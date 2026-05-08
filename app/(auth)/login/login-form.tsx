@@ -164,10 +164,6 @@ export function LoginForm({
           <SubmitButton />
         </form>
       </div>
-
-      <p className="text-center text-[11px] text-muted-foreground">
-        Si tu bar todavía no está en HUB, escribinos para sumarlo.
-      </p>
     </div>
   )
 }
