@@ -41,12 +41,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-    # Marcado no-bloqueante: la migration phase2 (kitchen enum) genera
-    # `ERROR: unsafe use of new value "kitchen" of enum type public.tenant_role`
-    # cuando supabase start aplica todas las migrations en la misma sesión.
-    # En producción remota cada migration corrió OK (transacciones separadas).
-    # TODO: agregar migration correctiva que separe el ALTER TYPE de su uso.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
