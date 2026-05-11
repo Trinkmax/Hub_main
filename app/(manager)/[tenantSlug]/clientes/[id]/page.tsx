@@ -16,6 +16,7 @@ import {
   listCustomerRedemptions,
   listCustomerVisits,
 } from '@/lib/points/queries'
+import { getCustomerLunchSnapshot } from '@/lib/punch-cards/queries'
 import { getCustomerInsights } from '@/lib/stats/queries'
 import { requireTenantAccess, TenantNotFoundError } from '@/lib/tenant'
 import { CustomerForm } from './_components/customer-form'
@@ -23,6 +24,7 @@ import { CustomerQrPanel } from './_components/customer-qr-panel'
 import { CustomerTags } from './_components/customer-tags'
 import { DeleteButton } from './_components/delete-button'
 import { LedgerTab } from './_components/ledger-tab'
+import { LunchCardPanel } from './_components/lunch-card-panel'
 import { VisitsTab } from './_components/visits-tab'
 
 export const metadata = { title: 'Cliente' }
@@ -46,14 +48,16 @@ export default async function CustomerDetailPage({
     throw error
   }
 
-  const [customer, allTags, visits, ledger, redemptions, insights] = await Promise.all([
-    getCustomerById({ tenantId: access.tenant.id, id }),
-    listTags({ tenantId: access.tenant.id }),
-    listCustomerVisits({ tenantId: access.tenant.id, customerId: id }),
-    listCustomerLedger({ tenantId: access.tenant.id, customerId: id }),
-    listCustomerRedemptions({ tenantId: access.tenant.id, customerId: id }),
-    getCustomerInsights(access.tenant.id, id),
-  ])
+  const [customer, allTags, visits, ledger, redemptions, insights, lunchSnapshot] =
+    await Promise.all([
+      getCustomerById({ tenantId: access.tenant.id, id }),
+      listTags({ tenantId: access.tenant.id }),
+      listCustomerVisits({ tenantId: access.tenant.id, customerId: id }),
+      listCustomerLedger({ tenantId: access.tenant.id, customerId: id }),
+      listCustomerRedemptions({ tenantId: access.tenant.id, customerId: id }),
+      getCustomerInsights(access.tenant.id, id),
+      getCustomerLunchSnapshot({ tenantId: access.tenant.id, customerId: id }),
+    ])
 
   if (!customer) notFound()
 
@@ -176,6 +180,22 @@ export default async function CustomerDetailPage({
         appUrl={process.env.NEXT_PUBLIC_APP_URL ?? ''}
         isOwner={access.role === 'owner'}
       />
+
+      {lunchSnapshot ? (
+        <LunchCardPanel
+          tenantSlug={tenantSlug}
+          customerId={c.id}
+          initial={{
+            template_id: lunchSnapshot.template_id,
+            template_name: lunchSnapshot.template_name,
+            current_stamps: lunchSnapshot.current_stamps,
+            threshold: lunchSnapshot.threshold,
+            reward_name: lunchSnapshot.reward_name,
+            hours_from: (lunchSnapshot.config.hours_from as string | undefined) ?? null,
+            hours_to: (lunchSnapshot.config.hours_to as string | undefined) ?? null,
+          }}
+        />
+      ) : null}
 
       {insights ? (
         <div className="card-hairline rounded-xl border bg-card p-5">
