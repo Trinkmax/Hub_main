@@ -246,6 +246,36 @@ export async function updateCustomer(
   return { ok: true, message: 'Guardado.' }
 }
 
+export async function rotateQrToken(
+  slug: string,
+  customerId: string,
+): Promise<{ ok: true; token: string } | { ok: false; message: string }> {
+  const access = await authorize(slug, ['owner'])
+  if (!access) return { ok: false, message: 'Solo el owner puede rotar el QR.' }
+
+  const parsed = customerIdSchema.safeParse({ id: customerId })
+  if (!parsed.success) return { ok: false, message: 'ID inválido.' }
+
+  const supabase = await createClient()
+  const { data: user } = await supabase.auth.getUser()
+
+  const { data, error } = await supabase.rpc('rotate_customer_qr_token', {
+    p_customer_id: parsed.data.id,
+  })
+  if (error || !data) return { ok: false, message: 'No pudimos regenerar el QR.' }
+
+  await logAudit({
+    tenantId: access.tenant.id,
+    userId: user.user?.id ?? null,
+    action: 'customer.qr_rotated',
+    entity: 'customer',
+    entityId: parsed.data.id,
+  })
+
+  revalidatePath(`/${slug}/clientes/${parsed.data.id}`)
+  return { ok: true, token: data as string }
+}
+
 export async function softDeleteCustomer(
   slug: string,
   customerId: string,

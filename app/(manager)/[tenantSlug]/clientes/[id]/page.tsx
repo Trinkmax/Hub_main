@@ -19,6 +19,7 @@ import {
 import { getCustomerInsights } from '@/lib/stats/queries'
 import { requireTenantAccess, TenantNotFoundError } from '@/lib/tenant'
 import { CustomerForm } from './_components/customer-form'
+import { CustomerQrPanel } from './_components/customer-qr-panel'
 import { CustomerTags } from './_components/customer-tags'
 import { DeleteButton } from './_components/delete-button'
 import { LedgerTab } from './_components/ledger-tab'
@@ -167,6 +168,14 @@ export default async function CustomerDetailPage({
           hint="Balance actual"
         />
       </div>
+
+      <CustomerQrPanel
+        tenantSlug={tenantSlug}
+        customerId={c.id}
+        initialQrToken={c.qr_token}
+        appUrl={process.env.NEXT_PUBLIC_APP_URL ?? ''}
+        isOwner={access.role === 'owner'}
+      />
 
       {insights ? (
         <div className="card-hairline rounded-xl border bg-card p-5">
