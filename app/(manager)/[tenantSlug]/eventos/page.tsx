@@ -1,4 +1,4 @@
-import { CalendarDays, CalendarPlus } from 'lucide-react'
+import { CalendarDays, CalendarPlus, Megaphone } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -61,12 +61,29 @@ export default async function EventosPage({
         description="Programá fiestas, peñas o cenas temáticas y registrá quién viene."
         actions={
           isOwner ? (
-            <Button asChild className="gap-2">
-              <Link href={`/${tenantSlug}/eventos/nuevo`}>
-                <CalendarPlus className="size-4" />
-                Nuevo evento
-              </Link>
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {calendarEvents.length > 0 ? (
+                <Button asChild variant="outline" className="gap-2">
+                  <Link
+                    href={`/${tenantSlug}/difusiones/nueva?prefillName=${encodeURIComponent(
+                      `Eventos · ${new Date().toLocaleDateString('es-AR', {
+                        month: 'long',
+                        year: 'numeric',
+                      })}`,
+                    )}`}
+                  >
+                    <Megaphone className="size-4" />
+                    Anunciar eventos del mes
+                  </Link>
+                </Button>
+              ) : null}
+              <Button asChild className="gap-2">
+                <Link href={`/${tenantSlug}/eventos/nuevo`}>
+                  <CalendarPlus className="size-4" />
+                  Nuevo evento
+                </Link>
+              </Button>
+            </div>
           ) : null
         }
       />

@@ -16,10 +16,14 @@ export const dynamic = 'force-dynamic'
 
 export default async function NuevaDifusionPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantSlug: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { tenantSlug } = await params
+  const sp = await searchParams
+  const prefillName = typeof sp.prefillName === 'string' ? sp.prefillName.slice(0, 80) : ''
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
     access = await requireTenantAccess(tenantSlug)
@@ -69,6 +73,7 @@ export default async function NuevaDifusionPage({
         channels={channelsRes.data ?? []}
         templates={templatesRes.data ?? []}
         audiences={audiencesRes.data ?? []}
+        initialName={prefillName}
       />
     </div>
   )

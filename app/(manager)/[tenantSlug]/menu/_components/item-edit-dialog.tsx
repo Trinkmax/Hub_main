@@ -1,5 +1,7 @@
 'use client'
 
+import { Megaphone } from 'lucide-react'
+import Link from 'next/link'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -136,13 +138,27 @@ export function ItemEditDialog({
           </div>
           <MenuImageUploader tenantId={tenantId} value={imageUrl} onChange={setImageUrl} />
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={pending}>
-            Cancelar
+        <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-between">
+          <Button asChild variant="ghost" size="sm" className="gap-1.5">
+            <Link
+              href={`/${tenantSlug}/difusiones/nueva?prefillName=${encodeURIComponent(
+                `Novedad: ${name}`,
+              )}`}
+              target="_blank"
+              rel="noopener"
+            >
+              <Megaphone className="size-3.5" />
+              Anunciar este ítem
+            </Link>
           </Button>
-          <Button onClick={onSave} disabled={pending}>
-            {pending ? 'Guardando…' : 'Guardar'}
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose} disabled={pending}>
+              Cancelar
+            </Button>
+            <Button onClick={onSave} disabled={pending}>
+              {pending ? 'Guardando…' : 'Guardar'}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

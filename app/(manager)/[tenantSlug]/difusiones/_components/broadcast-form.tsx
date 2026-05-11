@@ -38,16 +38,18 @@ export function BroadcastForm({
   channels,
   templates,
   audiences,
+  initialName = '',
 }: {
   tenantSlug: string
   channels: Channel[]
   templates: Template[]
   audiences: Audience[]
+  initialName?: string
 }) {
   const router = useRouter()
   const [state, action, pending] = useActionState(scheduleBroadcast.bind(null, tenantSlug), initial)
   const [step, setStep] = useState(0)
-  const [name, setName] = useState('')
+  const [name, setName] = useState(initialName)
   const [channelId, setChannelId] = useState<string>('')
   const [templateId, setTemplateId] = useState<string>('')
   const [audienceId, setAudienceId] = useState<string>('')
