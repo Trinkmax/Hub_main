@@ -63,6 +63,15 @@ export async function listCustomers(opts: {
     query = query.is('last_visit_at', null)
   }
 
+  // Pedido cliente: separar "Base de datos" (gente de reservas sin sistema de
+  // puntos) de "Usuarios con puntos" (gente que ya consumió). Mantenemos una
+  // sola tabla y derivamos la pertenencia del programa via total_visits.
+  if (filters.programa === 'with_points') {
+    query = query.gt('total_visits', 0)
+  } else if (filters.programa === 'contact_only') {
+    query = query.eq('total_visits', 0)
+  }
+
   const from = (filters.page - 1) * PAGE_SIZE
   const to = from + PAGE_SIZE - 1
   query = query.range(from, to)
@@ -134,6 +143,41 @@ export async function getCustomerById(opts: { tenantId: string; id: string }) {
     tags: (raw.tags ?? [])
       .map((t) => t.tag)
       .filter((t): t is { id: string; name: string; color: string } => t !== null),
+  }
+}
+
+export async function listCustomerProgramaCounts(opts: { tenantId: string }): Promise<{
+  all: number
+  with_points: number
+  contact_only: number
+}> {
+  const supabase = await createClient()
+  // Tres counts por separado. RLS ya filtra al tenant; aún así pasamos tenant_id
+  // explícito para que Postgres use el índice parcial (tenant_id, deleted_at).
+  const [{ count: allCount }, { count: withCount }, { count: contactCount }] = await Promise.all([
+    supabase
+      .from('customers')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', opts.tenantId)
+      .is('deleted_at', null),
+    supabase
+      .from('customers')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', opts.tenantId)
+      .is('deleted_at', null)
+      .gt('total_visits', 0),
+    supabase
+      .from('customers')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', opts.tenantId)
+      .is('deleted_at', null)
+      .eq('total_visits', 0),
+  ])
+
+  return {
+    all: allCount ?? 0,
+    with_points: withCount ?? 0,
+    contact_only: contactCount ?? 0,
   }
 }
 

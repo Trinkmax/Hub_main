@@ -4,7 +4,13 @@ import { notFound } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
-import { listCaptureLinks, listCustomers, listTags, PAGE_SIZE } from '@/lib/customers/queries'
+import {
+  listCaptureLinks,
+  listCustomerProgramaCounts,
+  listCustomers,
+  listTags,
+  PAGE_SIZE,
+} from '@/lib/customers/queries'
 import { listFiltersSchema } from '@/lib/customers/schemas'
 import { requireTenantAccess, TenantNotFoundError } from '@/lib/tenant'
 import { CustomersFilters } from './_components/customers-filters'
@@ -34,13 +40,15 @@ export default async function ClientesPage({
     q: sp.q,
     tag: sp.tag,
     since: sp.since,
+    programa: sp.programa,
     page: sp.page ?? 1,
   })
 
-  const [{ rows, total }, tags, links] = await Promise.all([
+  const [{ rows, total }, tags, links, programaCounts] = await Promise.all([
     listCustomers({ tenantId: access.tenant.id, filters }),
     listTags({ tenantId: access.tenant.id }),
     listCaptureLinks({ tenantId: access.tenant.id }),
+    listCustomerProgramaCounts({ tenantId: access.tenant.id }),
   ])
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
@@ -74,7 +82,7 @@ export default async function ClientesPage({
         }
       />
 
-      <CustomersFilters tags={tags} />
+      <CustomersFilters tags={tags} programaCounts={programaCounts} />
 
       {isEmpty ? (
         <EmptyState

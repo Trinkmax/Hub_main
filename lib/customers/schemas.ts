@@ -64,6 +64,8 @@ export const listFiltersSchema = z.object({
   q: z.string().trim().max(80).optional(),
   tag: z.string().uuid().optional(),
   since: z.enum(['30d', '90d', 'never']).optional(),
+  // 'all' (default), 'with_points' (total_visits > 0), 'contact_only' (sin visitas)
+  programa: z.enum(['all', 'with_points', 'contact_only']).default('all'),
   page: z.coerce.number().int().min(1).max(500).default(1),
 })
 
