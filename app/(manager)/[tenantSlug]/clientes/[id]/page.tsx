@@ -61,6 +61,7 @@ export default async function CustomerDetailPage({
     first_name: string
     last_name: string
     phone: string
+    email: string | null
     notes: string | null
     birthdate: string | null
     opt_in_marketing: boolean
@@ -70,6 +71,7 @@ export default async function CustomerDetailPage({
     last_visit_at: string | null
     created_at: string
     source: string
+    qr_token: string
     tags: { id: string; name: string; color: string }[]
   }
   const c = customer as unknown as C

@@ -62,6 +62,8 @@ export async function createCustomer(
     phone: formData.get('phone'),
     first_name: formData.get('first_name'),
     last_name: formData.get('last_name'),
+    email: formData.get('email'),
+    birthdate: formData.get('birthdate'),
     opt_in_marketing: formData.get('opt_in_marketing') === 'on',
   })
   if (!parsed.success) {
@@ -77,9 +79,10 @@ export async function createCustomer(
   if (!user.user) return { ok: false, message: 'No autenticado.' }
 
   const ip = await getRequestIp()
+  const nowIso = new Date().toISOString()
 
-  // Dedupe: si ya existe activo, redirige a su ficha en vez de crear duplicado.
-  const { data: existing } = await supabase
+  // Dedupe por teléfono primero (la identidad fuerte). Si no, por email.
+  const { data: existingByPhone } = await supabase
     .from('customers')
     .select('id')
     .eq('tenant_id', access.tenant.id)
@@ -87,12 +90,30 @@ export async function createCustomer(
     .is('deleted_at', null)
     .maybeSingle()
 
-  if (existing) {
+  if (existingByPhone) {
     revalidatePath(`/${slug}/clientes`)
     return {
       ok: true,
       message: 'Ya existía un cliente con ese teléfono.',
-      customerId: existing.id,
+      customerId: existingByPhone.id,
+    }
+  }
+
+  if (parsed.data.email) {
+    const { data: existingByEmail } = await supabase
+      .from('customers')
+      .select('id')
+      .eq('tenant_id', access.tenant.id)
+      .eq('email', parsed.data.email)
+      .is('deleted_at', null)
+      .maybeSingle()
+    if (existingByEmail) {
+      revalidatePath(`/${slug}/clientes`)
+      return {
+        ok: true,
+        message: 'Ya existía un cliente con ese email.',
+        customerId: existingByEmail.id,
+      }
     }
   }
 
@@ -103,10 +124,13 @@ export async function createCustomer(
       phone: parsed.data.phone,
       first_name: parsed.data.first_name,
       last_name: parsed.data.last_name,
+      email: parsed.data.email ?? null,
+      birthdate: parsed.data.birthdate ?? null,
       source: 'manual',
       opt_in_marketing: parsed.data.opt_in_marketing,
-      opt_in_at: parsed.data.opt_in_marketing ? new Date().toISOString() : null,
+      opt_in_at: parsed.data.opt_in_marketing ? nowIso : null,
       opt_in_ip: parsed.data.opt_in_marketing ? ip : null,
+      email_opt_in_at: parsed.data.opt_in_marketing && parsed.data.email ? nowIso : null,
     })
     .select('id')
     .single()
@@ -153,6 +177,7 @@ export async function updateCustomer(
     phone: formData.get('phone'),
     first_name: formData.get('first_name'),
     last_name: formData.get('last_name'),
+    email: formData.get('email'),
     notes: formData.get('notes'),
     birthdate: formData.get('birthdate'),
     opt_in_marketing: formData.get('opt_in_marketing') === 'on',
@@ -170,11 +195,12 @@ export async function updateCustomer(
   if (!user.user) return { ok: false, message: 'No autenticado.' }
 
   const ip = await getRequestIp()
+  const nowIso = new Date().toISOString()
 
   // Si pasa de no-opt-in a opt-in marcamos timestamp + IP
   const { data: current } = await supabase
     .from('customers')
-    .select('opt_in_marketing')
+    .select('opt_in_marketing, email, email_opt_in_at')
     .eq('id', parsed.data.id)
     .eq('tenant_id', access.tenant.id)
     .is('deleted_at', null)
@@ -182,6 +208,12 @@ export async function updateCustomer(
   if (!current) return { ok: false, message: 'Cliente no encontrado.' }
 
   const becomingOptIn = !current.opt_in_marketing && parsed.data.opt_in_marketing
+  const emailChanged = (current.email ?? null) !== (parsed.data.email ?? null)
+  // Si arrancó sin email y ahora carga email + tenía opt_in → registramos email_opt_in_at
+  const emailOptInTimestamp =
+    parsed.data.email && parsed.data.opt_in_marketing && (emailChanged || !current.email_opt_in_at)
+      ? nowIso
+      : current.email_opt_in_at
 
   const { error } = await supabase
     .from('customers')
@@ -189,10 +221,12 @@ export async function updateCustomer(
       phone: parsed.data.phone,
       first_name: parsed.data.first_name,
       last_name: parsed.data.last_name,
+      email: parsed.data.email ?? null,
       notes: parsed.data.notes ?? null,
       birthdate: parsed.data.birthdate,
       opt_in_marketing: parsed.data.opt_in_marketing,
-      ...(becomingOptIn ? { opt_in_at: new Date().toISOString(), opt_in_ip: ip } : {}),
+      email_opt_in_at: parsed.data.email ? emailOptInTimestamp : null,
+      ...(becomingOptIn ? { opt_in_at: nowIso, opt_in_ip: ip } : {}),
     })
     .eq('id', parsed.data.id)
     .eq('tenant_id', access.tenant.id)

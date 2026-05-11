@@ -1,8 +1,10 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useActionState, useEffect } from 'react'
+import { useActionState, useEffect, useState } from 'react'
 import { useFormStatus } from 'react-dom'
+import PhoneInput from 'react-phone-number-input'
+import 'react-phone-number-input/style.css'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -21,10 +23,19 @@ function SubmitButton() {
   )
 }
 
+function RequiredMark() {
+  return (
+    <span aria-hidden="true" className="ml-0.5 text-destructive">
+      *
+    </span>
+  )
+}
+
 export function NewCustomerForm({ tenantSlug }: { tenantSlug: string }) {
   const action = createCustomer.bind(null, tenantSlug)
   const [state, formAction] = useActionState(action, initial)
   const router = useRouter()
+  const [phone, setPhone] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     if (state.ok && state.customerId) {
@@ -38,30 +49,70 @@ export function NewCustomerForm({ tenantSlug }: { tenantSlug: string }) {
   return (
     <form action={formAction} className="grid gap-5">
       <div className="grid gap-1.5">
-        <Label htmlFor="phone">Teléfono</Label>
-        <Input
-          id="phone"
+        <Label htmlFor="phone-input">
+          WhatsApp
+          <RequiredMark />
+        </Label>
+        <PhoneInput
+          id="phone-input"
           name="phone"
-          type="tel"
-          required
-          placeholder="+54 9 351 555 1234"
-          autoComplete="off"
+          international
+          defaultCountry="AR"
+          countryCallingCodeEditable={false}
+          value={phone}
+          onChange={setPhone}
+          placeholder="351 555 1234"
+          className="hub-phone-input"
           aria-invalid={state.ok ? undefined : Boolean(state.fieldErrors?.phone)}
+          aria-required="true"
         />
         <p className="text-xs text-muted-foreground">
-          Lo normalizamos a E.164 automáticamente. Aceptamos cualquier formato local o
-          internacional.
+          Elegí el país y la bandera se autocompleta. Guardamos el número en formato internacional.
         </p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="grid gap-1.5">
-          <Label htmlFor="first_name">Nombre</Label>
-          <Input id="first_name" name="first_name" required maxLength={60} />
+          <Label htmlFor="first_name">
+            Nombre
+            <RequiredMark />
+          </Label>
+          <Input id="first_name" name="first_name" required maxLength={60} aria-required="true" />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="last_name">Apellido</Label>
-          <Input id="last_name" name="last_name" required maxLength={60} />
+          <Label htmlFor="last_name">
+            Apellido
+            <RequiredMark />
+          </Label>
+          <Input id="last_name" name="last_name" required maxLength={60} aria-required="true" />
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-1.5">
+          <Label htmlFor="email">
+            Email <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
+          </Label>
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            maxLength={120}
+            placeholder="cliente@ejemplo.com"
+            autoComplete="email"
+            aria-invalid={state.ok ? undefined : Boolean(state.fieldErrors?.email)}
+          />
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="birthdate">
+            Cumpleaños <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
+          </Label>
+          <Input
+            id="birthdate"
+            name="birthdate"
+            type="date"
+            aria-invalid={state.ok ? undefined : Boolean(state.fieldErrors?.birthdate)}
+          />
         </div>
       </div>
 
@@ -73,7 +124,7 @@ export function NewCustomerForm({ tenantSlug }: { tenantSlug: string }) {
           </span>
           <span className="block text-xs text-muted-foreground">
             Marcá esto solo si te lo confirmó verbalmente o por escrito. Quedará registrado con
-            fecha y hora.
+            fecha, hora e IP.
           </span>
         </div>
       </Label>

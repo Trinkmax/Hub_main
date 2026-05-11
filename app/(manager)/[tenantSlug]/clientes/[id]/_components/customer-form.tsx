@@ -1,7 +1,9 @@
 'use client'
 
-import { useActionState, useEffect } from 'react'
+import { useActionState, useEffect, useState } from 'react'
 import { useFormStatus } from 'react-dom'
+import PhoneInput from 'react-phone-number-input'
+import 'react-phone-number-input/style.css'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -21,11 +23,20 @@ function SubmitButton() {
   )
 }
 
+function RequiredMark() {
+  return (
+    <span aria-hidden="true" className="ml-0.5 text-destructive">
+      *
+    </span>
+  )
+}
+
 type CustomerFormData = {
   id: string
   first_name: string
   last_name: string
   phone: string
+  email: string | null
   notes: string | null
   birthdate: string | null
   opt_in_marketing: boolean
@@ -40,6 +51,7 @@ export function CustomerForm({
 }) {
   const action = updateCustomer.bind(null, tenantSlug)
   const [state, formAction] = useActionState(action, initial)
+  const [phone, setPhone] = useState<string | undefined>(customer.phone || undefined)
 
   useEffect(() => {
     if (state.ok && state.message) {
@@ -55,7 +67,10 @@ export function CustomerForm({
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="grid gap-1.5">
-          <Label htmlFor="first_name">Nombre</Label>
+          <Label htmlFor="first_name">
+            Nombre
+            <RequiredMark />
+          </Label>
           <Input
             id="first_name"
             name="first_name"
@@ -65,7 +80,10 @@ export function CustomerForm({
           />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="last_name">Apellido</Label>
+          <Label htmlFor="last_name">
+            Apellido
+            <RequiredMark />
+          </Label>
           <Input
             id="last_name"
             name="last_name"
@@ -76,20 +94,43 @@ export function CustomerForm({
         </div>
       </div>
 
+      <div className="grid gap-1.5">
+        <Label htmlFor="phone-input">
+          WhatsApp
+          <RequiredMark />
+        </Label>
+        <PhoneInput
+          id="phone-input"
+          name="phone"
+          international
+          defaultCountry="AR"
+          countryCallingCodeEditable={false}
+          value={phone}
+          onChange={setPhone}
+          className="hub-phone-input"
+          aria-required="true"
+        />
+      </div>
+
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="grid gap-1.5">
-          <Label htmlFor="phone">Teléfono</Label>
+          <Label htmlFor="email">
+            Email <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
+          </Label>
           <Input
-            id="phone"
-            name="phone"
-            type="tel"
-            defaultValue={customer.phone}
-            required
-            autoComplete="off"
+            id="email"
+            name="email"
+            type="email"
+            defaultValue={customer.email ?? ''}
+            maxLength={120}
+            placeholder="cliente@ejemplo.com"
+            autoComplete="email"
           />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="birthdate">Cumpleaños</Label>
+          <Label htmlFor="birthdate">
+            Cumpleaños <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
+          </Label>
           <Input
             id="birthdate"
             name="birthdate"
@@ -124,7 +165,7 @@ export function CustomerForm({
             Acepta recibir promociones por WhatsApp/email
           </span>
           <span className="block text-xs text-muted-foreground">
-            Solo marcá esto si te lo confirmó. Quedará registrado con fecha y hora.
+            Solo marcá esto si te lo confirmó. Quedará registrado con fecha, hora e IP.
           </span>
         </div>
       </Label>

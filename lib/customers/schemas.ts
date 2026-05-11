@@ -1,11 +1,19 @@
+import { isValidPhoneNumber } from 'libphonenumber-js'
 import { z } from 'zod'
 import { tryNormalizePhone } from '@/lib/phone'
 
+// Acepta E.164 nuevo (`+5493515551234`, vía react-phone-number-input) o
+// cualquier formato heredado que pase por tryNormalizePhone (imports viejos,
+// capture link). Conserva un solo punto de validación.
 const phoneField = z
   .string()
   .min(1, 'Ingresá un teléfono')
   .transform((v, ctx) => {
-    const normalized = tryNormalizePhone(v)
+    const trimmed = v.trim()
+    if (trimmed.startsWith('+') && isValidPhoneNumber(trimmed)) {
+      return trimmed
+    }
+    const normalized = tryNormalizePhone(trimmed)
     if (!normalized) {
       ctx.addIssue({ code: 'custom', message: 'Teléfono inválido' })
       return z.NEVER
@@ -15,10 +23,20 @@ const phoneField = z
 
 const nameField = z.string().trim().min(1, 'Requerido').max(60, 'Máximo 60 caracteres')
 
+const emailField = z
+  .union([z.string().trim().email('Email inválido').max(120), z.literal(''), z.null()])
+  .transform((v) => (v && v.length > 0 ? v.toLowerCase() : null))
+
+const birthdateField = z
+  .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato inválido'), z.literal(''), z.null()])
+  .transform((v) => (v && v.length > 0 ? v : null))
+
 export const createCustomerSchema = z.object({
   phone: phoneField,
   first_name: nameField,
   last_name: nameField,
+  email: emailField.optional(),
+  birthdate: birthdateField.optional(),
   opt_in_marketing: z.coerce.boolean().default(false),
 })
 
@@ -27,12 +45,11 @@ export const updateCustomerSchema = z.object({
   first_name: nameField,
   last_name: nameField,
   phone: phoneField,
+  email: emailField.optional(),
   notes: z
     .union([z.string().trim().max(500), z.null(), z.undefined()])
     .transform((v) => (v && v.length > 0 ? v : null)),
-  birthdate: z
-    .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato inválido'), z.literal('')])
-    .transform((v) => (v && v.length > 0 ? v : null)),
+  birthdate: birthdateField,
   opt_in_marketing: z.coerce.boolean().default(false),
 })
 
