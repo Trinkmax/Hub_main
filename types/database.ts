@@ -6,30 +6,6 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-// Convenience enum aliases for legacy imports.
-export type TenantRole = Database['public']['Enums']['tenant_role']
-export type CustomerSource = Database['public']['Enums']['customer_source']
-export type VisitSource = Database['public']['Enums']['visit_source']
-export type PointsRuleType = Database['public']['Enums']['points_rule_type']
-export type RedemptionStatus = Database['public']['Enums']['redemption_status']
-export type EventStatus = Database['public']['Enums']['event_status']
-export type ReservationStatus = Database['public']['Enums']['reservation_status']
-export type ChannelType = Database['public']['Enums']['channel_type']
-export type ChannelStatus = Database['public']['Enums']['channel_status']
-export type TemplateStatus = Database['public']['Enums']['template_status']
-export type MessageDirection = Database['public']['Enums']['message_direction']
-export type MessageStatus = Database['public']['Enums']['message_status']
-export type BroadcastStatus = Database['public']['Enums']['broadcast_status']
-export type RecipientStatus = Database['public']['Enums']['recipient_status']
-export type FlowTriggerType = Database['public']['Enums']['flow_trigger_type']
-export type FlowStepType = Database['public']['Enums']['flow_step_type']
-export type FlowExecutionStatus = Database['public']['Enums']['flow_execution_status']
-export type JobStatus = Database['public']['Enums']['job_status']
-export type SessionStatus = Database['public']['Enums']['session_status']
-export type SessionEventType = Database['public']['Enums']['session_event_type']
-export type TicketStatus = Database['public']['Enums']['ticket_status']
-export type PunchTriggerType = Database['public']['Enums']['punch_trigger_type']
-
 export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
@@ -714,6 +690,8 @@ export type Database = {
           birthdate: string | null
           created_at: string
           deleted_at: string | null
+          email: string | null
+          email_opt_in_at: string | null
           first_name: string
           id: string
           last_name: string
@@ -724,6 +702,8 @@ export type Database = {
           opt_in_marketing: boolean
           phone: string
           points_balance: number
+          qr_token: string
+          qr_token_generated_at: string
           source: Database["public"]["Enums"]["customer_source"]
           tenant_id: string
           total_spent_cents: number
@@ -734,6 +714,8 @@ export type Database = {
           birthdate?: string | null
           created_at?: string
           deleted_at?: string | null
+          email?: string | null
+          email_opt_in_at?: string | null
           first_name: string
           id?: string
           last_name: string
@@ -744,6 +726,8 @@ export type Database = {
           opt_in_marketing?: boolean
           phone: string
           points_balance?: number
+          qr_token?: string
+          qr_token_generated_at?: string
           source?: Database["public"]["Enums"]["customer_source"]
           tenant_id: string
           total_spent_cents?: number
@@ -754,6 +738,8 @@ export type Database = {
           birthdate?: string | null
           created_at?: string
           deleted_at?: string | null
+          email?: string | null
+          email_opt_in_at?: string | null
           first_name?: string
           id?: string
           last_name?: string
@@ -764,6 +750,8 @@ export type Database = {
           opt_in_marketing?: boolean
           phone?: string
           points_balance?: number
+          qr_token?: string
+          qr_token_generated_at?: string
           source?: Database["public"]["Enums"]["customer_source"]
           tenant_id?: string
           total_spent_cents?: number
@@ -1602,6 +1590,7 @@ export type Database = {
       punch_card_templates: {
         Row: {
           active: boolean
+          config: Json
           created_at: string
           description: string | null
           expires_after_days: number | null
@@ -1611,12 +1600,13 @@ export type Database = {
           reward_id: string
           tenant_id: string
           threshold: number
-          trigger_ref_id: string
+          trigger_ref_id: string | null
           trigger_type: Database["public"]["Enums"]["punch_trigger_type"]
           updated_at: string
         }
         Insert: {
           active?: boolean
+          config?: Json
           created_at?: string
           description?: string | null
           expires_after_days?: number | null
@@ -1626,12 +1616,13 @@ export type Database = {
           reward_id: string
           tenant_id: string
           threshold: number
-          trigger_ref_id: string
+          trigger_ref_id?: string | null
           trigger_type: Database["public"]["Enums"]["punch_trigger_type"]
           updated_at?: string
         }
         Update: {
           active?: boolean
+          config?: Json
           created_at?: string
           description?: string | null
           expires_after_days?: number | null
@@ -1641,7 +1632,7 @@ export type Database = {
           reward_id?: string
           tenant_id?: string
           threshold?: number
-          trigger_ref_id?: string
+          trigger_ref_id?: string | null
           trigger_type?: Database["public"]["Enums"]["punch_trigger_type"]
           updated_at?: string
         }
@@ -2617,6 +2608,10 @@ export type Database = {
         Returns: Json
       }
       auto_abandon_stale_sessions: { Args: never; Returns: Json }
+      award_points_by_amount: {
+        Args: { p_amount_cents: number; p_customer_id: string }
+        Returns: Json
+      }
       calculate_visit_points: {
         Args: { p_visit_id: string }
         Returns: {
@@ -2758,6 +2753,7 @@ export type Database = {
         Args: { p_error: string; p_id: string; p_recoverable?: boolean }
         Returns: undefined
       }
+      find_user_id_by_email: { Args: { p_email: string }; Returns: string }
       finish_past_events: {
         Args: never
         Returns: {
@@ -2765,7 +2761,6 @@ export type Database = {
           no_show_reservations: number
         }[]
       }
-      find_user_id_by_email: { Args: { p_email: string }; Returns: string }
       generate_qr_token: { Args: never; Returns: string }
       get_invitation_preview: {
         Args: { p_token: string }
@@ -2798,7 +2793,7 @@ export type Database = {
         Returns: {
           created_at: string
           email: string
-          full_name: string | null
+          full_name: string
           id: string
           role: Database["public"]["Enums"]["tenant_role"]
           user_id: string
@@ -2865,6 +2860,10 @@ export type Database = {
         }
         Returns: Json
       }
+      register_lunch_visit: {
+        Args: { p_customer_id: string; p_template_id: string }
+        Returns: Json
+      }
       reject_ticket: {
         Args: { p_reason: string; p_ticket_id: string }
         Returns: Json
@@ -2884,6 +2883,10 @@ export type Database = {
       requeue_stuck_jobs: {
         Args: { p_threshold_seconds?: number }
         Returns: number
+      }
+      rotate_customer_qr_token: {
+        Args: { p_customer_id: string }
+        Returns: string
       }
       set_active_tenant: { Args: { p_tenant: string }; Returns: undefined }
       show_limit: { Args: never; Returns: number }
@@ -2972,7 +2975,7 @@ export type Database = {
       message_direction: "inbound" | "outbound"
       message_status: "queued" | "sent" | "delivered" | "read" | "failed"
       points_rule_type: "per_amount" | "per_item"
-      punch_trigger_type: "item" | "category" | "tag"
+      punch_trigger_type: "item" | "category" | "tag" | "visit_window"
       recipient_status:
         | "pending"
         | "sent"
@@ -3165,7 +3168,7 @@ export const Constants = {
       message_direction: ["inbound", "outbound"],
       message_status: ["queued", "sent", "delivered", "read", "failed"],
       points_rule_type: ["per_amount", "per_item"],
-      punch_trigger_type: ["item", "category", "tag"],
+      punch_trigger_type: ["item", "category", "tag", "visit_window"],
       recipient_status: [
         "pending",
         "sent",
@@ -3208,3 +3211,31 @@ export const Constants = {
     },
   },
 } as const
+
+// ──────────────────────────────────────────────────────────
+// Enum aliases (mantenidos manualmente — no son parte del output de
+// supabase gen types pero el resto del codebase los importa por nombre).
+// Cuando agregues un enum nuevo a la DB, exportalo acá también.
+// ──────────────────────────────────────────────────────────
+export type TenantRole = Database['public']['Enums']['tenant_role']
+export type CustomerSource = Database['public']['Enums']['customer_source']
+export type VisitSource = Database['public']['Enums']['visit_source']
+export type PointsRuleType = Database['public']['Enums']['points_rule_type']
+export type RedemptionStatus = Database['public']['Enums']['redemption_status']
+export type EventStatus = Database['public']['Enums']['event_status']
+export type ReservationStatus = Database['public']['Enums']['reservation_status']
+export type ChannelType = Database['public']['Enums']['channel_type']
+export type ChannelStatus = Database['public']['Enums']['channel_status']
+export type TemplateStatus = Database['public']['Enums']['template_status']
+export type MessageDirection = Database['public']['Enums']['message_direction']
+export type MessageStatus = Database['public']['Enums']['message_status']
+export type BroadcastStatus = Database['public']['Enums']['broadcast_status']
+export type RecipientStatus = Database['public']['Enums']['recipient_status']
+export type FlowTriggerType = Database['public']['Enums']['flow_trigger_type']
+export type FlowStepType = Database['public']['Enums']['flow_step_type']
+export type FlowExecutionStatus = Database['public']['Enums']['flow_execution_status']
+export type JobStatus = Database['public']['Enums']['job_status']
+export type SessionStatus = Database['public']['Enums']['session_status']
+export type SessionEventType = Database['public']['Enums']['session_event_type']
+export type TicketStatus = Database['public']['Enums']['ticket_status']
+export type PunchTriggerType = Database['public']['Enums']['punch_trigger_type']
