@@ -41,7 +41,13 @@ const inactiveTriggerCfg = z.object({
   type: z.literal('customer_inactive'),
   days: z.number().int().min(1).max(365),
 })
-const birthdayTriggerCfg = z.object({ type: z.literal('birthday') })
+// offset_days: cuántos días *antes* del cumple disparar (0 = el día,
+// -15 = 15 días antes, +1 = un día después). Compatibilidad con flows
+// existentes sin offset_days → se asume 0.
+const birthdayTriggerCfg = z.object({
+  type: z.literal('birthday'),
+  offset_days: z.coerce.number().int().min(-90).max(90).default(0),
+})
 const afterVisitTriggerCfg = z.object({ type: z.literal('after_visit') })
 const eventStartingTriggerCfg = z.object({
   type: z.literal('event_starting'),

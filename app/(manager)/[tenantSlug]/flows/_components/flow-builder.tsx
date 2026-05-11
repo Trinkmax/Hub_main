@@ -266,6 +266,7 @@ function TriggerEditor({
             if (t === 'customer_inactive') onChange({ type: t, days: 30 })
             else if (t === 'event_starting') onChange({ type: t, hours_before: 24 })
             else if (t === 'tag_added') onChange({ type: t })
+            else if (t === 'birthday') onChange({ type: t, offset_days: 0 })
             else onChange({ type: t })
           }}
         >
@@ -280,6 +281,32 @@ function TriggerEditor({
             <SelectItem value="tag_added">Tag agregado</SelectItem>
           </SelectContent>
         </Select>
+        {value.type === 'birthday' ? (
+          <div className="grid gap-1.5">
+            <Label className="text-xs text-muted-foreground">Cuándo enviar</Label>
+            <Select
+              value={String(value.offset_days)}
+              onValueChange={(v) =>
+                onChange({ type: 'birthday', offset_days: Number.parseInt(v, 10) })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="-30">30 días antes</SelectItem>
+                <SelectItem value="-15">15 días antes</SelectItem>
+                <SelectItem value="-7">7 días antes</SelectItem>
+                <SelectItem value="-1">1 día antes</SelectItem>
+                <SelectItem value="0">El día del cumple</SelectItem>
+                <SelectItem value="1">1 día después</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">
+              El cron evalúa cada día; quienes cumplan en N días recibirán el mensaje hoy.
+            </p>
+          </div>
+        ) : null}
         {value.type === 'customer_inactive' ? (
           <div className="grid gap-1.5">
             <Label className="text-xs text-muted-foreground">Días sin venir</Label>
