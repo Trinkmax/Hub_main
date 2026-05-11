@@ -15,6 +15,121 @@ import { createRewardSchema, createRuleSchema, updateRewardSchema } from './sche
 
 export type LoyaltyActionState = { ok: true; message?: string } | { ok: false; message: string }
 
+export type AwardResult =
+  | {
+      ok: true
+      customer_id: string
+      points_awarded: number
+      amount_cents: number
+      new_balance: number
+    }
+  | { ok: false; message: string }
+
+const awardSchema = z.object({
+  customer_id: z.string().uuid(),
+  amount_cents: z.coerce.number().int().min(1).max(1_000_000_000_000),
+})
+
+async function authorizeAnyStaff(slug: string) {
+  try {
+    const { tenant, role } = await requireTenantAccess(slug)
+    requireRole(role, ['owner', 'cashier', 'waiter'])
+    return tenant
+  } catch (error) {
+    if (
+      error instanceof RoleRequiredError ||
+      error instanceof TenantNotFoundError ||
+      error instanceof UnauthenticatedError
+    )
+      return null
+    throw error
+  }
+}
+
+export async function awardPointsByAmount(
+  slug: string,
+  payload: { customer_id: string; amount_cents: number },
+): Promise<AwardResult> {
+  const tenant = await authorizeAnyStaff(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = awardSchema.safeParse(payload)
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos.' }
+  }
+
+  const supabase = await createClient()
+  const { data: customer } = await supabase
+    .from('customers')
+    .select('id, tenant_id')
+    .eq('id', parsed.data.customer_id)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (!customer || customer.tenant_id !== tenant.id) {
+    return { ok: false, message: 'Cliente no encontrado.' }
+  }
+
+  const { data, error } = await supabase.rpc('award_points_by_amount', {
+    p_customer_id: parsed.data.customer_id,
+    p_amount_cents: parsed.data.amount_cents,
+  })
+  if (error) {
+    return { ok: false, message: error.message }
+  }
+
+  const result = (data ?? {}) as {
+    visit_id?: string
+    points_awarded?: number
+    amount_cents?: number
+    new_balance?: number
+  }
+
+  await logAudit({
+    tenantId: tenant.id,
+    userId: null,
+    action: 'points.qr_award',
+    entity: 'customer',
+    entityId: parsed.data.customer_id,
+    payload: { amount_cents: parsed.data.amount_cents, points: result.points_awarded ?? 0 },
+  })
+
+  revalidatePath(`/${slug}/clientes/${parsed.data.customer_id}`)
+
+  return {
+    ok: true,
+    customer_id: parsed.data.customer_id,
+    points_awarded: result.points_awarded ?? 0,
+    amount_cents: result.amount_cents ?? parsed.data.amount_cents,
+    new_balance: result.new_balance ?? 0,
+  }
+}
+
+export async function lookupCustomerByQr(
+  slug: string,
+  qrToken: string,
+): Promise<
+  | {
+      ok: true
+      customer: {
+        id: string
+        first_name: string
+        last_name: string
+        phone: string
+        points_balance: number
+      }
+    }
+  | { ok: false; message: string }
+> {
+  const tenant = await authorizeAnyStaff(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+
+  // Lazy import para no crear ciclo
+  const { getCustomerByQrToken } = await import('@/lib/customers/queries')
+  const customer = await getCustomerByQrToken({ tenantId: tenant.id, token: qrToken })
+  if (!customer) return { ok: false, message: 'QR no reconocido.' }
+  return { ok: true, customer }
+}
+
 async function authorizeOwner(slug: string) {
   try {
     const { tenant, role } = await requireTenantAccess(slug)

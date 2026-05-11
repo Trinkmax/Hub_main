@@ -60,6 +60,11 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ['owner'],
       },
       {
+        label: 'Acreditar',
+        href: (s) => `/${s}/acreditar`,
+        icon: 'ScanLine',
+      },
+      {
         label: 'Bandeja',
         href: (s) => `/${s}/bandeja`,
         icon: 'Inbox',

@@ -181,6 +181,32 @@ export async function listCustomerProgramaCounts(opts: { tenantId: string }): Pr
   }
 }
 
+export async function getCustomerByQrToken(opts: { tenantId: string; token: string }): Promise<{
+  id: string
+  first_name: string
+  last_name: string
+  phone: string
+  points_balance: number
+} | null> {
+  if (!opts.token || opts.token.length < 8 || opts.token.length > 128) return null
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('customers')
+    .select('id, first_name, last_name, phone, points_balance, tenant_id')
+    .eq('tenant_id', opts.tenantId)
+    .eq('qr_token', opts.token)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (error || !data) return null
+  return {
+    id: data.id,
+    first_name: data.first_name,
+    last_name: data.last_name,
+    phone: data.phone,
+    points_balance: data.points_balance,
+  }
+}
+
 export async function listTags(opts: { tenantId: string }) {
   const supabase = await createClient()
   const { data, error } = await supabase
