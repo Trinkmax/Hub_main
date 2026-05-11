@@ -147,6 +147,7 @@ export async function createMenuItem(
     description: formData.get('description'),
     price_cents: formData.get('price_cents'),
     points_override: formData.get('points_override'),
+    image_url: formData.get('image_url'),
   })
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
@@ -180,6 +181,7 @@ export async function createMenuItem(
       description: parsed.data.description,
       price_cents: parsed.data.price_cents,
       points_override: parsed.data.points_override,
+      image_url: parsed.data.image_url,
       position: (maxPos?.position ?? 0) + 1,
     })
     .select('id')
@@ -208,6 +210,7 @@ export async function updateMenuItem(
     description: string | null
     price_cents: number
     points_override: number | null
+    image_url: string | null
     active: boolean
   },
 ): Promise<MenuActionState> {
@@ -226,6 +229,7 @@ export async function updateMenuItem(
       description: parsed.data.description,
       price_cents: parsed.data.price_cents,
       points_override: parsed.data.points_override,
+      image_url: parsed.data.image_url,
       active: parsed.data.active,
     })
     .eq('id', parsed.data.id)

@@ -27,10 +27,12 @@ import { CategoryRow } from './category-row'
 
 export function MenuBoard({
   tenantSlug,
+  tenantId,
   categories,
   items,
 }: {
   tenantSlug: string
+  tenantId: string
   categories: MenuCategory[]
   items: MenuItem[]
 }) {
@@ -72,6 +74,7 @@ export function MenuBoard({
               category={cat}
               items={items.filter((i) => i.category_id === cat.id)}
               tenantSlug={tenantSlug}
+              tenantId={tenantId}
               allCategories={order}
             />
           ))}
@@ -85,11 +88,13 @@ function SortableCategory({
   category,
   items,
   tenantSlug,
+  tenantId,
   allCategories,
 }: {
   category: MenuCategory
   items: MenuItem[]
   tenantSlug: string
+  tenantId: string
   allCategories: MenuCategory[]
 }) {
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
@@ -129,6 +134,7 @@ function SortableCategory({
           category={category}
           items={items}
           tenantSlug={tenantSlug}
+          tenantId={tenantId}
           allCategories={allCategories}
         />
       </div>

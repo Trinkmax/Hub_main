@@ -25,6 +25,18 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   turbopack: {},
+  images: {
+    // Fotos del menú y logos de tenants se sirven desde Supabase Storage.
+    // El subdominio coincide con el project ref; lo dejamos abierto a *.supabase.co
+    // para que funcione en preview/prod sin reconfiguración.
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '*.supabase.co',
+        pathname: '/storage/v1/object/public/**',
+      },
+    ],
+  },
   async headers() {
     return [
       {

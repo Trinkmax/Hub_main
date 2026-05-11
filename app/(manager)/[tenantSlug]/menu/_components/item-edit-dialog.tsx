@@ -22,15 +22,18 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { updateMenuItem } from '@/lib/menu/actions'
 import type { MenuCategory, MenuItem } from '@/lib/menu/queries'
+import { MenuImageUploader } from './image-uploader'
 
 export function ItemEditDialog({
   item,
   tenantSlug,
+  tenantId,
   categories,
   onClose,
 }: {
   item: MenuItem
   tenantSlug: string
+  tenantId: string
   categories: MenuCategory[]
   onClose: () => void
 }) {
@@ -41,6 +44,7 @@ export function ItemEditDialog({
   const [pointsOverride, setPointsOverride] = useState(
     item.points_override === null ? '' : String(item.points_override),
   )
+  const [imageUrl, setImageUrl] = useState<string | null>(item.image_url ?? null)
   const [pending, start] = useTransition()
 
   const onSave = () => {
@@ -62,6 +66,7 @@ export function ItemEditDialog({
         description: description.trim().length > 0 ? description.trim() : null,
         price_cents: price,
         points_override: pts,
+        image_url: imageUrl,
         active: item.active,
       })
       if (r.ok) {
@@ -129,6 +134,7 @@ export function ItemEditDialog({
               />
             </div>
           </div>
+          <MenuImageUploader tenantId={tenantId} value={imageUrl} onChange={setImageUrl} />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={pending}>

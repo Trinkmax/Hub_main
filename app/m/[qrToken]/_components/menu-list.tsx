@@ -1,6 +1,7 @@
 'use client'
 
-import { Plus } from 'lucide-react'
+import { ImageOff, Plus } from 'lucide-react'
+import Image from 'next/image'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -51,9 +52,25 @@ export function MenuList({
               <button
                 key={it.id}
                 type="button"
-                className="flex w-full items-center justify-between gap-3 rounded-xl border bg-card p-3 text-left shadow-sm hover:bg-card/95"
+                className="flex w-full items-center justify-between gap-3 rounded-xl border bg-card p-3 text-left shadow-sm transition-colors hover:bg-card/95"
                 onClick={() => setOpening(it)}
               >
+                <div className="relative size-14 shrink-0 overflow-hidden rounded-lg bg-secondary/60">
+                  {it.image_url ? (
+                    <Image
+                      src={it.image_url}
+                      alt=""
+                      fill
+                      sizes="56px"
+                      className="object-cover"
+                      unoptimized
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-muted-foreground/40">
+                      <ImageOff className="size-4" aria-hidden />
+                    </div>
+                  )}
+                </div>
                 <div className="min-w-0 flex-1">
                   <p className="font-medium">{it.name}</p>
                   {it.description && (
@@ -79,6 +96,18 @@ export function MenuList({
         <SheetContent side="bottom">
           {opening && (
             <>
+              {opening.image_url ? (
+                <div className="relative -mt-4 mb-3 aspect-[16/9] w-full overflow-hidden rounded-t-xl bg-secondary/40">
+                  <Image
+                    src={opening.image_url}
+                    alt={opening.name}
+                    fill
+                    sizes="(max-width: 640px) 100vw, 640px"
+                    className="object-cover"
+                    unoptimized
+                  />
+                </div>
+              ) : null}
               <SheetHeader>
                 <SheetTitle>{opening.name}</SheetTitle>
                 {opening.description && (

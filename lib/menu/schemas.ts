@@ -20,6 +20,9 @@ export const createMenuItemSchema = z.object({
   points_override: z
     .union([z.coerce.number().int(), z.literal(''), z.null(), z.undefined()])
     .transform((v) => (typeof v === 'number' ? v : null)),
+  image_url: z
+    .union([z.string().trim().url().max(2048), z.literal(''), z.null(), z.undefined()])
+    .transform((v) => (v && v.length > 0 ? v : null)),
 })
 
 export const updateMenuItemSchema = createMenuItemSchema.extend({

@@ -40,11 +40,13 @@ export function CategoryRow({
   category,
   items: initialItems,
   tenantSlug,
+  tenantId,
   allCategories,
 }: {
   category: MenuCategory
   items: MenuItem[]
   tenantSlug: string
+  tenantId: string
   allCategories: MenuCategory[]
 }) {
   const [items, setItems] = useState(initialItems)
@@ -172,7 +174,7 @@ export function CategoryRow({
         </SortableContext>
       </DndContext>
 
-      <NewItemForm tenantSlug={tenantSlug} categoryId={category.id} />
+      <NewItemForm tenantSlug={tenantSlug} tenantId={tenantId} categoryId={category.id} />
 
       {editingCat ? (
         <CategoryEditDialog
@@ -185,6 +187,7 @@ export function CategoryRow({
         <ItemEditDialog
           item={editingItem}
           tenantSlug={tenantSlug}
+          tenantId={tenantId}
           categories={allCategories}
           onClose={() => setEditingItem(null)}
         />
