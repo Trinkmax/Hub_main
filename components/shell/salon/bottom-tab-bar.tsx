@@ -1,6 +1,6 @@
 'use client'
 
-import { ChefHat, ClipboardList, Inbox, type LucideIcon, User } from 'lucide-react'
+import { CalendarCheck, ChefHat, ClipboardList, type LucideIcon, User } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { TenantRole } from '@/lib/tenant/types'
@@ -16,11 +16,19 @@ type Tab = {
 
 const TABS: Tab[] = [
   {
+    label: 'Reservas',
+    icon: CalendarCheck,
+    href: (s) => `/${s}/salon/reservas-operativo`,
+    match: (p, s) =>
+      p === `/${s}/salon` ||
+      p === `/${s}/salon/reservas-operativo` ||
+      p.startsWith(`/${s}/salon/reservas-operativo/`),
+  },
+  {
     label: 'Mesas',
     icon: ClipboardList,
     href: (s) => `/${s}/salon/mesas`,
-    match: (p, s) =>
-      p === `/${s}/salon` || p === `/${s}/salon/mesas` || p.startsWith(`/${s}/salon/mesas/`),
+    match: (p, s) => p === `/${s}/salon/mesas` || p.startsWith(`/${s}/salon/mesas/`),
   },
   {
     label: 'Cocina',
@@ -28,12 +36,6 @@ const TABS: Tab[] = [
     href: (s) => `/${s}/salon/cocina`,
     match: (p, s) => p.startsWith(`/${s}/salon/cocina`),
     roles: ['owner', 'cashier', 'kitchen'],
-  },
-  {
-    label: 'Bandeja',
-    icon: Inbox,
-    href: (s) => `/${s}/salon/bandeja`,
-    match: (p, s) => p.startsWith(`/${s}/salon/bandeja`),
   },
   {
     label: 'Mi turno',
