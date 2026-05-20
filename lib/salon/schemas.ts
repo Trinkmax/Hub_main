@@ -80,6 +80,10 @@ export const createSalonReservationSchema = z
     reservation_time_local: timeField,
     zone: salonZoneEnum,
     scheduled_event_id: z.string().uuid().optional().nullable(),
+    // Para reservas especiales (cumple/recibida) que piden un formato calendizado
+    // que puede NO estar programado ese día. Si está seteado y no hay instance,
+    // la Server Action crea una ad-hoc via ensure_scheduled_event_for_template.
+    requested_template_id: z.string().uuid().optional().nullable(),
 
     estimated_guests: z.coerce.number().int().min(1).max(99),
 
@@ -93,11 +97,11 @@ export const createSalonReservationSchema = z
     comments: optionalText(2000).optional(),
   })
   .superRefine((data, ctx) => {
-    if (data.zone === 'event_floating' && !data.scheduled_event_id) {
+    if (data.zone === 'event_floating' && !data.scheduled_event_id && !data.requested_template_id) {
       ctx.addIssue({
         code: 'custom',
         path: ['scheduled_event_id'],
-        message: 'La zona "Sujeta a evento" requiere un evento programado.',
+        message: 'La zona "Sujeta a evento" requiere un evento programado o un formato pedido.',
       })
     }
     if (data.assistant_manager_id && data.assistant_manager_id === data.primary_manager_id) {
@@ -105,6 +109,13 @@ export const createSalonReservationSchema = z
         code: 'custom',
         path: ['assistant_manager_id'],
         message: 'El asistente no puede ser el mismo que el gestor principal.',
+      })
+    }
+    if (data.requested_template_id && data.kind === 'normal') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['requested_template_id'],
+        message: 'Solo Cumpleaños o Reservas especiales pueden pedir un formato ad-hoc.',
       })
     }
   })

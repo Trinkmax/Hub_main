@@ -165,6 +165,7 @@ export function ReservationForm({
       reservation_time_local: '21:30',
       zone: 'planta_alta',
       scheduled_event_id: undefined,
+      requested_template_id: undefined,
       estimated_guests: 2,
       cake_count: 0,
       champagne_count: 0,
@@ -206,33 +207,46 @@ export function ReservationForm({
     })
   }, [values.reservation_date, tenantSlug])
 
-  // Auto-clear scheduled_event_id si zona no es event_floating Y kind no es special
+  // Auto-clear scheduled_event_id si zona no es event_floating
   useEffect(() => {
-    if (
-      values.zone !== 'event_floating' &&
-      values.kind !== 'special' &&
-      values.scheduled_event_id
-    ) {
+    if (values.zone !== 'event_floating' && values.scheduled_event_id) {
       form.setValue('scheduled_event_id', undefined)
     }
-  }, [values.zone, values.kind, values.scheduled_event_id, form])
+  }, [values.zone, values.scheduled_event_id, form])
+
+  // Auto-clear requested_template_id si kind=normal
+  useEffect(() => {
+    if (values.kind === 'normal' && values.requested_template_id) {
+      form.setValue('requested_template_id', undefined)
+    }
+  }, [values.kind, values.requested_template_id, form])
 
   // Bucket activo según los datos del form
   const activeBucket = useMemo<DayCapacityBucket | null>(() => {
+    // Sujeta a evento → bucket del evento elegido
     if (values.zone === 'event_floating' && values.scheduled_event_id) {
       return capacity.find((b) => b.bucket === `event:${values.scheduled_event_id}`) ?? null
     }
-    if (values.kind === 'special' && values.scheduled_event_id) {
-      const tpl = eventsForDate.find((e) => e.id === values.scheduled_event_id)?.template
-      if (tpl?.consume_special_reservations) {
-        return capacity.find((b) => b.bucket === `event:${values.scheduled_event_id}`) ?? null
+    // Reserva especial con formato pedido → si existe instance del template ese día,
+    // mostrar bucket de esa instance. Si va a crear ad-hoc, no hay bucket aún.
+    if (values.requested_template_id) {
+      const existing = eventsForDate.find((e) => e.template?.id === values.requested_template_id)
+      if (existing) {
+        return capacity.find((b) => b.bucket === `event:${existing.id}`) ?? null
       }
+      return null
     }
     if (values.zone === 'planta_alta' || values.zone === 'planta_baja') {
       return capacity.find((b) => b.bucket === `zone:${values.zone}`) ?? null
     }
     return null
-  }, [values.zone, values.kind, values.scheduled_event_id, capacity, eventsForDate])
+  }, [
+    values.zone,
+    values.scheduled_event_id,
+    values.requested_template_id,
+    capacity,
+    eventsForDate,
+  ])
 
   // Preview de comisión client-side
   const commissionPreviewCents = useMemo(() => {
@@ -467,16 +481,19 @@ export function ReservationForm({
         />
       </FieldGroup>
 
-      {/* Evento programado (condicional) */}
+      {/* CALENDIZADO: evento programado del día (zone=event_floating) */}
       <AnimatePresence initial={false}>
-        {(values.zone === 'event_floating' || values.kind === 'special') && (
+        {values.zone === 'event_floating' && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.18 }}
           >
-            <FieldGroup title="Evento programado" icon={Sparkles}>
+            <FieldGroup title="Evento programado del día" icon={Sparkles}>
+              <p className="text-xs text-muted-foreground">
+                Elegí a qué evento ya programado del día se suma esta reserva.
+              </p>
               <Select
                 value={values.scheduled_event_id ?? ''}
                 onValueChange={(v) =>
@@ -496,7 +513,7 @@ export function ReservationForm({
                         rel="noopener"
                         className="text-primary underline"
                       >
-                        Crear uno
+                        Programar uno
                       </a>
                     </div>
                   ) : (
@@ -525,9 +542,89 @@ export function ReservationForm({
                   {form.formState.errors.scheduled_event_id.message}
                 </p>
               ) : null}
-              {templates.length > 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  Templates disponibles: {templates.map((t) => t.name).join(' · ')}
+            </FieldGroup>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ESPECIAL: formato pedido (cumple/recibida que pide Sushi/Pizza/Ramen) */}
+      <AnimatePresence initial={false}>
+        {(values.kind === 'birthday' || values.kind === 'special') && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.18 }}
+          >
+            <FieldGroup title="¿Piden formato calendizado?" icon={Sparkles}>
+              <p className="text-xs text-muted-foreground">
+                Si el cumple / recibida pide Sushi Libre, Pizza Libre, Ramen u otro formato del
+                catálogo. Si ya hay ese evento programado ese día, se suma; si no, se crea
+                automáticamente un evento ad-hoc para ese cliente.
+              </p>
+              <Select
+                value={values.requested_template_id ?? '__none__'}
+                onValueChange={(v) =>
+                  form.setValue('requested_template_id', v === '__none__' ? undefined : v, {
+                    shouldValidate: true,
+                  })
+                }
+              >
+                <SelectTrigger className="h-11 text-base">
+                  <SelectValue placeholder="Sin formato (cena normal)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Sin formato — cena normal</SelectItem>
+                  {templates.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-muted-foreground">
+                      No hay templates configurados.{' '}
+                      <a
+                        href={`/${tenantSlug}/eventos/templates`}
+                        target="_blank"
+                        rel="noopener"
+                        className="text-primary underline"
+                      >
+                        Crear uno
+                      </a>
+                    </div>
+                  ) : (
+                    templates.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        <span className="flex items-center gap-2">
+                          <span
+                            className="size-2 rounded-full"
+                            style={{ backgroundColor: t.color_hex }}
+                            aria-hidden
+                          />
+                          {t.name}
+                          {t.default_capacity ? (
+                            <span className="text-xs text-muted-foreground">
+                              · cap {t.default_capacity}
+                            </span>
+                          ) : null}
+                        </span>
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              {values.requested_template_id ? (
+                <p className="text-xs text-emerald-700 dark:text-emerald-400">
+                  ✓ {(() => {
+                    const tpl = templates.find((t) => t.id === values.requested_template_id)
+                    const existing = eventsForDate.find(
+                      (e) => e.template?.id === values.requested_template_id,
+                    )
+                    if (existing) {
+                      return `Se suma al ${tpl?.name} ya programado (${existing.starts_at_local.slice(0, 5)} · cap ${existing.capacity}).`
+                    }
+                    return `${tpl?.name} no está programado ese día — se crea ad-hoc al guardar.`
+                  })()}
+                </p>
+              ) : null}
+              {form.formState.errors.requested_template_id?.message ? (
+                <p className="text-sm text-destructive">
+                  {form.formState.errors.requested_template_id.message}
                 </p>
               ) : null}
             </FieldGroup>
