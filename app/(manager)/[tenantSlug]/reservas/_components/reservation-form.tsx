@@ -625,16 +625,18 @@ export function ReservationForm({
               Asistente (opcional)
             </Label>
             <Select
-              value={values.assistant_manager_id ?? ''}
+              value={values.assistant_manager_id ?? '__none__'}
               onValueChange={(v) =>
-                form.setValue('assistant_manager_id', v || undefined, { shouldValidate: true })
+                form.setValue('assistant_manager_id', v === '__none__' ? undefined : v, {
+                  shouldValidate: true,
+                })
               }
             >
               <SelectTrigger className="h-11">
                 <SelectValue placeholder="Nadie" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Nadie</SelectItem>
+                <SelectItem value="__none__">Nadie</SelectItem>
                 {managers
                   .filter((m) => m.id !== values.primary_manager_id)
                   .map((m) => (
