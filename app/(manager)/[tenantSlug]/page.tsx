@@ -44,37 +44,53 @@ function deltaLabel(pct: number | null): {
   return { label: `${rounded}%`, tone: 'negative' }
 }
 
-async function getOnboardingStatus(tenantId: string) {
+async function getOnboardingStatus(
+  tenantId: string,
+  tenantSettings: Record<string, unknown> | null,
+) {
   const supabase = await createClient()
-  const [menu, capture, channel, visit] = await Promise.all([
+  const today = new Date().toISOString().slice(0, 10)
+
+  const [templates, scheduled, reservations, closed] = await Promise.all([
     supabase
-      .from('menu_items')
+      .from('scheduled_event_templates')
+      .select('id', { head: true, count: 'exact' })
+      .eq('tenant_id', tenantId)
+      .eq('active', true)
+      .limit(1),
+    supabase
+      .from('scheduled_events')
+      .select('id', { head: true, count: 'exact' })
+      .eq('tenant_id', tenantId)
+      .gte('event_date', today)
+      .limit(1),
+    supabase
+      .from('salon_reservations')
       .select('id', { head: true, count: 'exact' })
       .eq('tenant_id', tenantId)
       .limit(1),
     supabase
-      .from('customer_capture_links')
+      .from('salon_reservations')
       .select('id', { head: true, count: 'exact' })
       .eq('tenant_id', tenantId)
-      .limit(1),
-    supabase
-      .from('channels')
-      .select('id', { head: true, count: 'exact' })
-      .eq('tenant_id', tenantId)
-      .eq('status', 'connected')
-      .limit(1),
-    supabase
-      .from('visits')
-      .select('id', { head: true, count: 'exact' })
-      .eq('tenant_id', tenantId)
+      .eq('status', 'closed')
       .limit(1),
   ])
 
+  const caps = (tenantSettings?.salon_capacities ?? null) as {
+    planta_alta?: number
+    planta_baja?: number
+  } | null
+  const capacitiesReady = Boolean(
+    caps && Number(caps.planta_alta ?? 0) > 0 && Number(caps.planta_baja ?? 0) > 0,
+  )
+
   return {
-    menuReady: (menu.count ?? 0) > 0,
-    captureLinkReady: (capture.count ?? 0) > 0,
-    channelConnected: (channel.count ?? 0) > 0,
-    firstVisit: (visit.count ?? 0) > 0,
+    capacitiesReady,
+    templatesReady: (templates.count ?? 0) > 0,
+    eventScheduledReady: (scheduled.count ?? 0) > 0,
+    firstReservationReady: (reservations.count ?? 0) > 0,
+    firstClosedReady: (closed.count ?? 0) > 0,
   }
 }
 
@@ -96,11 +112,13 @@ export default async function TenantHomePage({
     }
   }
 
+  const tenantSettings = (tenant.settings ?? {}) as Record<string, unknown>
+
   const [kpis, daily60, topCustomers, onboarding] = await Promise.all([
     getKpis(tenant.id),
     getDailyMetrics(tenant.id, 60),
     isOwner ? getTopCustomersBySpent(tenant.id, 5) : Promise.resolve([]),
-    isOwner ? getOnboardingStatus(tenant.id) : Promise.resolve(null),
+    isOwner ? getOnboardingStatus(tenant.id, tenantSettings) : Promise.resolve(null),
   ])
 
   const last30 = daily60.slice(-30)
@@ -127,7 +145,7 @@ export default async function TenantHomePage({
     revenue_cents: Number(d.revenue_cents ?? 0),
   }))
 
-  const showOnboarding = isOwner && onboarding && !onboarding.firstVisit
+  const showOnboarding = isOwner && onboarding !== null
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">

@@ -9,51 +9,68 @@ type Step = {
   cta: string
 }
 
+export type OnboardingSteps = {
+  capacitiesReady: boolean
+  templatesReady: boolean
+  eventScheduledReady: boolean
+  firstReservationReady: boolean
+  firstClosedReady: boolean
+}
+
 export function OnboardingChecklist({
   tenantSlug,
   steps,
 }: {
   tenantSlug: string
-  steps: {
-    menuReady: boolean
-    captureLinkReady: boolean
-    channelConnected: boolean
-    firstVisit: boolean
-  }
+  steps: OnboardingSteps
 }) {
-  void tenantSlug
   const items: Step[] = [
     {
-      done: steps.menuReady,
-      title: 'Cargá tu menú',
-      description: 'Sin menú no podés cerrar mesas con consumo detallado.',
-      href: `/${tenantSlug}/menu`,
-      cta: 'Cargar menú',
+      done: steps.capacitiesReady,
+      title: 'Definí la capacidad del salón',
+      description:
+        'Cuántas personas entran en Planta Alta y Planta Baja. Es la base de las barras de capacidad en el panel operativo.',
+      href: `/${tenantSlug}/configuracion/salon`,
+      cta: 'Configurar capacidad',
     },
     {
-      done: steps.captureLinkReady,
-      title: 'Generá un QR de captura',
-      description: 'Imprimí el QR para que los clientes carguen sus datos.',
-      href: `/${tenantSlug}/configuracion/captura`,
-      cta: 'Crear QR',
+      done: steps.templatesReady,
+      title: 'Creá los templates de eventos',
+      description:
+        'Sushi Libre, Pizza Libre, Ramen, etc. — el catálogo de formatos que después se programan en fechas concretas.',
+      href: `/${tenantSlug}/eventos/templates`,
+      cta: 'Crear templates',
     },
     {
-      done: steps.channelConnected,
-      title: 'Conectá WhatsApp o Instagram',
-      description: 'Necesario para difusiones y respuestas a clientes.',
-      href: `/${tenantSlug}/configuracion/canales`,
-      cta: 'Conectar canal',
+      done: steps.eventScheduledReady,
+      title: 'Programá el primer evento del mes',
+      description:
+        'Elegí una fecha y un template (ej: Sushi Libre el sábado 27). Después las reservas pueden engancharse a ese evento.',
+      href: `/${tenantSlug}/eventos/programados`,
+      cta: 'Programar evento',
     },
     {
-      done: steps.firstVisit,
+      done: steps.firstReservationReady,
+      title: 'Cargá la primera reserva',
+      description:
+        'Reemplaza al Google Form. Probá el flow completo de < 30 segundos con autocomplete + capacidad + comisión en vivo.',
+      href: `/${tenantSlug}/reservas/nuevo`,
+      cta: 'Nueva reserva',
+    },
+    {
+      done: steps.firstClosedReady,
       title: 'Cerrá la primera mesa',
-      description: 'Empezá a registrar consumo para alimentar las estadísticas.',
-      href: `/${tenantSlug}/visitas/nueva`,
-      cta: 'Cerrar mesa',
+      description:
+        'Marcá Llegó → Sentar → Cerrar en el panel operativo. Eso genera la primera comisión y alimenta las estadísticas.',
+      href: `/${tenantSlug}/salon/reservas-operativo`,
+      cta: 'Abrir panel',
     },
   ]
 
   const completed = items.filter((s) => s.done).length
+
+  // Si está todo listo, no renderear el bloque
+  if (completed === items.length) return null
 
   return (
     <div className="card-hairline relative overflow-hidden rounded-xl border bg-card p-5">
@@ -68,7 +85,7 @@ export function OnboardingChecklist({
               Empezá por acá
             </p>
             <h2 className="mt-1 font-display text-lg font-semibold tracking-tight">
-              Configurá tu bar en 4 pasos
+              Configurá tu bar en {items.length} pasos
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {completed} de {items.length} pasos completados
