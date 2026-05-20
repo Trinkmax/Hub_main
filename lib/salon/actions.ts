@@ -129,6 +129,27 @@ export async function createSalonReservation(
     data: { user },
   } = await supabase.auth.getUser()
 
+  // Reserva especial pidiendo un formato calendizado (ej. Pizza Libre en una
+  // recibida del martes sin pizza libre programada): aseguramos que exista
+  // una scheduled_event ese día via helper SQL. Pisa cualquier scheduled_event_id
+  // del input — la prioridad de las reservas especiales es el formato pedido.
+  let scheduledEventIdFinal = parsed.data.scheduled_event_id ?? null
+  if (parsed.data.requested_template_id && parsed.data.kind !== 'normal') {
+    const { data: ensuredId, error: ensureErr } = await supabase.rpc(
+      'ensure_scheduled_event_for_template',
+      {
+        p_template_id: parsed.data.requested_template_id,
+        p_event_date: parsed.data.reservation_date,
+        p_starts_at_local: parsed.data.reservation_time_local,
+        p_capacity: null,
+      },
+    )
+    if (ensureErr) {
+      return { ok: false, message: humanizeSalonError(ensureErr.message), code: ensureErr.message }
+    }
+    scheduledEventIdFinal = ensuredId as string
+  }
+
   const { data, error } = await supabase
     .from('salon_reservations')
     .insert({
@@ -142,7 +163,7 @@ export async function createSalonReservation(
       reservation_date: parsed.data.reservation_date,
       reservation_time_local: parsed.data.reservation_time_local,
       zone: parsed.data.zone,
-      scheduled_event_id: parsed.data.scheduled_event_id ?? null,
+      scheduled_event_id: scheduledEventIdFinal,
       estimated_guests: parsed.data.estimated_guests,
       cake_count: parsed.data.cake_count,
       champagne_count: parsed.data.champagne_count,
