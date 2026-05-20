@@ -209,6 +209,11 @@ export const scheduledEventSchema = z.object({
 
 export const idOnlySchema = z.object({ id: z.string().uuid() })
 
+export const moveScheduledEventSchema = z.object({
+  id: z.string().uuid(),
+  event_date: dateField,
+})
+
 // ──────────────────────────────────────────────────────────
 // Configuración: gestores + tarifas + capacidades
 // ──────────────────────────────────────────────────────────
@@ -271,6 +276,7 @@ export type ActualGuestsInput = z.infer<typeof actualGuestsSchema>
 export type CancelReservationInput = z.infer<typeof cancelReservationSchema>
 export type ScheduledTemplateInput = z.infer<typeof scheduledTemplateSchema>
 export type ScheduledEventInput = z.infer<typeof scheduledEventSchema>
+export type MoveScheduledEventInput = z.infer<typeof moveScheduledEventSchema>
 export type ManagerInput = z.infer<typeof managerSchema>
 export type RateTierInput = z.infer<typeof rateTierSchema>
 export type BonusRuleInput = z.infer<typeof bonusRuleSchema>

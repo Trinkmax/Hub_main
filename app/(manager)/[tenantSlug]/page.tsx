@@ -3,14 +3,25 @@ import { redirect } from 'next/navigation'
 import { Sparkline } from '@/components/charts/sparkline'
 import { PageHeader } from '@/components/ui/page-header'
 import { StatCard } from '@/components/ui/stat-card'
+import { getTodaySalonOverview } from '@/lib/salon/queries'
 import { getDailyMetrics, getKpis, getTopCustomersBySpent } from '@/lib/stats/queries'
 import { createClient } from '@/lib/supabase/server'
 import { requireTenantAccess } from '@/lib/tenant'
 import type { TenantRole } from '@/lib/tenant/types'
 import { OnboardingChecklist } from './_components/onboarding-checklist'
 import { QuickActions } from './_components/quick-actions'
+import { TodaySalonOverview } from './_components/today-salon-overview'
 import { TopCustomersCard } from './_components/top-customers-card'
 import { RevenueChart } from './estadisticas/_components/revenue-chart'
+
+function todayCordoba(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Argentina/Cordoba',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -113,12 +124,14 @@ export default async function TenantHomePage({
   }
 
   const tenantSettings = (tenant.settings ?? {}) as Record<string, unknown>
+  const today = todayCordoba()
 
-  const [kpis, daily60, topCustomers, onboarding] = await Promise.all([
+  const [kpis, daily60, topCustomers, onboarding, todayOverview] = await Promise.all([
     getKpis(tenant.id),
     getDailyMetrics(tenant.id, 60),
     isOwner ? getTopCustomersBySpent(tenant.id, 5) : Promise.resolve([]),
     isOwner ? getOnboardingStatus(tenant.id, tenantSettings) : Promise.resolve(null),
+    getTodaySalonOverview({ tenantId: tenant.id, date: today }),
   ])
 
   const last30 = daily60.slice(-30)
@@ -155,6 +168,8 @@ export default async function TenantHomePage({
         description="Lo que pasó en tu bar en los últimos 30 días."
         actions={<QuickActions tenantSlug={tenantSlug} role={role as TenantRole} />}
       />
+
+      <TodaySalonOverview tenantSlug={tenantSlug} overview={todayOverview} />
 
       <section aria-label="Indicadores clave" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard

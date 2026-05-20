@@ -20,6 +20,7 @@ import {
   idOnlySchema,
   managerSchema,
   markPaidSchema,
+  moveScheduledEventSchema,
   rateTierSchema,
   scheduledEventSchema,
   scheduledTemplateSchema,
@@ -438,6 +439,60 @@ export async function upsertScheduledEvent(
   revalidatePath(`/${slug}/eventos/programados`)
   revalidatePath(`/${slug}/salon/reservas-operativo`)
   return { ok: true, data: { id } }
+}
+
+export async function moveScheduledEvent(
+  slug: string,
+  input: FormData | Record<string, unknown>,
+): Promise<ActionState> {
+  const access = await authorize(slug, STAFF)
+  if (!access) return noAccess()
+
+  const parsed = moveScheduledEventSchema.safeParse(asObject(input))
+  if (!parsed.success) {
+    const first = parsed.error.issues[0]
+    return badInput(first?.message ?? 'Datos inválidos', first?.path[0]?.toString())
+  }
+
+  const supabase = (await createClient()) as SBAny
+
+  // Si hay reservas activas atadas, no se puede mover — quedarían huérfanas
+  // en su fecha original mientras el evento vive en otra.
+  const { count: linked } = await supabase
+    .from('salon_reservations')
+    .select('id', { count: 'exact', head: true })
+    .eq('tenant_id', access.tenant.id)
+    .eq('scheduled_event_id', parsed.data.id)
+    .not('status', 'in', '(cancelled,no_show)')
+
+  if ((linked ?? 0) > 0) {
+    return {
+      ok: false,
+      message: `No se puede mover: el evento tiene ${linked} ${
+        linked === 1 ? 'reserva activa' : 'reservas activas'
+      } atadas. Cancelalas o reasignalas primero.`,
+    }
+  }
+
+  const { error } = await supabase
+    .from('scheduled_events')
+    .update({ event_date: parsed.data.event_date })
+    .eq('tenant_id', access.tenant.id)
+    .eq('id', parsed.data.id)
+  if (error) return { ok: false, message: humanizeSalonError(error.message) }
+
+  await logAudit({
+    tenantId: access.tenant.id,
+    userId: null,
+    action: 'scheduled_event.moved',
+    entity: 'scheduled_event',
+    entityId: parsed.data.id,
+    payload: { event_date: parsed.data.event_date },
+  })
+
+  revalidatePath(`/${slug}/eventos/programados`)
+  revalidatePath(`/${slug}/salon/reservas-operativo`)
+  return { ok: true, message: 'Evento movido.' }
 }
 
 export async function deleteScheduledEvent(slug: string, id: string): Promise<ActionState> {

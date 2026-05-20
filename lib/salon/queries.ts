@@ -1,5 +1,6 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
+import { computePeakWindow, type PeakWindow } from './peak'
 import type {
   CommissionBonusRuleRow,
   CommissionLedgerRow,
@@ -137,6 +138,80 @@ export async function getSalonReservation(opts: {
     .maybeSingle()
   if (error || !data) return null
   return flattenReservation(data as Record<string, unknown>)
+}
+
+export type TodaySalonOverview = {
+  date: string
+  reservationsCount: number
+  estimatedGuests: number
+  peak: PeakWindow | null
+  byStatus: { pending: number; arrived: number; seated: number; closed: number }
+  byMeal: Record<MealType, { count: number; guests: number }>
+}
+
+/**
+ * Snapshot del salón para el día indicado — pensado para mostrar al
+ * arrancar el dashboard. Excluye reservas canceladas o no-show porque
+ * no aportan al "qué esperar hoy".
+ *
+ * `estimatedGuests` usa `actual_guests` cuando ya hubo cierre y
+ * `estimated_guests` mientras la reserva sigue activa.
+ */
+export async function getTodaySalonOverview(opts: {
+  tenantId: string
+  date: string
+}): Promise<TodaySalonOverview> {
+  const supabase = (await createClient()) as SBAny
+  const { data, error } = await supabase
+    .from('salon_reservations')
+    .select('meal_type, reservation_time_local, estimated_guests, actual_guests, status')
+    .eq('tenant_id', opts.tenantId)
+    .eq('reservation_date', opts.date)
+    .not('status', 'in', '(cancelled,no_show)')
+
+  if (error) throw error
+
+  const rows = (data ?? []) as Array<{
+    meal_type: MealType
+    reservation_time_local: string
+    estimated_guests: number
+    actual_guests: number | null
+    status: 'pending' | 'arrived' | 'seated' | 'closed'
+  }>
+
+  const byStatus = { pending: 0, arrived: 0, seated: 0, closed: 0 }
+  const byMeal: TodaySalonOverview['byMeal'] = {
+    breakfast: { count: 0, guests: 0 },
+    lunch: { count: 0, guests: 0 },
+    tea_time: { count: 0, guests: 0 },
+    dinner: { count: 0, guests: 0 },
+    hub_event: { count: 0, guests: 0 },
+  }
+  let estimatedGuests = 0
+
+  for (const r of rows) {
+    const guests = r.actual_guests ?? r.estimated_guests ?? 0
+    estimatedGuests += guests
+    byStatus[r.status] = (byStatus[r.status] ?? 0) + 1
+    byMeal[r.meal_type].count += 1
+    byMeal[r.meal_type].guests += guests
+  }
+
+  const peak = computePeakWindow(
+    rows.map((r) => ({
+      time: r.reservation_time_local,
+      guests: r.actual_guests ?? r.estimated_guests,
+    })),
+  )
+
+  return {
+    date: opts.date,
+    reservationsCount: rows.length,
+    estimatedGuests,
+    peak,
+    byStatus,
+    byMeal,
+  }
 }
 
 export async function listTimelineForDate(opts: {

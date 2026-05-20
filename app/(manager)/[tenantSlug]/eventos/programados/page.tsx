@@ -106,7 +106,12 @@ export default async function ProgramadosPage({
           }
         />
       ) : (
-        <ScheduledEventsMonth tenantSlug={tenantSlug} ym={ymCurrent} events={events} />
+        <ScheduledEventsMonth
+          tenantSlug={tenantSlug}
+          ym={ymCurrent}
+          events={events}
+          templates={templates}
+        />
       )}
     </div>
   )

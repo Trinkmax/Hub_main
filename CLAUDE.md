@@ -55,52 +55,73 @@ Estamos construyendo una **plataforma SaaS multi-tenant tipo CRM para bares**. E
 
 ## 3. Estructura de carpetas
 
+Desde el rediseño 2026 hay **dos workspaces por rol** bajo el mismo
+`/[tenantSlug]`: `(manager)` (owner, desktop-first) y `(salon)` (staff,
+mobile PWA). El `proxy.ts` redirige al workspace correcto en login y
+bloquea a staff fuera de `/salon` — ver §4 punto 6.
+
 ```
+/proxy.ts                          ← Next 16 (ex middleware.ts); auth + redirect-by-role
 /app
-  /(auth)/login
-  /(auth)/accept-invite/[token]
-  /(dashboard)
-    /[tenantSlug]                  ← scoping por bar en URL
-      /clientes
-      /menu
-      /visitas
-      /eventos
-      /difusiones
-      /flows
-      /bandeja
-      /estadisticas
-      /configuracion
-  /capture/[linkSlug]              ← captura pública QR (sin auth)
+  /layout.tsx                      ← root + ThemeProvider + no-flash script
+  /(auth)
+    /login
+    /forgot-password
+  /(manager)/[tenantSlug]          ← owner workspace (sidebar + topbar + ⌘K)
+    /clientes /audiencias          ← Clientes
+    /difusiones /flows /eventos    ← Marketing
+    /menu /puntos /punch-cards     ← Catálogo
+    /estadisticas                  ← Insights
+    /configuracion                 ← Ajustes (Equipo/Local/Mensajería/Apariencia)
+    /reservas /bandeja /visitas
+    /acreditar /onboarding /docs
+  /(salon)/[tenantSlug]/salon      ← staff workspace (bottom-tab, PWA)
+    /mesas /cocina /bandeja /mi-turno /reservas-operativo
+  /accept-invite/[token]           ← acepta invitación con token
+  /onboarding                      ← primer login del owner
+  /auth/{callback,update-password} ← Supabase auth flow
+  /capture/[linkSlug]              ← captura pública del cliente (QR genérico)
+  /m/[qrToken]                     ← QR de mesa físico → abre carta
+  /c/[token]                       ← panel personal del cliente (puntos, QR)
+  /print/{c-qr,qr}                 ← páginas para imprimir QRs
   /api
-    /webhooks/whatsapp
-    /webhooks/instagram
-    /webhooks/meta-verify
-    /cron/process-broadcasts
-    /cron/process-flows
-    /cron/refresh-stats
+    /webhooks/{whatsapp,instagram,meta-verify}
+    /meta/{whatsapp,instagram}     ← OAuth/Embedded Signup callbacks
+    /audiences /kitchen /sessions /stats
+    /cron                          ← 9 jobs, todos validan CRON_SECRET
+      auto-abandon-stale evaluate-time-flows expire-punch-cards
+      finish-past-events process-broadcasts process-flows
+      process-jobs refresh-stats sync-templates
 /components
-  /ui                              ← shadcn (no editar manualmente)
+  /ui                              ← shadcn new-york (no editar a mano)
+  /shell                           ← AppShell, sidebar, topbar, salon nav
+  /command-palette                 ← ⌘K
+  /charts /theme
   /<dominio>                       ← componentes de negocio
 /lib
-  /supabase
-    server.ts                      ← createServerClient (cookies)
-    browser.ts                     ← createBrowserClient
-    service.ts                     ← createServiceClient (SOLO server)
-  /tenant                          ← getCurrentTenant, requireRole, etc.
-  /auth
-  /meta
-    whatsapp.ts
-    instagram.ts
-    templates.ts
-  /points                          ← motor de cálculo de puntos
-  /audiences                       ← evaluador de filtros
-  /flows                           ← runtime de flows
-/db
-  /migrations                      ← Supabase CLI
-  /seed
-  /policies                        ← snippets RLS reusables
+  /supabase   server | browser | service | middleware (helper SSR)
+  /tenant     access (requireTenantAccess, requireRole) | actions | slugify
+  /auth       actions + recovery-cookie + schemas
+  /meta       whatsapp instagram templates webhook-parser signature crypto oauth …
+  /points     engine + queries + actions
+  /audiences  evaluador de filtros
+  /flows      runtime de flows
+  /salon /tables /tickets /sessions-waiter
+  /broadcasts /capture /customers /events /visits /punch-cards /item-tags /tags
+  /jobs /commissions /stats /bandeja /m-session /c-panel /admin /onboarding /email
+  /realtime /theme
+  env.ts phone.ts qr.ts rate-limit.ts audit.ts ip.ts utils.ts
+/supabase
+  /migrations                      ← versionado, NO editar las aplicadas
+  config.toml
+  seed.sql                         ← idempotente, crea HUB + 40 clientes demo
+/tests
+  /lib                             ← unit tests (Vitest, environment: node)
+  /rls                             ← integración contra Supabase local (CI separado)
+  /__mocks__                       ← incluye stub de `server-only`
 /types
-  database.ts                      ← generado con supabase gen types
+  database.ts                      ← generado por `npm run db:types`
+/docs                              ← design-system, redesign-2026, reservas, …
 ```
 
 ---
@@ -118,7 +139,7 @@ Estas reglas se aplican **siempre**. Romperlas es bloqueante para mergear.
    const { tenant, role } = await requireTenantAccess(tenantSlug)
    await requireRole(role, ['owner', 'cashier'])
    ```
-6. **Las URLs scopean al tenant**: `/{tenantSlug}/clientes`. El middleware valida el slug contra membership antes de servir.
+6. **Las URLs scopean al tenant**: `/{tenantSlug}/clientes`. El `proxy.ts` (Next 16; ex `middleware.ts`) valida sesión y redirige según rol — `owner` → `/[slug]`, staff (`cashier`/`waiter`/`kitchen`) → `/[slug]/salon`. Si el usuario no tiene membership en el slug pedido, no se sirve la página. Slugs reservados (`login`, `auth`, `capture`, `accept-invite`, `onboarding`, `api`, `m`, `print`) nunca se tratan como tenant.
 7. **El JWT lleva el `tenant_id` activo** como custom claim para que las RLS puedan leerlo sin hop a la DB. Función `set_active_tenant(uuid)` que actualiza el claim.
 8. **Auditoría**: toda mutación sensible (crear cliente, enviar broadcast, canjear puntos) escribe en `audit_log`.
 
@@ -163,9 +184,9 @@ create policy "<tabla>_owner_write" on public.<tabla>
 - `created_at timestamptz not null default now()`, `updated_at timestamptz not null default now()` con trigger.
 - Plata: `_cents bigint`.
 - Strings sensibles cifrados con `pgcrypto` (tokens de Meta, etc.).
-- Migraciones generadas con `pnpm supabase migration new <slug>`. **Nunca** editar migraciones ya aplicadas.
-- `pnpm supabase gen types typescript --local > types/database.ts` después de cada migración.
 - Soft delete con `deleted_at timestamptz` solo donde haga falta (clientes, eventos cancelados). Default es delete físico.
+- Migraciones viven en `supabase/migrations/` (no en `/db`). Crear nuevas con `npx supabase migration new <slug>` o `npm run db:diff -- <slug>` (diff contra schema local). **Nunca** editar migraciones ya aplicadas.
+- `npm run db:types` regenera `types/database.ts` desde el schema local. Correrlo después de cada migración nueva.
 
 ### IMPORTANTE — Supabase Data API GRANTs (cambio del 30/05/2026)
 
@@ -365,3 +386,56 @@ META_GRAPH_VERSION=                # consultar Context7 al configurar — la ver
 # Vercel Cron
 CRON_SECRET=                       # validar header en /api/cron/*
 ```
+
+---
+
+## 16. Comandos comunes
+
+Package manager: **npm** (no usar pnpm/yarn — el lockfile es `package-lock.json`).
+
+### Dev loop
+
+```bash
+npm install
+cp .env.example .env.local            # completar variables
+npx supabase start                    # levanta Postgres local + Studio
+npm run db:reset                      # corre migraciones + seed.sql (idempotente)
+npm run dev                           # http://localhost:3000 (Turbopack default en Next 16)
+```
+
+### Calidad
+
+```bash
+npm run lint           # Biome check (lint + format check)
+npm run lint:fix       # Biome con --write
+npm run format         # solo format
+npm run typecheck      # tsc --noEmit
+npm test               # Vitest watch
+npm run test:ci        # Vitest run (single pass) — lo que corre CI
+```
+
+### Correr un solo test
+
+```bash
+npx vitest run tests/lib/points-engine.test.ts        # archivo puntual
+npx vitest run tests/lib/points-engine.test.ts -t "regla X"   # un caso por nombre
+npx vitest tests/lib/points-engine.test.ts            # watch sobre un archivo
+```
+
+### Supabase / DB
+
+```bash
+npm run db:start / db:stop / db:reset       # ciclo local
+npm run db:diff -- <slug>                   # migración a partir del diff actual
+npx supabase migration new <slug>           # migración vacía
+npm run db:types                            # regenera types/database.ts
+npm run db:push                             # push a remote (cuidado: usar solo si sabés)
+```
+
+### Calidad en pre-commit y CI
+
+- **Husky pre-commit** corre `npm run typecheck && npm run lint && npm run test:ci`. Si falla, el commit se aborta — no usar `--no-verify`, arreglar la causa.
+- **GitHub Actions** (`.github/workflows/ci.yml`) tiene dos jobs:
+  - `quality`: lint + typecheck + test:ci en Node 22.
+  - `rls`: levanta Supabase local (`supabase start --exclude=studio,inbucket,vector`), exporta `SUPABASE_URL/ANON_KEY/SERVICE_ROLE_KEY` al env, y corre `npx vitest run tests/rls`. Estos tests crean tenants y usuarios reales contra el Postgres local — no se pueden mockear.
+- Para reproducir el job de RLS en local: `npx supabase start`, exportar las mismas envs (mirar `npx supabase status -o json`), y `npx vitest run tests/rls`.

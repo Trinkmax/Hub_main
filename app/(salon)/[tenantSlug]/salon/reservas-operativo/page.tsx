@@ -4,8 +4,22 @@ import {
   listScheduledEventsForDate,
   listTimelineForDate,
 } from '@/lib/salon/queries'
+import type { MealType } from '@/lib/salon/types'
 import { requireTenantAccess, TenantNotFoundError } from '@/lib/tenant'
 import { TimelineView } from './_components/timeline-view'
+
+const VALID_MEALS = new Set<MealType>(['breakfast', 'lunch', 'tea_time', 'dinner', 'hub_event'])
+
+function parseMealsParam(raw: string | string[] | undefined): ReadonlySet<MealType> {
+  if (!raw) return new Set()
+  const list = (Array.isArray(raw) ? raw.join(',') : raw).split(',')
+  const out = new Set<MealType>()
+  for (const m of list) {
+    const trimmed = m.trim()
+    if (VALID_MEALS.has(trimmed as MealType)) out.add(trimmed as MealType)
+  }
+  return out
+}
 
 export const metadata = { title: 'Operativo · Reservas' }
 export const dynamic = 'force-dynamic'
@@ -41,6 +55,7 @@ export default async function ReservasOperativoPage({
 
   const date =
     typeof sp.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : todayCordoba()
+  const initialMeals = parseMealsParam(sp.meals)
 
   const [reservations, capacity, scheduledEvents] = await Promise.all([
     listTimelineForDate({ tenantId: access.tenant.id, date }),
@@ -58,6 +73,7 @@ export default async function ReservasOperativoPage({
         initialReservations={reservations}
         initialCapacity={capacity}
         initialEvents={scheduledEvents}
+        initialMeals={initialMeals}
       />
     </div>
   )

@@ -11,11 +11,19 @@ import { subscribeChanges } from '@/lib/realtime/subscribe'
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'
 import { fetchDayCapacity, fetchScheduledEventsForDate } from '@/lib/salon/client-actions'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
-import type { DayCapacityBucket, ReservationWithJoins, SalonZone } from '@/lib/salon/types'
+import type {
+  DayCapacityBucket,
+  MealType,
+  ReservationWithJoins,
+  SalonZone,
+} from '@/lib/salon/types'
 import type { TenantRole } from '@/lib/tenant/types'
 import { cn } from '@/lib/utils'
 import { CapacityHeader } from './capacity-header'
+import { MealTypeFilter } from './meal-type-filter'
 import { ReservationCard } from './reservation-card'
+
+const ALL_MEALS: MealType[] = ['breakfast', 'lunch', 'tea_time', 'dinner', 'hub_event']
 
 const SAFETY_NET_INTERVAL_MS = 30_000
 
@@ -54,6 +62,7 @@ export function TimelineView({
   initialReservations,
   initialCapacity,
   initialEvents,
+  initialMeals,
 }: {
   tenantSlug: string
   tenantId: string
@@ -62,14 +71,40 @@ export function TimelineView({
   initialReservations: ReservationWithJoins[]
   initialCapacity: DayCapacityBucket[]
   initialEvents: ScheduledEventWithTemplate[]
+  initialMeals: ReadonlySet<MealType>
 }) {
   const router = useRouter()
   const [reservations, setReservations] = useState(initialReservations)
   const [capacity, setCapacity] = useState(initialCapacity)
   const [events, setEvents] = useState(initialEvents)
   const [refreshing, startRefresh] = useTransition()
+  const [selectedMeals, setSelectedMeals] = useState<ReadonlySet<MealType>>(initialMeals)
 
   const canOperate = role === 'owner' || role === 'cashier' || role === 'waiter'
+
+  // Sync filtro a URL para shareable / persistencia entre nav
+  const updateMealsInUrl = useCallback((next: ReadonlySet<MealType>) => {
+    const url = new URL(window.location.href)
+    if (next.size === 0 || next.size === ALL_MEALS.length) {
+      url.searchParams.delete('meals')
+    } else {
+      url.searchParams.set('meals', ALL_MEALS.filter((m) => next.has(m)).join(','))
+    }
+    window.history.replaceState({}, '', url.toString())
+  }, [])
+
+  const handleMealsChange = useCallback(
+    (next: ReadonlySet<MealType>) => {
+      setSelectedMeals(next)
+      updateMealsInUrl(next)
+    },
+    [updateMealsInUrl],
+  )
+
+  const isMealActive = useCallback(
+    (m: MealType) => selectedMeals.size === 0 || selectedMeals.has(m),
+    [selectedMeals],
+  )
 
   const refreshExtras = useCallback(async () => {
     const [cap, ev] = await Promise.all([
@@ -144,6 +179,41 @@ export function TimelineView({
     }
   }, [tenantId, date, refreshExtras, debouncedCapacity])
 
+  // Counts por meal_type (sin filtrar — informan los chips)
+  const mealCounts = useMemo(() => {
+    const out: Record<MealType, number> = {
+      breakfast: 0,
+      lunch: 0,
+      tea_time: 0,
+      dinner: 0,
+      hub_event: 0,
+    }
+    for (const r of reservations) out[r.meal_type] = (out[r.meal_type] ?? 0) + 1
+    return out
+  }, [reservations])
+
+  // Reservas y eventos visibles según filtro
+  const filteredReservations = useMemo(
+    () => reservations.filter((r) => isMealActive(r.meal_type)),
+    [reservations, isMealActive],
+  )
+  const filteredEvents = useMemo(
+    () => events.filter((e) => isMealActive(e.meal_type)),
+    [events, isMealActive],
+  )
+  // Capacidad: zonas siempre visibles; eventos solo los que matchean el filtro.
+  const filteredCapacity = useMemo(() => {
+    const visibleEventIds = new Set(filteredEvents.map((e) => e.id))
+    return capacity.filter((b) => {
+      if (b.bucket.startsWith('event:')) {
+        return visibleEventIds.has(b.bucket.slice('event:'.length))
+      }
+      return true
+    })
+  }, [capacity, filteredEvents])
+
+  const isFiltered = selectedMeals.size > 0 && selectedMeals.size < ALL_MEALS.length
+
   // Agrupar reservas por zona, ordenadas por hora
   const grouped = useMemo(() => {
     const out: Record<SalonZone, ReservationWithJoins[]> = {
@@ -151,7 +221,7 @@ export function TimelineView({
       planta_baja: [],
       event_floating: [],
     }
-    for (const r of reservations) {
+    for (const r of filteredReservations) {
       out[r.zone].push(r)
     }
     for (const k of ZONE_ORDER) {
@@ -163,22 +233,22 @@ export function TimelineView({
       })
     }
     return out
-  }, [reservations])
+  }, [filteredReservations])
 
-  // Resumen rápido top-right
+  // Resumen rápido top-right (usa el set filtrado para que matchee lo que ve)
   const totals = useMemo(() => {
     let pending = 0
     let arrived = 0
     let seated = 0
     let closed = 0
-    for (const r of reservations) {
+    for (const r of filteredReservations) {
       if (r.status === 'pending') pending++
       else if (r.status === 'arrived') arrived++
       else if (r.status === 'seated') seated++
       else if (r.status === 'closed') closed++
     }
-    return { pending, arrived, seated, closed, total: reservations.length }
-  }, [reservations])
+    return { pending, arrived, seated, closed, total: filteredReservations.length }
+  }, [filteredReservations])
 
   function gotoDate(d: string) {
     router.push(`/${tenantSlug}/salon/reservas-operativo?date=${d}`)
@@ -239,7 +309,14 @@ export function TimelineView({
           </div>
         </div>
         <div className="mt-3">
-          <CapacityHeader capacity={capacity} events={events} />
+          <CapacityHeader capacity={filteredCapacity} events={filteredEvents} />
+        </div>
+        <div className="mt-2.5">
+          <MealTypeFilter
+            selected={selectedMeals}
+            counts={mealCounts}
+            onChange={handleMealsChange}
+          />
         </div>
       </header>
 
@@ -260,11 +337,23 @@ export function TimelineView({
               </Link>
             </Button>
           </div>
+        ) : filteredReservations.length === 0 ? (
+          <div className="mt-12 flex flex-col items-center justify-center gap-3 text-center">
+            <Sparkles className="size-12 text-muted-foreground/50" />
+            <h2 className="font-serif text-xl font-semibold">Ninguna reserva matchea el filtro</h2>
+            <p className="text-sm text-muted-foreground">
+              Hay {reservations.length} {reservations.length === 1 ? 'reserva' : 'reservas'} en el
+              día, pero ninguna del tipo seleccionado.
+            </p>
+            <Button variant="outline" className="mt-2" onClick={() => handleMealsChange(new Set())}>
+              Quitar filtro
+            </Button>
+          </div>
         ) : (
           <div className="grid gap-4 lg:grid-cols-3">
             {ZONE_ORDER.map((zone) => {
               const rows = grouped[zone]
-              const eventList = zone === 'event_floating' ? events : []
+              const eventList = zone === 'event_floating' ? filteredEvents : []
               return (
                 <ZoneColumn
                   key={zone}
@@ -279,6 +368,12 @@ export function TimelineView({
             })}
           </div>
         )}
+        {isFiltered ? (
+          <p className="mt-4 text-center text-[11px] text-muted-foreground">
+            Mostrando {filteredReservations.length} de {reservations.length}{' '}
+            {reservations.length === 1 ? 'reserva' : 'reservas'} — filtro activo
+          </p>
+        ) : null}
       </div>
     </>
   )
