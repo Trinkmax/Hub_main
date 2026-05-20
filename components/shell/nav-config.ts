@@ -84,9 +84,15 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Eventos',
     items: [
       {
-        label: 'Eventos',
-        href: (s) => `/${s}/eventos`,
+        label: 'Calendario',
+        href: (s) => `/${s}/eventos/programados`,
         icon: 'CalendarDays',
+      },
+      {
+        label: 'Templates',
+        href: (s) => `/${s}/eventos/templates`,
+        icon: 'Sparkles',
+        roles: ['owner'],
       },
     ],
   },
