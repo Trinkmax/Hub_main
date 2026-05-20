@@ -68,7 +68,7 @@ export async function createReservation(
   }
 
   const supabase = await createClient()
-  const { data, error } = await supabase.rpc('create_reservation', {
+  const { data, error } = await supabase.rpc('create_event_attendance', {
     p_event_id: parsed.data.event_id,
     p_customer_id: parsed.data.customer_id,
     p_guests: parsed.data.guests,
@@ -106,7 +106,7 @@ export async function cancelReservation(
   if (!parsed.success) return { ok: false, message: 'ID inválido.' }
 
   const supabase = await createClient()
-  const { data, error } = await supabase.rpc('cancel_reservation', {
+  const { data, error } = await supabase.rpc('cancel_event_attendance', {
     p_reservation_id: parsed.data.reservation_id,
   })
   if (error) return { ok: false, message: humanize(error.message) }
@@ -137,7 +137,7 @@ export async function checkInReservation(
   if (!parsed.success) return { ok: false, message: 'ID inválido.' }
 
   const supabase = await createClient()
-  const { error } = await supabase.rpc('check_in_reservation', {
+  const { error } = await supabase.rpc('check_in_event_attendance', {
     p_reservation_id: parsed.data.reservation_id,
   })
   if (error) return { ok: false, message: humanize(error.message) }

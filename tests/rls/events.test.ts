@@ -97,7 +97,7 @@ describeIfRls('RLS — events + reservations', () => {
 
   it('4 reservas de 1 → todas confirmed', async () => {
     for (let i = 0; i < 4; i++) {
-      const { data, error } = await cashierA.client.rpc('create_reservation', {
+      const { data, error } = await cashierA.client.rpc('create_event_attendance', {
         p_event_id: eventId,
         p_customer_id: customers[i]!,
         p_guests: 1,
@@ -109,7 +109,7 @@ describeIfRls('RLS — events + reservations', () => {
   })
 
   it('5ta y 6ta → waitlist 1 y 2', async () => {
-    const { data: r5 } = await cashierA.client.rpc('create_reservation', {
+    const { data: r5 } = await cashierA.client.rpc('create_event_attendance', {
       p_event_id: eventId,
       p_customer_id: customers[4]!,
       p_guests: 1,
@@ -118,7 +118,7 @@ describeIfRls('RLS — events + reservations', () => {
     expect(r5res?.status).toBe('waitlist')
     expect(r5res?.waitlist_position).toBe(1)
 
-    const { data: r6 } = await cashierA.client.rpc('create_reservation', {
+    const { data: r6 } = await cashierA.client.rpc('create_event_attendance', {
       p_event_id: eventId,
       p_customer_id: customers[5]!,
       p_guests: 1,
@@ -131,7 +131,7 @@ describeIfRls('RLS — events + reservations', () => {
   it('cancelar confirmed promueve primera de waitlist; posiciones se compactan', async () => {
     const service = getServiceClient()
     const { data: confirmed } = await service
-      .from('reservations')
+      .from('event_attendees')
       .select('id, customer_id')
       .eq('event_id', eventId)
       .eq('status', 'confirmed')
@@ -140,7 +140,7 @@ describeIfRls('RLS — events + reservations', () => {
     const target = confirmed?.[0]?.id
     expect(target).toBeTruthy()
 
-    const { data: cancelData, error } = await cashierA.client.rpc('cancel_reservation', {
+    const { data: cancelData, error } = await cashierA.client.rpc('cancel_event_attendance', {
       p_reservation_id: target,
     })
     expect(error).toBeNull()
@@ -148,7 +148,7 @@ describeIfRls('RLS — events + reservations', () => {
     expect(result?.promoted_id).toBeTruthy()
 
     const { data: nextWait } = await service
-      .from('reservations')
+      .from('event_attendees')
       .select('id, waitlist_position')
       .eq('event_id', eventId)
       .eq('status', 'waitlist')
@@ -157,7 +157,7 @@ describeIfRls('RLS — events + reservations', () => {
   })
 
   it('cross-tenant: reservar customer de B en evento de A → customer_invalid', async () => {
-    const { error } = await cashierA.client.rpc('create_reservation', {
+    const { error } = await cashierA.client.rpc('create_event_attendance', {
       p_event_id: eventId,
       p_customer_id: crossCustomer,
       p_guests: 1,
@@ -166,7 +166,7 @@ describeIfRls('RLS — events + reservations', () => {
   })
 
   it('guests > capacity bloqueado', async () => {
-    const { error } = await cashierA.client.rpc('create_reservation', {
+    const { error } = await cashierA.client.rpc('create_event_attendance', {
       p_event_id: eventId,
       p_customer_id: customers[5]!,
       p_guests: 99,
@@ -181,13 +181,13 @@ describeIfRls('RLS — events + reservations', () => {
     const service = getServiceClient()
     // Tomamos una en waitlist
     const { data: wl } = await service
-      .from('reservations')
+      .from('event_attendees')
       .select('id')
       .eq('event_id', eventId)
       .eq('status', 'waitlist')
       .limit(1)
     if (!wl?.[0]) return // ya no quedan, skip
-    const { error } = await cashierA.client.rpc('check_in_reservation', {
+    const { error } = await cashierA.client.rpc('check_in_event_attendance', {
       p_reservation_id: wl[0].id,
     })
     expect(error?.message).toContain('not_confirmed')
@@ -196,18 +196,18 @@ describeIfRls('RLS — events + reservations', () => {
   it('check-in confirmed → status checked_in', async () => {
     const service = getServiceClient()
     const { data: cf } = await service
-      .from('reservations')
+      .from('event_attendees')
       .select('id')
       .eq('event_id', eventId)
       .eq('status', 'confirmed')
       .limit(1)
     if (!cf?.[0]) throw new Error('expected confirmed reservation')
-    const { error } = await cashierA.client.rpc('check_in_reservation', {
+    const { error } = await cashierA.client.rpc('check_in_event_attendance', {
       p_reservation_id: cf[0].id,
     })
     expect(error).toBeNull()
     const { data: after } = await service
-      .from('reservations')
+      .from('event_attendees')
       .select('status, checked_in_at')
       .eq('id', cf[0].id)
       .single()
@@ -245,7 +245,7 @@ describeIfRls('RLS — events + reservations', () => {
 
     // Insert reservation con bypass via service (simulamos como si cashier hubiera reservado).
     // Como ledger es vía RPC, usamos service para insert directo (se permite con service_role).
-    await service.from('reservations').insert({
+    await service.from('event_attendees').insert({
       tenant_id: tenantA.id,
       event_id: pastEv?.id,
       customer_id: c?.id,
@@ -260,7 +260,7 @@ describeIfRls('RLS — events + reservations', () => {
     expect(ev?.status).toBe('finished')
 
     const { data: res } = await service
-      .from('reservations')
+      .from('event_attendees')
       .select('status')
       .eq('event_id', pastEv?.id)
     expect(res?.every((r) => r.status === 'no_show')).toBe(true)
@@ -292,7 +292,7 @@ describeIfRls('RLS — events + reservations', () => {
       })
       .select('id')
       .single()
-    await cashierA.client.rpc('create_reservation', {
+    await cashierA.client.rpc('create_event_attendance', {
       p_event_id: ev?.id,
       p_customer_id: c?.id,
       p_guests: 1,
@@ -307,7 +307,10 @@ describeIfRls('RLS — events + reservations', () => {
       .eq('id', ev?.id)
       .single()
     expect(refreshed?.status).toBe('cancelled')
-    const { data: rsv } = await service.from('reservations').select('status').eq('event_id', ev?.id)
+    const { data: rsv } = await service
+      .from('event_attendees')
+      .select('status')
+      .eq('event_id', ev?.id)
     expect(rsv?.every((r) => r.status === 'cancelled')).toBe(true)
   })
 
@@ -317,7 +320,7 @@ describeIfRls('RLS — events + reservations', () => {
   })
 
   it('reservations.insert directo de authenticated rechazado por RLS', async () => {
-    const { error } = await cashierA.client.from('reservations').insert({
+    const { error } = await cashierA.client.from('event_attendees').insert({
       tenant_id: tenantA.id,
       event_id: eventId,
       customer_id: customers[0]!,

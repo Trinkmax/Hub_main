@@ -50,7 +50,7 @@ export async function listEvents(opts: {
 
   const ids = events.map((e) => e.id)
   const { data: seats } = await supabase
-    .from('reservations')
+    .from('event_attendees')
     .select('event_id, status, guests_count')
     .in('event_id', ids)
 
@@ -109,7 +109,7 @@ export async function getEvent(opts: { tenantId: string; id: string }): Promise<
   if (error || !data) return null
 
   const { data: seats } = await supabase
-    .from('reservations')
+    .from('event_attendees')
     .select('status, guests_count')
     .eq('event_id', opts.id)
 
@@ -151,7 +151,7 @@ export async function listReservations(opts: {
 }): Promise<ReservationRow[]> {
   const supabase = await createClient()
   const { data, error } = await supabase
-    .from('reservations')
+    .from('event_attendees')
     .select(
       `id, status, guests_count, waitlist_position, checked_in_at,
        customer:customers(id, first_name, last_name, phone)`,

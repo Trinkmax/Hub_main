@@ -60,6 +60,12 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ['owner'],
       },
       {
+        label: 'Operativo',
+        href: (s) => `/${s}/salon/reservas-operativo`,
+        icon: 'MonitorSmartphone',
+        newTab: true,
+      },
+      {
         label: 'Acreditar',
         href: (s) => `/${s}/acreditar`,
         icon: 'ScanLine',
@@ -78,6 +84,11 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'Personas',
         href: (s) => `/${s}/clientes`,
         icon: 'Users',
+      },
+      {
+        label: 'Reservas',
+        href: (s) => `/${s}/reservas`,
+        icon: 'CalendarCheck',
       },
       {
         label: 'Audiencias',
@@ -139,6 +150,12 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'Estadísticas',
         href: (s) => `/${s}/estadisticas`,
         icon: 'BarChart3',
+        roles: ['owner'],
+      },
+      {
+        label: 'Comisiones',
+        href: (s) => `/${s}/estadisticas/comisiones`,
+        icon: 'Coins',
         roles: ['owner'],
       },
     ],

@@ -67,7 +67,7 @@ async function customersForEventStarting(
   const lower = new Date(Date.now() + (hoursBefore - 1) * 3600_000).toISOString()
   const upper = new Date(Date.now() + hoursBefore * 3600_000).toISOString()
   const { data } = await service
-    .from('reservations')
+    .from('event_attendees')
     .select('customer_id, event:events!inner(tenant_id, starts_at, status)')
     .eq('event.tenant_id', flow.tenant_id)
     .gt('event.starts_at', lower)

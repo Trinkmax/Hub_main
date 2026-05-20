@@ -10,7 +10,6 @@ import {
   LifeBuoy,
   type LucideIcon,
   Mail,
-  ScrollText,
   Shield,
   Smartphone,
   Stamp,

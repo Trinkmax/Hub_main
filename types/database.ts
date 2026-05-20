@@ -308,6 +308,170 @@ export type Database = {
           },
         ]
       }
+      commission_bonus_rules: {
+        Row: {
+          active: boolean
+          bonus_per_guest_cents: number
+          created_at: string
+          id: string
+          scope: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          bonus_per_guest_cents: number
+          created_at?: string
+          id?: string
+          scope: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          bonus_per_guest_cents?: number
+          created_at?: string
+          id?: string
+          scope?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commission_bonus_rules_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      commission_ledger: {
+        Row: {
+          base_rate_per_guest_cents: number
+          base_total_cents: number
+          bonus_per_guest_cents: number
+          bonus_total_cents: number
+          calculated_at: string
+          calculation_version: number
+          guests_billed: number
+          id: string
+          manager_id: string
+          meal_type: Database["public"]["Enums"]["meal_type"]
+          paid_at: string | null
+          paid_payout_id: string | null
+          payable_cents: number
+          reservation_id: string
+          split_factor_denominator: number
+          split_factor_numerator: number
+          tenant_id: string
+        }
+        Insert: {
+          base_rate_per_guest_cents: number
+          base_total_cents: number
+          bonus_per_guest_cents?: number
+          bonus_total_cents?: number
+          calculated_at?: string
+          calculation_version?: number
+          guests_billed: number
+          id?: string
+          manager_id: string
+          meal_type: Database["public"]["Enums"]["meal_type"]
+          paid_at?: string | null
+          paid_payout_id?: string | null
+          payable_cents: number
+          reservation_id: string
+          split_factor_denominator?: number
+          split_factor_numerator?: number
+          tenant_id: string
+        }
+        Update: {
+          base_rate_per_guest_cents?: number
+          base_total_cents?: number
+          bonus_per_guest_cents?: number
+          bonus_total_cents?: number
+          calculated_at?: string
+          calculation_version?: number
+          guests_billed?: number
+          id?: string
+          manager_id?: string
+          meal_type?: Database["public"]["Enums"]["meal_type"]
+          paid_at?: string | null
+          paid_payout_id?: string | null
+          payable_cents?: number
+          reservation_id?: string
+          split_factor_denominator?: number
+          split_factor_numerator?: number
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commission_ledger_manager_id_fkey"
+            columns: ["manager_id"]
+            isOneToOne: false
+            referencedRelation: "reservation_managers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commission_ledger_reservation_id_fkey"
+            columns: ["reservation_id"]
+            isOneToOne: false
+            referencedRelation: "salon_reservations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commission_ledger_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      commission_rate_tiers: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          max_guests: number | null
+          meal_type: Database["public"]["Enums"]["meal_type"]
+          min_guests: number
+          rate_per_guest_cents: number
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          max_guests?: number | null
+          meal_type: Database["public"]["Enums"]["meal_type"]
+          min_guests: number
+          rate_per_guest_cents: number
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          max_guests?: number | null
+          meal_type?: Database["public"]["Enums"]["meal_type"]
+          min_guests?: number
+          rate_per_guest_cents?: number
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commission_rate_tiers_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversations: {
         Row: {
           channel_id: string
@@ -761,6 +925,91 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "customers_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      event_attendees: {
+        Row: {
+          checked_in_at: string | null
+          checked_in_by: string | null
+          created_at: string
+          customer_id: string
+          event_id: string
+          guests_count: number
+          id: string
+          status: Database["public"]["Enums"]["reservation_status"]
+          tenant_id: string
+          updated_at: string
+          waitlist_position: number | null
+        }
+        Insert: {
+          checked_in_at?: string | null
+          checked_in_by?: string | null
+          created_at?: string
+          customer_id: string
+          event_id: string
+          guests_count?: number
+          id?: string
+          status?: Database["public"]["Enums"]["reservation_status"]
+          tenant_id: string
+          updated_at?: string
+          waitlist_position?: number | null
+        }
+        Update: {
+          checked_in_at?: string | null
+          checked_in_by?: string | null
+          created_at?: string
+          customer_id?: string
+          event_id?: string
+          guests_count?: number
+          id?: string
+          status?: Database["public"]["Enums"]["reservation_status"]
+          tenant_id?: string
+          updated_at?: string
+          waitlist_position?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reservations_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reservations_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "mv_customer_stats"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "reservations_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_churn_risk"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "reservations_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customer_stats"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "reservations_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reservations_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -1653,84 +1902,49 @@ export type Database = {
           },
         ]
       }
-      reservations: {
+      reservation_managers: {
         Row: {
-          checked_in_at: string | null
-          checked_in_by: string | null
+          active: boolean
+          commission_eligible: boolean
           created_at: string
-          customer_id: string
-          event_id: string
-          guests_count: number
+          display_name: string
+          email: string | null
           id: string
-          status: Database["public"]["Enums"]["reservation_status"]
+          notes: string | null
+          phone: string | null
           tenant_id: string
           updated_at: string
-          waitlist_position: number | null
+          user_id: string | null
         }
         Insert: {
-          checked_in_at?: string | null
-          checked_in_by?: string | null
+          active?: boolean
+          commission_eligible?: boolean
           created_at?: string
-          customer_id: string
-          event_id: string
-          guests_count?: number
+          display_name: string
+          email?: string | null
           id?: string
-          status?: Database["public"]["Enums"]["reservation_status"]
+          notes?: string | null
+          phone?: string | null
           tenant_id: string
           updated_at?: string
-          waitlist_position?: number | null
+          user_id?: string | null
         }
         Update: {
-          checked_in_at?: string | null
-          checked_in_by?: string | null
+          active?: boolean
+          commission_eligible?: boolean
           created_at?: string
-          customer_id?: string
-          event_id?: string
-          guests_count?: number
+          display_name?: string
+          email?: string | null
           id?: string
-          status?: Database["public"]["Enums"]["reservation_status"]
+          notes?: string | null
+          phone?: string | null
           tenant_id?: string
           updated_at?: string
-          waitlist_position?: number | null
+          user_id?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "reservations_customer_id_fkey"
-            columns: ["customer_id"]
-            isOneToOne: false
-            referencedRelation: "customers"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "reservations_customer_id_fkey"
-            columns: ["customer_id"]
-            isOneToOne: false
-            referencedRelation: "mv_customer_stats"
-            referencedColumns: ["customer_id"]
-          },
-          {
-            foreignKeyName: "reservations_customer_id_fkey"
-            columns: ["customer_id"]
-            isOneToOne: false
-            referencedRelation: "v_churn_risk"
-            referencedColumns: ["customer_id"]
-          },
-          {
-            foreignKeyName: "reservations_customer_id_fkey"
-            columns: ["customer_id"]
-            isOneToOne: false
-            referencedRelation: "v_customer_stats"
-            referencedColumns: ["customer_id"]
-          },
-          {
-            foreignKeyName: "reservations_event_id_fkey"
-            columns: ["event_id"]
-            isOneToOne: false
-            referencedRelation: "events"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "reservations_tenant_id_fkey"
+            foreignKeyName: "reservation_managers_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -1857,6 +2071,322 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "rewards_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      salon_reservations: {
+        Row: {
+          actual_guests: number | null
+          arrived_at: string | null
+          arrived_by: string | null
+          assistant_manager_id: string | null
+          cake_count: number
+          cancelled_at: string | null
+          cancelled_reason: string | null
+          champagne_count: number
+          closed_at: string | null
+          closed_by: string | null
+          comments: string | null
+          created_at: string
+          created_by: string | null
+          customer_id: string | null
+          deposit_cents: number
+          estimated_guests: number
+          guest_email: string | null
+          guest_name: string
+          guest_phone: string | null
+          id: string
+          kind: Database["public"]["Enums"]["reservation_kind"]
+          meal_type: Database["public"]["Enums"]["meal_type"]
+          origin: Database["public"]["Enums"]["reservation_origin"]
+          primary_manager_id: string
+          reservation_date: string
+          reservation_time_local: string
+          scheduled_event_id: string | null
+          seated_at: string | null
+          seated_by: string | null
+          status: Database["public"]["Enums"]["salon_reservation_status"]
+          tenant_id: string
+          updated_at: string
+          zone: Database["public"]["Enums"]["salon_zone"]
+        }
+        Insert: {
+          actual_guests?: number | null
+          arrived_at?: string | null
+          arrived_by?: string | null
+          assistant_manager_id?: string | null
+          cake_count?: number
+          cancelled_at?: string | null
+          cancelled_reason?: string | null
+          champagne_count?: number
+          closed_at?: string | null
+          closed_by?: string | null
+          comments?: string | null
+          created_at?: string
+          created_by?: string | null
+          customer_id?: string | null
+          deposit_cents?: number
+          estimated_guests: number
+          guest_email?: string | null
+          guest_name: string
+          guest_phone?: string | null
+          id?: string
+          kind?: Database["public"]["Enums"]["reservation_kind"]
+          meal_type: Database["public"]["Enums"]["meal_type"]
+          origin?: Database["public"]["Enums"]["reservation_origin"]
+          primary_manager_id: string
+          reservation_date: string
+          reservation_time_local: string
+          scheduled_event_id?: string | null
+          seated_at?: string | null
+          seated_by?: string | null
+          status?: Database["public"]["Enums"]["salon_reservation_status"]
+          tenant_id: string
+          updated_at?: string
+          zone: Database["public"]["Enums"]["salon_zone"]
+        }
+        Update: {
+          actual_guests?: number | null
+          arrived_at?: string | null
+          arrived_by?: string | null
+          assistant_manager_id?: string | null
+          cake_count?: number
+          cancelled_at?: string | null
+          cancelled_reason?: string | null
+          champagne_count?: number
+          closed_at?: string | null
+          closed_by?: string | null
+          comments?: string | null
+          created_at?: string
+          created_by?: string | null
+          customer_id?: string | null
+          deposit_cents?: number
+          estimated_guests?: number
+          guest_email?: string | null
+          guest_name?: string
+          guest_phone?: string | null
+          id?: string
+          kind?: Database["public"]["Enums"]["reservation_kind"]
+          meal_type?: Database["public"]["Enums"]["meal_type"]
+          origin?: Database["public"]["Enums"]["reservation_origin"]
+          primary_manager_id?: string
+          reservation_date?: string
+          reservation_time_local?: string
+          scheduled_event_id?: string | null
+          seated_at?: string | null
+          seated_by?: string | null
+          status?: Database["public"]["Enums"]["salon_reservation_status"]
+          tenant_id?: string
+          updated_at?: string
+          zone?: Database["public"]["Enums"]["salon_zone"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "salon_reservations_assistant_manager_id_fkey"
+            columns: ["assistant_manager_id"]
+            isOneToOne: false
+            referencedRelation: "reservation_managers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "salon_reservations_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "salon_reservations_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "mv_customer_stats"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "salon_reservations_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_churn_risk"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "salon_reservations_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customer_stats"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "salon_reservations_primary_manager_id_fkey"
+            columns: ["primary_manager_id"]
+            isOneToOne: false
+            referencedRelation: "reservation_managers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "salon_reservations_scheduled_event_id_fkey"
+            columns: ["scheduled_event_id"]
+            isOneToOne: false
+            referencedRelation: "scheduled_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "salon_reservations_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      salon_zone_capacity_overrides: {
+        Row: {
+          capacity: number
+          created_at: string
+          id: string
+          override_date: string
+          reason: string | null
+          tenant_id: string
+          zone: Database["public"]["Enums"]["salon_zone"]
+        }
+        Insert: {
+          capacity: number
+          created_at?: string
+          id?: string
+          override_date: string
+          reason?: string | null
+          tenant_id: string
+          zone: Database["public"]["Enums"]["salon_zone"]
+        }
+        Update: {
+          capacity?: number
+          created_at?: string
+          id?: string
+          override_date?: string
+          reason?: string | null
+          tenant_id?: string
+          zone?: Database["public"]["Enums"]["salon_zone"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "salon_zone_capacity_overrides_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scheduled_event_templates: {
+        Row: {
+          active: boolean
+          color_hex: string
+          consume_special_reservations: boolean
+          created_at: string
+          default_capacity: number | null
+          default_meal_type: Database["public"]["Enums"]["meal_type"]
+          id: string
+          name: string
+          slug: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          color_hex?: string
+          consume_special_reservations?: boolean
+          created_at?: string
+          default_capacity?: number | null
+          default_meal_type?: Database["public"]["Enums"]["meal_type"]
+          id?: string
+          name: string
+          slug: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          color_hex?: string
+          consume_special_reservations?: boolean
+          created_at?: string
+          default_capacity?: number | null
+          default_meal_type?: Database["public"]["Enums"]["meal_type"]
+          id?: string
+          name?: string
+          slug?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_event_templates_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scheduled_events: {
+        Row: {
+          capacity: number
+          created_at: string
+          ends_at_local: string | null
+          event_date: string
+          full_bonus_active: boolean
+          id: string
+          meal_type: Database["public"]["Enums"]["meal_type"]
+          name_override: string | null
+          notes: string | null
+          starts_at_local: string
+          template_id: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          capacity: number
+          created_at?: string
+          ends_at_local?: string | null
+          event_date: string
+          full_bonus_active?: boolean
+          id?: string
+          meal_type: Database["public"]["Enums"]["meal_type"]
+          name_override?: string | null
+          notes?: string | null
+          starts_at_local: string
+          template_id: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          capacity?: number
+          created_at?: string
+          ends_at_local?: string | null
+          event_date?: string
+          full_bonus_active?: boolean
+          id?: string
+          meal_type?: Database["public"]["Enums"]["meal_type"]
+          name_override?: string | null
+          notes?: string | null
+          starts_at_local?: string
+          template_id?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_events_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "scheduled_event_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_events_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -2620,21 +3150,21 @@ export type Database = {
         }[]
       }
       cancel_event: { Args: { p_event_id: string }; Returns: undefined }
-      cancel_pending_ticket: {
-        Args: { p_browser_token: string; p_ticket_id: string }
-        Returns: Json
-      }
-      cancel_reservation: {
+      cancel_event_attendance: {
         Args: { p_reservation_id: string }
         Returns: {
           promoted_id: string
         }[]
       }
+      cancel_pending_ticket: {
+        Args: { p_browser_token: string; p_ticket_id: string }
+        Returns: Json
+      }
       cancel_ticket_item: {
         Args: { p_reason: string; p_ticket_item_id: string }
         Returns: Json
       }
-      check_in_reservation: {
+      check_in_event_attendance: {
         Args: { p_reservation_id: string }
         Returns: undefined
       }
@@ -2670,7 +3200,7 @@ export type Database = {
         }[]
       }
       complete_job: { Args: { p_id: string }; Returns: undefined }
-      create_reservation: {
+      create_event_attendance: {
         Args: { p_customer_id: string; p_event_id: string; p_guests?: number }
         Returns: {
           reservation_id: string
@@ -2744,6 +3274,15 @@ export type Database = {
         Returns: {
           count_total: number
           customer_id: string
+        }[]
+      }
+      evaluate_day_capacity: {
+        Args: { p_date: string; p_tenant_id: string }
+        Returns: {
+          available: number
+          bucket: string
+          capacity: number
+          used: number
         }[]
       }
       event_lock_key: { Args: { p_event_id: string }; Returns: number }
@@ -2824,6 +3363,10 @@ export type Database = {
         }
         Returns: Json
       }
+      mark_commission_paid: {
+        Args: { p_ledger_ids: string[]; p_paid_at?: string }
+        Returns: number
+      }
       mark_session_abandoned: {
         Args: { p_reason?: string; p_session_id: string }
         Returns: Json
@@ -2836,6 +3379,14 @@ export type Database = {
       move_session: {
         Args: { p_new_physical_table_id: string; p_session_id: string }
         Returns: Json
+      }
+      recalc_event_commissions: {
+        Args: { p_scheduled_event_id: string }
+        Returns: undefined
+      }
+      recalc_reservation_commission: {
+        Args: { p_reservation_id: string }
+        Returns: undefined
       }
       redeem_reward: {
         Args: { p_customer_id: string; p_reward_id: string }
@@ -2884,6 +3435,10 @@ export type Database = {
         Args: { p_threshold_seconds?: number }
         Returns: number
       }
+      reservation_day_lock_key: {
+        Args: { p_date: string; p_tenant_id: string }
+        Returns: number
+      }
       rotate_customer_qr_token: {
         Args: { p_customer_id: string }
         Returns: string
@@ -2927,6 +3482,54 @@ export type Database = {
         }
         Returns: Json
       }
+      transition_reservation_status: {
+        Args: {
+          p_actual_guests?: number
+          p_reservation_id: string
+          p_to: Database["public"]["Enums"]["salon_reservation_status"]
+        }
+        Returns: {
+          actual_guests: number | null
+          arrived_at: string | null
+          arrived_by: string | null
+          assistant_manager_id: string | null
+          cake_count: number
+          cancelled_at: string | null
+          cancelled_reason: string | null
+          champagne_count: number
+          closed_at: string | null
+          closed_by: string | null
+          comments: string | null
+          created_at: string
+          created_by: string | null
+          customer_id: string | null
+          deposit_cents: number
+          estimated_guests: number
+          guest_email: string | null
+          guest_name: string
+          guest_phone: string | null
+          id: string
+          kind: Database["public"]["Enums"]["reservation_kind"]
+          meal_type: Database["public"]["Enums"]["meal_type"]
+          origin: Database["public"]["Enums"]["reservation_origin"]
+          primary_manager_id: string
+          reservation_date: string
+          reservation_time_local: string
+          scheduled_event_id: string | null
+          seated_at: string | null
+          seated_by: string | null
+          status: Database["public"]["Enums"]["salon_reservation_status"]
+          tenant_id: string
+          updated_at: string
+          zone: Database["public"]["Enums"]["salon_zone"]
+        }
+        SetofOptions: {
+          from: "*"
+          to: "salon_reservations"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       unaccent: { Args: { "": string }; Returns: string }
       update_message_status: {
         Args: {
@@ -2936,6 +3539,50 @@ export type Database = {
           p_timestamp: string
         }
         Returns: string
+      }
+      update_reservation_actual_guests: {
+        Args: { p_actual_guests: number; p_reservation_id: string }
+        Returns: {
+          actual_guests: number | null
+          arrived_at: string | null
+          arrived_by: string | null
+          assistant_manager_id: string | null
+          cake_count: number
+          cancelled_at: string | null
+          cancelled_reason: string | null
+          champagne_count: number
+          closed_at: string | null
+          closed_by: string | null
+          comments: string | null
+          created_at: string
+          created_by: string | null
+          customer_id: string | null
+          deposit_cents: number
+          estimated_guests: number
+          guest_email: string | null
+          guest_name: string
+          guest_phone: string | null
+          id: string
+          kind: Database["public"]["Enums"]["reservation_kind"]
+          meal_type: Database["public"]["Enums"]["meal_type"]
+          origin: Database["public"]["Enums"]["reservation_origin"]
+          primary_manager_id: string
+          reservation_date: string
+          reservation_time_local: string
+          scheduled_event_id: string | null
+          seated_at: string | null
+          seated_by: string | null
+          status: Database["public"]["Enums"]["salon_reservation_status"]
+          tenant_id: string
+          updated_at: string
+          zone: Database["public"]["Enums"]["salon_zone"]
+        }
+        SetofOptions: {
+          from: "*"
+          to: "salon_reservations"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       update_ticket_status: {
         Args: {
@@ -2972,6 +3619,7 @@ export type Database = {
         | "event_starting"
         | "tag_added"
       job_status: "pending" | "processing" | "done" | "failed"
+      meal_type: "breakfast" | "lunch" | "tea_time" | "dinner" | "hub_event"
       message_direction: "inbound" | "outbound"
       message_status: "queued" | "sent" | "delivered" | "read" | "failed"
       points_rule_type: "per_amount" | "per_item"
@@ -2984,12 +3632,27 @@ export type Database = {
         | "replied"
         | "failed"
       redemption_status: "pending" | "delivered" | "cancelled"
+      reservation_kind: "normal" | "birthday" | "special"
+      reservation_origin:
+        | "whatsapp"
+        | "instagram"
+        | "messenger"
+        | "in_person"
+        | "partner_referral"
       reservation_status:
         | "confirmed"
         | "waitlist"
         | "cancelled"
         | "checked_in"
         | "no_show"
+      salon_reservation_status:
+        | "pending"
+        | "arrived"
+        | "seated"
+        | "closed"
+        | "no_show"
+        | "cancelled"
+      salon_zone: "planta_alta" | "planta_baja" | "event_floating"
       session_event_type:
         | "session_opened"
         | "guest_joined"
@@ -3165,6 +3828,7 @@ export const Constants = {
         "tag_added",
       ],
       job_status: ["pending", "processing", "done", "failed"],
+      meal_type: ["breakfast", "lunch", "tea_time", "dinner", "hub_event"],
       message_direction: ["inbound", "outbound"],
       message_status: ["queued", "sent", "delivered", "read", "failed"],
       points_rule_type: ["per_amount", "per_item"],
@@ -3178,6 +3842,14 @@ export const Constants = {
         "failed",
       ],
       redemption_status: ["pending", "delivered", "cancelled"],
+      reservation_kind: ["normal", "birthday", "special"],
+      reservation_origin: [
+        "whatsapp",
+        "instagram",
+        "messenger",
+        "in_person",
+        "partner_referral",
+      ],
       reservation_status: [
         "confirmed",
         "waitlist",
@@ -3185,6 +3857,15 @@ export const Constants = {
         "checked_in",
         "no_show",
       ],
+      salon_reservation_status: [
+        "pending",
+        "arrived",
+        "seated",
+        "closed",
+        "no_show",
+        "cancelled",
+      ],
+      salon_zone: ["planta_alta", "planta_baja", "event_floating"],
       session_event_type: [
         "session_opened",
         "guest_joined",
@@ -3212,30 +3893,26 @@ export const Constants = {
   },
 } as const
 
+
 // ──────────────────────────────────────────────────────────
-// Enum aliases (mantenidos manualmente — no son parte del output de
-// supabase gen types pero el resto del codebase los importa por nombre).
-// Cuando agregues un enum nuevo a la DB, exportalo acá también.
+// Aliases para enums usados en todo el codebase
+// (re-generados manualmente cada vez que se corre db:types o el MCP, porque
+// el generator no los emite por sí mismo).
 // ──────────────────────────────────────────────────────────
-export type TenantRole = Database['public']['Enums']['tenant_role']
-export type CustomerSource = Database['public']['Enums']['customer_source']
-export type VisitSource = Database['public']['Enums']['visit_source']
-export type PointsRuleType = Database['public']['Enums']['points_rule_type']
-export type RedemptionStatus = Database['public']['Enums']['redemption_status']
 export type EventStatus = Database['public']['Enums']['event_status']
 export type ReservationStatus = Database['public']['Enums']['reservation_status']
+export type FlowTriggerType = Database['public']['Enums']['flow_trigger_type']
+export type FlowStepType = Database['public']['Enums']['flow_step_type']
 export type ChannelType = Database['public']['Enums']['channel_type']
-export type ChannelStatus = Database['public']['Enums']['channel_status']
-export type TemplateStatus = Database['public']['Enums']['template_status']
 export type MessageDirection = Database['public']['Enums']['message_direction']
 export type MessageStatus = Database['public']['Enums']['message_status']
 export type BroadcastStatus = Database['public']['Enums']['broadcast_status']
 export type RecipientStatus = Database['public']['Enums']['recipient_status']
-export type FlowTriggerType = Database['public']['Enums']['flow_trigger_type']
-export type FlowStepType = Database['public']['Enums']['flow_step_type']
-export type FlowExecutionStatus = Database['public']['Enums']['flow_execution_status']
-export type JobStatus = Database['public']['Enums']['job_status']
-export type SessionStatus = Database['public']['Enums']['session_status']
-export type SessionEventType = Database['public']['Enums']['session_event_type']
-export type TicketStatus = Database['public']['Enums']['ticket_status']
-export type PunchTriggerType = Database['public']['Enums']['punch_trigger_type']
+export type TemplateStatus = Database['public']['Enums']['template_status']
+
+// Aliases nuevos de la feature reservas de salón
+export type ReservationKind = Database['public']['Enums']['reservation_kind']
+export type MealType = Database['public']['Enums']['meal_type']
+export type ReservationOrigin = Database['public']['Enums']['reservation_origin']
+export type SalonZone = Database['public']['Enums']['salon_zone']
+export type SalonReservationStatus = Database['public']['Enums']['salon_reservation_status']
