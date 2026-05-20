@@ -2,14 +2,43 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import type { ResolvedNavGroup, ResolvedNavItem } from './nav-config'
 import { NAV_ICONS } from './nav-icons'
 
-function isActive(pathname: string, href: string, exact?: boolean) {
+function matches(pathname: string, href: string, exact?: boolean): boolean {
   if (exact) return pathname === href
-  if (href === pathname) return true
+  if (pathname === href) return true
   return pathname.startsWith(`${href}/`)
+}
+
+/**
+ * Sólo el item con el `href` más largo (= más específico) gana cuando varios
+ * matchean. Evita que `/estadisticas/comisiones` active además a `Estadísticas`
+ * cuyo href `/estadisticas` también es prefix válido.
+ */
+function computeActiveHrefs(pathname: string, groups: ResolvedNavGroup[]): Set<string> {
+  let maxLen = 0
+  for (const g of groups) {
+    for (const item of g.items) {
+      if (item.newTab) continue
+      if (matches(pathname, item.href, item.exact) && item.href.length > maxLen) {
+        maxLen = item.href.length
+      }
+    }
+  }
+  const active = new Set<string>()
+  if (maxLen === 0) return active
+  for (const g of groups) {
+    for (const item of g.items) {
+      if (item.newTab) continue
+      if (matches(pathname, item.href, item.exact) && item.href.length === maxLen) {
+        active.add(item.href)
+      }
+    }
+  }
+  return active
 }
 
 export function SidebarNav({
@@ -20,6 +49,7 @@ export function SidebarNav({
   onNavigate?: () => void
 }) {
   const pathname = usePathname()
+  const activeHrefs = useMemo(() => computeActiveHrefs(pathname, groups), [pathname, groups])
 
   return (
     <nav className="flex flex-1 flex-col gap-5 px-3 py-4">
@@ -33,7 +63,7 @@ export function SidebarNav({
               <li key={item.label}>
                 <SidebarLink
                   item={item}
-                  active={!item.newTab && isActive(pathname, item.href, item.exact)}
+                  active={!item.newTab && activeHrefs.has(item.href)}
                   onNavigate={onNavigate}
                 />
               </li>
