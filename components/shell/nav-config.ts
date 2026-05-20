@@ -53,13 +53,6 @@ export const NAV_GROUPS: NavGroup[] = [
         exact: true,
       },
       {
-        label: 'Salón en vivo',
-        href: (s) => `/${s}/salon/mesas`,
-        icon: 'ClipboardList',
-        newTab: true,
-        roles: ['owner'],
-      },
-      {
         label: 'Operativo',
         href: (s) => `/${s}/salon/reservas-operativo`,
         icon: 'MonitorSmartphone',
@@ -69,11 +62,6 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'Acreditar',
         href: (s) => `/${s}/acreditar`,
         icon: 'ScanLine',
-      },
-      {
-        label: 'Bandeja',
-        href: (s) => `/${s}/bandeja`,
-        icon: 'Inbox',
       },
     ],
   },
@@ -90,29 +78,11 @@ export const NAV_GROUPS: NavGroup[] = [
         href: (s) => `/${s}/reservas`,
         icon: 'CalendarCheck',
       },
-      {
-        label: 'Audiencias',
-        href: (s) => `/${s}/audiencias`,
-        icon: 'UsersRound',
-        roles: ['owner'],
-      },
     ],
   },
   {
-    label: 'Marketing',
+    label: 'Eventos',
     items: [
-      {
-        label: 'Difusiones',
-        href: (s) => `/${s}/difusiones`,
-        icon: 'Megaphone',
-        roles: ['owner'],
-      },
-      {
-        label: 'Flows',
-        href: (s) => `/${s}/flows`,
-        icon: 'Workflow',
-        roles: ['owner'],
-      },
       {
         label: 'Eventos',
         href: (s) => `/${s}/eventos`,
