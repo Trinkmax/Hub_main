@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import { getAppUrl } from '@/lib/app-url'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { buildQrSheet } from '@/lib/tables/qr-pdf'
@@ -43,7 +44,7 @@ export default async function PrintQrPage({ params }: { params: Promise<{ qrToke
     .maybeSingle()
   if (!tenant) notFound()
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const baseUrl = await getAppUrl()
   const sheet = await buildQrSheet({
     qrToken: table.qr_token,
     tableLabel: table.label,

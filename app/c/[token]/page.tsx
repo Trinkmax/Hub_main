@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import QRCode from 'qrcode'
+import { getAppUrl } from '@/lib/app-url'
 import { getCustomerPanelByToken } from '@/lib/c-panel/queries'
 import { CustomerPanelLayout } from './_components/customer-panel-layout'
 
@@ -15,8 +16,8 @@ export default async function CustomerPanelPage({
   const data = await getCustomerPanelByToken(token)
   if (!data) notFound()
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
-  const qrUrl = `${appUrl.replace(/\/$/, '')}/c/${data.customer.qr_token}`
+  const appUrl = await getAppUrl()
+  const qrUrl = `${appUrl}/c/${data.customer.qr_token}`
   const qrDataUrl = await QRCode.toDataURL(qrUrl, {
     width: 360,
     margin: 1,

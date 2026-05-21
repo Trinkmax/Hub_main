@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { StatCard } from '@/components/ui/stat-card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { getAppUrl } from '@/lib/app-url'
 import { getCustomerById, listTags } from '@/lib/customers/queries'
 import { formatPhoneForDisplay } from '@/lib/phone'
 import {
@@ -39,6 +40,7 @@ export default async function CustomerDetailPage({
   params: Promise<{ tenantSlug: string; id: string }>
 }) {
   const { tenantSlug, id } = await params
+  const appUrl = await getAppUrl()
 
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
@@ -177,7 +179,7 @@ export default async function CustomerDetailPage({
         tenantSlug={tenantSlug}
         customerId={c.id}
         initialQrToken={c.qr_token}
-        appUrl={process.env.NEXT_PUBLIC_APP_URL ?? ''}
+        appUrl={appUrl}
         isOwner={access.role === 'owner'}
       />
 

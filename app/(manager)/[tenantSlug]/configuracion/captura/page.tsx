@@ -2,6 +2,7 @@ import { QrCode } from 'lucide-react'
 import { notFound } from 'next/navigation'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
+import { getAppUrl } from '@/lib/app-url'
 import { listCaptureLinks } from '@/lib/customers/queries'
 import {
   RoleRequiredError,
@@ -32,7 +33,7 @@ export default async function CapturaConfigPage({
   }
 
   const links = await listCaptureLinks({ tenantId: access.tenant.id })
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const appUrl = await getAppUrl()
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">

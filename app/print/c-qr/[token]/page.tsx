@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import QRCode from 'qrcode'
+import { getAppUrl } from '@/lib/app-url'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { CustomerQrPrint } from './_components/customer-qr-print'
@@ -46,8 +47,8 @@ export default async function PrintCustomerQrPage({
     .eq('id', customer.tenant_id)
     .maybeSingle()
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
-  const panelUrl = `${baseUrl.replace(/\/$/, '')}/c/${token}`
+  const baseUrl = await getAppUrl()
+  const panelUrl = `${baseUrl}/c/${token}`
   const qrDataUrl = await QRCode.toDataURL(panelUrl, {
     width: 560,
     margin: 1,
