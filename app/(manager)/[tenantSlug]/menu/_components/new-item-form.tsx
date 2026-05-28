@@ -39,17 +39,23 @@ export function NewItemForm({
   const [state, formAction] = useActionState(action, initial)
   const formRef = useRef<HTMLFormElement>(null)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
+  // Input en pesos (entero); el hidden mirror manda centavos al action.
+  const [pricePesos, setPricePesos] = useState('')
 
   useEffect(() => {
     if (state.ok && state.message) {
       toast.success(state.message)
       formRef.current?.reset()
       setImageUrl(null)
+      setPricePesos('')
       onCreated?.()
     } else if (!state.ok) {
       toast.error(state.message)
     }
   }, [state, onCreated])
+
+  const pesosParsed = Number.parseInt(pricePesos, 10)
+  const priceCents = Number.isFinite(pesosParsed) && pesosParsed >= 0 ? pesosParsed * 100 : ''
 
   return (
     <form
@@ -59,6 +65,7 @@ export function NewItemForm({
     >
       <input type="hidden" name="category_id" value={categoryId} />
       <input type="hidden" name="image_url" value={imageUrl ?? ''} />
+      <input type="hidden" name="price_cents" value={priceCents} />
 
       <div className="grid gap-2 sm:grid-cols-[1fr_120px_120px_auto] sm:items-end">
         <div className="grid gap-1">
@@ -81,18 +88,25 @@ export function NewItemForm({
             htmlFor={`price-${categoryId}`}
             className="text-[11px] uppercase tracking-wider text-muted-foreground"
           >
-            Precio (¢)
+            Precio
           </Label>
-          <Input
-            id={`price-${categoryId}`}
-            name="price_cents"
-            type="number"
-            required
-            min={0}
-            step={1}
-            placeholder="150000"
-            className="tabular-nums"
-          />
+          <div className="relative">
+            <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+              $
+            </span>
+            <Input
+              id={`price-${categoryId}`}
+              type="number"
+              required
+              min={0}
+              step={1}
+              inputMode="numeric"
+              value={pricePesos}
+              onChange={(e) => setPricePesos(e.target.value)}
+              placeholder="15500"
+              className="pl-6 tabular-nums"
+            />
+          </div>
         </div>
         <div className="grid gap-1">
           <Label

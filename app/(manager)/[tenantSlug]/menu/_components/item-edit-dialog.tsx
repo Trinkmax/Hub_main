@@ -68,7 +68,9 @@ export function ItemEditDialog({
   const [name, setName] = useState(item.name)
   const [description, setDescription] = useState(item.description ?? '')
   const [categoryId, setCategoryId] = useState(item.category_id)
-  const [priceCents, setPriceCents] = useState(String(item.price_cents))
+  // Input en pesos (entero). Internamente convertimos a centavos antes de
+  // mandar al action — la DB sigue guardando en centavos (CLAUDE.md §2).
+  const [priceInput, setPriceInput] = useState(String(Math.round(item.price_cents / 100)))
   const [pointsOverride, setPointsOverride] = useState(
     item.points_override === null ? '' : String(item.points_override),
   )
@@ -96,8 +98,9 @@ export function ItemEditDialog({
   const [creatingTag, startCreatingTag] = useTransition()
   const [deleting, startDelete] = useTransition()
 
-  const priceParsed = Number.parseInt(priceCents, 10)
-  const priceValid = !Number.isNaN(priceParsed) && priceParsed >= 0
+  const priceParsedPesos = Number.parseInt(priceInput, 10)
+  const priceValid = !Number.isNaN(priceParsedPesos) && priceParsedPesos >= 0
+  const priceCents = priceValid ? priceParsedPesos * 100 : 0
 
   const toggleTagLocal = (id: string) => {
     setSelectedTagIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
@@ -123,7 +126,7 @@ export function ItemEditDialog({
         category_id: categoryId,
         name: name.trim(),
         description: description.trim().length > 0 ? description.trim() : null,
-        price_cents: priceParsed,
+        price_cents: priceCents,
         points_override: pts,
         image_url: imageUrl,
         active,
@@ -240,20 +243,25 @@ export function ItemEditDialog({
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="grid gap-1.5">
-                  <Label htmlFor="item-price">Precio (centavos)</Label>
-                  <Input
-                    id="item-price"
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={priceCents}
-                    onChange={(e) => setPriceCents(e.target.value)}
-                    className="tabular-nums"
-                  />
+                  <Label htmlFor="item-price">Precio</Label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                      $
+                    </span>
+                    <Input
+                      id="item-price"
+                      type="number"
+                      min={0}
+                      step={1}
+                      inputMode="numeric"
+                      value={priceInput}
+                      onChange={(e) => setPriceInput(e.target.value)}
+                      className="pl-7 tabular-nums"
+                      placeholder="15500"
+                    />
+                  </div>
                   <p className="text-[11px] tabular-nums text-muted-foreground">
-                    {priceValid
-                      ? `Equivale a ${fmtARS(priceParsed)}`
-                      : 'Ingresá el precio en centavos.'}
+                    {priceValid ? fmtARS(priceCents) : 'Ingresá el precio en pesos.'}
                   </p>
                 </div>
                 <div className="grid gap-1.5">
