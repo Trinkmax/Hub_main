@@ -1,8 +1,10 @@
 'use client'
 
 import { ArrowRight, CheckCircle2 } from 'lucide-react'
-import { useActionState } from 'react'
+import { useActionState, useState } from 'react'
 import { useFormStatus } from 'react-dom'
+import PhoneInput from 'react-phone-number-input'
+import 'react-phone-number-input/style.css'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -27,6 +29,7 @@ async function action(_prev: CaptureActionState | null, formData: FormData) {
 
 export function CaptureForm({ linkSlug, tenantName }: { linkSlug: string; tenantName: string }) {
   const [state, formAction] = useActionState(action, initial)
+  const [phone, setPhone] = useState<string | undefined>(undefined)
 
   if (state?.ok) {
     return (
@@ -62,17 +65,19 @@ export function CaptureForm({ linkSlug, tenantName }: { linkSlug: string; tenant
       </div>
 
       <div className="grid gap-1.5">
-        <Label htmlFor="phone">Teléfono</Label>
-        <Input
-          id="phone"
+        <Label htmlFor="phone-input">Teléfono</Label>
+        <PhoneInput
+          id="phone-input"
           name="phone"
-          type="tel"
-          inputMode="tel"
-          required
-          autoComplete="tel"
+          international
+          defaultCountry="AR"
+          value={phone}
+          onChange={setPhone}
           placeholder="351 555 1234"
-          className="h-11 text-base"
+          className="hub-phone-input"
+          aria-required="true"
         />
+        <p className="text-xs text-muted-foreground">Tocá la bandera si sos de otro país.</p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">

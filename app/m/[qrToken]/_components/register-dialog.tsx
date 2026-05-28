@@ -1,8 +1,10 @@
 'use client'
 
-import { Calendar, Gift, Phone, User } from 'lucide-react'
+import { Calendar, Gift, User } from 'lucide-react'
 import Image from 'next/image'
-import { useActionState, useEffect } from 'react'
+import { useActionState, useEffect, useState } from 'react'
+import PhoneInput from 'react-phone-number-input'
+import 'react-phone-number-input/style.css'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -45,6 +47,7 @@ export function RegisterDialog({
     (_prev: RegisterCustomerResult, fd: FormData) => registerCustomer(fd),
     initial,
   )
+  const [phone, setPhone] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     if (state.ok) onRegistered(state)
@@ -175,27 +178,25 @@ export function RegisterDialog({
 
           <div className="space-y-1.5">
             <Label
-              htmlFor="phone"
+              htmlFor="phone-input"
               className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
             >
               Teléfono
             </Label>
-            <div className="relative">
-              <Phone
-                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                aria-hidden
-              />
-              <Input
-                id="phone"
-                name="phone"
-                type="tel"
-                inputMode="tel"
-                required
-                placeholder="11 4567 8901"
-                autoComplete="tel"
-                className="h-12 rounded-xl pl-9 text-base"
-              />
-            </div>
+            <PhoneInput
+              id="phone-input"
+              name="phone"
+              international
+              defaultCountry="AR"
+              value={phone}
+              onChange={setPhone}
+              placeholder="11 4567 8901"
+              className="hub-phone-input"
+              aria-required="true"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Tocá la bandera si sos de otro país.
+            </p>
             {!state.ok && state.fieldErrors?.phone && (
               <p className="text-xs text-destructive">{state.fieldErrors.phone}</p>
             )}

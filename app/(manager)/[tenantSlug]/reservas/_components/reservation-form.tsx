@@ -19,6 +19,8 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
+import PhoneInput from 'react-phone-number-input'
+import 'react-phone-number-input/style.css'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -771,20 +773,26 @@ export function ReservationForm({
             >
               Seña (ARS)
             </Label>
-            <Input
-              id="deposit_cents"
-              type="number"
-              min={0}
-              step={1000}
-              placeholder="0"
-              value={values.deposit_cents > 0 ? Math.round(values.deposit_cents / 100) : ''}
-              onChange={(e) =>
-                form.setValue('deposit_cents', Math.max(0, Number(e.target.value) * 100), {
-                  shouldValidate: true,
-                })
-              }
-              className="h-11 text-base tabular-nums"
-            />
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                $
+              </span>
+              <Input
+                id="deposit_cents"
+                type="number"
+                min={0}
+                step={1}
+                inputMode="numeric"
+                placeholder="0"
+                value={values.deposit_cents > 0 ? Math.round(values.deposit_cents / 100) : ''}
+                onChange={(e) =>
+                  form.setValue('deposit_cents', Math.max(0, Number(e.target.value) * 100), {
+                    shouldValidate: true,
+                  })
+                }
+                className="h-11 pl-7 text-base tabular-nums"
+              />
+            </div>
           </div>
           <div className="space-y-1.5">
             <Label
@@ -1129,21 +1137,24 @@ function CustomerCombobox({
           >
             Teléfono (opcional)
           </Label>
-          <Input
+          <PhoneInput
             id="guest_phone"
-            type="tel"
-            inputMode="tel"
-            placeholder="+54 9 351 555…"
-            value={value.guest_phone ?? ''}
-            onChange={(e) =>
+            international
+            defaultCountry="AR"
+            placeholder="351 555 1234"
+            value={value.guest_phone ?? undefined}
+            onChange={(v) =>
               onChange({
                 ...value,
-                guest_phone: e.target.value || null,
+                guest_phone: v ?? null,
                 customer_id: undefined,
               })
             }
-            className="h-11 text-base"
+            className="hub-phone-input"
           />
+          <p className="text-[11px] text-muted-foreground">
+            Tocá la bandera si el cliente es de otro país.
+          </p>
         </div>
       </div>
     </div>
