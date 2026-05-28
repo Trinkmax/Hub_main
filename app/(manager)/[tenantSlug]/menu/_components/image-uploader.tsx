@@ -7,6 +7,14 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { uploadMenuImage } from '@/lib/menu/upload-image'
 
+type Stage = 'idle' | 'optimizing' | 'uploading'
+
+function prettyBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
 export function MenuImageUploader({
   tenantId,
   value,
@@ -19,28 +27,43 @@ export function MenuImageUploader({
   label?: string
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [previewBusy, setPreviewBusy] = useState(false)
+  const [stage, setStage] = useState<Stage>('idle')
   const [, startTransition] = useTransition()
 
+  const busy = stage !== 'idle'
   const onPick = () => inputRef.current?.click()
 
   const onFile = (file: File | undefined) => {
     if (!file) return
-    setPreviewBusy(true)
+    setStage('optimizing')
     startTransition(async () => {
       try {
-        const { publicUrl } = await uploadMenuImage({ tenantId, file })
+        const { publicUrl, originalBytes, finalBytes } = await uploadMenuImage({
+          tenantId,
+          file,
+          onProgress: (p) => {
+            if (p.stage === 'uploading') setStage('uploading')
+          },
+        })
         onChange(publicUrl)
-        toast.success('Imagen lista para guardar.')
+        const saved = Math.max(0, originalBytes - finalBytes)
+        const pct = originalBytes > 0 ? Math.round((saved / originalBytes) * 100) : 0
+        toast.success(
+          pct > 5
+            ? `Optimizada · ${prettyBytes(originalBytes)} → ${prettyBytes(finalBytes)} (-${pct}%)`
+            : `Imagen lista · ${prettyBytes(finalBytes)}`,
+        )
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'No pudimos subir la imagen.'
         toast.error(msg)
       } finally {
-        setPreviewBusy(false)
+        setStage('idle')
         if (inputRef.current) inputRef.current.value = ''
       }
     })
   }
+
+  const stageLabel = stage === 'optimizing' ? 'Optimizando…' : 'Subiendo…'
 
   return (
     <div className="grid gap-1.5">
@@ -48,7 +71,7 @@ export function MenuImageUploader({
       <input
         ref={inputRef}
         type="file"
-        accept="image/png,image/jpeg,image/webp,image/avif"
+        accept="image/png,image/jpeg,image/webp,image/avif,image/heic,image/heif"
         className="sr-only"
         onChange={(e) => onFile(e.target.files?.[0])}
       />
@@ -73,21 +96,18 @@ export function MenuImageUploader({
             variant="ghost"
             size="sm"
             onClick={onPick}
-            disabled={previewBusy}
+            disabled={busy}
             className="gap-1.5"
           >
-            {previewBusy ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Upload className="size-3.5" />
-            )}
-            Cambiar
+            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+            {busy ? stageLabel : 'Cambiar'}
           </Button>
           <Button
             type="button"
             variant="ghost"
             size="sm"
             onClick={() => onChange(null)}
+            disabled={busy}
             aria-label="Quitar imagen"
           >
             <X className="size-3.5" />
@@ -97,13 +117,13 @@ export function MenuImageUploader({
         <button
           type="button"
           onClick={onPick}
-          disabled={previewBusy}
+          disabled={busy}
           className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border/70 bg-background/30 px-3 py-4 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
         >
-          {previewBusy ? (
+          {busy ? (
             <>
               <Loader2 className="size-3.5 animate-spin" />
-              Subiendo…
+              {stageLabel}
             </>
           ) : (
             <>
