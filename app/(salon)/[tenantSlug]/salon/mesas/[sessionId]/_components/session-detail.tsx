@@ -1,6 +1,6 @@
 'use client'
 
-import { Coins, MoreVertical, Receipt, XCircle } from 'lucide-react'
+import { Coins, MoreVertical, Receipt, Users, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import {
@@ -21,10 +21,19 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import { subscribeChanges } from '@/lib/realtime/subscribe'
-import { markSessionAbandoned } from '@/lib/sessions-waiter/actions'
+import { markSessionAbandoned, updatePartySizeAction } from '@/lib/sessions-waiter/actions'
 import type { CobroBreakdown, WaiterSessionDetail } from '@/lib/sessions-waiter/queries'
 import type { TicketItemRow, TicketRow } from '@/lib/tickets/queries'
+import { PartySizeStepper } from '../../_components/party-size-stepper'
 import { CobrarDialog } from './cobrar-dialog'
 import { TicketCard } from './ticket-card'
 
@@ -46,6 +55,8 @@ export function SessionDetail({
   const [breakdown, setBreakdown] = useState<CobroBreakdown | null>(null)
   const [sessionStatus, setSessionStatus] = useState(session.status)
   const [showAbandonConfirm, setShowAbandonConfirm] = useState(false)
+  const [showPartySizeEditor, setShowPartySizeEditor] = useState(false)
+  const [partySize, setPartySize] = useState(session.party_size ?? 2)
   const [opPending, startOp] = useTransition()
 
   const refresh = useCallback(async () => {
@@ -78,11 +89,26 @@ export function SessionDetail({
 
   const handleAbandon = () => {
     startOp(async () => {
-      const r = await markSessionAbandoned(tenantSlug, session.id, 'Mozo cerró manualmente')
+      const r = await markSessionAbandoned(tenantSlug, session.id, 'released_by_waiter')
       if (r.ok) {
-        toast.success('Sesión marcada como abandoned')
+        toast.success('Mesa liberada')
         setShowAbandonConfirm(false)
         void refresh()
+      } else {
+        toast.error(r.message)
+      }
+    })
+  }
+
+  const handleUpdatePartySize = () => {
+    startOp(async () => {
+      const r = await updatePartySizeAction(tenantSlug, {
+        sessionId: session.id,
+        partySize,
+      })
+      if (r.ok) {
+        toast.success(`Ahora son ${r.partySize} ${r.partySize === 1 ? 'comensal' : 'comensales'}.`)
+        setShowPartySizeEditor(false)
       } else {
         toast.error(r.message)
       }
@@ -121,59 +147,103 @@ export function SessionDetail({
   return (
     <div className="space-y-4">
       {sessionStatus === 'open' && (
-        <div className="flex justify-end gap-2">
-          <Button onClick={openCobro} size="sm">
-            <Coins className="mr-1.5 size-4" />
-            Cobrar mesa
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="ghost">
-                <MoreVertical className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onClick={() => setShowAbandonConfirm(true)}
-                className="text-destructive"
-              >
-                <XCircle className="mr-1.5 size-4" />
-                Marcar abandoned
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+        <div className="flex items-center justify-between gap-2">
+          {session.party_size !== null ? (
+            <Badge variant="secondary" className="gap-1.5">
+              <Users className="size-3.5" aria-hidden />
+              {session.party_size} {session.party_size === 1 ? 'comensal' : 'comensales'}
+            </Badge>
+          ) : (
+            <Badge variant="outline">Sin comensales declarados</Badge>
+          )}
+          <div className="flex items-center gap-2">
+            <Button onClick={openCobro} size="sm">
+              <Coins className="mr-1.5 size-4" />
+              Cobrar mesa
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="ghost">
+                  <MoreVertical className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => {
+                    setPartySize(session.party_size ?? 2)
+                    setShowPartySizeEditor(true)
+                  }}
+                >
+                  <Users className="mr-1.5 size-4" />
+                  Editar comensales
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setShowAbandonConfirm(true)}
+                  className="text-destructive"
+                >
+                  <XCircle className="mr-1.5 size-4" />
+                  Liberar mesa
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       )}
 
       {sessionStatus === 'paid' && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-          Sesión cobrada. La mesa quedó libre y el QR rotó.
+          Sesión cobrada. La mesa quedó libre.
         </div>
       )}
 
       {sessionStatus === 'abandoned' && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          Sesión marcada como abandoned. No se generaron puntos.
+          Mesa liberada sin cobrar. No se generaron puntos.
         </div>
       )}
 
       <AlertDialog open={showAbandonConfirm} onOpenChange={setShowAbandonConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Marcar como abandoned</AlertDialogTitle>
+            <AlertDialogTitle>Liberar mesa</AlertDialogTitle>
             <AlertDialogDescription>
-              Esto cierra la sesión sin cobrar y sin generar puntos. Usalo cuando la mesa se fue sin
-              pagar. Quedan registradas las comandas para auditoría.
+              Esto cierra la sesión sin cobrar y libera la mesa para activar otra. Usalo cuando el
+              grupo se fue sin consumir o sin pagar. Quedan registradas las comandas para auditoría.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={handleAbandon} disabled={opPending}>
-              {opPending ? 'Marcando…' : 'Sí, marcar abandoned'}
+              {opPending ? 'Liberando…' : 'Sí, liberar mesa'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Sheet open={showPartySizeEditor} onOpenChange={setShowPartySizeEditor}>
+        <SheetContent side="bottom" className="gap-0">
+          <SheetHeader>
+            <SheetTitle className="font-serif">Editar comensales</SheetTitle>
+            <SheetDescription>Ajustá si llegó o se fue gente de la mesa.</SheetDescription>
+          </SheetHeader>
+          <div className="px-6 py-8">
+            <PartySizeStepper value={partySize} onChange={setPartySize} />
+          </div>
+          <SheetFooter className="flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowPartySizeEditor(false)}
+              disabled={opPending}
+              className="flex-1"
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleUpdatePartySize} disabled={opPending} className="flex-1">
+              {opPending ? 'Guardando…' : 'Guardar'}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
 
       {billRequested && sessionStatus === 'open' && (
         <div className="flex items-center gap-2 rounded-xl border border-destructive/40 bg-destructive/5 p-3 text-sm">

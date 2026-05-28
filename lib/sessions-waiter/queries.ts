@@ -1,80 +1,6 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
 
-export type WaiterSessionRow = {
-  id: string
-  table_label: string | null
-  opened_at: string
-  total_cents: number
-  guest_count: number
-  pending_tickets: number
-  bill_requested: boolean
-}
-
-export async function listOpenSessions(tenantId: string): Promise<WaiterSessionRow[]> {
-  const supabase = await createClient()
-
-  const { data: sessions, error } = await supabase
-    .from('table_sessions')
-    .select('id, opened_at, total_cents, physical_table_id, physical_tables(label)')
-    .eq('tenant_id', tenantId)
-    .eq('status', 'open')
-    .order('opened_at', { ascending: false })
-
-  if (error || !sessions) {
-    console.error('[sessions-waiter.list]', error?.message)
-    return []
-  }
-
-  const sessionIds = sessions.map((s) => s.id)
-  if (sessionIds.length === 0) return []
-
-  const [{ data: guests }, { data: pendings }, { data: events }] = await Promise.all([
-    supabase.from('session_guests').select('session_id').in('session_id', sessionIds),
-    supabase
-      .from('tickets')
-      .select('session_id')
-      .in('session_id', sessionIds)
-      .eq('status', 'pending'),
-    supabase
-      .from('table_session_events')
-      .select('session_id, created_at')
-      .in('session_id', sessionIds)
-      .eq('type', 'bill_requested')
-      .order('created_at', { ascending: false }),
-  ])
-
-  const guestCounts = new Map<string, number>()
-  for (const g of guests ?? []) {
-    guestCounts.set(g.session_id, (guestCounts.get(g.session_id) ?? 0) + 1)
-  }
-  const pendingCounts = new Map<string, number>()
-  for (const p of pendings ?? []) {
-    pendingCounts.set(p.session_id, (pendingCounts.get(p.session_id) ?? 0) + 1)
-  }
-  const billRequested = new Set<string>()
-  for (const e of events ?? []) {
-    billRequested.add(e.session_id)
-  }
-
-  type SessionWithTable = (typeof sessions)[number] & {
-    physical_tables: { label: string } | { label: string }[] | null
-  }
-  return sessions.map((s) => {
-    const sw = s as SessionWithTable
-    const pt = Array.isArray(sw.physical_tables) ? sw.physical_tables[0] : sw.physical_tables
-    return {
-      id: s.id,
-      table_label: pt?.label ?? null,
-      opened_at: s.opened_at,
-      total_cents: s.total_cents ?? 0,
-      guest_count: guestCounts.get(s.id) ?? 0,
-      pending_tickets: pendingCounts.get(s.id) ?? 0,
-      bill_requested: billRequested.has(s.id),
-    }
-  })
-}
-
 export type WaiterSessionDetail = {
   id: string
   status: string
@@ -82,6 +8,7 @@ export type WaiterSessionDetail = {
   paid_at: string | null
   total_cents: number
   table_label: string | null
+  party_size: number | null
   guests: Array<{
     id: string
     display_name: string | null
@@ -93,9 +20,10 @@ export type WaiterSessionDetail = {
 
 export async function getSessionForWaiter(sessionId: string): Promise<WaiterSessionDetail | null> {
   const supabase = await createClient()
+  // party_size se agrega en la migración 20260527 — cast hasta regenerar types.
   const { data: session } = await supabase
     .from('table_sessions')
-    .select('id, status, opened_at, paid_at, total_cents, physical_tables(label)')
+    .select('id, status, opened_at, paid_at, total_cents, party_size, physical_tables(label)')
     .eq('id', sessionId)
     .maybeSingle()
   if (!session) return null
@@ -116,9 +44,10 @@ export async function getSessionForWaiter(sessionId: string): Promise<WaiterSess
     .maybeSingle()
 
   type SessionWithTable = typeof session & {
+    party_size: number | null
     physical_tables: { label: string } | { label: string }[] | null
   }
-  const sw = session as SessionWithTable
+  const sw = session as unknown as SessionWithTable
   const pt = Array.isArray(sw.physical_tables) ? sw.physical_tables[0] : sw.physical_tables
 
   return {
@@ -128,6 +57,7 @@ export async function getSessionForWaiter(sessionId: string): Promise<WaiterSess
     paid_at: session.paid_at,
     total_cents: session.total_cents ?? 0,
     table_label: pt?.label ?? null,
+    party_size: sw.party_size ?? null,
     guests: guests ?? [],
     bill_requested: Boolean(billEvent),
   }
@@ -147,6 +77,168 @@ export type CobroBreakdown = {
   guests: CobroBreakdownGuest[]
   shared_total_cents: number
   shared_items: Array<{ name: string; quantity: number; line_total_cents: number }>
+}
+
+export type SalonOccupancy = {
+  totalSeats: number | null
+  occupiedSeats: number
+  availableSeats: number | null
+  openSessions: number
+  overCapacity: boolean
+}
+
+export async function getSalonOccupancy(tenantId: string): Promise<SalonOccupancy> {
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('get_salon_occupancy', { p_tenant_id: tenantId })
+  if (error || !data) {
+    console.error('[sessions-waiter.occupancy]', error?.message)
+    return {
+      totalSeats: null,
+      occupiedSeats: 0,
+      availableSeats: null,
+      openSessions: 0,
+      overCapacity: false,
+    }
+  }
+  const result = data as {
+    total_seats: number | null
+    occupied_seats: number
+    available_seats: number | null
+    open_sessions: number
+    over_capacity: boolean
+  }
+  return {
+    totalSeats: result.total_seats,
+    occupiedSeats: result.occupied_seats,
+    availableSeats: result.available_seats,
+    openSessions: result.open_sessions,
+    overCapacity: result.over_capacity,
+  }
+}
+
+export type SalonTableRow = {
+  physical_table_id: string
+  label: string
+  capacity: number | null
+  session: {
+    id: string
+    opened_at: string
+    party_size: number | null
+    total_cents: number
+    guest_count: number
+    pending_tickets: number
+    bill_requested: boolean
+  } | null
+}
+
+/**
+ * Devuelve todas las mesas físicas activas del tenant, con su sesión open (si tiene).
+ * Pensado para la grilla unificada de `/salon/mesas` donde se ven libres + activas.
+ */
+export async function listSalonTables(tenantId: string): Promise<SalonTableRow[]> {
+  const supabase = await createClient()
+
+  const { data: tables, error: tablesErr } = await supabase
+    .from('physical_tables')
+    .select('id, label, capacity')
+    .eq('tenant_id', tenantId)
+    .eq('active', true)
+    .order('label', { ascending: true })
+
+  if (tablesErr || !tables) {
+    console.error('[sessions-waiter.listSalonTables]', tablesErr?.message)
+    return []
+  }
+
+  const tableIds = tables.map((t) => t.id)
+  if (tableIds.length === 0) return []
+
+  // party_size se agrega en la migración 20260527 — cast hasta regenerar types.
+  const { data: rawSessions } = await supabase
+    .from('table_sessions')
+    .select('id, physical_table_id, opened_at, total_cents, party_size')
+    .eq('tenant_id', tenantId)
+    .eq('status', 'open')
+    .in('physical_table_id', tableIds)
+
+  type SessionRow = {
+    id: string
+    physical_table_id: string | null
+    opened_at: string
+    total_cents: number
+    party_size: number | null
+  }
+  const sessions = ((rawSessions ?? []) as unknown as SessionRow[]).filter(
+    (s) => s.physical_table_id !== null,
+  )
+  const sessionsByTable = new Map<string, SessionRow>()
+  for (const s of sessions) {
+    if (s.physical_table_id) sessionsByTable.set(s.physical_table_id, s)
+  }
+
+  const sessionIds = sessions.map((s) => s.id)
+
+  type Counters = {
+    guests: Map<string, number>
+    pendings: Map<string, number>
+    bills: Set<string>
+  }
+  const counters: Counters = {
+    guests: new Map(),
+    pendings: new Map(),
+    bills: new Set(),
+  }
+
+  if (sessionIds.length > 0) {
+    const [{ data: guests }, { data: pendings }, { data: events }] = await Promise.all([
+      supabase.from('session_guests').select('session_id').in('session_id', sessionIds),
+      supabase
+        .from('tickets')
+        .select('session_id')
+        .in('session_id', sessionIds)
+        .eq('status', 'pending'),
+      supabase
+        .from('table_session_events')
+        .select('session_id')
+        .in('session_id', sessionIds)
+        .eq('type', 'bill_requested'),
+    ])
+    for (const g of guests ?? []) {
+      counters.guests.set(g.session_id, (counters.guests.get(g.session_id) ?? 0) + 1)
+    }
+    for (const p of pendings ?? []) {
+      counters.pendings.set(p.session_id, (counters.pendings.get(p.session_id) ?? 0) + 1)
+    }
+    for (const e of events ?? []) {
+      counters.bills.add(e.session_id)
+    }
+  }
+
+  return tables.map((t) => {
+    const sess = sessionsByTable.get(t.id)
+    if (!sess) {
+      return {
+        physical_table_id: t.id,
+        label: t.label,
+        capacity: t.capacity ?? null,
+        session: null,
+      }
+    }
+    return {
+      physical_table_id: t.id,
+      label: t.label,
+      capacity: t.capacity ?? null,
+      session: {
+        id: sess.id,
+        opened_at: sess.opened_at,
+        party_size: sess.party_size,
+        total_cents: sess.total_cents ?? 0,
+        guest_count: counters.guests.get(sess.id) ?? 0,
+        pending_tickets: counters.pendings.get(sess.id) ?? 0,
+        bill_requested: counters.bills.has(sess.id),
+      },
+    }
+  })
 }
 
 export async function getCobroBreakdown(sessionId: string): Promise<CobroBreakdown | null> {

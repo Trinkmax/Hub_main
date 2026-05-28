@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { listOpenSessions } from '@/lib/sessions-waiter/queries'
+import { getSalonOccupancy, listSalonTables } from '@/lib/sessions-waiter/queries'
 import { createClient } from '@/lib/supabase/server'
 
 export async function GET(req: Request) {
@@ -13,7 +13,10 @@ export async function GET(req: Request) {
   const tenantId = url.searchParams.get('tenant_id')
   if (!tenantId) return new NextResponse('tenant_id required', { status: 400 })
 
-  // RLS protege la query: solo retorna sesiones del tenant donde el user es miembro.
-  const sessions = await listOpenSessions(tenantId)
-  return NextResponse.json({ sessions })
+  // RLS protege ambas queries: solo retorna data del tenant donde el user es miembro.
+  const [tables, occupancy] = await Promise.all([
+    listSalonTables(tenantId),
+    getSalonOccupancy(tenantId),
+  ])
+  return NextResponse.json({ tables, occupancy })
 }

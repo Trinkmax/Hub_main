@@ -4,7 +4,11 @@ import { CheckCircle2, Gift, PartyPopper, Sparkles, Star } from 'lucide-react'
 import { motion } from 'motion/react'
 import Image from 'next/image'
 import { useEffect, useState } from 'react'
-import { getLoyaltyState, type LoyaltyState, type SessionStateData } from '@/lib/m-session/actions'
+import {
+  type ActiveSessionStateData,
+  getLoyaltyState,
+  type LoyaltyState,
+} from '@/lib/m-session/actions'
 
 function ARSFormat(cents: number): string {
   return new Intl.NumberFormat('es-AR', {
@@ -25,7 +29,7 @@ export function ClosingScreen({
   browserToken: string | null
   tenantName: string
   tableLabel: string
-  state: SessionStateData | null
+  state: ActiveSessionStateData | null
 }) {
   const [loyalty, setLoyalty] = useState<LoyaltyState | null>(null)
 

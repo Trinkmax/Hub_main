@@ -10,6 +10,14 @@ import {
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
+import {
+  type ActivateByIdInput,
+  type ActivateByQrInput,
+  activateByIdSchema,
+  activateByQrSchema,
+  type UpdatePartySizeInput,
+  updatePartySizeSchema,
+} from './schemas'
 
 export type MarkPaidResult =
   | {
@@ -217,4 +225,206 @@ export async function splitSessionAction(
   revalidatePath(`/${slug}/salon/mesas`)
   revalidatePath(`/${slug}/salon/mesas/${sourceId}`)
   return { ok: true }
+}
+
+// ──────────────────────────────────────────────────────────
+// Activación de mesa por el mozo
+// ──────────────────────────────────────────────────────────
+
+export type ActivateResult =
+  | {
+      ok: true
+      sessionId: string
+      tableLabel: string | null
+      partySize: number
+      wasAlreadyActive: boolean
+    }
+  | { ok: false; message: string; fieldErrors?: Record<string, string> }
+
+function mapActivateError(error: { message: string }): { ok: false; message: string } {
+  const msg = error.message
+  if (msg.includes('invalid_qr_token')) return { ok: false, message: 'El QR no es válido.' }
+  if (msg.includes('table_not_found')) return { ok: false, message: 'Mesa no encontrada.' }
+  if (msg.includes('party_size_invalid')) {
+    return { ok: false, message: 'Cargá al menos 1 comensal.' }
+  }
+  if (msg.includes('invalid_source'))
+    return { ok: false, message: 'Origen de activación inválido.' }
+  if (msg.includes('forbidden') || msg.includes('unauthenticated')) {
+    return { ok: false, message: 'No tenés permiso para activar mesas.' }
+  }
+  console.error('[sessions-waiter.activate]', msg)
+  return { ok: false, message: 'No se pudo activar la mesa.' }
+}
+
+type ActivateRpcResult = {
+  session_id: string
+  tenant_id: string
+  physical_table_id: string
+  table_label: string | null
+  party_size: number
+  was_already_active: boolean
+}
+
+export async function activateTableByQrAction(
+  slug: string,
+  input: ActivateByQrInput,
+): Promise<ActivateResult> {
+  const access = await authorize(slug)
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = activateByQrSchema.safeParse(input)
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: parsed.error.issues[0]?.message ?? 'Datos inválidos',
+    }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('activate_table_session', {
+    p_qr_token: parsed.data.qrToken,
+    p_party_size: parsed.data.partySize,
+    p_source: parsed.data.source,
+  })
+  if (error) return mapActivateError(error)
+
+  const result = data as ActivateRpcResult
+
+  if (!result.was_already_active) {
+    const supabaseAuth = await createClient()
+    const {
+      data: { user },
+    } = await supabaseAuth.auth.getUser()
+    if (user) {
+      await logAudit({
+        tenantId: access.tenant.id,
+        userId: user.id,
+        action: 'activate_session',
+        entity: 'table_session',
+        entityId: result.session_id,
+        payload: {
+          source: parsed.data.source,
+          party_size: parsed.data.partySize,
+          physical_table_id: result.physical_table_id,
+        },
+      })
+    }
+  }
+
+  revalidatePath(`/${slug}/salon/mesas`)
+  return {
+    ok: true,
+    sessionId: result.session_id,
+    tableLabel: result.table_label,
+    partySize: result.party_size,
+    wasAlreadyActive: result.was_already_active,
+  }
+}
+
+export async function activateTableByIdAction(
+  slug: string,
+  input: ActivateByIdInput,
+): Promise<ActivateResult> {
+  const access = await authorize(slug)
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = activateByIdSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('activate_table_session_by_id', {
+    p_physical_table_id: parsed.data.physicalTableId,
+    p_party_size: parsed.data.partySize,
+    p_source: parsed.data.source,
+  })
+  if (error) return mapActivateError(error)
+
+  const result = data as ActivateRpcResult
+
+  if (!result.was_already_active) {
+    const supabaseAuth = await createClient()
+    const {
+      data: { user },
+    } = await supabaseAuth.auth.getUser()
+    if (user) {
+      await logAudit({
+        tenantId: access.tenant.id,
+        userId: user.id,
+        action: 'activate_session',
+        entity: 'table_session',
+        entityId: result.session_id,
+        payload: {
+          source: parsed.data.source,
+          party_size: parsed.data.partySize,
+          physical_table_id: parsed.data.physicalTableId,
+        },
+      })
+    }
+  }
+
+  revalidatePath(`/${slug}/salon/mesas`)
+  return {
+    ok: true,
+    sessionId: result.session_id,
+    tableLabel: result.table_label,
+    partySize: result.party_size,
+    wasAlreadyActive: result.was_already_active,
+  }
+}
+
+export type UpdatePartySizeResult =
+  | { ok: true; sessionId: string; partySize: number; previousPartySize: number | null }
+  | { ok: false; message: string }
+
+export async function updatePartySizeAction(
+  slug: string,
+  input: UpdatePartySizeInput,
+): Promise<UpdatePartySizeResult> {
+  const access = await authorize(slug)
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = updatePartySizeSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('update_session_party_size', {
+    p_session_id: parsed.data.sessionId,
+    p_party_size: parsed.data.partySize,
+  })
+  if (error) {
+    if (error.message.includes('party_size_invalid')) {
+      return { ok: false, message: 'Cargá al menos 1 comensal.' }
+    }
+    if (error.message.includes('session_not_found')) {
+      return { ok: false, message: 'Sesión no encontrada.' }
+    }
+    if (error.message.includes('session_not_open')) {
+      return { ok: false, message: 'La sesión ya no está abierta.' }
+    }
+    if (error.message.includes('forbidden')) {
+      return { ok: false, message: 'No tenés permiso para editar comensales.' }
+    }
+    console.error('[sessions-waiter.updatePartySize]', error.message)
+    return { ok: false, message: 'No se pudo actualizar comensales.' }
+  }
+
+  const result = data as {
+    session_id: string
+    party_size: number
+    previous_party_size: number | null
+  }
+
+  revalidatePath(`/${slug}/salon/mesas`)
+  revalidatePath(`/${slug}/salon/mesas/${result.session_id}`)
+  return {
+    ok: true,
+    sessionId: result.session_id,
+    partySize: result.party_size,
+    previousPartySize: result.previous_party_size,
+  }
 }
