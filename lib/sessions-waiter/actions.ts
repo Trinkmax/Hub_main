@@ -15,7 +15,9 @@ import {
   type ActivateByQrInput,
   activateByIdSchema,
   activateByQrSchema,
+  type UpdateAliasInput,
   type UpdatePartySizeInput,
+  updateAliasSchema,
   updatePartySizeSchema,
 } from './schemas'
 
@@ -237,6 +239,7 @@ export type ActivateResult =
       sessionId: string
       tableLabel: string | null
       partySize: number
+      alias: string | null
       wasAlreadyActive: boolean
     }
   | { ok: false; message: string; fieldErrors?: Record<string, string> }
@@ -247,6 +250,9 @@ function mapActivateError(error: { message: string }): { ok: false; message: str
   if (msg.includes('table_not_found')) return { ok: false, message: 'Mesa no encontrada.' }
   if (msg.includes('party_size_invalid')) {
     return { ok: false, message: 'Cargá al menos 1 comensal.' }
+  }
+  if (msg.includes('alias_too_long')) {
+    return { ok: false, message: 'El alias no puede tener más de 60 caracteres.' }
   }
   if (msg.includes('invalid_source'))
     return { ok: false, message: 'Origen de activación inválido.' }
@@ -263,6 +269,7 @@ type ActivateRpcResult = {
   physical_table_id: string
   table_label: string | null
   party_size: number
+  alias: string | null
   was_already_active: boolean
 }
 
@@ -286,6 +293,7 @@ export async function activateTableByQrAction(
     p_qr_token: parsed.data.qrToken,
     p_party_size: parsed.data.partySize,
     p_source: parsed.data.source,
+    p_alias: parsed.data.alias ?? null,
   })
   if (error) return mapActivateError(error)
 
@@ -318,6 +326,7 @@ export async function activateTableByQrAction(
     sessionId: result.session_id,
     tableLabel: result.table_label,
     partySize: result.party_size,
+    alias: result.alias,
     wasAlreadyActive: result.was_already_active,
   }
 }
@@ -339,6 +348,7 @@ export async function activateTableByIdAction(
     p_physical_table_id: parsed.data.physicalTableId,
     p_party_size: parsed.data.partySize,
     p_source: parsed.data.source,
+    p_alias: parsed.data.alias ?? null,
   })
   if (error) return mapActivateError(error)
 
@@ -371,7 +381,62 @@ export async function activateTableByIdAction(
     sessionId: result.session_id,
     tableLabel: result.table_label,
     partySize: result.party_size,
+    alias: result.alias,
     wasAlreadyActive: result.was_already_active,
+  }
+}
+
+export type UpdateAliasResult =
+  | { ok: true; sessionId: string; alias: string | null; previousAlias: string | null }
+  | { ok: false; message: string }
+
+export async function updateAliasAction(
+  slug: string,
+  input: UpdateAliasInput,
+): Promise<UpdateAliasResult> {
+  const access = await authorize(slug)
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = updateAliasSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('update_session_alias', {
+    p_session_id: parsed.data.sessionId,
+    p_alias: parsed.data.alias,
+  })
+  if (error) {
+    if (error.message.includes('alias_too_long')) {
+      return { ok: false, message: 'El alias no puede tener más de 60 caracteres.' }
+    }
+    if (error.message.includes('session_not_found')) {
+      return { ok: false, message: 'Sesión no encontrada.' }
+    }
+    if (error.message.includes('session_not_open')) {
+      return { ok: false, message: 'La sesión ya no está abierta.' }
+    }
+    if (error.message.includes('forbidden')) {
+      return { ok: false, message: 'No tenés permiso para editar el alias.' }
+    }
+    console.error('[sessions-waiter.updateAlias]', error.message)
+    return { ok: false, message: 'No se pudo actualizar el alias.' }
+  }
+
+  const result = data as {
+    session_id: string
+    alias: string | null
+    previous_alias: string | null
+  }
+
+  revalidatePath(`/${slug}/salon/mesas`)
+  revalidatePath(`/${slug}/salon/mesas/${result.session_id}`)
+  return {
+    ok: true,
+    sessionId: result.session_id,
+    alias: result.alias,
+    previousAlias: result.previous_alias,
   }
 }
 

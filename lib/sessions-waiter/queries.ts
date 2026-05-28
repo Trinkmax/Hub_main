@@ -9,6 +9,7 @@ export type WaiterSessionDetail = {
   total_cents: number
   table_label: string | null
   party_size: number | null
+  alias: string | null
   guests: Array<{
     id: string
     display_name: string | null
@@ -20,10 +21,12 @@ export type WaiterSessionDetail = {
 
 export async function getSessionForWaiter(sessionId: string): Promise<WaiterSessionDetail | null> {
   const supabase = await createClient()
-  // party_size se agrega en la migración 20260527 — cast hasta regenerar types.
+  // party_size y alias se agregan en migraciones 20260527/20260528 — cast hasta regenerar types.
   const { data: session } = await supabase
     .from('table_sessions')
-    .select('id, status, opened_at, paid_at, total_cents, party_size, physical_tables(label)')
+    .select(
+      'id, status, opened_at, paid_at, total_cents, party_size, alias, physical_tables(label)',
+    )
     .eq('id', sessionId)
     .maybeSingle()
   if (!session) return null
@@ -45,6 +48,7 @@ export async function getSessionForWaiter(sessionId: string): Promise<WaiterSess
 
   type SessionWithTable = typeof session & {
     party_size: number | null
+    alias: string | null
     physical_tables: { label: string } | { label: string }[] | null
   }
   const sw = session as unknown as SessionWithTable
@@ -58,6 +62,7 @@ export async function getSessionForWaiter(sessionId: string): Promise<WaiterSess
     total_cents: session.total_cents ?? 0,
     table_label: pt?.label ?? null,
     party_size: sw.party_size ?? null,
+    alias: sw.alias ?? null,
     guests: guests ?? [],
     bill_requested: Boolean(billEvent),
   }
@@ -124,6 +129,8 @@ export type SalonTableRow = {
     id: string
     opened_at: string
     party_size: number | null
+    alias: string | null
+    customer_names: string[]
     total_cents: number
     guest_count: number
     pending_tickets: number
@@ -153,10 +160,10 @@ export async function listSalonTables(tenantId: string): Promise<SalonTableRow[]
   const tableIds = tables.map((t) => t.id)
   if (tableIds.length === 0) return []
 
-  // party_size se agrega en la migración 20260527 — cast hasta regenerar types.
+  // party_size y alias se agregan en migraciones 20260527/20260528 — cast hasta regenerar.
   const { data: rawSessions } = await supabase
     .from('table_sessions')
-    .select('id, physical_table_id, opened_at, total_cents, party_size')
+    .select('id, physical_table_id, opened_at, total_cents, party_size, alias')
     .eq('tenant_id', tenantId)
     .eq('status', 'open')
     .in('physical_table_id', tableIds)
@@ -167,6 +174,7 @@ export async function listSalonTables(tenantId: string): Promise<SalonTableRow[]
     opened_at: string
     total_cents: number
     party_size: number | null
+    alias: string | null
   }
   const sessions = ((rawSessions ?? []) as unknown as SessionRow[]).filter(
     (s) => s.physical_table_id !== null,
@@ -182,27 +190,36 @@ export async function listSalonTables(tenantId: string): Promise<SalonTableRow[]
     guests: Map<string, number>
     pendings: Map<string, number>
     bills: Set<string>
+    customerNames: Map<string, string[]>
   }
   const counters: Counters = {
     guests: new Map(),
     pendings: new Map(),
     bills: new Set(),
+    customerNames: new Map(),
   }
 
   if (sessionIds.length > 0) {
-    const [{ data: guests }, { data: pendings }, { data: events }] = await Promise.all([
-      supabase.from('session_guests').select('session_id').in('session_id', sessionIds),
-      supabase
-        .from('tickets')
-        .select('session_id')
-        .in('session_id', sessionIds)
-        .eq('status', 'pending'),
-      supabase
-        .from('table_session_events')
-        .select('session_id')
-        .in('session_id', sessionIds)
-        .eq('type', 'bill_requested'),
-    ])
+    const [{ data: guests }, { data: pendings }, { data: events }, { data: namedGuests }] =
+      await Promise.all([
+        supabase.from('session_guests').select('session_id').in('session_id', sessionIds),
+        supabase
+          .from('tickets')
+          .select('session_id')
+          .in('session_id', sessionIds)
+          .eq('status', 'pending'),
+        supabase
+          .from('table_session_events')
+          .select('session_id')
+          .in('session_id', sessionIds)
+          .eq('type', 'bill_requested'),
+        // Nombres de customers asociados (para el buscador). Solo guests con customer_id.
+        supabase
+          .from('session_guests')
+          .select('session_id, customers(first_name, last_name)')
+          .in('session_id', sessionIds)
+          .not('customer_id', 'is', null),
+      ])
     for (const g of guests ?? []) {
       counters.guests.set(g.session_id, (counters.guests.get(g.session_id) ?? 0) + 1)
     }
@@ -211,6 +228,21 @@ export async function listSalonTables(tenantId: string): Promise<SalonTableRow[]
     }
     for (const e of events ?? []) {
       counters.bills.add(e.session_id)
+    }
+    type NamedRow = {
+      session_id: string
+      customers: { first_name: string | null; last_name: string | null } | null
+    }
+    for (const raw of (namedGuests ?? []) as unknown as NamedRow[]) {
+      if (!raw.customers) continue
+      const full = [raw.customers.first_name, raw.customers.last_name]
+        .filter((s): s is string => Boolean(s && s.trim()))
+        .join(' ')
+        .trim()
+      if (!full) continue
+      const arr = counters.customerNames.get(raw.session_id) ?? []
+      arr.push(full)
+      counters.customerNames.set(raw.session_id, arr)
     }
   }
 
@@ -232,6 +264,8 @@ export async function listSalonTables(tenantId: string): Promise<SalonTableRow[]
         id: sess.id,
         opened_at: sess.opened_at,
         party_size: sess.party_size,
+        alias: sess.alias,
+        customer_names: counters.customerNames.get(sess.id) ?? [],
         total_cents: sess.total_cents ?? 0,
         guest_count: counters.guests.get(sess.id) ?? 0,
         pending_tickets: counters.pendings.get(sess.id) ?? 0,

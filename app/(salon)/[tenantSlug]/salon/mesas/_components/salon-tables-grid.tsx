@@ -81,9 +81,12 @@ export function SalonTablesGrid({
             )}
           >
             <div className="flex items-start justify-between gap-2">
-              <div>
-                <h3 className="font-serif text-lg font-semibold tracking-tight">{t.label}</h3>
+              <div className="min-w-0">
+                <h3 className="truncate font-serif text-lg font-semibold tracking-tight">
+                  {s.alias ?? t.label}
+                </h3>
                 <p className="text-xs text-muted-foreground">
+                  {s.alias ? <span className="mr-1">{t.label} · </span> : null}
                   {elapsedLabel(s.opened_at)} ·{' '}
                   {new Date(s.opened_at).toLocaleTimeString('es-AR', {
                     hour: '2-digit',

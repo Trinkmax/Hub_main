@@ -1,6 +1,6 @@
 'use client'
 
-import { Coins, MoreVertical, Receipt, Users, XCircle } from 'lucide-react'
+import { Coins, MoreVertical, Receipt, Tag, Users, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import {
@@ -30,7 +30,11 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { subscribeChanges } from '@/lib/realtime/subscribe'
-import { markSessionAbandoned, updatePartySizeAction } from '@/lib/sessions-waiter/actions'
+import {
+  markSessionAbandoned,
+  updateAliasAction,
+  updatePartySizeAction,
+} from '@/lib/sessions-waiter/actions'
 import type { CobroBreakdown, WaiterSessionDetail } from '@/lib/sessions-waiter/queries'
 import type { TicketItemRow, TicketRow } from '@/lib/tickets/queries'
 import { PartySizeStepper } from '../../_components/party-size-stepper'
@@ -57,6 +61,9 @@ export function SessionDetail({
   const [showAbandonConfirm, setShowAbandonConfirm] = useState(false)
   const [showPartySizeEditor, setShowPartySizeEditor] = useState(false)
   const [partySize, setPartySize] = useState(session.party_size ?? 2)
+  const [showAliasEditor, setShowAliasEditor] = useState(false)
+  const [alias, setAlias] = useState(session.alias ?? '')
+  const [currentAlias, setCurrentAlias] = useState<string | null>(session.alias ?? null)
   const [opPending, startOp] = useTransition()
 
   const refresh = useCallback(async () => {
@@ -109,6 +116,23 @@ export function SessionDetail({
       if (r.ok) {
         toast.success(`Ahora son ${r.partySize} ${r.partySize === 1 ? 'comensal' : 'comensales'}.`)
         setShowPartySizeEditor(false)
+      } else {
+        toast.error(r.message)
+      }
+    })
+  }
+
+  const handleUpdateAlias = () => {
+    startOp(async () => {
+      const trimmed = alias.trim()
+      const r = await updateAliasAction(tenantSlug, {
+        sessionId: session.id,
+        alias: trimmed || null,
+      })
+      if (r.ok) {
+        setCurrentAlias(r.alias)
+        toast.success(r.alias ? `Alias "${r.alias}" guardado.` : 'Alias borrado.')
+        setShowAliasEditor(false)
       } else {
         toast.error(r.message)
       }
@@ -178,6 +202,15 @@ export function SessionDetail({
                   Editar comensales
                 </DropdownMenuItem>
                 <DropdownMenuItem
+                  onClick={() => {
+                    setAlias(currentAlias ?? '')
+                    setShowAliasEditor(true)
+                  }}
+                >
+                  <Tag className="mr-1.5 size-4" />
+                  Editar alias
+                </DropdownMenuItem>
+                <DropdownMenuItem
                   onClick={() => setShowAbandonConfirm(true)}
                   className="text-destructive"
                 >
@@ -239,6 +272,49 @@ export function SessionDetail({
               Cancelar
             </Button>
             <Button onClick={handleUpdatePartySize} disabled={opPending} className="flex-1">
+              {opPending ? 'Guardando…' : 'Guardar'}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={showAliasEditor} onOpenChange={setShowAliasEditor}>
+        <SheetContent side="bottom" className="gap-0">
+          <SheetHeader>
+            <SheetTitle className="font-serif">Editar alias</SheetTitle>
+            <SheetDescription>
+              Nombrá el grupo para identificarlo en la grilla (p. ej. "Cumple de Juan"). Dejalo
+              vacío para usar el nombre de la mesa.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="px-6 py-6">
+            <label
+              htmlFor="alias-editor-input"
+              className="mb-1.5 block text-xs uppercase tracking-wider text-muted-foreground"
+            >
+              Alias
+            </label>
+            <input
+              id="alias-editor-input"
+              type="text"
+              value={alias}
+              onChange={(e) => setAlias(e.target.value)}
+              maxLength={60}
+              placeholder="Cumple de Juan"
+              disabled={opPending}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40"
+            />
+          </div>
+          <SheetFooter className="flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowAliasEditor(false)}
+              disabled={opPending}
+              className="flex-1"
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleUpdateAlias} disabled={opPending} className="flex-1">
               {opPending ? 'Guardando…' : 'Guardar'}
             </Button>
           </SheetFooter>
