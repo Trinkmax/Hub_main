@@ -1477,6 +1477,7 @@ export type Database = {
           category_id: string
           created_at: string
           description: string | null
+          featured: boolean
           id: string
           image_url: string | null
           name: string
@@ -1491,6 +1492,7 @@ export type Database = {
           category_id: string
           created_at?: string
           description?: string | null
+          featured?: boolean
           id?: string
           image_url?: string | null
           name: string
@@ -1505,6 +1507,7 @@ export type Database = {
           category_id?: string
           created_at?: string
           description?: string | null
+          featured?: boolean
           id?: string
           image_url?: string | null
           name?: string
@@ -2517,6 +2520,7 @@ export type Database = {
           opened_at: string
           opened_by: string | null
           paid_at: string | null
+          party_size: number | null
           physical_table_id: string | null
           status: Database["public"]["Enums"]["session_status"]
           tenant_id: string
@@ -2531,6 +2535,7 @@ export type Database = {
           opened_at?: string
           opened_by?: string | null
           paid_at?: string | null
+          party_size?: number | null
           physical_table_id?: string | null
           status?: Database["public"]["Enums"]["session_status"]
           tenant_id: string
@@ -2545,6 +2550,7 @@ export type Database = {
           opened_at?: string
           opened_by?: string | null
           paid_at?: string | null
+          party_size?: number | null
           physical_table_id?: string | null
           status?: Database["public"]["Enums"]["session_status"]
           tenant_id?: string
@@ -2590,6 +2596,7 @@ export type Database = {
           ticket_auto_accept_max_cents: number | null
           ticket_auto_accept_max_items: number | null
           timezone: string
+          total_seats: number | null
           updated_at: string
         }
         Insert: {
@@ -2606,6 +2613,7 @@ export type Database = {
           ticket_auto_accept_max_cents?: number | null
           ticket_auto_accept_max_items?: number | null
           timezone?: string
+          total_seats?: number | null
           updated_at?: string
         }
         Update: {
@@ -2622,6 +2630,7 @@ export type Database = {
           ticket_auto_accept_max_cents?: number | null
           ticket_auto_accept_max_items?: number | null
           timezone?: string
+          total_seats?: number | null
           updated_at?: string
         }
         Relationships: []
@@ -2943,6 +2952,128 @@ export type Database = {
           },
         ]
       }
+      welcome_reward_configs: {
+        Row: {
+          enabled: boolean
+          headline: string
+          reward_id: string | null
+          subtext: string
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          enabled?: boolean
+          headline?: string
+          reward_id?: string | null
+          subtext?: string
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          enabled?: boolean
+          headline?: string
+          reward_id?: string | null
+          subtext?: string
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "welcome_reward_configs_reward_id_fkey"
+            columns: ["reward_id"]
+            isOneToOne: false
+            referencedRelation: "rewards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "welcome_reward_configs_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      welcome_reward_grants: {
+        Row: {
+          customer_id: string
+          granted_at: string
+          id: string
+          redemption_id: string
+          reward_id: string
+          tenant_id: string
+        }
+        Insert: {
+          customer_id: string
+          granted_at?: string
+          id?: string
+          redemption_id: string
+          reward_id: string
+          tenant_id: string
+        }
+        Update: {
+          customer_id?: string
+          granted_at?: string
+          id?: string
+          redemption_id?: string
+          reward_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "welcome_reward_grants_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: true
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "welcome_reward_grants_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: true
+            referencedRelation: "mv_customer_stats"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "welcome_reward_grants_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: true
+            referencedRelation: "v_churn_risk"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "welcome_reward_grants_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: true
+            referencedRelation: "v_customer_stats"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "welcome_reward_grants_redemption_id_fkey"
+            columns: ["redemption_id"]
+            isOneToOne: false
+            referencedRelation: "reward_redemptions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "welcome_reward_grants_reward_id_fkey"
+            columns: ["reward_id"]
+            isOneToOne: false
+            referencedRelation: "rewards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "welcome_reward_grants_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       mv_customer_stats: {
@@ -3128,6 +3259,18 @@ export type Database = {
         }
       }
       accept_ticket: { Args: { p_ticket_id: string }; Returns: Json }
+      activate_table_session: {
+        Args: { p_party_size: number; p_qr_token: string; p_source?: string }
+        Returns: Json
+      }
+      activate_table_session_by_id: {
+        Args: {
+          p_party_size: number
+          p_physical_table_id: string
+          p_source?: string
+        }
+        Returns: Json
+      }
       active_tenant_id: { Args: never; Returns: string }
       add_staff_ticket: {
         Args: {
@@ -3224,6 +3367,7 @@ export type Database = {
           ticket_auto_accept_max_cents: number | null
           ticket_auto_accept_max_items: number | null
           timezone: string
+          total_seats: number | null
           updated_at: string
         }
         SetofOptions: {
@@ -3264,6 +3408,15 @@ export type Database = {
         }
         Returns: string
       }
+      ensure_scheduled_event_for_template: {
+        Args: {
+          p_capacity?: number
+          p_event_date: string
+          p_starts_at_local?: string
+          p_template_id: string
+        }
+        Returns: string
+      }
       evaluate_audience_query: {
         Args: {
           p_limit?: number
@@ -3301,6 +3454,16 @@ export type Database = {
         }[]
       }
       generate_qr_token: { Args: never; Returns: string }
+      get_active_session_by_qr_token: {
+        Args: { p_qr_token: string }
+        Returns: {
+          is_activated: boolean
+          physical_table_id: string
+          session_id: string
+          table_label: string
+          tenant_id: string
+        }[]
+      }
       get_invitation_preview: {
         Args: { p_token: string }
         Returns: {
@@ -3314,15 +3477,7 @@ export type Database = {
         Args: { p_browser_token: string; p_qr_token: string }
         Returns: Json
       }
-      get_or_open_session: {
-        Args: { p_qr_token: string }
-        Returns: {
-          physical_table_id: string
-          session_id: string
-          tenant_id: string
-          was_new: boolean
-        }[]
-      }
+      get_salon_occupancy: { Args: { p_tenant_id: string }; Returns: Json }
       get_session_state: {
         Args: { p_browser_token: string; p_qr_token: string }
         Returns: Json
@@ -3354,6 +3509,15 @@ export type Database = {
           message_id: string
           was_new: boolean
         }[]
+      }
+      internal_activate_session_for_table: {
+        Args: {
+          p_party_size: number
+          p_source: string
+          p_table_id: string
+          p_user_id: string
+        }
+        Returns: Json
       }
       join_session_as_guest: {
         Args: {
@@ -3584,6 +3748,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      update_session_party_size: {
+        Args: { p_party_size: number; p_session_id: string }
+        Returns: Json
+      }
       update_ticket_status: {
         Args: {
           p_new_status: Database["public"]["Enums"]["ticket_status"]
@@ -3663,6 +3831,7 @@ export type Database = {
         | "session_split"
         | "session_abandoned"
         | "session_moved"
+        | "party_size_changed"
       session_status: "open" | "paid" | "merged" | "abandoned"
       template_status:
         | "draft"
@@ -3876,6 +4045,7 @@ export const Constants = {
         "session_split",
         "session_abandoned",
         "session_moved",
+        "party_size_changed",
       ],
       session_status: ["open", "paid", "merged", "abandoned"],
       template_status: ["draft", "pending", "approved", "rejected", "disabled"],
@@ -3893,26 +4063,33 @@ export const Constants = {
   },
 } as const
 
-
-// ──────────────────────────────────────────────────────────
-// Aliases para enums usados en todo el codebase
-// (re-generados manualmente cada vez que se corre db:types o el MCP, porque
-// el generator no los emite por sí mismo).
-// ──────────────────────────────────────────────────────────
-export type EventStatus = Database['public']['Enums']['event_status']
-export type ReservationStatus = Database['public']['Enums']['reservation_status']
-export type FlowTriggerType = Database['public']['Enums']['flow_trigger_type']
-export type FlowStepType = Database['public']['Enums']['flow_step_type']
-export type ChannelType = Database['public']['Enums']['channel_type']
-export type MessageDirection = Database['public']['Enums']['message_direction']
-export type MessageStatus = Database['public']['Enums']['message_status']
-export type BroadcastStatus = Database['public']['Enums']['broadcast_status']
-export type RecipientStatus = Database['public']['Enums']['recipient_status']
-export type TemplateStatus = Database['public']['Enums']['template_status']
-
-// Aliases nuevos de la feature reservas de salón
-export type ReservationKind = Database['public']['Enums']['reservation_kind']
-export type MealType = Database['public']['Enums']['meal_type']
-export type ReservationOrigin = Database['public']['Enums']['reservation_origin']
-export type SalonZone = Database['public']['Enums']['salon_zone']
-export type SalonReservationStatus = Database['public']['Enums']['salon_reservation_status']
+// ────────────────────────────────────────────────────────────
+// Enum aliases (mantienen compatibilidad con imports existentes)
+// ────────────────────────────────────────────────────────────
+export type BroadcastStatus = Database["public"]["Enums"]["broadcast_status"]
+export type ChannelStatus = Database["public"]["Enums"]["channel_status"]
+export type ChannelType = Database["public"]["Enums"]["channel_type"]
+export type CustomerSource = Database["public"]["Enums"]["customer_source"]
+export type EventStatus = Database["public"]["Enums"]["event_status"]
+export type FlowExecutionStatus = Database["public"]["Enums"]["flow_execution_status"]
+export type FlowStepType = Database["public"]["Enums"]["flow_step_type"]
+export type FlowTriggerType = Database["public"]["Enums"]["flow_trigger_type"]
+export type JobStatus = Database["public"]["Enums"]["job_status"]
+export type MealType = Database["public"]["Enums"]["meal_type"]
+export type MessageDirection = Database["public"]["Enums"]["message_direction"]
+export type MessageStatus = Database["public"]["Enums"]["message_status"]
+export type PointsRuleType = Database["public"]["Enums"]["points_rule_type"]
+export type PunchTriggerType = Database["public"]["Enums"]["punch_trigger_type"]
+export type RecipientStatus = Database["public"]["Enums"]["recipient_status"]
+export type RedemptionStatus = Database["public"]["Enums"]["redemption_status"]
+export type ReservationKind = Database["public"]["Enums"]["reservation_kind"]
+export type ReservationOrigin = Database["public"]["Enums"]["reservation_origin"]
+export type ReservationStatus = Database["public"]["Enums"]["reservation_status"]
+export type SalonReservationStatus = Database["public"]["Enums"]["salon_reservation_status"]
+export type SalonZone = Database["public"]["Enums"]["salon_zone"]
+export type SessionEventType = Database["public"]["Enums"]["session_event_type"]
+export type SessionStatus = Database["public"]["Enums"]["session_status"]
+export type TemplateStatus = Database["public"]["Enums"]["template_status"]
+export type TenantRole = Database["public"]["Enums"]["tenant_role"]
+export type TicketStatus = Database["public"]["Enums"]["ticket_status"]
+export type VisitSource = Database["public"]["Enums"]["visit_source"]
