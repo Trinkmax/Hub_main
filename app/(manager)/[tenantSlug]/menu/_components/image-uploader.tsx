@@ -6,6 +6,7 @@ import { useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { uploadMenuImage } from '@/lib/menu/upload-image'
+import { cn } from '@/lib/utils'
 
 type Stage = 'idle' | 'optimizing' | 'uploading'
 
@@ -13,6 +14,17 @@ function prettyBytes(n: number): string {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function pickImageFile(items: DataTransferItemList | null | undefined): File | null {
+  if (!items) return null
+  for (const it of items) {
+    if (it.kind === 'file' && it.type.startsWith('image/')) {
+      const f = it.getAsFile()
+      if (f) return f
+    }
+  }
+  return null
 }
 
 export function MenuImageUploader({
@@ -28,6 +40,10 @@ export function MenuImageUploader({
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [stage, setStage] = useState<Stage>('idle')
+  const [dragging, setDragging] = useState(false)
+  // Contador para soportar dragenter/leave anidados sin que entre/salgan
+  // los hijos rompa el highlight (cada hijo dispara enter+leave al pasar).
+  const dragDepth = useRef(0)
   const [, startTransition] = useTransition()
 
   const busy = stage !== 'idle'
@@ -35,6 +51,10 @@ export function MenuImageUploader({
 
   const onFile = (file: File | undefined) => {
     if (!file) return
+    if (!file.type.startsWith('image/')) {
+      toast.error('Eso no parece una imagen.')
+      return
+    }
     setStage('optimizing')
     startTransition(async () => {
       try {
@@ -63,7 +83,38 @@ export function MenuImageUploader({
     })
   }
 
+  const onDragEnter = (e: React.DragEvent) => {
+    if (busy) return
+    e.preventDefault()
+    e.stopPropagation()
+    dragDepth.current += 1
+    if (e.dataTransfer.types.includes('Files')) setDragging(true)
+  }
+  const onDragOver = (e: React.DragEvent) => {
+    if (busy) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'copy'
+  }
+  const onDragLeave = (e: React.DragEvent) => {
+    if (busy) return
+    e.preventDefault()
+    e.stopPropagation()
+    dragDepth.current = Math.max(0, dragDepth.current - 1)
+    if (dragDepth.current === 0) setDragging(false)
+  }
+  const onDrop = (e: React.DragEvent) => {
+    if (busy) return
+    e.preventDefault()
+    e.stopPropagation()
+    dragDepth.current = 0
+    setDragging(false)
+    const file = pickImageFile(e.dataTransfer.items) ?? e.dataTransfer.files[0]
+    onFile(file)
+  }
+
   const stageLabel = stage === 'optimizing' ? 'Optimizando…' : 'Subiendo…'
+  const dnd = { onDragEnter, onDragOver, onDragLeave, onDrop }
 
   return (
     <div className="grid gap-1.5">
@@ -77,7 +128,13 @@ export function MenuImageUploader({
       />
 
       {value ? (
-        <div className="relative flex items-center gap-3 rounded-lg border border-border/60 bg-card/40 p-2">
+        <div
+          {...dnd}
+          className={cn(
+            'relative flex items-center gap-3 rounded-lg border bg-card/40 p-2 transition-colors',
+            dragging ? 'border-primary bg-primary/5 ring-2 ring-primary/40' : 'border-border/60',
+          )}
+        >
           <div className="relative size-16 shrink-0 overflow-hidden rounded-md bg-secondary">
             <Image
               src={value}
@@ -89,7 +146,9 @@ export function MenuImageUploader({
             />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-xs text-muted-foreground">{value}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {dragging ? 'Soltá para reemplazar' : value}
+            </p>
           </div>
           <Button
             type="button"
@@ -118,17 +177,31 @@ export function MenuImageUploader({
           type="button"
           onClick={onPick}
           disabled={busy}
-          className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border/70 bg-background/30 px-3 py-4 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+          {...dnd}
+          className={cn(
+            'flex flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed px-3 py-6 text-xs transition-colors',
+            dragging
+              ? 'border-primary bg-primary/10 text-foreground ring-2 ring-primary/40'
+              : 'border-border/70 bg-background/30 text-muted-foreground hover:border-primary/50 hover:text-foreground',
+          )}
         >
           {busy ? (
-            <>
+            <span className="flex items-center gap-2">
               <Loader2 className="size-3.5 animate-spin" />
               {stageLabel}
-            </>
+            </span>
+          ) : dragging ? (
+            <span className="flex items-center gap-2 font-medium">
+              <Upload className="size-3.5" />
+              Soltá para subir
+            </span>
           ) : (
             <>
-              <ImageIcon className="size-3.5" />
-              Subir foto (opcional)
+              <span className="flex items-center gap-2">
+                <ImageIcon className="size-3.5" />
+                Subir foto (opcional)
+              </span>
+              <span className="text-[10px] text-muted-foreground/80">o arrastrá una imagen</span>
             </>
           )}
         </button>

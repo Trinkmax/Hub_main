@@ -2,6 +2,7 @@
 
 import { Check, Megaphone, Plus, Sparkles, Tag, Trash2 } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import {
@@ -73,6 +74,7 @@ export function ItemEditDialog({
   )
   const [imageUrl, setImageUrl] = useState<string | null>(item.image_url ?? null)
   const [active, setActive] = useState(item.active)
+  const router = useRouter()
   const [featured, setFeatured] = useState(item.featured)
 
   // Estado local de tags asignadas. El sheet trabaja optimista contra la UI;
@@ -130,6 +132,7 @@ export function ItemEditDialog({
       })
       if (r.ok) {
         toast.success('Guardado.')
+        router.refresh()
         onClose()
       } else {
         toast.error(r.message)
@@ -180,6 +183,7 @@ export function ItemEditDialog({
       const r = await deleteMenuItem(tenantSlug, item.id)
       if (r.ok) {
         toast.success('Ítem eliminado.')
+        router.refresh()
         onClose()
       } else {
         toast.error(r.message)
