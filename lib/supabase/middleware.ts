@@ -14,6 +14,8 @@ const PUBLIC_PATHS = new Set([
 ])
 const PUBLIC_PREFIXES = [
   '/capture/',
+  '/m/',
+  '/c/',
   '/api/webhooks/',
   '/_next/',
   '/auth/',
