@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   activateByIdSchema,
   activateByQrSchema,
+  updateAliasSchema,
   updatePartySizeSchema,
 } from '@/lib/sessions-waiter/schemas'
 
@@ -77,6 +78,58 @@ describe('activateByIdSchema', () => {
 
   it('rechaza UUID inválido', () => {
     const r = activateByIdSchema.safeParse({ physicalTableId: 'not-a-uuid', partySize: 2 })
+    expect(r.success).toBe(false)
+  })
+})
+
+describe('alias en activateByQrSchema', () => {
+  it('alias opcional, undefined cuando no se pasa', () => {
+    const r = activateByQrSchema.parse({ qrToken: validQrToken, partySize: 2 })
+    expect(r.alias).toBeUndefined()
+  })
+
+  it('string trimmea espacios', () => {
+    const r = activateByQrSchema.parse({
+      qrToken: validQrToken,
+      partySize: 2,
+      alias: '  Cumple de Juan  ',
+    })
+    expect(r.alias).toBe('Cumple de Juan')
+  })
+
+  it('string vacío se transforma a null', () => {
+    const r = activateByQrSchema.parse({ qrToken: validQrToken, partySize: 2, alias: '' })
+    expect(r.alias).toBeNull()
+  })
+
+  it('rechaza alias > 60 chars', () => {
+    const r = activateByQrSchema.safeParse({
+      qrToken: validQrToken,
+      partySize: 2,
+      alias: 'x'.repeat(61),
+    })
+    expect(r.success).toBe(false)
+  })
+})
+
+describe('updateAliasSchema', () => {
+  it('acepta string válido', () => {
+    const r = updateAliasSchema.parse({ sessionId: validUuid, alias: 'Cumple' })
+    expect(r.alias).toBe('Cumple')
+  })
+
+  it('acepta null para borrar alias', () => {
+    const r = updateAliasSchema.parse({ sessionId: validUuid, alias: null })
+    expect(r.alias).toBeNull()
+  })
+
+  it('rechaza alias > 60 chars', () => {
+    const r = updateAliasSchema.safeParse({ sessionId: validUuid, alias: 'x'.repeat(61) })
+    expect(r.success).toBe(false)
+  })
+
+  it('rechaza sessionId no-UUID', () => {
+    const r = updateAliasSchema.safeParse({ sessionId: 'bad', alias: 'x' })
     expect(r.success).toBe(false)
   })
 })

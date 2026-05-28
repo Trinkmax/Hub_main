@@ -10,16 +10,32 @@ const partySizeField = z.coerce
 
 const sourceField = z.enum(['scan', 'manual'])
 
+// Alias opcional. El RPC también valida; acá hacemos preflight para feedback inmediato.
+const aliasField = z
+  .union([
+    z.string().trim().max(60, 'Máximo 60 caracteres'),
+    z.literal(''),
+    z.null(),
+    z.undefined(),
+  ])
+  .transform((v) => {
+    if (typeof v !== 'string') return null
+    const trimmed = v.trim()
+    return trimmed.length === 0 ? null : trimmed
+  })
+
 export const activateByQrSchema = z.object({
   qrToken: z.string().regex(QR_TOKEN_REGEX, 'QR inválido'),
   partySize: partySizeField,
   source: sourceField.default('scan'),
+  alias: aliasField.optional(),
 })
 
 export const activateByIdSchema = z.object({
   physicalTableId: z.string().uuid('Mesa inválida'),
   partySize: partySizeField,
   source: sourceField.default('manual'),
+  alias: aliasField.optional(),
 })
 
 export const updatePartySizeSchema = z.object({
@@ -27,6 +43,12 @@ export const updatePartySizeSchema = z.object({
   partySize: partySizeField,
 })
 
+export const updateAliasSchema = z.object({
+  sessionId: z.string().uuid('Sesión inválida'),
+  alias: aliasField,
+})
+
 export type ActivateByQrInput = z.infer<typeof activateByQrSchema>
 export type ActivateByIdInput = z.infer<typeof activateByIdSchema>
 export type UpdatePartySizeInput = z.infer<typeof updatePartySizeSchema>
+export type UpdateAliasInput = z.infer<typeof updateAliasSchema>

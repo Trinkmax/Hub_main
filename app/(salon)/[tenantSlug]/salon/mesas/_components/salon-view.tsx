@@ -17,10 +17,12 @@ import { subscribeChanges } from '@/lib/realtime/subscribe'
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'
 import { activateTableByIdAction, activateTableByQrAction } from '@/lib/sessions-waiter/actions'
 import type { SalonOccupancy, SalonTableRow } from '@/lib/sessions-waiter/queries'
+import { filterTables } from '@/lib/sessions-waiter/table-search'
 import { ManualActivateSheet } from './manual-activate-sheet'
 import { OccupancyBanner } from './occupancy-banner'
 import { PartySizeStepper } from './party-size-stepper'
 import { QrScannerSheet } from './qr-scanner-sheet'
+import { SalonSearch } from './salon-search'
 import { SalonTablesGrid } from './salon-tables-grid'
 
 const SAFETY_NET_INTERVAL_MS = 30_000
@@ -48,9 +50,12 @@ export function SalonView({
   const [manualOpen, setManualOpen] = useState(false)
   const [pending, setPending] = useState<PendingActivation | null>(null)
   const [partySize, setPartySize] = useState(2)
+  const [alias, setAlias] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
   const [isActivating, startActivation] = useTransition()
 
   const freeTables = useMemo(() => tables.filter((t) => t.session === null), [tables])
+  const filteredTables = useMemo(() => filterTables(tables, searchQuery), [tables, searchQuery])
 
   const refresh = useCallback(async () => {
     const res = await fetch(`/api/sessions/list?tenant_id=${encodeURIComponent(tenantId)}`, {
@@ -98,28 +103,33 @@ export function SalonView({
     setScannerOpen(false)
     setPending({ kind: 'scan', qrToken })
     setPartySize(2)
+    setAlias('')
   }, [])
 
   const onPickFreeTable = useCallback((physicalTableId: string, label: string) => {
     setManualOpen(false)
     setPending({ kind: 'manual', physicalTableId, label })
     setPartySize(2)
+    setAlias('')
   }, [])
 
   const confirm = useCallback(() => {
     if (!pending) return
     startActivation(async () => {
+      const trimmedAlias = alias.trim()
       const result =
         pending.kind === 'scan'
           ? await activateTableByQrAction(tenantSlug, {
               qrToken: pending.qrToken,
               partySize,
               source: 'scan',
+              alias: trimmedAlias || null,
             })
           : await activateTableByIdAction(tenantSlug, {
               physicalTableId: pending.physicalTableId,
               partySize,
               source: 'manual',
+              alias: trimmedAlias || null,
             })
 
       if (!result.ok) {
@@ -134,11 +144,12 @@ export function SalonView({
         return
       }
 
-      toast.success(`Mesa ${result.tableLabel ?? ''} activada (${result.partySize} pax).`)
+      const titulo = result.alias ?? `Mesa ${result.tableLabel ?? ''}`
+      toast.success(`${titulo} activada (${result.partySize} pax).`)
       setPending(null)
       await refresh()
     })
-  }, [pending, partySize, tenantSlug, router, refresh])
+  }, [pending, partySize, alias, tenantSlug, router, refresh])
 
   return (
     <div className="space-y-4">
@@ -166,7 +177,13 @@ export function SalonView({
         </Button>
       </div>
 
-      <SalonTablesGrid tenantSlug={tenantSlug} tables={tables} onTapFreeTable={onPickFreeTable} />
+      <SalonSearch value={searchQuery} onChange={setSearchQuery} />
+
+      <SalonTablesGrid
+        tenantSlug={tenantSlug}
+        tables={filteredTables}
+        onTapFreeTable={onPickFreeTable}
+      />
 
       <QrScannerSheet open={scannerOpen} onOpenChange={setScannerOpen} onScan={onScanned} />
       <ManualActivateSheet
@@ -190,8 +207,29 @@ export function SalonView({
             <SheetDescription>¿Cuántas personas se van a sentar?</SheetDescription>
           </SheetHeader>
 
-          <div className="px-6 py-8">
+          <div className="px-6 py-8 space-y-6">
             <PartySizeStepper value={partySize} onChange={setPartySize} />
+            <div className="space-y-1.5">
+              <label
+                htmlFor="alias-input"
+                className="block text-xs uppercase tracking-wider text-muted-foreground"
+              >
+                Alias (opcional)
+              </label>
+              <input
+                id="alias-input"
+                type="text"
+                value={alias}
+                onChange={(e) => setAlias(e.target.value)}
+                maxLength={60}
+                placeholder="Cumple de Juan"
+                disabled={isActivating}
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Usalo para identificar el grupo (ej. para reservas que ocupan varias mesas).
+              </p>
+            </div>
           </div>
 
           <SheetFooter className="flex-row gap-2">
