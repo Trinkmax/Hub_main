@@ -1,6 +1,6 @@
 'use client'
 
-import { Coins, MoreVertical, Receipt, Tag, Users, XCircle } from 'lucide-react'
+import { Coins, MoreVertical, Plus, Receipt, Tag, Users, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import {
@@ -39,6 +39,7 @@ import type { CobroBreakdown, WaiterSessionDetail } from '@/lib/sessions-waiter/
 import type { TicketItemRow, TicketRow } from '@/lib/tickets/queries'
 import { PartySizeStepper } from '../../_components/party-size-stepper'
 import { CobrarDialog } from './cobrar-dialog'
+import { StaffMenuSheet } from './staff-menu-sheet'
 import { TicketCard } from './ticket-card'
 
 export function SessionDetail({
@@ -64,6 +65,7 @@ export function SessionDetail({
   const [showAliasEditor, setShowAliasEditor] = useState(false)
   const [alias, setAlias] = useState(session.alias ?? '')
   const [currentAlias, setCurrentAlias] = useState<string | null>(session.alias ?? null)
+  const [showStaffMenu, setShowStaffMenu] = useState(false)
   const [opPending, startOp] = useTransition()
 
   const refresh = useCallback(async () => {
@@ -181,6 +183,10 @@ export function SessionDetail({
             <Badge variant="outline">Sin comensales declarados</Badge>
           )}
           <div className="flex items-center gap-2">
+            <Button onClick={() => setShowStaffMenu(true)} size="sm" variant="secondary">
+              <Plus className="mr-1.5 size-4" />
+              Agregar productos
+            </Button>
             <Button onClick={openCobro} size="sm">
               <Coins className="mr-1.5 size-4" />
               Cobrar mesa
@@ -376,6 +382,15 @@ export function SessionDetail({
           }}
         />
       )}
+
+      <StaffMenuSheet
+        open={showStaffMenu}
+        onOpenChange={setShowStaffMenu}
+        tenantSlug={tenantSlug}
+        sessionId={session.id}
+        guests={session.guests}
+        onSent={() => void refresh()}
+      />
     </div>
   )
 }

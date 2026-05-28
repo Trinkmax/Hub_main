@@ -13,8 +13,10 @@ import {
 import {
   type ActivateByIdInput,
   type ActivateByQrInput,
+  type AddStaffTicketInput,
   activateByIdSchema,
   activateByQrSchema,
+  addStaffTicketSchema,
   type UpdateAliasInput,
   type UpdatePartySizeInput,
   updateAliasSchema,
@@ -491,5 +493,77 @@ export async function updatePartySizeAction(
     sessionId: result.session_id,
     partySize: result.party_size,
     previousPartySize: result.previous_party_size,
+  }
+}
+
+// ──────────────────────────────────────────────────────────
+// Comanda de palabra (mozo carga productos en nombre del cliente)
+// ──────────────────────────────────────────────────────────
+
+export type AddStaffTicketResult =
+  | { ok: true; ticketId: string; totalCents: number; totalItems: number }
+  | { ok: false; message: string }
+
+export async function addStaffTicketAction(
+  slug: string,
+  input: AddStaffTicketInput,
+): Promise<AddStaffTicketResult> {
+  const access = await authorize(slug)
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = addStaffTicketSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('add_staff_ticket', {
+    p_session_id: parsed.data.sessionId,
+    p_items: parsed.data.items.map((it) => ({
+      menu_item_id: it.menuItemId,
+      quantity: it.quantity,
+      notes: it.notes ?? null,
+    })),
+    p_assigned_to_guest_id: parsed.data.assignedToGuestId ?? null,
+  })
+  if (error) {
+    if (error.message.includes('session_not_found')) {
+      return { ok: false, message: 'Sesión no encontrada.' }
+    }
+    if (error.message.includes('session_not_open')) {
+      return { ok: false, message: 'La sesión ya no está abierta.' }
+    }
+    if (error.message.includes('empty_cart')) {
+      return { ok: false, message: 'Agregá al menos un ítem.' }
+    }
+    if (error.message.includes('menu_item_not_available')) {
+      return { ok: false, message: 'Algún ítem ya no está disponible.' }
+    }
+    if (error.message.includes('invalid_quantity')) {
+      return { ok: false, message: 'Cantidad inválida en algún ítem.' }
+    }
+    if (error.message.includes('invalid_assigned_guest')) {
+      return { ok: false, message: 'El comensal seleccionado no está en esta mesa.' }
+    }
+    if (error.message.includes('forbidden') || error.message.includes('staff_role_required')) {
+      return { ok: false, message: 'No tenés permiso para sumar comandas de mesa.' }
+    }
+    console.error('[sessions-waiter.addStaffTicket]', error.message)
+    return { ok: false, message: 'No se pudo crear la comanda.' }
+  }
+
+  const result = data as {
+    ticket_id: string
+    status: string
+    total_cents: number
+    total_items: number
+  }
+
+  revalidatePath(`/${slug}/salon/mesas/${parsed.data.sessionId}`)
+  return {
+    ok: true,
+    ticketId: result.ticket_id,
+    totalCents: result.total_cents,
+    totalItems: result.total_items,
   }
 }

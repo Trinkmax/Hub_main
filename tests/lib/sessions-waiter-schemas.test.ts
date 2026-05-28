@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   activateByIdSchema,
   activateByQrSchema,
+  addStaffTicketSchema,
   updateAliasSchema,
   updatePartySizeSchema,
 } from '@/lib/sessions-waiter/schemas'
@@ -147,6 +148,80 @@ describe('updatePartySizeSchema', () => {
 
   it('rechaza sessionId no-UUID', () => {
     const r = updatePartySizeSchema.safeParse({ sessionId: 'bad', partySize: 2 })
+    expect(r.success).toBe(false)
+  })
+})
+
+describe('addStaffTicketSchema', () => {
+  const validItem = { menuItemId: validUuid, quantity: 2, notes: null }
+
+  it('acepta input válido', () => {
+    const r = addStaffTicketSchema.parse({
+      sessionId: validUuid,
+      items: [validItem],
+    })
+    expect(r.items).toHaveLength(1)
+    expect(r.assignedToGuestId).toBeUndefined()
+  })
+
+  it('acepta assignedToGuestId opcional', () => {
+    const r = addStaffTicketSchema.parse({
+      sessionId: validUuid,
+      assignedToGuestId: validUuid,
+      items: [validItem],
+    })
+    expect(r.assignedToGuestId).toBe(validUuid)
+  })
+
+  it('rechaza items vacíos', () => {
+    const r = addStaffTicketSchema.safeParse({ sessionId: validUuid, items: [] })
+    expect(r.success).toBe(false)
+  })
+
+  it('rechaza quantity 0 o negativa', () => {
+    expect(
+      addStaffTicketSchema.safeParse({
+        sessionId: validUuid,
+        items: [{ ...validItem, quantity: 0 }],
+      }).success,
+    ).toBe(false)
+    expect(
+      addStaffTicketSchema.safeParse({
+        sessionId: validUuid,
+        items: [{ ...validItem, quantity: -1 }],
+      }).success,
+    ).toBe(false)
+  })
+
+  it('rechaza quantity > 50', () => {
+    const r = addStaffTicketSchema.safeParse({
+      sessionId: validUuid,
+      items: [{ ...validItem, quantity: 51 }],
+    })
+    expect(r.success).toBe(false)
+  })
+
+  it('notes vacías o solo espacios → null', () => {
+    const r = addStaffTicketSchema.parse({
+      sessionId: validUuid,
+      items: [{ ...validItem, notes: '   ' }],
+    })
+    expect(r.items[0]?.notes).toBeNull()
+  })
+
+  it('rechaza notes > 200 chars', () => {
+    const r = addStaffTicketSchema.safeParse({
+      sessionId: validUuid,
+      items: [{ ...validItem, notes: 'x'.repeat(201) }],
+    })
+    expect(r.success).toBe(false)
+  })
+
+  it('rechaza menuItemId no-UUID', () => {
+    const r = addStaffTicketSchema.safeParse({
+      sessionId: validUuid,
+      items: [{ ...validItem, menuItemId: 'bad' }],
+    })
     expect(r.success).toBe(false)
   })
 })

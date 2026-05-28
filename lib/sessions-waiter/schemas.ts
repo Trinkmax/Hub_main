@@ -48,7 +48,34 @@ export const updateAliasSchema = z.object({
   alias: aliasField,
 })
 
+const staffTicketItemSchema = z.object({
+  menuItemId: z.string().uuid('Ítem inválido'),
+  quantity: z.coerce
+    .number()
+    .int('Cantidad debe ser entero')
+    .min(1, 'Mínimo 1')
+    .max(50, 'Máximo 50 por ítem'),
+  notes: z
+    .union([z.string().trim().max(200, 'Notas muy largas'), z.literal(''), z.null(), z.undefined()])
+    .transform((v) => {
+      if (typeof v !== 'string') return null
+      const t = v.trim()
+      return t.length === 0 ? null : t
+    })
+    .optional(),
+})
+
+export const addStaffTicketSchema = z.object({
+  sessionId: z.string().uuid('Sesión inválida'),
+  assignedToGuestId: z
+    .union([z.string().uuid('Guest inválido'), z.null(), z.undefined()])
+    .transform((v) => (typeof v === 'string' ? v : null))
+    .optional(),
+  items: z.array(staffTicketItemSchema).min(1, 'Agregá al menos un ítem'),
+})
+
 export type ActivateByQrInput = z.infer<typeof activateByQrSchema>
 export type ActivateByIdInput = z.infer<typeof activateByIdSchema>
 export type UpdatePartySizeInput = z.infer<typeof updatePartySizeSchema>
 export type UpdateAliasInput = z.infer<typeof updateAliasSchema>
+export type AddStaffTicketInput = z.infer<typeof addStaffTicketSchema>
