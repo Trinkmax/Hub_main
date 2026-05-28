@@ -4,9 +4,9 @@ import { ClipboardList, X } from 'lucide-react'
 import { useTransition } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { cancelTicket, type SessionStateData } from '@/lib/m-session/actions'
+import { type ActiveSessionStateData, cancelTicket } from '@/lib/m-session/actions'
 
-type Ticket = SessionStateData['my_tickets'][number]
+type Ticket = ActiveSessionStateData['my_tickets'][number]
 type BadgeVariant = 'warning' | 'info' | 'success' | 'muted' | 'destructive'
 
 function ARSFormat(cents: number): string {

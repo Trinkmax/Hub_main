@@ -70,7 +70,10 @@ export async function joinSession(params: {
 
   if (error) {
     if (error.message.includes('invalid_qr_token')) {
-      return { ok: false, message: 'El QR no es válido o la mesa no está activa.' }
+      return { ok: false, message: 'El QR no es válido.' }
+    }
+    if (error.message.includes('no_active_session')) {
+      return { ok: false, message: 'La mesa todavía no fue activada por el mozo.' }
     }
     console.error('[m-session.joinSession]', error.message)
     return { ok: false, message: 'No pudimos unirte a la mesa.' }
@@ -194,13 +197,15 @@ export type RequestBillResult =
   | { ok: true; alreadyRequested: boolean }
   | { ok: false; message: string }
 
-export type SessionStateData = {
+export type ActiveSessionStateData = {
+  is_activated: true
   session_id: string
   tenant_id: string
   tenant_name: string
   // Logo del tenant para el header del QR del cliente. null si no está cargado.
   tenant_logo_url: string | null
   table_label: string
+  party_size: number | null
   guest_id: string | null
   customer_id: string | null
   guest_count: number
@@ -259,6 +264,16 @@ export type SessionStateData = {
     }>
   }>
 }
+
+export type InactiveSessionStateData = {
+  is_activated: false
+  tenant_id: string
+  tenant_name: string
+  physical_table_id: string
+  table_label: string
+}
+
+export type SessionStateData = ActiveSessionStateData | InactiveSessionStateData
 
 export type SessionStateResult =
   | { ok: true; data: SessionStateData }

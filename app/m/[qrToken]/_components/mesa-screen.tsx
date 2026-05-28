@@ -3,16 +3,17 @@
 import { Gift, ImageOff, Receipt, ShoppingBag, Sparkles } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import Image from 'next/image'
+import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
+  type ActiveSessionStateData,
   joinSession,
   type RegisterCustomerResult,
   refreshState,
   requestBill,
-  type SessionStateData,
 } from '@/lib/m-session/actions'
 import { getOrCreateBrowserToken } from '@/lib/m-session/browser-token'
 import { subscribeChanges } from '@/lib/realtime/subscribe'
@@ -48,8 +49,9 @@ export function MesaScreen({
   tableLabel: string
   tenantName: string
 }) {
+  const router = useRouter()
   const [browserToken, setBrowserToken] = useState<string | null>(null)
-  const [state, setState] = useState<SessionStateData | null>(null)
+  const [state, setState] = useState<ActiveSessionStateData | null>(null)
   const [showRegister, setShowRegister] = useState(false)
   const [showCart, setShowCart] = useState(false)
   const [cart, setCart] = useState<CartItem[]>([])
@@ -76,24 +78,35 @@ export function MesaScreen({
       }
       const fresh = await refreshState({ qrToken, browserToken })
       if (cancelled) return
-      if (fresh.ok) {
-        setState(fresh.data)
-        sessionIdRef.current = fresh.data.session_id
-      } else {
+      if (!fresh.ok) {
         setError(fresh.message)
+        return
       }
+      if (!fresh.data.is_activated) {
+        // La sesión se cerró entre que page.tsx renderizó y el cliente la pidió.
+        // Volvemos al gate del server component.
+        router.refresh()
+        return
+      }
+      setState(fresh.data)
+      sessionIdRef.current = fresh.data.session_id
     })()
     return () => {
       cancelled = true
     }
-  }, [browserToken, qrToken])
+  }, [browserToken, qrToken, router])
 
   useEffect(() => {
     if (!state || !browserToken) return
     const sessionId = state.session_id
     const refresh = async () => {
       const r = await refreshState({ qrToken, browserToken })
-      if (r.ok) setState(r.data)
+      if (!r.ok) return
+      if (!r.data.is_activated) {
+        router.refresh()
+        return
+      }
+      setState(r.data)
     }
     const cleanup = subscribeChanges({
       channel: `m-${sessionId}`,
@@ -174,8 +187,13 @@ export function MesaScreen({
   const refreshAfterSubmit = useCallback(async () => {
     if (!browserToken) return
     const r = await refreshState({ qrToken, browserToken })
-    if (r.ok) setState(r.data)
-  }, [browserToken, qrToken])
+    if (!r.ok) return
+    if (!r.data.is_activated) {
+      router.refresh()
+      return
+    }
+    setState(r.data)
+  }, [browserToken, qrToken, router])
 
   const handleRegistered = useCallback(
     (result: Extract<RegisterCustomerResult, { ok: true }>) => {

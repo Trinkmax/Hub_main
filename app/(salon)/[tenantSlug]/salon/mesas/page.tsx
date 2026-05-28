@@ -1,8 +1,8 @@
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
-import { listOpenSessions } from '@/lib/sessions-waiter/queries'
+import { getSalonOccupancy, listSalonTables } from '@/lib/sessions-waiter/queries'
 import { requireTenantAccess } from '@/lib/tenant'
-import { SessionsGrid } from './_components/sessions-grid'
+import { SalonView } from './_components/salon-view'
 
 export const metadata = { title: 'Salón · Mesas' }
 export const dynamic = 'force-dynamic'
@@ -26,16 +26,24 @@ export default async function SalonMesasPage({
 
   if (!['waiter', 'owner', 'cashier'].includes(role)) notFound()
 
-  const sessions = await listOpenSessions(tenantId)
+  const [tables, occupancy] = await Promise.all([
+    listSalonTables(tenantId),
+    getSalonOccupancy(tenantId),
+  ])
 
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Salón"
-        title="Mesas activas"
-        description="Cada mesa abierta en tu turno. Tap para entrar, swipe-left para marcar pagada."
+        title="Mesas"
+        description="Escaneá el QR al sentar a un grupo, o tocá una mesa libre para activarla."
       />
-      <SessionsGrid tenantSlug={tenantSlug} initialSessions={sessions} tenantId={tenantId} />
+      <SalonView
+        tenantSlug={tenantSlug}
+        tenantId={tenantId}
+        initialTables={tables}
+        initialOccupancy={occupancy}
+      />
     </div>
   )
 }

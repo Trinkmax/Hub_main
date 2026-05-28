@@ -4,12 +4,12 @@ import { ChevronRight, ImageOff, Search, Sparkles, Star } from 'lucide-react'
 import Image from 'next/image'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Input } from '@/components/ui/input'
-import type { SessionStateData } from '@/lib/m-session/actions'
+import type { ActiveSessionStateData } from '@/lib/m-session/actions'
 import { cn } from '@/lib/utils'
 import { ItemDetailSheet } from './item-detail-sheet'
 import type { CartItem } from './mesa-screen'
 
-type Category = SessionStateData['menu'][number]
+type Category = ActiveSessionStateData['menu'][number]
 type Item = Category['items'][number]
 type Tag = Item['tags'][number]
 

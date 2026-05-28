@@ -3,12 +3,14 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { getZoneCapacityDefaults, listZoneOverrides } from '@/lib/salon/queries'
+import { createClient } from '@/lib/supabase/server'
 import {
   RoleRequiredError,
   requireRole,
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
+import { TotalSeatsField } from './_components/total-seats-field'
 import { ZoneCapacityEditor } from './_components/zone-capacity-editor'
 
 export const metadata = { title: 'Capacidad del salón' }
@@ -31,10 +33,20 @@ export default async function SalonConfigPage({
     throw e
   }
 
+  const supabase = await createClient()
+  // total_seats se agrega en la migración 20260527 — cast hasta regenerar types.
+  const { data: tenantRow } = await supabase
+    .from('tenants')
+    .select('total_seats')
+    .eq('id', access.tenant.id)
+    .maybeSingle()
+
   const [defaults, overrides] = await Promise.all([
     getZoneCapacityDefaults({ tenantId: access.tenant.id }),
     listZoneOverrides({ tenantId: access.tenant.id }),
   ])
+
+  const totalSeats = (tenantRow as { total_seats?: number | null } | null)?.total_seats ?? null
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
@@ -49,8 +61,9 @@ export default async function SalonConfigPage({
           </Link>
         }
         title="Capacidad del salón"
-        description="Cupo por zona (Planta Alta, Plata Baja) + overrides puntuales por fecha. El panel operativo lo usa para mostrar las barras de capacidad."
+        description="Cupo total del bar (para ocupación en tiempo real) + cupo por zona y overrides puntuales (para reservas anticipadas)."
       />
+      <TotalSeatsField tenantSlug={tenantSlug} initialTotalSeats={totalSeats} />
       <ZoneCapacityEditor
         tenantSlug={tenantSlug}
         defaults={defaults}

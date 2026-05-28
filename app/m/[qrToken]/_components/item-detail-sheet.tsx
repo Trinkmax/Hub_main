@@ -7,11 +7,11 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
-import type { SessionStateData } from '@/lib/m-session/actions'
+import type { ActiveSessionStateData } from '@/lib/m-session/actions'
 import { cn } from '@/lib/utils'
 import type { CartItem } from './mesa-screen'
 
-type Item = SessionStateData['menu'][number]['items'][number]
+type Item = ActiveSessionStateData['menu'][number]['items'][number]
 
 function ARSFormat(cents: number): string {
   return new Intl.NumberFormat('es-AR', {
