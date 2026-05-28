@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { logAudit } from '@/lib/audit'
+import { setItemTags } from '@/lib/item-tags/actions'
 import { createClient } from '@/lib/supabase/server'
 import {
   RoleRequiredError,
@@ -19,6 +20,33 @@ import {
   updateCategorySchema,
   updateMenuItemSchema,
 } from './schemas'
+
+// Helper: lee tag_ids como CSV string o array. FormData de un <form> con
+// múltiples inputs hidden "tag_ids" devuelve sólo el último value; para
+// soportar ambos casos (CSV serializado o array via getAll), normalizamos.
+function readTagIds(formData: FormData): string[] {
+  const multi = formData.getAll('tag_ids')
+  if (multi.length > 1) {
+    return multi.filter((v): v is string => typeof v === 'string' && v.length > 0)
+  }
+  const single = formData.get('tag_ids')
+  if (typeof single !== 'string' || single.length === 0) return []
+  // Aceptamos CSV simple, o JSON array si vino de un control que serializa.
+  if (single.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(single)
+      if (Array.isArray(parsed)) {
+        return parsed.filter((v): v is string => typeof v === 'string' && v.length > 0)
+      }
+    } catch {
+      // cae a CSV
+    }
+  }
+  return single
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+}
 
 export type MenuActionState = { ok: true; message?: string } | { ok: false; message: string }
 
@@ -148,6 +176,8 @@ export async function createMenuItem(
     price_cents: formData.get('price_cents'),
     points_override: formData.get('points_override'),
     image_url: formData.get('image_url'),
+    featured: formData.get('featured') ?? false,
+    tag_ids: readTagIds(formData),
   })
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
@@ -183,10 +213,27 @@ export async function createMenuItem(
       points_override: parsed.data.points_override,
       image_url: parsed.data.image_url,
       position: (maxPos?.position ?? 0) + 1,
+      // featured no está aún en database.ts (tabla mig posterior). Cast aditivo.
+      ...({ featured: parsed.data.featured } as { featured?: boolean }),
     })
     .select('id')
     .single()
   if (error || !created) return { ok: false, message: 'No pudimos crear el ítem.' }
+
+  // Si vinieron tag_ids, sincronizar en el mismo flow. setItemTags reusa
+  // su propia autorización y audit; un fallo no rompe la creación del ítem
+  // pero sí devolvemos un message degradado.
+  let tagsWarning: string | null = null
+  if (parsed.data.tag_ids.length > 0) {
+    const tagResult = await setItemTags(slug, {
+      menu_item_id: created.id,
+      tag_ids: parsed.data.tag_ids,
+    })
+    if (!tagResult.ok) {
+      console.error('[menu.createMenuItem] setItemTags', tagResult.message)
+      tagsWarning = tagResult.message
+    }
+  }
 
   await logAudit({
     tenantId: tenant.id,
@@ -194,10 +241,18 @@ export async function createMenuItem(
     action: 'menu_item.created',
     entity: 'menu_item',
     entityId: created.id,
-    payload: { name: parsed.data.name, price_cents: parsed.data.price_cents },
+    payload: {
+      name: parsed.data.name,
+      price_cents: parsed.data.price_cents,
+      featured: parsed.data.featured,
+      tag_ids: parsed.data.tag_ids,
+    },
   })
 
   revalidatePath(`/${slug}/menu`)
+  if (tagsWarning) {
+    return { ok: true, message: `Ítem creado, pero: ${tagsWarning}` }
+  }
   return { ok: true, message: 'Ítem creado.' }
 }
 
@@ -212,6 +267,9 @@ export async function updateMenuItem(
     points_override: number | null
     image_url: string | null
     active: boolean
+    // Campos opcionales del rediseño 2026. Si no se pasan, no se tocan.
+    featured?: boolean
+    tag_ids?: string[]
   },
 ): Promise<MenuActionState> {
   const tenant = await authorizeOwner(slug)
@@ -221,20 +279,41 @@ export async function updateMenuItem(
   if (!parsed.success) return { ok: false, message: 'Datos inválidos.' }
 
   const supabase = await createClient()
+
+  // El UPDATE incluye featured solo si el caller pasó featured explícitamente.
+  // Esto evita sobreescribir el toggle hecho por toggleFeatured cuando un form
+  // legacy llama a updateMenuItem sin tocar featured.
+  const updatePayload: Record<string, unknown> = {
+    category_id: parsed.data.category_id,
+    name: parsed.data.name,
+    description: parsed.data.description,
+    price_cents: parsed.data.price_cents,
+    points_override: parsed.data.points_override,
+    image_url: parsed.data.image_url,
+    active: parsed.data.active,
+  }
+  if (payload.featured !== undefined) {
+    updatePayload.featured = parsed.data.featured
+  }
+
   const { error } = await supabase
     .from('menu_items')
-    .update({
-      category_id: parsed.data.category_id,
-      name: parsed.data.name,
-      description: parsed.data.description,
-      price_cents: parsed.data.price_cents,
-      points_override: parsed.data.points_override,
-      image_url: parsed.data.image_url,
-      active: parsed.data.active,
-    })
+    .update(updatePayload)
     .eq('id', parsed.data.id)
     .eq('tenant_id', tenant.id)
   if (error) return { ok: false, message: 'No pudimos actualizar.' }
+
+  // Sincronizar tags solo si vinieron explícitamente (undefined = no tocar).
+  if (payload.tag_ids !== undefined) {
+    const tagResult = await setItemTags(slug, {
+      menu_item_id: parsed.data.id,
+      tag_ids: parsed.data.tag_ids,
+    })
+    if (!tagResult.ok) {
+      console.error('[menu.updateMenuItem] setItemTags', tagResult.message)
+      return { ok: false, message: `Ítem actualizado, pero: ${tagResult.message}` }
+    }
+  }
 
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
@@ -306,4 +385,57 @@ export async function reorderItems(
 
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
+}
+
+// Toggle del flag featured en menu_items. Leer-luego-flip se hace en dos
+// queries para mantener tipos simples (sin RPC). El segundo eq() por
+// tenant_id en el UPDATE es defensa en profundidad además de la verificación.
+export async function toggleFeatured(slug: string, itemId: string): Promise<MenuActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+
+  const idParsed = z.string().uuid().safeParse(itemId)
+  if (!idParsed.success) return { ok: false, message: 'ID inválido.' }
+
+  const supabase = await createClient()
+
+  // featured todavía no está en database.ts (migración recién aplicada).
+  // Usamos .returns<>() para tipar el row sin recurrir a `any` en el .select().
+  const { data: current, error: readErr } = await supabase
+    .from('menu_items')
+    .select('id, featured')
+    .eq('id', idParsed.data)
+    .eq('tenant_id', tenant.id)
+    .returns<Array<{ id: string; featured: boolean | null }>>()
+    .maybeSingle()
+  if (readErr) {
+    console.error('[menu.toggleFeatured] read', readErr.message)
+    return { ok: false, message: 'No pudimos leer el ítem.' }
+  }
+  if (!current) return { ok: false, message: 'El ítem no existe.' }
+
+  const nowFeatured = !(current.featured ?? false)
+
+  const { error: updateErr } = await supabase
+    .from('menu_items')
+    .update({ featured: nowFeatured } as { featured?: boolean })
+    .eq('id', idParsed.data)
+    .eq('tenant_id', tenant.id)
+  if (updateErr) {
+    console.error('[menu.toggleFeatured] update', updateErr.message)
+    return { ok: false, message: 'No pudimos actualizar el ítem.' }
+  }
+
+  const { data: userResult } = await supabase.auth.getUser()
+  await logAudit({
+    tenantId: tenant.id,
+    userId: userResult.user?.id ?? null,
+    action: 'menu_item.featured_toggled',
+    entity: 'menu_item',
+    entityId: idParsed.data,
+    payload: { featured: nowFeatured },
+  })
+
+  revalidatePath(`/${slug}/menu`)
+  return { ok: true, message: nowFeatured ? 'Ítem destacado.' : 'Destacado removido.' }
 }

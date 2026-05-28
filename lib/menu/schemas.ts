@@ -23,6 +23,11 @@ export const createMenuItemSchema = z.object({
   image_url: z
     .union([z.string().trim().url().max(2048), z.literal(''), z.null(), z.undefined()])
     .transform((v) => (v && v.length > 0 ? v : null)),
+  // Campos opcionales del rediseño 2026 — featured (destacados) y tag_ids
+  // (asignación inicial de tags). Mantienen compat con consumers que no los
+  // pasen (default false / []).
+  featured: z.coerce.boolean().optional().default(false),
+  tag_ids: z.array(z.string().uuid()).max(50).optional().default([]),
 })
 
 export const updateMenuItemSchema = createMenuItemSchema.extend({

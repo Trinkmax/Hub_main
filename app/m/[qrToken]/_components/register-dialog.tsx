@@ -1,6 +1,7 @@
 'use client'
 
-import { Calendar, Gift, MessageCircleHeart, Phone, Sparkles, User } from 'lucide-react'
+import { Calendar, Gift, Phone, User } from 'lucide-react'
+import Image from 'next/image'
 import { useActionState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -17,18 +18,28 @@ import { type RegisterCustomerResult, registerCustomer } from '@/lib/m-session/a
 
 const initial: RegisterCustomerResult = { ok: false, message: '' }
 
+export type WelcomeRewardHero = {
+  name: string
+  description: string | null
+  imageUrl: string | null
+  headline: string
+  subtext: string
+} | null
+
 export function RegisterDialog({
   qrToken,
   browserToken,
   tenantName,
+  welcomeReward,
   onClose,
   onRegistered,
 }: {
   qrToken: string
   browserToken: string
   tenantName: string
+  welcomeReward: WelcomeRewardHero
   onClose: () => void
-  onRegistered: () => void
+  onRegistered: (result: Extract<RegisterCustomerResult, { ok: true }>) => void
 }) {
   const [state, action, pending] = useActionState(
     (_prev: RegisterCustomerResult, fd: FormData) => registerCustomer(fd),
@@ -36,53 +47,72 @@ export function RegisterDialog({
   )
 
   useEffect(() => {
-    if (state.ok) onRegistered()
-  }, [state.ok, onRegistered])
+    if (state.ok) onRegistered(state)
+  }, [state, onRegistered])
+
+  // Headline/subtext: el del tenant si está configurado, sino defaults sobrios
+  const heroHeadline = welcomeReward?.headline ?? `Sumá puntos en ${tenantName}`
+  const heroSubtext =
+    welcomeReward?.subtext ?? 'Tres datos · 20 segundos · acumulás en cada consumo.'
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[92dvh] overflow-y-auto p-0 sm:max-w-md">
-        {/* Hero header con gradient */}
-        <div className="relative overflow-hidden rounded-t-lg bg-gradient-to-br from-amber-100 via-amber-50 to-orange-100 px-6 pb-5 pt-6 dark:from-amber-950/40 dark:via-amber-950/30 dark:to-orange-950/40">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute -right-10 -top-10 size-40 rounded-full bg-amber-300/30 blur-2xl dark:bg-amber-600/20"
-          />
-          <div className="relative">
-            <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-md ring-4 ring-white/50 dark:ring-amber-900/40">
-              <Sparkles className="size-6 fill-white/30" />
+      <DialogContent className="max-h-[92dvh] gap-0 overflow-y-auto p-0 sm:max-w-md">
+        {/* HERO: si hay imagen del reward → image-led; sino → forest gradient con icono Gift */}
+        {welcomeReward?.imageUrl ? (
+          <div className="relative aspect-[16/10] w-full overflow-hidden rounded-t-lg bg-secondary/40">
+            <Image
+              src={welcomeReward.imageUrl}
+              alt=""
+              fill
+              sizes="(max-width: 640px) 100vw, 480px"
+              className="object-cover"
+              unoptimized
+              priority
+            />
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-background via-background/85 to-transparent"
+            />
+            <div className="absolute inset-x-0 bottom-0 px-6 pb-5">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-primary">
+                <Gift className="size-3" aria-hidden />
+                Regalo de bienvenida
+              </span>
+              <DialogHeader className="mt-2 text-left">
+                <DialogTitle className="font-serif text-2xl font-semibold leading-tight tracking-tight text-balance">
+                  {heroHeadline}
+                </DialogTitle>
+                <DialogDescription className="text-sm text-muted-foreground text-pretty">
+                  {heroSubtext}
+                </DialogDescription>
+              </DialogHeader>
             </div>
-            <DialogHeader className="text-left">
-              <DialogTitle className="font-serif text-2xl leading-tight tracking-tight text-amber-950 dark:text-amber-50">
-                Sumá puntos en {tenantName}
-              </DialogTitle>
-              <DialogDescription className="text-amber-800/80 dark:text-amber-200/80">
-                Tres datos · 20 segundos · acumulás en cada consumo.
-              </DialogDescription>
-            </DialogHeader>
           </div>
-        </div>
-
-        {/* Beneficios chiquitos */}
-        <ul className="grid grid-cols-3 gap-2 px-6 pt-5 text-center">
-          {[
-            { icon: Gift, label: 'Recompensas' },
-            { icon: Sparkles, label: 'Beneficios' },
-            { icon: MessageCircleHeart, label: 'Novedades' },
-          ].map(({ icon: Icon, label }) => (
-            <li key={label} className="flex flex-col items-center gap-1">
-              <span className="flex size-9 items-center justify-center rounded-full bg-secondary/60 text-primary">
-                <Icon className="size-4" />
-              </span>
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                {label}
-              </span>
-            </li>
-          ))}
-        </ul>
+        ) : (
+          <div className="relative overflow-hidden rounded-t-lg bg-app-gradient px-6 pt-6 pb-5">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -right-10 -top-10 size-40 rounded-full bg-[--forest-glow] blur-2xl"
+            />
+            <div className="relative">
+              <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md">
+                <Gift className="size-6" />
+              </div>
+              <DialogHeader className="text-left">
+                <DialogTitle className="font-serif text-2xl font-semibold leading-tight tracking-tight text-balance">
+                  {heroHeadline}
+                </DialogTitle>
+                <DialogDescription className="text-sm text-muted-foreground text-pretty">
+                  {heroSubtext}
+                </DialogDescription>
+              </DialogHeader>
+            </div>
+          </div>
+        )}
 
         {/* FORM */}
-        <form action={action} className="space-y-4 px-6 pb-6 pt-5">
+        <form action={action} className="space-y-4 px-6 pt-5 pb-6">
           <input type="hidden" name="qr_token" value={qrToken} />
           <input type="hidden" name="browser_token" value={browserToken} />
           {/* honeypot anti-bot */}
@@ -95,60 +125,66 @@ export function RegisterDialog({
             aria-hidden="true"
           />
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label
-                htmlFor="first_name"
-                className="text-xs uppercase tracking-wide text-muted-foreground"
-              >
-                Nombre
-              </Label>
-              <div className="relative">
-                <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="first_name"
-                  name="first_name"
-                  autoFocus
-                  required
-                  maxLength={60}
-                  className="h-11 pl-9 text-base"
-                  placeholder="Juan"
-                />
-              </div>
-              {!state.ok && state.fieldErrors?.first_name && (
-                <p className="text-xs text-destructive">{state.fieldErrors.first_name}</p>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <Label
-                htmlFor="last_name"
-                className="text-xs uppercase tracking-wide text-muted-foreground"
-              >
-                Apellido
-              </Label>
+          <div className="space-y-1.5">
+            <Label
+              htmlFor="first_name"
+              className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+            >
+              Nombre
+            </Label>
+            <div className="relative">
+              <User
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
               <Input
-                id="last_name"
-                name="last_name"
+                id="first_name"
+                name="first_name"
                 required
                 maxLength={60}
-                className="h-11 text-base"
-                placeholder="Pérez"
+                autoComplete="given-name"
+                className="h-12 rounded-xl pl-9 text-base"
+                placeholder="Juan"
               />
-              {!state.ok && state.fieldErrors?.last_name && (
-                <p className="text-xs text-destructive">{state.fieldErrors.last_name}</p>
-              )}
             </div>
+            {!state.ok && state.fieldErrors?.first_name && (
+              <p className="text-xs text-destructive">{state.fieldErrors.first_name}</p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label
+              htmlFor="last_name"
+              className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+            >
+              Apellido
+            </Label>
+            <Input
+              id="last_name"
+              name="last_name"
+              required
+              maxLength={60}
+              autoComplete="family-name"
+              className="h-12 rounded-xl text-base"
+              placeholder="Pérez"
+            />
+            {!state.ok && state.fieldErrors?.last_name && (
+              <p className="text-xs text-destructive">{state.fieldErrors.last_name}</p>
+            )}
           </div>
 
           <div className="space-y-1.5">
             <Label
               htmlFor="phone"
-              className="text-xs uppercase tracking-wide text-muted-foreground"
+              className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
             >
               Teléfono
             </Label>
             <div className="relative">
-              <Phone className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Phone
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
               <Input
                 id="phone"
                 name="phone"
@@ -157,7 +193,7 @@ export function RegisterDialog({
                 required
                 placeholder="11 4567 8901"
                 autoComplete="tel"
-                className="h-11 pl-9 text-base"
+                className="h-12 rounded-xl pl-9 text-base"
               />
             </div>
             {!state.ok && state.fieldErrors?.phone && (
@@ -168,23 +204,29 @@ export function RegisterDialog({
           <div className="space-y-1.5">
             <Label
               htmlFor="birthdate"
-              className="text-xs uppercase tracking-wide text-muted-foreground"
+              className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
             >
               Cumpleaños{' '}
-              <span className="font-normal lowercase text-muted-foreground/60">(opcional)</span>
+              <span className="font-normal normal-case text-muted-foreground/60">(opcional)</span>
             </Label>
             <div className="relative">
-              <Calendar className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input id="birthdate" name="birthdate" type="date" className="h-11 pl-9 text-base" />
+              <Calendar
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                id="birthdate"
+                name="birthdate"
+                type="date"
+                className="h-12 rounded-xl pl-9 text-base"
+              />
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              Para mandarte un regalo en tu día 🎂
-            </p>
+            <p className="text-[11px] text-muted-foreground">Para mandarte un regalo en tu día.</p>
           </div>
 
           <label
             htmlFor="opt_in_marketing"
-            className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border/60 bg-background/40 p-3"
+            className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-border/60 bg-card/50 p-3"
           >
             <Checkbox
               id="opt_in_marketing"
@@ -202,7 +244,10 @@ export function RegisterDialog({
           </label>
 
           {!state.ok && state.message && (
-            <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+            <div
+              role="alert"
+              className="rounded-xl border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+            >
               {state.message}
             </div>
           )}
@@ -214,10 +259,10 @@ export function RegisterDialog({
             <Button
               type="submit"
               disabled={pending}
-              className="h-12 gap-2 bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-md hover:from-amber-600 hover:to-orange-600 sm:flex-1"
+              size="xl"
+              className="rounded-xl font-semibold sm:flex-1"
             >
-              <Sparkles className="size-4" />
-              {pending ? 'Guardando…' : 'Empezar a sumar puntos'}
+              {pending ? 'Guardando…' : welcomeReward ? 'Lo quiero' : 'Empezar a sumar puntos'}
             </Button>
           </div>
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { Home, type LucideIcon, MessageCircle, Palette, UsersRound } from 'lucide-react'
+import { Gift, Home, type LucideIcon, MessageCircle, Palette, UsersRound } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -30,6 +30,11 @@ const GROUPS: Group[] = [
       { label: 'Captura QRs', href: (s) => `/${s}/configuracion/captura` },
       { label: 'Auto-aceptación', href: (s) => `/${s}/configuracion/auto-aceptacion` },
     ],
+  },
+  {
+    label: 'Fidelización',
+    icon: Gift,
+    items: [{ label: 'Regalo de bienvenida', href: (s) => `/${s}/configuracion/bienvenida` }],
   },
   {
     label: 'Mensajería',

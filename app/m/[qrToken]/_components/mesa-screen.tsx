@@ -1,13 +1,15 @@
 'use client'
 
-import { Receipt, ShoppingBag, Sparkles, Star, UserCircle2 } from 'lucide-react'
+import { Gift, ImageOff, Receipt, ShoppingBag, Sparkles } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
+import Image from 'next/image'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   joinSession,
+  type RegisterCustomerResult,
   refreshState,
   requestBill,
   type SessionStateData,
@@ -175,11 +177,33 @@ export function MesaScreen({
     if (r.ok) setState(r.data)
   }, [browserToken, qrToken])
 
+  const handleRegistered = useCallback(
+    (result: Extract<RegisterCustomerResult, { ok: true }>) => {
+      setShowRegister(false)
+      void refreshAfterSubmit()
+      if (result.welcomeReward) {
+        // Toast con tu regalo de bienvenida: mensaje accionable para que el cliente
+        // sepa que lo tiene que pedir al mozo (la redemption queda pending hasta entrega).
+        toast.success(`¡Listo! Mostrále esto al mozo: ${result.welcomeReward.name}`, {
+          duration: 6000,
+        })
+      } else {
+        toast.success('¡Listo! Estás sumando puntos.')
+      }
+    },
+    [refreshAfterSubmit],
+  )
+
+  // Datos derivados del state para los heroes
+  const welcomeReward = state?.welcome_reward ?? null
+  const welcomeRedeemed = state?.welcome_reward_redeemed ?? null
+  const tenantLogoUrl = state?.tenant_logo_url ?? null
+
   if (error && !state) {
     return (
       <div className="mx-auto flex min-h-[100dvh] max-w-md flex-col items-center justify-center gap-4 px-6 text-center">
-        <div className="flex size-16 items-center justify-center rounded-full bg-destructive/10">
-          <span className="text-3xl">😕</span>
+        <div className="flex size-16 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+          <Receipt className="size-7" />
         </div>
         <h1 className="font-serif text-2xl font-semibold tracking-tight">
           No pudimos abrir tu mesa
@@ -205,15 +229,11 @@ export function MesaScreen({
   }
 
   return (
-    <div className="relative min-h-[100dvh] pb-32">
-      {/* Hero gradient background */}
+    <div className="relative min-h-[100dvh] bg-app-gradient pb-32">
+      {/* Glow sutil top */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-72 bg-gradient-to-b from-primary/15 via-primary/5 to-transparent"
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute right-0 top-12 -z-10 size-64 rounded-full bg-[--cream-tint] opacity-50 blur-3xl"
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-72 bg-gradient-to-b from-[--forest-glow] via-[--forest-glow]/40 to-transparent"
       />
 
       <div className="mx-auto max-w-md px-4 pt-6">
@@ -222,12 +242,33 @@ export function MesaScreen({
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35, ease: 'easeOut' }}
-          className="mb-5 text-center"
+          className="mb-5 flex flex-col items-center text-center"
         >
-          <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-primary/80">
+          {tenantLogoUrl ? (
+            <div className="relative size-14 overflow-hidden rounded-full bg-card ring-2 ring-border/60 shadow-sm">
+              <Image
+                src={tenantLogoUrl}
+                alt={tenantName}
+                fill
+                sizes="56px"
+                className="object-cover"
+                unoptimized
+                priority
+              />
+            </div>
+          ) : (
+            <span
+              role="img"
+              aria-label={tenantName}
+              className="flex size-14 items-center justify-center rounded-full bg-primary font-serif text-xl font-bold text-primary-foreground shadow-sm"
+            >
+              HUB
+            </span>
+          )}
+          <p className="mt-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-primary/80">
             {tenantName}
           </p>
-          <h1 className="mt-1.5 font-serif text-[28px] font-semibold leading-tight tracking-tight">
+          <h1 className="mt-1 font-serif text-[32px] font-semibold leading-tight tracking-tight">
             {tableLabel}
           </h1>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -235,38 +276,88 @@ export function MesaScreen({
           </p>
         </motion.header>
 
-        {/* CTA / STATUS de puntos */}
+        {/* HEROES — Welcome reward / Registered */}
         <AnimatePresence mode="wait">
-          {state && !state.customer_id ? (
+          {state && !state.customer_id && welcomeReward?.enabled ? (
             <motion.button
-              key="cta"
+              key="welcome-hero"
               type="button"
               initial={{ opacity: 0, y: 8, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -8, scale: 0.98 }}
               transition={{ duration: 0.25 }}
-              whileTap={{ scale: 0.97 }}
+              whileTap={{ scale: 0.98 }}
               onClick={() => setShowRegister(true)}
-              className="group relative mb-4 flex w-full items-center gap-3 overflow-hidden rounded-2xl border border-amber-300/40 bg-gradient-to-br from-amber-50 via-amber-50/80 to-orange-100/60 p-4 text-left shadow-sm transition-shadow hover:shadow-md dark:from-amber-950/30 dark:via-amber-950/20 dark:to-orange-950/30"
+              className="card-hairline group relative mb-4 flex w-full flex-col overflow-hidden rounded-2xl border border-border/60 bg-card text-left shadow-md transition-shadow hover:shadow-lg"
             >
-              <span
-                aria-hidden
-                className="pointer-events-none absolute -right-8 -top-8 size-32 rounded-full bg-amber-200/40 blur-2xl dark:bg-amber-700/20"
-              />
-              <span className="relative flex size-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-md ring-2 ring-white/60 dark:ring-amber-900/40">
-                <Star className="size-5 fill-white" />
+              {/* Imagen del reward arriba si existe */}
+              {welcomeReward.image_url ? (
+                <div className="relative aspect-[16/9] w-full overflow-hidden bg-secondary/40">
+                  <Image
+                    src={welcomeReward.image_url}
+                    alt=""
+                    fill
+                    sizes="(max-width: 640px) 100vw, 480px"
+                    className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                    unoptimized
+                  />
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-card via-card/60 to-transparent"
+                  />
+                  <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-warning/95 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-warning-foreground shadow-sm">
+                    <Gift className="size-3" aria-hidden />
+                    Regalo de bienvenida
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 px-4 pt-4">
+                  <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-warning/15 text-warning">
+                    <Gift className="size-5" aria-hidden />
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-warning/15 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-warning">
+                    Regalo de bienvenida
+                  </span>
+                </div>
+              )}
+              <div className="flex items-end justify-between gap-3 p-4">
+                <div className="min-w-0 flex-1">
+                  <p className="font-serif text-lg font-semibold leading-tight tracking-tight text-balance">
+                    {welcomeReward.headline}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground text-pretty">
+                    {welcomeReward.subtext}
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm">
+                  Lo quiero
+                </span>
+              </div>
+            </motion.button>
+          ) : state && !state.customer_id ? (
+            <motion.button
+              key="register-cta"
+              type="button"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.25 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => setShowRegister(true)}
+              className="card-hairline group mb-4 flex w-full items-center gap-3 rounded-2xl border border-border/60 bg-card p-4 text-left shadow-sm transition-shadow hover:shadow-md"
+            >
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm">
+                <Sparkles className="size-5" />
               </span>
-              <div className="relative min-w-0 flex-1">
-                <p className="text-[15px] font-semibold leading-tight text-amber-950 dark:text-amber-100">
+              <div className="min-w-0 flex-1">
+                <p className="text-[15px] font-semibold leading-tight">
                   Sumá puntos en {tenantName}
                 </p>
-                <p className="mt-0.5 text-xs text-amber-800/80 dark:text-amber-200/80">
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   Cada consumo te da beneficios. Registrate en 20s.
                 </p>
               </div>
-              <span className="relative text-xs font-semibold text-amber-900 dark:text-amber-200">
-                Sumarme →
-              </span>
+              <span className="shrink-0 text-xs font-semibold text-primary">Sumarme →</span>
             </motion.button>
           ) : state?.customer_id ? (
             <motion.div
@@ -275,44 +366,67 @@ export function MesaScreen({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.25 }}
-              className="mb-4 flex items-center gap-2.5 rounded-2xl border border-emerald-300/50 bg-emerald-50/70 px-3.5 py-2.5 shadow-sm dark:border-emerald-900/60 dark:bg-emerald-950/30"
+              className="mb-4 space-y-2"
             >
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
-                <UserCircle2 className="size-4" />
-              </span>
-              <div className="flex-1 text-sm">
-                <span className="font-medium text-emerald-900 dark:text-emerald-100">
-                  Sumando puntos
+              <div className="flex items-center gap-2.5 rounded-2xl border border-success/30 bg-success/5 px-3.5 py-2.5 shadow-sm">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-success text-success-foreground">
+                  <Sparkles className="size-3.5" />
                 </span>
-                <span className="text-emerald-700/70 dark:text-emerald-300/70">
-                  {' '}
-                  · {tenantName}
-                </span>
+                <div className="flex-1 text-sm">
+                  <span className="font-medium">Sumando puntos</span>
+                  <span className="text-muted-foreground"> · {tenantName}</span>
+                </div>
               </div>
-              <Sparkles className="size-4 text-emerald-600 dark:text-emerald-400" />
+              {welcomeRedeemed && (
+                <div className="card-hairline flex items-center gap-3 rounded-2xl border border-warning/40 bg-card p-3 shadow-sm">
+                  <div className="relative size-12 shrink-0 overflow-hidden rounded-xl bg-secondary/40">
+                    {welcomeRedeemed.image_url ? (
+                      <Image
+                        src={welcomeRedeemed.image_url}
+                        alt=""
+                        fill
+                        sizes="48px"
+                        className="object-cover"
+                        unoptimized
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-warning/60">
+                        <Gift className="size-5" aria-hidden />
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-warning">
+                      Tu regalo está esperándote
+                    </p>
+                    <p className="line-clamp-1 text-sm font-medium">{welcomeRedeemed.name}</p>
+                    <p className="text-[11px] text-muted-foreground">Mostrále esto al mozo</p>
+                  </div>
+                </div>
+              )}
             </motion.div>
           ) : null}
         </AnimatePresence>
 
         {/* TABS */}
         <Tabs defaultValue="menu" className="w-full">
-          <TabsList className="grid h-12 w-full grid-cols-2 rounded-xl border bg-card/60 p-1 shadow-sm">
+          <TabsList className="grid h-12 w-full grid-cols-2 rounded-xl border border-border/60 bg-card/60 p-1 shadow-sm">
             <TabsTrigger
               value="menu"
-              className="rounded-lg text-sm font-medium data-[state=active]:bg-background data-[state=active]:shadow-sm"
+              className="rounded-lg font-serif text-sm font-semibold data-[state=active]:bg-background data-[state=active]:shadow-sm"
             >
               Carta
             </TabsTrigger>
             <TabsTrigger
               value="orders"
-              className="rounded-lg text-sm font-medium data-[state=active]:bg-background data-[state=active]:shadow-sm"
+              className="rounded-lg font-serif text-sm font-semibold data-[state=active]:bg-background data-[state=active]:shadow-sm"
             >
               Mis órdenes
               {state && state.my_tickets.length > 0 ? (
                 <motion.span
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
-                  className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground"
+                  className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground tabular-nums"
                 >
                   {state.my_tickets.length}
                 </motion.span>
@@ -346,7 +460,7 @@ export function MesaScreen({
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 80, opacity: 0 }}
             transition={{ duration: 0.25 }}
-            className="fixed inset-x-0 bottom-0 z-20 border-t border-border/60 bg-background/95 px-4 pb-[max(env(safe-area-inset-bottom),12px)] pt-3 backdrop-blur-xl supports-[backdrop-filter]:bg-background/75"
+            className="fixed inset-x-0 bottom-0 z-20 border-t border-border/60 bg-background/95 px-4 pt-3 pb-[max(env(safe-area-inset-bottom),12px)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/80"
           >
             <div className="mx-auto flex max-w-md items-center gap-2">
               <Button
@@ -354,9 +468,9 @@ export function MesaScreen({
                 onClick={handleRequestBill}
                 disabled={billPending || billRequested}
                 className={cn(
-                  'h-12 flex-1 gap-1.5 text-sm font-medium',
+                  'h-12 flex-1 gap-1.5 rounded-xl text-sm font-medium',
                   billRequested &&
-                    'border-emerald-500/40 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300',
+                    'border-success/40 bg-success/10 text-success hover:bg-success/15 hover:text-success',
                 )}
               >
                 <Receipt className="size-4" />
@@ -365,7 +479,7 @@ export function MesaScreen({
               <Button
                 onClick={() => setShowCart(true)}
                 disabled={cart.length === 0}
-                className="h-12 flex-[1.2] gap-2 text-sm font-semibold"
+                className="h-12 flex-[1.2] gap-2 rounded-xl text-sm font-semibold"
               >
                 <ShoppingBag className="size-4" />
                 {cart.length === 0 ? (
@@ -390,12 +504,19 @@ export function MesaScreen({
           qrToken={qrToken}
           browserToken={browserToken}
           tenantName={tenantName}
+          welcomeReward={
+            welcomeReward?.enabled
+              ? {
+                  name: welcomeReward.name,
+                  description: welcomeReward.description,
+                  imageUrl: welcomeReward.image_url,
+                  headline: welcomeReward.headline,
+                  subtext: welcomeReward.subtext,
+                }
+              : null
+          }
           onClose={() => setShowRegister(false)}
-          onRegistered={() => {
-            setShowRegister(false)
-            void refreshAfterSubmit()
-            toast.success('¡Listo! Estás sumando puntos.')
-          }}
+          onRegistered={handleRegistered}
         />
       )}
 
@@ -421,6 +542,19 @@ export function MesaScreen({
 function MenuSkeleton() {
   return (
     <div className="space-y-5">
+      {/* Sticky toolbar skeleton */}
+      <div className="space-y-2.5">
+        <div className="h-11 w-full animate-pulse rounded-xl bg-muted" />
+        <div className="flex gap-1.5 overflow-hidden">
+          {[1, 2, 3].map((k) => (
+            <div
+              key={`chip-${k}`}
+              className="h-7 w-20 shrink-0 animate-pulse rounded-full bg-muted/70"
+            />
+          ))}
+        </div>
+      </div>
+      {/* Items skeleton */}
       {['skel-1', 'skel-2'].map((k) => (
         <div key={k} className="space-y-2">
           <div className="h-5 w-32 animate-pulse rounded-md bg-muted" />
@@ -428,9 +562,11 @@ function MenuSkeleton() {
             {['a', 'b', 'c'].map((kk) => (
               <div
                 key={`${k}-${kk}`}
-                className="flex items-center gap-3 rounded-xl border bg-card/40 p-3"
+                className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card/40 p-2.5"
               >
-                <div className="size-14 shrink-0 animate-pulse rounded-lg bg-muted" />
+                <div className="size-[72px] shrink-0 animate-pulse rounded-xl bg-muted">
+                  <ImageOff className="m-auto mt-7 size-5 text-muted-foreground/30" aria-hidden />
+                </div>
                 <div className="flex-1 space-y-2">
                   <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
                   <div className="h-3 w-1/2 animate-pulse rounded bg-muted/70" />

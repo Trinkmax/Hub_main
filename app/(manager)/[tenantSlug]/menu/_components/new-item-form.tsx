@@ -26,10 +26,14 @@ export function NewItemForm({
   tenantSlug,
   tenantId,
   categoryId,
+  onCreated,
 }: {
   tenantSlug: string
   tenantId: string
   categoryId: string
+  // Callback opcional para que el contenedor (p. ej. un Popover) se cierre tras
+  // crear el ítem con éxito. Si no se pasa, el form sólo se resetea.
+  onCreated?: () => void
 }) {
   const action = createMenuItem.bind(null, tenantSlug)
   const [state, formAction] = useActionState(action, initial)
@@ -41,10 +45,11 @@ export function NewItemForm({
       toast.success(state.message)
       formRef.current?.reset()
       setImageUrl(null)
+      onCreated?.()
     } else if (!state.ok) {
       toast.error(state.message)
     }
-  }, [state])
+  }, [state, onCreated])
 
   return (
     <form

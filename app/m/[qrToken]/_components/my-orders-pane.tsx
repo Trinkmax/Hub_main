@@ -1,18 +1,29 @@
 'use client'
 
+import { ClipboardList, X } from 'lucide-react'
 import { useTransition } from 'react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cancelTicket, type SessionStateData } from '@/lib/m-session/actions'
 
 type Ticket = SessionStateData['my_tickets'][number]
+type BadgeVariant = 'warning' | 'info' | 'success' | 'muted' | 'destructive'
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: 'Esperando confirmación',
-  accepted: 'Mozo confirmó · en cocina',
-  preparing: 'Preparando',
-  ready: 'Listo · esperando que te lo lleven',
-  served: 'Entregado',
-  cancelled: 'Cancelada',
+function ARSFormat(cents: number): string {
+  return new Intl.NumberFormat('es-AR', {
+    style: 'currency',
+    currency: 'ARS',
+    maximumFractionDigits: 0,
+  }).format(Math.round(cents / 100))
+}
+
+const STATUS_META: Record<string, { label: string; variant: BadgeVariant }> = {
+  pending: { label: 'Esperando confirmación', variant: 'warning' },
+  accepted: { label: 'En preparación', variant: 'info' },
+  preparing: { label: 'En preparación', variant: 'info' },
+  ready: { label: 'Listo', variant: 'success' },
+  served: { label: 'Servido', variant: 'muted' },
+  cancelled: { label: 'Cancelado', variant: 'destructive' },
 }
 
 function withinCancelWindow(submittedAt: string): boolean {
@@ -32,9 +43,15 @@ export function MyOrdersPane({
 
   if (tickets.length === 0) {
     return (
-      <p className="text-center text-sm text-muted-foreground">
-        Todavía no pediste nada. Andá a Carta y armá tu pedido.
-      </p>
+      <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border/60 bg-card/40 px-6 py-10 text-center">
+        <span className="flex size-14 items-center justify-center rounded-full bg-secondary/60 text-muted-foreground">
+          <ClipboardList className="size-6" aria-hidden />
+        </span>
+        <p className="text-sm font-medium">No pediste nada todavía</p>
+        <p className="max-w-[28ch] text-xs text-muted-foreground">
+          Andá a Carta y armá tu pedido. Acá vas a ver el estado en vivo.
+        </p>
+      </div>
     )
   }
 
@@ -47,46 +64,70 @@ export function MyOrdersPane({
 
   return (
     <div className="space-y-3">
-      {tickets.map((t) => (
-        <div key={t.id} className="rounded-xl border bg-card p-3 shadow-sm">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                Comanda #{t.id.slice(0, 6)}
-              </p>
-              <p className="text-sm font-medium">{STATUS_LABEL[t.status] ?? t.status}</p>
-            </div>
-            <p className="text-sm font-semibold">${(t.total_cents / 100).toFixed(2)}</p>
-          </div>
-          <ul className="mt-2 space-y-1 text-sm">
-            {t.items.map((it) => (
-              <li
-                key={it.id}
-                className={
-                  it.cancelled_at ? 'text-xs text-muted-foreground line-through' : 'text-sm'
-                }
+      {tickets.map((t) => {
+        const meta = STATUS_META[t.status] ?? { label: t.status, variant: 'muted' as const }
+        const canCancel = t.status === 'pending' && withinCancelWindow(t.submitted_at)
+        return (
+          <article
+            key={t.id}
+            className="card-hairline rounded-2xl border border-border/60 bg-card p-4 shadow-sm"
+          >
+            <header className="flex items-start justify-between gap-2 border-b border-border/40 pb-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Comanda #{t.id.slice(0, 6)}
+                </p>
+                <div className="mt-1">
+                  <Badge variant={meta.variant}>{meta.label}</Badge>
+                </div>
+              </div>
+              <span className="font-serif text-lg font-semibold tabular-nums">
+                {ARSFormat(t.total_cents)}
+              </span>
+            </header>
+
+            <ul className="mt-3 space-y-1.5 text-sm">
+              {t.items.map((it) => (
+                <li
+                  key={it.id}
+                  className={
+                    it.cancelled_at
+                      ? 'flex items-start justify-between gap-2 text-xs text-muted-foreground line-through'
+                      : 'flex items-start justify-between gap-2'
+                  }
+                >
+                  <div className="min-w-0 flex-1">
+                    <p>
+                      <span className="font-semibold tabular-nums">{it.quantity}×</span>{' '}
+                      {it.menu_item_name ?? 'Ítem'}
+                    </p>
+                    {it.notes && <p className="mt-0.5 text-xs text-muted-foreground">{it.notes}</p>}
+                  </div>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {ARSFormat(it.line_total_cents)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+
+            {canCancel && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={pending}
+                onClick={() => handleCancel(t.id)}
+                className="mt-3 h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:text-destructive"
               >
-                {it.quantity}× {it.menu_item_name ?? 'Ítem'}
-                {it.notes && <span className="text-xs text-muted-foreground"> — {it.notes}</span>}
-              </li>
-            ))}
-          </ul>
-          {t.status === 'pending' && withinCancelWindow(t.submitted_at) && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="mt-2 h-7 px-2 text-xs"
-              disabled={pending}
-              onClick={() => handleCancel(t.id)}
-            >
-              Cancelar
-            </Button>
-          )}
-          {t.cancellation_reason && (
-            <p className="mt-2 text-xs text-destructive">{t.cancellation_reason}</p>
-          )}
-        </div>
-      ))}
+                <X className="size-3.5" />
+                Cancelar
+              </Button>
+            )}
+            {t.cancellation_reason && (
+              <p className="mt-2 text-xs text-destructive">{t.cancellation_reason}</p>
+            )}
+          </article>
+        )
+      })}
     </div>
   )
 }

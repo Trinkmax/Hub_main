@@ -17,7 +17,15 @@ export type JoinSessionResult =
   | { ok: false; message: string }
 
 export type RegisterCustomerResult =
-  | { ok: true; customerId: string; wasNewCustomer: boolean }
+  | {
+      ok: true
+      customerId: string
+      wasNewCustomer: boolean
+      // Cuando el RPC otorgó un welcome reward al cliente nuevo, devolvemos
+      // los datos para que la UI muestre el toast/closing screen. null si no
+      // hubo grant (ya tenía uno previo, config disabled, sin stock, etc).
+      welcomeReward?: { name: string; imageUrl: string | null; redemptionId: string } | null
+    }
   | { ok: false; message: string; fieldErrors?: Record<string, string> }
 
 function flattenIssues(error: z.ZodError): Record<string, string> {
@@ -144,11 +152,29 @@ export async function registerCustomer(formData: FormData): Promise<RegisterCust
     return { ok: false, message: 'No pudimos guardar tus datos.' }
   }
 
-  const result = data as { customer_id: string; was_new_customer: boolean }
+  // El RPC extendido devuelve también welcome_redemption_id + name + image_url
+  // cuando se generó un welcome reward para este customer. Si no aplica, esos
+  // 3 campos son null.
+  const result = data as {
+    customer_id: string
+    was_new_customer: boolean
+    welcome_redemption_id: string | null
+    welcome_reward_name: string | null
+    welcome_reward_image_url: string | null
+  }
+  const welcomeReward =
+    result.welcome_redemption_id && result.welcome_reward_name
+      ? {
+          name: result.welcome_reward_name,
+          imageUrl: result.welcome_reward_image_url,
+          redemptionId: result.welcome_redemption_id,
+        }
+      : null
   return {
     ok: true,
     customerId: result.customer_id,
     wasNewCustomer: result.was_new_customer,
+    welcomeReward,
   }
 }
 
@@ -172,6 +198,8 @@ export type SessionStateData = {
   session_id: string
   tenant_id: string
   tenant_name: string
+  // Logo del tenant para el header del QR del cliente. null si no está cargado.
+  tenant_logo_url: string | null
   table_label: string
   guest_id: string | null
   customer_id: string | null
@@ -188,8 +216,32 @@ export type SessionStateData = {
       price_cents: number
       image_url: string | null
       position: number
+      // Campos del rediseño 2026 — siempre presentes.
+      featured: boolean
+      points_override: number | null
+      tags: Array<{ id: string; name: string; color: string }>
     }>
   }>
+  // Welcome reward disponible para el cliente actual cuando no se registró aún.
+  // Si no hay config válida, queda null.
+  welcome_reward: {
+    enabled: boolean
+    reward_id: string
+    name: string
+    description: string | null
+    image_url: string | null
+    headline: string
+    subtext: string
+  } | null
+  // Welcome reward ya entregado a este customer. Útil para closing screen.
+  welcome_reward_redeemed: {
+    reward_id: string
+    name: string
+    image_url: string | null
+    redemption_id: string
+    granted_at: string
+    status: 'pending' | 'delivered' | 'cancelled'
+  } | null
   my_tickets: Array<{
     id: string
     status: string
