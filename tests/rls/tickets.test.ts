@@ -277,3 +277,144 @@ describeIfRls('RLS — tickets / ticket_items', () => {
     expect(data).toMatchObject({ requested: true })
   })
 })
+
+describeIfRls('RLS — update_ticket_status con kitchen_flow_enabled', () => {
+  let owner: Awaited<ReturnType<typeof createUserClient>>
+  let waiter: Awaited<ReturnType<typeof createUserClient>>
+  let kitchen: Awaited<ReturnType<typeof createUserClient>>
+  let tenant: { id: string; slug: string }
+  let qrToken: string
+  let menuItemId: string
+
+  // Crea un ticket fresco en estado 'accepted' y devuelve su id.
+  async function freshAcceptedTicket(browserToken: string): Promise<string> {
+    const anon = getAnonClient()
+    await anon.rpc('join_session_as_guest', {
+      p_qr_token: qrToken,
+      p_browser_token: browserToken,
+      p_display_name: null,
+    })
+    const { data: submit } = await anon.rpc('submit_ticket', {
+      p_qr_token: qrToken,
+      p_browser_token: browserToken,
+      p_items: [{ menu_item_id: menuItemId, quantity: 1, notes: null, assigned_to_guest_id: null }],
+      p_idempotency_key: `kf-${browserToken}`,
+    })
+    const ticketId = (submit as { ticket_id: string }).ticket_id
+    await owner.client.rpc('accept_ticket', { p_ticket_id: ticketId })
+    return ticketId
+  }
+
+  async function setKitchenFlow(enabled: boolean) {
+    const service = getServiceClient()
+    await service.from('tenants').update({ kitchen_flow_enabled: enabled }).eq('id', tenant.id)
+  }
+
+  beforeAll(async () => {
+    owner = await createUserClient({ email: uniqueEmail('kfOwn') })
+    waiter = await createUserClient({ email: uniqueEmail('kfWai') })
+    kitchen = await createUserClient({ email: uniqueEmail('kfKit') })
+    tenant = await createTenant({
+      name: 'Kitchen Flow Bar',
+      slug: uniqueSlug('kf-bar'),
+      ownerId: owner.userId,
+    })
+    const service = getServiceClient()
+    await service.from('memberships').insert([
+      { tenant_id: tenant.id, user_id: waiter.userId, role: 'waiter' },
+      { tenant_id: tenant.id, user_id: kitchen.userId, role: 'kitchen' },
+    ])
+    const { data: pt } = await service
+      .from('physical_tables')
+      .insert({ tenant_id: tenant.id, label: 'KF-1' })
+      .select('qr_token')
+      .single()
+    if (!pt) throw new Error('seed pt failed')
+    qrToken = pt.qr_token
+    // Activar la mesa (owner) para que el comensal pueda submit.
+    await owner.client.rpc('activate_table_session', {
+      p_qr_token: qrToken,
+      p_party_size: 2,
+      p_source: 'manual',
+      p_alias: null,
+    })
+    const { data: cat } = await service
+      .from('menu_categories')
+      .insert({ tenant_id: tenant.id, name: 'Café' })
+      .select('id')
+      .single()
+    if (!cat) throw new Error('seed cat failed')
+    const { data: item } = await service
+      .from('menu_items')
+      .insert({ tenant_id: tenant.id, category_id: cat.id, name: 'Cortado', price_cents: 90000 })
+      .select('id')
+      .single()
+    if (!item) throw new Error('seed item failed')
+    menuItemId = item.id
+  })
+
+  afterAll(async () => {
+    await deleteUser(owner.userId)
+    await deleteUser(waiter.userId)
+    await deleteUser(kitchen.userId)
+  })
+
+  it('flag OFF: waiter puede accepted → preparing', async () => {
+    await setKitchenFlow(false)
+    const ticketId = await freshAcceptedTicket('kfOffWaiter12345')
+    const { error } = await waiter.client.rpc('update_ticket_status', {
+      p_ticket_id: ticketId,
+      p_new_status: 'preparing',
+    })
+    expect(error).toBeNull()
+  })
+
+  it('flag ON: waiter NO puede accepted → preparing', async () => {
+    await setKitchenFlow(true)
+    const ticketId = await freshAcceptedTicket('kfOnWaiter123456')
+    const { error } = await waiter.client.rpc('update_ticket_status', {
+      p_ticket_id: ticketId,
+      p_new_status: 'preparing',
+    })
+    expect(error?.message).toMatch(/invalid_transition_or_role|role_not_allowed/)
+  })
+
+  it('flag ON: kitchen sí puede accepted → preparing', async () => {
+    await setKitchenFlow(true)
+    const ticketId = await freshAcceptedTicket('kfOnKitchen12345')
+    const { error } = await kitchen.client.rpc('update_ticket_status', {
+      p_ticket_id: ticketId,
+      p_new_status: 'preparing',
+    })
+    expect(error).toBeNull()
+  })
+
+  it('flag ON: owner puede accepted → preparing (override)', async () => {
+    await setKitchenFlow(true)
+    const ticketId = await freshAcceptedTicket('kfOnOwner1234567')
+    const { error } = await owner.client.rpc('update_ticket_status', {
+      p_ticket_id: ticketId,
+      p_new_status: 'preparing',
+    })
+    expect(error).toBeNull()
+  })
+
+  it('flag ON: waiter sí puede ready → served (entregar es del mozo)', async () => {
+    await setKitchenFlow(true)
+    const ticketId = await freshAcceptedTicket('kfOnServe1234567')
+    // Llevar a ready vía kitchen.
+    await kitchen.client.rpc('update_ticket_status', {
+      p_ticket_id: ticketId,
+      p_new_status: 'preparing',
+    })
+    await kitchen.client.rpc('update_ticket_status', {
+      p_ticket_id: ticketId,
+      p_new_status: 'ready',
+    })
+    const { error } = await waiter.client.rpc('update_ticket_status', {
+      p_ticket_id: ticketId,
+      p_new_status: 'served',
+    })
+    expect(error).toBeNull()
+  })
+})

@@ -85,3 +85,18 @@ export async function listKitchenQueue(tenantId: string): Promise<TicketRow[]> {
   }
   return (data ?? []) as TicketRow[]
 }
+
+/**
+ * Lee el flag kitchen_flow_enabled del tenant. Cualquier miembro (waiter,
+ * cashier, owner, kitchen) puede leerlo — RLS sobre tenants permite SELECT a
+ * los miembros. Default false si no se puede leer.
+ */
+export async function getKitchenFlowEnabled(tenantId: string): Promise<boolean> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('tenants')
+    .select('kitchen_flow_enabled')
+    .eq('id', tenantId)
+    .maybeSingle()
+  return Boolean((data as { kitchen_flow_enabled?: boolean } | null)?.kitchen_flow_enabled)
+}

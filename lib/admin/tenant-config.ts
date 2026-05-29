@@ -21,6 +21,7 @@ const configSchema = z.object({
   ticket_auto_accept_max_items: z
     .union([z.coerce.number().int().min(1).max(100), z.literal(''), z.null(), z.undefined()])
     .transform((v) => (typeof v === 'number' ? v : null)),
+  kitchen_flow_enabled: z.coerce.boolean().default(false),
 })
 
 export type TenantConfigState =
@@ -51,7 +52,7 @@ export async function getTenantConfig(slug: string) {
   const { data } = await supabase
     .from('tenants')
     .select(
-      'guest_idle_hours_to_rescan, session_auto_abandon_hours, ticket_auto_accept_enabled, ticket_auto_accept_max_cents, ticket_auto_accept_max_items',
+      'guest_idle_hours_to_rescan, session_auto_abandon_hours, ticket_auto_accept_enabled, ticket_auto_accept_max_cents, ticket_auto_accept_max_items, kitchen_flow_enabled',
     )
     .eq('id', access.tenant.id)
     .maybeSingle()
@@ -72,6 +73,7 @@ export async function updateTenantConfig(
     ticket_auto_accept_enabled: formData.get('ticket_auto_accept_enabled') === 'on',
     ticket_auto_accept_max_cents: formData.get('ticket_auto_accept_max_cents'),
     ticket_auto_accept_max_items: formData.get('ticket_auto_accept_max_items'),
+    kitchen_flow_enabled: formData.get('kitchen_flow_enabled') === 'on',
   })
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }

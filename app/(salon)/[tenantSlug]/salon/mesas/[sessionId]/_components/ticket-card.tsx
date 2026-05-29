@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { acceptTicket, rejectTicket, updateTicketStatus } from '@/lib/tickets/actions'
 import type { TicketItemRow, TicketRow } from '@/lib/tickets/queries'
+import { isWaitingOnKitchen, type TicketStatus } from '@/lib/tickets/ticket-flow'
 
 const STATUS_VARIANTS: Record<string, 'default' | 'outline' | 'secondary' | 'destructive'> = {
   pending: 'outline',
@@ -23,13 +24,16 @@ export function TicketCard({
   ticket,
   items,
   onChange,
+  kitchenFlowEnabled = false,
 }: {
   tenantSlug: string
   ticket: TicketRow
   items: TicketItemRow[]
   onChange: () => void
+  kitchenFlowEnabled?: boolean
 }) {
   const [pending, startTransition] = useTransition()
+  const waitingOnKitchen = isWaitingOnKitchen(ticket.status as TicketStatus, kitchenFlowEnabled)
 
   const handle = (fn: () => Promise<{ ok: boolean; message?: string }>, success: string) => {
     startTransition(async () => {
@@ -97,7 +101,13 @@ export function TicketCard({
             </Button>
           </>
         )}
-        {ticket.status === 'accepted' && (
+        {waitingOnKitchen && (
+          <Badge variant="outline" className="gap-1 text-muted-foreground">
+            <ChefHat className="size-3.5" aria-hidden />
+            En cocina…
+          </Badge>
+        )}
+        {!kitchenFlowEnabled && ticket.status === 'accepted' && (
           <Button
             size="sm"
             variant="outline"
@@ -110,7 +120,7 @@ export function TicketCard({
             Empezar
           </Button>
         )}
-        {ticket.status === 'preparing' && (
+        {!kitchenFlowEnabled && ticket.status === 'preparing' && (
           <Button
             size="sm"
             variant="outline"

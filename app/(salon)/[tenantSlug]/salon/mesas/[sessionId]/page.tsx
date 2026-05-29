@@ -2,7 +2,11 @@ import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { getSessionForWaiter } from '@/lib/sessions-waiter/queries'
 import { requireTenantAccess } from '@/lib/tenant'
-import { listTicketItemsForTickets, listTicketsForSession } from '@/lib/tickets/queries'
+import {
+  getKitchenFlowEnabled,
+  listTicketItemsForTickets,
+  listTicketsForSession,
+} from '@/lib/tickets/queries'
 import { SessionDetail } from './_components/session-detail'
 
 export const metadata = { title: 'Sesión' }
@@ -16,9 +20,11 @@ export default async function SessionDetailPage({
   const { tenantSlug, sessionId } = await params
 
   let role: string
+  let tenantId: string
   try {
     const access = await requireTenantAccess(tenantSlug)
     role = access.role
+    tenantId = access.tenant.id
   } catch {
     notFound()
   }
@@ -28,7 +34,10 @@ export default async function SessionDetailPage({
   const session = await getSessionForWaiter(sessionId)
   if (!session) notFound()
 
-  const tickets = await listTicketsForSession(sessionId)
+  const [tickets, kitchenFlowEnabled] = await Promise.all([
+    listTicketsForSession(sessionId),
+    getKitchenFlowEnabled(tenantId),
+  ])
   const items = await listTicketItemsForTickets(tickets.map((t) => t.id))
 
   return (
@@ -43,6 +52,7 @@ export default async function SessionDetailPage({
         session={session}
         initialTickets={tickets}
         initialItems={items}
+        kitchenFlowEnabled={kitchenFlowEnabled}
       />
     </div>
   )

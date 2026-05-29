@@ -48,11 +48,13 @@ export function SessionDetail({
   session,
   initialTickets,
   initialItems,
+  kitchenFlowEnabled = false,
 }: {
   tenantSlug: string
   session: WaiterSessionDetail
   initialTickets: TicketRow[]
   initialItems: TicketItemRow[]
+  kitchenFlowEnabled?: boolean
 }) {
   const [tickets, setTickets] = useState(initialTickets)
   const [items, setItems] = useState(initialItems)
@@ -376,6 +378,7 @@ export function SessionDetail({
                 ticket={t}
                 items={itemsByTicket.get(t.id) ?? []}
                 onChange={refresh}
+                kitchenFlowEnabled={kitchenFlowEnabled}
               />
             ))
           )}

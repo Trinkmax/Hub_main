@@ -16,6 +16,7 @@ type Config = {
   ticket_auto_accept_enabled: boolean
   ticket_auto_accept_max_cents: number | null
   ticket_auto_accept_max_items: number | null
+  kitchen_flow_enabled: boolean
 }
 
 export function AutoAcceptForm({
@@ -83,6 +84,23 @@ export function AutoAcceptForm({
               </p>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border bg-card p-5">
+        <h2 className="font-display text-base font-semibold">Flujo de cocina</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Si está activo, solo la cocina (y el dueño) mueven las comandas por preparación (En
+          preparación → Listo). El mozo solo confirma el pedido y lo marca como entregado. Si está
+          apagado, el mozo maneja todo el flujo de la comanda.
+        </p>
+        <div className="mt-4 flex items-center gap-2">
+          <Checkbox
+            id="kitchen_flow_enabled"
+            name="kitchen_flow_enabled"
+            defaultChecked={initialConfig.kitchen_flow_enabled}
+          />
+          <Label htmlFor="kitchen_flow_enabled">El bar usa cocina (KDS)</Label>
         </div>
       </div>
 
