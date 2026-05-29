@@ -16,6 +16,8 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
 import { StatCard } from '@/components/ui/stat-card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { getStaffSummaries } from '@/lib/staff-performance/queries'
+import { resolveFromSearchParams } from '@/lib/staff-performance/range-from-search-params'
 import {
   getChurnRisk,
   getCommunicationStats,
@@ -34,6 +36,7 @@ import {
 import { ChurnCard } from './_components/churn-card'
 import { Heatmap } from './_components/heatmap'
 import { RevenueChart } from './_components/revenue-chart'
+import { StaffPerformanceTab } from './_components/staff-performance-tab'
 
 export const metadata = { title: 'Estadísticas' }
 export const dynamic = 'force-dynamic'
@@ -48,10 +51,13 @@ const TAB_CLASS = 'data-[state=active]:bg-card data-[state=active]:shadow-sm'
 
 export default async function EstadisticasPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantSlug: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { tenantSlug } = await params
+  const sp = await searchParams
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
     access = await requireTenantAccess(tenantSlug)
@@ -62,7 +68,10 @@ export default async function EstadisticasPage({
     throw error
   }
 
-  const [kpis, daily90, heatmap, top, churn, events, comms] = await Promise.all([
+  const { preset: staffPreset, range: staffRange } = resolveFromSearchParams(sp)
+  const activeTab = typeof sp.tab === 'string' ? sp.tab : 'overview'
+
+  const [kpis, daily90, heatmap, top, churn, events, comms, staffSummaries] = await Promise.all([
     getKpis(access.tenant.id),
     getDailyMetrics(access.tenant.id, 90),
     getHeatmap(access.tenant.id),
@@ -70,6 +79,7 @@ export default async function EstadisticasPage({
     getChurnRisk(access.tenant.id, 200),
     getEventsRanking(access.tenant.id, 20),
     getCommunicationStats(access.tenant.id),
+    getStaffSummaries(access.tenant.id, staffRange),
   ])
 
   const totalRevenue = daily90.reduce((acc, d) => acc + Number(d.revenue_cents ?? 0), 0)
@@ -82,7 +92,7 @@ export default async function EstadisticasPage({
         description="Vista profunda de tu bar: clientes, visitas, eventos y comunicaciones."
       />
 
-      <Tabs defaultValue="overview" className="space-y-6">
+      <Tabs defaultValue={activeTab} className="space-y-6">
         <TabsList className="bg-secondary/40">
           <TabsTrigger value="overview" className={TAB_CLASS}>
             Visión general
@@ -95,6 +105,9 @@ export default async function EstadisticasPage({
           </TabsTrigger>
           <TabsTrigger value="comms" className={TAB_CLASS}>
             Comunicación
+          </TabsTrigger>
+          <TabsTrigger value="mozos" className={TAB_CLASS}>
+            Mozos
           </TabsTrigger>
         </TabsList>
 
@@ -288,6 +301,14 @@ export default async function EstadisticasPage({
               </DataTableScroll>
             )}
           </DataTableShell>
+        </TabsContent>
+
+        <TabsContent value="mozos" className="space-y-6">
+          <StaffPerformanceTab
+            tenantId={access.tenant.id}
+            summaries={staffSummaries}
+            preset={staffPreset}
+          />
         </TabsContent>
 
         <TabsContent value="comms" className="space-y-6">
