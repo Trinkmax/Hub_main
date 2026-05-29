@@ -54,3 +54,19 @@ export const updateRewardSchema = createRewardSchema.extend({
 
 export type CreateRuleInput = z.infer<typeof createRuleSchema>
 export type CreateRewardInput = z.infer<typeof createRewardSchema>
+
+// ──────────────────────────────────────────────────────────
+// Redención de puntos como descuento al cobrar
+// ──────────────────────────────────────────────────────────
+
+export const updatePointsRedemptionConfigSchema = z.object({
+  enabled: z.coerce.boolean(),
+  ratePointsToCents: z.coerce
+    .number()
+    .int('Tiene que ser un entero')
+    .min(1, 'Mínimo 1 centavo')
+    .max(100000, 'Demasiado alto'),
+  maxPct: z.coerce.number().min(0, 'Mínimo 0%').max(100, 'Máximo 100%'),
+})
+
+export type UpdatePointsRedemptionConfigInput = z.infer<typeof updatePointsRedemptionConfigSchema>

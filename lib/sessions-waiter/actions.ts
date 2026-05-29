@@ -23,12 +23,18 @@ import {
   updatePartySizeSchema,
 } from './schemas'
 
+export type MarkPaidRedemptionInput = {
+  customerId: string
+  pointsToRedeem: number
+}
+
 export type MarkPaidResult =
   | {
       ok: true
       sessionId: string
       idempotent: boolean
       totalCents: number
+      totalRedeemedCents: number
       visitsCreated: number
       totalPoints: number
     }
@@ -51,7 +57,11 @@ async function authorize(slug: string) {
   }
 }
 
-export async function markSessionPaid(slug: string, sessionId: string): Promise<MarkPaidResult> {
+export async function markSessionPaid(
+  slug: string,
+  sessionId: string,
+  redemptions: MarkPaidRedemptionInput[] = [],
+): Promise<MarkPaidResult> {
   const access = await authorize(slug)
   if (!access) return { ok: false, message: 'No tenés permiso.' }
 
@@ -61,13 +71,37 @@ export async function markSessionPaid(slug: string, sessionId: string): Promise<
   } = await supabase.auth.getUser()
   if (!user) return { ok: false, message: 'No autenticado.' }
 
-  const { data, error } = await supabase.rpc('mark_session_paid', { p_session_id: sessionId })
+  const { data, error } = await supabase.rpc('mark_session_paid', {
+    p_session_id: sessionId,
+    p_redemptions: redemptions.map((r) => ({
+      customer_id: r.customerId,
+      points_to_redeem: r.pointsToRedeem,
+    })),
+  })
   if (error) {
     if (error.message.includes('session_not_open')) {
       return { ok: false, message: 'La sesión no está abierta.' }
     }
     if (error.message.includes('session_not_found')) {
       return { ok: false, message: 'Sesión no encontrada.' }
+    }
+    if (error.message.includes('redemption_disabled')) {
+      return { ok: false, message: 'Pagar con puntos está deshabilitado en este bar.' }
+    }
+    if (error.message.includes('invalid_points_to_redeem')) {
+      return { ok: false, message: 'Cantidad de puntos inválida.' }
+    }
+    if (error.message.includes('customer_not_in_session')) {
+      return { ok: false, message: 'El cliente no está en la sesión.' }
+    }
+    if (error.message.includes('insufficient_balance')) {
+      return { ok: false, message: 'El cliente no tiene saldo suficiente.' }
+    }
+    if (error.message.includes('exceeds_cap')) {
+      return { ok: false, message: 'La redención excede el % máximo configurado.' }
+    }
+    if (error.message.includes('exceeds_share')) {
+      return { ok: false, message: 'La redención excede la parte del cliente.' }
     }
     console.error('[sessions.markPaid]', error.message)
     return { ok: false, message: 'No se pudo cobrar la mesa.' }
@@ -77,6 +111,7 @@ export async function markSessionPaid(slug: string, sessionId: string): Promise<
     session_id: string
     idempotent: boolean
     total_cents: number
+    total_redeemed_cents?: number
     visits_created: number
     total_points: number
   }
@@ -89,6 +124,8 @@ export async function markSessionPaid(slug: string, sessionId: string): Promise<
     entityId: sessionId,
     payload: {
       total_cents: result.total_cents,
+      total_redeemed_cents: result.total_redeemed_cents ?? 0,
+      redemptions_count: redemptions.length,
       visits_created: result.visits_created,
       total_points: result.total_points,
     },
@@ -101,6 +138,7 @@ export async function markSessionPaid(slug: string, sessionId: string): Promise<
     sessionId: result.session_id,
     idempotent: result.idempotent,
     totalCents: result.total_cents,
+    totalRedeemedCents: result.total_redeemed_cents ?? 0,
     visitsCreated: result.visits_created,
     totalPoints: result.total_points,
   }

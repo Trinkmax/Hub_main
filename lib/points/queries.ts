@@ -138,3 +138,34 @@ export async function listCustomerRedemptions(opts: {
     }
   })
 }
+
+export type PointsRedemptionConfigRow = {
+  enabled: boolean
+  ratePointsToCents: number
+  maxPct: number
+}
+
+export async function getPointsRedemptionConfig(
+  tenantId: string,
+): Promise<PointsRedemptionConfigRow> {
+  const supabase = await createClient()
+  // Las columnas se agregan en la migración 20260529 — cast hasta regenerar types.
+  const { data } = await supabase
+    .from('tenants')
+    .select('points_redemption_enabled, points_to_cents_rate, points_redemption_max_pct')
+    .eq('id', tenantId)
+    .maybeSingle()
+
+  type Row = {
+    points_redemption_enabled?: boolean | null
+    points_to_cents_rate?: number | null
+    points_redemption_max_pct?: number | string | null
+  }
+  const row = (data as Row | null) ?? null
+  if (!row) return { enabled: false, ratePointsToCents: 100, maxPct: 50 }
+  return {
+    enabled: Boolean(row.points_redemption_enabled),
+    ratePointsToCents: Number(row.points_to_cents_rate ?? 100),
+    maxPct: Number(row.points_redemption_max_pct ?? 50),
+  }
+}

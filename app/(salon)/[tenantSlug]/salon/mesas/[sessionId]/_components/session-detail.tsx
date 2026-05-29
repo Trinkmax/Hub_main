@@ -29,6 +29,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import type { PointsRedemptionConfig } from '@/lib/points/redemption'
 import { subscribeChanges } from '@/lib/realtime/subscribe'
 import {
   markSessionAbandoned,
@@ -38,7 +39,7 @@ import {
 import type { CobroBreakdown, WaiterSessionDetail } from '@/lib/sessions-waiter/queries'
 import type { TicketItemRow, TicketRow } from '@/lib/tickets/queries'
 import { PartySizeStepper } from '../../_components/party-size-stepper'
-import { CobrarDialog } from './cobrar-dialog'
+import { CobrarDialog, type CustomerBalance } from './cobrar-dialog'
 import { StaffMenuSheet } from './staff-menu-sheet'
 import { TicketCard } from './ticket-card'
 
@@ -58,6 +59,12 @@ export function SessionDetail({
   const [billRequested, setBillRequested] = useState(session.bill_requested)
   const [showCobro, setShowCobro] = useState(false)
   const [breakdown, setBreakdown] = useState<CobroBreakdown | null>(null)
+  const [redemptionConfig, setRedemptionConfig] = useState<PointsRedemptionConfig>({
+    enabled: false,
+    ratePointsToCents: 100,
+    maxPct: 50,
+  })
+  const [customerBalances, setCustomerBalances] = useState<CustomerBalance[]>([])
   const [sessionStatus, setSessionStatus] = useState(session.status)
   const [showAbandonConfirm, setShowAbandonConfirm] = useState(false)
   const [showPartySizeEditor, setShowPartySizeEditor] = useState(false)
@@ -91,8 +98,14 @@ export function SessionDetail({
       cache: 'no-store',
     })
     if (!res.ok) return
-    const data = (await res.json()) as { breakdown: CobroBreakdown }
+    const data = (await res.json()) as {
+      breakdown: CobroBreakdown
+      redemptionConfig: PointsRedemptionConfig
+      customerBalances: CustomerBalance[]
+    }
     setBreakdown(data.breakdown)
+    setRedemptionConfig(data.redemptionConfig)
+    setCustomerBalances(data.customerBalances)
     setShowCobro(true)
   }
 
@@ -374,6 +387,8 @@ export function SessionDetail({
           tenantSlug={tenantSlug}
           sessionId={session.id}
           breakdown={breakdown}
+          redemptionConfig={redemptionConfig}
+          customerBalances={customerBalances}
           open={showCobro}
           onClose={() => setShowCobro(false)}
           onPaid={() => {

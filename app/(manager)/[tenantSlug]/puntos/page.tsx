@@ -2,7 +2,7 @@ import { Gift, Info, Star } from 'lucide-react'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { listMenu } from '@/lib/menu/queries'
-import { listRewards, listRules } from '@/lib/points/queries'
+import { getPointsRedemptionConfig, listRewards, listRules } from '@/lib/points/queries'
 import {
   RoleRequiredError,
   requireRole,
@@ -12,6 +12,7 @@ import {
 import { NewPerAmountForm } from './_components/new-per-amount-form'
 import { NewPerItemForm } from './_components/new-per-item-form'
 import { NewRewardForm } from './_components/new-reward-form'
+import { RedemptionConfigForm } from './_components/redemption-config-form'
 import { RewardsList } from './_components/rewards-list'
 import { RulesList } from './_components/rules-list'
 
@@ -55,10 +56,11 @@ export default async function PuntosPage({ params }: { params: Promise<{ tenantS
     throw error
   }
 
-  const [rules, rewards, menu] = await Promise.all([
+  const [rules, rewards, menu, redemptionConfig] = await Promise.all([
     listRules({ tenantId: access.tenant.id }),
     listRewards({ tenantId: access.tenant.id }),
     listMenu({ tenantId: access.tenant.id }),
+    getPointsRedemptionConfig(access.tenant.id),
   ])
 
   const activeRuleSummary = describeActivePerAmountRule(rules as Rule[])
@@ -71,6 +73,8 @@ export default async function PuntosPage({ params }: { params: Promise<{ tenantS
         title="Puntos y recompensas"
         description="Cómo se ganan los puntos y qué pueden canjear los clientes."
       />
+
+      <RedemptionConfigForm tenantSlug={tenantSlug} initial={redemptionConfig} />
 
       {activeRuleSummary ? (
         <div className="card-hairline flex items-start gap-3 rounded-xl border bg-primary/5 p-4 text-sm">

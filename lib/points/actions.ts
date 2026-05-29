@@ -11,7 +11,13 @@ import {
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
-import { createRewardSchema, createRuleSchema, updateRewardSchema } from './schemas'
+import {
+  createRewardSchema,
+  createRuleSchema,
+  type UpdatePointsRedemptionConfigInput,
+  updatePointsRedemptionConfigSchema,
+  updateRewardSchema,
+} from './schemas'
 
 export type LoyaltyActionState = { ok: true; message?: string } | { ok: false; message: string }
 
@@ -391,4 +397,39 @@ export async function deleteReward(slug: string, id: string): Promise<LoyaltyAct
 
   revalidatePath(`/${slug}/configuracion/puntos`)
   return { ok: true }
+}
+
+// ──────────────────────────────────────────────────────────
+// Config de redención de puntos como descuento al cobrar
+// ──────────────────────────────────────────────────────────
+
+export async function updatePointsRedemptionConfigAction(
+  slug: string,
+  input: UpdatePointsRedemptionConfigInput,
+): Promise<LoyaltyActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = updatePointsRedemptionConfigSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('tenants')
+    .update({
+      points_redemption_enabled: parsed.data.enabled,
+      points_to_cents_rate: parsed.data.ratePointsToCents,
+      points_redemption_max_pct: parsed.data.maxPct,
+    })
+    .eq('id', tenant.id)
+
+  if (error) {
+    console.error('[points.updateRedemptionConfig]', error.message)
+    return { ok: false, message: 'No se pudo guardar la configuración.' }
+  }
+
+  revalidatePath(`/${slug}/puntos`)
+  return { ok: true, message: 'Configuración guardada' }
 }
