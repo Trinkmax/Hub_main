@@ -21,6 +21,7 @@ import {
   managerSchema,
   markPaidSchema,
   moveScheduledEventSchema,
+  quickTemplateSchema,
   rateTierSchema,
   scheduledEventSchema,
   scheduledTemplateSchema,
@@ -29,6 +30,7 @@ import {
   zoneCapacityDefaultsSchema,
   zoneCapacityOverrideSchema,
 } from './schemas'
+import { uniqueSlugFrom } from './slug-dedupe'
 import type { SalonReservationStatus } from './types'
 
 // ──────────────────────────────────────────────────────────
@@ -603,6 +605,70 @@ export async function upsertScheduledTemplate(
   revalidatePath(`/${slug}/eventos/templates`)
   revalidatePath(`/${slug}/eventos/programados`)
   return { ok: true, data: { id } }
+}
+
+/**
+ * Alta rápida de formato desde el alta de reservas. A diferencia de
+ * `upsertScheduledTemplate` (owner-only), esta la puede usar cualquier staff
+ * (owner + cashier) — RLS lo permite vía la policy `set_staff_insert`. Solo
+ * inserta (nunca edita), genera slug único y devuelve la fila completa para
+ * que el form la agregue al combo y la seleccione.
+ */
+export async function quickCreateScheduledTemplate(
+  slug: string,
+  input: FormData | Record<string, unknown>,
+): Promise<ActionState> {
+  const access = await authorize(slug, STAFF)
+  if (!access) return noAccess()
+
+  const parsed = quickTemplateSchema.safeParse(asObject(input))
+  if (!parsed.success) {
+    const first = parsed.error.issues[0]
+    return badInput(first?.message ?? 'Datos inválidos', first?.path[0]?.toString())
+  }
+
+  const supabase = (await createClient()) as SBAny
+
+  const { data: existingRows } = await supabase
+    .from('scheduled_event_templates')
+    .select('slug')
+    .eq('tenant_id', access.tenant.id)
+  const existing = ((existingRows ?? []) as Array<{ slug: string }>).map((r) => r.slug)
+  const finalSlug = uniqueSlugFrom(parsed.data.name, existing)
+
+  const { data, error } = await supabase
+    .from('scheduled_event_templates')
+    .insert({
+      tenant_id: access.tenant.id,
+      name: parsed.data.name,
+      slug: finalSlug,
+      consume_special_reservations: false,
+      default_capacity: parsed.data.default_capacity,
+      default_meal_type: parsed.data.default_meal_type,
+      color_hex: parsed.data.color_hex,
+      active: true,
+    })
+    .select('*')
+    .single()
+
+  if (error) return { ok: false, message: humanizeSalonError(error.message), code: error.message }
+
+  await logAudit({
+    tenantId: access.tenant.id,
+    userId: null,
+    action: 'scheduled_event_template.created',
+    entity: 'scheduled_event_template',
+    entityId: (data as { id: string }).id,
+    payload: { name: parsed.data.name, source: 'quick_create' },
+  })
+
+  revalidatePath(`/${slug}/eventos/templates`)
+  revalidatePath(`/${slug}/eventos/programados`)
+  return {
+    ok: true,
+    message: 'Formato creado.',
+    data: { template: data as Record<string, unknown> },
+  }
 }
 
 // ──────────────────────────────────────────────────────────
