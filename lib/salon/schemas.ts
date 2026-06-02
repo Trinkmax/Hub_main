@@ -202,6 +202,22 @@ export const scheduledTemplateSchema = z.object({
   active: z.coerce.boolean().default(true),
 })
 
+// Alta rápida de formato (staff) desde el alta de reservas — campos mínimos.
+// El slug se genera server-side; consume_special_reservations queda en false.
+export const quickTemplateSchema = z.object({
+  name: z.string().trim().min(1, 'Poné un nombre').max(80),
+  default_capacity: z
+    .union([z.coerce.number().int().min(1).max(9999), z.literal(''), z.null(), z.undefined()])
+    .transform((v) => (typeof v === 'number' ? v : null))
+    .optional()
+    .transform((v) => v ?? null),
+  default_meal_type: mealTypeEnum.default('dinner'),
+  color_hex: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, 'Color inválido (#RRGGBB)')
+    .default('#7c3aed'),
+})
+
 export const scheduledEventSchema = z.object({
   id: z.string().uuid().optional(),
   template_id: z.string().uuid(),
@@ -286,6 +302,7 @@ export type TransitionStatusInput = z.infer<typeof transitionStatusSchema>
 export type ActualGuestsInput = z.infer<typeof actualGuestsSchema>
 export type CancelReservationInput = z.infer<typeof cancelReservationSchema>
 export type ScheduledTemplateInput = z.infer<typeof scheduledTemplateSchema>
+export type QuickTemplateInput = z.infer<typeof quickTemplateSchema>
 export type ScheduledEventInput = z.infer<typeof scheduledEventSchema>
 export type MoveScheduledEventInput = z.infer<typeof moveScheduledEventSchema>
 export type ManagerInput = z.infer<typeof managerSchema>
