@@ -1,5 +1,6 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
+import { aggregateMonthCapacity, type MonthCapacity } from './month-capacity'
 import { computePeakWindow, type PeakWindow } from './peak'
 import type {
   CommissionBonusRuleRow,
@@ -10,6 +11,7 @@ import type {
   ReservationManagerRow,
   ReservationWithJoins,
   SalonReservationStatus,
+  SalonZone,
   SalonZoneCapacityOverrideRow,
   ScheduledEventRow,
   ScheduledEventTemplateRow,
@@ -244,6 +246,55 @@ export async function getDayCapacitySnapshot(opts: {
   })
   if (error) throw error
   return (data ?? []) as DayCapacityBucket[]
+}
+
+/**
+ * Capacidad agregada por día para un mes (YYYY-MM). Pensado para el badge
+ * del calendario de salón. Resuelve con 3 lecturas (reservas del mes,
+ * overrides, defaults) y delega el cómputo a `aggregateMonthCapacity`.
+ */
+export async function getMonthCapacity(opts: {
+  tenantId: string
+  ym: string // YYYY-MM
+}): Promise<MonthCapacity> {
+  const supabase = (await createClient()) as SBAny
+  const [yStr, mStr] = opts.ym.split('-')
+  const y = Number(yStr)
+  const m = Number(mStr)
+  const from = `${opts.ym}-01`
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate()
+  const to = `${opts.ym}-${String(lastDay).padStart(2, '0')}`
+
+  const [resResult, overrides, defaults] = await Promise.all([
+    supabase
+      .from('salon_reservations')
+      .select('reservation_date, zone, estimated_guests, actual_guests, status')
+      .eq('tenant_id', opts.tenantId)
+      .gte('reservation_date', from)
+      .lte('reservation_date', to)
+      .not('status', 'in', '(cancelled,no_show)'),
+    listZoneOverrides({ tenantId: opts.tenantId, from, to }),
+    getZoneCapacityDefaults({ tenantId: opts.tenantId }),
+  ])
+  if (resResult.error) throw resResult.error
+
+  const reservations = (resResult.data ?? []) as Array<{
+    reservation_date: string
+    zone: SalonZone
+    estimated_guests: number
+    actual_guests: number | null
+    status: SalonReservationStatus
+  }>
+
+  const physicalOverrides = overrides
+    .filter((o) => o.zone === 'planta_alta' || o.zone === 'planta_baja')
+    .map((o) => ({
+      override_date: o.override_date,
+      zone: o.zone as 'planta_alta' | 'planta_baja',
+      capacity: o.capacity,
+    }))
+
+  return aggregateMonthCapacity({ reservations, overrides: physicalOverrides, defaults })
 }
 
 // ──────────────────────────────────────────────────────────
