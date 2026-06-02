@@ -39,6 +39,7 @@ import { createSalonReservation, updateSalonReservation } from '@/lib/salon/acti
 import { fetchDayCapacity, fetchScheduledEventsForDate } from '@/lib/salon/client-actions'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import { type CreateSalonReservationInput, createSalonReservationSchema } from '@/lib/salon/schemas'
+import { QuickTemplateDialog } from './quick-template-dialog'
 
 type ReservationFormInput = CreateSalonReservationInput
 
@@ -130,7 +131,7 @@ export function ReservationForm({
   tenantSlug,
   initialDate,
   managers,
-  templates,
+  templates: templatesProp,
   initialEventsForDate,
   rateTiers,
   bonusPerGuestCents,
@@ -138,6 +139,7 @@ export function ReservationForm({
   initialValues,
 }: Props) {
   const router = useRouter()
+  const [templates, setTemplates] = useState<ScheduledEventTemplateRow[]>(templatesProp)
   const [submitting, startSubmit] = useTransition()
   const [, startCapacity] = useTransition()
   const [, startEvents] = useTransition()
@@ -610,6 +612,18 @@ export function ReservationForm({
                   )}
                 </SelectContent>
               </Select>
+              <div className="flex justify-end">
+                <QuickTemplateDialog
+                  tenantSlug={tenantSlug}
+                  defaultMealType={values.meal_type}
+                  onCreated={(tpl) => {
+                    setTemplates((prev) =>
+                      [...prev, tpl].sort((a, b) => a.name.localeCompare(b.name)),
+                    )
+                    form.setValue('requested_template_id', tpl.id, { shouldValidate: true })
+                  }}
+                />
+              </div>
               {values.requested_template_id ? (
                 <p className="text-xs text-emerald-700 dark:text-emerald-400">
                   ✓ {(() => {
