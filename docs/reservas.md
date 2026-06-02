@@ -205,4 +205,25 @@ Antes de mergear, verificar localmente:
 - Hard-capacity lock (flag tenant) — hoy permite overbooking voluntario.
 - Vista "mi liquidación" para que cada gestor vea sus propias comisiones.
 - Recibo PDF de comisión por gestor/período.
+
+---
+
+## Addendum 2026-06 — Mejoras UX
+
+- **Alta inline de formato**: en el alta de reserva (cumpleaños/especial) hay un
+  botón "Crear formato nuevo" que inserta un `scheduled_event_templates` con
+  campos mínimos. Lo puede usar staff (owner + cashier) — policy RLS
+  `set_staff_insert`. La edición/borrado de formatos sigue siendo owner-only.
+- **Popup de gestión rápida**: "Ver" en el listado abre `ReservationQuickView`
+  (datos + controles Llegó/Sentar/Cerrar/cancelar). La edición a fondo sigue en
+  `/reservas/[id]`. Los controles viven en `components/reservations/`.
+- **Vista por día**: `/reservas` usa el param `?day=YYYY-MM-DD` (default hoy) con
+  stepper de flechas + "Hoy" + contador de cubiertos. El rango (`from`/`to`)
+  queda como filtro avanzado.
+- **Calendario**: `/eventos/programados` muestra un badge `used/total` por día y
+  un popup (`DayReservationsDialog`) con el listado completo de reservas del día
+  y el desglose de capacidad. Capacidad mensual: `getMonthCapacity` +
+  `aggregateMonthCapacity`.
+- **Torta/champagne**: selector con toggle Sí/No + stepper de cantidad
+  (`BringsItemControl`).
 - Bonus condicional por día de semana o estacionalidad.
