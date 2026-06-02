@@ -19,9 +19,11 @@ import { useCallback, useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { moveScheduledEvent } from '@/lib/salon/actions'
+import type { MonthCapacity } from '@/lib/salon/month-capacity'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import type { ScheduledEventTemplateRow } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
+import { DayReservationsDialog } from './day-reservations-dialog'
 import { TemplateDropDialog } from './template-drop-dialog'
 
 function shiftYM(ym: string, months: number): string {
@@ -59,16 +61,19 @@ export function ScheduledEventsMonth({
   ym,
   events: initialEvents,
   templates,
+  monthCapacity,
 }: {
   tenantSlug: string
   ym: string
   events: ScheduledEventWithTemplate[]
   templates: ScheduledEventTemplateRow[]
+  monthCapacity: MonthCapacity
 }) {
   const router = useRouter()
   const [events, setEvents] = useState(initialEvents)
   const [activeDrag, setActiveDrag] = useState<ActiveDrag>(null)
   const [moving, startMoving] = useTransition()
+  const [dayDialogDate, setDayDialogDate] = useState<string | null>(null)
 
   // Estado del dialog cuando se suelta un template
   const [dropDialog, setDropDialog] = useState<{
@@ -215,6 +220,15 @@ export function ScheduledEventsMonth({
               tenantSlug={tenantSlug}
               isDraggingTemplate={activeDrag?.kind === 'template'}
               isDraggingEvent={activeDrag?.kind === 'event'}
+              capacity={
+                cell.date
+                  ? (monthCapacity.days[cell.date] ?? {
+                      used: 0,
+                      total: monthCapacity.defaultTotal,
+                    })
+                  : null
+              }
+              onOpenDay={setDayDialogDate}
             />
           ))}
         </div>
@@ -237,6 +251,15 @@ export function ScheduledEventsMonth({
         template={dropDialog?.template ?? null}
         date={dropDialog?.date ?? null}
         onCreated={refreshEventList}
+      />
+
+      <DayReservationsDialog
+        tenantSlug={tenantSlug}
+        date={dayDialogDate}
+        open={dayDialogDate !== null}
+        onOpenChange={(o) => {
+          if (!o) setDayDialogDate(null)
+        }}
       />
     </DndContext>
   )
@@ -352,18 +375,42 @@ function EventCardOverlay({ event }: { event: ScheduledEventWithTemplate }) {
   )
 }
 
+function CapacityBadge({ used, total }: { used: number; total: number }) {
+  const isOver = used > total
+  const isFull = !isOver && total > 0 && used >= total * 0.9
+  return (
+    <span
+      className={cn(
+        'rounded px-1 py-px font-mono text-[10px] font-semibold tabular-nums',
+        isOver
+          ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+          : isFull
+            ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+            : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
+      )}
+      title="Cubiertos / tope del salón"
+    >
+      {used}/{total}
+    </span>
+  )
+}
+
 function DayCell({
   date,
   events,
   tenantSlug,
   isDraggingTemplate,
   isDraggingEvent,
+  capacity,
+  onOpenDay,
 }: {
   date: string | null
   events: ScheduledEventWithTemplate[]
   tenantSlug: string
   isDraggingTemplate: boolean
   isDraggingEvent: boolean
+  capacity: { used: number; total: number } | null
+  onOpenDay: (date: string) => void
 }) {
   // Las celdas vacías de padding no son droppables.
   const { setNodeRef, isOver } = useDroppable({
@@ -390,10 +437,18 @@ function DayCell({
       )}
     >
       <div className="flex h-full flex-col gap-1">
-        <div className="flex items-center justify-between">
-          <span className="font-mono text-[11px] font-semibold tabular-nums text-muted-foreground">
-            {Number(date.slice(-2))}
-          </span>
+        <div className="flex items-center justify-between gap-1">
+          <button
+            type="button"
+            onClick={() => onOpenDay(date)}
+            className="-mx-1 flex items-center gap-1.5 rounded px-1 py-0.5 transition-colors hover:bg-secondary"
+            aria-label={`Ver reservas del ${date}`}
+          >
+            <span className="font-mono text-[11px] font-semibold tabular-nums text-muted-foreground">
+              {Number(date.slice(-2))}
+            </span>
+            {capacity ? <CapacityBadge used={capacity.used} total={capacity.total} /> : null}
+          </button>
           <Link
             href={`/${tenantSlug}/eventos/programados/nuevo?date=${date}`}
             className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary group-hover:opacity-100"
