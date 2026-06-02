@@ -16,9 +16,10 @@ import {
 import {
   getDayCapacitySnapshot,
   listScheduledEventsForDate,
+  listTimelineForDate,
   type ScheduledEventWithTemplate,
 } from './queries'
-import type { DayCapacityBucket } from './types'
+import type { DayCapacityBucket, ReservationWithJoins } from './types'
 
 async function authorizeRead(slug: string) {
   try {
@@ -61,5 +62,19 @@ export async function fetchScheduledEventsForDate(
     return { ok: true, events }
   } catch {
     return { ok: false, message: 'No pudimos leer los eventos.' }
+  }
+}
+
+export async function fetchReservationsForDate(
+  slug: string,
+  date: string,
+): Promise<{ ok: true; reservations: ReservationWithJoins[] } | { ok: false; message: string }> {
+  const access = await authorizeRead(slug)
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+  try {
+    const reservations = await listTimelineForDate({ tenantId: access.tenant.id, date })
+    return { ok: true, reservations }
+  } catch {
+    return { ok: false, message: 'No pudimos leer las reservas del día.' }
   }
 }

@@ -1,5 +1,7 @@
 import { Cake, ChevronLeft, ChevronRight, GlassWater, Users } from 'lucide-react'
 import Link from 'next/link'
+import { ReservationQuickView } from '@/components/reservations/reservation-quick-view'
+import { StatusPill } from '@/components/reservations/status-pill'
 import { Button } from '@/components/ui/button'
 import {
   DataTableBody,
@@ -13,7 +15,6 @@ import {
   DataTableShell,
 } from '@/components/ui/data-table'
 import { MEAL_TYPE_LABELS, type ReservationWithJoins, ZONE_LABELS } from '@/lib/salon/types'
-import { StatusPill } from './status-pill'
 
 function formatDate(d: string): string {
   // 'YYYY-MM-DD' → 'dd/MM'
@@ -172,9 +173,7 @@ export function ReservationsTable({
                     <StatusPill status={r.status} />
                   </DataTableCell>
                   <DataTableCell className="text-right">
-                    <Button asChild variant="ghost" size="sm">
-                      <Link href={`/${tenantSlug}/reservas/${r.id}`}>Ver</Link>
-                    </Button>
+                    <ReservationQuickView tenantSlug={tenantSlug} reservation={r} />
                   </DataTableCell>
                 </DataTableRow>
               )

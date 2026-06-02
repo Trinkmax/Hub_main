@@ -39,6 +39,7 @@ import { createSalonReservation, updateSalonReservation } from '@/lib/salon/acti
 import { fetchDayCapacity, fetchScheduledEventsForDate } from '@/lib/salon/client-actions'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import { type CreateSalonReservationInput, createSalonReservationSchema } from '@/lib/salon/schemas'
+import { QuickTemplateDialog } from './quick-template-dialog'
 
 type ReservationFormInput = CreateSalonReservationInput
 
@@ -130,7 +131,7 @@ export function ReservationForm({
   tenantSlug,
   initialDate,
   managers,
-  templates,
+  templates: templatesProp,
   initialEventsForDate,
   rateTiers,
   bonusPerGuestCents,
@@ -138,6 +139,7 @@ export function ReservationForm({
   initialValues,
 }: Props) {
   const router = useRouter()
+  const [templates, setTemplates] = useState<ScheduledEventTemplateRow[]>(templatesProp)
   const [submitting, startSubmit] = useTransition()
   const [, startCapacity] = useTransition()
   const [, startEvents] = useTransition()
@@ -610,6 +612,18 @@ export function ReservationForm({
                   )}
                 </SelectContent>
               </Select>
+              <div className="flex justify-end">
+                <QuickTemplateDialog
+                  tenantSlug={tenantSlug}
+                  defaultMealType={values.meal_type}
+                  onCreated={(tpl) => {
+                    setTemplates((prev) =>
+                      [...prev, tpl].sort((a, b) => a.name.localeCompare(b.name)),
+                    )
+                    form.setValue('requested_template_id', tpl.id, { shouldValidate: true })
+                  }}
+                />
+              </div>
               {values.requested_template_id ? (
                 <p className="text-xs text-emerald-700 dark:text-emerald-400">
                   ✓ {(() => {
@@ -659,17 +673,15 @@ export function ReservationForm({
           >
             <FieldGroup title="Cumpleaños" icon={Cake}>
               <div className="grid gap-3 sm:grid-cols-2">
-                <CountControl
+                <BringsItemControl
                   icon={Cake}
-                  label="Tortas que traen"
-                  max={2}
+                  label="¿Traen torta?"
                   value={values.cake_count}
                   onChange={(v) => form.setValue('cake_count', v)}
                 />
-                <CountControl
+                <BringsItemControl
                   icon={GlassWater}
-                  label="Champagne que traen"
-                  max={2}
+                  label="¿Traen champagne?"
                   value={values.champagne_count}
                   onChange={(v) => form.setValue('champagne_count', v)}
                 />
@@ -921,43 +933,85 @@ function GuestStepper({ value, onChange }: { value: number; onChange: (v: number
   )
 }
 
-function CountControl({
+function BringsItemControl({
   icon: Icon,
   label,
-  max,
   value,
   onChange,
 }: {
   // biome-ignore lint/suspicious/noExplicitAny: lucide icon type
   icon: any
   label: string
-  max: number
   value: number
   onChange: (v: number) => void
 }) {
+  const brings = value > 0
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <Label className="text-xs uppercase tracking-wide text-muted-foreground">{label}</Label>
       <div className="flex items-center gap-2">
-        {Array.from({ length: max + 1 }, (_, i) => i).map((i) => {
-          const isActive = value === i
-          return (
-            <button
-              type="button"
-              key={`count-${label}-${i}`}
-              onClick={() => onChange(i)}
-              className={cn(
-                'flex h-10 w-10 items-center justify-center rounded-lg border transition-all',
-                isActive
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border bg-card/40 text-muted-foreground hover:bg-secondary',
-              )}
-            >
-              {i === 0 ? <span className="text-xs">No</span> : <Icon className="size-4" />}
-            </button>
-          )
-        })}
+        <button
+          type="button"
+          onClick={() => onChange(0)}
+          className={cn(
+            'h-10 rounded-lg border px-4 text-sm font-medium transition-all',
+            !brings
+              ? 'border-primary bg-primary text-primary-foreground'
+              : 'border-border bg-card/40 text-muted-foreground hover:bg-secondary',
+          )}
+        >
+          No
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange(value > 0 ? value : 1)}
+          className={cn(
+            'flex h-10 items-center gap-1.5 rounded-lg border px-4 text-sm font-medium transition-all',
+            brings
+              ? 'border-primary bg-primary text-primary-foreground'
+              : 'border-border bg-card/40 text-muted-foreground hover:bg-secondary',
+          )}
+        >
+          <Icon className="size-4" />
+          Sí
+        </button>
       </div>
+      <AnimatePresence initial={false}>
+        {brings ? (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.15 }}
+          >
+            <div className="flex items-center gap-3 pt-1">
+              <span className="text-xs text-muted-foreground">Cantidad</span>
+              <div className="flex h-10 items-center rounded-lg border border-border bg-card/60">
+                <button
+                  type="button"
+                  aria-label="Quitar"
+                  onClick={() => onChange(Math.max(1, value - 1))}
+                  className="flex h-full w-9 items-center justify-center text-muted-foreground transition-colors hover:bg-secondary/60"
+                >
+                  <Minus className="size-3.5" />
+                </button>
+                <span className="w-8 text-center font-mono text-base font-semibold tabular-nums">
+                  {value}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Agregar"
+                  onClick={() => onChange(Math.min(2, value + 1))}
+                  className="flex h-full w-9 items-center justify-center text-muted-foreground transition-colors hover:bg-secondary/60"
+                >
+                  <Plus className="size-3.5" />
+                </button>
+              </div>
+              <span className="text-[11px] text-muted-foreground">máx 2</span>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   )
 }

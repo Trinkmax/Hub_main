@@ -34,10 +34,13 @@ function todayCordoba(): string {
 
 export default async function NuevaReservaPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantSlug: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { tenantSlug } = await params
+  const sp = await searchParams
 
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
@@ -50,10 +53,14 @@ export default async function NuevaReservaPage({
   }
 
   const today = todayCordoba()
+  const dateParam =
+    typeof sp.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : undefined
+  const initialDate = dateParam ?? today
+
   const [managers, templates, eventsToday, tiers, bonus] = await Promise.all([
     listManagers({ tenantId: access.tenant.id, onlyActive: true }),
     listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: true }),
-    listScheduledEventsForDate({ tenantId: access.tenant.id, date: today }),
+    listScheduledEventsForDate({ tenantId: access.tenant.id, date: initialDate }),
     listRateTiers({ tenantId: access.tenant.id }),
     getBonusRule({ tenantId: access.tenant.id }),
   ])
@@ -76,7 +83,7 @@ export default async function NuevaReservaPage({
       <ReservationForm
         mode="create"
         tenantSlug={tenantSlug}
-        initialDate={today}
+        initialDate={initialDate}
         managers={managers}
         templates={templates}
         initialEventsForDate={eventsToday}

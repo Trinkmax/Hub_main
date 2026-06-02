@@ -4,7 +4,11 @@ import { notFound } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
-import { listScheduledEventsForDateRange, listScheduledTemplates } from '@/lib/salon/queries'
+import {
+  getMonthCapacity,
+  listScheduledEventsForDateRange,
+  listScheduledTemplates,
+} from '@/lib/salon/queries'
 import {
   RoleRequiredError,
   requireRole,
@@ -54,9 +58,10 @@ export default async function ProgramadosPage({
   }
 
   const { from, to, ymCurrent } = defaultRange(monthStr)
-  const [events, templates] = await Promise.all([
+  const [events, templates, monthCapacity] = await Promise.all([
     listScheduledEventsForDateRange({ tenantId: access.tenant.id, from, to }),
     listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: true }),
+    getMonthCapacity({ tenantId: access.tenant.id, ym: ymCurrent }),
   ])
 
   return (
@@ -111,6 +116,7 @@ export default async function ProgramadosPage({
           ym={ymCurrent}
           events={events}
           templates={templates}
+          monthCapacity={monthCapacity}
         />
       )}
     </div>
