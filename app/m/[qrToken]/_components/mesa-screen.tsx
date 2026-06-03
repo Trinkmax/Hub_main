@@ -23,7 +23,7 @@ import { CapturePromptCard } from './capture-prompt-card'
 import { CaptureSheet } from './capture-sheet'
 import { CartSheet } from './cart-sheet'
 import { ClosingScreen } from './closing-screen'
-import { MenuList } from './menu-list'
+import { MenuHub } from './menu-hub'
 import { MyOrdersPane } from './my-orders-pane'
 import { OrderConfirmation } from './order-confirmation'
 
@@ -471,7 +471,7 @@ export function MesaScreen({
           </TabsList>
 
           <TabsContent value="menu" className="mt-5">
-            {state ? <MenuList categories={state.menu} onAdd={addToCart} /> : <MenuSkeleton />}
+            {state ? <MenuHub categories={state.menu} onAdd={addToCart} /> : <MenuSkeleton />}
           </TabsContent>
 
           <TabsContent value="orders" className="mt-5">
