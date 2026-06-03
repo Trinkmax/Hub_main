@@ -95,7 +95,7 @@ export default async function MenuPage({ params }: { params: Promise<{ tenantSlu
                 <p className="mb-3 text-xs text-muted-foreground">
                   Por ejemplo: Tragos, Comida, Postres.
                 </p>
-                <NewCategoryForm tenantSlug={tenantSlug} />
+                <NewCategoryForm tenantId={access.tenant.id} tenantSlug={tenantSlug} />
               </PopoverContent>
             </Popover>
           </div>
@@ -119,7 +119,7 @@ export default async function MenuPage({ params }: { params: Promise<{ tenantSlu
                 <p className="mb-3 text-xs text-muted-foreground">
                   Por ejemplo: Tragos, Comida, Postres.
                 </p>
-                <NewCategoryForm tenantSlug={tenantSlug} />
+                <NewCategoryForm tenantId={access.tenant.id} tenantSlug={tenantSlug} />
               </PopoverContent>
             </Popover>
           }

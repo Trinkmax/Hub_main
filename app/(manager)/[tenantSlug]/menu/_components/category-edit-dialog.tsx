@@ -14,17 +14,21 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { updateCategory } from '@/lib/menu/actions'
 import type { MenuCategory } from '@/lib/menu/queries'
+import { MenuImageUploader } from './image-uploader'
 
 export function CategoryEditDialog({
   category,
+  tenantId,
   tenantSlug,
   onClose,
 }: {
   category: MenuCategory
+  tenantId: string
   tenantSlug: string
   onClose: () => void
 }) {
   const [name, setName] = useState(category.name)
+  const [imageUrl, setImageUrl] = useState<string | null>(category.image_url)
   const [pending, start] = useTransition()
 
   const onSave = () => {
@@ -33,6 +37,7 @@ export function CategoryEditDialog({
         id: category.id,
         name,
         active: category.active,
+        image_url: imageUrl,
       })
       if (r.ok) {
         toast.success('Guardado.')
@@ -59,6 +64,12 @@ export function CategoryEditDialog({
               maxLength={60}
             />
           </div>
+          <MenuImageUploader
+            tenantId={tenantId}
+            value={imageUrl}
+            onChange={setImageUrl}
+            label="Foto de la categoría"
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={pending}>

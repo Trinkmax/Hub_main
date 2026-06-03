@@ -227,6 +227,7 @@ function SortableCategory({
         id: category.id,
         name: category.name,
         active: !category.active,
+        image_url: category.image_url,
       })
       if (r.ok) {
         toast.success(category.active ? 'Categoría pausada.' : 'Categoría activada.')
@@ -336,6 +337,7 @@ function SortableCategory({
       {editingCat ? (
         <CategoryEditDialog
           category={category}
+          tenantId={tenantId}
           tenantSlug={tenantSlug}
           onClose={() => setEditingCat(false)}
         />

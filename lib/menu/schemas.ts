@@ -1,13 +1,19 @@
 import { z } from 'zod'
 
+const categoryImageUrl = z
+  .union([z.string().trim().url().max(2048), z.literal(''), z.null(), z.undefined()])
+  .transform((v) => (v && v.length > 0 ? v : null))
+
 export const createCategorySchema = z.object({
   name: z.string().trim().min(1, 'Nombre requerido').max(60, 'Máximo 60'),
+  image_url: categoryImageUrl.optional().default(null),
 })
 
 export const updateCategorySchema = z.object({
   id: z.string().uuid(),
   name: z.string().trim().min(1).max(60),
   active: z.coerce.boolean(),
+  image_url: categoryImageUrl,
 })
 
 export const createMenuItemSchema = z.object({

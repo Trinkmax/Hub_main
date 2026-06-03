@@ -7,6 +7,7 @@ export type MenuCategory = {
   name: string
   position: number
   active: boolean
+  image_url: string | null
 }
 
 export type MenuItem = {
@@ -42,7 +43,7 @@ export async function listMenu(opts: { tenantId: string }): Promise<{
     await Promise.all([
       supabase
         .from('menu_categories')
-        .select('id, name, position, active')
+        .select('id, name, position, active, image_url')
         .eq('tenant_id', opts.tenantId)
         .order('position', { ascending: true }),
       supabase
