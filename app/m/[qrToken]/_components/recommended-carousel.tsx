@@ -31,7 +31,7 @@ export function RecommendedCarousel({
             key={`rec-${it.id}`}
             type="button"
             onClick={() => onOpen(it)}
-            className="card-hairline group flex w-[15.5rem] shrink-0 flex-col overflow-hidden rounded-2xl border border-border/60 bg-card text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+            className="card-hairline group flex w-[15.5rem] shrink-0 flex-col overflow-hidden rounded-2xl border border-border/60 bg-card text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             <div className="relative aspect-[4/3] w-full overflow-hidden bg-secondary/40">
               {it.image_url ? (

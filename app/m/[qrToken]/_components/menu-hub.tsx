@@ -79,7 +79,7 @@ export function MenuHub({
             <button
               type="button"
               onClick={() => setSelectedId(null)}
-              className="flex size-9 items-center justify-center rounded-full border border-border/60 bg-card text-foreground shadow-sm transition-colors hover:bg-[--cream-tint]"
+              className="flex size-9 items-center justify-center rounded-full border border-border/60 bg-card text-foreground shadow-sm transition-colors hover:bg-[--cream-tint] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               aria-label="Volver a las categorías"
             >
               <ArrowLeft className="size-4" />
@@ -116,9 +116,9 @@ export function MenuHub({
         <button
           type="button"
           onClick={() => setQuery('')}
-          className="mx-auto flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm"
+          className="mx-auto flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
-          <X className="size-3.5" /> Limpiar búsqueda
+          <X className="size-3.5" aria-hidden /> Limpiar búsqueda
         </button>
       )}
 

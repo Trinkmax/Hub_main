@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { logAudit } from '@/lib/audit'
 import { createClient } from '@/lib/supabase/server'
 import {
   RoleRequiredError,
@@ -39,7 +40,7 @@ export async function updateCapturePromptConfig(
   if (!tenant) return { ok: false, message: 'No tenés permiso.' }
 
   const parsed = capturePromptConfigSchema.safeParse({
-    enabled: formData.get('enabled') === 'on',
+    enabled: formData.get('enabled') === 'true',
     headline: formData.get('headline'),
     subtext: formData.get('subtext'),
   })
@@ -64,6 +65,17 @@ export async function updateCapturePromptConfig(
     console.error('[capture-prompt.update]', error.message)
     return { ok: false, message: 'No se pudo guardar.' }
   }
+
+  const { data: userResult } = await supabase.auth.getUser()
+  await logAudit({
+    tenantId: tenant.id,
+    userId: userResult.user?.id ?? null,
+    action: 'tenant_config.capture_prompt_updated',
+    entity: 'tenant',
+    entityId: tenant.id,
+    payload: { enabled: parsed.data.enabled },
+  })
+
   revalidatePath(`/${slug}/configuracion/bienvenida`)
   return { ok: true, message: 'Guardado.' }
 }

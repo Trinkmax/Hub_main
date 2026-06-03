@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useEffect } from 'react'
+import { useActionState, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,6 +19,7 @@ export function CapturePromptForm({
   tenantSlug: string
   config: CapturePromptConfig
 }) {
+  const [enabled, setEnabled] = useState(config.enabled)
   const [state, action, pending] = useActionState(
     (prev: CapturePromptState, fd: FormData) => updateCapturePromptConfig(tenantSlug, prev, fd),
     initial,
@@ -31,6 +32,10 @@ export function CapturePromptForm({
 
   return (
     <form action={action} className="max-w-2xl space-y-4 rounded-xl border bg-card p-5">
+      {/* Input oculto: el Switch de Radix se maneja controlado y sincroniza
+          su estado acá para que viaje en el FormData (igual que welcome-reward-form). */}
+      <input type="hidden" name="enabled" value={enabled ? 'true' : 'false'} />
+
       <div>
         <h2 className="font-display text-base font-semibold">Invitación a registrarse</h2>
         <p className="mt-1 text-xs text-muted-foreground">
@@ -40,7 +45,7 @@ export function CapturePromptForm({
       </div>
 
       <div className="flex items-center gap-2">
-        <Switch id="enabled" name="enabled" defaultChecked={config.enabled} />
+        <Switch id="enabled" checked={enabled} onCheckedChange={setEnabled} />
         <Label htmlFor="enabled">Mostrar la invitación de captura</Label>
       </div>
 

@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { updateCategory } from '@/lib/menu/actions'
 import type { MenuCategory } from '@/lib/menu/queries'
+import { deleteMenuImageByUrl } from '@/lib/menu/upload-image'
 import { MenuImageUploader } from './image-uploader'
 
 export function CategoryEditDialog({
@@ -40,6 +41,16 @@ export function CategoryEditDialog({
         image_url: imageUrl,
       })
       if (r.ok) {
+        // Si se reemplazó o limpió la imagen, borrar la previa del bucket
+        // para no dejar archivos huérfanos (deleteMenuImageByUrl corre en el
+        // browser con el client anon; es best-effort y no bloquea el guardado).
+        if (category.image_url && category.image_url !== imageUrl) {
+          try {
+            await deleteMenuImageByUrl(category.image_url)
+          } catch {
+            // best-effort: un fallo de borrado no debe romper el guardado
+          }
+        }
         toast.success('Guardado.')
         onClose()
       } else {

@@ -31,7 +31,7 @@ export function ItemRow({ item, onOpen }: { item: Item; onOpen: (item: Item) => 
     <button
       type="button"
       onClick={() => onOpen(item)}
-      className="card-hairline group flex w-full items-stretch gap-3 rounded-2xl border border-border/60 bg-card p-2.5 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-card/95 hover:shadow-md"
+      className="card-hairline group flex w-full items-stretch gap-3 rounded-2xl border border-border/60 bg-card p-2.5 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-card/95 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
     >
       <div className="relative size-[72px] shrink-0 overflow-hidden rounded-xl bg-secondary/40">
         {item.image_url ? (

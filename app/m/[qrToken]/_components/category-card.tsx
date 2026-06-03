@@ -3,6 +3,7 @@
 import { ChevronRight } from 'lucide-react'
 import Image from 'next/image'
 import type { ActiveSessionStateData } from '@/lib/m-session/actions'
+import { cn } from '@/lib/utils'
 
 type Category = ActiveSessionStateData['menu'][number]
 
@@ -15,12 +16,17 @@ export function CategoryCard({
 }) {
   const count = category.items.length
   const countLabel = `${count} ${count === 1 ? 'opción' : 'opciones'}`
+  // Con imagen el texto va sobre un degradé fijo oscuro → blanco en ambos temas.
+  // Sin imagen va sobre bg-primary → text-primary-foreground contrasta por
+  // definición en light y dark. (text-primary-foreground es oscuro en dark mode,
+  // así que NO sirve sobre el degradé de la foto.)
+  const onImage = Boolean(category.image_url)
 
   return (
     <button
       type="button"
       onClick={() => onSelect(category.id)}
-      className="card-hairline group relative flex h-28 w-full items-end overflow-hidden rounded-2xl border border-border/60 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+      className="card-hairline group relative flex h-28 w-full items-end overflow-hidden rounded-2xl border border-border/60 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
     >
       {category.image_url ? (
         <>
@@ -44,12 +50,29 @@ export function CategoryCard({
       )}
       <div className="relative flex w-full items-end justify-between p-4">
         <div className="min-w-0">
-          <p className="font-serif text-xl font-semibold leading-tight tracking-tight text-primary-foreground text-balance">
+          <p
+            className={cn(
+              'font-serif text-xl font-semibold leading-tight tracking-tight text-balance',
+              onImage ? 'text-white' : 'text-primary-foreground',
+            )}
+          >
             {category.name}
           </p>
-          <p className="mt-0.5 text-[11px] font-medium text-primary-foreground/80">{countLabel}</p>
+          <p
+            className={cn(
+              'mt-0.5 text-[11px] font-medium',
+              onImage ? 'text-white/85' : 'text-primary-foreground/80',
+            )}
+          >
+            {countLabel}
+          </p>
         </div>
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-foreground/15 text-primary-foreground backdrop-blur-sm transition-transform group-hover:translate-x-0.5">
+        <span
+          className={cn(
+            'flex size-8 shrink-0 items-center justify-center rounded-full backdrop-blur-sm transition-transform group-hover:translate-x-0.5',
+            onImage ? 'bg-white/20 text-white' : 'bg-primary-foreground/15 text-primary-foreground',
+          )}
+        >
           <ChevronRight className="size-4" aria-hidden />
         </span>
       </div>

@@ -143,7 +143,7 @@ export function MesaScreen({
     autoSheetTriedRef.current = true
     if (
       !state.customer_id &&
-      state.capture_prompt?.enabled &&
+      state.capture_prompt.enabled &&
       !isCaptureSeen('sheet', state.session_id)
     ) {
       setShowRegister(true)
@@ -228,6 +228,24 @@ export function MesaScreen({
       }
     },
     [refreshAfterSubmit],
+  )
+
+  // Cerrar la pantalla de confirmación descartando la card de captura:
+  // mantenemos el feedback de "pedido enviado" con un toast (la card tapaba
+  // ese mensaje, así que sin esto el comensal se quedaba sin confirmación).
+  const dismissOrderConfirm = useCallback(() => {
+    setShowOrderConfirm(false)
+    toast.success('Pedido enviado. Esperando confirmación del mozo.')
+  }, [])
+
+  // Registro desde la card post-orden: callback estable (un arrow inline haría
+  // re-disparar el efecto onRegistered de RegisterForm en cada render).
+  const handleRegisteredPostOrder = useCallback(
+    (result: Extract<RegisterCustomerResult, { ok: true }>) => {
+      handleRegistered(result)
+      setShowOrderConfirm(false)
+    },
+    [handleRegistered],
   )
 
   // Datos derivados del state para los heroes
@@ -564,7 +582,7 @@ export function MesaScreen({
             if (
               state &&
               !state.customer_id &&
-              state.capture_prompt?.enabled &&
+              state.capture_prompt.enabled &&
               sid &&
               !isCaptureSeen('postorder', sid)
             ) {
@@ -580,18 +598,15 @@ export function MesaScreen({
 
       {showOrderConfirm && state && browserToken && (
         <OrderConfirmation onClose={() => setShowOrderConfirm(false)}>
-          {!state.customer_id && state.capture_prompt?.enabled ? (
+          {!state.customer_id && state.capture_prompt.enabled ? (
             <CapturePromptCard
               qrToken={qrToken}
               browserToken={browserToken}
               tenantName={tenantName}
               headline={state.capture_prompt.headline}
               subtext={state.capture_prompt.subtext}
-              onDismiss={() => setShowOrderConfirm(false)}
-              onRegistered={(r) => {
-                handleRegistered(r)
-                setShowOrderConfirm(false)
-              }}
+              onDismiss={dismissOrderConfirm}
+              onRegistered={handleRegisteredPostOrder}
             />
           ) : null}
         </OrderConfirmation>
@@ -603,6 +618,9 @@ export function MesaScreen({
 function MenuSkeleton() {
   return (
     <div className="space-y-5">
+      <span role="status" aria-live="polite" className="sr-only">
+        Cargando carta…
+      </span>
       {/* Sticky toolbar skeleton */}
       <div className="space-y-2.5">
         <div className="h-11 w-full animate-pulse rounded-xl bg-muted" />
