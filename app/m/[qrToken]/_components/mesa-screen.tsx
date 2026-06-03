@@ -16,13 +16,16 @@ import {
   requestBill,
 } from '@/lib/m-session/actions'
 import { getOrCreateBrowserToken } from '@/lib/m-session/browser-token'
+import { isCaptureSeen, markCaptureSeen } from '@/lib/m-session/capture-dismissal'
 import { subscribeChanges } from '@/lib/realtime/subscribe'
 import { cn } from '@/lib/utils'
+import { CapturePromptCard } from './capture-prompt-card'
+import { CaptureSheet } from './capture-sheet'
 import { CartSheet } from './cart-sheet'
 import { ClosingScreen } from './closing-screen'
 import { MenuList } from './menu-list'
 import { MyOrdersPane } from './my-orders-pane'
-import { RegisterDialog } from './register-dialog'
+import { OrderConfirmation } from './order-confirmation'
 
 export type CartItem = {
   menuItemId: string
@@ -59,6 +62,8 @@ export function MesaScreen({
   const [billPending, setBillPending] = useState(false)
   const [billRequested, setBillRequested] = useState(false)
   const [paid, setPaid] = useState(false)
+  const [showOrderConfirm, setShowOrderConfirm] = useState(false)
+  const autoSheetTriedRef = useRef(false)
   const sessionIdRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -131,6 +136,19 @@ export function MesaScreen({
     })
     return cleanup
   }, [state, browserToken, qrToken])
+
+  // Auto-abrir el sheet de captura una sola vez por sesión, si aplica.
+  useEffect(() => {
+    if (!state || autoSheetTriedRef.current) return
+    autoSheetTriedRef.current = true
+    if (
+      !state.customer_id &&
+      state.capture_prompt?.enabled &&
+      !isCaptureSeen('sheet', state.session_id)
+    ) {
+      setShowRegister(true)
+    }
+  }, [state])
 
   const addToCart = useCallback((item: CartItem) => {
     setCart((prev) => {
@@ -518,22 +536,16 @@ export function MesaScreen({
 
       {/* DIALOGS */}
       {state && showRegister && browserToken && (
-        <RegisterDialog
+        <CaptureSheet
           qrToken={qrToken}
           browserToken={browserToken}
           tenantName={tenantName}
-          welcomeReward={
-            welcomeReward?.enabled
-              ? {
-                  name: welcomeReward.name,
-                  description: welcomeReward.description,
-                  imageUrl: welcomeReward.image_url,
-                  headline: welcomeReward.headline,
-                  subtext: welcomeReward.subtext,
-                }
-              : null
-          }
-          onClose={() => setShowRegister(false)}
+          headline={state.capture_prompt.headline}
+          subtext={state.capture_prompt.subtext}
+          onClose={() => {
+            setShowRegister(false)
+            if (state.session_id) markCaptureSeen('sheet', state.session_id)
+          }}
           onRegistered={handleRegistered}
         />
       )}
@@ -548,10 +560,41 @@ export function MesaScreen({
           onSubmitted={() => {
             setCart([])
             setShowCart(false)
+            const sid = state?.session_id
+            if (
+              state &&
+              !state.customer_id &&
+              state.capture_prompt?.enabled &&
+              sid &&
+              !isCaptureSeen('postorder', sid)
+            ) {
+              markCaptureSeen('postorder', sid)
+              setShowOrderConfirm(true)
+            } else {
+              toast.success('Pedido enviado. Esperando confirmación del mozo.')
+            }
             void refreshAfterSubmit()
-            toast.success('Pedido enviado. Esperando confirmación del mozo.')
           }}
         />
+      )}
+
+      {showOrderConfirm && state && browserToken && (
+        <OrderConfirmation onClose={() => setShowOrderConfirm(false)}>
+          {!state.customer_id && state.capture_prompt?.enabled ? (
+            <CapturePromptCard
+              qrToken={qrToken}
+              browserToken={browserToken}
+              tenantName={tenantName}
+              headline={state.capture_prompt.headline}
+              subtext={state.capture_prompt.subtext}
+              onDismiss={() => setShowOrderConfirm(false)}
+              onRegistered={(r) => {
+                handleRegistered(r)
+                setShowOrderConfirm(false)
+              }}
+            />
+          ) : null}
+        </OrderConfirmation>
       )}
     </div>
   )
