@@ -1397,6 +1397,7 @@ export type Database = {
           active: boolean
           created_at: string
           id: string
+          image_url: string | null
           name: string
           position: number
           tenant_id: string
@@ -1405,6 +1406,7 @@ export type Database = {
           active?: boolean
           created_at?: string
           id?: string
+          image_url?: string | null
           name: string
           position?: number
           tenant_id: string
@@ -1413,6 +1415,7 @@ export type Database = {
           active?: boolean
           created_at?: string
           id?: string
+          image_url?: string | null
           name?: string
           position?: number
           tenant_id?: string

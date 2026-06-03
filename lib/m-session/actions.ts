@@ -214,6 +214,7 @@ export type ActiveSessionStateData = {
     id: string
     name: string
     position: number
+    image_url: string | null
     items: Array<{
       id: string
       name: string
@@ -227,6 +228,12 @@ export type ActiveSessionStateData = {
       tags: Array<{ id: string; name: string; color: string }>
     }>
   }>
+  // Copy configurable del banner de captura (de tenants.settings). Siempre presente.
+  capture_prompt: {
+    enabled: boolean
+    headline: string
+    subtext: string
+  }
   // Welcome reward disponible para el cliente actual cuando no se registró aún.
   // Si no hay config válida, queda null.
   welcome_reward: {

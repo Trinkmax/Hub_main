@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
+import { getCapturePromptConfig } from '@/lib/capture-prompt/queries'
 import { listActiveRewards } from '@/lib/points/queries'
 import {
   RoleRequiredError,
@@ -12,6 +13,7 @@ import {
   TenantNotFoundError,
 } from '@/lib/tenant'
 import { getWelcomeRewardConfig } from '@/lib/welcome-reward/queries'
+import { CapturePromptForm } from './_components/capture-prompt-form'
 import { WelcomeRewardForm } from './_components/welcome-reward-form'
 
 export const metadata = { title: 'Regalo de bienvenida' }
@@ -36,9 +38,10 @@ export default async function BienvenidaPage({
   }
 
   // Traemos config + rewards activos en paralelo para acelerar el TTFB.
-  const [config, rewards] = await Promise.all([
+  const [config, rewards, capturePrompt] = await Promise.all([
     getWelcomeRewardConfig(access.tenant.id),
     listActiveRewards({ tenantId: access.tenant.id }),
+    getCapturePromptConfig(access.tenant.id),
   ])
 
   return (
@@ -67,6 +70,10 @@ export default async function BienvenidaPage({
           availableRewards={rewards}
         />
       )}
+      <section className="space-y-3">
+        <h2 className="font-serif text-xl font-semibold tracking-tight">Captura de datos</h2>
+        <CapturePromptForm tenantSlug={tenantSlug} config={capturePrompt} />
+      </section>
     </main>
   )
 }

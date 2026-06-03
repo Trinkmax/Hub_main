@@ -74,7 +74,10 @@ export async function createCategory(
   const tenant = await authorizeOwner(slug)
   if (!tenant) return { ok: false, message: 'No tenés permiso.' }
 
-  const parsed = createCategorySchema.safeParse({ name: formData.get('name') })
+  const parsed = createCategorySchema.safeParse({
+    name: formData.get('name'),
+    image_url: formData.get('image_url'),
+  })
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
   }
@@ -93,6 +96,7 @@ export async function createCategory(
     .insert({
       tenant_id: tenant.id,
       name: parsed.data.name,
+      image_url: parsed.data.image_url,
       position: (maxPos?.position ?? 0) + 1,
     })
     .select('id')
@@ -114,7 +118,7 @@ export async function createCategory(
 
 export async function updateCategory(
   slug: string,
-  payload: { id: string; name: string; active: boolean },
+  payload: { id: string; name: string; active: boolean; image_url: string | null },
 ): Promise<MenuActionState> {
   const tenant = await authorizeOwner(slug)
   if (!tenant) return { ok: false, message: 'No tenés permiso.' }
@@ -125,7 +129,11 @@ export async function updateCategory(
   const supabase = await createClient()
   const { error } = await supabase
     .from('menu_categories')
-    .update({ name: parsed.data.name, active: parsed.data.active })
+    .update({
+      name: parsed.data.name,
+      active: parsed.data.active,
+      image_url: parsed.data.image_url,
+    })
     .eq('id', parsed.data.id)
     .eq('tenant_id', tenant.id)
   if (error) return { ok: false, message: 'No pudimos actualizar.' }
