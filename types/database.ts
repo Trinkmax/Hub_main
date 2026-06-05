@@ -1073,6 +1073,129 @@ export type Database = {
           },
         ]
       }
+      floor_plan_areas: {
+        Row: {
+          created_at: string
+          height: number
+          id: string
+          name: string
+          number_start: number
+          position: number
+          tenant_id: string
+          updated_at: string
+          width: number
+        }
+        Insert: {
+          created_at?: string
+          height?: number
+          id?: string
+          name: string
+          number_start?: number
+          position?: number
+          tenant_id: string
+          updated_at?: string
+          width?: number
+        }
+        Update: {
+          created_at?: string
+          height?: number
+          id?: string
+          name?: string
+          number_start?: number
+          position?: number
+          tenant_id?: string
+          updated_at?: string
+          width?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "floor_plan_areas_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      floor_plan_elements: {
+        Row: {
+          area_id: string
+          color: string | null
+          created_at: string
+          height: number
+          id: string
+          kind: Database["public"]["Enums"]["floor_element_kind"]
+          label: string | null
+          physical_table_id: string | null
+          rotation: number
+          shape: Database["public"]["Enums"]["floor_element_shape"]
+          tenant_id: string
+          updated_at: string
+          width: number
+          x: number
+          y: number
+          z_index: number
+        }
+        Insert: {
+          area_id: string
+          color?: string | null
+          created_at?: string
+          height?: number
+          id?: string
+          kind: Database["public"]["Enums"]["floor_element_kind"]
+          label?: string | null
+          physical_table_id?: string | null
+          rotation?: number
+          shape?: Database["public"]["Enums"]["floor_element_shape"]
+          tenant_id: string
+          updated_at?: string
+          width?: number
+          x?: number
+          y?: number
+          z_index?: number
+        }
+        Update: {
+          area_id?: string
+          color?: string | null
+          created_at?: string
+          height?: number
+          id?: string
+          kind?: Database["public"]["Enums"]["floor_element_kind"]
+          label?: string | null
+          physical_table_id?: string | null
+          rotation?: number
+          shape?: Database["public"]["Enums"]["floor_element_shape"]
+          tenant_id?: string
+          updated_at?: string
+          width?: number
+          x?: number
+          y?: number
+          z_index?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "floor_plan_elements_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "floor_plan_areas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "floor_plan_elements_physical_table_id_fkey"
+            columns: ["physical_table_id"]
+            isOneToOne: false
+            referencedRelation: "physical_tables"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "floor_plan_elements_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       flow_executions: {
         Row: {
           completed_at: string | null
@@ -2517,6 +2640,7 @@ export type Database = {
       table_sessions: {
         Row: {
           abandoned_reason: string | null
+          alias: string | null
           created_at: string
           id: string
           merged_into: string | null
@@ -2525,6 +2649,8 @@ export type Database = {
           paid_at: string | null
           party_size: number | null
           physical_table_id: string | null
+          points_redeemed_cents: number
+          points_redemptions: Json
           status: Database["public"]["Enums"]["session_status"]
           tenant_id: string
           total_cents: number
@@ -2532,6 +2658,7 @@ export type Database = {
         }
         Insert: {
           abandoned_reason?: string | null
+          alias?: string | null
           created_at?: string
           id?: string
           merged_into?: string | null
@@ -2540,6 +2667,8 @@ export type Database = {
           paid_at?: string | null
           party_size?: number | null
           physical_table_id?: string | null
+          points_redeemed_cents?: number
+          points_redemptions?: Json
           status?: Database["public"]["Enums"]["session_status"]
           tenant_id: string
           total_cents?: number
@@ -2547,6 +2676,7 @@ export type Database = {
         }
         Update: {
           abandoned_reason?: string | null
+          alias?: string | null
           created_at?: string
           id?: string
           merged_into?: string | null
@@ -2555,6 +2685,8 @@ export type Database = {
           paid_at?: string | null
           party_size?: number | null
           physical_table_id?: string | null
+          points_redeemed_cents?: number
+          points_redemptions?: Json
           status?: Database["public"]["Enums"]["session_status"]
           tenant_id?: string
           total_cents?: number
@@ -2590,8 +2722,12 @@ export type Database = {
           currency: string
           guest_idle_hours_to_rescan: number
           id: string
+          kitchen_flow_enabled: boolean
           logo_url: string | null
           name: string
+          points_redemption_enabled: boolean
+          points_redemption_max_pct: number
+          points_to_cents_rate: number
           session_auto_abandon_hours: number
           settings: Json
           slug: string
@@ -2607,8 +2743,12 @@ export type Database = {
           currency?: string
           guest_idle_hours_to_rescan?: number
           id?: string
+          kitchen_flow_enabled?: boolean
           logo_url?: string | null
           name: string
+          points_redemption_enabled?: boolean
+          points_redemption_max_pct?: number
+          points_to_cents_rate?: number
           session_auto_abandon_hours?: number
           settings?: Json
           slug: string
@@ -2624,8 +2764,12 @@ export type Database = {
           currency?: string
           guest_idle_hours_to_rescan?: number
           id?: string
+          kitchen_flow_enabled?: boolean
           logo_url?: string | null
           name?: string
+          points_redemption_enabled?: boolean
+          points_redemption_max_pct?: number
+          points_to_cents_rate?: number
           session_auto_abandon_hours?: number
           settings?: Json
           slug?: string
@@ -3263,11 +3407,17 @@ export type Database = {
       }
       accept_ticket: { Args: { p_ticket_id: string }; Returns: Json }
       activate_table_session: {
-        Args: { p_party_size: number; p_qr_token: string; p_source?: string }
+        Args: {
+          p_alias?: string
+          p_party_size: number
+          p_qr_token: string
+          p_source?: string
+        }
         Returns: Json
       }
       activate_table_session_by_id: {
         Args: {
+          p_alias?: string
           p_party_size: number
           p_physical_table_id: string
           p_source?: string
@@ -3361,8 +3511,12 @@ export type Database = {
           currency: string
           guest_idle_hours_to_rescan: number
           id: string
+          kitchen_flow_enabled: boolean
           logo_url: string | null
           name: string
+          points_redemption_enabled: boolean
+          points_redemption_max_pct: number
+          points_to_cents_rate: number
           session_auto_abandon_hours: number
           settings: Json
           slug: string
@@ -3515,6 +3669,7 @@ export type Database = {
       }
       internal_activate_session_for_table: {
         Args: {
+          p_alias?: string
           p_party_size: number
           p_source: string
           p_table_id: string
@@ -3538,7 +3693,10 @@ export type Database = {
         Args: { p_reason?: string; p_session_id: string }
         Returns: Json
       }
-      mark_session_paid: { Args: { p_session_id: string }; Returns: Json }
+      mark_session_paid: {
+        Args: { p_redemptions?: Json; p_session_id: string }
+        Returns: Json
+      }
       merge_sessions: {
         Args: { p_absorbed_ids: string[]; p_survivor_id: string }
         Returns: Json
@@ -3751,6 +3909,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      update_session_alias: {
+        Args: { p_alias: string; p_session_id: string }
+        Returns: Json
+      }
       update_session_party_size: {
         Args: { p_party_size: number; p_session_id: string }
         Returns: Json
@@ -3781,6 +3943,8 @@ export type Database = {
       channel_type: "whatsapp" | "instagram"
       customer_source: "qr" | "manual" | "import"
       event_status: "draft" | "published" | "finished" | "cancelled"
+      floor_element_kind: "table" | "wall" | "pillar" | "island" | "bar"
+      floor_element_shape: "rect" | "circle"
       flow_execution_status: "running" | "completed" | "failed" | "cancelled"
       flow_step_type: "send_template" | "wait" | "condition" | "add_tag"
       flow_trigger_type:
@@ -3835,6 +3999,7 @@ export type Database = {
         | "session_abandoned"
         | "session_moved"
         | "party_size_changed"
+        | "alias_changed"
       session_status: "open" | "paid" | "merged" | "abandoned"
       template_status:
         | "draft"
@@ -3990,6 +4155,8 @@ export const Constants = {
       channel_type: ["whatsapp", "instagram"],
       customer_source: ["qr", "manual", "import"],
       event_status: ["draft", "published", "finished", "cancelled"],
+      floor_element_kind: ["table", "wall", "pillar", "island", "bar"],
+      floor_element_shape: ["rect", "circle"],
       flow_execution_status: ["running", "completed", "failed", "cancelled"],
       flow_step_type: ["send_template", "wait", "condition", "add_tag"],
       flow_trigger_type: [
@@ -4049,6 +4216,7 @@ export const Constants = {
         "session_abandoned",
         "session_moved",
         "party_size_changed",
+        "alias_changed",
       ],
       session_status: ["open", "paid", "merged", "abandoned"],
       template_status: ["draft", "pending", "approved", "rejected", "disabled"],
@@ -4096,3 +4264,5 @@ export type TemplateStatus = Database["public"]["Enums"]["template_status"]
 export type TenantRole = Database["public"]["Enums"]["tenant_role"]
 export type TicketStatus = Database["public"]["Enums"]["ticket_status"]
 export type VisitSource = Database["public"]["Enums"]["visit_source"]
+export type FloorElementKind = Database["public"]["Enums"]["floor_element_kind"]
+export type FloorElementShape = Database["public"]["Enums"]["floor_element_shape"]
