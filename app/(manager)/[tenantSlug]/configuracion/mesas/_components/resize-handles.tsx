@@ -1,0 +1,120 @@
+'use client'
+
+import { useRef } from 'react'
+import { RESIZE_MIN, snapToGrid } from '@/lib/floor-plan/grid'
+import { cn } from '@/lib/utils'
+
+type ResizeHandlesProps = {
+  width: number
+  height: number
+  scale: number
+  onResize: (size: { width: number; height: number }) => void
+  onResizeEnd: (size: { width: number; height: number }) => void
+}
+
+type Axis = 'se' | 'e' | 's'
+
+// Estado vivo del gesto de resize (refs, no state: no re-render por move).
+type DragState = {
+  axis: Axis
+  startX: number
+  startY: number
+  startW: number
+  startH: number
+  last: { width: number; height: number }
+}
+
+export function ResizeHandles({ width, height, scale, onResize, onResizeEnd }: ResizeHandlesProps) {
+  const drag = useRef<DragState | null>(null)
+
+  function compute(
+    state: DragState,
+    e: PointerEvent | React.PointerEvent,
+  ): {
+    width: number
+    height: number
+  } {
+    // Delta en px de pantalla → px lógicos dividiendo por scale.
+    const dxLogical = (e.clientX - state.startX) / scale
+    const dyLogical = (e.clientY - state.startY) / scale
+    const nextW =
+      state.axis === 's' ? state.startW : Math.max(RESIZE_MIN, snapToGrid(state.startW + dxLogical))
+    const nextH =
+      state.axis === 'e' ? state.startH : Math.max(RESIZE_MIN, snapToGrid(state.startH + dyLogical))
+    return { width: nextW, height: nextH }
+  }
+
+  function handlePointerMove(e: PointerEvent) {
+    const state = drag.current
+    if (!state) return
+    const size = compute(state, e)
+    state.last = size
+    onResize(size)
+  }
+
+  function handlePointerUpOrCancel(e: PointerEvent) {
+    const state = drag.current
+    if (!state) return
+    window.removeEventListener('pointermove', handlePointerMove)
+    window.removeEventListener('pointerup', handlePointerUpOrCancel)
+    window.removeEventListener('pointercancel', handlePointerUpOrCancel)
+    const target = e.target as Element
+    if (target.hasPointerCapture?.(e.pointerId)) {
+      target.releasePointerCapture(e.pointerId)
+    }
+    drag.current = null
+    onResizeEnd(state.last)
+  }
+
+  function startResize(axis: Axis) {
+    return (e: React.PointerEvent) => {
+      // CLAVE: detener la propagación para que el activator del drag (en el body
+      // del FloorElement) no se dispare; el resize es un gesto independiente.
+      e.stopPropagation()
+      e.preventDefault()
+      ;(e.target as Element).setPointerCapture(e.pointerId)
+      drag.current = {
+        axis,
+        startX: e.clientX,
+        startY: e.clientY,
+        startW: width,
+        startH: height,
+        last: { width, height },
+      }
+      window.addEventListener('pointermove', handlePointerMove)
+      window.addEventListener('pointerup', handlePointerUpOrCancel)
+      window.addEventListener('pointercancel', handlePointerUpOrCancel)
+    }
+  }
+
+  const base = 'absolute z-20 rounded-sm border border-primary bg-background shadow-sm'
+
+  return (
+    <>
+      {/* Esquina inferior-derecha (redimensiona ancho + alto) */}
+      <div
+        role="presentation"
+        aria-hidden
+        onPointerDown={startResize('se')}
+        className={cn(base, 'size-3 -bottom-1.5 -right-1.5 cursor-nwse-resize')}
+        style={{ touchAction: 'none' }}
+      />
+      {/* Borde derecho (solo ancho) */}
+      <div
+        role="presentation"
+        aria-hidden
+        onPointerDown={startResize('e')}
+        className={cn(base, 'h-3 w-2.5 top-1/2 -right-1.5 -translate-y-1/2 cursor-ew-resize')}
+        style={{ touchAction: 'none' }}
+      />
+      {/* Borde inferior (solo alto) */}
+      <div
+        role="presentation"
+        aria-hidden
+        onPointerDown={startResize('s')}
+        className={cn(base, 'h-2.5 w-3 left-1/2 -bottom-1.5 -translate-x-1/2 cursor-ns-resize')}
+        style={{ touchAction: 'none' }}
+      />
+    </>
+  )
+}
