@@ -55,18 +55,23 @@ begin
     raise exception 'owner_required' using errcode = '42501';
   end if;
 
-  -- 3. Validar label
+  -- 3. Validar capacidad
+  if p_capacity is not null and p_capacity <= 0 then
+    raise exception 'invalid_capacity' using errcode = 'P0001';
+  end if;
+
+  -- 4. Validar label
   v_clean := nullif(trim(coalesce(p_label, '')), '');
   if v_clean is null or length(v_clean) > 40 then
     raise exception 'invalid_label' using errcode = 'P0001';
   end if;
 
-  -- 4. Insertar la mesa (qr_token por default)
+  -- 5. Insertar la mesa (qr_token por default)
   insert into public.physical_tables (tenant_id, label, capacity)
     values (v_tenant, v_clean, p_capacity)
     returning id, qr_token into v_table_id, v_qr_token;
 
-  -- 5. Insertar su elemento en el plano (kind='table', z=10, 80x80)
+  -- 6. Insertar su elemento en el plano (kind='table', z=10, 80x80)
   --    El trigger fp_elements_integrity valida tenant + mesa activa.
   insert into public.floor_plan_elements (
     tenant_id, area_id, kind, shape, physical_table_id,
@@ -83,7 +88,7 @@ begin
   );
 end $$;
 
-revoke all on function public.fp_create_table(uuid, text, int, public.floor_element_shape, int, int) from public;
+revoke all on function public.fp_create_table(uuid, text, int, public.floor_element_shape, int, int) from public, anon, authenticated;
 grant execute on function public.fp_create_table(uuid, text, int, public.floor_element_shape, int, int) to authenticated;
 
 -- ──────────────────────────────────────────────────────────
@@ -122,10 +127,11 @@ begin
     raise exception 'owner_required' using errcode = '42501';
   end if;
 
-  -- 3. Mismo-tenant que la sobreviviente
+  -- 3. Mismo-tenant que la sobreviviente (lock para consistencia de orden de locks)
   select tenant_id into v_survivor_tenant
     from public.physical_tables
-    where id = p_survivor_table_id;
+    where id = p_survivor_table_id
+    for update;
   if v_survivor_tenant is null then
     raise exception 'table_not_found' using errcode = 'P0001';
   end if;
@@ -152,7 +158,7 @@ begin
   return jsonb_build_object('ok', true);
 end $$;
 
-revoke all on function public.fp_merge_tables(uuid, uuid) from public;
+revoke all on function public.fp_merge_tables(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.fp_merge_tables(uuid, uuid) to authenticated;
 
 -- ──────────────────────────────────────────────────────────
@@ -190,7 +196,7 @@ begin
     raise exception 'owner_required' using errcode = '42501';
   end if;
 
-  if p_active = false then
+  if p_active is not true then
     -- 3a. Desactivar: guarda de sesión abierta (atómica con el lock)
     if exists (
       select 1 from public.table_sessions
@@ -216,7 +222,7 @@ begin
   return jsonb_build_object('ok', true);
 end $$;
 
-revoke all on function public.fp_set_table_active(uuid, boolean) from public;
+revoke all on function public.fp_set_table_active(uuid, boolean) from public, anon, authenticated;
 grant execute on function public.fp_set_table_active(uuid, boolean) to authenticated;
 
 -- ──────────────────────────────────────────────────────────
@@ -234,10 +240,11 @@ declare
   v_tenant uuid;
   v_role   text;
 begin
-  -- 1. Resolver tenant
+  -- 1. Resolver tenant (FOR UPDATE: evita TOCTOU entre la guarda de historial y el delete)
   select tenant_id into v_tenant
     from public.physical_tables
-    where id = p_table_id;
+    where id = p_table_id
+    for update;
   if v_tenant is null then
     raise exception 'table_not_found' using errcode = 'P0001';
   end if;
@@ -268,7 +275,7 @@ begin
   return jsonb_build_object('ok', true);
 end $$;
 
-revoke all on function public.fp_delete_table(uuid) from public;
+revoke all on function public.fp_delete_table(uuid) from public, anon, authenticated;
 grant execute on function public.fp_delete_table(uuid) to authenticated;
 
 -- ──────────────────────────────────────────────────────────
@@ -329,5 +336,5 @@ begin
   return jsonb_build_object('ok', true);
 end $$;
 
-revoke all on function public.fp_delete_area(uuid) from public;
+revoke all on function public.fp_delete_area(uuid) from public, anon, authenticated;
 grant execute on function public.fp_delete_area(uuid) to authenticated;
