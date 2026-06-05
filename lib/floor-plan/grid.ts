@@ -8,6 +8,8 @@
  * archivo (Task 3.3) y solo importan el TIPO `Modifier`.
  */
 
+import type { Modifier } from '@dnd-kit/core'
+
 /** Grilla lógica (px lógicos). El snap y el paso de teclado usan este valor. */
 export const GRID = 20
 
@@ -54,5 +56,68 @@ export function clampToArea(
   return {
     x: Math.max(0, Math.min(x, maxX)),
     y: Math.max(0, Math.min(y, maxY)),
+  }
+}
+
+/**
+ * Modifier v6 de snap-a-grilla en espacio lógico.
+ *
+ * Bajo `transform: scale(s)` en el stage, dnd-kit reporta `transform` en px de
+ * PANTALLA. Snapeamos en px LÓGICOS (`/ scale`) y devolvemos px de pantalla
+ * (`* scale`) para que el preview coincida con el commit en `onDragEnd`.
+ * `getScale` cierra sobre el scale vigente (re-`useMemo` keyed en `scale` en
+ * el editor). Devuelve `{ ...transform, x, y }` para preservar `scaleX/scaleY`.
+ */
+export function createSnapModifier(grid: number, getScale: () => number): Modifier {
+  return ({ transform }) => {
+    const scale = getScale()
+    const x = Math.round(transform.x / scale / grid) * grid * scale
+    const y = Math.round(transform.y / scale / grid) * grid * scale
+    return { ...transform, x, y }
+  }
+}
+
+/**
+ * Modifier v6 que restringe el arrastre al contenedor (viewport) en espacio
+ * lógico. Bajo `scale`, los rects que reporta dnd-kit están en px de PANTALLA;
+ * dividimos por `scale` para acotar en lógico y multiplicamos de vuelta para
+ * devolver px de pantalla. Sin rects (no medible) devuelve el transform tal cual.
+ * Devuelve `{ ...transform, x, y }` para preservar `scaleX/scaleY`.
+ *
+ * Acotación: el elemento puede moverse `transform.x` de modo que su borde
+ * izquierdo no pase el `left` del contenedor ni su borde derecho pase el
+ * `right`. En lógico:
+ *   minX = container.left - dragging.left
+ *   maxX = container.right - dragging.right
+ * (idem Y). Se clampea `transform.x/scale` a `[minX, maxX]` y se reescala.
+ */
+export function restrictToParent(getScale: () => number): Modifier {
+  return ({ transform, draggingNodeRect, containerNodeRect }) => {
+    if (!draggingNodeRect || !containerNodeRect) {
+      return transform
+    }
+    const scale = getScale()
+    // Rects a espacio lógico.
+    const cLeft = containerNodeRect.left / scale
+    const cTop = containerNodeRect.top / scale
+    const cRight = containerNodeRect.right / scale
+    const cBottom = containerNodeRect.bottom / scale
+    const dLeft = draggingNodeRect.left / scale
+    const dTop = draggingNodeRect.top / scale
+    const dRight = draggingNodeRect.right / scale
+    const dBottom = draggingNodeRect.bottom / scale
+
+    const minX = cLeft - dLeft
+    const maxX = cRight - dRight
+    const minY = cTop - dTop
+    const maxY = cBottom - dBottom
+
+    const logicalX = transform.x / scale
+    const logicalY = transform.y / scale
+
+    const clampedX = Math.max(minX, Math.min(logicalX, maxX))
+    const clampedY = Math.max(minY, Math.min(logicalY, maxY))
+
+    return { ...transform, x: clampedX * scale, y: clampedY * scale }
   }
 }
