@@ -33,3 +33,22 @@ Hallazgos fuera del scope de la tarea en curso, anotados para retomar
   "detalle dorado (acento)" en el contador cuando la categoría no tiene foto;
   hoy usa `text-primary-foreground/80`. Cosmético — definir el token de acento
   (¿`--forest-glow`/`--warning`?) y aplicarlo manteniendo contraste AA.
+
+## Floor plan de mesas (rama `feat/floor-plan-mesas`)
+
+Hallazgos Minor del code-review de la Migración A (`20260605000100_floor_plan_editor.sql`,
+ya aplicada al remoto vía MCP — **no editar**; corregir en una migración follow-up
+cuando aterrice el editor v1):
+
+- **`floor_plan_elements.rotation` sin CHECK.** La columna es "siempre 0 en v1" pero no lo
+  enforcea el DB. Agregar en follow-up `check (rotation between 0 and 359)` (forward-compat
+  con v2) o `check (rotation = 0)` (invariante estricta v1).
+- **`floor_plan_areas.position` y `floor_plan_elements.z_index` sin cota superior.** El resto
+  de las columnas numéricas (width/height/x/y/number_start) tienen rango; estas no. Agregar
+  `check (… between 0 and 9999)` en follow-up para frenar basura de un bug de cliente.
+- **Estilo de `revoke` divergente.** `fp_elements_integrity` revoca en dos statements
+  (`from anon` + `from public`) y omite `authenticated`; funcionalmente equivalente, pero el
+  resto del repo usa `revoke execute … from public, anon, authenticated;` en un solo statement.
+  Consolidar en la próxima migración que toque la función.
+- **`types/database.ts`: aliases `FloorElementKind`/`FloorElementShape` fuera de orden alfabético**
+  (apendizados al final en vez de tras `EventStatus`). Nit cosmético en la sección hand-maintained.
