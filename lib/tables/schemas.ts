@@ -15,7 +15,6 @@ export const updateTableSchema = z.object({
   id: z.string().uuid(),
   label: labelField,
   capacity: capacityField,
-  active: z.coerce.boolean().default(true),
 })
 
 export const tableIdSchema = z.object({

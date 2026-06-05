@@ -109,7 +109,6 @@ export async function updateTable(
     id: formData.get('id'),
     label: formData.get('label'),
     capacity: formData.get('capacity'),
-    active: formData.get('active') === 'on',
   })
   if (!parsed.success) {
     return {
@@ -130,7 +129,6 @@ export async function updateTable(
     .update({
       label: parsed.data.label,
       capacity: parsed.data.capacity,
-      active: parsed.data.active,
     })
     .eq('id', parsed.data.id)
     .eq('tenant_id', access.tenant.id)
@@ -146,7 +144,7 @@ export async function updateTable(
     action: 'update',
     entity: 'physical_table',
     entityId: parsed.data.id,
-    payload: { label: parsed.data.label, active: parsed.data.active },
+    payload: { label: parsed.data.label, capacity: parsed.data.capacity },
   })
 
   revalidatePath(`/${slug}/configuracion/mesas`)
