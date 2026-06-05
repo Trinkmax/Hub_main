@@ -58,3 +58,11 @@ cuando aterrice el editor v1):
   CASE o un `fp_reorder_areas(p_ids uuid[])`).
 - **`splitTableAction` no re-chequea que el elemento fuente siga existiendo** entre la lectura y el
   RPC. Benigno (crea la mesa igual en el área correcta); informativo.
+- **Re-colocar una mesa pierde la forma `circle`.** `placeTableAction` (y el drop/“Colocar” de la
+  bandeja) hardcodean `shape: ELEMENT_DEFAULTS.table.shape` (`'rect'`). Una mesa creada redonda,
+  al quitarla del plano y volver a colocarla desde la bandeja, vuelve como rectángulo (la forma no
+  se guarda en `physical_tables`). Aceptable v1; para arreglarlo habría que persistir la última
+  forma (columna nueva o en el último element antes de quitarla).
+- **`useGeometryQueue.flushNow` se expone pero el editor no lo llama.** Superficie muerta en el tipo
+  de retorno del hook; el flush por `beforeunload` es interno y alcanza. Quitar `flushNow` del API
+  o usarlo (p. ej. flush al cambiar de área).
