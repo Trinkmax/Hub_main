@@ -47,11 +47,13 @@ export function DecorInspector({ slug, element, onChanged, onClose }: DecorInspe
   const [color, setColor] = useState(element.color ?? '')
   const [pending, start] = useTransition()
 
-  // Re-sincroniza si cambia el elemento seleccionado.
+  // Re-sincroniza si cambia el elemento seleccionado (clave: element.id).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: element.id es el disparador
+  // intencional del re-sync al cambiar de elemento; el cuerpo solo lee label/color.
   useEffect(() => {
     setLabel(element.label ?? '')
     setColor(element.color ?? '')
-  }, [element.label, element.color])
+  }, [element.id, element.label, element.color])
 
   const colorInvalid = color.trim().length > 0 && !HEX_RE.test(color.trim())
 
