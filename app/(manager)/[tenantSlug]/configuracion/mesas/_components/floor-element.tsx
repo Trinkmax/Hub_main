@@ -2,7 +2,7 @@
 
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import type { CSSProperties } from 'react'
+import { type CSSProperties, useEffect, useState } from 'react'
 import type { ElementRow } from '@/lib/floor-plan/queries'
 import { cn } from '@/lib/utils'
 import { ResizeHandles } from './resize-handles'
@@ -34,8 +34,21 @@ export function FloorElement({
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, isDragging } =
     useDraggable({ id: element.id })
 
+  // Tamaño transitorio durante el gesto de resize (no afecta la firma de props).
+  const [liveSize, setLiveSize] = useState<{ width: number; height: number } | null>(null)
+
+  // Cuando el tamaño committeado cambia (después de onResizeEnd), descartamos el
+  // estado transitorio para que el elemento se dibuje desde la geometría canónica.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: element.width/height son los triggers intencionales del reset; setLiveSize es estable pero no es el gatillo.
+  useEffect(() => {
+    setLiveSize(null)
+  }, [element.width, element.height])
+
   const isTable = element.kind === 'table'
   const isCircle = element.shape === 'circle'
+
+  const displayWidth = liveSize?.width ?? element.width
+  const displayHeight = liveSize?.height ?? element.height
 
   // El stage está escalado; el elemento se posiciona en px lógicos. El transform
   // de dnd-kit es para el preview en vivo del drag (se descarta en dragEnd y el
@@ -44,8 +57,8 @@ export function FloorElement({
     position: 'absolute',
     left: element.x,
     top: element.y,
-    width: element.width,
-    height: element.height,
+    width: displayWidth,
+    height: displayHeight,
     transform: CSS.Translate.toString(transform),
     zIndex: selected ? element.z_index + 1000 : element.z_index,
     touchAction: 'none',
@@ -101,16 +114,15 @@ export function FloorElement({
 
       {selected && (
         <ResizeHandles
-          width={element.width}
-          height={element.height}
+          width={displayWidth}
+          height={displayHeight}
           scale={scale}
-          onResize={() => {
-            // Preview live: el editor maneja la geometría transitoria; acá no
-            // re-renderizamos width/height locales para no pelear con el stage.
-            // (El editor pasa onResizeEnd para committear; el live preview de
-            // tamaño lo aplica el editor sobre el element prop.)
+          onResize={setLiveSize}
+          onResizeEnd={(size) => {
+            // Limpiamos el estado transitorio y commiteamos el tamaño final.
+            setLiveSize(null)
+            onResizeEnd(element.id, size)
           }}
-          onResizeEnd={(size) => onResizeEnd(element.id, size)}
         />
       )}
     </div>

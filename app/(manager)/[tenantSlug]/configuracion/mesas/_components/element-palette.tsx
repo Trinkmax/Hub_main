@@ -20,10 +20,8 @@ const DECOR: { kind: DecorKind; label: string; Icon: typeof Box }[] = [
 
 export function ElementPalette({ onAddTable, onAddDecor }: ElementPaletteProps) {
   return (
-    <fieldset
-      aria-label="Agregar elementos al plano"
-      className="flex flex-wrap items-center gap-2 border-0 p-0"
-    >
+    <fieldset className="flex flex-wrap items-center gap-2 border-0 p-0">
+      <legend className="sr-only">Agregar al plano</legend>
       <Button type="button" variant="default" size="sm" onClick={onAddTable} className="gap-1.5">
         <Table2 className="size-4" aria-hidden />
         Mesa

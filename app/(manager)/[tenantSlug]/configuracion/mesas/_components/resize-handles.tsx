@@ -44,28 +44,6 @@ export function ResizeHandles({ width, height, scale, onResize, onResizeEnd }: R
     return { width: nextW, height: nextH }
   }
 
-  function handlePointerMove(e: PointerEvent) {
-    const state = drag.current
-    if (!state) return
-    const size = compute(state, e)
-    state.last = size
-    onResize(size)
-  }
-
-  function handlePointerUpOrCancel(e: PointerEvent) {
-    const state = drag.current
-    if (!state) return
-    window.removeEventListener('pointermove', handlePointerMove)
-    window.removeEventListener('pointerup', handlePointerUpOrCancel)
-    window.removeEventListener('pointercancel', handlePointerUpOrCancel)
-    const target = e.target as Element
-    if (target.hasPointerCapture?.(e.pointerId)) {
-      target.releasePointerCapture(e.pointerId)
-    }
-    drag.current = null
-    onResizeEnd(state.last)
-  }
-
   function startResize(axis: Axis) {
     return (e: React.PointerEvent) => {
       // CLAVE: detener la propagación para que el activator del drag (en el body
@@ -81,6 +59,30 @@ export function ResizeHandles({ width, height, scale, onResize, onResizeEnd }: R
         startH: height,
         last: { width, height },
       }
+
+      // Los handlers se definen dentro del gesto para que add/remove usen
+      // referencias estables; evita leaks si el componente re-renderiza mid-gesture.
+      function handlePointerMove(ev: PointerEvent) {
+        const state = drag.current
+        if (!state) return
+        const size = compute(state, ev)
+        state.last = size
+        onResize(size)
+      }
+
+      function handlePointerUpOrCancel(ev: PointerEvent) {
+        const state = drag.current
+        window.removeEventListener('pointermove', handlePointerMove)
+        window.removeEventListener('pointerup', handlePointerUpOrCancel)
+        window.removeEventListener('pointercancel', handlePointerUpOrCancel)
+        const target = ev.target as Element
+        if (target.hasPointerCapture?.(ev.pointerId)) {
+          target.releasePointerCapture(ev.pointerId)
+        }
+        drag.current = null
+        if (state) onResizeEnd(state.last)
+      }
+
       window.addEventListener('pointermove', handlePointerMove)
       window.addEventListener('pointerup', handlePointerUpOrCancel)
       window.addEventListener('pointercancel', handlePointerUpOrCancel)
