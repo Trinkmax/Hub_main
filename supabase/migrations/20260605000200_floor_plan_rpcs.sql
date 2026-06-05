@@ -24,10 +24,10 @@
 create or replace function public.fp_create_table(
   p_area_id  uuid,
   p_label    text,
-  p_capacity int,
   p_shape    public.floor_element_shape,
   p_x        int,
-  p_y        int
+  p_y        int,
+  p_capacity int default null
 ) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -88,8 +88,10 @@ begin
   );
 end $$;
 
-revoke all on function public.fp_create_table(uuid, text, int, public.floor_element_shape, int, int) from public, anon, authenticated;
-grant execute on function public.fp_create_table(uuid, text, int, public.floor_element_shape, int, int) to authenticated;
+revoke all on function public.fp_create_table(uuid, text, public.floor_element_shape, int, int, int) from public, anon, authenticated;
+grant execute on function public.fp_create_table(uuid, text, public.floor_element_shape, int, int, int) to authenticated;
+-- Note: migration edited before first production deploy to move p_capacity last with default null,
+-- so callers can omit it when capacity is unknown. Body unchanged — already handles null.
 
 -- ──────────────────────────────────────────────────────────
 -- fp_merge_tables

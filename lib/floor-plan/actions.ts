@@ -149,15 +149,19 @@ export async function renameAreaAction(
   }
 
   const supabase = await createClient()
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from('floor_plan_areas')
     .update({ name: parsed.data.name })
     .eq('id', parsed.data.id)
     .eq('tenant_id', access.tenant.id)
+    .select('id')
 
   if (error) {
     console.error('[floor-plan.renameArea]', error.message)
     return { ok: false, message: mapPgError(error) }
+  }
+  if (!updated || updated.length === 0) {
+    return { ok: false, message: 'No se encontró el elemento (puede que ya no exista).' }
   }
 
   revalidatePath(`/${slug}/configuracion/mesas`)
@@ -181,7 +185,7 @@ export async function updateAreaCanvasAction(
   }
 
   const supabase = await createClient()
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from('floor_plan_areas')
     .update({
       width: parsed.data.width,
@@ -190,10 +194,14 @@ export async function updateAreaCanvasAction(
     })
     .eq('id', parsed.data.id)
     .eq('tenant_id', access.tenant.id)
+    .select('id')
 
   if (error) {
     console.error('[floor-plan.updateAreaCanvas]', error.message)
     return { ok: false, message: mapPgError(error) }
+  }
+  if (!updated || updated.length === 0) {
+    return { ok: false, message: 'No se encontró el elemento (puede que ya no exista).' }
   }
 
   revalidatePath(`/${slug}/configuracion/mesas`)
@@ -333,10 +341,10 @@ export async function createTableInPlanAction(
   const { data, error } = await supabase.rpc('fp_create_table', {
     p_area_id: parsed.data.area_id,
     p_label: parsed.data.label,
-    p_capacity: parsed.data.capacity ?? 0,
     p_shape: parsed.data.shape,
     p_x: parsed.data.x,
     p_y: parsed.data.y,
+    ...(parsed.data.capacity != null ? { p_capacity: parsed.data.capacity } : {}),
   })
 
   if (error || !data) {
@@ -448,10 +456,10 @@ export async function splitTableAction(
   const { data, error } = await supabase.rpc('fp_create_table', {
     p_area_id: src.area_id,
     p_label: newLabel,
-    p_capacity: src.physical_tables?.capacity ?? 0,
     p_shape: src.shape,
     p_x: offset.x,
     p_y: offset.y,
+    ...(src.physical_tables?.capacity != null ? { p_capacity: src.physical_tables.capacity } : {}),
   })
 
   if (error || !data) {
@@ -740,16 +748,20 @@ export async function updateDecorAction(
   if ('color' in parsed.data) patch.color = parsed.data.color ?? null
 
   const supabase = await createClient()
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from('floor_plan_elements')
     .update(patch)
     .eq('id', parsed.data.id)
     .eq('tenant_id', access.tenant.id)
     .neq('kind', 'table')
+    .select('id')
 
   if (error) {
     console.error('[floor-plan.updateDecor]', error.message)
     return { ok: false, message: mapPgError(error) }
+  }
+  if (!updated || updated.length === 0) {
+    return { ok: false, message: 'No se encontró el elemento (puede que ya no exista).' }
   }
 
   revalidatePath(`/${slug}/configuracion/mesas`)

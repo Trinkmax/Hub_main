@@ -3613,7 +3613,7 @@ export type Database = {
       fp_create_table: {
         Args: {
           p_area_id: string
-          p_capacity: number
+          p_capacity?: number
           p_label: string
           p_shape: Database["public"]["Enums"]["floor_element_shape"]
           p_x: number
