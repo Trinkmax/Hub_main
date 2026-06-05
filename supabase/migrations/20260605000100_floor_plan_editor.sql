@@ -123,6 +123,11 @@ create trigger fp_elements_integrity_biu
   before insert or update on public.floor_plan_elements
   for each row execute function public.fp_elements_integrity();
 
+-- Trigger functions are not callable via REST API; revoke anon execute
+-- to avoid the anon_security_definer advisory (same as RPC pattern).
+revoke execute on function public.fp_elements_integrity() from anon;
+revoke execute on function public.fp_elements_integrity() from public;
+
 -- updated_at en ambas tablas (función public.set_updated_at() existente)
 drop trigger if exists floor_plan_areas_updated_at on public.floor_plan_areas;
 create trigger floor_plan_areas_updated_at
