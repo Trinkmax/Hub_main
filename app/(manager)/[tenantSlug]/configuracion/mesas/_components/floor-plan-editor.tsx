@@ -9,7 +9,7 @@ import {
   useSensors,
 } from '@dnd-kit/core'
 import { useRouter } from 'next/navigation'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { floorPlanAnnouncements, floorPlanScreenReaderInstructions } from '@/lib/floor-plan/a11y'
@@ -49,14 +49,44 @@ type DecorKind = 'wall' | 'pillar' | 'island' | 'bar'
 export function FloorPlanEditor({ slug, initial }: FloorPlanEditorProps) {
   const router = useRouter()
 
-  const [areas] = useState(initial.areas)
+  // areas and unplaced are read-only (never optimistically mutated) — derive
+  // directly from props so router.refresh() (new initial) updates them.
+  const areas = initial.areas
+  const unplaced = initial.unplacedTables
+
   const [elements, setElements] = useState<ElementRow[]>(initial.elements)
-  const [unplaced] = useState(initial.unplacedTables)
   const [activeAreaId, setActiveAreaId] = useState<string>(initial.areas[0]?.id ?? '')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [scale, setScale] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [createOpen, setCreateOpen] = useState(false)
+
+  // Re-sync elements when server data changes after router.refresh().
+  // initial is a new object reference every render, so we use a content
+  // signature to avoid resetting on every render.
+  const initialSig = useMemo(
+    () =>
+      initial.elements
+        .map(
+          (e) =>
+            `${e.id}:${e.x}:${e.y}:${e.width}:${e.height}:${e.z_index}:${e.label}:${e.color}:${e.table ? `${e.table.active}:${e.table.label}:${e.table.capacity}` : ''}`,
+        )
+        .join('|'),
+    [initial],
+  )
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-sync solo cuando cambian los datos del server (initialSig), no en cada render
+  useEffect(() => {
+    setElements(initial.elements)
+  }, [initialSig])
+
+  // Guard activeAreaId: if the active area was deleted, fall back to the first.
+  useEffect(() => {
+    const first = areas[0]
+    if (!first) return
+    if (!areas.find((a) => a.id === activeAreaId)) {
+      setActiveAreaId(first.id)
+    }
+  }, [areas, activeAreaId])
 
   // Snapshot de geometría previa por id, para revertir si el flush falla.
   const prevGeomRef = useRef<Map<string, ElementGeometry>>(new Map())

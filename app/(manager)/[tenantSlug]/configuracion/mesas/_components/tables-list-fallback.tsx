@@ -1,6 +1,7 @@
 'use client'
 
 import { Power, RefreshCw, Trash2 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import {
@@ -50,6 +51,7 @@ type TablesListFallbackProps = {
  * como tab secundaria del editor y como fallback de render.
  */
 export function TablesListFallback({ slug, tables }: TablesListFallbackProps) {
+  const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [busyId, setBusyId] = useState<string | null>(null)
 
@@ -61,6 +63,7 @@ export function TablesListFallback({ slug, tables }: TablesListFallbackProps) {
         toast.success(
           table.active ? `Mesa "${table.label}" desactivada` : `Mesa "${table.label}" activada`,
         )
+        router.refresh()
       } else {
         toast.error(result.message)
       }
@@ -72,8 +75,12 @@ export function TablesListFallback({ slug, tables }: TablesListFallbackProps) {
     setBusyId(table.id)
     startTransition(async () => {
       const result = await regenerateQrToken(slug, table.id)
-      if (result.ok) toast.success(`QR de "${table.label}" regenerado`)
-      else toast.error(result.message)
+      if (result.ok) {
+        toast.success(`QR de "${table.label}" regenerado`)
+        router.refresh()
+      } else {
+        toast.error(result.message)
+      }
       setBusyId(null)
     })
   }
@@ -82,8 +89,12 @@ export function TablesListFallback({ slug, tables }: TablesListFallbackProps) {
     setBusyId(table.id)
     startTransition(async () => {
       const result = await deleteTablePermanentlyAction(slug, table.id)
-      if (result.ok) toast.success(`Mesa "${table.label}" eliminada`)
-      else toast.error(result.message)
+      if (result.ok) {
+        toast.success(`Mesa "${table.label}" eliminada`)
+        router.refresh()
+      } else {
+        toast.error(result.message)
+      }
       setBusyId(null)
     })
   }
