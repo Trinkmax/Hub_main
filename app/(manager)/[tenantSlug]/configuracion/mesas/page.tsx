@@ -1,12 +1,15 @@
+import { LayoutGrid } from 'lucide-react'
 import { notFound } from 'next/navigation'
+import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
-import { Section } from '@/components/ui/section'
-import { listPhysicalTables } from '@/lib/tables/queries'
+import { getFloorPlan } from '@/lib/floor-plan/queries'
 import { requireTenantAccess } from '@/lib/tenant'
-import { NewTableDialog } from './_components/new-table-dialog'
-import { TablesList } from './_components/tables-list'
+import { FloorPlanEditor } from './_components/floor-plan-editor'
+import { FloorPlanErrorBoundary } from './_components/floor-plan-error-boundary'
+import { TablesListFallback } from './_components/tables-list-fallback'
+import { ZeroAreaCta } from './_components/zero-area-cta'
 
-export const metadata = { title: 'Mesas' }
+export const metadata = { title: 'Plano de mesas' }
 
 export default async function MesasPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
   const { tenantSlug } = await params
@@ -23,18 +26,50 @@ export default async function MesasPage({ params }: { params: Promise<{ tenantSl
 
   if (role !== 'owner') notFound()
 
-  const tables = await listPhysicalTables(tenant.id)
+  const data = await getFloorPlan(tenant.id)
+
+  // Para el fallback accesible (datos planos serializables): mesas ubicadas
+  // (elementos kind='table') + mesas no ubicadas (bandeja).
+  const fallbackTables = [
+    ...data.elements
+      .filter((el) => el.kind === 'table' && el.physical_table_id && el.table)
+      .map((el) => ({
+        id: el.physical_table_id as string,
+        label: el.table?.label ?? el.label ?? '',
+        capacity: el.table?.capacity ?? null,
+        qr_token: el.table?.qr_token ?? '',
+        active: el.table?.active ?? true,
+      })),
+    ...data.unplacedTables.map((t) => ({
+      id: t.id,
+      label: t.label,
+      capacity: t.capacity,
+      qr_token: t.qr_token,
+      active: true,
+    })),
+  ].sort((a, b) => a.label.localeCompare(b.label, 'es'))
 
   return (
     <main className="space-y-6 py-6">
       <PageHeader
-        title="Mesas"
-        description="Gestioná las mesas físicas del bar y sus QRs."
-        actions={<NewTableDialog tenantSlug={tenantSlug} />}
+        title="Plano de mesas"
+        description="Dibujá la distribución real del local: arrastrá mesas, agregá decoración y gestioná cada QR."
       />
-      <Section>
-        <TablesList tenantSlug={tenantSlug} tables={tables} />
-      </Section>
+
+      {data.areas.length === 0 ? (
+        <EmptyState
+          icon={LayoutGrid}
+          title="Todavía no hay áreas"
+          description="Creá la primera área (un piso o salón) para empezar a ubicar mesas en el plano."
+          action={<ZeroAreaCta slug={tenantSlug} />}
+        />
+      ) : (
+        <FloorPlanErrorBoundary
+          fallback={<TablesListFallback slug={tenantSlug} tables={fallbackTables} />}
+        >
+          <FloorPlanEditor slug={tenantSlug} tenantId={tenant.id} initial={data} />
+        </FloorPlanErrorBoundary>
+      )}
     </main>
   )
 }
