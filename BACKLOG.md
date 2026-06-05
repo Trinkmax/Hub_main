@@ -52,3 +52,9 @@ cuando aterrice el editor v1):
   Consolidar en la próxima migración que toque la función.
 - **`types/database.ts`: aliases `FloorElementKind`/`FloorElementShape` fuera de orden alfabético**
   (apendizados al final en vez de tras `EventStatus`). Nit cosmético en la sección hand-maintained.
+- **`reorderAreasAction` no es atómico.** Hace N `update` secuenciales de `position`; un fallo
+  parcial deja el orden inconsistente (no hay rollback). Bajo riesgo (un solo owner edita, y un
+  retry restaura el orden). Mejorar con un único statement/RPC transaccional (p. ej. update con
+  CASE o un `fp_reorder_areas(p_ids uuid[])`).
+- **`splitTableAction` no re-chequea que el elemento fuente siga existiendo** entre la lectura y el
+  RPC. Benigno (crea la mesa igual en el área correcta); informativo.
