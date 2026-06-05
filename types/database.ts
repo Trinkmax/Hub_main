@@ -3610,6 +3610,27 @@ export type Database = {
           no_show_reservations: number
         }[]
       }
+      fp_create_table: {
+        Args: {
+          p_area_id: string
+          p_capacity: number
+          p_label: string
+          p_shape: Database["public"]["Enums"]["floor_element_shape"]
+          p_x: number
+          p_y: number
+        }
+        Returns: Json
+      }
+      fp_delete_area: { Args: { p_area_id: string }; Returns: Json }
+      fp_delete_table: { Args: { p_table_id: string }; Returns: Json }
+      fp_merge_tables: {
+        Args: { p_absorbed_table_id: string; p_survivor_table_id: string }
+        Returns: Json
+      }
+      fp_set_table_active: {
+        Args: { p_active: boolean; p_table_id: string }
+        Returns: Json
+      }
       generate_qr_token: { Args: never; Returns: string }
       get_active_session_by_qr_token: {
         Args: { p_qr_token: string }
