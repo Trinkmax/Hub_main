@@ -10,6 +10,7 @@ import { subscribeChanges } from '@/lib/realtime/subscribe'
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'
 import { cancelTicketItem, updateTicketStatus } from '@/lib/tickets/actions'
 import type { TicketItemRow, TicketRow } from '@/lib/tickets/queries'
+import { TICKET_STATUS_LABELS, type TicketStatus } from '@/lib/tickets/ticket-flow'
 
 // Estados que la cocina muestra activamente (mismo whitelist que el query
 // inicial). Si un ticket cambia a `done`/`cancelled`, lo removemos del state.
@@ -140,7 +141,7 @@ export function KdsScreen({
                 #{t.id.slice(0, 6)} · {elapsed(t.submitted_at)}
               </p>
               <Badge variant={t.status === 'preparing' ? 'default' : 'outline'} className="mt-1">
-                {t.status}
+                {TICKET_STATUS_LABELS[t.status as TicketStatus] ?? t.status}
               </Badge>
             </div>
           </div>

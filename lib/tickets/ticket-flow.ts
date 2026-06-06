@@ -14,6 +14,19 @@
 export type TicketStatus = 'pending' | 'accepted' | 'preparing' | 'ready' | 'served' | 'cancelled'
 
 /**
+ * Etiquetas en español (es-AR) para cada estado del enum `TicketStatus`.
+ * Usar siempre este mapa en lugar de renderizar el valor crudo del enum.
+ */
+export const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {
+  pending: 'Pendiente',
+  accepted: 'Aceptada',
+  preparing: 'Preparando',
+  ready: 'Lista para servir',
+  served: 'Servida',
+  cancelled: 'Cancelada',
+}
+
+/**
  * Para el panel del MOZO: dado el estado actual y el flag, ¿a qué estado puede
  * avanzar la comanda con un botón propio? Devuelve el nuevo estado o null si el
  * mozo no tiene ninguna acción de avance en ese estado.
