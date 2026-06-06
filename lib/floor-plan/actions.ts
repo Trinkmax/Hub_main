@@ -128,7 +128,7 @@ export async function createAreaAction(
     payload: { name: parsed.data.name, number_start: parsed.data.number_start },
   })
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return { ok: true, data: { id: data.id } }
 }
 
@@ -164,7 +164,7 @@ export async function renameAreaAction(
     return { ok: false, message: 'No se encontró el elemento (puede que ya no exista).' }
   }
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return { ok: true }
 }
 
@@ -204,7 +204,7 @@ export async function updateAreaCanvasAction(
     return { ok: false, message: 'No se encontró el elemento (puede que ya no exista).' }
   }
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return { ok: true }
 }
 
@@ -238,7 +238,7 @@ export async function reorderAreasAction(
     }
   }
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return { ok: true }
 }
 
@@ -268,7 +268,7 @@ export async function deleteAreaAction(
     entityId: parsed.data.id,
   })
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return { ok: true }
 }
 
@@ -310,7 +310,7 @@ export async function saveGeometryAction(
     }
   }
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return { ok: true }
 }
 
@@ -363,7 +363,7 @@ export async function createTableInPlanAction(
     payload: { label: parsed.data.label, area_id: parsed.data.area_id },
   })
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return {
     ok: true,
     tableId: result.table_id,
@@ -478,7 +478,7 @@ export async function splitTableAction(
     payload: { source_element_id: parsed.data.source_element_id, label: newLabel },
   })
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return { ok: true, data: { tableId: result.table_id, elementId: result.element_id } }
 }
 
@@ -531,7 +531,7 @@ export async function placeTableAction(
     payload: { table_id: parsed.data.table_id, area_id: parsed.data.area_id },
   })
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return { ok: true, data: { id: data.id } }
 }
 
@@ -567,7 +567,7 @@ export async function removeFromPlanAction(
     entityId: parsed.data.id,
   })
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return { ok: true }
 }
 
@@ -607,7 +607,7 @@ export async function mergeTablesAction(
     payload: { absorbed_table_id: parsed.data.absorbed_table_id },
   })
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return { ok: true }
 }
 
@@ -643,7 +643,7 @@ export async function setTableActiveAction(
     entityId: parsed.data.table_id,
   })
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return { ok: true }
 }
 
@@ -673,7 +673,7 @@ export async function deleteTablePermanentlyAction(
     entityId: parsed.data.id,
   })
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return { ok: true }
 }
 
@@ -722,7 +722,7 @@ export async function addDecorAction(
     return { ok: false, message: mapPgError(error) }
   }
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return { ok: true, data: { id: data.id } }
 }
 
@@ -764,7 +764,7 @@ export async function updateDecorAction(
     return { ok: false, message: 'No se encontró el elemento (puede que ya no exista).' }
   }
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return { ok: true }
 }
 
@@ -791,7 +791,7 @@ export async function deleteDecorAction(
     return { ok: false, message: mapPgError(error) }
   }
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return { ok: true }
 }
 
@@ -820,6 +820,6 @@ export async function setElementZIndexAction(
     return { ok: false, message: mapPgError(error) }
   }
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return { ok: true }
 }

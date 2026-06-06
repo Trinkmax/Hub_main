@@ -93,7 +93,7 @@ export async function createTable(
     payload: { label: parsed.data.label, capacity: parsed.data.capacity },
   })
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return { ok: true, tableId: data.id, qrToken: data.qr_token }
 }
 
@@ -147,7 +147,7 @@ export async function updateTable(
     payload: { label: parsed.data.label, capacity: parsed.data.capacity },
   })
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return { ok: true, tableId: parsed.data.id }
 }
 
@@ -183,7 +183,7 @@ export async function deleteTable(slug: string, id: string): Promise<TableAction
     entityId: parsed.data.id,
   })
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return { ok: true, tableId: parsed.data.id }
 }
 
@@ -215,6 +215,6 @@ export async function regenerateQrToken(slug: string, id: string): Promise<Table
     entityId: parsed.data.id,
   })
 
-  revalidatePath(`/${slug}/configuracion/mesas`)
+  revalidatePath(`/${slug}/local/mesas`)
   return { ok: true, tableId: parsed.data.id, qrToken: data ?? undefined }
 }

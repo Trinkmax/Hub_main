@@ -146,7 +146,7 @@ export async function createCaptureLink(
     payload: { slug: parsed.data.slug, label: parsed.data.label },
   })
 
-  revalidatePath(`/${tenantSlug}/configuracion/captura`)
+  revalidatePath(`/${tenantSlug}/local/captura`)
   return { ok: true, message: 'Link creado.' }
 }
 
@@ -170,7 +170,7 @@ export async function toggleCaptureLink(
 
   if (error) return { ok: false, message: 'No pudimos actualizar.' }
 
-  revalidatePath(`/${tenantSlug}/configuracion/captura`)
+  revalidatePath(`/${tenantSlug}/local/captura`)
   return { ok: true }
 }
 
@@ -193,6 +193,6 @@ export async function deleteCaptureLink(
 
   if (error) return { ok: false, message: 'No pudimos borrar.' }
 
-  revalidatePath(`/${tenantSlug}/configuracion/captura`)
+  revalidatePath(`/${tenantSlug}/local/captura`)
   return { ok: true }
 }
