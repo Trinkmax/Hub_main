@@ -379,6 +379,7 @@ export function SessionDetail({
                 items={itemsByTicket.get(t.id) ?? []}
                 onChange={refresh}
                 kitchenFlowEnabled={kitchenFlowEnabled}
+                isSessionOpen={sessionStatus === 'open'}
               />
             ))
           )}
