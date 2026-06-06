@@ -227,7 +227,7 @@ function MesaStep({
       description="Cada mesa física tiene un QR único. Lo imprimís y lo pegás en la mesa. Cuando un comensal lo escanea, ve la carta en su celular y puede pedir directo. Si la mesa se desarma, podés mover, splitear o mergear sesiones desde el panel del mozo más adelante."
       tip="Empezá con 3-5 mesas para probar. Después podés sumar más."
       ctaLabel="Ir a Mesas"
-      ctaHref={`/${tenantSlug}/configuracion/mesas`}
+      ctaHref={`/${tenantSlug}/local/mesas`}
       onNext={onNext}
       onPrev={onPrev}
     />

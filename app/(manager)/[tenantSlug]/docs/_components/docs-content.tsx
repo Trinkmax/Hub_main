@@ -276,8 +276,8 @@ function SectionMesas({ slug }: { slug: string }) {
       <Steps>
         <li>
           Andá a{' '}
-          <a href={`/${slug}/configuracion/mesas`} className="text-primary underline">
-            Configuración → Mesas
+          <a href={`/${slug}/local/mesas`} className="text-primary underline">
+            Local → Plano
           </a>
           .
         </li>
@@ -735,8 +735,8 @@ function SectionAutoAccept({ slug }: { slug: string }) {
       <H3>Configurar</H3>
       <P>
         Andá a{' '}
-        <a href={`/${slug}/configuracion/auto-aceptacion`} className="text-primary underline">
-          Configuración → Auto-aceptación
+        <a href={`/${slug}/local/auto-aceptacion`} className="text-primary underline">
+          Local → Auto-aceptación
         </a>
         .
       </P>

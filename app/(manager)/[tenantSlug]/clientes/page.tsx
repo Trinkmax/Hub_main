@@ -66,7 +66,7 @@ export default async function ClientesPage({
           <>
             {!hasCaptureLinks ? (
               <Button asChild variant="outline" className="gap-2">
-                <Link href={`/${tenantSlug}/configuracion/captura`}>
+                <Link href={`/${tenantSlug}/local/captura`}>
                   <QrCode className="size-4" />
                   Crear QR de captura
                 </Link>
@@ -103,7 +103,7 @@ export default async function ClientesPage({
                   </Link>
                 </Button>
                 <Button asChild variant="outline" className="gap-2">
-                  <Link href={`/${tenantSlug}/configuracion/captura`}>
+                  <Link href={`/${tenantSlug}/local/captura`}>
                     <QrCode className="size-4" />
                     Crear QR
                   </Link>
