@@ -1,4 +1,4 @@
-import { ArrowRight, Home, type LucideIcon, MessageCircle, Palette, UsersRound } from 'lucide-react'
+import { ArrowRight, type LucideIcon, MessageCircle, Palette, UsersRound } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Card } from '@/components/ui/card'
@@ -27,13 +27,6 @@ const CARDS: SettingsCard[] = [
     description: 'Sumá owners, cajeros, mozos y cocineros con el rol que corresponde.',
     topics: ['Miembros', 'Roles e invitaciones'],
     href: (s) => `/${s}/configuracion/equipo`,
-  },
-  {
-    icon: Home,
-    title: 'Local',
-    description: 'Cómo está armado tu salón y qué pasa cuando un cliente escanea un QR.',
-    topics: ['Mesas físicas', 'Captura QRs', 'Auto-aceptación de pedidos'],
-    href: (s) => `/${s}/configuracion/mesas`,
   },
   {
     icon: MessageCircle,
@@ -72,7 +65,7 @@ export default async function ConfiguracionIndexPage({
       <PageHeader
         eyebrow="Ajustes"
         title="Configuración"
-        description="Cuatro grupos para que encuentres rápido lo que necesitás cambiar."
+        description="Tres grupos para que encuentres rápido lo que necesitás cambiar."
       />
 
       <div className="grid gap-4 sm:grid-cols-2">

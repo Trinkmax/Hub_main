@@ -1,6 +1,6 @@
 'use client'
 
-import { Gift, Home, type LucideIcon, MessageCircle, Palette, UsersRound } from 'lucide-react'
+import { Gift, type LucideIcon, MessageCircle, Palette, UsersRound } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -21,15 +21,6 @@ const GROUPS: Group[] = [
     label: 'Equipo',
     icon: UsersRound,
     items: [{ label: 'Miembros', href: (s) => `/${s}/configuracion/equipo` }],
-  },
-  {
-    label: 'Local',
-    icon: Home,
-    items: [
-      { label: 'Mesas físicas', href: (s) => `/${s}/configuracion/mesas` },
-      { label: 'Captura QRs', href: (s) => `/${s}/configuracion/captura` },
-      { label: 'Auto-aceptación', href: (s) => `/${s}/configuracion/auto-aceptacion` },
-    ],
   },
   {
     label: 'Fidelización',
