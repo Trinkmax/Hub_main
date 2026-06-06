@@ -121,3 +121,29 @@ export function restrictToParent(getScale: () => number): Modifier {
     return { ...transform, x: clampedX * scale, y: clampedY * scale }
   }
 }
+
+/**
+ * Convierte un punto de pantalla (clientX/Y) a coordenadas lógicas del stage.
+ *
+ * Fórmula: `(clientX - rect.left - posX) / scale` (ídem Y).
+ *
+ * @param clientX  - evento.clientX del pointer
+ * @param clientY  - evento.clientY del pointer
+ * @param rect     - `wrapperRef.current.getBoundingClientRect()` (solo left/top)
+ * @param scale    - `transformRef.current.state.scale`
+ * @param posX     - `transformRef.current.state.positionX`
+ * @param posY     - `transformRef.current.state.positionY`
+ */
+export function stagePointFromClient(
+  clientX: number,
+  clientY: number,
+  rect: { left: number; top: number },
+  scale: number,
+  posX: number,
+  posY: number,
+): { x: number; y: number } {
+  return {
+    x: (clientX - rect.left - posX) / scale,
+    y: (clientY - rect.top - posY) / scale,
+  }
+}

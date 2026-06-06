@@ -8,6 +8,7 @@ import {
   RESIZE_MIN,
   restrictToParent,
   snapToGrid,
+  stagePointFromClient,
 } from '@/lib/floor-plan/grid'
 
 // ClientRect de dnd-kit: { width, height, top, left, right, bottom }.
@@ -221,5 +222,45 @@ describe('restrictToParent', () => {
     })
     expect(out.scaleX).toBe(1)
     expect(out.scaleY).toBe(1)
+  })
+})
+
+describe('stagePointFromClient', () => {
+  it('a scale=1 sin pan devuelve clientX-rect.left, clientY-rect.top', () => {
+    // rect.left=50, rect.top=80; posX=0, posY=0; scale=1
+    // clientX=350, clientY=280 → x=(350-50-0)/1=300, y=(280-80-0)/1=200
+    expect(stagePointFromClient(350, 280, { left: 50, top: 80 }, 1, 0, 0)).toEqual({
+      x: 300,
+      y: 200,
+    })
+  })
+
+  it('a scale=2 sin pan divide por scale', () => {
+    // rect.left=0, rect.top=0; posX=0, posY=0; scale=2
+    // clientX=200, clientY=100 → x=200/2=100, y=100/2=50
+    expect(stagePointFromClient(200, 100, { left: 0, top: 0 }, 2, 0, 0)).toEqual({
+      x: 100,
+      y: 50,
+    })
+  })
+
+  it('a scale=1 con pan (posX=100, posY=60) descuenta el pan antes de dividir', () => {
+    // rect.left=0, rect.top=0; posX=100, posY=60; scale=1
+    // clientX=250, clientY=160 → x=(250-0-100)/1=150, y=(160-0-60)/1=100
+    expect(stagePointFromClient(250, 160, { left: 0, top: 0 }, 1, 100, 60)).toEqual({
+      x: 150,
+      y: 100,
+    })
+  })
+
+  it('a scale=2 con pan y rect offset combina los tres factores', () => {
+    // rect.left=20, rect.top=10; posX=40, posY=20; scale=2
+    // clientX=180, clientY=90
+    // x=(180-20-40)/2 = 120/2 = 60
+    // y=(90-10-20)/2  = 60/2  = 30
+    expect(stagePointFromClient(180, 90, { left: 20, top: 10 }, 2, 40, 20)).toEqual({
+      x: 60,
+      y: 30,
+    })
   })
 })
