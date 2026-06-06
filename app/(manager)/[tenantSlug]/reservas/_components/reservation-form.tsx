@@ -304,37 +304,42 @@ export function ReservationForm({
   ])
 
   // Submit
-  const onSubmit = form.handleSubmit((data) => {
-    if (typeof window !== 'undefined' && data.primary_manager_id) {
-      window.localStorage.setItem(lastManagerKey, data.primary_manager_id)
-    }
-    startSubmit(async () => {
-      const action =
-        mode === 'create'
-          ? createSalonReservation(tenantSlug, data as Record<string, unknown>)
-          : updateSalonReservation(tenantSlug, {
-              ...data,
-              id: reservationId,
-            } as Record<string, unknown>)
-      const result = await action
-      if (result.ok) {
-        toast.success(
-          result.message ?? (mode === 'create' ? 'Reserva creada.' : 'Reserva actualizada.'),
-        )
-        if (mode === 'create' && result.data?.id) {
-          router.push(`/${tenantSlug}/reservas/${result.data.id}`)
-        } else {
-          router.push(`/${tenantSlug}/reservas`)
-          router.refresh()
-        }
-      } else {
-        toast.error(result.message)
-        if (result.field) {
-          form.setError(result.field as keyof ReservationFormInput, { message: result.message })
-        }
+  const onSubmit = form.handleSubmit(
+    (data) => {
+      if (typeof window !== 'undefined' && data.primary_manager_id) {
+        window.localStorage.setItem(lastManagerKey, data.primary_manager_id)
       }
-    })
-  })
+      startSubmit(async () => {
+        const action =
+          mode === 'create'
+            ? createSalonReservation(tenantSlug, data as Record<string, unknown>)
+            : updateSalonReservation(tenantSlug, {
+                ...data,
+                id: reservationId,
+              } as Record<string, unknown>)
+        const result = await action
+        if (result.ok) {
+          toast.success(
+            result.message ?? (mode === 'create' ? 'Reserva creada.' : 'Reserva actualizada.'),
+          )
+          if (mode === 'create' && result.data?.id) {
+            router.push(`/${tenantSlug}/reservas/${result.data.id}`)
+          } else {
+            router.push(`/${tenantSlug}/reservas`)
+            router.refresh()
+          }
+        } else {
+          toast.error(result.message)
+          if (result.field) {
+            form.setError(result.field as keyof ReservationFormInput, { message: result.message })
+          }
+        }
+      })
+    },
+    () => {
+      toast.error('Revisá los campos marcados en rojo antes de guardar.')
+    },
+  )
 
   // Cmd+Enter submit
   useEffect(() => {
