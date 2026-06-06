@@ -8,9 +8,11 @@ import {
   Coins,
   Inbox,
   LayoutDashboard,
+  LayoutGrid,
   type LucideIcon,
   Megaphone,
   MonitorSmartphone,
+  QrCode,
   ScanLine,
   Settings2,
   Sparkles,
@@ -20,6 +22,7 @@ import {
   UsersRound,
   UtensilsCrossed,
   Workflow,
+  Zap,
 } from 'lucide-react'
 
 /**
@@ -38,8 +41,10 @@ export const NAV_ICONS = {
   Coins,
   Inbox,
   LayoutDashboard,
+  LayoutGrid,
   Megaphone,
   MonitorSmartphone,
+  QrCode,
   ScanLine,
   Settings2,
   Sparkles,
@@ -49,6 +54,7 @@ export const NAV_ICONS = {
   UsersRound,
   UtensilsCrossed,
   Workflow,
+  Zap,
 } satisfies Record<string, LucideIcon>
 
 export type NavIconKey = keyof typeof NAV_ICONS

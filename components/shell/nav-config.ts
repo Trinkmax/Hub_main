@@ -33,11 +33,12 @@ export type ResolvedNavGroup = {
 }
 
 /**
- * Information architecture del Manager Workspace — 6 dominios.
+ * Information architecture del Manager Workspace — 7 dominios.
  * Cada dominio agrupa por job-to-be-done del owner:
  *   HOY       — qué está pasando ahora
  *   CLIENTES  — quién viene
  *   MARKETING — cómo los traigo de vuelta
+ *   LOCAL     — cómo está armado el salón
  *   CATÁLOGO  — qué vendo y cómo se premia
  *   INSIGHTS  — qué entiendo
  *   AJUSTES   — cómo lo configuro
@@ -92,6 +93,29 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'Templates',
         href: (s) => `/${s}/eventos/templates`,
         icon: 'Sparkles',
+        roles: ['owner'],
+      },
+    ],
+  },
+  {
+    label: 'Local',
+    items: [
+      {
+        label: 'Plano',
+        href: (s) => `/${s}/local/mesas`,
+        icon: 'LayoutGrid',
+        roles: ['owner'],
+      },
+      {
+        label: 'Captura QRs',
+        href: (s) => `/${s}/local/captura`,
+        icon: 'QrCode',
+        roles: ['owner'],
+      },
+      {
+        label: 'Auto-aceptación',
+        href: (s) => `/${s}/local/auto-aceptacion`,
+        icon: 'Zap',
         roles: ['owner'],
       },
     ],
