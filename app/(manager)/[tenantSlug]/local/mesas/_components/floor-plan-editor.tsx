@@ -1,19 +1,36 @@
 'use client'
 
+import { Bell, CircleDot, Receipt, Users } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
 import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { addDecorAction, createTableInPlanAction, placeTableAction } from '@/lib/floor-plan/actions'
 import { clampToArea, ELEMENT_DEFAULTS, GRID, snapToGrid } from '@/lib/floor-plan/grid'
 import { suggestNextLabel } from '@/lib/floor-plan/numbering'
-import type { ElementRow, FloorPlanData } from '@/lib/floor-plan/queries'
+import type {
+  AreaRow,
+  ElementRow,
+  FloorPlanData,
+  LiveFloorData,
+  LiveTable,
+} from '@/lib/floor-plan/queries'
 import type { ElementGeometry } from '@/lib/floor-plan/schemas'
+import { ARSFormat, elapsedLabel } from '@/lib/salon/format'
 import { AreaManager } from './area-manager'
 import { DecorInspector } from './decor-inspector'
 import { ElementPalette } from './element-palette'
 import { FloorElement } from './floor-element'
+import { LiveFloor } from './live-floor'
 import { PanZoomStage, stagePointFromClient } from './pan-zoom-stage'
 import { TableInspector } from './table-inspector'
 import { TablesListFallback } from './tables-list-fallback'
@@ -24,12 +41,20 @@ export type FloorPlanEditorProps = {
   slug: string
   tenantId: string
   initial: FloorPlanData
+  liveAreas: AreaRow[]
+  initialLive: LiveFloorData | null
 }
 
 type Kind = 'table' | 'wall' | 'pillar' | 'island' | 'bar'
 type Mode = 'editar' | 'vivo'
 
-export function FloorPlanEditor({ slug, initial }: FloorPlanEditorProps) {
+export function FloorPlanEditor({
+  slug,
+  tenantId,
+  initial,
+  liveAreas,
+  initialLive,
+}: FloorPlanEditorProps) {
   const router = useRouter()
 
   // areas / unplaced son read-only: derivan de props (router.refresh re-siembra).
@@ -40,6 +65,13 @@ export function FloorPlanEditor({ slug, initial }: FloorPlanEditorProps) {
   const [activeAreaId, setActiveAreaId] = useState<string>(initial.areas[0]?.id ?? '')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [mode, setMode] = useState<Mode>('editar')
+
+  // Detalle de mesa en vivo (panel read-only del dueño; no hay ruta de sesión en (manager)).
+  const [liveDetail, setLiveDetail] = useState<LiveTable | null>(null)
+
+  const onLiveTableOpen = useCallback((table: LiveTable) => {
+    setLiveDetail(table)
+  }, [])
 
   // Ref único del stage de react-zoom-pan-pinch (scale/positionX/positionY).
   const transformRef = useRef<ReactZoomPanPinchRef | null>(null)
@@ -319,117 +351,202 @@ export function FloorPlanEditor({ slug, initial }: FloorPlanEditorProps) {
   if (!activeArea) return null
 
   return (
-    <Tabs defaultValue="plano" className="gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <TabsList>
-          <TabsTrigger value="plano">Plano</TabsTrigger>
-          <TabsTrigger value="lista">Lista</TabsTrigger>
-        </TabsList>
+    <>
+      <Tabs defaultValue="plano" className="gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <TabsList>
+            <TabsTrigger value="plano">Plano</TabsTrigger>
+            <TabsTrigger value="lista">Lista</TabsTrigger>
+          </TabsList>
 
-        {/* Toggle Editar / En vivo (solo aplica a la pestaña Plano). */}
-        <div className="inline-flex items-center rounded-lg border border-border/60 bg-card p-0.5">
-          <button
-            type="button"
-            onClick={() => setMode('editar')}
-            aria-pressed={mode === 'editar'}
-            className={
-              mode === 'editar'
-                ? 'rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground'
-                : 'rounded-md px-3 py-1 text-xs font-medium text-muted-foreground'
-            }
-          >
-            Editar
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('vivo')}
-            aria-pressed={mode === 'vivo'}
-            className={
-              mode === 'vivo'
-                ? 'rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground'
-                : 'rounded-md px-3 py-1 text-xs font-medium text-muted-foreground'
-            }
-          >
-            En vivo
-          </button>
+          {/* Toggle Editar / En vivo (solo aplica a la pestaña Plano). */}
+          <div className="inline-flex items-center rounded-lg border border-border/60 bg-card p-0.5">
+            <button
+              type="button"
+              onClick={() => setMode('editar')}
+              aria-pressed={mode === 'editar'}
+              className={
+                mode === 'editar'
+                  ? 'rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground'
+                  : 'rounded-md px-3 py-1 text-xs font-medium text-muted-foreground'
+              }
+            >
+              Editar
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('vivo')}
+              aria-pressed={mode === 'vivo'}
+              className={
+                mode === 'vivo'
+                  ? 'rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground'
+                  : 'rounded-md px-3 py-1 text-xs font-medium text-muted-foreground'
+              }
+            >
+              En vivo
+            </button>
+          </div>
         </div>
-      </div>
 
-      <TabsContent value="plano">
-        {mode === 'vivo' ? (
-          // LiveFloor se cablea en la Fase 6.
-          <div className="flex h-[70vh] min-h-[420px] w-full items-center justify-center rounded-2xl border border-dashed border-border/60 bg-card/50 text-sm text-muted-foreground">
-            Vista en vivo (próxima fase)
-          </div>
-        ) : (
-          <div className="grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)_18rem]">
-            <AreaManager
-              slug={slug}
-              areas={areas}
-              activeAreaId={activeAreaId}
-              onActiveAreaChange={(id) => {
-                setSelectedId(null)
-                setActiveAreaId(id)
-              }}
-              onChanged={onChanged}
-            />
+        <TabsContent value="plano">
+          {mode === 'vivo' ? (
+            initialLive ? (
+              <LiveFloor
+                slug={slug}
+                tenantId={tenantId}
+                areas={liveAreas}
+                activeAreaId={initialLive.area.id}
+                initial={initialLive}
+                onTableOpen={onLiveTableOpen}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No hay áreas para mostrar en vivo. Creá un área en el modo Editar.
+              </p>
+            )
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)_18rem]">
+              <AreaManager
+                slug={slug}
+                areas={areas}
+                activeAreaId={activeAreaId}
+                onActiveAreaChange={(id) => {
+                  setSelectedId(null)
+                  setActiveAreaId(id)
+                }}
+                onChanged={onChanged}
+              />
 
-            <div className="space-y-3">
-              <ElementPalette onQuickAdd={handleQuickAdd} />
-              <div ref={wrapperRef}>
-                <PanZoomStage
-                  width={activeArea.width}
-                  height={activeArea.height}
-                  transformRef={transformRef}
-                  interactive
-                  gridSize={GRID}
-                  onBackgroundClick={() => setSelectedId(null)}
-                  onDropKind={handleDropKind}
-                >
-                  {areaElements.map((element) => (
-                    <FloorElement
-                      key={element.id}
-                      element={element}
-                      selected={element.id === selectedId}
-                      transformRef={transformRef}
-                      areaWidth={activeArea.width}
-                      areaHeight={activeArea.height}
-                      onSelect={setSelectedId}
-                      onMove={handleMove}
-                      onResizeEnd={handleResizeEnd}
-                    />
-                  ))}
-                </PanZoomStage>
+              <div className="space-y-3">
+                <ElementPalette onQuickAdd={handleQuickAdd} />
+                <div ref={wrapperRef}>
+                  <PanZoomStage
+                    width={activeArea.width}
+                    height={activeArea.height}
+                    transformRef={transformRef}
+                    interactive
+                    gridSize={GRID}
+                    onBackgroundClick={() => setSelectedId(null)}
+                    onDropKind={handleDropKind}
+                  >
+                    {areaElements.map((element) => (
+                      <FloorElement
+                        key={element.id}
+                        element={element}
+                        selected={element.id === selectedId}
+                        transformRef={transformRef}
+                        areaWidth={activeArea.width}
+                        areaHeight={activeArea.height}
+                        onSelect={setSelectedId}
+                        onMove={handleMove}
+                        onResizeEnd={handleResizeEnd}
+                      />
+                    ))}
+                  </PanZoomStage>
+                </div>
               </div>
+
+              <aside className="space-y-3">
+                {selectedElement && selectedElement.kind === 'table' ? (
+                  <TableInspector
+                    slug={slug}
+                    element={selectedElement}
+                    allTables={allTables}
+                    onChanged={onChanged}
+                    onClose={() => setSelectedId(null)}
+                  />
+                ) : selectedElement ? (
+                  <DecorInspector
+                    slug={slug}
+                    element={selectedElement}
+                    onChanged={onChanged}
+                    onClose={() => setSelectedId(null)}
+                  />
+                ) : (
+                  <UnplacedTray tables={unplaced} onPlace={onPlace} />
+                )}
+              </aside>
             </div>
+          )}
+        </TabsContent>
 
-            <aside className="space-y-3">
-              {selectedElement && selectedElement.kind === 'table' ? (
-                <TableInspector
-                  slug={slug}
-                  element={selectedElement}
-                  allTables={allTables}
-                  onChanged={onChanged}
-                  onClose={() => setSelectedId(null)}
-                />
-              ) : selectedElement ? (
-                <DecorInspector
-                  slug={slug}
-                  element={selectedElement}
-                  onChanged={onChanged}
-                  onClose={() => setSelectedId(null)}
-                />
-              ) : (
-                <UnplacedTray tables={unplaced} onPlace={onPlace} />
-              )}
-            </aside>
-          </div>
-        )}
-      </TabsContent>
+        <TabsContent value="lista">
+          <TablesListFallback slug={slug} tables={fallbackTables} />
+        </TabsContent>
+      </Tabs>
 
-      <TabsContent value="lista">
-        <TablesListFallback slug={slug} tables={fallbackTables} />
-      </TabsContent>
-    </Tabs>
+      <Sheet
+        open={liveDetail !== null}
+        onOpenChange={(o) => {
+          if (!o) setLiveDetail(null)
+        }}
+      >
+        <SheetContent side="right" className="gap-0">
+          <SheetHeader>
+            <SheetTitle className="font-serif">
+              {liveDetail?.session?.alias ?? liveDetail?.label ?? 'Mesa'}
+            </SheetTitle>
+            <SheetDescription>
+              {liveDetail?.session
+                ? 'Estado de la sesión en curso (solo lectura).'
+                : 'Mesa libre — no hay sesión abierta.'}
+            </SheetDescription>
+          </SheetHeader>
+
+          {liveDetail?.session ? (
+            <div className="space-y-4 px-6 py-6">
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs uppercase tracking-wider text-muted-foreground">
+                  Gasto acumulado
+                </span>
+                <span className="font-serif text-2xl font-semibold tabular-nums">
+                  {ARSFormat(liveDetail.session.total_cents)}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {liveDetail.session.party_size !== null ? (
+                  <Badge variant="secondary" className="gap-1">
+                    <Users className="size-3" aria-hidden />
+                    {liveDetail.session.party_size}{' '}
+                    {liveDetail.session.party_size === 1 ? 'comensal' : 'comensales'}
+                  </Badge>
+                ) : null}
+                <Badge variant="outline" className="gap-1">
+                  <CircleDot className="size-3" aria-hidden />
+                  {elapsedLabel(liveDetail.session.opened_at)}
+                </Badge>
+                {liveDetail.session.kitchen === 'preparing' ? (
+                  <Badge variant="warning" className="gap-1">
+                    <Bell className="size-3" aria-hidden />
+                    Preparando
+                  </Badge>
+                ) : null}
+                {liveDetail.session.kitchen === 'ready' ? (
+                  <Badge variant="success" className="gap-1">
+                    <Bell className="size-3" aria-hidden />
+                    Lista
+                  </Badge>
+                ) : null}
+                {liveDetail.session.bill_requested ? (
+                  <Badge variant="destructive" className="gap-1">
+                    <Receipt className="size-3" aria-hidden />
+                    Cuenta pedida
+                  </Badge>
+                ) : null}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                La gestión de la mesa (cobrar, dividir, mover) se hace desde el salón.
+              </p>
+            </div>
+          ) : (
+            <div className="px-6 py-6">
+              <p className="text-sm text-muted-foreground">
+                Esta mesa no tiene una sesión abierta en este momento.
+              </p>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+    </>
   )
 }

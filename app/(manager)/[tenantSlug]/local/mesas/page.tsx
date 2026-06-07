@@ -2,7 +2,8 @@ import { LayoutGrid } from 'lucide-react'
 import { notFound } from 'next/navigation'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
-import { getFloorPlan } from '@/lib/floor-plan/queries'
+import type { LiveFloorData } from '@/lib/floor-plan/queries'
+import { getFloorPlan, getLiveFloor, listFloorAreas } from '@/lib/floor-plan/queries'
 import { requireTenantAccess } from '@/lib/tenant'
 import { FloorPlanEditor } from './_components/floor-plan-editor'
 import { FloorPlanErrorBoundary } from './_components/floor-plan-error-boundary'
@@ -27,6 +28,15 @@ export default async function MesasPage({ params }: { params: Promise<{ tenantSl
   if (role !== 'owner') notFound()
 
   const data = await getFloorPlan(tenant.id)
+
+  // Áreas para el selector de la vista En vivo (mismo orden canónico que el editor).
+  const liveAreas = await listFloorAreas(tenant.id)
+  // Live data del área default (la primera). Si no hay áreas, no hay vista en vivo.
+  const defaultAreaId = liveAreas[0]?.id ?? null
+  let initialLive: LiveFloorData | null = null
+  if (defaultAreaId) {
+    initialLive = await getLiveFloor(tenant.id, defaultAreaId)
+  }
 
   // Para el fallback accesible (datos planos serializables): mesas ubicadas
   // (elementos kind='table') + mesas no ubicadas (bandeja).
@@ -67,7 +77,13 @@ export default async function MesasPage({ params }: { params: Promise<{ tenantSl
         <FloorPlanErrorBoundary
           fallback={<TablesListFallback slug={tenantSlug} tables={fallbackTables} />}
         >
-          <FloorPlanEditor slug={tenantSlug} tenantId={tenant.id} initial={data} />
+          <FloorPlanEditor
+            slug={tenantSlug}
+            tenantId={tenant.id}
+            initial={data}
+            liveAreas={liveAreas}
+            initialLive={initialLive}
+          />
         </FloorPlanErrorBoundary>
       )}
     </main>
