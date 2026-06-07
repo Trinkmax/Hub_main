@@ -1,5 +1,7 @@
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import type { LiveFloorData } from '@/lib/floor-plan/queries'
+import { getLiveFloor, listFloorAreas } from '@/lib/floor-plan/queries'
 import { getSalonOccupancy, listSalonTables } from '@/lib/sessions-waiter/queries'
 import { requireTenantAccess } from '@/lib/tenant'
 import { SalonView } from './_components/salon-view'
@@ -26,10 +28,18 @@ export default async function SalonMesasPage({
 
   if (!['waiter', 'owner', 'cashier'].includes(role)) notFound()
 
-  const [tables, occupancy] = await Promise.all([
+  const [tables, occupancy, liveAreas] = await Promise.all([
     listSalonTables(tenantId),
     getSalonOccupancy(tenantId),
+    listFloorAreas(tenantId),
   ])
+
+  // Live data del área default para la pestaña Plano (null si el salón no tiene áreas).
+  const defaultAreaId = liveAreas[0]?.id ?? null
+  let initialLive: LiveFloorData | null = null
+  if (defaultAreaId) {
+    initialLive = await getLiveFloor(tenantId, defaultAreaId)
+  }
 
   return (
     <div className="space-y-6">
@@ -43,6 +53,8 @@ export default async function SalonMesasPage({
         tenantId={tenantId}
         initialTables={tables}
         initialOccupancy={occupancy}
+        liveAreas={liveAreas}
+        initialLive={initialLive}
       />
     </div>
   )

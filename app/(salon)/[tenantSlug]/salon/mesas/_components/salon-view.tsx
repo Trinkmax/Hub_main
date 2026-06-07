@@ -13,11 +13,14 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import type { AreaRow, LiveFloorData, LiveTable } from '@/lib/floor-plan/queries'
 import { subscribeChanges } from '@/lib/realtime/subscribe'
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'
 import { activateTableByIdAction, activateTableByQrAction } from '@/lib/sessions-waiter/actions'
 import type { SalonOccupancy, SalonTableRow } from '@/lib/sessions-waiter/queries'
 import { filterTables } from '@/lib/sessions-waiter/table-search'
+import { LiveFloor } from '../../../../../(manager)/[tenantSlug]/local/mesas/_components/live-floor'
 import { ManualActivateSheet } from './manual-activate-sheet'
 import { OccupancyBanner } from './occupancy-banner'
 import { PartySizeStepper } from './party-size-stepper'
@@ -37,11 +40,15 @@ export function SalonView({
   tenantId,
   initialTables,
   initialOccupancy,
+  liveAreas,
+  initialLive,
 }: {
   tenantSlug: string
   tenantId: string
   initialTables: SalonTableRow[]
   initialOccupancy: SalonOccupancy
+  liveAreas: AreaRow[]
+  initialLive: LiveFloorData | null
 }) {
   const router = useRouter()
   const [tables, setTables] = useState(initialTables)
@@ -57,6 +64,9 @@ export function SalonView({
   const freeTables = useMemo(() => tables.filter((t) => t.session === null), [tables])
   const filteredTables = useMemo(() => filterTables(tables, searchQuery), [tables, searchQuery])
 
+  // Refetch de la lista plana (pestaña Lista) — alimenta la grilla + el banner de ocupación.
+  // El plano en vivo (pestaña Plano) tiene su PROPIA suscripción dentro de <LiveFloor>
+  // (canal live-${tenantId}); esta es la suscripción salon-${tenantId} de la grilla.
   const refresh = useCallback(async () => {
     const res = await fetch(`/api/sessions/list?tenant_id=${encodeURIComponent(tenantId)}`, {
       cache: 'no-store',
@@ -113,6 +123,17 @@ export function SalonView({
     setAlias('')
   }, [])
 
+  // Tap en una mesa del plano en vivo: con sesión → su detalle; sin sesión no es
+  // navegable (la activación de mesas libres vive en la pestaña Lista).
+  const onLiveTableOpen = useCallback(
+    (table: LiveTable) => {
+      if (table.session) {
+        router.push(`/${tenantSlug}/salon/mesas/${table.session.id}`)
+      }
+    },
+    [router, tenantSlug],
+  )
+
   const confirm = useCallback(() => {
     if (!pending) return
     startActivation(async () => {
@@ -147,9 +168,12 @@ export function SalonView({
       const titulo = result.alias ?? `Mesa ${result.tableLabel ?? ''}`
       toast.success(`${titulo} activada (${result.partySize} pax).`)
       setPending(null)
-      await refresh()
+      router.push(`/${tenantSlug}/salon/mesas/${result.sessionId}`)
     })
-  }, [pending, partySize, alias, tenantSlug, router, refresh])
+  }, [pending, partySize, alias, tenantSlug, router])
+
+  // Sin áreas en el plano: Lista es el tab por defecto (no hay nada que mostrar en vivo).
+  const defaultTab = initialLive ? 'plano' : 'lista'
 
   return (
     <div className="space-y-4">
@@ -177,13 +201,39 @@ export function SalonView({
         </Button>
       </div>
 
-      <SalonSearch value={searchQuery} onChange={setSearchQuery} />
+      <Tabs defaultValue={defaultTab} className="gap-4">
+        <TabsList>
+          <TabsTrigger value="plano">Plano</TabsTrigger>
+          <TabsTrigger value="lista">Lista</TabsTrigger>
+        </TabsList>
 
-      <SalonTablesGrid
-        tenantSlug={tenantSlug}
-        tables={filteredTables}
-        onTapFreeTable={onPickFreeTable}
-      />
+        <TabsContent value="plano">
+          {initialLive ? (
+            <LiveFloor
+              slug={tenantSlug}
+              tenantId={tenantId}
+              areas={liveAreas}
+              activeAreaId={initialLive.area.id}
+              initial={initialLive}
+              onTableOpen={onLiveTableOpen}
+            />
+          ) : (
+            <p className="rounded-xl border border-dashed border-border/60 bg-card/50 p-6 text-sm text-muted-foreground">
+              Todavía no hay un plano de mesas configurado. Pedile al dueño que arme el plano en
+              Local → Plano. Mientras tanto, usá la pestaña Lista.
+            </p>
+          )}
+        </TabsContent>
+
+        <TabsContent value="lista" className="space-y-4">
+          <SalonSearch value={searchQuery} onChange={setSearchQuery} />
+          <SalonTablesGrid
+            tenantSlug={tenantSlug}
+            tables={filteredTables}
+            onTapFreeTable={onPickFreeTable}
+          />
+        </TabsContent>
+      </Tabs>
 
       <QrScannerSheet open={scannerOpen} onOpenChange={setScannerOpen} onScan={onScanned} />
       <ManualActivateSheet
