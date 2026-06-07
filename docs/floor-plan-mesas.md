@@ -1,7 +1,8 @@
 # Editor visual de plano de mesas (floor plan) — guía técnica v2
 
 > Rediseño 2026-06-06. El editor usa **`react-zoom-pan-pinch`** (pan/zoom robusto) + drag
-> propio con pointer events (sale dnd-kit); se agrega la **vista operativa en vivo** con
+> propio con pointer events (dnd-kit **removido del canvas**; sigue instalado para otras
+> features: menu/flows/eventos); se agrega la **vista operativa en vivo** con
 > Supabase Realtime; y las tres páginas de "Local" se mueven a su **propia tab del
 > sidebar**.
 
@@ -19,7 +20,7 @@ Ruta: `/{tenantSlug}/local/mesas` (solo `owner`; staff en `/{tenantSlug}/salon/m
 | Colocar elementos | Clic en paleta → diálogo al centro | **Arrastrar** desde la paleta al lugar |
 | Pan/zoom | Pan CSS transform + botones de zoom | `TransformWrapper` nativo (scroll, pinch, `+/-/fit`) |
 | Drag a escala ≠ 1 | Bug: delta no dividido → drift | Correcto: `delta / scale` antes de snap |
-| `a11y.ts` | Announcements dnd-kit es-AR | Retirado (dnd-kit sale). Lista accesible sigue canónica |
+| `a11y.ts` | Announcements dnd-kit es-AR | Retirado del plano (dnd-kit sigue en menu/flows/eventos). Lista accesible sigue canónica |
 | Vista en vivo | No existía | **Live floor** + Realtime (dueño toggle + staff `/salon`) |
 | Realtime | — | Migración publica 4 tablas; Supabase Realtime efectivo |
 

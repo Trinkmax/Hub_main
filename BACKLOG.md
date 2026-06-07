@@ -66,3 +66,18 @@ cuando aterrice el editor v1):
 - **`useGeometryQueue.flushNow` se expone pero el editor no lo llama.** Superficie muerta en el tipo
   de retorno del hook; el flush por `beforeunload` es interno y alcanza. Quitar `flushNow` del API
   o usarlo (p. ej. flush al cambiar de área).
+
+## Rediseño del floor plan v2 (rama `feat/floor-plan-rediseno`)
+
+- **Falta unit test de la derivación JS de `getLiveFloor`.** El plan listaba
+  `tests/lib/floor-plan-live.test.ts` para la lógica pura (estado→color, cocina ready>preparing>none,
+  bill flag); no se creó. El test RLS cubre aislamiento/área/join de sesión, pero la derivación de
+  cocina/estado no tiene cobertura automatizada. Extraer esa lógica a un helper puro y testearla.
+- **`bill_requested` en la vista en vivo tarda hasta 30s.** `table_session_events` **no tiene
+  `tenant_id`**, así que no se puede filtrar una suscripción realtime por tenant; el flag de
+  "cuenta pedida" se actualiza solo en el tick del safety-net (≤30s). Para hacerlo instantáneo:
+  agregar `tenant_id` a `table_session_events` y sumar la suscripción (mirror de salon-view).
+- **`getLiveFloor`: `total_cents ?? 0` es dead code** (`table_sessions.total_cents` es `NOT NULL
+  DEFAULT 0`). Cosmético; quitar el fallback.
+- **Doc/commits dicen `react-zoom-pan-pinch` v4 pero se instaló v3.7.0** (v4 no existe en npm; v3.7
+  es el `latest` estable y API-compatible). Nit de naming en el plan/commits; el código es correcto.
