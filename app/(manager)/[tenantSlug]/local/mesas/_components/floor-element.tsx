@@ -1,21 +1,28 @@
 'use client'
 
-import { useDraggable } from '@dnd-kit/core'
-import { CSS } from '@dnd-kit/utilities'
-import { type CSSProperties, useEffect, useState } from 'react'
+import { type CSSProperties, useRef, useState } from 'react'
+import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
+import { clampToArea, snapToGrid } from '@/lib/floor-plan/grid'
 import type { ElementRow } from '@/lib/floor-plan/queries'
 import { cn } from '@/lib/utils'
 import { ResizeHandles } from './resize-handles'
 
-type FloorElementProps = {
+type TransformRef = React.RefObject<ReactZoomPanPinchRef | null>
+
+export type FloorElementProps = {
   element: ElementRow
   selected: boolean
-  scale: number
+  transformRef: TransformRef
+  /** Dimensiones lógicas del área (para clampToArea durante el drag). */
+  areaWidth: number
+  areaHeight: number
   onSelect: (id: string) => void
+  /** Move optimista durante el drag; el editor encola la persistencia. */
+  onMove: (id: string, x: number, y: number) => void
   onResizeEnd: (id: string, size: { width: number; height: number }) => void
 }
 
-// Etiquetas es-AR por tipo (para aria-label de decoración). No exportado: detalle de UI.
+// Etiquetas es-AR por tipo (para aria-label de decoración).
 const KIND_LABELS: Record<ElementRow['kind'], string> = {
   table: 'Mesa',
   wall: 'Pared',
@@ -24,25 +31,41 @@ const KIND_LABELS: Record<ElementRow['kind'], string> = {
   bar: 'Barra',
 }
 
+// Umbral (px de pantalla) para distinguir click (selección) de drag (mover).
+const DRAG_THRESHOLD = 4
+
+type DragState = {
+  startClientX: number
+  startClientY: number
+  origX: number
+  origY: number
+  moved: boolean
+}
+
 export function FloorElement({
   element,
   selected,
-  scale,
+  transformRef,
+  areaWidth,
+  areaHeight,
   onSelect,
+  onMove,
   onResizeEnd,
 }: FloorElementProps) {
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, isDragging } =
-    useDraggable({ id: element.id })
-
-  // Tamaño transitorio durante el gesto de resize (no afecta la firma de props).
+  const drag = useRef<DragState | null>(null)
+  // Tamaño transitorio durante el gesto de resize.
   const [liveSize, setLiveSize] = useState<{ width: number; height: number } | null>(null)
 
-  // Cuando el tamaño committeado cambia (después de onResizeEnd), descartamos el
-  // estado transitorio para que el elemento se dibuje desde la geometría canónica.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: element.width/height son los triggers intencionales del reset; setLiveSize es estable pero no es el gatillo.
-  useEffect(() => {
-    setLiveSize(null)
-  }, [element.width, element.height])
+  // Si la geometría committeada cambia (post onResizeEnd), descartamos el
+  // tamaño transitorio para dibujar desde la geometría canónica.
+  const lastCommittedRef = useRef({ width: element.width, height: element.height })
+  if (
+    lastCommittedRef.current.width !== element.width ||
+    lastCommittedRef.current.height !== element.height
+  ) {
+    lastCommittedRef.current = { width: element.width, height: element.height }
+    if (liveSize) setLiveSize(null)
+  }
 
   const isTable = element.kind === 'table'
   const isCircle = element.shape === 'circle'
@@ -50,21 +73,64 @@ export function FloorElement({
   const displayWidth = liveSize?.width ?? element.width
   const displayHeight = liveSize?.height ?? element.height
 
-  // El stage está escalado; el elemento se posiciona en px lógicos. El transform
-  // de dnd-kit es para el preview en vivo del drag (se descarta en dragEnd y el
-  // editor re-aplica la geometría committeada).
+  const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    // No iniciamos drag con botón secundario.
+    if (e.button !== 0) return
+    // Detener la propagación → el pan del stage no agarra el gesto.
+    e.stopPropagation()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    drag.current = {
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      origX: element.x,
+      origY: element.y,
+      moved: false,
+    }
+  }
+
+  const onPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const state = drag.current
+    if (!state) return
+    const dx = e.clientX - state.startClientX
+    const dy = e.clientY - state.startClientY
+    if (!state.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return
+    state.moved = true
+    const scale = transformRef.current?.state.scale ?? 1
+    const logicalX = snapToGrid(state.origX + dx / scale)
+    const logicalY = snapToGrid(state.origY + dy / scale)
+    const clamped = clampToArea(
+      logicalX,
+      logicalY,
+      element.width,
+      element.height,
+      areaWidth,
+      areaHeight,
+    )
+    onMove(element.id, clamped.x, clamped.y)
+  }
+
+  const onPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const state = drag.current
+    drag.current = null
+    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+    // Click sin drag → seleccionar (abre inspector). El move ya quedó persistido
+    // por el editor a través de onMove (que encola); no hay commit extra acá.
+    if (state && !state.moved) onSelect(element.id)
+  }
+
   const wrapperStyle: CSSProperties = {
     position: 'absolute',
     left: element.x,
     top: element.y,
     width: displayWidth,
     height: displayHeight,
-    transform: CSS.Translate.toString(transform),
     zIndex: selected ? element.z_index + 1000 : element.z_index,
     touchAction: 'none',
   }
 
-  // Fill de decoración: hex del dueño, o token neutro si color is null (dark-mode safe).
+  // Fill de decoración: hex del dueño o token neutro (dark-mode safe).
   const decorStyle: CSSProperties | undefined = isTable
     ? undefined
     : { backgroundColor: element.color ?? 'var(--muted)' }
@@ -74,14 +140,14 @@ export function FloorElement({
     : `${KIND_LABELS[element.kind]}${element.label ? ` ${element.label}` : ''}`
 
   return (
-    <div ref={setNodeRef} style={wrapperStyle}>
-      {/* Body = activator del drag (NO los handles). Click sin drag selecciona. */}
+    // className="floor-element" → react-zoom-pan-pinch EXCLUYE el pan sobre este nodo.
+    <div className="floor-element" style={wrapperStyle}>
       <button
-        ref={setActivatorNodeRef}
         type="button"
-        onClick={() => onSelect(element.id)}
-        {...listeners}
-        {...attributes}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
         aria-label={ariaLabel}
         style={decorStyle}
         className={cn(
@@ -91,7 +157,6 @@ export function FloorElement({
             ? 'border-primary/40 bg-card text-card-foreground shadow-sm'
             : 'border-border/70 text-muted-foreground',
           selected && 'ring-2 ring-primary ring-offset-1 ring-offset-background',
-          isDragging && 'opacity-70 shadow-lg',
         )}
       >
         {isTable ? (
@@ -116,10 +181,9 @@ export function FloorElement({
         <ResizeHandles
           width={displayWidth}
           height={displayHeight}
-          scale={scale}
+          transformRef={transformRef}
           onResize={setLiveSize}
           onResizeEnd={(size) => {
-            // Limpiamos el estado transitorio y commiteamos el tamaño final.
             setLiveSize(null)
             onResizeEnd(element.id, size)
           }}

@@ -1,37 +1,23 @@
 'use client'
 
-import {
-  DndContext,
-  type DragEndEvent,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
 import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { floorPlanAnnouncements, floorPlanScreenReaderInstructions } from '@/lib/floor-plan/a11y'
-import { addDecorAction, placeTableAction } from '@/lib/floor-plan/actions'
-import {
-  clampToArea,
-  createSnapModifier,
-  ELEMENT_DEFAULTS,
-  GRID,
-  restrictToParent,
-  snapToGrid,
-} from '@/lib/floor-plan/grid'
+import { addDecorAction, createTableInPlanAction, placeTableAction } from '@/lib/floor-plan/actions'
+import { clampToArea, ELEMENT_DEFAULTS, GRID, snapToGrid } from '@/lib/floor-plan/grid'
+import { suggestNextLabel } from '@/lib/floor-plan/numbering'
 import type { ElementRow, FloorPlanData } from '@/lib/floor-plan/queries'
 import type { ElementGeometry } from '@/lib/floor-plan/schemas'
 import { AreaManager } from './area-manager'
-import { CreateTableDialog } from './create-table-dialog'
 import { DecorInspector } from './decor-inspector'
 import { ElementPalette } from './element-palette'
-import { FloorCanvas } from './floor-canvas'
+import { FloorElement } from './floor-element'
+import { PanZoomStage, stagePointFromClient } from './pan-zoom-stage'
 import { TableInspector } from './table-inspector'
 import { TablesListFallback } from './tables-list-fallback'
-import { TRAY_DRAG_PREFIX, UnplacedTray } from './unplaced-tray'
+import { UnplacedTray } from './unplaced-tray'
 import { useGeometryQueue } from './use-geometry-queue'
 
 export type FloorPlanEditorProps = {
@@ -40,30 +26,28 @@ export type FloorPlanEditorProps = {
   initial: FloorPlanData
 }
 
-const MIN_SCALE = 0.25
-const MAX_SCALE = 2
-const ZOOM_STEP = 0.2
-
-type DecorKind = 'wall' | 'pillar' | 'island' | 'bar'
+type Kind = 'table' | 'wall' | 'pillar' | 'island' | 'bar'
+type Mode = 'editar' | 'vivo'
 
 export function FloorPlanEditor({ slug, initial }: FloorPlanEditorProps) {
   const router = useRouter()
 
-  // areas and unplaced are read-only (never optimistically mutated) — derive
-  // directly from props so router.refresh() (new initial) updates them.
+  // areas / unplaced son read-only: derivan de props (router.refresh re-siembra).
   const areas = initial.areas
   const unplaced = initial.unplacedTables
 
   const [elements, setElements] = useState<ElementRow[]>(initial.elements)
   const [activeAreaId, setActiveAreaId] = useState<string>(initial.areas[0]?.id ?? '')
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [scale, setScale] = useState(1)
-  const [pan, setPan] = useState({ x: 0, y: 0 })
-  const [createOpen, setCreateOpen] = useState(false)
+  const [mode, setMode] = useState<Mode>('editar')
 
-  // Re-sync elements when server data changes after router.refresh().
-  // initial is a new object reference every render, so we use a content
-  // signature to avoid resetting on every render.
+  // Ref único del stage de react-zoom-pan-pinch (scale/positionX/positionY).
+  const transformRef = useRef<ReactZoomPanPinchRef | null>(null)
+  // Wrapper del stage para medir su rect en el drop-from-palette.
+  const wrapperRef = useRef<HTMLDivElement>(null)
+
+  // Re-sync de elements cuando cambian los datos del server (firma de contenido
+  // para no resetear en cada render — initial es una ref nueva cada vez).
   const initialSig = useMemo(
     () =>
       initial.elements
@@ -79,7 +63,7 @@ export function FloorPlanEditor({ slug, initial }: FloorPlanEditorProps) {
     setElements(initial.elements)
   }, [initialSig])
 
-  // Guard activeAreaId: if the active area was deleted, fall back to the first.
+  // Guard: si borraron el área activa, caer a la primera.
   useEffect(() => {
     const first = areas[0]
     if (!first) return
@@ -113,34 +97,6 @@ export function FloorPlanEditor({ slug, initial }: FloorPlanEditorProps) {
 
   const queue = useGeometryQueue(slug, onQueueError)
 
-  // Modifiers re-creados cuando cambia scale (cierran sobre el scale vigente).
-  const getScale = useCallback(() => scale, [scale])
-  const modifiers = useMemo(
-    () => [createSnapModifier(GRID, getScale), restrictToParent(getScale)],
-    [getScale],
-  )
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: (event, { currentCoordinates }) => {
-        const step = GRID * scale
-        switch (event.code) {
-          case 'ArrowRight':
-            return { ...currentCoordinates, x: currentCoordinates.x + step }
-          case 'ArrowLeft':
-            return { ...currentCoordinates, x: currentCoordinates.x - step }
-          case 'ArrowDown':
-            return { ...currentCoordinates, y: currentCoordinates.y + step }
-          case 'ArrowUp':
-            return { ...currentCoordinates, y: currentCoordinates.y - step }
-          default:
-            return undefined
-        }
-      },
-    }),
-  )
-
   const activeArea = areas.find((a) => a.id === activeAreaId) ?? null
   const areaElements = useMemo(
     () => (activeArea ? elements.filter((el) => el.area_id === activeArea.id) : []),
@@ -148,7 +104,7 @@ export function FloorPlanEditor({ slug, initial }: FloorPlanEditorProps) {
   )
   const selectedElement = elements.find((el) => el.id === selectedId) ?? null
 
-  // Tras mutaciones estructurales: deseleccionar + recargar el RSC (re-siembra initial).
+  // Tras mutaciones estructurales: deseleccionar + recargar el RSC.
   const onChanged = useCallback(() => {
     setSelectedId(null)
     router.refresh()
@@ -160,27 +116,54 @@ export function FloorPlanEditor({ slug, initial }: FloorPlanEditorProps) {
       el: ElementRow,
       next: { x: number; y: number; width: number; height: number; z_index: number },
     ) => {
-      prevGeomRef.current.set(el.id, {
-        id: el.id,
-        x: el.x,
-        y: el.y,
-        width: el.width,
-        height: el.height,
-        z_index: el.z_index,
-      })
+      // Snapshot solo del primer cambio de este id en el batch corriente.
+      if (!prevGeomRef.current.has(el.id)) {
+        prevGeomRef.current.set(el.id, {
+          id: el.id,
+          x: el.x,
+          y: el.y,
+          width: el.width,
+          height: el.height,
+          z_index: el.z_index,
+        })
+      }
       setElements((current) => current.map((e) => (e.id === el.id ? { ...e, ...next } : e)))
       queue.enqueue({ id: el.id, ...next })
     },
     [queue],
   )
 
-  // Centro lógico del área activa (para alta de mesa/decor y colocar de bandeja).
+  // Move optimista durante el drag de un elemento (FloorElement → onMove).
+  const handleMove = useCallback(
+    (id: string, x: number, y: number) => {
+      const el = elements.find((e) => e.id === id)
+      if (!el) return
+      if (el.x === x && el.y === y) return
+      commitGeometry(el, { x, y, width: el.width, height: el.height, z_index: el.z_index })
+    },
+    [elements, commitGeometry],
+  )
+
+  const handleResizeEnd = useCallback(
+    (id: string, size: { width: number; height: number }) => {
+      if (!activeArea) return
+      const el = elements.find((e) => e.id === id)
+      if (!el) return
+      const width = snapToGrid(size.width)
+      const height = snapToGrid(size.height)
+      const clamped = clampToArea(el.x, el.y, width, height, activeArea.width, activeArea.height)
+      commitGeometry(el, { x: clamped.x, y: clamped.y, width, height, z_index: el.z_index })
+    },
+    [activeArea, elements, commitGeometry],
+  )
+
+  // Centro lógico del área activa (para el fallback no-drag de la paleta).
   const areaCenter = useCallback(
     (w: number, h: number) => {
       if (!activeArea) return { x: 0, y: 0 }
       return clampToArea(
-        snapToGrid(activeArea.width / 2 - w / 2, GRID),
-        snapToGrid(activeArea.height / 2 - h / 2, GRID),
+        snapToGrid(activeArea.width / 2 - w / 2),
+        snapToGrid(activeArea.height / 2 - h / 2),
         w,
         h,
         activeArea.width,
@@ -190,101 +173,44 @@ export function FloorPlanEditor({ slug, initial }: FloorPlanEditorProps) {
     [activeArea],
   )
 
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
+  // Crea/coloca el kind en el punto lógico (x,y) ya clampeado.
+  const insertAt = useCallback(
+    (kind: Kind, x: number, y: number) => {
       if (!activeArea) return
-      const rawId = String(event.active.id)
-
-      // Drag desde la bandeja → colocar mesa en el centro del área activa.
-      if (rawId.startsWith(TRAY_DRAG_PREFIX)) {
-        const tableId = rawId.slice(TRAY_DRAG_PREFIX.length)
-        const def = ELEMENT_DEFAULTS.table
-        const center = areaCenter(def.width, def.height)
+      if (kind === 'table') {
+        // Autosugerir el próximo label libre del área (el inspector permite editarlo).
+        const areaLabels = elements
+          .filter((el) => el.area_id === activeArea.id && el.kind === 'table' && el.table)
+          .map((el) => el.table?.label ?? '')
+          .filter((l) => l.length > 0)
+        const label = suggestNextLabel(activeArea.number_start, areaLabels)
         void (async () => {
-          const r = await placeTableAction(slug, {
-            table_id: tableId,
+          const r = await createTableInPlanAction(slug, {
             area_id: activeArea.id,
-            x: center.x,
-            y: center.y,
+            label,
+            capacity: null,
+            shape: ELEMENT_DEFAULTS.table.shape,
+            x,
+            y,
           })
-          if (r.ok) onChanged()
-          else toast.error(r.message)
+          if (r.ok) {
+            // Re-sembrar y abrir el inspector de la mesa nueva (por su element_id).
+            setSelectedId(r.elementId)
+            router.refresh()
+          } else {
+            toast.error(r.message)
+          }
         })()
         return
       }
-
-      // Drag de un elemento del plano → pipeline canónica (snap lógico + clamp).
-      const el = elements.find((e) => e.id === rawId)
-      if (!el) return
-      const logicalX = snapToGrid(el.x + event.delta.x / scale, GRID)
-      const logicalY = snapToGrid(el.y + event.delta.y / scale, GRID)
-      const clamped = clampToArea(
-        logicalX,
-        logicalY,
-        el.width,
-        el.height,
-        activeArea.width,
-        activeArea.height,
-      )
-      if (clamped.x === el.x && clamped.y === el.y) return
-      commitGeometry(el, {
-        x: clamped.x,
-        y: clamped.y,
-        width: el.width,
-        height: el.height,
-        z_index: el.z_index,
-      })
-    },
-    [activeArea, elements, scale, areaCenter, slug, onChanged, commitGeometry],
-  )
-
-  const handleResizeEnd = useCallback(
-    (id: string, size: { width: number; height: number }) => {
-      if (!activeArea) return
-      const el = elements.find((e) => e.id === id)
-      if (!el) return
-      const width = snapToGrid(size.width, GRID)
-      const height = snapToGrid(size.height, GRID)
-      const clamped = clampToArea(el.x, el.y, width, height, activeArea.width, activeArea.height)
-      commitGeometry(el, {
-        x: clamped.x,
-        y: clamped.y,
-        width,
-        height,
-        z_index: el.z_index,
-      })
-    },
-    [activeArea, elements, commitGeometry],
-  )
-
-  // Zoom/pan: estado en el editor, controles en el canvas.
-  const zoomIn = useCallback(
-    () => setScale((s) => Math.min(MAX_SCALE, Math.round((s + ZOOM_STEP) * 100) / 100)),
-    [],
-  )
-  const zoomOut = useCallback(
-    () => setScale((s) => Math.max(MIN_SCALE, Math.round((s - ZOOM_STEP) * 100) / 100)),
-    [],
-  )
-  const fit = useCallback(() => {
-    setScale(1)
-    setPan({ x: 0, y: 0 })
-  }, [])
-
-  // Paleta: "Mesa" abre el diálogo; decoración inserta el elemento en el centro.
-  const onAddTable = useCallback(() => setCreateOpen(true), [])
-  const onAddDecor = useCallback(
-    (kind: DecorKind) => {
-      if (!activeArea) return
       const def = ELEMENT_DEFAULTS[kind]
-      const center = areaCenter(def.width, def.height)
       void (async () => {
         const r = await addDecorAction(slug, {
           area_id: activeArea.id,
           kind,
           shape: def.shape,
-          x: center.x,
-          y: center.y,
+          x,
+          y,
           width: def.width,
           height: def.height,
           label: null,
@@ -294,7 +220,47 @@ export function FloorPlanEditor({ slug, initial }: FloorPlanEditorProps) {
         else toast.error(r.message)
       })()
     },
-    [activeArea, areaCenter, slug, onChanged],
+    [activeArea, slug, router, onChanged, elements],
+  )
+
+  // Drop-from-palette: punto de pantalla → coords lógicas del stage → clamp → insertar.
+  const handleDropKind = useCallback(
+    (kind: Kind, clientX: number, clientY: number) => {
+      if (!activeArea) return
+      const wrapper = wrapperRef.current
+      const state = transformRef.current?.state
+      if (!wrapper || !state) return
+      const rect = wrapper.getBoundingClientRect()
+      const point = stagePointFromClient(
+        clientX,
+        clientY,
+        rect,
+        state.scale,
+        state.positionX,
+        state.positionY,
+      )
+      const def = ELEMENT_DEFAULTS[kind]
+      const clamped = clampToArea(
+        snapToGrid(point.x - def.width / 2),
+        snapToGrid(point.y - def.height / 2),
+        def.width,
+        def.height,
+        activeArea.width,
+        activeArea.height,
+      )
+      insertAt(kind, clamped.x, clamped.y)
+    },
+    [activeArea, insertAt],
+  )
+
+  // Fallback no-drag de la paleta: agregar en el centro del área activa.
+  const handleQuickAdd = useCallback(
+    (kind: Kind) => {
+      const def = ELEMENT_DEFAULTS[kind]
+      const center = areaCenter(def.width, def.height)
+      insertAt(kind, center.x, center.y)
+    },
+    [areaCenter, insertAt],
   )
 
   // Bandeja: "Colocar" ubica la mesa en el centro del área activa.
@@ -317,7 +283,7 @@ export function FloorPlanEditor({ slug, initial }: FloorPlanEditorProps) {
     [activeArea, areaCenter, slug, onChanged],
   )
 
-  // Para el merge-select del inspector: mesas (activas) ubicadas en el plano.
+  // Merge-select del inspector: mesas (activas) ubicadas en el plano.
   const allTables = useMemo(
     () =>
       elements
@@ -326,17 +292,7 @@ export function FloorPlanEditor({ slug, initial }: FloorPlanEditorProps) {
     [elements],
   )
 
-  // Labels de mesas del área activa, para autosugerir el alta.
-  const areaTableLabels = useMemo(
-    () =>
-      areaElements
-        .filter((el) => el.kind === 'table' && el.table)
-        .map((el) => el.table?.label ?? '')
-        .filter((l) => l.length > 0),
-    [areaElements],
-  )
-
-  // Lista accesible canónica: ubicadas (elemento kind='table') + bandeja.
+  // Lista accesible canónica: ubicadas + bandeja.
   const fallbackTables = useMemo(
     () =>
       [
@@ -362,52 +318,89 @@ export function FloorPlanEditor({ slug, initial }: FloorPlanEditorProps) {
 
   if (!activeArea) return null
 
-  const tableCenter = areaCenter(ELEMENT_DEFAULTS.table.width, ELEMENT_DEFAULTS.table.height)
-
   return (
     <Tabs defaultValue="plano" className="gap-4">
-      <TabsList>
-        <TabsTrigger value="plano">Plano</TabsTrigger>
-        <TabsTrigger value="lista">Lista</TabsTrigger>
-      </TabsList>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <TabsList>
+          <TabsTrigger value="plano">Plano</TabsTrigger>
+          <TabsTrigger value="lista">Lista</TabsTrigger>
+        </TabsList>
+
+        {/* Toggle Editar / En vivo (solo aplica a la pestaña Plano). */}
+        <div className="inline-flex items-center rounded-lg border border-border/60 bg-card p-0.5">
+          <button
+            type="button"
+            onClick={() => setMode('editar')}
+            aria-pressed={mode === 'editar'}
+            className={
+              mode === 'editar'
+                ? 'rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground'
+                : 'rounded-md px-3 py-1 text-xs font-medium text-muted-foreground'
+            }
+          >
+            Editar
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('vivo')}
+            aria-pressed={mode === 'vivo'}
+            className={
+              mode === 'vivo'
+                ? 'rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground'
+                : 'rounded-md px-3 py-1 text-xs font-medium text-muted-foreground'
+            }
+          >
+            En vivo
+          </button>
+        </div>
+      </div>
 
       <TabsContent value="plano">
-        <div className="grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)_18rem]">
-          <AreaManager
-            slug={slug}
-            areas={areas}
-            activeAreaId={activeAreaId}
-            onActiveAreaChange={(id) => {
-              setSelectedId(null)
-              setActiveAreaId(id)
-            }}
-            onChanged={onChanged}
-          />
+        {mode === 'vivo' ? (
+          // LiveFloor se cablea en la Fase 6.
+          <div className="flex h-[70vh] min-h-[420px] w-full items-center justify-center rounded-2xl border border-dashed border-border/60 bg-card/50 text-sm text-muted-foreground">
+            Vista en vivo (próxima fase)
+          </div>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)_18rem]">
+            <AreaManager
+              slug={slug}
+              areas={areas}
+              activeAreaId={activeAreaId}
+              onActiveAreaChange={(id) => {
+                setSelectedId(null)
+                setActiveAreaId(id)
+              }}
+              onChanged={onChanged}
+            />
 
-          <DndContext
-            sensors={sensors}
-            modifiers={modifiers}
-            autoScroll={false}
-            onDragEnd={handleDragEnd}
-            accessibility={{
-              announcements: floorPlanAnnouncements,
-              screenReaderInstructions: floorPlanScreenReaderInstructions,
-            }}
-          >
             <div className="space-y-3">
-              <ElementPalette onAddTable={onAddTable} onAddDecor={onAddDecor} />
-              <FloorCanvas
-                area={activeArea}
-                elements={areaElements}
-                scale={scale}
-                pan={pan}
-                selectedId={selectedId}
-                onSelectElement={setSelectedId}
-                onResizeEnd={handleResizeEnd}
-                onZoomIn={zoomIn}
-                onZoomOut={zoomOut}
-                onFit={fit}
-              />
+              <ElementPalette onQuickAdd={handleQuickAdd} />
+              <div ref={wrapperRef}>
+                <PanZoomStage
+                  width={activeArea.width}
+                  height={activeArea.height}
+                  transformRef={transformRef}
+                  interactive
+                  gridSize={GRID}
+                  onBackgroundClick={() => setSelectedId(null)}
+                  onDropKind={handleDropKind}
+                >
+                  {areaElements.map((element) => (
+                    <FloorElement
+                      key={element.id}
+                      element={element}
+                      selected={element.id === selectedId}
+                      transformRef={transformRef}
+                      areaWidth={activeArea.width}
+                      areaHeight={activeArea.height}
+                      onSelect={setSelectedId}
+                      onMove={handleMove}
+                      onResizeEnd={handleResizeEnd}
+                    />
+                  ))}
+                </PanZoomStage>
+              </div>
             </div>
 
             <aside className="space-y-3">
@@ -430,20 +423,8 @@ export function FloorPlanEditor({ slug, initial }: FloorPlanEditorProps) {
                 <UnplacedTray tables={unplaced} onPlace={onPlace} />
               )}
             </aside>
-          </DndContext>
-        </div>
-
-        <CreateTableDialog
-          slug={slug}
-          areaId={activeArea.id}
-          areaNumberStart={activeArea.number_start}
-          existingLabels={areaTableLabels}
-          centerX={tableCenter.x}
-          centerY={tableCenter.y}
-          open={createOpen}
-          onOpenChange={setCreateOpen}
-          onCreated={onChanged}
-        />
+          </div>
+        )}
       </TabsContent>
 
       <TabsContent value="lista">

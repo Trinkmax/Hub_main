@@ -1,20 +1,23 @@
 'use client'
 
 import { useRef } from 'react'
+import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
 import { RESIZE_MIN, snapToGrid } from '@/lib/floor-plan/grid'
 import { cn } from '@/lib/utils'
 
-type ResizeHandlesProps = {
+type TransformRef = React.RefObject<ReactZoomPanPinchRef | null>
+
+export type ResizeHandlesProps = {
   width: number
   height: number
-  scale: number
+  transformRef: TransformRef
   onResize: (size: { width: number; height: number }) => void
   onResizeEnd: (size: { width: number; height: number }) => void
 }
 
 type Axis = 'se' | 'e' | 's'
 
-// Estado vivo del gesto de resize (refs, no state: no re-render por move).
+// Estado vivo del gesto (refs, no state: no re-render por move).
 type DragState = {
   axis: Axis
   startX: number
@@ -24,17 +27,22 @@ type DragState = {
   last: { width: number; height: number }
 }
 
-export function ResizeHandles({ width, height, scale, onResize, onResizeEnd }: ResizeHandlesProps) {
+export function ResizeHandles({
+  width,
+  height,
+  transformRef,
+  onResize,
+  onResizeEnd,
+}: ResizeHandlesProps) {
   const drag = useRef<DragState | null>(null)
 
   function compute(
     state: DragState,
     e: PointerEvent | React.PointerEvent,
-  ): {
-    width: number
-    height: number
-  } {
-    // Delta en px de pantalla → px lógicos dividiendo por scale.
+  ): { width: number; height: number } {
+    // Scale vigente leído del stage (sin re-render). Fallback a 1 si no montó.
+    const scale = transformRef.current?.state.scale ?? 1
+    // Delta en px de pantalla → px lógicos dividiendo por scale (corrección del bug v1).
     const dxLogical = (e.clientX - state.startX) / scale
     const dyLogical = (e.clientY - state.startY) / scale
     const nextW =
@@ -46,8 +54,8 @@ export function ResizeHandles({ width, height, scale, onResize, onResizeEnd }: R
 
   function startResize(axis: Axis) {
     return (e: React.PointerEvent) => {
-      // CLAVE: detener la propagación para que el activator del drag (en el body
-      // del FloorElement) no se dispare; el resize es un gesto independiente.
+      // CLAVE: detener la propagación para que el pointer-drag del body del
+      // FloorElement no se dispare; el resize es un gesto independiente.
       e.stopPropagation()
       e.preventDefault()
       ;(e.target as Element).setPointerCapture(e.pointerId)
@@ -60,8 +68,7 @@ export function ResizeHandles({ width, height, scale, onResize, onResizeEnd }: R
         last: { width, height },
       }
 
-      // Los handlers se definen dentro del gesto para que add/remove usen
-      // referencias estables; evita leaks si el componente re-renderiza mid-gesture.
+      // Handlers locales al gesto → referencias estables para add/remove.
       function handlePointerMove(ev: PointerEvent) {
         const state = drag.current
         if (!state) return
@@ -93,7 +100,7 @@ export function ResizeHandles({ width, height, scale, onResize, onResizeEnd }: R
 
   return (
     <>
-      {/* Esquina inferior-derecha (redimensiona ancho + alto) */}
+      {/* Esquina inferior-derecha (ancho + alto) */}
       <div
         role="presentation"
         aria-hidden
