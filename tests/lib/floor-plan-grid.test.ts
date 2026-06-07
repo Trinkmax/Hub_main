@@ -1,3 +1,5 @@
+// Note: createSnapModifier and restrictToParent from dnd-kit were removed in the v2
+// redesign (react-zoom-pan-pinch + pointer drag replaces dnd-kit on the canvas).
 import { describe, expect, it } from 'vitest'
 import {
   clampToArea,
@@ -93,5 +95,69 @@ describe('stagePointFromClient', () => {
   it('a scale=0.5 escala hacia arriba el delta de pantalla', () => {
     // x: (300-100-0)/0.5 = 400 ; y: (250-50-0)/0.5 = 400
     expect(stagePointFromClient(300, 250, rect, 0.5, 0, 0)).toEqual({ x: 400, y: 400 })
+  })
+})
+
+describe('drag-commit math (bug class v1)', () => {
+  // En el editor, el commit de drag usa:
+  //   newX = snapToGrid(origX + (clientX - startX) / scale)
+  //   newY = snapToGrid(origY + (clientY - startY) / scale)
+  // Luego clampToArea. A scale=1 delta == delta_lógico; a scale=2 hay que dividir.
+
+  it('a scale=1 el delta se aplica sin corrección (comportamiento normal)', () => {
+    const origX = 100
+    const origY = 80
+    const deltaClientX = 43 // movimiento en px pantalla
+    const deltaClientY = 17
+    const scale = 1
+    const newX = snapToGrid(origX + deltaClientX / scale)
+    const newY = snapToGrid(origY + deltaClientY / scale)
+    // 100 + 43 = 143 → snapToGrid(143) = round(143/20)*20 = round(7.15)*20 = 7*20 = 140
+    expect(newX).toBe(140)
+    // 80 + 17 = 97 → snapToGrid(97) = round(4.85)*20 = 5*20 = 100
+    expect(newY).toBe(100)
+  })
+
+  it('a scale=2 dividir por scale evita el drift doble (BUG v1 sin división)', () => {
+    const origX = 100
+    const origY = 80
+    const deltaClientX = 86 // 43px lógicos * scale 2
+    const deltaClientY = 34 // 17px lógicos * scale 2
+    const scale = 2
+
+    // Correcto (divide por scale):
+    const newXCorrect = snapToGrid(origX + deltaClientX / scale)
+    const newYCorrect = snapToGrid(origY + deltaClientY / scale)
+    // 100 + 86/2 = 100 + 43 = 143 → snap → 140
+    expect(newXCorrect).toBe(140)
+    // 80 + 34/2 = 80 + 17 = 97 → snap → 100
+    expect(newYCorrect).toBe(100)
+
+    // Sin división (bug v1): el elemento se desplaza el doble del movimiento visual.
+    const newXBug = snapToGrid(origX + deltaClientX)
+    expect(newXBug).not.toBe(140) // 100 + 86 = 186 → snap → 180 (incorrecto)
+    expect(newXBug).toBe(180) // documenta el valor que producía el bug
+  })
+
+  it('a scale=0.5 el delta lógico es mayor que el visual (zoom-out)', () => {
+    const origX = 200
+    const deltaClientX = 20 // 20px en pantalla → 40px lógicos a scale 0.5
+    const scale = 0.5
+    const newX = snapToGrid(origX + deltaClientX / scale)
+    // 200 + 40 = 240 → snap → 240
+    expect(newX).toBe(240)
+  })
+
+  it('clampToArea después del snap limita al borde del área', () => {
+    const origX = 1100
+    const deltaClientX = 200 // intento de sacar del área
+    const scale = 1
+    const areaW = 1200
+    const w = 80
+    const rawX = origX + deltaClientX / scale // 1300
+    const snapped = snapToGrid(rawX) // 1300 → round(65)*20 = 65*20 = 1300
+    const { x } = clampToArea(snapped, 0, w, 80, areaW, 800)
+    // máx = 1200 - 80 = 1120
+    expect(x).toBe(1120)
   })
 })
