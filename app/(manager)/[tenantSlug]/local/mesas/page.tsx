@@ -53,7 +53,7 @@ export default async function MesasPage({ params }: { params: Promise<{ tenantSl
     <main className="space-y-6 py-6">
       <PageHeader
         title="Plano de mesas"
-        description="Dibujá la distribución real del local: arrastrá mesas, agregá decoración y gestioná cada QR."
+        description="Dibujá la distribución real del local: arrastrá elementos desde la paleta al lienzo, reubicalos y gestioná cada QR. Cambiá a En vivo para ver el estado de cada mesa."
       />
 
       {data.areas.length === 0 ? (
