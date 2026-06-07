@@ -34,7 +34,7 @@ export type PanZoomStageProps = {
  *   arrastrar una mesa no panee el lienzo (la mesa hace su propio pointer-drag).
  * - `!interactive` (live): pan/zoom libre, sin exclusiones.
  *
- * El scale vigente se lee con `transformRef.current.state.scale` durante el drag
+ * El scale vigente se lee con `readStageTransform(transformRef)` durante el drag
  * (sin re-render). Los controles +/−/fit usan `zoomIn/zoomOut/centerView` por ref.
  */
 export function PanZoomStage({
@@ -136,6 +136,8 @@ export function PanZoomStage({
   )
 }
 
-// Re-export del helper para que el editor lo importe desde un único lugar junto
-// al componente que lo necesita (evita duplicar el import en cada consumidor).
+export { readStageTransform } from '@/lib/floor-plan/stage-transform'
+// Re-exports para que los consumidores importen desde un único lugar junto al
+// componente que los necesita (evita duplicar imports). `readStageTransform` vive
+// en un módulo puro (testeable) — ver su doc para el porqué del path instance.transformState.
 export { stagePointFromClient }

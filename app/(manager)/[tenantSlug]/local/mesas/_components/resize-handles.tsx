@@ -4,6 +4,7 @@ import { useRef } from 'react'
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
 import { RESIZE_MIN, snapToGrid } from '@/lib/floor-plan/grid'
 import { cn } from '@/lib/utils'
+import { readStageTransform } from './pan-zoom-stage'
 
 type TransformRef = React.RefObject<ReactZoomPanPinchRef | null>
 
@@ -41,7 +42,8 @@ export function ResizeHandles({
     e: PointerEvent | React.PointerEvent,
   ): { width: number; height: number } {
     // Scale vigente leído del stage (sin re-render). Fallback a 1 si no montó.
-    const scale = transformRef.current?.state.scale ?? 1
+    // OJO: el ref de rzpp no expone `.state` en runtime → usar readStageTransform.
+    const { scale } = readStageTransform(transformRef)
     // Delta en px de pantalla → px lógicos dividiendo por scale (corrección del bug v1).
     const dxLogical = (e.clientX - state.startX) / scale
     const dyLogical = (e.clientY - state.startY) / scale

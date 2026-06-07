@@ -5,6 +5,7 @@ import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
 import { commitDragPosition, freeDragPosition } from '@/lib/floor-plan/grid'
 import type { ElementRow } from '@/lib/floor-plan/queries'
 import { cn } from '@/lib/utils'
+import { readStageTransform } from './pan-zoom-stage'
 import { ResizeHandles } from './resize-handles'
 
 type TransformRef = React.RefObject<ReactZoomPanPinchRef | null>
@@ -136,7 +137,8 @@ function FloorElementImpl({
       origX: element.x,
       origY: element.y,
       // Scale congelado al agarrar (evita drift por lecturas stale post centerOnInit).
-      scale: transformRef.current?.state.scale ?? 1,
+      // Leído vía readStageTransform: el ref de rzpp NO tiene `.state` en runtime.
+      scale: readStageTransform(transformRef).scale,
       moved: false,
       lastDx: 0,
       lastDy: 0,

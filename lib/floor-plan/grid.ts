@@ -64,9 +64,9 @@ export function clampToArea(
  * @param clientX  - evento.clientX del pointer
  * @param clientY  - evento.clientY del pointer
  * @param rect     - `wrapperRef.current.getBoundingClientRect()` (solo left/top)
- * @param scale    - `transformRef.current.state.scale`
- * @param posX     - `transformRef.current.state.positionX`
- * @param posY     - `transformRef.current.state.positionY`
+ * @param scale    - `readStageTransform(transformRef).scale`
+ * @param posX     - `readStageTransform(transformRef).positionX`
+ * @param posY     - `readStageTransform(transformRef).positionY`
  */
 export function stagePointFromClient(
   clientX: number,

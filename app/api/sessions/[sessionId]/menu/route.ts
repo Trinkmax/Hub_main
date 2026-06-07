@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server'
 import { getStaffMenuForTenant } from '@/lib/sessions-waiter/staff-menu-queries'
 import { createClient } from '@/lib/supabase/server'
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id: sessionId } = await params
+export async function GET(_req: Request, { params }: { params: Promise<{ sessionId: string }> }) {
+  const { sessionId } = await params
 
   const supabase = await createClient()
   const {

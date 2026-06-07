@@ -127,7 +127,17 @@ La sección "Local" fue eliminada de `configuracion/_components/settings-nav.tsx
 > **mover imperativamente durante el gesto, commitear una sola vez al soltar.**
 
 Cada `floor-element` usa `onPointerDown` → `setPointerCapture` + `e.stopPropagation()`
-+ congela el `scale` del stage en ese instante (`transformRef.current.state.scale`).
++ congela el `scale` del stage en ese instante con **`readStageTransform(transformRef)`**.
+
+> **Gotcha de react-zoom-pan-pinch (v2.1):** el ref que entrega `<TransformWrapper ref>`
+> es `getControls(instance)` → `{ instance, zoomIn, … }`, que **NO tiene `.state`** (eso vive
+> en `getContext`/render-prop). El tipo `ReactZoomPanPinchRef` declara `.state`, así que
+> TypeScript no avisa, pero en runtime `ref.current.state` es `undefined` y leer
+> `ref.current.state.scale` **lanza** "Cannot read properties of undefined (reading 'scale')"
+> → el `onPointerDown` explotaba y el drag quedaba **congelado**. El estado vivo está en
+> `instance.transformState`. El helper puro `lib/floor-plan/stage-transform.ts`
+> (`readStageTransform`, testeado) centraliza el acceso correcto; lo usan el drag, el
+> resize y el drop-from-palette.
 
 - **`onPointerMove`**: calcula la posición **libre** (sin snap) con `freeDragPosition`
   (`origX + dxPantalla/scale`, sólo `clampToArea`) y la pinta **imperativamente** con
@@ -168,7 +178,8 @@ export function stagePointFromClient(
 }
 ```
 
-Donde `rect = wrapper.getBoundingClientRect()` y `posX/posY/scale = transformRef.current.state`.
+Donde `rect = wrapper.getBoundingClientRect()` y `{ scale, positionX, positionY } = readStageTransform(transformRef)`
+(ver el gotcha del ref más arriba — NO `transformRef.current.state`).
 Se usa tanto para el drop-from-palette como para la conversión inicial del drag.
 
 ### Colocar desde la paleta (drag-from-palette) — pointer events (v2.1)

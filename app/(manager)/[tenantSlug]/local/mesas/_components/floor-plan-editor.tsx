@@ -31,7 +31,7 @@ import { DecorInspector } from './decor-inspector'
 import { ElementPalette } from './element-palette'
 import { FloorElement } from './floor-element'
 import { LiveFloor } from './live-floor'
-import { PanZoomStage, stagePointFromClient } from './pan-zoom-stage'
+import { PanZoomStage, readStageTransform, stagePointFromClient } from './pan-zoom-stage'
 import { TableInspector } from './table-inspector'
 import { TablesListFallback } from './tables-list-fallback'
 import { UnplacedTray } from './unplaced-tray'
@@ -272,17 +272,11 @@ export function FloorPlanEditor({
     (kind: Kind, clientX: number, clientY: number) => {
       if (!activeArea) return
       const wrapper = wrapperRef.current
-      const state = transformRef.current?.state
-      if (!wrapper || !state) return
+      if (!wrapper) return
+      // OJO: el ref de rzpp no expone `.state` en runtime → readStageTransform.
+      const { scale, positionX, positionY } = readStageTransform(transformRef)
       const rect = wrapper.getBoundingClientRect()
-      const point = stagePointFromClient(
-        clientX,
-        clientY,
-        rect,
-        state.scale,
-        state.positionX,
-        state.positionY,
-      )
+      const point = stagePointFromClient(clientX, clientY, rect, scale, positionX, positionY)
       const def = ELEMENT_DEFAULTS[kind]
       const clamped = clampToArea(
         snapToGrid(point.x - def.width / 2),
