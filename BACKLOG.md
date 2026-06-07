@@ -67,6 +67,18 @@ cuando aterrice el editor v1):
   de retorno del hook; el flush por `beforeunload` es interno y alcanza. Quitar `flushNow` del API
   o usarlo (p. ej. flush al cambiar de área).
 
+## Arreglo drag + estilo del floor plan v2.1 (2026-06-07)
+
+- **Migrar el resize al mismo patrón rAF + transform del move.** Hoy `resize-handles.tsx`
+  usa `setLiveSize` (estado), que re-renderiza el elemento activo por frame durante el
+  gesto; funciona y commitea al soltar, pero por consistencia/perf convendría pintar el
+  resize con `transform`/dimensiones imperativas como hace ahora el move.
+- **Feedback de "agarrado" en el drag.** Pulido visual no incluido: al `pointerdown` de
+  una mesa, subir sombra + `scale(1.02)` + `cursor:grabbing`. Aplicarlo al `<button>`
+  (no al wrapper, que recibe el `translate3d` del drag) para no pisar el transform.
+- **Nudge por teclado en el canvas.** Mover elementos con flechas (con/ sin snap) — sigue
+  fuera de alcance; la lista accesible es el camino canónico por teclado.
+
 ## Rediseño del floor plan v2 (rama `feat/floor-plan-rediseno`)
 
 - **Falta unit test de la derivación JS de `getLiveFloor`.** El plan listaba

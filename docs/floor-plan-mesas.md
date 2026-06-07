@@ -34,7 +34,7 @@ Ruta: `/{tenantSlug}/local/mesas` (solo `owner`; staff en `/{tenantSlug}/salon/m
 | DB | RPCs `fp_*` SECURITY DEFINER | `supabase/migrations/20260605000200_floor_plan_rpcs.sql` |
 | DB | Publicación Realtime para `table_sessions`, `tickets`, `ticket_items`, `table_session_events` | `supabase/migrations/20260606000100_realtime_salon_publication.sql` |
 | Tipos | tablas + enums `floor_element_kind` / `floor_element_shape` | `types/database.ts` |
-| Lógica pura | grid/snap/clamp + `stagePointFromClient` | `lib/floor-plan/grid.ts` |
+| Lógica pura | grid/snap/clamp + `stagePointFromClient` + `freeDragPosition`/`commitDragPosition` (drag) | `lib/floor-plan/grid.ts` |
 | Lógica servidor | `getFloorPlan` + `getLiveFloor` + `listFloorAreas` | `lib/floor-plan/queries.ts` |
 | Server Actions | owner-only (`lib/floor-plan/actions.ts`) + live refetch (`lib/floor-plan/live-actions.ts`) | |
 | Navegación | NavGroup "Local" + rutas movidas de `/configuracion` | `components/shell/nav-config.ts`, `app/(manager)/[tenantSlug]/local/` |
@@ -115,20 +115,41 @@ La sección "Local" fue eliminada de `configuracion/_components/settings-nav.tsx
 - **Zoom**: scroll/pinch + botones `+` / `−` / fit via `transformRef.current`.
 - **`limitToBounds={false}`**: permite panear más allá de los bordes del área.
 
-### Drag de elementos (pointer events, sin dnd-kit)
+### Drag de elementos (pointer events, sin dnd-kit) — revisión v2.1 (2026-06-07)
 
-Cada `floor-element` usa `onPointerDown` → `setPointerCapture` + `e.stopPropagation()`.
-En `onPointerMove` lee `scale` desde `transformRef.current.state` **sin re-render** y
-aplica:
+> **Por qué cambió:** la v2 snapeaba a la grilla en **cada** `pointermove` y pintaba la
+> posición desde `element.x/y` vía `setElements` por frame. Eso producía: movimiento "a
+> saltos" de 20px, **zona muerta a zoom alto** (a `scale=4` una celda son 80px de
+> pantalla, arrastres <40px resolvían a no-op → "no se mueve"), y jank por re-render
+> O(n) de todos los elementos. Además `touch-action:'none'` estaba sólo en el wrapper y
+> no en el `<button>` → en tablet el gesto se cortaba (`pointercancel`). La v2.1 adopta
+> el patrón de tldraw/Excalidraw (el mismo que ya usaba el resize en este repo):
+> **mover imperativamente durante el gesto, commitear una sola vez al soltar.**
 
-```ts
-newX = snapToGrid(origX + (clientX - startX) / scale)
-newY = snapToGrid(origY + (clientY - startY) / scale)
-```
+Cada `floor-element` usa `onPointerDown` → `setPointerCapture` + `e.stopPropagation()`
++ congela el `scale` del stage en ese instante (`transformRef.current.state.scale`).
 
-La división por `scale` es la corrección del bug de v1 (a `scale=2` el drift era el
-doble del movimiento visual). Luego `clampToArea` antes del set optimista y del commit
-vía `use-geometry-queue.ts`.
+- **`onPointerMove`**: calcula la posición **libre** (sin snap) con `freeDragPosition`
+  (`origX + dxPantalla/scale`, sólo `clampToArea`) y la pinta **imperativamente** con
+  `wrapperRef.style.transform = translate3d(freeX-origX, freeY-origY, 0)`, batcheada en
+  un `requestAnimationFrame` deduplicado. **No toca el estado de React** → seguimiento
+  1:1 a cualquier zoom, capa GPU, 0 re-render por frame.
+- **`onPointerUp`/`onPointerCancel`**: calcula la posición final con `commitDragPosition`
+  (`snap = !e.altKey` → **Alt** mueve libre sin snap), fija ese transform y llama
+  `onMove(id, x, y)` **una sola vez** → `commitGeometry` + encola en `use-geometry-queue`
+  (debounce 600ms, ahora 1 enqueue por gesto, no por pixel).
+- **Sin parpadeo al soltar**: un `useLayoutEffect([element.x, element.y])` zera el
+  `transform` **después** de que React aplica el nuevo `left/top` (mismo commit, antes
+  del paint) → la mesa "cae" en su lugar.
+- **Touch**: `touch-none` está también en el `<button>` (no se hereda del wrapper).
+- **Guard anti-reseed**: `FloorElement` avisa `onDragStart`/`onDragEnd`; el editor pone
+  `draggingRef` y el `useEffect([initialSig])` no pisa el estado optimista mid-gesto.
+- **`React.memo`**: `FloorElement` está memoizado (comparador por geometría + selección
+  + identidad de handlers) → seleccionar/cambiar de área no re-renderiza los N elementos.
+
+`freeDragPosition` y `commitDragPosition` son **puras** y testeadas (a scale 0.25/1/4)
+en `tests/lib/floor-plan-grid.test.ts`. La división por `scale` sigue siendo la
+corrección del bug de v1 (a `scale=2` el drift era el doble del movimiento visual).
 
 ### `stagePointFromClient` (en `lib/floor-plan/grid.ts`)
 
@@ -150,23 +171,57 @@ export function stagePointFromClient(
 Donde `rect = wrapper.getBoundingClientRect()` y `posX/posY/scale = transformRef.current.state`.
 Se usa tanto para el drop-from-palette como para la conversión inicial del drag.
 
-### Colocar desde la paleta (drag-from-palette)
+### Colocar desde la paleta (drag-from-palette) — pointer events (v2.1)
 
-Las chips de `element-palette.tsx` son arrastrables (HTML5 drag,
-`dataTransfer 'application/x-floor-kind'`). Al soltar sobre el stage,
-`PanZoomStage.onDropKind` recibe `(kind, clientX, clientY)`, convierte a coords lógicas
-con `stagePointFromClient` y llama:
+> **Por qué cambió:** la v2 usaba HTML5 drag-and-drop (`draggable` +
+> `dataTransfer`), que **no dispara en tablet/celular** — y el staff usa tablet. La v2.1
+> lo reemplaza por un drag con **pointer events** (`use-palette-drag.tsx`), que funciona
+> en mouse y touch por igual.
 
-- **Mesa** → `createTableInPlanAction` → abre el inspector (sin diálogo al centro).
-  `create-table-dialog.tsx` fue retirado.
-- **Decoración** → `addDecorAction` con `ELEMENT_DEFAULTS[kind]`.
+`element-palette.tsx` ya no es `draggable`; cada chip dispara `onChipPointerDown`. El
+hook `usePaletteDrag({ wrapperRef, onDrop })`:
 
-Fallback (click en la chip): coloca el elemento en el centro del área visible.
+- Escucha `pointermove`/`pointerup`/`pointercancel` en `window` (handlers locales y
+  estables, sin re-render — patrón del resize).
+- Pinta un **ghost** `position:fixed pointer-events-none` siguiendo al puntero/dedo.
+- Al soltar **dentro del rect del stage** (re-medido al soltar), llama
+  `onDrop(kind, clientX, clientY)` = el `handleDropKind` del editor, que convierte a
+  coords lógicas con `stagePointFromClient` y crea:
+  - **Mesa** → `createTableInPlanAction` → abre el inspector (sin diálogo al centro).
+    `create-table-dialog.tsx` fue retirado.
+  - **Decoración** → `addDecorAction` con `ELEMENT_DEFAULTS[kind]`.
+- `shouldSuppressClick()` evita que el `click` posterior a un drag real dispare doble
+  alta.
+
+Fallback (tap/teclado sobre la chip → `onClick`): coloca el elemento en el centro del
+área visible.
 
 ### Persistencia de geometría (reusado de v1)
 
 `use-geometry-queue.ts` sin cambios: cola debounced 600 ms, flush en `beforeunload`,
-rollback de ids afectados si falla.
+rollback de ids afectados si falla. **v2.1:** `saveGeometryAction` ya **no** llama
+`revalidatePath` — revalidar re-streameaba el RSC y pisaba el estado optimista a
+mitad/fin del drag (la geometría es optimista con rollback propio; el próximo SSR trae
+lo persistido). Las acciones estructurales (crear/borrar/split/merge) sí revalidan.
+
+### Estilo de la decoración: "poche" sólido (v2.1)
+
+> **Por qué cambió:** la decoración (paredes/columnas/barra/islas) usaba `var(--muted)`
+> — un token de **superficie**, casi idéntico al `--card` del lienzo en light — con
+> borde al 70% y label `opacity-70`; en la vista en vivo era peor (`bg-muted/60`,
+> literalmente semitransparente). Se veía "lavada/transparente".
+
+Tokens nuevos en `app/globals.css` (OKLCH, dark-safe, hue 165 estructural):
+`--wall` (fill sólido oscuro), `--wall-foreground` (texto claro), `--wall-border`
+(borde marcado), expuestos en `@theme` como `--color-wall*` → utilidades
+`bg-wall`/`text-wall-foreground`/`border-wall-border`.
+
+La decoración usa `backgroundColor: element.color ?? var(--wall)` (el color del dueño
+tiene prioridad) + `border-2 border-wall-border` + `text-wall-foreground`, **sin** sombra
+ni opacidad. Las mesas siguen claras (`bg-card`, `shadow-sm`, `cursor-grab`): la jerarquía
+**mate-fija vs clara-flotante** comunica "estructura no interactiva vs mobiliario movible"
+(convención OpenTable/Resy/SevenRooms). Mismo lenguaje en editor (`floor-element.tsx`) y
+en vivo (`live-floor.tsx` `DecorBox`).
 
 ---
 
@@ -257,9 +312,10 @@ Realtime (ver arriba).
 | `pan-zoom-stage.tsx` | Wrapper compartido `TransformWrapper` + stage + controles `+/-/fit` |
 | `floor-plan-editor.tsx` | Orquestador (reescrito sin `DndContext`; toggle Editar/En vivo) |
 | `floor-canvas.tsx` | Canvas editor (reescrito; usa `PanZoomStage`) |
-| `floor-element.tsx` | Elemento editable (reescrito; pointer drag + scale) |
+| `floor-element.tsx` | Elemento editable (v2.1: drag imperativo `translate3d` + snap al soltar + `React.memo` + poche) |
 | `resize-handles.tsx` | Handles de resize (reescrito; delta / scale) |
-| `element-palette.tsx` | Chips arrastrables (reescrito; drop-to-create + click fallback) |
+| `element-palette.tsx` | Chips de la paleta (v2.1: drag por pointer events, ya no HTML5) |
+| `use-palette-drag.tsx` | Hook del drag-from-palette por pointer + ghost (v2.1) |
 | `live-floor.tsx` | Vista en vivo read-only (nuevo; dueño + staff) |
 | `live-table-card.tsx` | Tarjeta de mesa en vivo (nuevo) |
 

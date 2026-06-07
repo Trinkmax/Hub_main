@@ -81,3 +81,54 @@ export function stagePointFromClient(
     y: (clientY - rect.top - posY) / scale,
   }
 }
+
+/**
+ * Posición LIBRE de un elemento durante el drag, en coords lógicas: el delta de
+ * pantalla (`dxScreen`/`dyScreen`) se pasa a lógico dividiendo por `scale` y se
+ * suma al origen del gesto (`origX`/`origY`), sólo acotado al área (SIN snap).
+ *
+ * Es lo que se pinta con `translate3d` durante el arrastre → seguimiento 1:1 a
+ * cualquier zoom (sin escalonado, sin "zona muerta" a zoom alto). Puro.
+ */
+export function freeDragPosition(
+  origX: number,
+  origY: number,
+  dxScreen: number,
+  dyScreen: number,
+  scale: number,
+  w: number,
+  h: number,
+  areaW: number,
+  areaH: number,
+): { x: number; y: number } {
+  return clampToArea(origX + dxScreen / scale, origY + dyScreen / scale, w, h, areaW, areaH)
+}
+
+/**
+ * Posición FINAL al soltar el drag, en coords lógicas: `origX + dxScreen/scale`,
+ * con `snapToGrid` si `snap` (default del gesto) o libre si `snap === false`
+ * (bypass con Alt), y siempre acotada al área. Puro.
+ *
+ * Devuelve SIEMPRE enteros: la geometría persistida es `z.number().int()`
+ * (`elementGeometrySchema`); a `scale` fraccional el path libre se redondea (el
+ * de snap ya es múltiplo de GRID). Un float haría fallar el `safeParse` y
+ * dispararía el rollback del estado optimista.
+ */
+export function commitDragPosition(
+  origX: number,
+  origY: number,
+  dxScreen: number,
+  dyScreen: number,
+  scale: number,
+  w: number,
+  h: number,
+  areaW: number,
+  areaH: number,
+  snap: boolean,
+): { x: number; y: number } {
+  const rawX = origX + dxScreen / scale
+  const rawY = origY + dyScreen / scale
+  const x = snap ? snapToGrid(rawX) : Math.round(rawX)
+  const y = snap ? snapToGrid(rawY) : Math.round(rawY)
+  return clampToArea(x, y, w, h, areaW, areaH)
+}

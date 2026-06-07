@@ -36,6 +36,7 @@ import { TableInspector } from './table-inspector'
 import { TablesListFallback } from './tables-list-fallback'
 import { UnplacedTray } from './unplaced-tray'
 import { useGeometryQueue } from './use-geometry-queue'
+import { usePaletteDrag } from './use-palette-drag'
 
 export type FloorPlanEditorProps = {
   slug: string
@@ -78,6 +79,15 @@ export function FloorPlanEditor({
   // Wrapper del stage para medir su rect en el drop-from-palette.
   const wrapperRef = useRef<HTMLDivElement>(null)
 
+  // Drag activo (move de un elemento): frena el re-seed del RSC mid-gesto.
+  const draggingRef = useRef(false)
+  const handleDragStart = useCallback(() => {
+    draggingRef.current = true
+  }, [])
+  const handleDragEnd = useCallback(() => {
+    draggingRef.current = false
+  }, [])
+
   // Re-sync de elements cuando cambian los datos del server (firma de contenido
   // para no resetear en cada render — initial es una ref nueva cada vez).
   const initialSig = useMemo(
@@ -92,6 +102,8 @@ export function FloorPlanEditor({
   )
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-sync solo cuando cambian los datos del server (initialSig), no en cada render
   useEffect(() => {
+    // No pisar el estado optimista en medio de un drag (defensa en profundidad).
+    if (draggingRef.current) return
     setElements(initial.elements)
   }, [initialSig])
 
@@ -285,6 +297,12 @@ export function FloorPlanEditor({
     [activeArea, insertAt],
   )
 
+  // Drag-from-palette por pointer (mouse + touch): ghost + drop sobre el stage.
+  const { onChipPointerDown, shouldSuppressClick, ghostNode } = usePaletteDrag({
+    wrapperRef,
+    onDrop: handleDropKind,
+  })
+
   // Fallback no-drag de la paleta: agregar en el centro del área activa.
   const handleQuickAdd = useCallback(
     (kind: Kind) => {
@@ -418,7 +436,11 @@ export function FloorPlanEditor({
               />
 
               <div className="space-y-3">
-                <ElementPalette onQuickAdd={handleQuickAdd} />
+                <ElementPalette
+                  onQuickAdd={handleQuickAdd}
+                  onChipPointerDown={onChipPointerDown}
+                  shouldSuppressClick={shouldSuppressClick}
+                />
                 <div ref={wrapperRef}>
                   <PanZoomStage
                     width={activeArea.width}
@@ -427,7 +449,6 @@ export function FloorPlanEditor({
                     interactive
                     gridSize={GRID}
                     onBackgroundClick={() => setSelectedId(null)}
-                    onDropKind={handleDropKind}
                   >
                     {areaElements.map((element) => (
                       <FloorElement
@@ -440,6 +461,8 @@ export function FloorPlanEditor({
                         onSelect={setSelectedId}
                         onMove={handleMove}
                         onResizeEnd={handleResizeEnd}
+                        onDragStart={handleDragStart}
+                        onDragEnd={handleDragEnd}
                       />
                     ))}
                   </PanZoomStage>
@@ -547,6 +570,9 @@ export function FloorPlanEditor({
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Ghost del drag-from-palette (fixed, oculto hasta arrastrar una chip). */}
+      {ghostNode}
     </>
   )
 }

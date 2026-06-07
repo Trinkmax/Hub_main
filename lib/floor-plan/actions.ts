@@ -310,7 +310,9 @@ export async function saveGeometryAction(
     }
   }
 
-  revalidatePath(`/${slug}/local/mesas`)
+  // NO revalidamos acá: la geometría es optimista en cliente con rollback propio
+  // (onQueueError). Revalidar re-stremearía el RSC y pisaría el estado optimista
+  // a mitad/fin del drag. El próximo SSR (navegación/recarga) ya trae lo persistido.
   return { ok: true }
 }
 

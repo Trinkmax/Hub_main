@@ -22,15 +22,15 @@ export type LiveFloorProps = {
   onTableOpen: (table: LiveTable) => void
 }
 
-// Decoración: misma paleta neutra para todos los kinds (gris), el plano la
-// dibuja como contexto, no como objeto interactivo.
+// Decoración: "poche" sólido (mate, sin sombra) para leerla como base construida
+// fija; mismo lenguaje visual que el editor. El color del dueño tiene prioridad.
 function DecorBox({ decor }: { decor: LiveDecor }) {
   const isCircle = decor.shape === 'circle'
   return (
     <div
       aria-hidden
       className={cn(
-        'absolute border border-border/60 bg-muted/60',
+        'absolute border-2 border-wall-border text-wall-foreground',
         isCircle ? 'rounded-full' : 'rounded-md',
       )}
       style={{
@@ -39,10 +39,11 @@ function DecorBox({ decor }: { decor: LiveDecor }) {
         width: decor.width,
         height: decor.height,
         zIndex: decor.z_index,
+        backgroundColor: decor.color ?? 'var(--wall)',
       }}
     >
       {decor.label ? (
-        <span className="pointer-events-none flex h-full w-full items-center justify-center px-1 text-center text-[10px] font-medium text-muted-foreground">
+        <span className="pointer-events-none flex h-full w-full items-center justify-center px-1 text-center text-[10px] font-medium">
           {decor.label}
         </span>
       ) : null}

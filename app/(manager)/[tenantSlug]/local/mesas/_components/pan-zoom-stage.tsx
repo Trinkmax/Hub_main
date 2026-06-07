@@ -17,12 +17,6 @@ export type PanZoomStageProps = {
   interactive?: boolean
   /** Click en el fondo vacío del stage (deseleccionar). */
   onBackgroundClick?: () => void
-  /** Drop de una chip de la paleta sobre el stage (drag-from-palette). */
-  onDropKind?: (
-    kind: 'table' | 'wall' | 'pillar' | 'island' | 'bar',
-    clientX: number,
-    clientY: number,
-  ) => void
   /** Tamaño de la grilla CSS de fondo (px lógicos). Default GRID. */
   gridSize?: number
   /** Clase del wrapper externo (alto del viewport, etc.). */
@@ -30,9 +24,6 @@ export type PanZoomStageProps = {
   /** FloorElements (editor) o LiveTableCards (live), posicionados absolute en coords lógicas. */
   children: React.ReactNode
 }
-
-// Kinds válidos del dataTransfer de la paleta (validación del drop).
-const DROP_KINDS = new Set(['table', 'wall', 'pillar', 'island', 'bar'])
 
 /**
  * Wrapper compartido editor/live: `react-zoom-pan-pinch` (pan/zoom robusto) +
@@ -52,7 +43,6 @@ export function PanZoomStage({
   transformRef,
   interactive = false,
   onBackgroundClick,
-  onDropKind,
   gridSize,
   className,
   children,
@@ -64,33 +54,9 @@ export function PanZoomStage({
   // "Fit": re-encuadra el stage en el viewport (centra y escala a contenido).
   const onFit = () => transformRef.current?.centerView(undefined, 200, 'easeOut')
 
-  // Drop-from-palette: convertir el punto de pantalla a coords lógicas se hace
-  // en el editor (necesita el rect del wrapper + el pan); acá solo leemos el
-  // kind del dataTransfer y propagamos clientX/clientY crudos.
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    if (!onDropKind) return
-    const kind = e.dataTransfer.getData('application/x-floor-kind')
-    if (!DROP_KINDS.has(kind)) return
-    e.preventDefault()
-    onDropKind(kind as 'table' | 'wall' | 'pillar' | 'island' | 'bar', e.clientX, e.clientY)
-  }
-
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    // Solo aceptamos el drop si viene de la paleta (permite el cursor "copy").
-    if (onDropKind && e.dataTransfer.types.includes('application/x-floor-kind')) {
-      e.preventDefault()
-      e.dataTransfer.dropEffect = 'copy'
-    }
-  }
-
   return (
     <div className={className ?? 'relative w-full'}>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: el drop-from-palette es un augment del onClick de las chips de la paleta (ruta accesible no-drag); el lienzo no es un control en sí. */}
-      <div
-        className="card-hairline relative h-[70vh] min-h-[420px] w-full overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm"
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-      >
+      <div className="card-hairline relative h-[70vh] min-h-[420px] w-full overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm">
         <TransformWrapper
           ref={transformRef}
           initialScale={1}

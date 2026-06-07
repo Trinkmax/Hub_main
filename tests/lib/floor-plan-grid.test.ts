@@ -3,7 +3,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   clampToArea,
+  commitDragPosition,
   ELEMENT_DEFAULTS,
+  freeDragPosition,
   GRID,
   RESIZE_MIN,
   snapToGrid,
@@ -159,5 +161,84 @@ describe('drag-commit math (bug class v1)', () => {
     const { x } = clampToArea(snapped, 0, w, 80, areaW, 800)
     // máx = 1200 - 80 = 1120
     expect(x).toBe(1120)
+  })
+})
+
+describe('freeDragPosition (posición viva del gesto — SIN snap)', () => {
+  // La posición libre sigue al cursor 1:1 en coords lógicas: origX + dxPantalla/scale,
+  // sólo clampeada al área. Es lo que se pinta con translate3d durante el drag.
+
+  it('a scale=1 sigue el delta de pantalla 1:1 (sin snap, sin escalonado)', () => {
+    expect(freeDragPosition(100, 80, 43, 17, 1, 80, 80, 1200, 800)).toEqual({ x: 143, y: 97 })
+  })
+
+  it('a scale=4 un drag CHICO sí mueve (arregla la "zona muerta" a zoom alto)', () => {
+    // El bug viejo snapeaba en cada move → a scale 4 drags <40px de pantalla no movían nada.
+    // La posición libre se mueve siempre: dx=4 de pantalla = 1px lógico → 101 (NO se clava).
+    expect(freeDragPosition(100, 80, 4, 0, 4, 80, 80, 1200, 800)).toEqual({ x: 101, y: 80 })
+    expect(freeDragPosition(100, 80, 8, 0, 4, 80, 80, 1200, 800)).toEqual({ x: 102, y: 80 })
+    // dx=40 de pantalla = 10px lógicos → 110 (seguimiento exacto, sin saltar de a 20).
+    expect(freeDragPosition(100, 80, 40, 0, 4, 80, 80, 1200, 800)).toEqual({ x: 110, y: 80 })
+  })
+
+  it('a scale=0.5 amplifica el delta de pantalla a lógico (zoom-out)', () => {
+    // 20px de pantalla / 0.5 = 40px lógicos.
+    expect(freeDragPosition(200, 200, 20, 20, 0.5, 80, 80, 1200, 800)).toEqual({ x: 240, y: 240 })
+  })
+
+  it('clampea al borde del área (sin snap)', () => {
+    // raw x = 1100 + 200 = 1300 → clamp a 1200-80 = 1120.
+    expect(freeDragPosition(1100, 0, 200, 0, 1, 80, 80, 1200, 800)).toEqual({ x: 1120, y: 0 })
+  })
+})
+
+describe('commitDragPosition (commit al soltar)', () => {
+  // Al soltar: snapToGrid(origX + dxPantalla/scale) + clampToArea, salvo Alt (snap=false → libre).
+
+  it('snap=true a scale=1 cae a la grilla de 20px', () => {
+    // 100+43=143 → snap 140 ; 80+17=97 → snap 100.
+    expect(commitDragPosition(100, 80, 43, 17, 1, 80, 80, 1200, 800, true)).toEqual({
+      x: 140,
+      y: 100,
+    })
+  })
+
+  it('snap=true a scale=4 cae a la grilla aunque el drag haya sido fino', () => {
+    // dx=40 pantalla = 10 lógicos → raw 110 → snap 120.
+    expect(commitDragPosition(100, 80, 40, 0, 4, 80, 80, 1200, 800, true)).toEqual({
+      x: 120,
+      y: 80,
+    })
+    // dx=4 pantalla = 1 lógico → raw 101 → snap 100 (vuelve a la celda; durante el drag SÍ se movió).
+    expect(commitDragPosition(100, 80, 4, 0, 4, 80, 80, 1200, 800, true)).toEqual({ x: 100, y: 80 })
+  })
+
+  it('snap=false (Alt) deja la posición libre, sólo clampeada', () => {
+    expect(commitDragPosition(100, 80, 43, 17, 1, 80, 80, 1200, 800, false)).toEqual({
+      x: 143,
+      y: 97,
+    })
+  })
+
+  it('SIEMPRE devuelve enteros (la geometría persistida es z.number().int())', () => {
+    // A scale fraccional (p.ej. tras wheel-zoom step 0.2 → 1.3), el commit libre (Alt)
+    // daría un float que el schema rechaza → rollback. Debe redondearse a entero.
+    const free = commitDragPosition(100, 80, 5, 5, 1.3, 80, 80, 1200, 800, false)
+    expect(Number.isInteger(free.x)).toBe(true)
+    expect(Number.isInteger(free.y)).toBe(true)
+    // x: 100 + 5/1.3 = 103.846… → 104 ; y: 80 + 5/1.3 = 83.846… → 84.
+    expect(free).toEqual({ x: 104, y: 84 })
+    // El path con snap también es entero (múltiplo de 20) a scale fraccional.
+    const snapped = commitDragPosition(100, 80, 5, 5, 1.3, 80, 80, 1200, 800, true)
+    expect(Number.isInteger(snapped.x)).toBe(true)
+    expect(Number.isInteger(snapped.y)).toBe(true)
+  })
+
+  it('clampea después del snap al borde del área', () => {
+    // raw 1300 → snap 1300 → clamp 1120.
+    expect(commitDragPosition(1100, 0, 200, 0, 1, 80, 80, 1200, 800, true)).toEqual({
+      x: 1120,
+      y: 0,
+    })
   })
 })

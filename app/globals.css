@@ -23,6 +23,9 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-wall: var(--wall);
+  --color-wall-foreground: var(--wall-foreground);
+  --color-wall-border: var(--wall-border);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
@@ -100,6 +103,12 @@
   --muted:             oklch(0.92 0.018 88);
   --muted-foreground:  oklch(0.45 0.022 165);
 
+  /* Estructura del plano (paredes/columnas/barra/islas): "poche" sólido oscuro,
+     NO transparente — contrasta con las mesas (claras, card). */
+  --wall:              oklch(0.32 0.02 165);
+  --wall-foreground:   oklch(0.96 0.012 88);
+  --wall-border:       oklch(0.24 0.025 165);
+
   --accent:            oklch(0.91 0.04 165);
   --accent-foreground: oklch(0.245 0.05 165);
 
@@ -157,6 +166,11 @@
 
   --muted:             oklch(0.255 0.022 165);
   --muted-foreground:  oklch(0.66 0.015 88);
+
+  /* Estructura del plano en dark: masa sólida media (más clara que card) con rim. */
+  --wall:              oklch(0.42 0.018 165);
+  --wall-foreground:   oklch(0.97 0.01 88);
+  --wall-border:       oklch(0.52 0.02 165);
 
   --accent:            oklch(0.32 0.05 165);
   --accent-foreground: oklch(0.92 0.04 88);
