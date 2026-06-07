@@ -4,24 +4,9 @@ import { Bell, CircleDot, Receipt, Users } from 'lucide-react'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
+import { ARSFormat, elapsedLabel } from '@/lib/salon/format'
 import type { SalonTableRow } from '@/lib/sessions-waiter/queries'
 import { cn } from '@/lib/utils'
-
-function ARSFormat(cents: number): string {
-  return new Intl.NumberFormat('es-AR', {
-    style: 'currency',
-    currency: 'ARS',
-    maximumFractionDigits: 0,
-  }).format(Math.round(cents / 100))
-}
-
-function elapsedLabel(openedAt: string): string {
-  const minutes = Math.max(0, Math.round((Date.now() - new Date(openedAt).getTime()) / 60000))
-  if (minutes < 60) return `${minutes} min`
-  const hours = Math.floor(minutes / 60)
-  const rem = minutes % 60
-  return rem === 0 ? `${hours}h` : `${hours}h ${rem}m`
-}
 
 export function SalonTablesGrid({
   tenantSlug,
