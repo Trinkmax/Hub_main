@@ -1,14 +1,27 @@
-# Editor visual de plano de mesas (floor plan) — guía técnica
+# Editor visual de plano de mesas (floor plan) — guía técnica v2
 
-> Convierte la pantalla de mesas del dueño
-> (`(manager)/[tenantSlug]/configuracion/mesas`) de una grilla de cards a un
-> **editor visual de plano**: arrastrar/redimensionar mesas y decoración
-> (paredes/columnas/islas/barra) sobre **áreas configurables** por tenant, con
-> gestión mesa-QR (crear, dividir, combinar-soft, activar/desactivar, quitar del
-> plano) desde un panel lateral. Solo el editor del dueño; la vista operativa en
-> vivo del salón queda para entrega 2 sobre el mismo modelo.
+> Rediseño 2026-06-06. El editor usa **`react-zoom-pan-pinch`** (pan/zoom robusto) + drag
+> propio con pointer events (sale dnd-kit); se agrega la **vista operativa en vivo** con
+> Supabase Realtime; y las tres páginas de "Local" se mueven a su **propia tab del
+> sidebar**.
 
-Ruta: `/{tenantSlug}/configuracion/mesas` (solo `owner`).
+Ruta: `/{tenantSlug}/local/mesas` (solo `owner`; staff en `/{tenantSlug}/salon/mesas`).
+
+---
+
+## Qué cambió respecto a v1
+
+| Área | v1 | v2 |
+|---|---|---|
+| Ruta del editor | `/configuracion/mesas` | `/local/mesas` |
+| Sidebar | "Configuración → Local" | Tab **"Local"** propia |
+| Librería de canvas | dnd-kit v6 + modifiers custom | **react-zoom-pan-pinch v3.7** + pointer events |
+| Colocar elementos | Clic en paleta → diálogo al centro | **Arrastrar** desde la paleta al lugar |
+| Pan/zoom | Pan CSS transform + botones de zoom | `TransformWrapper` nativo (scroll, pinch, `+/-/fit`) |
+| Drag a escala ≠ 1 | Bug: delta no dividido → drift | Correcto: `delta / scale` antes de snap |
+| `a11y.ts` | Announcements dnd-kit es-AR | Retirado (dnd-kit sale). Lista accesible sigue canónica |
+| Vista en vivo | No existía | **Live floor** + Realtime (dueño toggle + staff `/salon`) |
+| Realtime | — | Migración publica 4 tablas; Supabase Realtime efectivo |
 
 ---
 
@@ -16,241 +29,289 @@ Ruta: `/{tenantSlug}/configuracion/mesas` (solo `owner`).
 
 | Capa | Qué hay | Dónde |
 |---|---|---|
-| DB | 2 tablas (`floor_plan_areas`, `floor_plan_elements`) + enums + triggers de integridad + RLS owner-write + seed HUB | `supabase/migrations/20260605000100_floor_plan_editor.sql` |
-| DB | RPCs `fp_*` SECURITY DEFINER con guarda de sesión abierta atómica | `supabase/migrations/20260605000200_floor_plan_rpcs.sql` |
+| DB | 2 tablas (`floor_plan_areas`, `floor_plan_elements`) + enums + triggers + RLS + seed HUB | `supabase/migrations/20260605000100_floor_plan_editor.sql` |
+| DB | RPCs `fp_*` SECURITY DEFINER | `supabase/migrations/20260605000200_floor_plan_rpcs.sql` |
+| DB | Publicación Realtime para `table_sessions`, `tickets`, `ticket_items`, `table_session_events` | `supabase/migrations/20260606000100_realtime_salon_publication.sql` |
 | Tipos | tablas + enums `floor_element_kind` / `floor_element_shape` | `types/database.ts` |
-| Lógica pura | autosugerencia de número, grid/snap/clamp + modifiers dnd-kit v6 custom, zod, mapa de errores | `lib/floor-plan/{numbering,grid,schemas,errors}.ts` |
-| Server | query `getFloorPlan` + Server Actions owner-only (audit TS) | `lib/floor-plan/{queries,actions}.ts` |
-| UI | editor cliente (canvas 3 capas, dnd-kit), inspectores, áreas, bandeja, fallback accesible | `app/(manager)/[tenantSlug]/configuracion/mesas/{page.tsx,_components/*}` |
-| `lib/tables` | `updateTable` deja de tocar `active` (RPC-only) | `lib/tables/{schemas,actions}.ts` |
-| Tests | unit (numbering/grid/schemas) + RLS/integración | `tests/lib/floor-plan-*.test.ts`, `tests/rls/floor-plan.test.ts` |
-
-Eliminados: `_components/{tables-list,new-table-dialog,edit-table-dialog}.tsx`
-(la grilla y los dialogs viejos). `print-qr-button.tsx` se **conserva** (lo reusa
-el inspector de mesa).
+| Lógica pura | grid/snap/clamp + `stagePointFromClient` | `lib/floor-plan/grid.ts` |
+| Lógica servidor | `getFloorPlan` + `getLiveFloor` + `listFloorAreas` | `lib/floor-plan/queries.ts` |
+| Server Actions | owner-only (`lib/floor-plan/actions.ts`) + live refetch (`lib/floor-plan/live-actions.ts`) | |
+| Navegación | NavGroup "Local" + rutas movidas de `/configuracion` | `components/shell/nav-config.ts`, `app/(manager)/[tenantSlug]/local/` |
+| UI editor | `pan-zoom-stage`, `floor-canvas`, `floor-element`, `resize-handles`, `element-palette`, `floor-plan-editor` | `app/(manager)/[tenantSlug]/local/mesas/_components/` |
+| UI live | `live-floor`, `live-table-card` (compartidos dueño + staff) | |
+| Tests | unit (grid + drag-commit math) + RLS (isolation + area scope + session join) | `tests/lib/floor-plan-grid.test.ts`, `tests/rls/floor-plan-live.test.ts` |
 
 ---
 
 ## Modelo de datos
 
-Dos tablas nuevas; **`physical_tables` queda intacto** (no se le agregan columnas —
-el piso/área es un atributo del elemento donde está ubicada la mesa, no de la mesa).
+Sin cambios respecto a v1. Ver sección "Modelo de datos" del README anterior para el
+detalle completo de `floor_plan_areas` y `floor_plan_elements`.
 
-### `floor_plan_areas` — áreas/pisos configurables (N por tenant)
+### Migración de Realtime (`20260606000100_realtime_salon_publication.sql`)
 
-```
-id, tenant_id → tenants on delete cascade
-name           text (1–40)
-position       int default 0          -- orden canónico: (position, created_at, id)
-width          int default 1200 (200–6000)
-height         int default 800  (200–6000)
-number_start   int default 1   (0–100000)   -- base de la autosugerencia de número
-created_at, updated_at
-```
+Agrega idempotentemente cuatro tablas a la publicación `supabase_realtime`:
 
-Índices: `floor_plan_areas_tenant_name_uidx` UNIQUE `(tenant_id, lower(trim(name)))`
-(backing del `on conflict` del seed; evita áreas duplicadas) y
-`floor_plan_areas_tenant_pos_idx (tenant_id, position)`.
-
-### `floor_plan_elements` — todo lo que vive en el canvas
-
-```
-id, tenant_id → tenants on delete cascade
-area_id           → floor_plan_areas on delete cascade
-kind              floor_element_kind  ('table'|'wall'|'pillar'|'island'|'bar')
-shape             floor_element_shape ('rect'|'circle') default 'rect'
-physical_table_id → physical_tables on delete cascade   -- solo kind='table'
-x, y              int (−10000..10000) default 0
-width, height     int (8..6000) default 80
-rotation          int default 0      -- reservado v2, siempre 0 en v1 (sin UI)
-z_index           int default 0      -- decor 0, mesa 10; render (z_index, created_at, id)
-label             text (≤40, nullable)
-color             text (^#[0-9a-fA-F]{6}$, nullable)
-created_at, updated_at
+```sql
+do $$
+begin
+  begin alter publication supabase_realtime add table public.table_sessions;       exception when duplicate_object then null; end;
+  begin alter publication supabase_realtime add table public.tickets;              exception when duplicate_object then null; end;
+  begin alter publication supabase_realtime add table public.ticket_items;         exception when duplicate_object then null; end;
+  begin alter publication supabase_realtime add table public.table_session_events; exception when duplicate_object then null; end;
+end $$;
 ```
 
-- CHECK `fpe_table_has_pt`: `kind='table'` ⇔ `physical_table_id is not null`.
-- `floor_plan_elements_pt_uidx` UNIQUE `(physical_table_id) where physical_table_id is not null`
-  → **1 mesa ⇒ a lo sumo 1 elemento** (es el anti-join de la bandeja de no ubicadas).
-- `floor_plan_elements_area_idx (area_id)`, `floor_plan_elements_tenant_idx (tenant_id)`.
+RLS no cambia (realtime respeta las políticas SELECT existentes; solo `authenticated`
+recibe). `db:types` no es necesario (sin cambio de schema).
 
-### Invariantes y enforcement (trigger `fp_elements_integrity`, BEFORE INSERT/UPDATE)
-
-- **Cross-tenant**: `element.tenant_id = area.tenant_id` (raise `fp_tenant_mismatch_area`,
-  `42501`) y, si `kind='table'`, `= physical_table.tenant_id` (raise
-  `fp_tenant_mismatch_table`, `42501`). RLS solo verifica que el caller sea owner de
-  `element.tenant_id`, **no** que `area_id`/`physical_table_id` sean del mismo tenant — por
-  eso el trigger.
-- **Mesa activa**: un elemento `kind='table'` solo puede referenciar una mesa **activa**
-  (raise `fp_table_inactive`, `P0001`). Desactivar/combinar **borra** el elemento;
-  reactivar manda la mesa a la bandeja (sin elemento).
-- **Geometría dentro del área**: NO se enforcea en DB (last-write-wins); el editor
-  clampea. Los CHECK `x/y ±10000` solo evitan basura grosera de un caller no-UI.
-- **No** hay trigger BEFORE DELETE en `physical_tables`: rompería el `on delete cascade`
-  de `tenants`. El borrado seguro se controla en el RPC (ver abajo).
-
-### Seed HUB (idempotente, solo-HUB)
-
-Si existe el tenant slug `hub`, siembra `Planta Baja` (pos 0, `number_start` 1) y
-`Planta Alta` (pos 1, `number_start` 101) con `on conflict (tenant_id, lower(trim(name)))
-do nothing`. Todo tenant nuevo no-HUB arranca **sin áreas** → empty-state + CTA
-"Crear primera área".
+**Por qué:** antes de esta migración, las suscripciones realtime a esas tablas en
+`salon-view.tsx` y en `live-floor.tsx` nunca disparaban eventos; la UI se apoyaba solo
+en el safety-net de 30 s. La migración hace efectivo el push en tiempo real.
 
 ---
 
-## RPCs (`fp_*`, SECURITY DEFINER, `set search_path=''`)
+## Navegación — tab "Local"
 
-Convención (espejo de `regenerate_qr_token`): identificadores 100% schema-qualified,
-resuelven `tenant_id` desde la fila, `public.user_role_in_tenant(v_tenant) = 'owner'`
-(si no → `raise 'owner_required'` `42501`), y cierran con
-`revoke all … from public; grant execute … to authenticated;`. Devuelven `jsonb`.
-**Los RPC NO escriben `audit_log`** (`audit_log` no tiene GRANT de INSERT); la
-auditoría se hace en la Server Action con `logAudit()` tras el RPC OK.
+El sidebar del dueño tiene ahora un `NavGroup` "Local" independiente (antes las tres
+páginas eran sub-secciones de "Configuración"):
 
-| RPC | Firma | Devuelve | Guarda |
-|---|---|---|---|
-| `fp_create_table` | `(p_area_id, p_label, p_shape, p_x, p_y, p_capacity default null)` | `{table_id, element_id, qr_token}` | inserta `physical_tables` (qr_token default) + su elemento `kind='table'` z=10 en una transacción |
-| `fp_merge_tables` | `(p_survivor_table_id, p_absorbed_table_id)` | `{ok:true}` | `for update` sobre la absorbida; mismo-tenant (`cross_tenant_merge`); sesión abierta → `table_has_open_session`; `active=false` + borra su elemento |
-| `fp_set_table_active` | `(p_table_id, p_active)` | `{ok:true}` | desactivar: `for update` + `table_has_open_session` + `active=false` + borra elemento; reactivar: `active=true` (vuelve a la bandeja) |
-| `fp_delete_table` | `(p_table_id)` | `{ok:true}` | con `table_session` → `table_has_history`; si no, hard delete (elemento cae por cascade) |
-| `fp_delete_area` | `(p_area_id)` | `{ok:true}` | mesa activa ubicada → `area_has_active_tables`; última área → `cannot_delete_last_area` |
+| Ítem | Ruta | Icono |
+|---|---|---|
+| Plano | `/{slug}/local/mesas` | `LayoutGrid` |
+| Captura QRs | `/{slug}/local/captura` | `QrCode` |
+| Auto-aceptación | `/{slug}/local/auto-aceptacion` | `Zap` |
 
-Todos los códigos de raise son `P0001` salvo `owner_required` / `fp_tenant_mismatch_*` (`42501`).
-
-### Server Actions (`lib/floor-plan/actions.ts`, `'use server'`, owner-only)
-
-Patrón uniforme: `requireTenantAccess(slug)` → `requireRole(role, ['owner'])` → zod parse
-→ RPC/write → en éxito `logAudit({...})` + `revalidatePath('/${slug}/configuracion/mesas')`;
-errores Postgres → `mapPgError` (`lib/floor-plan/errors.ts`). Geometría/decor de alto
-volumen **no** auditan. `removeFromPlanAction` es un `delete` simple del elemento (la mesa
-sigue activa y ordenable por QR; sin guarda atómica porque no hay riesgo de datos).
-
-### Query `getFloorPlan(tenantId)` (`server-only`)
-
-- `areas`: `order by position, created_at, id`.
-- `elements`: `order by z_index, created_at, id`; join a `physical_tables` para
-  `label/capacity/qr_token/active` cuando `kind='table'`.
-- `unplacedTables` (anti-join sobre `floor_plan_elements_pt_uidx`): mesas **activas** del
-  tenant sin fila en `floor_plan_elements`. Mesas reactivadas o de áreas borradas (su
-  elemento cayó por cascade) reaparecen acá.
+La sección "Local" fue eliminada de `configuracion/_components/settings-nav.tsx` y de
+`configuracion/page.tsx`.
 
 ---
 
-## Persistencia de geometría
+## Editor (modo Editar)
 
-Mover y redimensionar son operaciones de alta frecuencia: van por una cola
-optimista (`use-geometry-queue.ts`) con debounce de 600 ms y flush en
-`beforeunload`. Si el flush falla, el editor revierte el estado optimista de los
-ids afectados y muestra un toast. Las mutaciones estructurales (alta/baja/merge,
-áreas, colocar/quitar del plano) usan `router.refresh()` para re-sembrar el RSC.
+### Canvas con `react-zoom-pan-pinch` v3.7
 
-El pipeline de commit de un drag es canónico: los deltas de dnd-kit vienen en px
-de pantalla, así que se dividen por `scale` antes de snapear a la grilla en
-espacio lógico y clampear al área (`snapToGrid(el.x + delta.x / scale)` →
-`clampToArea`). El `DndContext` usa `autoScroll={false}` y mide contra el
-viewport sin transform (el stage escalado vive dentro).
+```tsx
+<TransformWrapper
+  ref={transformRef}
+  initialScale={1}
+  centerOnInit
+  minScale={0.25}
+  maxScale={4}
+  limitToBounds={false}
+  panning={{ excluded: ['floor-element'], velocityDisabled: true }}
+  wheel={{ step: 0.2 }}
+  pinch={{ step: 5 }}
+>
+  <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }}>
+    {/* Stage div position:relative, tamaño = área lógica, grilla CSS */}
+    {/* Hijos: divs position:absolute en coords lógicas, className="floor-element" */}
+  </TransformComponent>
+</TransformWrapper>
+```
+
+- **Pan**: arrastrar el fondo (excluye `.floor-element`).
+- **Zoom**: scroll/pinch + botones `+` / `−` / fit via `transformRef.current`.
+- **`limitToBounds={false}`**: permite panear más allá de los bordes del área.
+
+### Drag de elementos (pointer events, sin dnd-kit)
+
+Cada `floor-element` usa `onPointerDown` → `setPointerCapture` + `e.stopPropagation()`.
+En `onPointerMove` lee `scale` desde `transformRef.current.state` **sin re-render** y
+aplica:
+
+```ts
+newX = snapToGrid(origX + (clientX - startX) / scale)
+newY = snapToGrid(origY + (clientY - startY) / scale)
+```
+
+La división por `scale` es la corrección del bug de v1 (a `scale=2` el drift era el
+doble del movimiento visual). Luego `clampToArea` antes del set optimista y del commit
+vía `use-geometry-queue.ts`.
+
+### `stagePointFromClient` (en `lib/floor-plan/grid.ts`)
+
+Convierte un punto de pantalla (`clientX`/`clientY`) a coords lógicas del stage:
+
+```ts
+export function stagePointFromClient(
+  clientX: number, clientY: number,
+  rect: { left: number; top: number },
+  scale: number, posX: number, posY: number,
+): { x: number; y: number } {
+  return {
+    x: (clientX - rect.left - posX) / scale,
+    y: (clientY - rect.top - posY) / scale,
+  }
+}
+```
+
+Donde `rect = wrapper.getBoundingClientRect()` y `posX/posY/scale = transformRef.current.state`.
+Se usa tanto para el drop-from-palette como para la conversión inicial del drag.
+
+### Colocar desde la paleta (drag-from-palette)
+
+Las chips de `element-palette.tsx` son arrastrables (HTML5 drag,
+`dataTransfer 'application/x-floor-kind'`). Al soltar sobre el stage,
+`PanZoomStage.onDropKind` recibe `(kind, clientX, clientY)`, convierte a coords lógicas
+con `stagePointFromClient` y llama:
+
+- **Mesa** → `createTableInPlanAction` → abre el inspector (sin diálogo al centro).
+  `create-table-dialog.tsx` fue retirado.
+- **Decoración** → `addDecorAction` con `ELEMENT_DEFAULTS[kind]`.
+
+Fallback (click en la chip): coloca el elemento en el centro del área visible.
+
+### Persistencia de geometría (reusado de v1)
+
+`use-geometry-queue.ts` sin cambios: cola debounced 600 ms, flush en `beforeunload`,
+rollback de ids afectados si falla.
 
 ---
 
-## Componentes (cliente, `…/configuracion/mesas/_components/`)
+## Vista en vivo (modo En vivo)
 
-- **`floor-plan-editor.tsx`** — orquestador. Dueño del estado: geometría committeada
-  por elemento, `selectedId`, `{scale, panX, panY}`, área activa. Provee `DndContext`,
-  paleta, inspectores y la cola de persistencia.
-- **`floor-canvas.tsx`** — DOM de 3 capas: **viewport** (`overflow:hidden`, sin
-  transform, límite de medición de `DndContext`), **stage** (`transform: translate(pan)
-  scale(s)`, tamaño = área lógica), **FloorElement** (`position:absolute`, `left/top` en
-  px lógicos). Grilla de fondo, zoom/pan transform-based (`autoScroll={false}`).
-- **`floor-element.tsx`** — div arrastrable (`useDraggable`; activator **solo en el
-  body** vía `setActivatorNodeRef`, no en los handles). Estado transitorio del drag;
-  sube al editor en `dragEnd`.
-- **`resize-handles.tsx`** — handles propios (dnd-kit no redimensiona): `onPointerDown`
-  hace `stopPropagation()` + `setPointerCapture`, escribe w/h transitorio, sube en
-  `pointerUp`.
-- **`element-palette.tsx`** — botonera "agregar" (mesa / pared / columna / isla / barra),
-  con los defaults `ELEMENT_DEFAULTS`.
-- **`table-inspector.tsx`** — editar nombre/capacidad (reusa `updateTable`, **sin** tocar
-  `active`), imprimir QR (`PrintQrButton`), regenerar token (`regenerateQrToken`),
-  **activar/desactivar Switch → RPC `fp_set_table_active`** (nunca `updateTable`),
-  dividir, combinar (`AlertDialog`), quitar del plano, al frente/al fondo (z-index).
-- **`decor-inspector.tsx`** — tamaño, etiqueta, color, z-index, borrar (shape no editable).
-- **`area-manager.tsx`** — crear/renombrar/reordenar/borrar áreas; editar
-  `width/height/number_start`.
-- **`unplaced-tray.tsx`** — bandeja de mesas activas sin elemento; arrastrar al canvas o
-  botón "colocar".
-- **`tables-list-fallback.tsx`** — lista accesible (camino accesible **canónico**, no solo
-  respaldo); fallback del `ErrorBoundary` y tab secundaria siempre alcanzable.
-- **`use-geometry-queue.ts`** — cola **única** `Map<elementId, geom>` debounced
-  (drag-end y resize-end encolan en la misma cola; nunca dos escritores en paralelo) +
-  flush en `beforeunload`. Si el flush falla → toast + revert optimista de los ids
-  afectados.
+### `getLiveFloor(tenantId, areaId)`
 
-### dnd-kit v6 (línea estable — no el rewrite next-gen 0.x)
+Query server-only en `lib/floor-plan/queries.ts`. Combina:
 
-`@dnd-kit/core ^6.3.1` + `@dnd-kit/sortable ^10` + `@dnd-kit/utilities ^3.2.2`.
-**`@dnd-kit/modifiers` NO está instalado**: `createSnapModifier`/`restrictToParent` se
-escriben custom en `lib/floor-plan/grid.ts` (firma v6 `({transform, draggingNodeRect,
-containerNodeRect}) => Transform`). Todo modifier preserva `scaleX/scaleY`
-(`return {...transform, x, y}`). Snap y restrict operan en **espacio lógico** (dividen por
-`scale`). Commit canónico en `onDragEnd`: `snapToGrid(stored + delta/scale)` + clamp al
-área. Sensores: `PointerSensor {activationConstraint:{distance:8}}` (click <8px
-selecciona, no mueve) + `KeyboardSensor` (paso `grid*scale`).
+1. `floor_plan_elements WHERE area_id = $areaId` (geometría completa).
+2. Para los `kind='table'`: join a `physical_tables` (label, capacity) y a la **única
+   sesión abierta** por `physical_table_id` (`status='open'`).
+3. Flag `kitchen`: `'ready'` si algún ticket de la sesión tiene `status='ready'`;
+   `'preparing'` si tiene `'accepted'`/`'preparing'` y ninguno `'ready'`; `'none'` si no hay
+   tickets activos.
+4. Flag `bill_requested`: `true` si existe un `table_session_events` de tipo
+   `'bill_requested'` para la sesión.
 
----
+Patrón TS + supabase-js (anti-join/conteos en JS, como `listSalonTables`). RLS abre
+SELECT a cualquier miembro del tenant (owner + staff).
 
-## Accesibilidad y fallback
+### Tipos de la vista en vivo
 
-El editor de plano es desktop-first y visual, pero el camino accesible es de
-primera clase, no un respaldo de segunda:
+```ts
+type LiveSession = {
+  id: string
+  status: 'open' | 'paid' | 'merged' | 'abandoned'
+  total_cents: number
+  party_size: number | null
+  alias: string | null
+  opened_at: string
+  kitchen: 'none' | 'preparing' | 'ready'
+  bill_requested: boolean
+}
+type LiveTable  = { element_id, physical_table_id, x, y, width, height, shape, z_index, label, capacity, session: LiveSession | null }
+type LiveDecor  = { element_id, kind, shape, x, y, width, height, z_index, label, color }
+type LiveFloorData = { area: AreaRow; tables: LiveTable[]; decor: LiveDecor[] }
+```
 
-- **Tab "Lista" (siempre presente):** dentro del editor, la tab secundaria "Lista"
-  renderiza `TablesListFallback` — una `<table>` HTML real con todas las mesas y
-  sus acciones (imprimir QR, regenerar token, activar/desactivar con un `Switch`,
-  eliminar definitivamente solo si la mesa no tiene historial). No depende de
-  `DndContext` ni del canvas.
-- **Fallback de error:** el editor cliente se monta dentro de
-  `FloorPlanErrorBoundary` (en `page.tsx`). Si revienta en render, la pantalla
-  degrada a un banner `role="alert"` + `TablesListFallback`, sin perder la
-  gestión de mesas.
-- **dnd-kit en español:** `DndContext` recibe `floorPlanAnnouncements` y
-  `floorPlanScreenReaderInstructions` (`lib/floor-plan/a11y.ts`) en es-AR; el
-  live region anuncia levantar/mover/soltar/cancelar.
+### Render (`live-floor.tsx`)
 
-### Keymap del canvas
+El mismo canvas (`TransformWrapper`) sin handles de resize ni drag de elementos
+(`interactive={false}` en `PanZoomStage`). Cada mesa renderiza un `LiveTableCard`:
 
-| Tecla | Acción |
+| Estado `session` | Color de fondo |
 |---|---|
-| Click / Enter | Selecciona el elemento y abre su inspector |
-| Barra espaciadora | Levanta el elemento para arrastre por teclado |
-| Flechas ↑ ↓ ← → | Mueven el elemento levantado 1 celda de grilla (`GRID * scale` px) |
-| Barra espaciadora (de nuevo) | Suelta el elemento en la posición nueva |
-| Escape | Cancela el arrastre y vuelve a la posición original |
+| `null` (libre) | Verde tenue |
+| `open` | Ámbar |
+| `paid` | Azul/slate |
 
-Los elementos decorativos llevan `aria-label` (kind + etiqueta) y el body es el
-único activador del drag (los handles de resize cortan la propagación), de modo
-que no quedan tab-stops mudos ni pelean drag y resize.
+Tarjeta completa: `alias ?? label`, `ARSFormat(total_cents)`, `party_size` (👥),
+`elapsedLabel(opened_at)`, punto de cocina (ámbar = preparando / verde = lista), badge
+"cuenta pedida".
+
+Header: resumen ocupadas / libres / total vía `getSalonOccupancy`.
+
+### Realtime
+
+```ts
+subscribeChanges({
+  channel: `live-${tenantId}`,
+  events: [
+    { event: '*', table: 'table_sessions', filter: `tenant_id=eq.${tenantId}`, onChange },
+    { event: '*', table: 'tickets',        filter: `tenant_id=eq.${tenantId}`, onChange },
+  ],
+})
+```
+
+`onChange` = `useDebouncedRefresh(() => refreshLiveFloorAction(slug, areaId))`.
+Safety-net adicional de `setInterval` 30 s. Requiere la migración de publicación de
+Realtime (ver arriba).
+
+### Dónde vive
+
+- **Dueño** (`/local/mesas`): toggle **Editar / En vivo** en el header del editor. En
+  modo "En vivo" monta `<LiveFloor>`.
+- **Staff** (`/salon/mesas`): tab "Plano" renderiza `<LiveFloor>` con `interactive={false}`
+  y `onTableOpen` navegando a `/salon/mesas/[sessionId]`.
 
 ---
 
-## Multi-tenant / seguridad (LEY)
+## Componentes
 
-- Dos tablas nuevas con `tenant_id`, RLS (`*_select_member` para cualquier miembro
-  vía `public.user_tenant_ids()`; `*_owner_insert/update/delete` vía
-  `public.user_role_in_tenant(tenant_id)='owner'`), GRANTs `select,insert,update,delete`
-  a `authenticated`. SELECT abierto a cualquier miembro (incl. `kitchen`) a propósito —
-  lo consumirá la vista operativa de entrega 2; en v1 el editor es owner-only por la
-  guarda de ruta/acción.
-- RPCs `security definer set search_path=''`, schema-qualified, owner check + `revoke/grant`.
-- Integridad cross-tenant por **trigger** (no por confianza en el cliente);
-  `saveGeometryAction` jamás cambia `area_id`/`tenant_id` (solo `x,y,width,height,z_index`).
-- Guarda de sesión abierta **atómica** (`for update` en el RPC); el TS delega en el RPC
-  (un check JS sería TOCTOU-racy).
-- `active` es **RPC-only**: `updateTable` ya no maneja `active` (se quitó de
-  `updateTableSchema`) — así editar el nombre no reactiva silenciosamente una mesa
-  desactivada.
-- Sin PII en logs. Auditoría TS en mutaciones estructurales
-  (`createTableInPlan`, `splitTable`, `mergeTables`, activar/desactivar, `deleteArea`,
-  `deleteTablePermanently`). El comensal `anon` no se ve afectado.
+### Nuevos
+
+| Archivo | Descripción |
+|---|---|
+| `pan-zoom-stage.tsx` | Wrapper compartido `TransformWrapper` + stage + controles `+/-/fit` |
+| `floor-plan-editor.tsx` | Orquestador (reescrito sin `DndContext`; toggle Editar/En vivo) |
+| `floor-canvas.tsx` | Canvas editor (reescrito; usa `PanZoomStage`) |
+| `floor-element.tsx` | Elemento editable (reescrito; pointer drag + scale) |
+| `resize-handles.tsx` | Handles de resize (reescrito; delta / scale) |
+| `element-palette.tsx` | Chips arrastrables (reescrito; drop-to-create + click fallback) |
+| `live-floor.tsx` | Vista en vivo read-only (nuevo; dueño + staff) |
+| `live-table-card.tsx` | Tarjeta de mesa en vivo (nuevo) |
+
+### Reusados sin cambios (o con ajustes mínimos)
+
+`table-inspector.tsx`, `decor-inspector.tsx`, `area-manager.tsx`,
+`tables-list-fallback.tsx`, `print-qr-button.tsx`, `floor-plan-error-boundary.tsx`,
+`zero-area-cta.tsx`, `use-geometry-queue.ts`.
+
+`unplaced-tray.tsx` fue reescrito para quitar la dependencia de dnd-kit: conserva el
+botón **"Colocar"** como única ruta de ubicación (ya no hay handle de drag desde la
+bandeja).
+
+### Retirados
+
+`create-table-dialog.tsx` (reemplazado por drop-from-palette + inspector),
+`lib/floor-plan/a11y.ts` (era de dnd-kit).
+
+---
+
+## RPCs (`fp_*`) y Server Actions
+
+Sin cambios funcionales respecto a v1. La única diferencia es que `revalidatePath`
+ahora usa `/${slug}/local/mesas` en lugar de `/${slug}/configuracion/mesas`.
+
+Nueva Server Action: `refreshLiveFloorAction(slug, areaId)` en
+`lib/floor-plan/live-actions.ts` — cualquier miembro del tenant puede llamarla
+(no es owner-only); revalidación de la vista en vivo vía Realtime.
+
+---
+
+## Accesibilidad
+
+El canvas con `react-zoom-pan-pinch` no provee navegación por teclado nativa para mover
+elementos.
+
+- **Lista accesible (canónica):** la tab "Lista" siempre visible en el editor muestra
+  `TablesListFallback` — una `<table>` HTML con todas las mesas y sus acciones. Es el
+  camino canónico para usuarios de teclado/lector de pantalla, no un respaldo de segunda
+  clase.
+- **Elementos focusables:** cada `floor-element` es focusable (Tab), con `aria-label`
+  (kind + etiqueta). Enter abre el inspector.
+- **Nudge por flechas en el canvas:** fuera de alcance v2 (anotado en BACKLOG).
+- **Staff `/salon/mesas`:** la tab "Lista" siempre visible muestra la grilla de cards,
+  accesible por teclado sin depender del canvas.
+
+---
+
+## Multi-tenant / seguridad
+
+Sin cambios respecto a v1. El live floor amplía el SELECT a `authenticated` (cualquier
+miembro) por diseño — el staff debe ver la vista operativa. Realtime solo llega a
+`authenticated`; `anon` (comensal) no recibe eventos (sin policy `to anon`).
 
 ---
 
@@ -259,65 +320,31 @@ que no quedan tab-stops mudos ni pelean drag y resize.
 ### Unit (Vitest, `tests/lib/`)
 
 ```bash
-npx vitest run tests/lib/floor-plan-numbering.test.ts
 npx vitest run tests/lib/floor-plan-grid.test.ts
-npx vitest run tests/lib/floor-plan-schemas.test.ts
+# Cubre: GRID/RESIZE_MIN/ELEMENT_DEFAULTS; snapToGrid (positivos/negativos/custom);
+#         clampToArea (bordes, oversized); stagePointFromClient (scale 1/2/0.5, pan);
+#         drag-commit math a scale 1 y 2 (documenta el bug de v1 y la corrección).
 ```
-
-Cubren: `suggestNextLabel` (próximo libre desde `number_start`, huecos); `snapToGrid` +
-`createSnapModifier`/`restrictToParent` a `scale=1` y `scale=2` preservando
-`scaleX/scaleY`; zod de área/geometría/decor/merge (límites, color hex 6 dígitos,
-capacity, bounds de x/y).
 
 ### RLS / integración (`tests/rls/`, CI contra Supabase local)
 
 ```bash
-npx vitest run tests/rls/floor-plan.test.ts   # requiere Supabase local + envs (CLAUDE.md §16)
+npx vitest run tests/rls/floor-plan.test.ts        # editor v1 (intacto)
+npx vitest run tests/rls/floor-plan-live.test.ts   # live floor v2
 ```
 
-Cubre: aislamiento SELECT/INSERT entre tenants; cashier/waiter no pueden los `fp_*`
-(`owner_required`); `fp_set_table_active(false)` y `fp_merge_tables` levantan
-`table_has_open_session` con sesión abierta; 2º elemento por mesa falla
-(`floor_plan_elements_pt_uidx`); elemento con `area_id`/`physical_table_id` de otro
-tenant falla (`fp_tenant_mismatch_*`); elemento de mesa inactiva falla
-(`fp_table_inactive`); `fp_delete_area` bloquea con mesa activa ubicada
-(`area_has_active_tables`) y en la última área (`cannot_delete_last_area`).
+`floor-plan-live.test.ts` cubre:
+- Tenant B no ve áreas / elementos / sesiones de tenant A.
+- Query scopeada a `areaA1` devuelve solo elementos de esa área (no `areaA2`).
+- La sesión abierta de `tableA1` es visible vía join directo (total_cents, party_size,
+  alias).
+- `tableA2` sin sesión devuelve `length = 0`.
+- Staff (waiter) también puede leer el floor y la sesión de su tenant.
+- Staff de A no puede ver sesiones de B.
 
 > Sin Docker local → migraciones aplicadas vía Supabase MCP `apply_migration`
 > (proyecto `ogplsevtrclzxvyejlns`); `tests/rls` corre en CI contra Supabase local.
 
 ### Smoke manual
 
-Checklist runnable en `docs/superpowers/plans/2026-06-05-floor-plan-smoke.md` (pasos
-exactos + resultado esperado).
-
----
-
-## Decisiones de diseño (del brainstorming)
-
-- **El plano absorbe la gestión**: el editor visual ES la pantalla de mesas; la grilla
-  vieja se retira y queda la lista accesible como camino canónico + fallback.
-- **Áreas configurables (N) por tenant**, independientes de las zonas de reservas
-  (`salon_zone`) — dominios separados, sin FK ni join, no se unifican en v1.
-- **Dividir/combinar operan sobre `physical_tables` (estructura)**, no sobre sesiones
-  vivas — por eso el prefijo `fp_*` y `lib/floor-plan/` (distinto de los `merge_sessions`
-  / `split_session` de `lib/sessions-waiter/`).
-- **Combinar/quitar/borrar es soft (`active=false`)** salvo `deleteTablePermanently` para
-  mesas sin historial: la FK `table_sessions.physical_table_id` es `on delete set null`,
-  un hard delete destruiría el vínculo mesa↔sesión histórica.
-- **Guarda de sesión abierta atómica en el RPC** (`for update`): cierra el gap real de
-  que hoy nada impide desactivar/borrar una mesa con sesión abierta.
-- **dnd-kit + divs posicionados** (no SVG/canvas); modifiers custom contra la API v6.
-- **Numeración autosugerida editable** por área; piso = atributo explícito (vía área),
-  no derivado del número.
-
----
-
-## Fuera de alcance v1
-
-Vista operativa en vivo del salón (tiempo real para staff) → entrega 2 (mismo modelo).
-Editor **no realtime** (los cambios concurrentes se ven al recargar). Rotación libre
-(queda la columna `rotation`). `shape` editable post-creación, undo/redo,
-multiselección/mover en bloque, plantillas, alineación/guías, colisión/overlap, drag
-cross-área (se mueve vía bandeja), imagen de fondo del plano, unificar `floor_plan_areas`
-con `salon_zone`. No se toca puntos, reservas, carta ni KDS.
+Checklist runnable en `docs/superpowers/plans/2026-06-06-floor-plan-rediseno-smoke.md`.
