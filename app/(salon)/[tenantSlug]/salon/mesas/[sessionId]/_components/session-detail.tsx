@@ -201,27 +201,19 @@ export function SessionDetail({
   return (
     <div className="space-y-4">
       {sessionStatus === 'open' && (
-        <div className="flex items-center justify-between gap-2">
-          {session.party_size !== null ? (
-            <Badge variant="secondary" className="gap-1.5">
-              <Users className="size-3.5" aria-hidden />
-              {session.party_size} {session.party_size === 1 ? 'comensal' : 'comensales'}
-            </Badge>
-          ) : (
-            <Badge variant="outline">Sin comensales declarados</Badge>
-          )}
-          <div className="flex items-center gap-2">
-            <Button onClick={() => setShowStaffMenu(true)} size="sm" variant="secondary">
-              <Plus className="mr-1.5 size-4" />
-              Agregar productos
-            </Button>
-            <Button onClick={openCobro} size="sm">
-              <Coins className="mr-1.5 size-4" />
-              Cobrar mesa
-            </Button>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            {session.party_size !== null ? (
+              <Badge variant="secondary" className="gap-1.5">
+                <Users className="size-3.5" aria-hidden />
+                {session.party_size} {session.party_size === 1 ? 'comensal' : 'comensales'}
+              </Badge>
+            ) : (
+              <Badge variant="outline">Sin comensales declarados</Badge>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button size="sm" variant="ghost">
+                <Button size="sm" variant="ghost" aria-label="Más acciones de la mesa">
                   <MoreVertical className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -257,6 +249,23 @@ export function SessionDetail({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              onClick={() => setShowStaffMenu(true)}
+              variant="secondary"
+              className="h-auto min-h-11 w-full min-w-0 whitespace-normal leading-tight"
+            >
+              <Plus className="size-4 shrink-0" />
+              Agregar productos
+            </Button>
+            <Button
+              onClick={openCobro}
+              className="h-auto min-h-11 w-full min-w-0 whitespace-normal leading-tight"
+            >
+              <Coins className="size-4 shrink-0" />
+              Cobrar mesa
+            </Button>
           </div>
         </div>
       )}
