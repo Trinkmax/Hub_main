@@ -7,6 +7,7 @@ import { useMemo } from 'react'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
+import { StatCard } from '@/components/ui/stat-card'
 import { formatARS } from '@/lib/commissions/calculate'
 import type { CommissionSummaryRow } from '@/lib/salon/queries'
 
@@ -28,14 +29,11 @@ function formatYM(ym: string): string {
 }
 
 const COLORS = [
-  '#7c3aed',
-  '#0ea5e9',
-  '#f97316',
-  '#dc2626',
-  '#14b8a6',
-  '#a855f7',
-  '#ec4899',
-  '#16a34a',
+  'var(--chart-1)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
 ]
 
 export function CommissionsDashboard({
@@ -103,9 +101,17 @@ export function CommissionsDashboard({
         <>
           {/* Totales del período */}
           <div className="grid gap-3 sm:grid-cols-3">
-            <StatCard label="Total a liquidar" value={formatARS(totals.payable)} highlight />
-            <StatCard label="Ya cobrado" value={formatARS(totals.paid)} tone="muted" />
-            <StatCard label="Pendiente" value={formatARS(totals.pending)} tone="amber" />
+            <StatCard
+              label="Total a liquidar"
+              value={formatARS(totals.payable)}
+              className="border-primary/60 bg-primary/5"
+            />
+            <StatCard label="Ya cobrado" value={formatARS(totals.paid)} />
+            <StatCard
+              label="Pendiente"
+              value={formatARS(totals.pending)}
+              hint={totals.pending > 0 ? 'Falta cobrar' : undefined}
+            />
           </div>
 
           {/* Chart + tabla */}
@@ -151,8 +157,8 @@ export function CommissionsDashboard({
               </ul>
             </div>
 
-            <div className="card-hairline overflow-hidden rounded-xl border bg-card">
-              <table className="w-full text-sm">
+            <div className="card-hairline overflow-x-auto rounded-xl border bg-card">
+              <table className="w-full min-w-[720px] text-sm">
                 <thead className="border-b border-border/60 bg-secondary/40 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                   <tr>
                     <th className="px-3 py-2">Gestor</th>
@@ -181,9 +187,7 @@ export function CommissionsDashboard({
                       </td>
                       <td className="px-3 py-2 text-right font-mono tabular-nums">
                         {s.bonus_cents > 0 ? (
-                          <span className="text-amber-700 dark:text-amber-300">
-                            {formatARS(s.bonus_cents)}
-                          </span>
+                          <span className="text-warning">{formatARS(s.bonus_cents)}</span>
                         ) : (
                           '—'
                         )}
@@ -196,9 +200,7 @@ export function CommissionsDashboard({
                       </td>
                       <td className="px-3 py-2 text-right font-mono tabular-nums">
                         {s.pending_cents > 0 ? (
-                          <span className="text-amber-700 dark:text-amber-300">
-                            {formatARS(s.pending_cents)}
-                          </span>
+                          <span className="text-warning">{formatARS(s.pending_cents)}</span>
                         ) : (
                           '—'
                         )}
@@ -221,33 +223,6 @@ export function CommissionsDashboard({
           </div>
         </>
       )}
-    </div>
-  )
-}
-
-function StatCard({
-  label,
-  value,
-  highlight,
-  tone,
-}: {
-  label: string
-  value: string
-  highlight?: boolean
-  tone?: 'muted' | 'amber'
-}) {
-  return (
-    <div
-      className={`rounded-xl border p-4 ${
-        highlight
-          ? 'border-primary/60 bg-primary/5'
-          : tone === 'amber'
-            ? 'border-amber-300/60 bg-amber-50/40 dark:bg-amber-950/20'
-            : 'border-border/60 bg-card/60'
-      }`}
-    >
-      <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="mt-1 font-mono text-2xl font-semibold tabular-nums">{value}</div>
     </div>
   )
 }

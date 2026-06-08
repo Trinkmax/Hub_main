@@ -73,8 +73,8 @@ export function ManagersList({
           Nuevo gestor
         </Button>
       </div>
-      <div className="rounded-xl border bg-card/60">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-xl border bg-card/60">
+        <table className="w-full min-w-[640px] text-sm">
           <thead className="border-b border-border/60 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-3 py-2">Nombre</th>

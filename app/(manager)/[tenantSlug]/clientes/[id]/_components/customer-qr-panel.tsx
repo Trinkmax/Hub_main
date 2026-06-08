@@ -5,6 +5,17 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { rotateQrToken } from '@/lib/customers/actions'
 
@@ -23,6 +34,7 @@ export function CustomerQrPanel({
 }) {
   const [qrToken, setQrToken] = useState(initialQrToken)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  const [confirmRotate, setConfirmRotate] = useState(false)
   const [pending, start] = useTransition()
 
   const panelUrl = `${appUrl.replace(/\/$/, '')}/c/${qrToken}`
@@ -45,11 +57,11 @@ export function CustomerQrPanel({
   }, [panelUrl])
 
   const onRotate = () => {
-    if (!confirm('¿Regenerar el QR? El link anterior dejará de funcionar.')) return
     start(async () => {
       const r = await rotateQrToken(tenantSlug, customerId)
       if (r.ok) {
         setQrToken(r.token)
+        setConfirmRotate(false)
         toast.success('QR regenerado.')
       } else {
         toast.error(r.message)
@@ -101,6 +113,7 @@ export function CustomerQrPanel({
             <button
               type="button"
               onClick={onCopy}
+              aria-label="Copiar link personal del cliente"
               className="mt-0.5 block w-full truncate text-left font-mono text-xs text-foreground transition-colors hover:text-primary"
               title="Click para copiar"
             >
@@ -122,21 +135,42 @@ export function CustomerQrPanel({
               </Link>
             </Button>
             {isOwner ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={onRotate}
-                disabled={pending}
-                className="gap-1.5 text-muted-foreground"
-              >
-                {pending ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="size-3.5" />
-                )}
-                {pending ? 'Rotando…' : 'Rotar'}
-              </Button>
+              <AlertDialog open={confirmRotate} onOpenChange={setConfirmRotate}>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={pending}
+                    className="gap-1.5 text-muted-foreground"
+                  >
+                    {pending ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="size-3.5" />
+                    )}
+                    {pending ? 'Rotando…' : 'Rotar'}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>¿Regenerar el QR?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      El link anterior dejará de funcionar. Vas a tener que reimprimir el QR.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={onRotate}
+                      disabled={pending}
+                      className="bg-destructive text-white hover:bg-destructive/90"
+                    >
+                      Regenerar
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             ) : null}
           </div>
         </div>

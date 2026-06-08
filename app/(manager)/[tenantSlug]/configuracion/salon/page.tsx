@@ -49,7 +49,7 @@ export default async function SalonConfigPage({
   const totalSeats = (tenantRow as { total_seats?: number | null } | null)?.total_seats ?? null
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+    <div className="space-y-6">
       <PageHeader
         eyebrow={
           <Link

@@ -1,8 +1,18 @@
 'use client'
 
 import { Gift, Pause, Play, Trash2 } from 'lucide-react'
-import { useTransition } from 'react'
+import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -11,6 +21,7 @@ import type { Reward } from '@/lib/points/queries'
 
 export function RewardsList({ tenantSlug, rewards }: { tenantSlug: string; rewards: Reward[] }) {
   const [, start] = useTransition()
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
 
   const onToggle = (r: Reward) => {
     start(async () => {
@@ -26,11 +37,13 @@ export function RewardsList({ tenantSlug, rewards }: { tenantSlug: string; rewar
     })
   }
 
-  const onDelete = (id: string) => {
-    if (!confirm('¿Borrar esta recompensa?')) return
+  const onConfirmDelete = () => {
+    if (!pendingDelete) return
+    const id = pendingDelete
     start(async () => {
       const result = await deleteReward(tenantSlug, id)
       if (!result.ok) toast.error(result.message)
+      setPendingDelete(null)
     })
   }
 
@@ -75,13 +88,38 @@ export function RewardsList({ tenantSlug, rewards }: { tenantSlug: string; rewar
             size="icon"
             variant="ghost"
             className="size-7 text-muted-foreground hover:text-destructive"
-            onClick={() => onDelete(r.id)}
+            onClick={() => setPendingDelete(r.id)}
             aria-label="Borrar"
           >
             <Trash2 className="size-3.5" />
           </Button>
         </div>
       ))}
+
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Borrar esta recompensa?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Los clientes ya no podrán canjearla. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={onConfirmDelete}
+            >
+              Borrar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

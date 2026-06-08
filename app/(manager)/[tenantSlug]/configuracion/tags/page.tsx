@@ -24,14 +24,15 @@ export default async function TagsPage({ params }: { params: Promise<{ tenantSlu
   const [tags, items] = await Promise.all([listItemTags(tenantId), listMenuItemsWithTags(tenantId)])
 
   return (
-    <main className="space-y-6 py-6">
+    <div className="space-y-6">
       <PageHeader
+        eyebrow="Configuración · Tags"
         title="Tags de carta"
         description="Etiquetá ítems para usar en punch cards (#cafe, #vegano, etc.)"
       />
       <Section>
         <TagsManager tenantSlug={tenantSlug} initialTags={tags} initialItems={items} />
       </Section>
-    </main>
+    </div>
   )
 }

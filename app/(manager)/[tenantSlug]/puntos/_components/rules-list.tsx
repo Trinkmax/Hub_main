@@ -1,8 +1,18 @@
 'use client'
 
 import { Pause, Play, Trash2 } from 'lucide-react'
-import { useTransition } from 'react'
+import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -20,6 +30,7 @@ export function RulesList({
   menu: { items: MenuItem[]; categories: MenuCategory[] }
 }) {
   const [, start] = useTransition()
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
 
   const describe = (rule: PointsRule): string => {
     if (rule.type === 'per_amount') {
@@ -45,11 +56,13 @@ export function RulesList({
     })
   }
 
-  const onDelete = (id: string) => {
-    if (!confirm('¿Borrar esta regla?')) return
+  const onConfirmDelete = () => {
+    if (!pendingDelete) return
+    const id = pendingDelete
     start(async () => {
       const r = await deleteRule(tenantSlug, id)
       if (!r.ok) toast.error(r.message)
+      setPendingDelete(null)
     })
   }
 
@@ -90,13 +103,38 @@ export function RulesList({
             size="icon"
             variant="ghost"
             className="size-7 text-muted-foreground hover:text-destructive"
-            onClick={() => onDelete(r.id)}
+            onClick={() => setPendingDelete(r.id)}
             aria-label="Borrar"
           >
             <Trash2 className="size-3.5" />
           </Button>
         </div>
       ))}
+
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Borrar esta regla?</AlertDialogTitle>
+            <AlertDialogDescription>
+              La regla dejará de otorgar puntos. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={onConfirmDelete}
+            >
+              Borrar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

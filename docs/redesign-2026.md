@@ -90,6 +90,48 @@ Configuración se reagrupa en 4 dominios con sub-nav lateral.
 
 Bookmarks viejos siguen vivos via redirects 308 en `next.config.ts`.
 
+### Después v2 — ordenado por flujo operativo (jun 2026)
+
+A pedido del dueño, el sidebar se reordena para seguir su **flujo de trabajo**
+real (no por dominio técnico) y se sacan a la luz secciones de Marketing que
+estaban escondidas (solo en ⌘K).
+
+```
+MANAGER  /[slug]
+  HOY         Resumen · Operativo (newTab) · Bandeja · Acreditar
+  CALENDARIO  Calendario        ⟨pestañas internas: Calendario | Eventos⟩
+  RESERVAS    Reservas
+  SALÓN       Plano · Captura QRs · Auto-aceptación
+  CLIENTES    Personas · Visitas
+  MARKETING   Shows y fiestas · Difusiones · Audiencias · Flows
+  CATÁLOGO    Menú · Puntos · Punch cards
+  INSIGHTS    Estadísticas · Comisiones
+  AYUDA       Documentación
+  AJUSTES     Configuración
+```
+
+Cambios clave:
+
+- **`Templates` deja de ser item de nav.** Era jerga de dev; el dueño los
+  llama "Eventos". Ahora son una **pestaña interna de Calendario**
+  (`/eventos/programados?tab=eventos`), que es el mental model: definís el
+  formato (Sushi Libre) y lo programás en el mes. `/eventos/templates` queda
+  como redirect a esa pestaña.
+- **Dos sistemas de eventos, ahora separados por nombre.** No comparten datos:
+  `scheduled_events`/`scheduled_event_templates` (cupos de salón) = **Calendario**;
+  `events`/`event_attendees` (fiestas/peñas/shows con invitados, waitlist y
+  check-in) = **Shows y fiestas** (bajo Marketing). Antes ambos colgaban de
+  `/eventos/*` y `/eventos/programados` parecía sub-recurso del hub de
+  marketing — jerarquía falsa que se corta (se sacó el "Volver a Eventos").
+- **Marketing visible.** Difusiones, Audiencias, Flows y Shows y fiestas no
+  estaban en el sidebar (solo ⌘K) pese a ser el core del producto. Ahora viven
+  en el grupo **Marketing**, ordenado: el evento que se promociona → cómo se
+  comunica → a quién → en automático.
+- **`Local` → `Salón`** (alineado con el workspace salon) y **Bandeja** sube a
+  Hoy (tenía eyebrow "Hoy" pero estaba fuera del nav).
+- **⌘K saneado:** links muertos a `/configuracion/mensajeria?tab=…` (ruta
+  inexistente) reapuntados a `/configuracion/templates` y `/configuracion/tags`.
+
 ---
 
 ## Decisiones técnicas no obvias

@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
 import { requireTenantAccess, TenantNotFoundError } from '@/lib/tenant'
 import { DocsContent } from './_components/docs-content'
 
@@ -18,12 +19,12 @@ export default async function DocsPage({ params }: { params: Promise<{ tenantSlu
   }
 
   return (
-    <main className="space-y-6 py-6">
+    <PageShell width="default">
       <PageHeader
         title="Documentación"
         description="Guía completa del sistema. Consultala cuando tengas dudas."
       />
       <DocsContent tenantSlug={tenantSlug} role={role} />
-    </main>
+    </PageShell>
   )
 }

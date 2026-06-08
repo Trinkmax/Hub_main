@@ -83,7 +83,7 @@ export default async function TemplatesPage({
   }>
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Configuración"
         title="Plantillas de WhatsApp"

@@ -3,6 +3,16 @@
 import { Plus, Save, Trash2 } from 'lucide-react'
 import { useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -28,6 +38,7 @@ export function RateTiersEditor({
 }) {
   const [tiers, setTiers] = useState<Draft[]>(initial)
   const [pending, startTransition] = useTransition()
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
 
   const byMeal = useMemo(() => {
     const out = new Map<MealType, Draft[]>()
@@ -87,15 +98,21 @@ export function RateTiersEditor({
       setTiers((prev) => prev.filter((x) => x !== t))
       return
     }
-    if (!confirm('¿Borrar este tier?')) return
+    setPendingDelete(t.id)
+  }
+
+  function confirmRemove() {
+    if (!pendingDelete) return
+    const id = pendingDelete
     startTransition(async () => {
-      const r = await removeRateTier(tenantSlug, t.id ?? '')
+      const r = await removeRateTier(tenantSlug, id)
       if (r.ok) {
-        setTiers((prev) => prev.filter((x) => x !== t))
+        setTiers((prev) => prev.filter((x) => x.id !== id))
         toast.success('Tier eliminado.')
       } else {
         toast.error(r.message)
       }
+      setPendingDelete(null)
     })
   }
 
@@ -174,6 +191,32 @@ export function RateTiersEditor({
           </div>
         </section>
       ))}
+
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Borrar este tier?</AlertDialogTitle>
+            <AlertDialogDescription>
+              El tramo de comisión dejará de aplicarse. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={pending}
+              onClick={confirmRemove}
+            >
+              Borrar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

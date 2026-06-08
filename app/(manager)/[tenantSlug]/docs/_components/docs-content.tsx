@@ -101,6 +101,7 @@ export function DocsContent({ tenantSlug, role }: { tenantSlug: string; role: st
               <a
                 href={`#${s.id}`}
                 onClick={() => setActive(s.id)}
+                aria-current={active === s.id ? 'page' : undefined}
                 className={cn(
                   'flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors',
                   active === s.id
@@ -148,7 +149,7 @@ function Tip({ children }: { children: React.ReactNode }) {
 }
 function Note({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+    <div className="mt-4 rounded-lg border border-info/30 bg-info/10 p-3 text-xs text-info">
       <strong>Nota:</strong> {children}
     </div>
   )

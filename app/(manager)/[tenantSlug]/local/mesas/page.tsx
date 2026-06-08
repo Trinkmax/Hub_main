@@ -2,6 +2,7 @@ import { LayoutGrid } from 'lucide-react'
 import { notFound } from 'next/navigation'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
 import type { LiveFloorData } from '@/lib/floor-plan/queries'
 import { getFloorPlan, getLiveFloor, listFloorAreas } from '@/lib/floor-plan/queries'
 import { requireTenantAccess } from '@/lib/tenant'
@@ -60,7 +61,7 @@ export default async function MesasPage({ params }: { params: Promise<{ tenantSl
   ].sort((a, b) => a.label.localeCompare(b.label, 'es'))
 
   return (
-    <main className="space-y-6 py-6">
+    <PageShell width="wide">
       <PageHeader
         title="Plano de mesas"
         description="Dibujá la distribución real del local: arrastrá elementos desde la paleta al lienzo, reubicalos y gestioná cada QR. Cambiá a En vivo para ver el estado de cada mesa."
@@ -86,6 +87,6 @@ export default async function MesasPage({ params }: { params: Promise<{ tenantSl
           />
         </FloorPlanErrorBoundary>
       )}
-    </main>
+    </PageShell>
   )
 }

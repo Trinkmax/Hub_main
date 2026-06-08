@@ -2,9 +2,20 @@
 
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
-import { useEffect, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -43,6 +54,7 @@ export function ScheduledEventForm({
 }: Props) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const form = useForm<ScheduledEventFormInput>({
     resolver: zodResolver(scheduledEventSchema) as never,
@@ -89,10 +101,10 @@ export function ScheduledEventForm({
 
   const onDelete = () => {
     if (!initialValues?.id) return
-    if (!confirm('¿Borrar este evento programado?')) return
     startTransition(async () => {
       const r = await deleteScheduledEvent(tenantSlug, initialValues.id ?? '')
       if (r.ok) {
+        setConfirmDelete(false)
         toast.success('Evento eliminado.')
         router.push(`/${tenantSlug}/eventos/programados`)
         router.refresh()
@@ -214,9 +226,31 @@ export function ScheduledEventForm({
 
       <div className="flex flex-wrap items-center justify-end gap-2">
         {mode === 'edit' && initialValues?.id ? (
-          <Button type="button" variant="ghost" onClick={onDelete} disabled={pending}>
-            Borrar
-          </Button>
+          <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+            <AlertDialogTrigger asChild>
+              <Button type="button" variant="ghost" disabled={pending}>
+                Borrar
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>¿Borrar este evento programado?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Se eliminará de forma permanente. Esta acción no se puede deshacer.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={onDelete}
+                  disabled={pending}
+                  className="bg-destructive text-white hover:bg-destructive/90"
+                >
+                  Borrar
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         ) : null}
         <Button type="submit" disabled={pending}>
           {pending ? 'Guardando…' : mode === 'create' ? 'Programar' : 'Guardar cambios'}

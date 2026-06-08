@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
 import { Section } from '@/components/ui/section'
 import { listItemTags } from '@/lib/item-tags/queries'
 import { listPunchCardTemplates } from '@/lib/punch-cards/queries'
@@ -37,7 +38,7 @@ export default async function PunchCardsPage({
   ])
 
   return (
-    <main className="space-y-6 py-6">
+    <PageShell width="wide">
       <PageHeader
         eyebrow="Catálogo"
         title="Punch cards"
@@ -53,6 +54,6 @@ export default async function PunchCardsPage({
           rewards={rewards ?? []}
         />
       </Section>
-    </main>
+    </PageShell>
   )
 }

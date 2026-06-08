@@ -1,4 +1,5 @@
-import { Inbox, MessageSquareDashed } from 'lucide-react'
+import { ArrowLeft, Inbox, MessageSquareDashed } from 'lucide-react'
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
@@ -9,6 +10,7 @@ import {
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
+import { cn } from '@/lib/utils'
 import { ConversationList } from './_components/conversation-list'
 import { ConversationView } from './_components/conversation-view'
 
@@ -39,7 +41,7 @@ export default async function BandejaPage({
   const templates = await listApprovedTemplates(access.tenant.id)
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-3.5rem)] w-full max-w-7xl flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
+    <div className="mx-auto flex h-[calc(100dvh-3.5rem)] w-full max-w-7xl flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
       <PageHeader
         eyebrow="Hoy"
         title="Bandeja"
@@ -48,7 +50,12 @@ export default async function BandejaPage({
       />
 
       <div className="card-hairline flex flex-1 overflow-hidden rounded-xl border bg-card">
-        <aside className="flex w-full max-w-[320px] shrink-0 flex-col border-r border-border/60 bg-surface/40">
+        <aside
+          className={cn(
+            'w-full flex-col border-r border-border/60 bg-surface/40 md:flex md:w-[320px] md:max-w-[320px] md:shrink-0',
+            selectedId ? 'hidden' : 'flex',
+          )}
+        >
           <header className="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-3">
             <div className="flex items-center gap-2">
               <Inbox className="size-4 text-primary" />
@@ -64,16 +71,29 @@ export default async function BandejaPage({
             selectedId={selectedId ?? null}
           />
         </aside>
-        <section className="flex flex-1 overflow-hidden">
+        <section
+          className={cn('flex-1 flex-col overflow-hidden md:flex', selectedId ? 'flex' : 'hidden')}
+        >
           {selectedId ? (
-            <ConversationView
-              tenantSlug={tenantSlug}
-              tenantId={access.tenant.id}
-              conversationId={selectedId}
-              templates={templates}
-            />
+            <>
+              <div className="border-b border-border/60 px-3 py-2 md:hidden">
+                <Link
+                  href={`/${tenantSlug}/bandeja`}
+                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary/40 hover:text-foreground"
+                >
+                  <ArrowLeft className="size-4" />
+                  Volver
+                </Link>
+              </div>
+              <ConversationView
+                tenantSlug={tenantSlug}
+                tenantId={access.tenant.id}
+                conversationId={selectedId}
+                templates={templates}
+              />
+            </>
           ) : (
-            <div className="flex w-full items-center justify-center p-6">
+            <div className="flex w-full flex-1 items-center justify-center p-6">
               <EmptyState
                 icon={MessageSquareDashed}
                 title="Elegí una conversación"

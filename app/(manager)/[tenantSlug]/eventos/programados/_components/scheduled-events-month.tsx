@@ -203,7 +203,18 @@ export function ScheduledEventsMonth({
             <ChevronRight className="size-4" />
           </Button>
         </header>
-        <div className="grid grid-cols-7 gap-1.5 text-xs">
+        {/* Agenda vertical para mobile: la grilla 7-col deja celdas ilegibles en celular.
+            El drag-and-drop queda solo en >=sm; en mobile se programa con el botón + por día. */}
+        <div className="space-y-2 sm:hidden">
+          <MonthAgenda
+            ym={ym}
+            events={events}
+            tenantSlug={tenantSlug}
+            monthCapacity={monthCapacity}
+            onOpenDay={setDayDialogDate}
+          />
+        </div>
+        <div className="hidden grid-cols-7 gap-1.5 text-xs sm:grid">
           {DOW_LABELS.map((d) => (
             <div
               key={d}
@@ -232,8 +243,11 @@ export function ScheduledEventsMonth({
             />
           ))}
         </div>
-        <p className="mt-3 text-center text-[11px] text-muted-foreground">
+        <p className="mt-3 hidden text-center text-[11px] text-muted-foreground sm:block">
           Arrastrá un template a un día para programar, o un evento a otra fecha para moverlo.
+        </p>
+        <p className="mt-3 text-center text-[11px] text-muted-foreground sm:hidden">
+          Tocá el + de un día para programar un evento.
         </p>
       </div>
 
@@ -278,6 +292,110 @@ function formatShortDate(date: string): string {
     month: 'short',
     timeZone: 'UTC',
   }).format(dt)
+}
+
+function formatAgendaDate(date: string): string {
+  const [y, m, d] = date.split('-').map(Number)
+  if (!y || !m || !d) return date
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  return new Intl.DateTimeFormat('es-AR', {
+    weekday: 'long',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(dt)
+}
+
+// Agenda mensual para mobile: lista de días con eventos (fecha + nombre + hora).
+// Sin drag-and-drop — programar se hace con el botón + de cada día.
+function MonthAgenda({
+  ym,
+  events,
+  tenantSlug,
+  monthCapacity,
+  onOpenDay,
+}: {
+  ym: string
+  events: ScheduledEventWithTemplate[]
+  tenantSlug: string
+  monthCapacity: MonthCapacity
+  onOpenDay: (date: string) => void
+}) {
+  const [y, m] = ym.split('-').map(Number)
+  if (!y || !m) return null
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate()
+
+  const daysWithEvents: Array<{ date: string; events: ScheduledEventWithTemplate[] }> = []
+  for (let d = 1; d <= lastDay; d++) {
+    const dateStr = `${ym}-${String(d).padStart(2, '0')}`
+    const dayEvents = events.filter((e) => e.event_date === dateStr)
+    if (dayEvents.length > 0) daysWithEvents.push({ date: dateStr, events: dayEvents })
+  }
+
+  if (daysWithEvents.length === 0) {
+    return (
+      <p className="rounded-lg border border-border/60 bg-card/40 px-3 py-4 text-center text-xs text-muted-foreground">
+        No hay eventos programados este mes.
+      </p>
+    )
+  }
+
+  return (
+    <>
+      {daysWithEvents.map(({ date, events: dayEvents }) => {
+        const capacity = monthCapacity.days[date] ?? {
+          used: 0,
+          total: monthCapacity.defaultTotal,
+        }
+        return (
+          <div key={date} className="rounded-lg border border-border/60 bg-card/40 p-2">
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => onOpenDay(date)}
+                className="-mx-1 flex items-center gap-2 rounded px-1 py-0.5 text-left transition-colors hover:bg-secondary"
+                aria-label={`Ver reservas del ${date}`}
+              >
+                <span className="text-sm font-semibold capitalize tabular-nums">
+                  {formatAgendaDate(date)}
+                </span>
+                <CapacityBadge used={capacity.used} total={capacity.total} />
+              </button>
+              <Link
+                href={`/${tenantSlug}/eventos/programados/nuevo?date=${date}`}
+                className="rounded p-1 text-muted-foreground transition-colors hover:bg-secondary"
+                aria-label={`Programar evento ${date}`}
+              >
+                <Plus className="size-4" />
+              </Link>
+            </div>
+            <div className="space-y-1">
+              {dayEvents.map((e) => {
+                const color = e.template?.color_hex ?? '#7c3aed'
+                return (
+                  <Link
+                    key={e.id}
+                    href={`/${tenantSlug}/eventos/programados/${e.id}`}
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium leading-snug transition-transform"
+                    style={{ backgroundColor: `${color}1f`, color }}
+                  >
+                    <span className="font-mono text-[11px] tabular-nums opacity-80">
+                      {e.starts_at_local.slice(0, 5)}
+                    </span>
+                    <span className="truncate">
+                      {e.name_override ?? e.template?.name ?? 'Evento'}
+                    </span>
+                    <span className="ml-auto shrink-0 text-[10px] tabular-nums opacity-70">
+                      {e.capacity}
+                    </span>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+    </>
+  )
 }
 
 function TemplateRail({ templates }: { templates: ScheduledEventTemplateRow[] }) {

@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
-import { Section } from '@/components/ui/section'
+import { PageShell } from '@/components/ui/page-shell'
 import { getTenantConfig } from '@/lib/admin/tenant-config'
 import { requireTenantAccess } from '@/lib/tenant'
 import { AutoAcceptForm } from './_components/auto-accept-form'
@@ -27,14 +27,13 @@ export default async function AutoAcceptPage({
   if (!config) notFound()
 
   return (
-    <main className="space-y-6 py-6">
+    <PageShell width="compact">
       <PageHeader
+        eyebrow="Salón"
         title="Auto-aceptación de comandas"
         description="Configurá si las comandas del comensal van directo a cocina o esperan al mozo."
       />
-      <Section>
-        <AutoAcceptForm tenantSlug={tenantSlug} initialConfig={config} />
-      </Section>
-    </main>
+      <AutoAcceptForm tenantSlug={tenantSlug} initialConfig={config} />
+    </PageShell>
   )
 }

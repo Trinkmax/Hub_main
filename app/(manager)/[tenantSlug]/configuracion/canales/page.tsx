@@ -42,7 +42,7 @@ export default async function CanalesPage({
   const ig = channels.find((c) => c.type === 'instagram')
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Configuración"
         title="Canales"

@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import type { MembershipWithTenant, Tenant, TenantRole } from './types'
 
@@ -12,20 +13,20 @@ function pickTenant(raw: RawJoinedRow['tenant']): MembershipWithTenant['tenant']
   return raw
 }
 
-export async function getCurrentUser() {
+// cache() deduplica el getUser() (round-trip a Supabase Auth) entre el layout, la
+// page y los demás helpers de tenant dentro de un mismo render de request.
+export const getCurrentUser = cache(async () => {
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
   return user
-}
+})
 
 export async function getMembershipsForUser(): Promise<MembershipWithTenant[]> {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getCurrentUser()
   if (!user) return []
+  const supabase = await createClient()
 
   // Filtramos por user_id: la RLS muestra memberships de otros del mismo bar,
   // sin este filtro listaríamos miembros ajenos como si fueran del usuario.

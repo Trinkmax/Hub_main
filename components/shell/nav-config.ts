@@ -33,15 +33,22 @@ export type ResolvedNavGroup = {
 }
 
 /**
- * Information architecture del Manager Workspace — 7 dominios.
- * Cada dominio agrupa por job-to-be-done del owner:
- *   HOY       — qué está pasando ahora
- *   CLIENTES  — quién viene
- *   MARKETING — cómo los traigo de vuelta
- *   LOCAL     — cómo está armado el salón
- *   CATÁLOGO  — qué vendo y cómo se premia
- *   INSIGHTS  — qué entiendo
- *   AJUSTES   — cómo lo configuro
+ * Information architecture del Manager Workspace, ordenada por el FLUJO DE TRABAJO
+ * del dueño (no por dominio técnico): primero el día, después se arma el mes
+ * (Calendario), se gestionan las Reservas que caen, se prepara el Salón físico,
+ * se atiende al Cliente, se hace Marketing para traerlos de vuelta, se mantiene
+ * el Catálogo, se miran los Insights y al final los Ajustes.
+ *
+ *   HOY        — qué está pasando ahora (resumen, salón en vivo, bandeja, acreditar)
+ *   CALENDARIO — el mes de eventos programados (Sushi/Pizza Libre); los "Eventos"
+ *                (ex-Templates) son una PESTAÑA adentro, no un item de nav
+ *   RESERVAS   — quién reservó para esas fechas
+ *   SALÓN      — disposición física: plano, QRs de mesa, flujo de comandas
+ *   CLIENTES   — el CRM: quién viene y su historial
+ *   MARKETING  — cómo los traigo de vuelta (shows, difusiones, audiencias, flows)
+ *   CATÁLOGO   — qué vendo y cómo premio la recurrencia
+ *   INSIGHTS   — qué entiendo del negocio
+ *   AYUDA / AJUSTES
  */
 export const NAV_GROUPS: NavGroup[] = [
   {
@@ -60,6 +67,11 @@ export const NAV_GROUPS: NavGroup[] = [
         newTab: true,
       },
       {
+        label: 'Bandeja',
+        href: (s) => `/${s}/bandeja`,
+        icon: 'Inbox',
+      },
+      {
         label: 'Acreditar',
         href: (s) => `/${s}/acreditar`,
         icon: 'ScanLine',
@@ -67,13 +79,18 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: 'Clientes',
+    label: 'Calendario',
     items: [
       {
-        label: 'Personas',
-        href: (s) => `/${s}/clientes`,
-        icon: 'Users',
+        label: 'Calendario',
+        href: (s) => `/${s}/eventos/programados`,
+        icon: 'CalendarDays',
       },
+    ],
+  },
+  {
+    label: 'Reservas',
+    items: [
       {
         label: 'Reservas',
         href: (s) => `/${s}/reservas`,
@@ -82,23 +99,7 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: 'Eventos',
-    items: [
-      {
-        label: 'Calendario',
-        href: (s) => `/${s}/eventos/programados`,
-        icon: 'CalendarDays',
-      },
-      {
-        label: 'Templates',
-        href: (s) => `/${s}/eventos/templates`,
-        icon: 'Sparkles',
-        roles: ['owner'],
-      },
-    ],
-  },
-  {
-    label: 'Local',
+    label: 'Salón',
     items: [
       {
         label: 'Plano',
@@ -116,6 +117,50 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'Auto-aceptación',
         href: (s) => `/${s}/local/auto-aceptacion`,
         icon: 'Zap',
+        roles: ['owner'],
+      },
+    ],
+  },
+  {
+    label: 'Clientes',
+    items: [
+      {
+        label: 'Personas',
+        href: (s) => `/${s}/clientes`,
+        icon: 'Users',
+      },
+      {
+        label: 'Visitas',
+        href: (s) => `/${s}/visitas/nueva`,
+        icon: 'Receipt',
+      },
+    ],
+  },
+  {
+    label: 'Marketing',
+    items: [
+      {
+        label: 'Shows y fiestas',
+        href: (s) => `/${s}/eventos`,
+        icon: 'PartyPopper',
+        roles: ['owner'],
+      },
+      {
+        label: 'Difusiones',
+        href: (s) => `/${s}/difusiones`,
+        icon: 'Megaphone',
+        roles: ['owner'],
+      },
+      {
+        label: 'Audiencias',
+        href: (s) => `/${s}/audiencias`,
+        icon: 'UsersRound',
+        roles: ['owner'],
+      },
+      {
+        label: 'Flows',
+        href: (s) => `/${s}/flows`,
+        icon: 'Workflow',
         roles: ['owner'],
       },
     ],

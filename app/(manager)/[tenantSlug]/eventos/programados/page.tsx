@@ -1,9 +1,9 @@
-import { ArrowLeft, CalendarPlus, Settings2 } from 'lucide-react'
+import { CalendarPlus } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
 import {
   getMonthCapacity,
   listScheduledEventsForDateRange,
@@ -15,9 +15,9 @@ import {
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
-import { ScheduledEventsMonth } from './_components/scheduled-events-month'
+import { CalendarTabs } from './_components/calendar-tabs'
 
-export const metadata = { title: 'Eventos programados' }
+export const metadata = { title: 'Calendario' }
 export const dynamic = 'force-dynamic'
 
 function defaultRange(monthStr?: string): { from: string; to: string; ymCurrent: string } {
@@ -36,7 +36,7 @@ function defaultRange(monthStr?: string): { from: string; to: string; ymCurrent:
   return { from, to, ymCurrent: ym }
 }
 
-export default async function ProgramadosPage({
+export default async function CalendarioPage({
   params,
   searchParams,
 }: {
@@ -46,6 +46,7 @@ export default async function ProgramadosPage({
   const { tenantSlug } = await params
   const sp = await searchParams
   const monthStr = typeof sp.month === 'string' ? sp.month : undefined
+  const defaultTab = sp.tab === 'eventos' ? 'eventos' : 'calendario'
 
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
@@ -60,65 +61,36 @@ export default async function ProgramadosPage({
   const { from, to, ymCurrent } = defaultRange(monthStr)
   const [events, templates, monthCapacity] = await Promise.all([
     listScheduledEventsForDateRange({ tenantId: access.tenant.id, from, to }),
-    listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: true }),
+    listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: false }),
     getMonthCapacity({ tenantId: access.tenant.id, ym: ymCurrent }),
   ])
+  const activeTemplates = templates.filter((t) => t.active)
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+    <PageShell width="wide">
       <PageHeader
-        eyebrow={
-          <Link
-            href={`/${tenantSlug}/eventos`}
-            className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="size-3.5" />
-            Volver a Eventos
-          </Link>
-        }
-        title="Eventos programados"
-        description="Calendario mensual de Sushi Libre, Pizza Libre, Ramen y más. Cada instancia tiene su cupo y fecha."
+        eyebrow="Eventos"
+        title="Calendario"
+        description="El mes de Sushi Libre, Pizza Libre, Ramen y más. Programá cada evento en su fecha con su cupo, y gestioná el catálogo de formatos desde la pestaña Eventos."
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Button asChild variant="outline" className="gap-2">
-              <Link href={`/${tenantSlug}/eventos/templates`}>
-                <Settings2 className="size-4" />
-                Templates
-              </Link>
-            </Button>
-            <Button asChild className="gap-2">
-              <Link href={`/${tenantSlug}/eventos/programados/nuevo`}>
-                <CalendarPlus className="size-4" />
-                Programar evento
-              </Link>
-            </Button>
-          </div>
+          <Button asChild className="gap-2">
+            <Link href={`/${tenantSlug}/eventos/programados/nuevo`}>
+              <CalendarPlus className="size-4" />
+              Programar evento
+            </Link>
+          </Button>
         }
       />
 
-      {templates.length === 0 ? (
-        <EmptyState
-          icon={Settings2}
-          title="Configurá los templates primero"
-          description="Sushi Libre, Pizza Libre, Ramen, etc. — necesitás al menos un template para programar eventos."
-          action={
-            <Button asChild className="gap-2">
-              <Link href={`/${tenantSlug}/eventos/templates`}>
-                <Settings2 className="size-4" />
-                Crear templates
-              </Link>
-            </Button>
-          }
-        />
-      ) : (
-        <ScheduledEventsMonth
-          tenantSlug={tenantSlug}
-          ym={ymCurrent}
-          events={events}
-          templates={templates}
-          monthCapacity={monthCapacity}
-        />
-      )}
-    </div>
+      <CalendarTabs
+        tenantSlug={tenantSlug}
+        ym={ymCurrent}
+        events={events}
+        templates={templates}
+        activeTemplates={activeTemplates}
+        monthCapacity={monthCapacity}
+        defaultTab={defaultTab}
+      />
+    </PageShell>
   )
 }

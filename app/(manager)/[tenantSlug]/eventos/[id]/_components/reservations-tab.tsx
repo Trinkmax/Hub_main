@@ -3,6 +3,16 @@
 import { Plus, Search, Users } from 'lucide-react'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -29,7 +39,8 @@ export function ReservationsTab({
 }) {
   const [query, setQuery] = useState('')
   const [openNew, setOpenNew] = useState(false)
-  const [, start] = useTransition()
+  const [cancelId, setCancelId] = useState<string | null>(null)
+  const [pending, start] = useTransition()
 
   const visible = reservations
     .filter((r) => r.status === 'confirmed' || r.status === 'checked_in')
@@ -51,12 +62,15 @@ export function ReservationsTab({
     })
   }
 
-  const onCancel = (id: string) => {
-    if (!confirm('¿Cancelar esta reserva?')) return
+  const onConfirmCancel = () => {
+    if (!cancelId) return
     start(async () => {
-      const r = await cancelReservation(tenantSlug, id)
+      const r = await cancelReservation(tenantSlug, cancelId)
       if (!r.ok) toast.error(r.message)
-      else toast.success(r.promoted_id ? 'Cancelada · promovió waitlist' : 'Cancelada')
+      else {
+        setCancelId(null)
+        toast.success(r.promoted_id ? 'Cancelada · promovió waitlist' : 'Cancelada')
+      }
     })
   }
 
@@ -132,7 +146,7 @@ export function ReservationsTab({
                   size="sm"
                   variant="ghost"
                   className="text-muted-foreground hover:text-destructive"
-                  onClick={() => onCancel(r.id)}
+                  onClick={() => setCancelId(r.id)}
                 >
                   Cancelar
                 </Button>
@@ -149,6 +163,28 @@ export function ReservationsTab({
           onClose={() => setOpenNew(false)}
         />
       ) : null}
+
+      <AlertDialog open={cancelId !== null} onOpenChange={(open) => !open && setCancelId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Cancelar esta reserva?</AlertDialogTitle>
+            <AlertDialogDescription>
+              La reserva quedará cancelada. Si hay lista de espera, se promueve al próximo en la
+              fila.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Volver</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={onConfirmCancel}
+              disabled={pending}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              Cancelar reserva
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -3,6 +3,16 @@
 import { Plus, Save, Trash2 } from 'lucide-react'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -33,6 +43,7 @@ export function ZoneCapacityEditor({
   const [pb, setPB] = useState(defaults.planta_baja)
   const [overrides, setOverrides] = useState(initialOverrides)
   const [pending, startTransition] = useTransition()
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
 
   // Nuevo override
   const [newZone, setNewZone] = useState<'planta_alta' | 'planta_baja'>('planta_alta')
@@ -98,8 +109,9 @@ export function ZoneCapacityEditor({
     })
   }
 
-  function deleteOverride(id: string) {
-    if (!confirm('¿Borrar este override?')) return
+  function confirmDeleteOverride() {
+    if (!pendingDelete) return
+    const id = pendingDelete
     startTransition(async () => {
       const r = await removeZoneOverride(tenantSlug, id)
       if (r.ok) {
@@ -108,6 +120,7 @@ export function ZoneCapacityEditor({
       } else {
         toast.error(r.message)
       }
+      setPendingDelete(null)
     })
   }
 
@@ -211,7 +224,7 @@ export function ZoneCapacityEditor({
                     <span className="text-xs text-muted-foreground">· {o.reason}</span>
                   ) : null}
                 </div>
-                <Button size="sm" variant="ghost" onClick={() => deleteOverride(o.id)}>
+                <Button size="sm" variant="ghost" onClick={() => setPendingDelete(o.id)}>
                   <Trash2 className="size-4" />
                 </Button>
               </li>
@@ -219,6 +232,33 @@ export function ZoneCapacityEditor({
           </ul>
         )}
       </section>
+
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Borrar este override?</AlertDialogTitle>
+            <AlertDialogDescription>
+              La zona volverá a usar su capacidad default para esa fecha. Esta acción no se puede
+              deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={pending}
+              onClick={confirmDeleteOverride}
+            >
+              Borrar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }
