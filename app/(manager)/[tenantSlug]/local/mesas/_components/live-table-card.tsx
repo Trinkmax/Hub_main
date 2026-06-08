@@ -4,7 +4,7 @@ import { Receipt, Users } from 'lucide-react'
 import { type CSSProperties, memo } from 'react'
 import { bodyRadius, ChairsSvg } from '@/components/floor-plan/table-glyph'
 import type { LiveTable } from '@/lib/floor-plan/queries'
-import { ARSFormat, elapsedLabel } from '@/lib/salon/format'
+import { ARSFormat } from '@/lib/salon/format'
 import { cn } from '@/lib/utils'
 
 export type LiveTableCardProps = { table: LiveTable; onOpen: (table: LiveTable) => void }
@@ -60,13 +60,14 @@ function LiveTableCardImpl({ table, onOpen }: LiveTableCardProps) {
   const rotation = table.rotation ?? 0
   const title = s?.alias ?? table.label
   const radius = bodyRadius(table.shape, table.corner_radius || 8)
-  const upright: CSSProperties | undefined = rotation
-    ? { transform: `rotate(${-rotation}deg)` }
-    : undefined
+  const hasIndicator = (s?.kitchen && s.kitchen !== 'none') || s?.bill_requested
 
   return (
-    <div
-      className="absolute"
+    <button
+      type="button"
+      onClick={() => onOpen(table)}
+      aria-label={`${title} — ${STATUS_LABEL[status]}${s ? ` · ${ARSFormat(s.total_cents)}` : ''}`}
+      className="group absolute outline-none transition-transform duration-[var(--duration-base)] ease-[var(--ease-out)] hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring/50"
       style={{
         left: table.x,
         top: table.y,
@@ -76,10 +77,13 @@ function LiveTableCardImpl({ table, onOpen }: LiveTableCardProps) {
         ...SEAT_VARS[status],
       }}
     >
-      {/* Capa que rota: sillas + cuerpo. */}
+      {/* Capa que rota: SOLO sillas + cuerpo (el texto va derecho, sin rotar). */}
       <div
-        className="relative h-full w-full"
-        style={{ transform: `rotate(${rotation}deg)`, transformOrigin: 'center' }}
+        className="absolute inset-0"
+        style={{
+          transform: rotation ? `rotate(${rotation}deg)` : undefined,
+          transformOrigin: 'center',
+        }}
       >
         <ChairsSvg
           shape={table.shape}
@@ -88,83 +92,66 @@ function LiveTableCardImpl({ table, onOpen }: LiveTableCardProps) {
           height={table.height}
           capacity={table.capacity}
         />
-        <button
-          type="button"
-          onClick={() => onOpen(table)}
-          aria-label={`${title} — ${STATUS_LABEL[status]}${s ? ` · ${ARSFormat(s.total_cents)}` : ''}`}
+        <div
+          className={cn('absolute inset-0 border shadow-sm', STATUS_SURFACE[status])}
           style={{ borderRadius: radius }}
-          className={cn(
-            'group absolute inset-0 flex flex-col items-stretch justify-between overflow-hidden border p-1.5 text-left shadow-sm outline-none transition-[transform,box-shadow] duration-[var(--duration-base)] ease-[var(--ease-out)] hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring/50',
-            STATUS_SURFACE[status],
-          )}
-        >
-          {/* Fila superior: nombre + indicadores (cocina / cuenta). */}
-          <div className="flex items-start justify-between gap-1" style={upright}>
-            <span className="min-w-0 truncate font-serif text-sm font-semibold leading-tight tracking-tight">
-              {table.label}
-            </span>
-            <span className="flex shrink-0 items-center gap-1">
-              {s?.kitchen === 'preparing' ? (
-                <span
-                  className="size-2.5 rounded-full bg-warning ring-2 ring-warning/25"
-                  role="img"
-                  aria-label="Cocina: preparando"
-                  title="Preparando"
-                />
-              ) : null}
-              {s?.kitchen === 'ready' ? (
-                <span
-                  className="size-2.5 animate-pulse rounded-full bg-success ring-2 ring-success/30"
-                  role="img"
-                  aria-label="Cocina: lista"
-                  title="Lista"
-                />
-              ) : null}
-              {s?.bill_requested ? (
-                <Receipt
-                  className="size-3.5 text-destructive"
-                  role="img"
-                  aria-label="Cuenta pedida"
-                />
-              ) : null}
-            </span>
-          </div>
-
-          {/* Fila inferior: estado o métricas de la sesión. */}
-          {s ? (
-            <div className="flex items-end justify-between gap-1" style={upright}>
-              <span className="flex items-center gap-1 text-[11px] text-muted-foreground tabular-nums">
-                {s.party_size !== null ? (
-                  <span className="flex items-center gap-0.5">
-                    <Users className="size-3" aria-hidden />
-                    {s.party_size}
-                  </span>
-                ) : null}
-                <span>{elapsedLabel(s.opened_at)}</span>
-              </span>
-              <span className="font-serif text-xs font-semibold tabular-nums">
-                {ARSFormat(s.total_cents)}
-              </span>
-            </div>
-          ) : (
-            <span
-              className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground"
-              style={upright}
-            >
-              <span className={cn('size-1.5 rounded-full', STATUS_DOT.free)} aria-hidden />
-              {STATUS_LABEL.free}
-            </span>
-          )}
-        </button>
+        />
       </div>
+
+      {/* Indicadores (cocina / cuenta): esquina fija, siempre derechos. */}
+      {hasIndicator ? (
+        <span className="absolute right-1 top-1 z-10 flex items-center gap-1">
+          {s?.kitchen === 'preparing' ? (
+            <span
+              className="size-2.5 rounded-full bg-warning ring-2 ring-warning/25"
+              role="img"
+              aria-label="Cocina: preparando"
+              title="Preparando"
+            />
+          ) : null}
+          {s?.kitchen === 'ready' ? (
+            <span
+              className="size-2.5 animate-pulse rounded-full bg-success ring-2 ring-success/30"
+              role="img"
+              aria-label="Cocina: lista"
+              title="Lista"
+            />
+          ) : null}
+          {s?.bill_requested ? (
+            <Receipt className="size-3.5 text-destructive" role="img" aria-label="Cuenta pedida" />
+          ) : null}
+        </span>
+      ) : null}
+
+      {/* Texto: número centrado + estado/gasto. SIEMPRE derecho (no rota) y
+          centrado → legible en mobile y en mesas rotadas. */}
+      <span className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-1 text-center leading-none">
+        <span className="font-serif text-sm font-semibold tabular-nums">{table.label}</span>
+        {s ? (
+          <span className="flex items-center gap-1 font-serif text-[11px] font-semibold tabular-nums">
+            {s.party_size !== null ? (
+              <span className="flex items-center gap-0.5 font-sans font-normal text-muted-foreground">
+                <Users className="size-2.5" aria-hidden />
+                {s.party_size}
+              </span>
+            ) : null}
+            {ARSFormat(s.total_cents)}
+          </span>
+        ) : (
+          <span className="flex items-center gap-1 font-medium text-[10px] text-muted-foreground">
+            <span className={cn('size-1.5 rounded-full', STATUS_DOT.free)} aria-hidden />
+            {STATUS_LABEL.free}
+          </span>
+        )}
+      </span>
 
       {/* Nombre del grupo debajo de la mesa ocupada (estilo SevenRooms). */}
       {s?.alias ? (
-        <span className="pointer-events-none absolute left-1/2 top-full mt-1 max-w-[140%] -translate-x-1/2 truncate rounded bg-card/80 px-1 text-center text-[11px] font-medium text-foreground/80 backdrop-blur-sm">
+        <span className="pointer-events-none absolute top-full left-1/2 mt-1 max-w-[140%] -translate-x-1/2 truncate rounded bg-card/80 px-1 text-center font-medium text-[11px] text-foreground/80 backdrop-blur-sm">
           {s.alias}
         </span>
       ) : null}
-    </div>
+    </button>
   )
 }
 
