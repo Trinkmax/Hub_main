@@ -1525,6 +1525,7 @@ export type Database = {
           id: string
           image_url: string | null
           name: string
+          parent_id: string | null
           position: number
           tenant_id: string
         }
@@ -1534,6 +1535,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           name: string
+          parent_id?: string | null
           position?: number
           tenant_id: string
         }
@@ -1543,6 +1545,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           name?: string
+          parent_id?: string | null
           position?: number
           tenant_id?: string
         }
