@@ -123,15 +123,17 @@ export function SalonView({
     setAlias('')
   }, [])
 
-  // Tap en una mesa del plano en vivo: con sesión → su detalle; sin sesión no es
-  // navegable (la activación de mesas libres vive en la pestaña Lista).
+  // Tap en una mesa del plano en vivo: con sesión → su detalle; sin sesión →
+  // abre el flujo de activación (comensales + alias), igual que la Lista.
   const onLiveTableOpen = useCallback(
     (table: LiveTable) => {
       if (table.session) {
         router.push(`/${tenantSlug}/salon/mesas/${table.session.id}`)
+        return
       }
+      onPickFreeTable(table.physical_table_id, table.label)
     },
-    [router, tenantSlug],
+    [router, tenantSlug, onPickFreeTable],
   )
 
   const confirm = useCallback(() => {

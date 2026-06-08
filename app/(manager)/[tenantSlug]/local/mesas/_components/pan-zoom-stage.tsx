@@ -19,6 +19,8 @@ export type PanZoomStageProps = {
   onBackgroundClick?: () => void
   /** Tamaño de la grilla CSS de fondo (px lógicos). Default GRID. */
   gridSize?: number
+  /** Id de un elemento DOM (dentro del stage) al que encajar con "Ajustar". */
+  fitTargetId?: string
   /** Clase del wrapper externo (alto del viewport, etc.). */
   className?: string
   /** FloorElements (editor) o LiveTableCards (live), posicionados absolute en coords lógicas. */
@@ -44,6 +46,7 @@ export function PanZoomStage({
   interactive = false,
   onBackgroundClick,
   gridSize,
+  fitTargetId,
   className,
   children,
 }: PanZoomStageProps) {
@@ -51,8 +54,14 @@ export function PanZoomStage({
 
   const onZoomIn = () => transformRef.current?.zoomIn()
   const onZoomOut = () => transformRef.current?.zoomOut()
-  // "Fit": re-encuadra el stage en el viewport (centra y escala a contenido).
-  const onFit = () => transformRef.current?.centerView(undefined, 200, 'easeOut')
+  // "Fit": encaja el contenido (bbox de elementos) si hay target; si no, el stage.
+  const onFit = () => {
+    const ref = transformRef.current
+    if (!ref) return
+    const target = fitTargetId ? document.getElementById(fitTargetId) : null
+    if (target) ref.zoomToElement(target, undefined, 300, 'easeOut')
+    else ref.centerView(undefined, 200, 'easeOut')
+  }
 
   return (
     <div className={className ?? 'relative w-full'}>
@@ -77,16 +86,17 @@ export function PanZoomStage({
             wrapperStyle={{ width: '100%', height: '100%' }}
             contentStyle={{ width, height }}
           >
-            {/* Stage: tamaño = área lógica; grilla CSS de fondo. */}
+            {/* Stage: tamaño = área lógica; grilla + viñeta token-driven (light + dark). */}
             <div
-              className="relative"
-              style={{
-                width,
-                height,
-                backgroundImage:
-                  'linear-gradient(to right, oklch(0.5 0.02 165 / 0.10) 1px, transparent 1px), linear-gradient(to bottom, oklch(0.5 0.02 165 / 0.10) 1px, transparent 1px)',
-                backgroundSize: `${grid}px ${grid}px`,
-              }}
+              className="fp-canvas relative"
+              style={
+                {
+                  width,
+                  height,
+                  '--fp-grid': `${grid}px`,
+                  '--fp-grid-major': `${grid * 5}px`,
+                } as React.CSSProperties
+              }
               // Click en el stage vacío deselecciona. Si vino de un elemento, su
               // body hizo stopPropagation y el target no es el stage.
               onPointerDown={(e) => {

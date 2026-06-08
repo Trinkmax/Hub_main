@@ -1,8 +1,19 @@
 'use client'
 
-import { Coins, MoreVertical, Plus, Receipt, Tag, Users, XCircle } from 'lucide-react'
+import {
+  ArrowRightLeft,
+  Coins,
+  MoreVertical,
+  Plus,
+  Receipt,
+  Tag,
+  Users,
+  XCircle,
+} from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { MoveTableSheet } from '@/components/floor-plan/move-table-sheet'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -75,7 +86,9 @@ export function SessionDetail({
   const [alias, setAlias] = useState(session.alias ?? '')
   const [currentAlias, setCurrentAlias] = useState<string | null>(session.alias ?? null)
   const [showStaffMenu, setShowStaffMenu] = useState(false)
+  const [showMove, setShowMove] = useState(false)
   const [opPending, startOp] = useTransition()
+  const router = useRouter()
 
   const refresh = useCallback(async () => {
     const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/snapshot`, {
@@ -230,6 +243,10 @@ export function SessionDetail({
                 >
                   <Tag className="mr-1.5 size-4" />
                   Editar alias
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setShowMove(true)}>
+                  <ArrowRightLeft className="mr-1.5 size-4" />
+                  Mover de mesa
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setShowAbandonConfirm(true)}
@@ -409,6 +426,18 @@ export function SessionDetail({
         sessionId={session.id}
         guests={session.guests}
         onSent={() => void refresh()}
+      />
+
+      <MoveTableSheet
+        slug={tenantSlug}
+        sessionId={session.id}
+        currentTableId={null}
+        currentLabel={session.table_label}
+        open={showMove}
+        onOpenChange={setShowMove}
+        onMoved={() => {
+          router.refresh()
+        }}
       />
     </div>
   )

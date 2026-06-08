@@ -29,6 +29,7 @@ import { Switch } from '@/components/ui/switch'
 import {
   mergeTablesAction,
   removeFromPlanAction,
+  setElementShapeAction,
   setElementZIndexAction,
   setTableActiveAction,
   splitTableAction,
@@ -153,6 +154,15 @@ export function TableInspector({
     })
   }
 
+  const onSetShape = (shape: 'rect' | 'circle' | 'banquette') => {
+    if (shape === element.shape) return
+    start(async () => {
+      const r = await setElementShapeAction(slug, element.id, shape)
+      if (r.ok) onChanged()
+      else toast.error(r.message)
+    })
+  }
+
   const busy = pending || updatePending
   const mergeOptions = allTables.filter((t) => t.id !== tableId)
 
@@ -197,6 +207,37 @@ export function TableInspector({
           {updatePending ? 'Guardando…' : 'Guardar'}
         </Button>
       </form>
+
+      <Separator />
+
+      {/* Forma de la mesa (las sillas se redibujan según forma + capacidad) */}
+      <div className="grid gap-1.5">
+        <Label>Forma</Label>
+        <div className="grid grid-cols-3 gap-1 rounded-lg border border-border/60 bg-muted/40 p-0.5">
+          {(
+            [
+              { value: 'circle', label: 'Redonda' },
+              { value: 'rect', label: 'Rectangular' },
+              { value: 'banquette', label: 'Banquette' },
+            ] as const
+          ).map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              disabled={busy}
+              onClick={() => onSetShape(opt.value)}
+              aria-pressed={element.shape === opt.value}
+              className={
+                element.shape === opt.value
+                  ? 'rounded-md bg-card px-2 py-1.5 text-center font-medium text-xs shadow-sm'
+                  : 'rounded-md px-2 py-1.5 text-center text-muted-foreground text-xs transition-colors hover:text-foreground'
+              }
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <Separator />
 

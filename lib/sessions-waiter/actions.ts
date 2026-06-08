@@ -240,6 +240,20 @@ export async function moveSessionAction(
   return { ok: true }
 }
 
+export async function loadMoveTargetsAction(
+  slug: string,
+  excludeTableId?: string,
+): Promise<
+  | { ok: true; targets: import('@/lib/floor-plan/queries').MoveTarget[] }
+  | { ok: false; message: string }
+> {
+  const access = await authorizeOps(slug)
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+  const { getMoveTargets } = await import('@/lib/floor-plan/queries')
+  const targets = await getMoveTargets(access.tenant.id, excludeTableId)
+  return { ok: true, targets }
+}
+
 export async function splitSessionAction(
   slug: string,
   sourceId: string,

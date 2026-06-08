@@ -1121,6 +1121,7 @@ export type Database = {
         Row: {
           area_id: string
           color: string | null
+          corner_radius: number
           created_at: string
           height: number
           id: string
@@ -1139,6 +1140,7 @@ export type Database = {
         Insert: {
           area_id: string
           color?: string | null
+          corner_radius?: number
           created_at?: string
           height?: number
           id?: string
@@ -1157,6 +1159,7 @@ export type Database = {
         Update: {
           area_id?: string
           color?: string | null
+          corner_radius?: number
           created_at?: string
           height?: number
           id?: string
@@ -3964,8 +3967,17 @@ export type Database = {
       channel_type: "whatsapp" | "instagram"
       customer_source: "qr" | "manual" | "import"
       event_status: "draft" | "published" | "finished" | "cancelled"
-      floor_element_kind: "table" | "wall" | "pillar" | "island" | "bar"
-      floor_element_shape: "rect" | "circle"
+      floor_element_kind:
+        | "table"
+        | "wall"
+        | "pillar"
+        | "island"
+        | "bar"
+        | "door"
+        | "text"
+        | "stage"
+        | "booth"
+      floor_element_shape: "rect" | "circle" | "banquette"
       flow_execution_status: "running" | "completed" | "failed" | "cancelled"
       flow_step_type: "send_template" | "wait" | "condition" | "add_tag"
       flow_trigger_type:
@@ -4176,8 +4188,18 @@ export const Constants = {
       channel_type: ["whatsapp", "instagram"],
       customer_source: ["qr", "manual", "import"],
       event_status: ["draft", "published", "finished", "cancelled"],
-      floor_element_kind: ["table", "wall", "pillar", "island", "bar"],
-      floor_element_shape: ["rect", "circle"],
+      floor_element_kind: [
+        "table",
+        "wall",
+        "pillar",
+        "island",
+        "bar",
+        "door",
+        "text",
+        "stage",
+        "booth",
+      ],
+      floor_element_shape: ["rect", "circle", "banquette"],
       flow_execution_status: ["running", "completed", "failed", "cancelled"],
       flow_step_type: ["send_template", "wait", "condition", "add_tag"],
       flow_trigger_type: [

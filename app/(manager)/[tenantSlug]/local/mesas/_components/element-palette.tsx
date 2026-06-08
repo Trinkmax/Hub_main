@@ -1,9 +1,9 @@
 'use client'
 
-import { Box, Columns3, Square, Table2, Wine } from 'lucide-react'
+import { Box, Columns3, DoorOpen, Music, Square, Table2, Type, Wine } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
-type Kind = 'table' | 'wall' | 'pillar' | 'island' | 'bar'
+type Kind = 'table' | 'wall' | 'pillar' | 'island' | 'bar' | 'door' | 'text' | 'stage'
 
 export type ElementPaletteProps = {
   /** Fallback tap/teclado: agrega el elemento en el centro del área visible. */
@@ -14,13 +14,16 @@ export type ElementPaletteProps = {
   shouldSuppressClick: () => boolean
 }
 
-// kind + label es-AR + ícono. "Mesa" primero (acción principal), luego decoración.
+// kind + label es-AR + ícono. "Mesa" primero (acción principal), luego estructura.
 const ITEMS: { kind: Kind; label: string; Icon: typeof Box; primary?: boolean }[] = [
   { kind: 'table', label: 'Mesa', Icon: Table2, primary: true },
+  { kind: 'bar', label: 'Barra', Icon: Wine },
   { kind: 'wall', label: 'Pared', Icon: Columns3 },
   { kind: 'pillar', label: 'Columna', Icon: Box },
   { kind: 'island', label: 'Isla', Icon: Square },
-  { kind: 'bar', label: 'Barra', Icon: Wine },
+  { kind: 'door', label: 'Puerta', Icon: DoorOpen },
+  { kind: 'stage', label: 'Escenario', Icon: Music },
+  { kind: 'text', label: 'Texto', Icon: Type },
 ]
 
 export function ElementPalette({

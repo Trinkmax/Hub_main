@@ -38,6 +38,10 @@ const KIND_LABELS: Record<ElementRow['kind'], string> = {
   pillar: 'Columna',
   island: 'Isla',
   bar: 'Barra',
+  door: 'Puerta',
+  text: 'Texto',
+  stage: 'Escenario',
+  booth: 'Box',
 }
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/

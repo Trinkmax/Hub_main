@@ -1,12 +1,21 @@
 'use client'
 
-import { type CSSProperties, memo, useLayoutEffect, useRef, useState } from 'react'
+import { type CSSProperties, memo, useCallback, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
-import { commitDragPosition, freeDragPosition } from '@/lib/floor-plan/grid'
+import {
+  bodyRadius,
+  ChairsSvg,
+  DecorContent,
+  decorSurfaceClass,
+  decorSurfaceStyle,
+} from '@/components/floor-plan/table-glyph'
+import { clampToArea, freeDragPosition, snapToGrid } from '@/lib/floor-plan/grid'
 import type { ElementRow } from '@/lib/floor-plan/queries'
+import { type Box, computeSnap, type Guide } from '@/lib/floor-plan/snap'
 import { cn } from '@/lib/utils'
 import { readStageTransform } from './pan-zoom-stage'
 import { ResizeHandles } from './resize-handles'
+import { RotateHandle } from './rotate-handle'
 
 type TransformRef = React.RefObject<ReactZoomPanPinchRef | null>
 
@@ -17,12 +26,23 @@ export type FloorElementProps = {
   /** Dimensiones lógicas del área (para clampToArea durante el drag). */
   areaWidth: number
   areaHeight: number
-  onSelect: (id: string) => void
-  /** Commit del move al SOLTAR (una vez por gesto); el editor encola la persistencia. */
-  onMove: (id: string, x: number, y: number) => void
+  /** Selección (additive = shift/cmd para multi-selección). */
+  onSelect: (id: string, additive: boolean) => void
+  /** Cajas de los hermanos (para snap-a-objeto) al iniciar el gesto. */
+  getSiblings: (id: string) => Box[]
+  /** Registra el nodo DOM (para que el editor mueva los pares en grupo). */
+  registerNode: (id: string, node: HTMLDivElement | null) => void
+  /** Delta lógico vivo durante el drag (el editor mueve los pares seleccionados). */
+  onMoveLive: (id: string, dx: number, dy: number) => void
+  /** Commit del move al SOLTAR: delta lógico (el editor aplica al grupo + persiste). */
+  onMoveEnd: (id: string, dx: number, dy: number) => void
   onResizeEnd: (id: string, size: { width: number; height: number }) => void
-  /** Avisos de inicio/fin de gesto (el editor frena el re-seed del RSC mientras se arrastra). */
-  onDragStart?: () => void
+  /** Commit de la rotación al soltar el handle (grados 0..359). */
+  onRotateEnd: (id: string, rotation: number) => void
+  /** Guías de alineación vivas (se dibujan en el stage); [] al terminar. */
+  onGuides: (guides: Guide[]) => void
+  /** Inicio/fin de gesto: el editor frena el re-seed del RSC y asegura la selección. */
+  onDragStart?: (id: string) => void
   onDragEnd?: () => void
 }
 
@@ -33,6 +53,10 @@ const KIND_LABELS: Record<ElementRow['kind'], string> = {
   pillar: 'Columna',
   island: 'Isla',
   bar: 'Barra',
+  door: 'Puerta',
+  text: 'Texto',
+  stage: 'Escenario',
+  booth: 'Box',
 }
 
 // Umbral (px de pantalla) para distinguir click (selección) de drag (mover).
@@ -43,12 +67,11 @@ type DragState = {
   startClientY: number
   origX: number
   origY: number
-  /** Scale del stage capturado al iniciar el gesto (sin re-leer cada frame). */
   scale: number
   moved: boolean
-  /** Último delta de pantalla (para el commit en up/cancel sin depender del evento). */
   lastDx: number
   lastDy: number
+  siblings: Box[]
 }
 
 function FloorElementImpl({
@@ -58,22 +81,34 @@ function FloorElementImpl({
   areaWidth,
   areaHeight,
   onSelect,
-  onMove,
+  getSiblings,
+  registerNode,
+  onMoveLive,
+  onMoveEnd,
   onResizeEnd,
+  onRotateEnd,
+  onGuides,
   onDragStart,
   onDragEnd,
 }: FloorElementProps) {
-  // Nodo posicionado (left/top = ancla committeada). El move vivo se pinta acá con
-  // translate3d, SIN tocar el estado de React (capa GPU, 0 re-render por frame).
   const wrapperRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+  // Etiqueta (número/rótulo): se contra-rota para quedar derecha; durante el gesto
+  // de rotación se actualiza imperativamente para no quedar inclinada.
+  const labelRef = useRef<HTMLSpanElement>(null)
   const drag = useRef<DragState | null>(null)
-  // rAF pendiente que aplica el transform (deduplicado: a lo sumo uno encolado).
   const rafRef = useRef<number | null>(null)
-  // Tamaño transitorio durante el gesto de resize.
   const [liveSize, setLiveSize] = useState<{ width: number; height: number } | null>(null)
 
-  // Si la geometría committeada cambia (post onResizeEnd), descartamos el
-  // tamaño transitorio para dibujar desde la geometría canónica.
+  // Callback ref: setea el wrapper local + registra el nodo en el editor.
+  const setWrapper = useCallback(
+    (node: HTMLDivElement | null) => {
+      wrapperRef.current = node
+      registerNode(element.id, node)
+    },
+    [registerNode, element.id],
+  )
+
   const lastCommittedRef = useRef({ width: element.width, height: element.height })
   if (
     lastCommittedRef.current.width !== element.width ||
@@ -83,16 +118,11 @@ function FloorElementImpl({
     if (liveSize) setLiveSize(null)
   }
 
-  // Cuando React aplica la posición committeada nueva (left/top = element.x/y),
-  // zeramos el translate3d DESPUÉS de la mutación del DOM y antes del paint
-  // (mismo commit) → la mesa "cae" en su lugar sin parpadeo. Durante el drag
-  // element.x/y NO cambia, así que este efecto no corre mid-gesto.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-sync sólo cuando cambia la posición canónica del elemento
   useLayoutEffect(() => {
     if (wrapperRef.current) wrapperRef.current.style.transform = ''
   }, [element.x, element.y])
 
-  // Cancelar cualquier rAF huérfano al desmontar.
   useLayoutEffect(() => {
     return () => {
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
@@ -100,17 +130,18 @@ function FloorElementImpl({
   }, [])
 
   const isTable = element.kind === 'table'
-  const isCircle = element.shape === 'circle'
+  const isBanquette = element.shape === 'banquette'
 
   const displayWidth = liveSize?.width ?? element.width
   const displayHeight = liveSize?.height ?? element.height
+  const rotation = element.rotation ?? 0
+  const radius = bodyRadius(
+    element.shape,
+    isTable ? element.corner_radius || 8 : element.corner_radius,
+  )
 
-  // Pinta la posición libre vigente (sin snap) como delta respecto al ancla left/top.
-  const applyLiveTransform = () => {
-    rafRef.current = null
-    const state = drag.current
-    const node = wrapperRef.current
-    if (!state || !node) return
+  // Posición imantada vigente (free + snap-a-objeto). Devuelve {x,y,guides}.
+  const resolveSnap = (state: DragState) => {
     const free = freeDragPosition(
       state.origX,
       state.origY,
@@ -122,29 +153,40 @@ function FloorElementImpl({
       areaWidth,
       areaHeight,
     )
-    node.style.transform = `translate3d(${free.x - state.origX}px, ${free.y - state.origY}px, 0)`
+    return computeSnap(
+      { x: free.x, y: free.y, width: element.width, height: element.height },
+      state.siblings,
+    )
+  }
+
+  const applyLiveTransform = () => {
+    rafRef.current = null
+    const state = drag.current
+    const node = wrapperRef.current
+    if (!state || !node) return
+    const snap = resolveSnap(state)
+    node.style.transform = `translate3d(${snap.x - state.origX}px, ${snap.y - state.origY}px, 0)`
+    onGuides(snap.guides)
+    onMoveLive(element.id, snap.x - state.origX, snap.y - state.origY)
   }
 
   const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
-    // No iniciamos drag con botón secundario.
     if (e.button !== 0) return
-    // Detener la propagación → el pan del stage no agarra el gesto.
     e.stopPropagation()
     e.currentTarget.setPointerCapture(e.pointerId)
+    onDragStart?.(element.id)
     drag.current = {
       startClientX: e.clientX,
       startClientY: e.clientY,
       origX: element.x,
       origY: element.y,
-      // Scale congelado al agarrar (evita drift por lecturas stale post centerOnInit).
-      // Leído vía readStageTransform: el ref de rzpp NO tiene `.state` en runtime.
       scale: readStageTransform(transformRef).scale,
       moved: false,
       lastDx: 0,
       lastDy: 0,
+      siblings: getSiblings(element.id),
     }
     if (wrapperRef.current) wrapperRef.current.style.willChange = 'transform'
-    onDragStart?.()
   }
 
   const onPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -156,7 +198,6 @@ function FloorElementImpl({
     state.moved = true
     state.lastDx = dx
     state.lastDy = dy
-    // Batcheo: a lo sumo un transform por frame (deduplicado).
     if (rafRef.current == null) rafRef.current = requestAnimationFrame(applyLiveTransform)
   }
 
@@ -172,9 +213,9 @@ function FloorElementImpl({
     }
     const node = wrapperRef.current
     if (state?.moved) {
-      // Snap al soltar (Alt = libre, sin snap). Mantener el nodo en el lugar final
-      // con un transform snappeado hasta que React re-renderice con el nuevo left/top.
-      const commit = commitDragPosition(
+      // Snap final: por eje, gana el snap-a-objeto; si no, snap-a-grilla
+      // (Alt = libre). Luego clamp al área.
+      const free = freeDragPosition(
         state.origX,
         state.origY,
         state.lastDx,
@@ -184,15 +225,23 @@ function FloorElementImpl({
         element.height,
         areaWidth,
         areaHeight,
-        !e.altKey,
       )
+      const snap = computeSnap(
+        { x: free.x, y: free.y, width: element.width, height: element.height },
+        state.siblings,
+      )
+      const hasV = snap.guides.some((g) => g.axis === 'v')
+      const hasH = snap.guides.some((g) => g.axis === 'h')
+      const fx = hasV ? snap.x : e.altKey ? Math.round(free.x) : snapToGrid(free.x)
+      const fy = hasH ? snap.y : e.altKey ? Math.round(free.y) : snapToGrid(free.y)
+      const c = clampToArea(fx, fy, element.width, element.height, areaWidth, areaHeight)
       if (node) {
-        node.style.transform = `translate3d(${commit.x - state.origX}px, ${commit.y - state.origY}px, 0)`
+        node.style.transform = `translate3d(${c.x - state.origX}px, ${c.y - state.origY}px, 0)`
       }
-      onMove(element.id, commit.x, commit.y)
+      onGuides([])
+      onMoveEnd(element.id, c.x - state.origX, c.y - state.origY)
     } else if (state) {
-      // Click sin drag → seleccionar (abre inspector).
-      onSelect(element.id)
+      onSelect(element.id, e.shiftKey || e.metaKey || e.ctrlKey)
     }
     if (node) node.style.willChange = 'auto'
     onDragEnd?.()
@@ -208,74 +257,120 @@ function FloorElementImpl({
     touchAction: 'none',
   }
 
-  // Fill de decoración: hex del dueño o el token estructural "poche" (sólido, dark-safe).
-  const decorStyle: CSSProperties | undefined = isTable
-    ? undefined
-    : { backgroundColor: element.color ?? 'var(--wall)' }
+  const decorStyle: CSSProperties = isTable
+    ? { borderRadius: radius }
+    : {
+        ...decorSurfaceStyle(element.kind, element.color),
+        // La decoración redonda (columna, isla circular) se dibuja como círculo
+        // también en el editor (espejo de la vista en vivo).
+        ...(element.shape === 'circle' ? { borderRadius: '50%' } : null),
+      }
 
   const ariaLabel = isTable
     ? `Mesa ${element.table?.label ?? element.label ?? ''}`.trim()
     : `${KIND_LABELS[element.kind]}${element.label ? ` ${element.label}` : ''}`
 
   return (
-    // className="floor-element" → react-zoom-pan-pinch EXCLUYE el pan sobre este nodo.
-    <div ref={wrapperRef} className="floor-element" style={wrapperStyle}>
-      <button
-        type="button"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-        aria-label={ariaLabel}
-        style={decorStyle}
-        className={cn(
-          // touch-none también en el botón: touch-action NO se hereda del wrapper,
-          // sin esto el navegador toma el drag como scroll y corta el gesto en tablet.
-          'relative flex h-full w-full cursor-grab touch-none items-center justify-center overflow-hidden text-center transition-shadow active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-          isCircle ? 'rounded-full' : 'rounded-md',
-          isTable
-            ? 'border border-primary/40 bg-card text-card-foreground shadow-sm'
-            : 'border-2 border-wall-border text-wall-foreground',
-          selected && 'ring-2 ring-primary ring-offset-1 ring-offset-background',
-        )}
+    <div ref={setWrapper} className="floor-element" style={wrapperStyle}>
+      {/* Capa que rota: cuerpo + sillas giran juntos; el número se contra-rota. */}
+      <div
+        ref={contentRef}
+        className="relative h-full w-full"
+        style={{ transform: `rotate(${rotation}deg)`, transformOrigin: 'center' }}
       >
-        {isTable ? (
-          <span className="flex flex-col items-center justify-center gap-0.5 px-1 leading-none">
-            <span className="font-serif text-sm font-semibold tabular-nums">
-              {element.table?.label ?? element.label ?? '—'}
-            </span>
-            {element.table?.capacity != null && (
-              <span className="text-[10px] text-muted-foreground">
-                {element.table.capacity} pers.
+        {(isTable || element.kind === 'bar') && (
+          <ChairsSvg
+            shape={element.shape}
+            kind={element.kind}
+            width={displayWidth}
+            height={displayHeight}
+            capacity={element.table?.capacity ?? null}
+          />
+        )}
+
+        {isBanquette && (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute top-0 right-1 left-1 h-1.5 rounded-full bg-primary/45"
+          />
+        )}
+
+        <button
+          type="button"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          aria-label={ariaLabel}
+          style={decorStyle}
+          className={cn(
+            'absolute inset-0 flex cursor-grab touch-none items-center justify-center overflow-hidden text-center transition-shadow active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            isTable
+              ? 'border border-primary/35 bg-card text-card-foreground shadow-sm'
+              : decorSurfaceClass(element.kind),
+            selected && 'shadow-[var(--shadow-glow)]',
+          )}
+        >
+          {isTable ? (
+            <span
+              ref={labelRef}
+              className="flex flex-col items-center justify-center gap-0.5 px-1 leading-none"
+              style={rotation ? { transform: `rotate(${-rotation}deg)` } : undefined}
+            >
+              <span className="font-serif text-sm font-semibold tabular-nums">
+                {element.table?.label ?? element.label ?? '—'}
               </span>
-            )}
-          </span>
-        ) : element.label ? (
-          <span className="px-1 text-[10px] font-medium uppercase tracking-wide">
-            {element.label}
-          </span>
-        ) : null}
-      </button>
+              {element.table?.capacity != null && (
+                <span className="text-[10px] text-muted-foreground tabular-nums">
+                  {element.table.capacity}
+                </span>
+              )}
+            </span>
+          ) : (
+            <span
+              ref={labelRef}
+              style={rotation ? { transform: `rotate(${-rotation}deg)` } : undefined}
+            >
+              <DecorContent kind={element.kind} label={element.label} />
+            </span>
+          )}
+        </button>
+      </div>
 
       {selected && (
-        <ResizeHandles
-          width={displayWidth}
-          height={displayHeight}
-          transformRef={transformRef}
-          onResize={setLiveSize}
-          onResizeEnd={(size) => {
-            setLiveSize(null)
-            onResizeEnd(element.id, size)
-          }}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -inset-px rounded-[10px] ring-2 ring-primary"
         />
+      )}
+
+      {selected && (
+        <>
+          <ResizeHandles
+            width={displayWidth}
+            height={displayHeight}
+            transformRef={transformRef}
+            onResize={setLiveSize}
+            onResizeEnd={(size) => {
+              setLiveSize(null)
+              onResizeEnd(element.id, size)
+            }}
+          />
+          <RotateHandle
+            boxRef={wrapperRef}
+            onRotate={(deg) => {
+              if (contentRef.current) contentRef.current.style.transform = `rotate(${deg}deg)`
+              // Mantener la etiqueta derecha durante el gesto (contra-rotación viva).
+              if (labelRef.current) labelRef.current.style.transform = `rotate(${-deg}deg)`
+            }}
+            onRotateEnd={(deg) => onRotateEnd(element.id, deg)}
+          />
+        </>
       )}
     </div>
   )
 }
 
-// Memoizado: el editor re-renderiza al seleccionar/cambiar de área o al commitear un
-// move; sin memo se re-renderizarían los N elementos. Comparamos por todo lo que
-// afecta el render (geometría + selección + identidad de los handlers).
 export const FloorElement = memo(FloorElementImpl, (a, b) => {
   const ea = a.element
   const eb = b.element
@@ -285,8 +380,13 @@ export const FloorElement = memo(FloorElementImpl, (a, b) => {
     a.areaHeight === b.areaHeight &&
     a.transformRef === b.transformRef &&
     a.onSelect === b.onSelect &&
-    a.onMove === b.onMove &&
+    a.getSiblings === b.getSiblings &&
+    a.registerNode === b.registerNode &&
+    a.onMoveLive === b.onMoveLive &&
+    a.onMoveEnd === b.onMoveEnd &&
     a.onResizeEnd === b.onResizeEnd &&
+    a.onRotateEnd === b.onRotateEnd &&
+    a.onGuides === b.onGuides &&
     a.onDragStart === b.onDragStart &&
     a.onDragEnd === b.onDragEnd &&
     ea.id === eb.id &&
@@ -294,6 +394,8 @@ export const FloorElement = memo(FloorElementImpl, (a, b) => {
     ea.y === eb.y &&
     ea.width === eb.width &&
     ea.height === eb.height &&
+    ea.rotation === eb.rotation &&
+    ea.corner_radius === eb.corner_radius &&
     ea.z_index === eb.z_index &&
     ea.kind === eb.kind &&
     ea.shape === eb.shape &&

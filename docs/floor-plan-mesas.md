@@ -1,12 +1,61 @@
-# Editor visual de plano de mesas (floor plan) — guía técnica v2
+# Editor visual de plano de mesas (floor plan) — guía técnica v3
 
-> Rediseño 2026-06-06. El editor usa **`react-zoom-pan-pinch`** (pan/zoom robusto) + drag
-> propio con pointer events (dnd-kit **removido del canvas**; sigue instalado para otras
-> features: menu/flows/eventos); se agrega la **vista operativa en vivo** con
-> Supabase Realtime; y las tres páginas de "Local" se mueven a su **propia tab del
-> sidebar**.
+> **Rediseño v3 (2026-06-08) — calidad SevenRooms.** Sobre la base v2
+> (`react-zoom-pan-pinch` + pointer drag), v3 suma: **sillas dibujadas** alrededor
+> de cada mesa (derivadas de `capacity`), **rotación** viva, **formas** reales
+> (redonda/óvalo/cuadrada/rect/banquette), **vocabulario** de decoración
+> (puerta/texto/escenario + barra en L con banquetas), **edición sin fricción**
+> (guías de alineación + snap-a-objeto, multi-selección + group-drag, teclado,
+> **deshacer/rehacer**, encajar-a-contenido, barra contextual flotante),
+> **velocidad de armado** (duplicar, crear N mesas en grilla, impresión masiva de
+> QR por área), y operación en vivo (**cambio de mesa cross-área**, tap-a-sentar).
 
 Ruta: `/{tenantSlug}/local/mesas` (solo `owner`; staff en `/{tenantSlug}/salon/mesas`).
+
+---
+
+## v3 — qué cambió respecto a v2
+
+### Modelo de datos (migraciones aditivas, idempotentes)
+- `20260609000100_floor_plan_v2_enums.sql`: `floor_element_kind` += `door, text, stage, booth`;
+  `floor_element_shape` += `banquette`.
+- `20260609000200_floor_plan_v2_geometry.sql`: columna `corner_radius int` (0..200);
+  CHECK `rotation` 0..359; publica `floor_plan_elements`/`floor_plan_areas` en `supabase_realtime`.
+- `rotation` (existía, muerta en v2) ahora se **persiste** end-to-end (schema → `saveGeometryAction`
+  → `getFloorPlan`/`getLiveFloor`). Tipos regenerados en `types/database.ts`.
+
+### Render (sillas + formas)
+- `lib/floor-plan/chairs.ts` — `computeChairs(shape, kind, w, h, capacity)` PURO + testeado
+  (`tests/lib/floor-plan-chairs.test.ts`): reparte sillas por forma (círculo equiespaciado;
+  rect por densidad de lados — 4-top 1/1/1/1, 8-top 3/3/1/1; banquette un solo lado);
+  `computeBarStools` para la barra. Máx 12 sillas dibujadas.
+- `components/floor-plan/table-glyph.tsx` (compartido editor + vivo + salón): `ChairsSvg`
+  (SVG `overflow:visible`, fill por `--fp-seat`), `bodyRadius`, `decorSurfaceStyle/Class`,
+  `DecorContent` (íconos puerta/escenario, texto sin caja).
+- Tokens nuevos en `globals.css`: `--seat`/`--seat-border` (light+dark), clases `.fp-chair`/
+  `.fp-stool`/`.fp-canvas` (grilla token-driven que arregla el dark + viñeta, en UNA regla).
+
+### Edición sin fricción (`floor-plan-editor.tsx`)
+- `lib/floor-plan/snap.ts` — `computeSnap` (guías de alineación + snap-a-objeto, testeado) +
+  `alignBoxes`.
+- Multi-selección (shift/cmd-click) + **group-drag** (los pares siguen vía `registerNode` +
+  `onMoveLive`); teclado (flechas = 1px, Shift+flechas = grilla; Supr; Esc; `[`/`]` orden;
+  `r` rotar 90°; **⌘Z/⌘⇧Z deshacer/rehacer** de geometría vía transacciones `runOp`);
+  encajar-a-contenido (`fitTargetId` → `zoomToElement`); barra contextual flotante
+  (`contextual-toolbar.tsx`); handle de rotación (`rotate-handle.tsx`).
+
+### Velocidad de armado
+- `duplicateElementAction` (⌘D / barra) — clona mesa (mintea PT+QR nuevo) o decoración.
+- `bulkCreateTablesAction` + `bulk-create-dialog.tsx` — crea N mesas en grilla, auto-numeradas,
+  cada una con su QR; agranda el área si no entran.
+- **Impresión masiva de QR**: `/print/qrs/[areaId]` (owner-gated) + botón "Imprimir QRs" por área.
+
+### Operación en vivo
+- **Cambio de mesa (cross-área)**: `getMoveTargets` + `loadMoveTargetsAction` + `move-table-sheet.tsx`
+  (compartido) sobre el RPC existente `move_session`. Wireado en el detalle de sesión del salón
+  (dropdown "Mover de mesa") y en la vista En vivo del dueño.
+- **Tap-a-sentar**: tocar una mesa libre en el plano del salón abre el flujo de activación.
+- `LiveTableCard` memoizado (comparador por campos) — el live floor reemplaza `data` entero por refresh.
 
 ---
 

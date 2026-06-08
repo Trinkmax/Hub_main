@@ -212,94 +212,70 @@ describe('areaReorderSchema', () => {
 })
 
 describe('elementGeometrySchema', () => {
+  // Base válida con los campos v2 (rotation + corner_radius requeridos).
+  const base = {
+    id: UUID,
+    x: 100,
+    y: 200,
+    width: 80,
+    height: 80,
+    rotation: 0,
+    corner_radius: 0,
+    z_index: 10,
+  }
+
   it('acepta una geometría válida', () => {
-    expect(
-      elementGeometrySchema.safeParse({
-        id: UUID,
-        x: 100,
-        y: 200,
-        width: 80,
-        height: 80,
-        z_index: 10,
-      }).success,
-    ).toBe(true)
+    expect(elementGeometrySchema.safeParse(base).success).toBe(true)
   })
 
   it('acepta x/y en los bordes ±10000', () => {
-    expect(
-      elementGeometrySchema.safeParse({
-        id: UUID,
-        x: -10000,
-        y: 10000,
-        width: 80,
-        height: 80,
-        z_index: 0,
-      }).success,
-    ).toBe(true)
+    expect(elementGeometrySchema.safeParse({ ...base, x: -10000, y: 10000 }).success).toBe(true)
   })
 
   it('rechaza x/y fuera de ±10000', () => {
-    expect(
-      elementGeometrySchema.safeParse({
-        id: UUID,
-        x: -10001,
-        y: 0,
-        width: 80,
-        height: 80,
-        z_index: 0,
-      }).success,
-    ).toBe(false)
-    expect(
-      elementGeometrySchema.safeParse({
-        id: UUID,
-        x: 0,
-        y: 10001,
-        width: 80,
-        height: 80,
-        z_index: 0,
-      }).success,
-    ).toBe(false)
+    expect(elementGeometrySchema.safeParse({ ...base, x: -10001 }).success).toBe(false)
+    expect(elementGeometrySchema.safeParse({ ...base, y: 10001 }).success).toBe(false)
   })
 
   it('rechaza width/height fuera de [8,6000]', () => {
-    expect(
-      elementGeometrySchema.safeParse({
-        id: UUID,
-        x: 0,
-        y: 0,
-        width: 7,
-        height: 80,
-        z_index: 0,
-      }).success,
-    ).toBe(false)
-    expect(
-      elementGeometrySchema.safeParse({
-        id: UUID,
-        x: 0,
-        y: 0,
-        width: 80,
-        height: 6001,
-        z_index: 0,
-      }).success,
-    ).toBe(false)
+    expect(elementGeometrySchema.safeParse({ ...base, width: 7 }).success).toBe(false)
+    expect(elementGeometrySchema.safeParse({ ...base, height: 6001 }).success).toBe(false)
   })
 
   it('rechaza x no-entero', () => {
-    expect(
-      elementGeometrySchema.safeParse({
-        id: UUID,
-        x: 1.5,
-        y: 0,
-        width: 80,
-        height: 80,
-        z_index: 0,
-      }).success,
-    ).toBe(false)
+    expect(elementGeometrySchema.safeParse({ ...base, x: 1.5 }).success).toBe(false)
+  })
+
+  it('acepta rotation 0..359 y rechaza fuera de rango', () => {
+    expect(elementGeometrySchema.safeParse({ ...base, rotation: 359 }).success).toBe(true)
+    expect(elementGeometrySchema.safeParse({ ...base, rotation: 360 }).success).toBe(false)
+    expect(elementGeometrySchema.safeParse({ ...base, rotation: -1 }).success).toBe(false)
+  })
+
+  it('acepta corner_radius 0..200 y rechaza fuera de rango', () => {
+    expect(elementGeometrySchema.safeParse({ ...base, corner_radius: 200 }).success).toBe(true)
+    expect(elementGeometrySchema.safeParse({ ...base, corner_radius: 201 }).success).toBe(false)
+  })
+
+  it('rechaza si falta rotation o corner_radius', () => {
+    const { rotation, ...noRotation } = base
+    const { corner_radius, ...noCorner } = base
+    expect(elementGeometrySchema.safeParse(noRotation).success).toBe(false)
+    expect(elementGeometrySchema.safeParse(noCorner).success).toBe(false)
   })
 })
 
 describe('geometryBatchSchema', () => {
-  const geom = { id: UUID, x: 0, y: 0, width: 80, height: 80, z_index: 0 }
+  const geom = {
+    id: UUID,
+    x: 0,
+    y: 0,
+    width: 80,
+    height: 80,
+    rotation: 0,
+    corner_radius: 0,
+    z_index: 0,
+  }
 
   it('acepta entre 1 y 500 items', () => {
     expect(geometryBatchSchema.safeParse({ items: [geom] }).success).toBe(true)

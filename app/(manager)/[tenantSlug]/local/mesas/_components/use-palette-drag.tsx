@@ -2,7 +2,7 @@
 
 import { useRef } from 'react'
 
-type Kind = 'table' | 'wall' | 'pillar' | 'island' | 'bar'
+type Kind = 'table' | 'wall' | 'pillar' | 'island' | 'bar' | 'door' | 'text' | 'stage'
 
 type TransformRef = React.RefObject<HTMLDivElement | null>
 

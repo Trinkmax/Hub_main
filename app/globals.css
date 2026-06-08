@@ -109,6 +109,11 @@
   --wall-foreground:   oklch(0.96 0.012 88);
   --wall-border:       oklch(0.24 0.025 165);
 
+  /* Sillas/banquetas del plano (estilo SevenRooms). Neutras por defecto; el
+     componente en vivo sobrescribe --fp-seat por estado de la mesa. */
+  --seat:              oklch(0.83 0.016 88);
+  --seat-border:       oklch(0.7 0.022 165);
+
   --accent:            oklch(0.91 0.04 165);
   --accent-foreground: oklch(0.245 0.05 165);
 
@@ -171,6 +176,10 @@
   --wall:              oklch(0.42 0.018 165);
   --wall-foreground:   oklch(0.97 0.01 88);
   --wall-border:       oklch(0.52 0.02 165);
+
+  /* Sillas/banquetas en dark: medias para separarse del carbón. */
+  --seat:              oklch(0.56 0.02 165);
+  --seat-border:       oklch(0.68 0.022 165);
 
   --accent:            oklch(0.32 0.05 165);
   --accent-foreground: oklch(0.92 0.04 88);
@@ -281,6 +290,41 @@
 
   .text-balance { text-wrap: balance; }
   .text-pretty  { text-wrap: pretty; }
+
+  /* ── Plano de mesas (floor plan) ──────────────────────────────────────────
+     Sillas/banquetas dibujadas en SVG. El fill se controla con --fp-seat (lo
+     setea el contenedor por estado de la mesa); por defecto, neutro. */
+  .fp-chair {
+    fill: var(--fp-seat, var(--seat));
+    stroke: var(--fp-seat-border, var(--seat-border));
+    stroke-width: 1;
+    transition: fill var(--duration-base) var(--ease-out);
+  }
+  .fp-stool {
+    fill: var(--fp-seat, var(--seat));
+    stroke: var(--fp-seat-border, var(--seat-border));
+    stroke-width: 1;
+  }
+
+  /* Lienzo del plano: grilla token-driven (visible en light Y dark) + viñeta
+     cálida que enmarca el área, en UNA sola regla (un 2º background-image en
+     otra clase pisaría a este). Las líneas de grilla van primero (arriba); la
+     viñeta radial va última (debajo). */
+  .fp-canvas {
+    background-color: var(--card);
+    background-image:
+      linear-gradient(to right,  color-mix(in oklch, var(--foreground) 5%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklch, var(--foreground) 5%, transparent) 1px, transparent 1px),
+      linear-gradient(to right,  color-mix(in oklch, var(--foreground) 9%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklch, var(--foreground) 9%, transparent) 1px, transparent 1px),
+      radial-gradient(120% 90% at 50% 0%, var(--card), color-mix(in oklch, var(--surface) 88%, var(--background)));
+    background-size:
+      var(--fp-grid, 20px) var(--fp-grid, 20px),
+      var(--fp-grid, 20px) var(--fp-grid, 20px),
+      var(--fp-grid-major, 100px) var(--fp-grid-major, 100px),
+      var(--fp-grid-major, 100px) var(--fp-grid-major, 100px),
+      100% 100%;
+  }
 }
 
 /* react-phone-number-input: match shadcn Input styling */

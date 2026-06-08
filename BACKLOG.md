@@ -93,3 +93,28 @@ cuando aterrice el editor v1):
   DEFAULT 0`). Cosmético; quitar el fallback.
 - **Doc/commits dicen `react-zoom-pan-pinch` v4 pero se instaló v3.7.0** (v4 no existe en npm; v3.7
   es el `latest` estable y API-compatible). Nit de naming en el plan/commits; el código es correcto.
+
+## Rediseño floor plan v3 (SevenRooms) — lows diferidos del review adversarial
+
+Anotados del review (2026-06-08); no bloquean. Confirmados pero de bajo impacto:
+
+- **Marquee/box-select en el editor.** La multi-selección hoy es shift/cmd-click + grupo.
+  Falta arrastrar un rectángulo sobre el fondo para seleccionar varios. (rzpp usa el
+  drag de fondo para panear; haría falta un modo o Shift+drag-bg.)
+- **Re-seed del editor sólo guardado por `draggingRef`** (lo setean el body-drag y
+  drag-from-palette, NO el resize/rotate). Un `router.refresh` concurrente a mitad de un
+  resize/rotate podría pisar el estado optimista. Muy estrecho. Fix: que ResizeHandles/
+  RotateHandle también marquen el ref de gesto activo.
+- **`router.refresh` tras create/duplicate/delete no flushea la cola de geometría** (sí lo
+  hace `onChanged`). Un move sin flushear (<600ms) seguido de una op estructural se revierte
+  visualmente hasta el próximo flush+refresh. Fix: `await queue.flushNow()` en esos paths.
+- **Fit-to-content ignora la rotación** al calcular el bbox (puede recortar levemente una
+  mesa muy rotada). Fix: expandir cada elemento a su AABB rotado.
+- **Bulk-create: dedup de labels best-effort** (snapshot único; dos bulk concurrentes en la
+  misma área podrían repetir números). No hay unicidad DB en `(tenant_id, label)`.
+- **`saveGeometryAction` / `reorderAreasAction` son loops por fila no atómicos** (patrón
+  preexistente). Un fallo a mitad deja layout parcial. Fix: RPC transaccional `fp_save_geometry(jsonb)`.
+- **LiveFloor ignora cambios de `initial` tras `router.refresh`** (depende de Realtime +
+  safety-net 30s). No se hizo re-seed naive por el estado interno de área (causaría salto de
+  área). Fix correcto: re-seed sólo del área activa.
+- **Nudge de teclado por flechas en el canvas** ya existe; falta documentarlo en la ayuda.

@@ -12,20 +12,27 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 import { mapPgError } from './errors'
-import { clampToArea, ELEMENT_DEFAULTS, GRID } from './grid'
+import { clampToArea, ELEMENT_DEFAULTS, GRID, TABLE_PRESETS } from './grid'
 import { suggestNextLabel } from './numbering'
-import type { AddDecorInput, CreateTableInPlanInput, ElementGeometry } from './schemas'
+import type {
+  AddDecorInput,
+  BulkCreateTablesInput,
+  CreateTableInPlanInput,
+  ElementGeometry,
+} from './schemas'
 import {
   addDecorSchema,
   areaCanvasSchema,
   areaCreateSchema,
   areaRenameSchema,
   areaReorderSchema,
+  bulkCreateTablesSchema,
   createTableInPlanSchema,
   elementIdSchema,
   geometryBatchSchema,
   mergeTablesSchema,
   placeTableSchema,
+  setShapeSchema,
   setTableActiveSchema,
   setZIndexSchema,
   splitTableSchema,
@@ -290,8 +297,9 @@ export async function saveGeometryAction(
 
   const supabase = await createClient()
 
-  // Update por elemento: SOLO x,y,width,height,z_index. Nunca area_id/tenant_id/
-  // kind/physical_table_id. Cada update filtra por tenant_id (RLS + eq).
+  // Update por elemento: SOLO geometría (x,y,width,height,rotation,corner_radius,
+  // z_index). Nunca area_id/tenant_id/kind/physical_table_id. Cada update filtra
+  // por tenant_id (RLS + eq).
   for (const item of parsed.data.items) {
     const { error } = await supabase
       .from('floor_plan_elements')
@@ -300,6 +308,8 @@ export async function saveGeometryAction(
         y: item.y,
         width: item.width,
         height: item.height,
+        rotation: item.rotation,
+        corner_radius: item.corner_radius,
         z_index: item.z_index,
       })
       .eq('id', item.id)
@@ -372,6 +382,122 @@ export async function createTableInPlanAction(
     elementId: result.element_id,
     qrToken: result.qr_token,
   }
+}
+
+/**
+ * Crea N mesas de una vez en grilla (armado rápido). Cada mesa mintea su propio
+ * physical_table + qr_token vía fp_create_table (no toca QRs existentes) y se
+ * auto-numera desde `area.number_start`. La forma/tamaño viene del preset.
+ */
+export async function bulkCreateTablesAction(
+  slug: string,
+  input: BulkCreateTablesInput,
+): Promise<{ ok: true; data: { created: number } } | { ok: false; message: string }> {
+  const access = await authorize(slug)
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = bulkCreateTablesSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  }
+  const { area_id, count, capacity, preset } = parsed.data
+  const dims = TABLE_PRESETS[preset]
+
+  const supabase = await createClient()
+
+  // Área (dimensiones + numeración) y labels existentes en el área.
+  const { data: area, error: areaError } = await supabase
+    .from('floor_plan_areas')
+    .select('width, height, number_start')
+    .eq('id', area_id)
+    .eq('tenant_id', access.tenant.id)
+    .single()
+  if (areaError || !area) {
+    console.error('[floor-plan.bulkCreate] area', areaError?.message)
+    return { ok: false, message: 'No se pudo leer el área.' }
+  }
+
+  const { data: siblings } = await supabase
+    .from('floor_plan_elements')
+    .select('physical_tables(label)')
+    .eq('area_id', area_id)
+    .eq('tenant_id', access.tenant.id)
+    .eq('kind', 'table')
+  const existingLabels = (
+    (siblings ?? []) as unknown as { physical_tables: { label: string } | null }[]
+  )
+    .map((s) => s.physical_tables?.label)
+    .filter((l): l is string => typeof l === 'string')
+
+  // Grilla: columnas según el ancho del área y el tamaño del preset.
+  const stepX = dims.width + 24
+  const stepY = dims.height + 28
+  const cols = Math.max(1, Math.floor((area.width - 40) / stepX))
+
+  // Si el área no es lo bastante alta para todas las filas, la agrandamos (cap 6000)
+  // para que las mesas no se apilen contra el borde inferior (clamp → overlap).
+  const rows = Math.ceil(count / cols)
+  const neededHeight = Math.min(6000, 20 + (rows - 1) * stepY + dims.height + 20)
+  const effHeight = Math.max(area.height, neededHeight)
+  if (effHeight > area.height) {
+    await supabase
+      .from('floor_plan_areas')
+      .update({ height: effHeight })
+      .eq('id', area_id)
+      .eq('tenant_id', access.tenant.id)
+  }
+
+  const createdElementIds: string[] = []
+  for (let i = 0; i < count; i++) {
+    const label = suggestNextLabel(area.number_start, existingLabels)
+    existingLabels.push(label)
+    const col = i % cols
+    const row = Math.floor(i / cols)
+    const pos = clampToArea(
+      20 + col * stepX,
+      20 + row * stepY,
+      dims.width,
+      dims.height,
+      area.width,
+      effHeight,
+    )
+    const { data, error } = await supabase.rpc('fp_create_table', {
+      p_area_id: area_id,
+      p_label: label,
+      p_shape: dims.shape,
+      p_x: pos.x,
+      p_y: pos.y,
+      ...(capacity != null ? { p_capacity: capacity } : {}),
+    })
+    if (error || !data) {
+      console.error('[floor-plan.bulkCreate] create', error?.message)
+      // Devolver lo creado hasta ahora (no es atómico, pero no rompe invariantes).
+      if (createdElementIds.length === 0) return { ok: false, message: mapPgError(error) }
+      break
+    }
+    createdElementIds.push((data as { element_id: string }).element_id)
+  }
+
+  // Ajustar el tamaño de todas las nuevas al preset en una sola pasada.
+  if (createdElementIds.length > 0) {
+    await supabase
+      .from('floor_plan_elements')
+      .update({ width: dims.width, height: dims.height })
+      .in('id', createdElementIds)
+      .eq('tenant_id', access.tenant.id)
+  }
+
+  await logAudit({
+    tenantId: access.tenant.id,
+    userId: access.userId,
+    action: 'bulk_create',
+    entity: 'physical_table',
+    entityId: area_id,
+    payload: { count: createdElementIds.length, preset, capacity },
+  })
+
+  revalidatePath(`/${slug}/local/mesas`)
+  return { ok: true, data: { created: createdElementIds.length } }
 }
 
 export async function splitTableAction(
@@ -484,9 +610,161 @@ export async function splitTableAction(
   return { ok: true, data: { tableId: result.table_id, elementId: result.element_id } }
 }
 
+/**
+ * Duplica un elemento del plano (mesa o decoración) con un offset en cascada.
+ * - Mesa: crea una mesa NUEVA (mintea physical_table + qr_token vía fp_create_table,
+ *   hereda shape + capacidad), auto-numerada. NO toca QRs existentes.
+ * - Decoración: inserta una copia (kind/shape/label/color/tamaño/rotación).
+ * Devuelve el element_id nuevo para seleccionarlo.
+ */
+export async function duplicateElementAction(
+  slug: string,
+  elementId: string,
+): Promise<{ ok: true; data: { elementId: string } } | { ok: false; message: string }> {
+  const access = await authorize(slug)
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = elementIdSchema.safeParse({ id: elementId })
+  if (!parsed.success) return { ok: false, message: 'Id inválido.' }
+
+  const supabase = await createClient()
+
+  // 1) Leer el elemento + su área (para clamp del offset) + capacidad si es mesa.
+  const { data: src, error: srcError } = await supabase
+    .from('floor_plan_elements')
+    .select(
+      'area_id, kind, shape, x, y, width, height, rotation, corner_radius, z_index, label, color, physical_tables(capacity)',
+    )
+    .eq('id', parsed.data.id)
+    .eq('tenant_id', access.tenant.id)
+    .single()
+
+  if (srcError || !src) {
+    console.error('[floor-plan.duplicate] source', srcError?.message)
+    return { ok: false, message: 'No se pudo leer el elemento a duplicar.' }
+  }
+
+  const el = src as unknown as {
+    area_id: string
+    kind: 'table' | 'wall' | 'pillar' | 'island' | 'bar' | 'door' | 'text' | 'stage' | 'booth'
+    shape: 'rect' | 'circle' | 'banquette'
+    x: number
+    y: number
+    width: number
+    height: number
+    rotation: number
+    corner_radius: number
+    z_index: number
+    label: string | null
+    color: string | null
+    physical_tables: { capacity: number | null } | null
+  }
+
+  const { data: area } = await supabase
+    .from('floor_plan_areas')
+    .select('width, height, number_start')
+    .eq('id', el.area_id)
+    .eq('tenant_id', access.tenant.id)
+    .single()
+  const areaW = area?.width ?? 2000
+  const areaH = area?.height ?? 2000
+
+  const offset = clampToArea(el.x + GRID * 2, el.y + GRID * 2, el.width, el.height, areaW, areaH)
+
+  if (el.kind === 'table') {
+    // Labels existentes del área para auto-numerar.
+    const { data: siblings } = await supabase
+      .from('floor_plan_elements')
+      .select('physical_tables(label)')
+      .eq('area_id', el.area_id)
+      .eq('tenant_id', access.tenant.id)
+      .eq('kind', 'table')
+    const existingLabels = (
+      (siblings ?? []) as unknown as { physical_tables: { label: string } | null }[]
+    )
+      .map((s) => s.physical_tables?.label)
+      .filter((l): l is string => typeof l === 'string')
+    const newLabel = suggestNextLabel(area?.number_start ?? 1, existingLabels)
+
+    const { data, error } = await supabase.rpc('fp_create_table', {
+      p_area_id: el.area_id,
+      p_label: newLabel,
+      p_shape: el.shape,
+      p_x: offset.x,
+      p_y: offset.y,
+      ...(el.physical_tables?.capacity != null ? { p_capacity: el.physical_tables.capacity } : {}),
+    })
+    if (error || !data) {
+      console.error('[floor-plan.duplicate] table', error?.message)
+      return { ok: false, message: mapPgError(error) }
+    }
+    const result = data as { table_id: string; element_id: string }
+
+    // Heredar tamaño/rotación/corner del original (fp_create_table usa defaults).
+    const { error: geomErr } = await supabase
+      .from('floor_plan_elements')
+      .update({
+        width: el.width,
+        height: el.height,
+        rotation: el.rotation,
+        corner_radius: el.corner_radius,
+      })
+      .eq('id', result.element_id)
+      .eq('tenant_id', access.tenant.id)
+    // No abortamos (la mesa ya existe con su QR); solo lo dejamos observable.
+    if (geomErr) console.error('[floor-plan.duplicate] geom', geomErr.message)
+
+    await logAudit({
+      tenantId: access.tenant.id,
+      userId: access.userId,
+      action: 'duplicate',
+      entity: 'physical_table',
+      entityId: result.table_id,
+      payload: { source_element_id: parsed.data.id, label: newLabel },
+    })
+    revalidatePath(`/${slug}/local/mesas`)
+    return { ok: true, data: { elementId: result.element_id } }
+  }
+
+  // Decoración: insertar copia directa (RLS owner).
+  const { data, error } = await supabase
+    .from('floor_plan_elements')
+    .insert({
+      tenant_id: access.tenant.id,
+      area_id: el.area_id,
+      kind: el.kind,
+      shape: el.shape,
+      physical_table_id: null,
+      x: offset.x,
+      y: offset.y,
+      width: el.width,
+      height: el.height,
+      rotation: el.rotation,
+      corner_radius: el.corner_radius,
+      z_index: el.z_index,
+      label: el.label,
+      color: el.color,
+    })
+    .select('id')
+    .single()
+
+  if (error || !data) {
+    console.error('[floor-plan.duplicate] decor', error?.message)
+    return { ok: false, message: mapPgError(error) }
+  }
+  revalidatePath(`/${slug}/local/mesas`)
+  return { ok: true, data: { elementId: data.id } }
+}
+
 export async function placeTableAction(
   slug: string,
-  input: { table_id: string; area_id: string; x: number; y: number },
+  input: {
+    table_id: string
+    area_id: string
+    x: number
+    y: number
+    shape?: 'rect' | 'circle' | 'banquette'
+  },
 ): Promise<FloorPlanActionState> {
   const access = await authorize(slug)
   if (!access) return NO_ACCESS
@@ -508,7 +786,8 @@ export async function placeTableAction(
       tenant_id: access.tenant.id,
       area_id: parsed.data.area_id,
       kind: 'table',
-      shape: ELEMENT_DEFAULTS.table.shape,
+      // Conservar la forma con la que se re-ubica (no degradar redonda → rect).
+      shape: parsed.data.shape,
       physical_table_id: parsed.data.table_id,
       x: parsed.data.x,
       y: parsed.data.y,
@@ -791,6 +1070,41 @@ export async function deleteDecorAction(
   if (error) {
     console.error('[floor-plan.deleteDecor]', error.message)
     return { ok: false, message: mapPgError(error) }
+  }
+
+  revalidatePath(`/${slug}/local/mesas`)
+  return { ok: true }
+}
+
+export async function setElementShapeAction(
+  slug: string,
+  elementId: string,
+  shape: 'rect' | 'circle' | 'banquette',
+): Promise<FloorPlanActionState> {
+  const access = await authorize(slug)
+  if (!access) return NO_ACCESS
+
+  const parsed = setShapeSchema.safeParse({ id: elementId, shape })
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  }
+
+  const supabase = await createClient()
+  // Solo las mesas tienen selector de forma (las sillas se dibujan por forma+capacidad).
+  const { data: updated, error } = await supabase
+    .from('floor_plan_elements')
+    .update({ shape: parsed.data.shape })
+    .eq('id', parsed.data.id)
+    .eq('tenant_id', access.tenant.id)
+    .eq('kind', 'table')
+    .select('id')
+
+  if (error) {
+    console.error('[floor-plan.setElementShape]', error.message)
+    return { ok: false, message: mapPgError(error) }
+  }
+  if (!updated || updated.length === 0) {
+    return { ok: false, message: 'No se encontró el elemento (puede que ya no exista).' }
   }
 
   revalidatePath(`/${slug}/local/mesas`)

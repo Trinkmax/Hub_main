@@ -17,17 +17,32 @@ export type FloorTableMeta = {
   active: boolean
 }
 
+/** Vocabulario del plano (espejo de los enums `floor_element_*`). */
+export type FloorKind =
+  | 'table'
+  | 'wall'
+  | 'pillar'
+  | 'island'
+  | 'bar'
+  | 'door'
+  | 'text'
+  | 'stage'
+  | 'booth'
+export type FloorShape = 'rect' | 'circle' | 'banquette'
+export type DecorKind = Exclude<FloorKind, 'table'>
+
 export type ElementRow = {
   id: string
   area_id: string
-  kind: 'table' | 'wall' | 'pillar' | 'island' | 'bar'
-  shape: 'rect' | 'circle'
+  kind: FloorKind
+  shape: FloorShape
   physical_table_id: string | null
   x: number
   y: number
   width: number
   height: number
   rotation: number
+  corner_radius: number
   z_index: number
   label: string | null
   color: string | null
@@ -59,6 +74,7 @@ type RawElementRow = {
   width: number
   height: number
   rotation: number
+  corner_radius: number
   z_index: number
   label: string | null
   color: string | null
@@ -94,7 +110,7 @@ export async function getFloorPlan(tenantId: string): Promise<FloorPlanData> {
   const { data: elementsData, error: elementsError } = await supabase
     .from('floor_plan_elements')
     .select(
-      'id, area_id, kind, shape, physical_table_id, x, y, width, height, rotation, z_index, label, color, physical_tables(label, capacity, qr_token, active)',
+      'id, area_id, kind, shape, physical_table_id, x, y, width, height, rotation, corner_radius, z_index, label, color, physical_tables(label, capacity, qr_token, active)',
     )
     .eq('tenant_id', tenantId)
     .order('z_index', { ascending: true })
@@ -133,6 +149,7 @@ export async function getFloorPlan(tenantId: string): Promise<FloorPlanData> {
     width: row.width,
     height: row.height,
     rotation: row.rotation,
+    corner_radius: row.corner_radius,
     z_index: row.z_index,
     label: row.label,
     color: row.color,
@@ -199,7 +216,9 @@ export type LiveTable = {
   y: number
   width: number
   height: number
-  shape: 'rect' | 'circle'
+  rotation: number
+  corner_radius: number
+  shape: FloorShape
   z_index: number
   label: string
   capacity: number | null
@@ -209,12 +228,14 @@ export type LiveTable = {
 
 export type LiveDecor = {
   element_id: string
-  kind: 'wall' | 'pillar' | 'island' | 'bar'
-  shape: 'rect' | 'circle'
+  kind: DecorKind
+  shape: FloorShape
   x: number
   y: number
   width: number
   height: number
+  rotation: number
+  corner_radius: number
   z_index: number
   label: string | null
   color: string | null
@@ -232,12 +253,14 @@ type RawLiveElementRow = {
   id: string
   area_id: string
   kind: ElementRow['kind']
-  shape: 'rect' | 'circle'
+  shape: FloorShape
   physical_table_id: string | null
   x: number
   y: number
   width: number
   height: number
+  rotation: number
+  corner_radius: number
   z_index: number
   label: string | null
   color: string | null
@@ -349,7 +372,7 @@ export async function getLiveFloor(tenantId: string, areaId: string): Promise<Li
   const { data: elementsData, error: elementsError } = await supabase
     .from('floor_plan_elements')
     .select(
-      'id, area_id, kind, shape, physical_table_id, x, y, width, height, z_index, label, color, physical_tables(label, capacity)',
+      'id, area_id, kind, shape, physical_table_id, x, y, width, height, rotation, corner_radius, z_index, label, color, physical_tables(label, capacity)',
     )
     .eq('tenant_id', tenantId)
     .eq('area_id', areaId)
@@ -378,6 +401,8 @@ export async function getLiveFloor(tenantId: string, areaId: string): Promise<Li
     y: el.y,
     width: el.width,
     height: el.height,
+    rotation: el.rotation,
+    corner_radius: el.corner_radius,
     z_index: el.z_index,
     label: el.label,
     color: el.color,
@@ -472,6 +497,8 @@ export async function getLiveFloor(tenantId: string, areaId: string): Promise<Li
       y: el.y,
       width: el.width,
       height: el.height,
+      rotation: el.rotation,
+      corner_radius: el.corner_radius,
       shape: el.shape,
       z_index: el.z_index,
       label: pt?.label ?? el.label ?? '',
@@ -481,4 +508,81 @@ export async function getLiveFloor(tenantId: string, areaId: string): Promise<Li
   })
 
   return { area, tables, decor }
+}
+
+// ─── Destinos para "cambio de mesa" (mover una sesión) ────────────────────────
+
+export type MoveTarget = {
+  table_id: string
+  label: string
+  capacity: number | null
+  area_name: string
+  /** posición del área para ordenar (cross-área) */
+  area_pos: number
+}
+
+/**
+ * Devuelve las mesas LIBRES (activas, sin sesión abierta) a las que se puede
+ * mover una sesión, en TODAS las áreas (cross-área: Planta Baja → Planta Alta).
+ * Incluye mesas sin ubicar bajo el grupo "Sin ubicar". Excluye `excludeTableId`.
+ * RLS SELECT abierta a miembros del tenant.
+ */
+export async function getMoveTargets(
+  tenantId: string,
+  excludeTableId?: string,
+): Promise<MoveTarget[]> {
+  const supabase = await createClient()
+
+  const [{ data: els }, { data: tbls }, { data: open }] = await Promise.all([
+    supabase
+      .from('floor_plan_elements')
+      .select('physical_table_id, floor_plan_areas(name, position)')
+      .eq('tenant_id', tenantId)
+      .eq('kind', 'table'),
+    supabase
+      .from('physical_tables')
+      .select('id, label, capacity')
+      .eq('tenant_id', tenantId)
+      .eq('active', true),
+    supabase
+      .from('table_sessions')
+      .select('physical_table_id')
+      .eq('tenant_id', tenantId)
+      .eq('status', 'open'),
+  ])
+
+  const occupied = new Set(
+    ((open ?? []) as { physical_table_id: string | null }[])
+      .map((s) => s.physical_table_id)
+      .filter((id): id is string => id !== null),
+  )
+
+  const placed = new Map<string, { area_name: string; area_pos: number }>()
+  for (const e of (els ?? []) as unknown as {
+    physical_table_id: string | null
+    floor_plan_areas: { name: string; position: number } | null
+  }[]) {
+    if (e.physical_table_id) {
+      placed.set(e.physical_table_id, {
+        area_name: e.floor_plan_areas?.name ?? 'Sin ubicar',
+        area_pos: e.floor_plan_areas?.position ?? 999,
+      })
+    }
+  }
+
+  const targets: MoveTarget[] = []
+  for (const t of (tbls ?? []) as { id: string; label: string; capacity: number | null }[]) {
+    if (t.id === excludeTableId || occupied.has(t.id)) continue
+    const p = placed.get(t.id)
+    targets.push({
+      table_id: t.id,
+      label: t.label,
+      capacity: t.capacity,
+      area_name: p?.area_name ?? 'Sin ubicar',
+      area_pos: p?.area_pos ?? 999,
+    })
+  }
+
+  targets.sort((a, b) => a.area_pos - b.area_pos || a.label.localeCompare(b.label, 'es'))
+  return targets
 }

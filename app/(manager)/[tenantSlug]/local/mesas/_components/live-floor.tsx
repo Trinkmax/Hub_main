@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
+import {
+  ChairsSvg,
+  DecorContent,
+  decorSurfaceClass,
+  decorSurfaceStyle,
+} from '@/components/floor-plan/table-glyph'
 import { refreshLiveFloorAction } from '@/lib/floor-plan/live-actions'
 import type { AreaRow, LiveDecor, LiveFloorData, LiveTable } from '@/lib/floor-plan/queries'
 import { subscribeChanges } from '@/lib/realtime/subscribe'
@@ -26,27 +32,42 @@ export type LiveFloorProps = {
 // fija; mismo lenguaje visual que el editor. El color del dueño tiene prioridad.
 function DecorBox({ decor }: { decor: LiveDecor }) {
   const isCircle = decor.shape === 'circle'
+  const rotation = decor.rotation ?? 0
   return (
     <div
       aria-hidden
-      className={cn(
-        'absolute border-2 border-wall-border text-wall-foreground',
-        isCircle ? 'rounded-full' : 'rounded-md',
-      )}
+      className="absolute"
       style={{
         left: decor.x,
         top: decor.y,
         width: decor.width,
         height: decor.height,
         zIndex: decor.z_index,
-        backgroundColor: decor.color ?? 'var(--wall)',
+        transform: rotation ? `rotate(${rotation}deg)` : undefined,
+        transformOrigin: 'center',
       }}
     >
-      {decor.label ? (
-        <span className="pointer-events-none flex h-full w-full items-center justify-center px-1 text-center text-[10px] font-medium">
-          {decor.label}
-        </span>
+      {decor.kind === 'bar' ? (
+        <ChairsSvg
+          shape={decor.shape}
+          kind="bar"
+          width={decor.width}
+          height={decor.height}
+          capacity={null}
+        />
       ) : null}
+      <div
+        className={cn(
+          'absolute inset-0 flex items-center justify-center',
+          decorSurfaceClass(decor.kind),
+        )}
+        style={{
+          ...decorSurfaceStyle(decor.kind, decor.color),
+          ...(isCircle ? { borderRadius: '50%' } : null),
+        }}
+      >
+        <DecorContent kind={decor.kind} label={decor.label} />
+      </div>
     </div>
   )
 }
@@ -166,7 +187,7 @@ export function LiveFloor({
           <DecorBox key={d.element_id} decor={d} />
         ))}
         {data.tables.map((t) => (
-          <LiveTableCard key={t.element_id} table={t} onOpen={() => onTableOpen(t)} />
+          <LiveTableCard key={t.element_id} table={t} onOpen={onTableOpen} />
         ))}
       </PanZoomStage>
     </div>

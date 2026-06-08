@@ -15,15 +15,23 @@ export type GeometryQueue = {
  * Cola única de persistencia de geometría. drag-end y resize-end encolan acá
  * (nunca dos escritores en paralelo). Flush por debounce (600ms) y en
  * beforeunload. Si el flush falla, onError(ids) deja que el editor revierta el
- * estado optimista de esos ids y muestre un toast.
+ * estado optimista de esos ids y muestre un toast. Si tiene éxito, onSuccess(items)
+ * deja que el editor mueva el baseline de rollback al valor recién persistido
+ * (si no, un fallo posterior revertiría al estado del inicio de la sesión).
  */
-export function useGeometryQueue(slug: string, onError: (ids: string[]) => void): GeometryQueue {
+export function useGeometryQueue(
+  slug: string,
+  onError: (ids: string[]) => void,
+  onSuccess?: (items: ElementGeometry[]) => void,
+): GeometryQueue {
   // Cola viva entre renders.
   const queueRef = useRef<Map<string, ElementGeometry>>(new Map())
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // onError fresco sin re-suscribir el beforeunload ni recrear flushNow.
+  // onError/onSuccess frescos sin re-suscribir el beforeunload ni recrear flushNow.
   const onErrorRef = useRef(onError)
   onErrorRef.current = onError
+  const onSuccessRef = useRef(onSuccess)
+  onSuccessRef.current = onSuccess
 
   const flushNow = useCallback(async () => {
     if (timerRef.current) {
@@ -39,7 +47,8 @@ export function useGeometryQueue(slug: string, onError: (ids: string[]) => void)
     queue.clear()
     try {
       const result = await saveGeometryAction(slug, items)
-      if (!result.ok) onErrorRef.current(ids)
+      if (result.ok) onSuccessRef.current?.(items)
+      else onErrorRef.current(ids)
     } catch {
       onErrorRef.current(ids)
     }

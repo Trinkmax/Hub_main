@@ -15,14 +15,28 @@ export const RESIZE_MIN = 24
 
 /** Defaults de shape/tamaño por kind al agregar un elemento nuevo. */
 export const ELEMENT_DEFAULTS: Record<
-  'table' | 'wall' | 'pillar' | 'island' | 'bar',
-  { shape: 'rect' | 'circle'; width: number; height: number }
+  'table' | 'wall' | 'pillar' | 'island' | 'bar' | 'door' | 'text' | 'stage',
+  { shape: 'rect' | 'circle' | 'banquette'; width: number; height: number }
 > = {
   table: { shape: 'rect', width: 80, height: 80 },
   wall: { shape: 'rect', width: 200, height: 16 },
   pillar: { shape: 'circle', width: 40, height: 40 },
   island: { shape: 'rect', width: 120, height: 80 },
   bar: { shape: 'rect', width: 240, height: 40 },
+  door: { shape: 'rect', width: 44, height: 44 },
+  text: { shape: 'rect', width: 120, height: 36 },
+  stage: { shape: 'rect', width: 240, height: 120 },
+}
+
+/** Presets de mesa por forma (tamaño sensato por forma). */
+export const TABLE_PRESETS: Record<
+  'round' | 'square' | 'rect' | 'banquette',
+  { shape: 'rect' | 'circle' | 'banquette'; width: number; height: number }
+> = {
+  round: { shape: 'circle', width: 80, height: 80 },
+  square: { shape: 'rect', width: 80, height: 80 },
+  rect: { shape: 'rect', width: 140, height: 80 },
+  banquette: { shape: 'banquette', width: 200, height: 70 },
 }
 
 /**
@@ -131,4 +145,31 @@ export function commitDragPosition(
   const x = snap ? snapToGrid(rawX) : Math.round(rawX)
   const y = snap ? snapToGrid(rawY) : Math.round(rawY)
   return clampToArea(x, y, w, h, areaW, areaH)
+}
+
+/** Paso de snap de rotación (grados) cuando se rota con Shift. */
+export const ROTATION_STEP = 15
+
+/** Normaliza un ángulo a `[0, 360)` en enteros. Puro. */
+export function normalizeRotation(deg: number): number {
+  const r = Math.round(deg) % 360
+  return r < 0 ? r + 360 : r
+}
+
+/**
+ * Ángulo (grados, 0..359) desde el centro `(cx, cy)` hacia el punto `(px, py)`,
+ * con 0 = "arriba" (12 en punto) y sentido horario, para que el handle de
+ * rotación (que vive sobre el borde superior) mapee 0° = sin rotar. Puro.
+ */
+export function angleFromCenter(cx: number, cy: number, px: number, py: number): number {
+  // atan2 estándar tiene 0 = derecha (eje +x), antihorario. Lo corremos para que
+  // el handle superior (px=cx, py<cy) dé 0° y crezca en sentido horario.
+  const deg = (Math.atan2(py - cy, px - cx) * 180) / Math.PI + 90
+  return normalizeRotation(deg)
+}
+
+/** Aplica snap de rotación al múltiplo de `step` (default `ROTATION_STEP`). Puro. */
+export function snapRotation(deg: number, step?: number): number {
+  const s = step ?? ROTATION_STEP
+  return normalizeRotation(Math.round(deg / s) * s)
 }
