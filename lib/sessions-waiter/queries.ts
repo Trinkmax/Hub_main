@@ -346,3 +346,31 @@ export async function getCobroBreakdown(sessionId: string): Promise<CobroBreakdo
     shared_items: sharedItems,
   }
 }
+
+export type SessionGuestLite = {
+  id: string
+  display_name: string | null
+  customer_id: string | null
+}
+
+/**
+ * Comensales de una sesión (para el selector de reasignación al mover ítems).
+ * RLS SELECT en session_guests: abierta a miembros del tenant.
+ */
+export async function listSessionGuests(sessionId: string): Promise<SessionGuestLite[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('session_guests')
+    .select('id, display_name, customer_id')
+    .eq('session_id', sessionId)
+    .order('joined_at', { ascending: true })
+  if (error) {
+    console.error('[sessions-waiter.listSessionGuests]', error.message)
+    return []
+  }
+  return (data ?? []).map((g) => ({
+    id: g.id,
+    display_name: g.display_name,
+    customer_id: g.customer_id,
+  }))
+}
