@@ -30,6 +30,7 @@ import {
   addDecorAction,
   createTableInPlanAction,
   deleteDecorAction,
+  deleteTablePermanentlyAction,
   duplicateElementAction,
   placeTableAction,
   removeFromPlanAction,
@@ -751,6 +752,23 @@ export function FloorPlanEditor({
     [activeArea, areaCenter, slug, onChanged],
   )
 
+  // Borra una mesa de la bandeja de forma definitiva (mesa + QR). El RPC bloquea
+  // si la mesa tuvo sesiones → mensaje "desactivala en su lugar".
+  const onDeleteTrayTable = useCallback(
+    (tableId: string) => {
+      void (async () => {
+        const r = await deleteTablePermanentlyAction(slug, tableId)
+        if (r.ok) {
+          toast.success('Mesa eliminada.')
+          onChanged()
+        } else {
+          toast.error(r.message)
+        }
+      })()
+    },
+    [slug, onChanged],
+  )
+
   const allTables = useMemo(
     () =>
       elements
@@ -983,7 +1001,7 @@ export function FloorPlanEditor({
                     onClose={clearSelection}
                   />
                 ) : (
-                  <UnplacedTray tables={unplaced} onPlace={onPlace} />
+                  <UnplacedTray tables={unplaced} onPlace={onPlace} onDelete={onDeleteTrayTable} />
                 )}
               </aside>
             </div>

@@ -335,38 +335,41 @@ function FloorElementImpl({
             </span>
           )}
         </button>
+
+        {/* Ring + handles DENTRO de la capa que rota → siguen la rotación del
+            elemento (antes quedaban desalineados con el cuerpo rotado). */}
+        {selected && (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute -inset-px rounded-[10px] ring-2 ring-primary"
+          />
+        )}
+
+        {selected && (
+          <>
+            <ResizeHandles
+              width={displayWidth}
+              height={displayHeight}
+              transformRef={transformRef}
+              rotation={rotation}
+              onResize={setLiveSize}
+              onResizeEnd={(size) => {
+                setLiveSize(null)
+                onResizeEnd(element.id, size)
+              }}
+            />
+            <RotateHandle
+              boxRef={wrapperRef}
+              onRotate={(deg) => {
+                if (contentRef.current) contentRef.current.style.transform = `rotate(${deg}deg)`
+                // Mantener la etiqueta derecha durante el gesto (contra-rotación viva).
+                if (labelRef.current) labelRef.current.style.transform = `rotate(${-deg}deg)`
+              }}
+              onRotateEnd={(deg) => onRotateEnd(element.id, deg)}
+            />
+          </>
+        )}
       </div>
-
-      {selected && (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute -inset-px rounded-[10px] ring-2 ring-primary"
-        />
-      )}
-
-      {selected && (
-        <>
-          <ResizeHandles
-            width={displayWidth}
-            height={displayHeight}
-            transformRef={transformRef}
-            onResize={setLiveSize}
-            onResizeEnd={(size) => {
-              setLiveSize(null)
-              onResizeEnd(element.id, size)
-            }}
-          />
-          <RotateHandle
-            boxRef={wrapperRef}
-            onRotate={(deg) => {
-              if (contentRef.current) contentRef.current.style.transform = `rotate(${deg}deg)`
-              // Mantener la etiqueta derecha durante el gesto (contra-rotación viva).
-              if (labelRef.current) labelRef.current.style.transform = `rotate(${-deg}deg)`
-            }}
-            onRotateEnd={(deg) => onRotateEnd(element.id, deg)}
-          />
-        </>
-      )}
     </div>
   )
 }

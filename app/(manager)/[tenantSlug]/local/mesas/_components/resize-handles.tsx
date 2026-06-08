@@ -12,6 +12,8 @@ export type ResizeHandlesProps = {
   width: number
   height: number
   transformRef: TransformRef
+  /** Rotación del elemento (grados): proyecta el delta de pantalla al eje local. */
+  rotation?: number
   onResize: (size: { width: number; height: number }) => void
   onResizeEnd: (size: { width: number; height: number }) => void
 }
@@ -32,6 +34,7 @@ export function ResizeHandles({
   width,
   height,
   transformRef,
+  rotation = 0,
   onResize,
   onResizeEnd,
 }: ResizeHandlesProps) {
@@ -44,9 +47,15 @@ export function ResizeHandles({
     // Scale vigente leído del stage (sin re-render). Fallback a 1 si no montó.
     // OJO: el ref de rzpp no expone `.state` en runtime → usar readStageTransform.
     const { scale } = readStageTransform(transformRef)
-    // Delta en px de pantalla → px lógicos dividiendo por scale (corrección del bug v1).
-    const dxLogical = (e.clientX - state.startX) / scale
-    const dyLogical = (e.clientY - state.startY) / scale
+    // Delta de pantalla → eje LOCAL del elemento (rotamos el delta por -rotation),
+    // luego a px lógicos dividiendo por scale. Sin rotación, es el caso de siempre.
+    const dxs = e.clientX - state.startX
+    const dys = e.clientY - state.startY
+    const rad = (rotation * Math.PI) / 180
+    const cos = Math.cos(rad)
+    const sin = Math.sin(rad)
+    const dxLogical = (dxs * cos + dys * sin) / scale
+    const dyLogical = (-dxs * sin + dys * cos) / scale
     const nextW =
       state.axis === 's' ? state.startW : Math.max(RESIZE_MIN, snapToGrid(state.startW + dxLogical))
     const nextH =
