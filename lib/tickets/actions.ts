@@ -16,6 +16,7 @@ import {
   acceptTicketSchema,
   addStaffTicketSchema,
   cancelTicketItemSchema,
+  moveTicketItemsSchema,
   rejectTicketSchema,
   updateTicketStatusSchema,
 } from './schemas'
@@ -229,4 +230,141 @@ export async function addStaffTicket(
 
   revalidatePath(`/${slug}/salon/mesas`)
   return { ok: true, ticketId: (data as { ticket_id: string }).ticket_id }
+}
+
+export type MoveTicketItemsState =
+  | { ok: true; targetSessionId: string; targetTicketId: string; movedCount: number }
+  | { ok: false; message: string; fieldErrors?: Record<string, string> }
+
+export async function moveTicketItemsAction(
+  slug: string,
+  input: {
+    sourceSessionId: string
+    targetTableId: string
+    moves: Array<{ ticketItemId: string; quantity: number; assign?: string }>
+    idempotencyKey?: string
+  },
+): Promise<MoveTicketItemsState> {
+  const access = await authorize(slug, ['waiter', 'owner'])
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = moveTicketItemsSchema.safeParse(input)
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: parsed.error.issues[0]?.message ?? 'Datos inválidos',
+      fieldErrors: flattenIssues(parsed.error),
+    }
+  }
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { ok: false, message: 'No autenticado.' }
+
+  const { data, error } = await supabase.rpc('move_ticket_items', {
+    p_source_session_id: parsed.data.sourceSessionId,
+    p_target_table_id: parsed.data.targetTableId,
+    p_moves: parsed.data.moves.map((m) => ({
+      ticket_item_id: m.ticketItemId,
+      quantity: m.quantity,
+      assign: m.assign ?? 'auto',
+    })),
+    p_idempotency_key: parsed.data.idempotencyKey ?? null,
+  })
+  if (error) {
+    const msg = error.message
+    if (msg.includes('session_not_open')) {
+      return { ok: false, message: 'La mesa de origen ya no está abierta.' }
+    }
+    if (msg.includes('session_not_found')) {
+      return { ok: false, message: 'Sesión de origen no encontrada.' }
+    }
+    if (msg.includes('invalid_target_table')) {
+      return { ok: false, message: 'La mesa destino no es válida.' }
+    }
+    if (msg.includes('same_table_move')) {
+      return { ok: false, message: 'Elegí una mesa distinta a la actual.' }
+    }
+    if (msg.includes('item_not_in_session')) {
+      return { ok: false, message: 'Alguno de los ítems no pertenece a esta mesa.' }
+    }
+    if (msg.includes('item_cancelled')) {
+      return { ok: false, message: 'No se pueden mover ítems cancelados.' }
+    }
+    if (msg.includes('invalid_quantity')) {
+      return { ok: false, message: 'Cantidad a mover inválida.' }
+    }
+    if (msg.includes('invalid_assigned_guest')) {
+      return { ok: false, message: 'El comensal destino no es válido.' }
+    }
+    if (msg.includes('no_moves')) {
+      return { ok: false, message: 'Seleccioná al menos un ítem.' }
+    }
+    if (msg.includes('role_not_allowed') || msg.includes('forbidden')) {
+      return { ok: false, message: 'No tenés permiso para mover ítems.' }
+    }
+    console.error('[tickets.moveItems]', msg)
+    return { ok: false, message: 'No se pudieron mover los ítems.' }
+  }
+
+  const result = data as {
+    target_session_id: string
+    target_ticket_id: string
+    moved_count: number
+  }
+
+  await logAudit({
+    tenantId: access.tenant.id,
+    userId: user.id,
+    action: 'ticket.items_moved',
+    entity: 'table_session',
+    entityId: parsed.data.sourceSessionId,
+    payload: {
+      target_session_id: result.target_session_id,
+      target_ticket_id: result.target_ticket_id,
+      target_table_id: parsed.data.targetTableId,
+      moves: parsed.data.moves,
+    },
+  })
+
+  revalidatePath(`/${slug}/salon/mesas`)
+  revalidatePath(`/${slug}/salon/mesas/${parsed.data.sourceSessionId}`)
+  revalidatePath(`/${slug}/salon/mesas/${result.target_session_id}`)
+  revalidatePath(`/${slug}/salon/cocina`)
+  return {
+    ok: true,
+    targetSessionId: result.target_session_id,
+    targetTicketId: result.target_ticket_id,
+    movedCount: result.moved_count,
+  }
+}
+
+export async function loadItemMoveTargetsAction(
+  slug: string,
+  sourceSessionId: string,
+): Promise<
+  | { ok: true; targets: import('@/lib/floor-plan/queries').ItemMoveTarget[] }
+  | { ok: false; message: string }
+> {
+  const access = await authorize(slug, ['waiter', 'owner'])
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+  const { getItemMoveTargets } = await import('@/lib/floor-plan/queries')
+  const targets = await getItemMoveTargets(access.tenant.id, sourceSessionId)
+  return { ok: true, targets }
+}
+
+export async function loadSessionGuestsAction(
+  slug: string,
+  sessionId: string,
+): Promise<
+  | { ok: true; guests: import('@/lib/sessions-waiter/queries').SessionGuestLite[] }
+  | { ok: false; message: string }
+> {
+  const access = await authorize(slug, ['waiter', 'owner'])
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+  const { listSessionGuests } = await import('@/lib/sessions-waiter/queries')
+  const guests = await listSessionGuests(sessionId)
+  return { ok: true, guests }
 }
