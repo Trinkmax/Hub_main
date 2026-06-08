@@ -3,9 +3,10 @@
 import { Minus, Plus, ShoppingBag, Trash2, Utensils } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetGrabber } from '@/components/ui/sheet'
 import { submitTicket } from '@/lib/m-session/actions'
 import type { CartItem } from './mesa-screen'
+import { useDismissOnBack } from './use-dismiss-on-back'
 
 function ARSFormat(cents: number): string {
   return new Intl.NumberFormat('es-AR', {
@@ -37,6 +38,7 @@ export function CartSheet({
 }) {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  useDismissOnBack(true, onClose)
   const total = cart.reduce((sum, c) => sum + c.unitPriceCents * c.quantity, 0)
   const itemCount = cart.reduce((sum, c) => sum + c.quantity, 0)
 
@@ -70,6 +72,7 @@ export function CartSheet({
         className="max-h-[88dvh] gap-0 rounded-t-3xl border-t-0 p-0"
         aria-describedby={undefined}
       >
+        <SheetGrabber />
         <div className="flex h-full flex-col">
           {/* HEADER */}
           <div className="border-b border-border/60 px-5 pt-5 pb-3">
