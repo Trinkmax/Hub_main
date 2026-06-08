@@ -34,3 +34,22 @@ export const addStaffTicketSchema = z.object({
     .min(1, 'El ticket no puede estar vacío'),
   assigned_to_guest_id: z.string().uuid().nullable().optional(),
 })
+
+export const moveTicketItemsSchema = z.object({
+  sourceSessionId: z.string().uuid(),
+  targetTableId: z.string().uuid(),
+  moves: z
+    .array(
+      z.object({
+        ticketItemId: z.string().uuid(),
+        quantity: z.coerce.number().int().min(1),
+        assign: z
+          .union([z.literal('auto'), z.literal('shared'), z.string().uuid()])
+          .default('auto'),
+      }),
+    )
+    .min(1, 'Seleccioná al menos un ítem para mover'),
+  idempotencyKey: z.string().min(1).max(64).optional(),
+})
+
+export type MoveTicketItemsInput = z.infer<typeof moveTicketItemsSchema>
