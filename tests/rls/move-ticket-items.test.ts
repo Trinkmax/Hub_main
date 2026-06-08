@@ -53,7 +53,6 @@ describeIfRls('RPC — move_ticket_items', () => {
   let cashier: Awaited<ReturnType<typeof createUserClient>>
   let tenant: { id: string; slug: string }
   let qrA: string
-  let qrB: string
   let qrC: string
   let tableA: string
   let tableB: string
@@ -92,7 +91,6 @@ describeIfRls('RPC — move_ticket_items', () => {
     tableA = a.id
     tableB = b.id
     qrA = a.qr_token
-    qrB = b.qr_token
     qrC = c.qr_token
     menuItemId = await seedMenuItem(svc, tenant.id, 100000) // $1000
   })
