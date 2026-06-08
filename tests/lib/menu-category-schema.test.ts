@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createCategorySchema, updateCategorySchema } from '@/lib/menu/schemas'
+import { createCategorySchema, moveCategorySchema, updateCategorySchema } from '@/lib/menu/schemas'
 
 describe('createCategorySchema con image_url', () => {
   it('acepta sin image_url (=> null)', () => {
@@ -36,6 +36,35 @@ describe('updateCategorySchema con image_url', () => {
       name: 'Postres',
       active: true,
       image_url: null,
+    })
+    expect(r.success).toBe(true)
+  })
+})
+
+describe('createCategorySchema con parent_id', () => {
+  it('acepta sin parent_id (=> null/undefined permitido)', () => {
+    const r = createCategorySchema.safeParse({ name: 'Bebidas' })
+    expect(r.success).toBe(true)
+  })
+  it('acepta un parent_id uuid', () => {
+    const r = createCategorySchema.safeParse({
+      name: 'Vinos',
+      parent_id: '11111111-1111-1111-1111-111111111111',
+    })
+    expect(r.success).toBe(true)
+    if (r.success) expect(r.data.parent_id).toBe('11111111-1111-1111-1111-111111111111')
+  })
+  it('rechaza parent_id no-uuid', () => {
+    const r = createCategorySchema.safeParse({ name: 'Vinos', parent_id: 'x' })
+    expect(r.success).toBe(false)
+  })
+})
+
+describe('moveCategorySchema', () => {
+  it('acepta parent_id null (mover a raíz)', () => {
+    const r = moveCategorySchema.safeParse({
+      id: '11111111-1111-1111-1111-111111111111',
+      parent_id: null,
     })
     expect(r.success).toBe(true)
   })
