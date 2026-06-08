@@ -1,15 +1,16 @@
 'use client'
 
-import { ImageOff, Minus, Plus, Sparkles } from 'lucide-react'
+import { ArrowLeft, ImageOff, Minus, Plus, Sparkles } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import Image from 'next/image'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetGrabber } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
 import type { ActiveSessionStateData } from '@/lib/m-session/actions'
 import { cn } from '@/lib/utils'
 import type { CartItem } from './mesa-screen'
+import { useDismissOnBack } from './use-dismiss-on-back'
 
 type Item = ActiveSessionStateData['menu'][number]['items'][number]
 
@@ -58,6 +59,7 @@ export function ItemDetailSheet({
   }, [item])
 
   const open = item !== null
+  useDismissOnBack(open, onClose)
   const total = item ? item.price_cents * qty : 0
 
   const handleAdd = () => {
@@ -76,6 +78,7 @@ export function ItemDetailSheet({
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
       <SheetContent
         side="bottom"
+        showClose={false}
         className="max-h-[92dvh] gap-0 rounded-t-3xl border-t-0 p-0"
         aria-describedby={undefined}
       >
@@ -91,6 +94,15 @@ export function ItemDetailSheet({
             >
               {/* HERO IMAGE con overlay */}
               <div className="relative aspect-[4/3] w-full overflow-hidden bg-secondary/40">
+                <SheetGrabber tone="light" />
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Volver"
+                  className="absolute left-3.5 top-3.5 z-20 flex size-9 items-center justify-center rounded-full bg-black/55 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+                >
+                  <ArrowLeft className="size-5" />
+                </button>
                 {item.image_url ? (
                   <Image
                     src={item.image_url}
