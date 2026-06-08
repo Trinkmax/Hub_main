@@ -71,6 +71,41 @@ export function clampToArea(
 }
 
 /**
+ * Igual que `clampToArea` pero respeta la ROTACIÓN: acota la caja envolvente
+ * REAL del elemento rotado (AABB), no la lógica `w×h`. Así una mesa rotada 90°
+ * (que visualmente mide `h×w`) puede llegar hasta el borde visual del área en vez
+ * de frenarse con un hueco. La rotación gira alrededor del centro, por eso
+ * clampeamos el centro y devolvemos el `x/y` (esquina) correspondiente.
+ *
+ * Con `rotation === 0` es idéntica a `clampToArea`. Devuelve enteros (geometría
+ * persistida es `int`). Pura.
+ */
+export function clampToAreaRotated(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  rotation: number,
+  areaW: number,
+  areaH: number,
+): { x: number; y: number } {
+  if (!rotation) return clampToArea(x, y, w, h, areaW, areaH)
+  const rad = (rotation * Math.PI) / 180
+  const aabbW = Math.abs(w * Math.cos(rad)) + Math.abs(h * Math.sin(rad))
+  const aabbH = Math.abs(w * Math.sin(rad)) + Math.abs(h * Math.cos(rad))
+  const cx = x + w / 2
+  const cy = y + h / 2
+  const minCx = aabbW / 2
+  const maxCx = areaW - aabbW / 2
+  const minCy = aabbH / 2
+  const maxCy = areaH - aabbH / 2
+  // Si el elemento (rotado) es más grande que el área, centrarlo.
+  const ncx = minCx > maxCx ? areaW / 2 : Math.max(minCx, Math.min(cx, maxCx))
+  const ncy = minCy > maxCy ? areaH / 2 : Math.max(minCy, Math.min(cy, maxCy))
+  return { x: Math.round(ncx - w / 2), y: Math.round(ncy - h / 2) }
+}
+
+/**
  * Convierte un punto de pantalla (clientX/Y) a coordenadas lógicas del stage.
  *
  * Fórmula: `(clientX - rect.left - posX) / scale` (ídem Y).
@@ -114,8 +149,17 @@ export function freeDragPosition(
   h: number,
   areaW: number,
   areaH: number,
+  rotation = 0,
 ): { x: number; y: number } {
-  return clampToArea(origX + dxScreen / scale, origY + dyScreen / scale, w, h, areaW, areaH)
+  return clampToAreaRotated(
+    origX + dxScreen / scale,
+    origY + dyScreen / scale,
+    w,
+    h,
+    rotation,
+    areaW,
+    areaH,
+  )
 }
 
 /**
@@ -139,12 +183,13 @@ export function commitDragPosition(
   areaW: number,
   areaH: number,
   snap: boolean,
+  rotation = 0,
 ): { x: number; y: number } {
   const rawX = origX + dxScreen / scale
   const rawY = origY + dyScreen / scale
   const x = snap ? snapToGrid(rawX) : Math.round(rawX)
   const y = snap ? snapToGrid(rawY) : Math.round(rawY)
-  return clampToArea(x, y, w, h, areaW, areaH)
+  return clampToAreaRotated(x, y, w, h, rotation, areaW, areaH)
 }
 
 /** Paso de snap de rotación (grados) cuando se rota con Shift. */

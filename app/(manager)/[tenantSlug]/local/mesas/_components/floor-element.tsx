@@ -9,7 +9,7 @@ import {
   decorSurfaceClass,
   decorSurfaceStyle,
 } from '@/components/floor-plan/table-glyph'
-import { clampToArea, freeDragPosition, snapToGrid } from '@/lib/floor-plan/grid'
+import { clampToAreaRotated, freeDragPosition, snapToGrid } from '@/lib/floor-plan/grid'
 import type { ElementRow } from '@/lib/floor-plan/queries'
 import { type Box, computeSnap, type Guide } from '@/lib/floor-plan/snap'
 import { cn } from '@/lib/utils'
@@ -152,6 +152,7 @@ function FloorElementImpl({
       element.height,
       areaWidth,
       areaHeight,
+      rotation,
     )
     return computeSnap(
       { x: free.x, y: free.y, width: element.width, height: element.height },
@@ -225,6 +226,7 @@ function FloorElementImpl({
         element.height,
         areaWidth,
         areaHeight,
+        rotation,
       )
       const snap = computeSnap(
         { x: free.x, y: free.y, width: element.width, height: element.height },
@@ -234,7 +236,15 @@ function FloorElementImpl({
       const hasH = snap.guides.some((g) => g.axis === 'h')
       const fx = hasV ? snap.x : e.altKey ? Math.round(free.x) : snapToGrid(free.x)
       const fy = hasH ? snap.y : e.altKey ? Math.round(free.y) : snapToGrid(free.y)
-      const c = clampToArea(fx, fy, element.width, element.height, areaWidth, areaHeight)
+      const c = clampToAreaRotated(
+        fx,
+        fy,
+        element.width,
+        element.height,
+        rotation,
+        areaWidth,
+        areaHeight,
+      )
       if (node) {
         node.style.transform = `translate3d(${c.x - state.origX}px, ${c.y - state.origY}px, 0)`
       }
