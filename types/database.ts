@@ -937,10 +937,11 @@ export type Database = {
           checked_in_at: string | null
           checked_in_by: string | null
           created_at: string
-          customer_id: string
+          customer_id: string | null
           event_id: string
           guests_count: number
           id: string
+          salon_reservation_id: string | null
           status: Database["public"]["Enums"]["reservation_status"]
           tenant_id: string
           updated_at: string
@@ -950,10 +951,11 @@ export type Database = {
           checked_in_at?: string | null
           checked_in_by?: string | null
           created_at?: string
-          customer_id: string
+          customer_id?: string | null
           event_id: string
           guests_count?: number
           id?: string
+          salon_reservation_id?: string | null
           status?: Database["public"]["Enums"]["reservation_status"]
           tenant_id: string
           updated_at?: string
@@ -963,16 +965,24 @@ export type Database = {
           checked_in_at?: string | null
           checked_in_by?: string | null
           created_at?: string
-          customer_id?: string
+          customer_id?: string | null
           event_id?: string
           guests_count?: number
           id?: string
+          salon_reservation_id?: string | null
           status?: Database["public"]["Enums"]["reservation_status"]
           tenant_id?: string
           updated_at?: string
           waitlist_position?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "event_attendees_salon_reservation_id_fkey"
+            columns: ["salon_reservation_id"]
+            isOneToOne: false
+            referencedRelation: "salon_reservations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "reservations_customer_id_fkey"
             columns: ["customer_id"]
@@ -2231,6 +2241,7 @@ export type Database = {
           guest_email: string | null
           guest_name: string
           guest_phone: string | null
+          hub_event_id: string | null
           id: string
           kind: Database["public"]["Enums"]["reservation_kind"]
           meal_type: Database["public"]["Enums"]["meal_type"]
@@ -2266,6 +2277,7 @@ export type Database = {
           guest_email?: string | null
           guest_name: string
           guest_phone?: string | null
+          hub_event_id?: string | null
           id?: string
           kind?: Database["public"]["Enums"]["reservation_kind"]
           meal_type: Database["public"]["Enums"]["meal_type"]
@@ -2301,6 +2313,7 @@ export type Database = {
           guest_email?: string | null
           guest_name?: string
           guest_phone?: string | null
+          hub_event_id?: string | null
           id?: string
           kind?: Database["public"]["Enums"]["reservation_kind"]
           meal_type?: Database["public"]["Enums"]["meal_type"]
@@ -2351,6 +2364,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_customer_stats"
             referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "salon_reservations_hub_event_id_fkey"
+            columns: ["hub_event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "salon_reservations_primary_manager_id_fkey"
@@ -3709,6 +3729,14 @@ export type Database = {
         }
         Returns: Json
       }
+      link_salon_reservation_to_event: {
+        Args: { p_event_id: string; p_reservation_id: string }
+        Returns: {
+          attendee_id: string
+          status: Database["public"]["Enums"]["reservation_status"]
+          waitlist_position: number
+        }[]
+      }
       mark_commission_paid: {
         Args: { p_ledger_ids: string[]; p_paid_at?: string }
         Returns: number
@@ -3857,6 +3885,7 @@ export type Database = {
           guest_email: string | null
           guest_name: string
           guest_phone: string | null
+          hub_event_id: string | null
           id: string
           kind: Database["public"]["Enums"]["reservation_kind"]
           meal_type: Database["public"]["Enums"]["meal_type"]
@@ -3880,6 +3909,12 @@ export type Database = {
         }
       }
       unaccent: { Args: { "": string }; Returns: string }
+      unlink_salon_reservation_from_event: {
+        Args: { p_reservation_id: string }
+        Returns: {
+          promoted_id: string
+        }[]
+      }
       update_message_status: {
         Args: {
           p_error: string
@@ -3911,6 +3946,7 @@ export type Database = {
           guest_email: string | null
           guest_name: string
           guest_phone: string | null
+          hub_event_id: string | null
           id: string
           kind: Database["public"]["Enums"]["reservation_kind"]
           meal_type: Database["public"]["Enums"]["meal_type"]
