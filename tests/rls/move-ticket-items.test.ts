@@ -203,7 +203,8 @@ describeIfRls('RPC — move_ticket_items', () => {
       .insert({
         tenant_id: tenant.id,
         first_name: 'Ana',
-        phone_e164: `+54935100${Math.floor(Math.random() * 90000) + 10000}`,
+        last_name: 'Registrada',
+        phone: `+54935100${Math.floor(Math.random() * 90000) + 10000}`,
       })
       .select('id')
       .single()
