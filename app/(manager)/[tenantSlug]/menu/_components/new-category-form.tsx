@@ -24,9 +24,11 @@ function SubmitBtn() {
 export function NewCategoryForm({
   tenantId,
   tenantSlug,
+  parentId = null,
 }: {
   tenantId: string
   tenantSlug: string
+  parentId?: string | null
 }) {
   const action = createCategory.bind(null, tenantSlug)
   const [state, formAction] = useActionState(action, initial)
@@ -44,6 +46,7 @@ export function NewCategoryForm({
   return (
     <form ref={formRef} action={formAction} className="grid gap-3">
       <input type="hidden" name="image_url" value={imageUrl ?? ''} />
+      <input type="hidden" name="parent_id" value={parentId ?? ''} />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <Input
           name="name"
