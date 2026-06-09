@@ -117,6 +117,7 @@ export function MenuBoard({
     startTransition(async () => {
       const result = await reorderCategories(
         tenantSlug,
+        null,
         next.map((c) => c.id),
       )
       if (!result.ok) {
