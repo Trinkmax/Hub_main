@@ -84,6 +84,7 @@ export const createSalonReservationSchema = z
     // que puede NO estar programado ese día. Si está seteado y no hay instance,
     // la Server Action crea una ad-hoc via ensure_scheduled_event_for_template.
     requested_template_id: z.string().uuid().optional().nullable(),
+    hub_event_id: z.string().uuid().optional().nullable(),
 
     estimated_guests: z.coerce.number().int().min(1).max(99),
 
@@ -118,6 +119,13 @@ export const createSalonReservationSchema = z
         message: 'Solo Cumpleaños o Reservas especiales pueden pedir un formato ad-hoc.',
       })
     }
+    if (data.meal_type === 'hub_event' && !data.hub_event_id) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['hub_event_id'],
+        message: 'Elegí el evento del calendario al que se asocia.',
+      })
+    }
   })
 
 export const updateSalonReservationSchema = z
@@ -134,6 +142,7 @@ export const updateSalonReservationSchema = z
     reservation_time_local: timeField,
     zone: salonZoneEnum,
     scheduled_event_id: z.string().uuid().optional().nullable(),
+    hub_event_id: z.string().uuid().optional().nullable(),
 
     estimated_guests: z.coerce.number().int().min(1).max(99),
     actual_guests: z.union([z.coerce.number().int().min(1).max(99), z.null()]).optional(),
@@ -160,6 +169,13 @@ export const updateSalonReservationSchema = z
         code: 'custom',
         path: ['assistant_manager_id'],
         message: 'El asistente no puede ser el mismo que el gestor principal.',
+      })
+    }
+    if (data.meal_type === 'hub_event' && !data.hub_event_id) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['hub_event_id'],
+        message: 'Elegí el evento del calendario al que se asocia.',
       })
     }
   })
