@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowLeft, Search, X } from 'lucide-react'
+import { ChevronRight, Home, Search, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Input } from '@/components/ui/input'
 import type { ActiveSessionStateData } from '@/lib/m-session/actions'
@@ -13,6 +13,34 @@ import { RecommendedCarousel } from './recommended-carousel'
 
 type Category = ActiveSessionStateData['menu'][number]
 type Item = Category['items'][number]
+type Node = Category & { children: Node[] }
+
+// Arma el bosque por parent_id. Cada categoría conserva sus ítems directos.
+function buildForest(categories: Category[]): {
+  roots: Node[]
+  byId: Map<string, Node>
+} {
+  const byId = new Map<string, Node>()
+  for (const c of categories) byId.set(c.id, { ...c, children: [] })
+  const roots: Node[] = []
+  for (const n of byId.values()) {
+    if (n.parent_id && byId.has(n.parent_id)) byId.get(n.parent_id)!.children.push(n)
+    else roots.push(n)
+  }
+  const byPos = (a: { position: number }, b: { position: number }) => a.position - b.position
+  const sortRec = (ns: Node[]) => {
+    ns.sort(byPos)
+    for (const n of ns) sortRec(n.children)
+  }
+  sortRec(roots)
+  return { roots, byId }
+}
+
+// ¿La categoría tiene contenido (ítems directos o algún descendiente con ítems)?
+function hasContent(node: Node): boolean {
+  if (node.items.length > 0) return true
+  return node.children.some(hasContent)
+}
 
 export function MenuHub({
   categories,
@@ -21,29 +49,38 @@ export function MenuHub({
   categories: Category[]
   onAdd: (item: CartItem) => void
 }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [currentId, setCurrentId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [opening, setOpening] = useState<Item | null>(null)
 
-  const visibleCategories = useMemo(
-    () => categories.filter((c) => c.items.length > 0),
-    [categories],
-  )
+  const { roots, byId } = useMemo(() => buildForest(categories), [categories])
   const featured = useMemo(
     () => categories.flatMap((c) => c.items.filter((i) => i.featured)).slice(0, 6),
     [categories],
   )
   const searchResults = useMemo(() => searchMenuItems(categories, query), [categories, query])
-  const selected = useMemo(
-    () => (selectedId ? (categories.find((c) => c.id === selectedId) ?? null) : null),
-    [categories, selectedId],
-  )
-
   const searching = query.trim().length > 0
+
+  const current = currentId ? (byId.get(currentId) ?? null) : null
+  const levelNodes = (current ? current.children : roots).filter(hasContent)
+  const levelItems = current ? current.items : []
+
+  // Breadcrumb (ancestros).
+  const breadcrumb = useMemo(() => {
+    const out: Node[] = []
+    let cur = current
+    const seen = new Set<string>()
+    while (cur && !seen.has(cur.id)) {
+      seen.add(cur.id)
+      out.unshift(cur)
+      cur = cur.parent_id ? (byId.get(cur.parent_id) ?? null) : null
+    }
+    return out
+  }, [current, byId])
 
   return (
     <div className="space-y-5">
-      {!selected && (
+      {!current && (
         <div className="relative">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
@@ -60,7 +97,7 @@ export function MenuHub({
         </div>
       )}
 
-      {!selected && searching ? (
+      {!current && searching ? (
         searchResults.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-border/60 bg-card/40 p-8 text-center">
             <p className="text-sm font-medium">Sin resultados</p>
@@ -73,46 +110,92 @@ export function MenuHub({
             ))}
           </div>
         )
-      ) : selected ? (
-        <section aria-labelledby="cat-detail-title" className="space-y-3">
-          <div className="flex items-center gap-2">
+      ) : current ? (
+        <section aria-labelledby="cat-detail-title" className="space-y-4">
+          {/* Breadcrumb */}
+          <nav className="flex flex-wrap items-center gap-1 text-sm" aria-label="Ruta">
             <button
               type="button"
-              onClick={() => setSelectedId(null)}
-              className="flex size-9 items-center justify-center rounded-full border border-border/60 bg-card text-foreground shadow-sm transition-colors hover:bg-[--cream-tint] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              aria-label="Volver a las categorías"
+              onClick={() => setCurrentId(null)}
+              className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-card px-2.5 py-1 text-muted-foreground shadow-sm"
             >
-              <ArrowLeft className="size-4" />
+              <Home className="size-3.5" aria-hidden /> Carta
             </button>
-            <h2 id="cat-detail-title" className="font-serif text-xl font-semibold tracking-tight">
-              {selected.name}
-            </h2>
-          </div>
-          <div className="space-y-2">
-            {selected.items.map((it) => (
-              <ItemRow key={it.id} item={it} onOpen={setOpening} />
+            {breadcrumb.map((c, idx) => (
+              <span key={c.id} className="inline-flex items-center gap-1">
+                <ChevronRight className="size-3.5 text-muted-foreground/60" aria-hidden />
+                {idx === breadcrumb.length - 1 ? (
+                  <span
+                    id="cat-detail-title"
+                    className="px-1.5 py-1 font-serif text-base font-semibold"
+                  >
+                    {c.name}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setCurrentId(c.id)}
+                    className="rounded-md px-1.5 py-1 font-medium"
+                  >
+                    {c.name}
+                  </button>
+                )}
+              </span>
             ))}
-          </div>
+          </nav>
+
+          {/* Ítems directos */}
+          {levelItems.length > 0 ? (
+            <div className="space-y-2">
+              {levelItems.map((it) => (
+                <ItemRow key={it.id} item={it} onOpen={setOpening} />
+              ))}
+            </div>
+          ) : null}
+
+          {/* Subcategorías */}
+          {levelNodes.length > 0 ? (
+            <div className="space-y-3">
+              {levelItems.length > 0 ? (
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  Más opciones
+                </p>
+              ) : null}
+              {levelNodes.map((node) => (
+                <CategoryCard
+                  key={node.id}
+                  category={node}
+                  subcatCount={node.children.filter(hasContent).length}
+                  onSelect={setCurrentId}
+                />
+              ))}
+            </div>
+          ) : null}
         </section>
       ) : (
         <>
           <RecommendedCarousel items={featured} onOpen={setOpening} />
-          {visibleCategories.length === 0 ? (
+          {levelNodes.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border/60 bg-card/40 p-8 text-center">
               <p className="text-sm font-medium">La carta está vacía</p>
               <p className="mt-1 text-xs text-muted-foreground">Pedile al mozo que te ayude.</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {visibleCategories.map((cat) => (
-                <CategoryCard key={cat.id} category={cat} onSelect={setSelectedId} />
+              {levelNodes.map((node) => (
+                <CategoryCard
+                  key={node.id}
+                  category={node}
+                  subcatCount={node.children.filter(hasContent).length}
+                  onSelect={setCurrentId}
+                />
               ))}
             </div>
           )}
         </>
       )}
 
-      {!selected && searching && (
+      {!current && searching && (
         <button
           type="button"
           onClick={() => setQuery('')}
