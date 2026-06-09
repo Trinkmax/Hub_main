@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { MenuCategory, MenuItem } from '@/lib/menu/queries'
+import { categoryPathLabel } from '@/lib/menu/tree'
 import { createPerItemRule } from '@/lib/points/actions'
 
 export function NewPerItemForm({
@@ -87,7 +88,7 @@ export function NewPerItemForm({
             <SelectContent>
               {(mode === 'category' ? categories : items).map((opt) => (
                 <SelectItem key={opt.id} value={opt.id}>
-                  {opt.name}
+                  {mode === 'category' ? categoryPathLabel(categories, opt.id) : opt.name}
                 </SelectItem>
               ))}
             </SelectContent>
