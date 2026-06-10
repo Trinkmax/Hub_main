@@ -34,6 +34,9 @@ export function CalendarMonth({
     eventsByDay.get(key)?.push(ev)
   }
 
+  const occ = (ev: EventListEntry): string =>
+    ev.capacity === null ? `${ev.confirmed_seats}` : `${ev.confirmed_seats}/${ev.capacity}`
+
   const weekHeader = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 
   return (
@@ -95,6 +98,10 @@ export function CalendarMonth({
                           {format(new Date(ev.starts_at), 'HH:mm')}
                         </span>
                         <span className="truncate">{ev.name}</span>
+                        <span className="ml-auto shrink-0 font-mono text-[10px] tabular-nums opacity-80">
+                          {occ(ev)}
+                          {ev.waitlist_count > 0 ? ` +${ev.waitlist_count}` : ''}
+                        </span>
                       </Link>
                     ))}
                   </div>
@@ -141,10 +148,10 @@ export function CalendarMonth({
                     key={ev.id}
                     href={`/${tenantSlug}/eventos/${ev.id}`}
                     className="block truncate rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium leading-tight text-primary hover:bg-primary/25"
-                    title={ev.name}
+                    title={`${ev.name} · ${occ(ev)}${ev.waitlist_count > 0 ? ` (+${ev.waitlist_count} espera)` : ''}`}
                   >
                     <span className="font-mono">{format(new Date(ev.starts_at), 'HH:mm')}</span>{' '}
-                    {ev.name}
+                    {ev.name} <span className="font-mono tabular-nums opacity-80">{occ(ev)}</span>
                   </Link>
                 ))}
                 {dayEvents.length > 2 ? (
