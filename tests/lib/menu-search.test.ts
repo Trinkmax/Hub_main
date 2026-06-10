@@ -62,5 +62,6 @@ describe('searchMenuItems', () => {
     ]
     const r = searchMenuItems(nested, 'malbec')
     expect(r.map((i) => i.id)).toEqual(['malbec'])
+    expect(r[0]?.path).toBe('bebidas › vinos')
   })
 })

@@ -15,6 +15,7 @@ import {
   MoreHorizontal,
   Pause,
   Pencil,
+  Play,
   Plus,
   Sparkles,
   Trash2,
@@ -395,7 +396,7 @@ function SortableItemCard({
               {item.featured ? 'Quitar destacado' : 'Destacar'}
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={onToggleActive}>
-              <Pause className="size-3.5" />
+              {item.active ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
               {item.active ? 'Pausar' : 'Activar'}
             </DropdownMenuItem>
             <DropdownMenuSeparator />

@@ -171,6 +171,11 @@ begin
 end; $$;
 
 -- 5. GRANTs ---------------------------------------------------
+-- revoke from public primero (patrón del codebase para SECURITY DEFINER):
+-- una función recién creada/recreada lleva EXECUTE implícito a PUBLIC (incluye anon).
+revoke all on function public.reorder_menu_categories(uuid, uuid[]) from public;
+revoke all on function public.move_category(uuid, uuid) from public;
+revoke all on function public.delete_category_cascade(uuid) from public;
 grant execute on function public.reorder_menu_categories(uuid, uuid[]),
   public.move_category(uuid, uuid),
   public.delete_category_cascade(uuid) to authenticated;

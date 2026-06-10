@@ -24,7 +24,7 @@ function buildForest(categories: Category[]): {
   for (const c of categories) byId.set(c.id, { ...c, children: [] })
   const roots: Node[] = []
   for (const n of byId.values()) {
-    if (n.parent_id && byId.has(n.parent_id)) byId.get(n.parent_id)!.children.push(n)
+    if (n.parent_id && byId.has(n.parent_id)) byId.get(n.parent_id)?.children.push(n)
     else roots.push(n)
   }
   const byPos = (a: { position: number }, b: { position: number }) => a.position - b.position
@@ -104,9 +104,16 @@ export function MenuHub({
             <p className="mt-1 text-xs text-muted-foreground">Probá con otra búsqueda.</p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {searchResults.map((it) => (
-              <ItemRow key={it.id} item={it} onOpen={setOpening} />
+              <div key={it.id} className="space-y-1">
+                {it.path ? (
+                  <p className="px-1 text-[11px] font-medium tracking-wide text-muted-foreground">
+                    {it.path}
+                  </p>
+                ) : null}
+                <ItemRow item={it} onOpen={setOpening} />
+              </div>
             ))}
           </div>
         )

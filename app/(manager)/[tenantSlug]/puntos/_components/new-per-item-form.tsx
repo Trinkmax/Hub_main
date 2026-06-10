@@ -32,6 +32,11 @@ export function NewPerItemForm({
   const [priority, setPriority] = useState('0')
   const [pending, start] = useTransition()
 
+  // Solo categorías con ítems DIRECTOS: una regla por categoría solo puntúa esos
+  // ítems (el motor no hereda a subcategorías), así que ofrecer un contenedor sin
+  // ítems propios crearía una regla que nunca dispara.
+  const leafCategories = categories.filter((c) => items.some((i) => i.category_id === c.id))
+
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!targetId) {
@@ -86,7 +91,7 @@ export function NewPerItemForm({
               <SelectValue placeholder="Elegir…" />
             </SelectTrigger>
             <SelectContent>
-              {(mode === 'category' ? categories : items).map((opt) => (
+              {(mode === 'category' ? leafCategories : items).map((opt) => (
                 <SelectItem key={opt.id} value={opt.id}>
                   {mode === 'category' ? categoryPathLabel(categories, opt.id) : opt.name}
                 </SelectItem>
@@ -118,6 +123,12 @@ export function NewPerItemForm({
           {pending ? '…' : 'Crear'}
         </Button>
       </div>
+      {mode === 'category' ? (
+        <p className="text-[11px] text-muted-foreground">
+          La regla suma puntos solo por ítems asignados <strong>directamente</strong> a esa
+          categoría, no a los de sus subcategorías. Para puntuar una subcategoría, elegila a ella.
+        </p>
+      ) : null}
     </form>
   )
 }

@@ -100,7 +100,7 @@ export async function listActiveMenu(opts: { tenantId: string }): Promise<{
   const [{ data: cats }, { data: items }, { data: featuredRows }] = await Promise.all([
     supabase
       .from('menu_categories')
-      .select('id, name, position, active, parent_id')
+      .select('id, name, position, active, image_url, parent_id')
       .eq('tenant_id', opts.tenantId)
       .eq('active', true)
       .order('position', { ascending: true }),
@@ -109,6 +109,7 @@ export async function listActiveMenu(opts: { tenantId: string }): Promise<{
       .select(MENU_ITEM_COLUMNS)
       .eq('tenant_id', opts.tenantId)
       .eq('active', true)
+      .not('category_id', 'is', null)
       .order('position', { ascending: true }),
     supabase
       .from('menu_items')

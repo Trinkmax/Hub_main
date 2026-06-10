@@ -118,3 +118,38 @@ Anotados del review (2026-06-08); no bloquean. Confirmados pero de bajo impacto:
   safety-net 30s). No se hizo re-seed naive por el estado interno de área (causaría salto de
   área). Fix correcto: re-seed sólo del área activa.
 - **Nudge de teclado por flechas en el canvas** ya existe; falta documentarlo en la ayuda.
+
+## Carta — categorías anidadas (rama `feat/carta-nested-categories`)
+
+Diferidas del review final (ninguna bloquea; la feature es correcta y testeada):
+
+- **Hardening DB del invariante intra-tenant de `parent_id`.** Hoy lo garantizan RLS
+  + validación en `move_category`/`createCategory`. Vía PostgREST directo, un owner
+  podría setear `parent_id` a una categoría de otro tenant (tendría que adivinar el
+  UUID, RLS le oculta los ids ajenos). Agregar un trigger que valide que el `tenant_id`
+  del padre == el de la fila para hacerlo garantía de DB.
+- **Audit actor en `createCategory`/`moveCategory`/`createMenuItem`.** Registran
+  `userId: null`; `deleteCategory`/`toggleFeatured` ya capturan el actor con
+  `auth.getUser()`. Unificar para tener el "quién" en todos los eventos.
+- **`lib/item-tags/queries.ts` (gestión de tags).** No filtra `active` ni `category_id`,
+  así que tras un borrado en cascada los ítems archivados aparecen con `category_name = null`
+  (no crashea). Agregar `.not('category_id','is',null)` si molesta.
+- **`get_session_state`: `order by category->>'position'` es lexicográfico** (preexistente):
+  con 10+ categorías de primer nivel el orden sale "1,10,2…". Castear: `order by (category->>'position')::int`.
+- **Consistencia de validación.** `lib/menu/schemas.ts` usa `z.guid()` para
+  `parent_id`/`moveCategorySchema`/`reorderCategoriesSchema`; el resto del repo usa
+  `z.string().uuid()`. Estandarizar (con fixtures de UUID v4 válidos en tests).
+- **Paridad de pausado padre→hijo (cliente).** Al pausar una categoría padre, sus
+  subcategorías activas se promueven a raíz en la carta (decisión aceptada). Para paridad
+  estricta, filtrar subtrees con ancestro inactivo en `get_session_state`.
+- **Mozo `items-step`: tabs planas con ruta** en vez de drill-down (decisión explícita del
+  usuario sobre la UI del staff). El texto del spec quedó desactualizado respecto a esa decisión.
+- **`new-per-item-form` (puntos)** usa `<Select>` con labels de ruta en vez del
+  `CategoryTreePicker`. Cumple el requisito (muestra la ruta); opcional unificar componente.
+- **Perf menor:** en `menu-hub.tsx`, `levelNodes`/`subcatCount` recomputan `hasContent`
+  por render. Memoizar si aparecen árboles muy grandes (no relevante a escala de un bar).
+- **Datos cíclicos de categorías.** `buildCategoryTree`/`buildForest` excluyen nodos en
+  ciclo (no crashean; nunca quedan como raíz) → esas categorías se vuelven invisibles. Un
+  ciclo solo es alcanzable por escritura raw/seed (la app lo previene en `move_category`). Aceptable.
+- **Unicidad de nombres entre hermanos** no se enforce (`unique(tenant_id, parent_id, name)`).
+  Opcional con warning suave en UI.

@@ -302,8 +302,17 @@ function SubcategoryList({
 
   // Re-sincroniza si cambian los nodos (navegación de nivel o refresh).
   // Patrón de "ajustar estado al cambiar props" comparando por ids.
-  const idsKey = nodes.map((n) => n.id).join(',')
-  const orderIdsKey = order.map((n) => n.id).join(',')
+  // Comparamos ids ORDENADOS para detectar solo cambios de membresía (alta/baja/
+  // navegación de nivel), no de orden — así un reorder optimista no se pisa si el
+  // componente re-renderiza por otra razón antes de que resuelva router.refresh().
+  const idsKey = [...nodes]
+    .map((n) => n.id)
+    .sort()
+    .join(',')
+  const orderIdsKey = [...order]
+    .map((n) => n.id)
+    .sort()
+    .join(',')
   if (idsKey !== orderIdsKey) {
     setOrder(nodes)
   }
@@ -502,7 +511,13 @@ function SubcategoryRow({
       ) : null}
 
       {/* Mover a… */}
-      <Dialog open={moving} onOpenChange={setMoving}>
+      <Dialog
+        open={moving}
+        onOpenChange={(o) => {
+          if (!o) setMoveTarget(node.parent_id)
+          setMoving(o)
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Mover "{node.name}"</DialogTitle>
@@ -516,7 +531,13 @@ function SubcategoryRow({
             allowRoot
           />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setMoving(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setMoving(false)
+                setMoveTarget(node.parent_id)
+              }}
+            >
               Cancelar
             </Button>
             <Button onClick={onConfirmMove}>Mover</Button>
