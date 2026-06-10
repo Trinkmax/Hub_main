@@ -2,6 +2,7 @@ import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { listLinkableHubEvents } from '@/lib/events/queries'
 import {
   getBonusRule,
   getSalonReservation,
@@ -42,7 +43,7 @@ export default async function ReservaDetailPage({
   const reservation = await getSalonReservation({ tenantId: access.tenant.id, id })
   if (!reservation) notFound()
 
-  const [managers, templates, eventsForDate, tiers, bonus] = await Promise.all([
+  const [managers, templates, eventsForDate, tiers, bonus, hubEvents] = await Promise.all([
     listManagers({ tenantId: access.tenant.id, onlyActive: true }),
     listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: true }),
     listScheduledEventsForDate({
@@ -51,6 +52,7 @@ export default async function ReservaDetailPage({
     }),
     listRateTiers({ tenantId: access.tenant.id }),
     getBonusRule({ tenantId: access.tenant.id }),
+    listLinkableHubEvents({ tenantId: access.tenant.id }),
   ])
 
   return (
@@ -77,6 +79,7 @@ export default async function ReservaDetailPage({
           managers={managers}
           templates={templates}
           initialEventsForDate={eventsForDate}
+          hubEvents={hubEvents}
           rateTiers={tiers}
           bonusPerGuestCents={bonus?.bonus_per_guest_cents ?? 0}
           reservationId={reservation.id}
@@ -91,6 +94,7 @@ export default async function ReservaDetailPage({
             reservation_time_local: reservation.reservation_time_local,
             zone: reservation.zone,
             scheduled_event_id: reservation.scheduled_event_id ?? undefined,
+            hub_event_id: reservation.hub_event_id ?? undefined,
             estimated_guests: reservation.estimated_guests,
             cake_count: reservation.cake_count,
             champagne_count: reservation.champagne_count,
