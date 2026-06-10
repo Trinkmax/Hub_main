@@ -18,6 +18,13 @@ export function humanizeSalonError(message: string): string {
     return 'El rango de personas se solapa con otro tier activo.'
   if (m.includes('check constraint') || m.includes('violates check'))
     return 'Algún campo tiene un valor fuera de rango.'
+  if (m.includes('event_not_found')) return 'El evento no existe.'
+  if (m.includes('event_not_open')) return 'El evento no está publicado.'
+  if (m.includes('tenant_mismatch')) return 'El evento es de otro local.'
+  if (m.includes('guests_exceed_capacity'))
+    return 'La cantidad de personas supera el cupo del evento.'
+  if (m.includes('capacity_reached')) return 'El evento está lleno y no admite lista de espera.'
+  if (m.includes('relink_requires_unlink')) return 'No se pudo reasignar el evento. Probá de nuevo.'
   if (m.includes('foreign key')) return 'Referencia inválida (gestor o evento inexistente).'
   return 'No pudimos completar la acción.'
 }
