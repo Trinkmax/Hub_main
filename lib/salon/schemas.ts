@@ -80,7 +80,7 @@ export const createSalonReservationSchema = z
     reservation_time_local: timeField,
     zone: salonZoneEnum,
     scheduled_event_id: z.string().uuid().optional().nullable(),
-    // Para reservas especiales (cumple/recibida) que piden un formato calendizado
+    // Para reservas especiales (cumple/recibida) que piden un formato calendarizado
     // que puede NO estar programado ese día. Si está seteado y no hay instance,
     // la Server Action crea una ad-hoc via ensure_scheduled_event_for_template.
     requested_template_id: z.string().uuid().optional().nullable(),

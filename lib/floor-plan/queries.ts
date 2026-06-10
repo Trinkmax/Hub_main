@@ -586,3 +586,108 @@ export async function getMoveTargets(
   targets.sort((a, b) => a.area_pos - b.area_pos || a.label.localeCompare(b.label, 'es'))
   return targets
 }
+
+// ─── Destinos para "mover ítems" (incluye mesas ocupadas) ─────────────────────
+
+export type ItemMoveTarget = {
+  table_id: string
+  label: string
+  capacity: number | null
+  area_name: string
+  area_pos: number
+  /** sesión abierta en la mesa, o null si está libre */
+  session: {
+    id: string
+    alias: string | null
+    total_cents: number
+    party_size: number | null
+  } | null
+}
+
+/**
+ * Igual que getMoveTargets pero para mover ÍTEMS: incluye mesas ocupadas
+ * (con su sesión abierta) además de las libres, y excluye la mesa de la
+ * sesión origen. RLS SELECT abierta a miembros del tenant.
+ */
+export async function getItemMoveTargets(
+  tenantId: string,
+  sourceSessionId: string,
+): Promise<ItemMoveTarget[]> {
+  const supabase = await createClient()
+
+  const { data: src } = await supabase
+    .from('table_sessions')
+    .select('physical_table_id')
+    .eq('id', sourceSessionId)
+    .maybeSingle()
+  const sourceTableId = src?.physical_table_id ?? null
+
+  const [{ data: els }, { data: tbls }, { data: open }] = await Promise.all([
+    supabase
+      .from('floor_plan_elements')
+      .select('physical_table_id, floor_plan_areas(name, position)')
+      .eq('tenant_id', tenantId)
+      .eq('kind', 'table'),
+    supabase
+      .from('physical_tables')
+      .select('id, label, capacity')
+      .eq('tenant_id', tenantId)
+      .eq('active', true),
+    supabase
+      .from('table_sessions')
+      .select('id, physical_table_id, alias, total_cents, party_size')
+      .eq('tenant_id', tenantId)
+      .eq('status', 'open'),
+  ])
+
+  const openByTable = new Map<
+    string,
+    { id: string; alias: string | null; total_cents: number; party_size: number | null }
+  >()
+  for (const s of (open ?? []) as {
+    id: string
+    physical_table_id: string | null
+    alias: string | null
+    total_cents: number
+    party_size: number | null
+  }[]) {
+    if (s.physical_table_id) {
+      openByTable.set(s.physical_table_id, {
+        id: s.id,
+        alias: s.alias,
+        total_cents: s.total_cents ?? 0,
+        party_size: s.party_size,
+      })
+    }
+  }
+
+  const placed = new Map<string, { area_name: string; area_pos: number }>()
+  for (const e of (els ?? []) as unknown as {
+    physical_table_id: string | null
+    floor_plan_areas: { name: string; position: number } | null
+  }[]) {
+    if (e.physical_table_id) {
+      placed.set(e.physical_table_id, {
+        area_name: e.floor_plan_areas?.name ?? 'Sin ubicar',
+        area_pos: e.floor_plan_areas?.position ?? 999,
+      })
+    }
+  }
+
+  const targets: ItemMoveTarget[] = []
+  for (const t of (tbls ?? []) as { id: string; label: string; capacity: number | null }[]) {
+    if (t.id === sourceTableId) continue
+    const p = placed.get(t.id)
+    targets.push({
+      table_id: t.id,
+      label: t.label,
+      capacity: t.capacity,
+      area_name: p?.area_name ?? 'Sin ubicar',
+      area_pos: p?.area_pos ?? 999,
+      session: openByTable.get(t.id) ?? null,
+    })
+  }
+
+  targets.sort((a, b) => a.area_pos - b.area_pos || a.label.localeCompare(b.label, 'es'))
+  return targets
+}

@@ -185,7 +185,7 @@ begin
   delete from public.conversations where tenant_id = v_tenant_id;
   delete from public.message_templates where tenant_id = v_tenant_id;
   delete from public.channels where tenant_id = v_tenant_id;
-  delete from public.reservations where tenant_id = v_tenant_id;
+  delete from public.event_attendees where tenant_id = v_tenant_id;
   delete from public.events where tenant_id = v_tenant_id;
   delete from public.reward_redemptions where tenant_id = v_tenant_id;
   delete from public.rewards where tenant_id = v_tenant_id;
@@ -716,7 +716,7 @@ begin
   loop
     -- 8 reservas confirmed (tomamos un slice variado de customers)
     for i in 1..8 loop
-      insert into public.reservations (tenant_id, event_id, customer_id, guests_count, status)
+      insert into public.event_attendees (tenant_id, event_id, customer_id, guests_count, status)
       values (
         v_tenant_id, v_event_id, v_active_customer_ids[i],
         case when i % 3 = 0 then 4 else 2 end,
@@ -729,7 +729,7 @@ begin
     end loop;
     -- 2 waitlist en eventos con capacity
     if exists (select 1 from public.events where id = v_event_id and capacity is not null) then
-      insert into public.reservations (tenant_id, event_id, customer_id, guests_count, status, waitlist_position)
+      insert into public.event_attendees (tenant_id, event_id, customer_id, guests_count, status, waitlist_position)
       values
         (v_tenant_id, v_event_id, v_active_customer_ids[20], 2, 'waitlist', 1),
         (v_tenant_id, v_event_id, v_active_customer_ids[22], 3, 'waitlist', 2);

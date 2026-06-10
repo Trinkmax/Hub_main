@@ -132,7 +132,7 @@ export async function createSalonReservation(
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Reserva especial pidiendo un formato calendizado (ej. Pizza Libre en una
+  // Reserva especial pidiendo un formato calendarizado (ej. Pizza Libre en una
   // recibida del martes sin pizza libre programada): aseguramos que exista
   // una scheduled_event ese día via helper SQL. Pisa cualquier scheduled_event_id
   // del input — la prioridad de las reservas especiales es el formato pedido.
