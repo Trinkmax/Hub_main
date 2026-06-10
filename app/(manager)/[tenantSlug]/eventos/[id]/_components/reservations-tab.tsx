@@ -47,11 +47,7 @@ export function ReservationsTab({
     .filter((r) => {
       if (!query.trim()) return true
       const q = query.toLowerCase()
-      return (
-        r.customer.first_name.toLowerCase().includes(q) ||
-        r.customer.last_name.toLowerCase().includes(q) ||
-        r.customer.phone.includes(q)
-      )
+      return r.display_name.toLowerCase().includes(q) || r.customer.phone.includes(q)
     })
 
   const onCheckin = (id: string) => {
@@ -110,8 +106,12 @@ export function ReservationsTab({
       ) : (
         <ul className="divide-y divide-border/60">
           {visible.map((r) => {
-            const initials =
-              `${r.customer.first_name?.[0] ?? ''}${r.customer.last_name?.[0] ?? ''}`.toUpperCase()
+            const initials = r.display_name
+              .split(' ')
+              .map((w) => w[0] ?? '')
+              .slice(0, 2)
+              .join('')
+              .toUpperCase()
             return (
               <li
                 key={r.id}
@@ -123,8 +123,13 @@ export function ReservationsTab({
                   </AvatarFallback>
                 </Avatar>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">
-                    {r.customer.first_name} {r.customer.last_name}
+                  <p className="flex items-center gap-1.5 text-sm font-medium">
+                    {r.display_name}
+                    {r.source === 'table' ? (
+                      <Badge variant="outline" className="px-1 py-0 text-[10px] font-normal">
+                        Mesa
+                      </Badge>
+                    ) : null}
                   </p>
                   <p className="font-mono text-[11px] text-muted-foreground">
                     {formatPhoneForDisplay(r.customer.phone)}

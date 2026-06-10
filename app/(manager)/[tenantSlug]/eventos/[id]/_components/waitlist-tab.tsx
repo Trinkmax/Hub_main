@@ -59,8 +59,12 @@ export function WaitlistTab({
         {reservations
           .sort((a, b) => (a.waitlist_position ?? 0) - (b.waitlist_position ?? 0))
           .map((r) => {
-            const initials =
-              `${r.customer.first_name?.[0] ?? ''}${r.customer.last_name?.[0] ?? ''}`.toUpperCase()
+            const initials = r.display_name
+              .split(' ')
+              .map((w) => w[0] ?? '')
+              .slice(0, 2)
+              .join('')
+              .toUpperCase()
             return (
               <li
                 key={r.id}
@@ -75,9 +79,7 @@ export function WaitlistTab({
                   </AvatarFallback>
                 </Avatar>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">
-                    {r.customer.first_name} {r.customer.last_name}
-                  </p>
+                  <p className="text-sm font-medium">{r.display_name}</p>
                   <p className="font-mono text-[11px] text-muted-foreground">
                     {formatPhoneForDisplay(r.customer.phone)} · ×{r.guests_count}
                   </p>

@@ -23,11 +23,7 @@ export function CheckInTab({
   const visible = reservations.filter((r) => {
     if (!query.trim()) return true
     const q = query.toLowerCase()
-    return (
-      r.customer.first_name.toLowerCase().includes(q) ||
-      r.customer.last_name.toLowerCase().includes(q) ||
-      r.customer.phone.includes(q)
-    )
+    return r.display_name.toLowerCase().includes(q) || r.customer.phone.includes(q)
   })
 
   const onCheckin = (id: string) => {
@@ -58,8 +54,12 @@ export function CheckInTab({
           </li>
         ) : (
           visible.map((r) => {
-            const initials =
-              `${r.customer.first_name?.[0] ?? ''}${r.customer.last_name?.[0] ?? ''}`.toUpperCase()
+            const initials = r.display_name
+              .split(' ')
+              .map((w) => w[0] ?? '')
+              .slice(0, 2)
+              .join('')
+              .toUpperCase()
             return (
               <li key={r.id} className="flex items-center gap-3 px-4 py-3 text-sm">
                 <Avatar className="size-9">
@@ -68,9 +68,7 @@ export function CheckInTab({
                   </AvatarFallback>
                 </Avatar>
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium">
-                    {r.customer.first_name} {r.customer.last_name}
-                  </p>
+                  <p className="font-medium">{r.display_name}</p>
                   <p className="font-mono text-[11px] text-muted-foreground">
                     {formatPhoneForDisplay(r.customer.phone)}
                   </p>
