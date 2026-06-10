@@ -131,12 +131,66 @@ export async function getEvent(opts: { tenantId: string; id: string }): Promise<
   }
 }
 
+export type HubEventOption = {
+  id: string
+  name: string
+  starts_at: string
+  capacity: number | null
+  confirmed_seats: number
+  waitlist_enabled: boolean
+}
+
+/**
+ * Eventos publicados y futuros del tenant, con asientos confirmados agregados.
+ * Para poblar el desplegable de asociación en el alta de reservas «Evento HUB».
+ */
+export async function listLinkableHubEvents(opts: { tenantId: string }): Promise<HubEventOption[]> {
+  const supabase = await createClient()
+  const now = new Date().toISOString()
+  const { data, error } = await supabase
+    .from('events')
+    .select('id, name, starts_at, capacity, waitlist_enabled')
+    .eq('tenant_id', opts.tenantId)
+    .eq('status', 'published')
+    .gte('ends_at', now)
+    .order('starts_at', { ascending: true })
+  if (error) throw error
+  const events = data ?? []
+  if (events.length === 0) return []
+
+  const ids = events.map((e) => e.id)
+  const { data: seats } = await supabase
+    .from('event_attendees')
+    .select('event_id, status, guests_count')
+    .in('event_id', ids)
+
+  const confirmed = new Map<string, number>()
+  for (const id of ids) confirmed.set(id, 0)
+  for (const r of seats ?? []) {
+    const row = r as unknown as {
+      event_id: string
+      status: ReservationStatus
+      guests_count: number
+    }
+    if (row.status === 'confirmed' || row.status === 'checked_in') {
+      confirmed.set(row.event_id, (confirmed.get(row.event_id) ?? 0) + row.guests_count)
+    }
+  }
+
+  return events.map((e) => ({
+    ...(e as unknown as Omit<HubEventOption, 'confirmed_seats'>),
+    confirmed_seats: confirmed.get(e.id) ?? 0,
+  }))
+}
+
 export type ReservationRow = {
   id: string
   status: ReservationStatus
   guests_count: number
   waitlist_position: number | null
   checked_in_at: string | null
+  display_name: string
+  source: 'attendee' | 'table'
   customer: {
     id: string
     first_name: string
@@ -154,23 +208,32 @@ export async function listReservations(opts: {
     .from('event_attendees')
     .select(
       `id, status, guests_count, waitlist_position, checked_in_at,
-       customer:customers(id, first_name, last_name, phone)`,
+       customer:customers(id, first_name, last_name, phone),
+       salon_reservation:salon_reservations(guest_name)`,
     )
     .eq('tenant_id', opts.tenantId)
     .eq('event_id', opts.eventId)
     .order('created_at', { ascending: true })
   if (error) throw error
   return (data ?? []).map((row) => {
-    const r = row as unknown as Omit<ReservationRow, 'customer'> & {
+    const r = row as unknown as Omit<ReservationRow, 'customer' | 'display_name' | 'source'> & {
       customer: ReservationRow['customer'] | ReservationRow['customer'][] | null
+      salon_reservation: { guest_name: string } | { guest_name: string }[] | null
     }
     const customer = Array.isArray(r.customer) ? r.customer[0] : r.customer
+    const sr = Array.isArray(r.salon_reservation) ? r.salon_reservation[0] : r.salon_reservation
+    const source: 'attendee' | 'table' = sr ? 'table' : 'attendee'
+    const display_name = customer
+      ? `${customer.first_name} ${customer.last_name}`.trim()
+      : (sr?.guest_name ?? '—')
     return {
       id: r.id,
       status: r.status,
       guests_count: r.guests_count,
       waitlist_position: r.waitlist_position,
       checked_in_at: r.checked_in_at,
+      display_name,
+      source,
       customer: customer ?? { id: '', first_name: '—', last_name: '', phone: '' },
     }
   })
