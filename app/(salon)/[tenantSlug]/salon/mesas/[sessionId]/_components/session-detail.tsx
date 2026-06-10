@@ -4,6 +4,7 @@ import {
   ArrowRightLeft,
   Coins,
   MoreVertical,
+  PackageOpen,
   Plus,
   Receipt,
   Tag,
@@ -51,6 +52,7 @@ import type { CobroBreakdown, WaiterSessionDetail } from '@/lib/sessions-waiter/
 import type { TicketItemRow, TicketRow } from '@/lib/tickets/queries'
 import { PartySizeStepper } from '../../_components/party-size-stepper'
 import { CobrarDialog, type CustomerBalance } from './cobrar-dialog'
+import { MoveItemsSheet } from './move-items-sheet'
 import { StaffMenuSheet } from './staff-menu-sheet'
 import { TicketCard } from './ticket-card'
 
@@ -87,7 +89,38 @@ export function SessionDetail({
   const [currentAlias, setCurrentAlias] = useState<string | null>(session.alias ?? null)
   const [showStaffMenu, setShowStaffMenu] = useState(false)
   const [showMove, setShowMove] = useState(false)
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selection, setSelection] = useState<Record<string, number>>({})
+  const [showMoveItems, setShowMoveItems] = useState(false)
   const [opPending, startOp] = useTransition()
+
+  const toggleItem = (item: TicketItemRow, checked: boolean) =>
+    setSelection((prev) => {
+      const next = { ...prev }
+      if (checked) next[item.id] = item.quantity
+      else delete next[item.id]
+      return next
+    })
+  const setItemQuantity = (itemId: string, qty: number) =>
+    setSelection((prev) => ({ ...prev, [itemId]: qty }))
+  const toggleTicket = (ticketItems: TicketItemRow[], checked: boolean) =>
+    setSelection((prev) => {
+      const next = { ...prev }
+      for (const it of ticketItems) {
+        if (it.cancelled_at) continue
+        if (checked) next[it.id] = it.quantity
+        else delete next[it.id]
+      }
+      return next
+    })
+  const exitSelection = () => {
+    setSelectionMode(false)
+    setSelection({})
+  }
+  const selectedMoves = Object.entries(selection).map(([ticketItemId, quantity]) => ({
+    ticketItemId,
+    quantity,
+  }))
   const router = useRouter()
 
   const refresh = useCallback(async () => {
@@ -239,6 +272,15 @@ export function SessionDetail({
                 <DropdownMenuItem onClick={() => setShowMove(true)}>
                   <ArrowRightLeft className="mr-1.5 size-4" />
                   Mover de mesa
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    setSelection({})
+                    setSelectionMode(true)
+                  }}
+                >
+                  <PackageOpen className="mr-1.5 size-4" />
+                  Mover ítems
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setShowAbandonConfirm(true)}
@@ -406,6 +448,11 @@ export function SessionDetail({
                 onChange={refresh}
                 kitchenFlowEnabled={kitchenFlowEnabled}
                 isSessionOpen={sessionStatus === 'open'}
+                selectionMode={selectionMode}
+                selectedQuantities={selection}
+                onToggleItem={toggleItem}
+                onSetItemQuantity={setItemQuantity}
+                onToggleTicket={toggleTicket}
               />
             ))
           )}
@@ -446,6 +493,35 @@ export function SessionDetail({
         onOpenChange={setShowMove}
         onMoved={() => {
           router.refresh()
+        }}
+      />
+
+      {selectionMode && (
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 p-3 backdrop-blur">
+          <div className="mx-auto flex max-w-screen-sm items-center gap-2">
+            <Button variant="outline" className="flex-1" onClick={exitSelection}>
+              Cancelar
+            </Button>
+            <Button
+              className="flex-1"
+              disabled={selectedMoves.length === 0}
+              onClick={() => setShowMoveItems(true)}
+            >
+              Mover {selectedMoves.length} {selectedMoves.length === 1 ? 'ítem' : 'ítems'} →
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <MoveItemsSheet
+        slug={tenantSlug}
+        sourceSessionId={session.id}
+        moves={selectedMoves}
+        open={showMoveItems}
+        onOpenChange={setShowMoveItems}
+        onMoved={() => {
+          exitSelection()
+          void refresh()
         }}
       />
     </div>

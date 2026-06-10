@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import type { MenuCategory, MenuItem } from '@/lib/menu/queries'
+import { categoryPathLabel } from '@/lib/menu/tree'
 import type { WizardCustomer, WizardLine } from './wizard'
 
 function fmt(c: number) {
@@ -38,14 +39,17 @@ export function ItemsStep({
   onBack: () => void
   onNext: () => void
 }) {
-  const [tab, setTab] = useState<string>(categories[0]?.id ?? '')
+  // Solo categorías con ítems directos (las "contenedor" no generan tab vacío).
+  // Etiqueta con ruta completa para ubicar subcategorías sin drill-down.
+  const leafCats = categories.filter((c) => items.some((i) => i.category_id === c.id))
+  const [tab, setTab] = useState<string>(leafCats[0]?.id ?? '')
 
   const total = lines.reduce((acc, line) => {
     const item = items.find((i) => i.id === line.item_id)
     return acc + (item ? item.price_cents * line.quantity : 0)
   }, 0)
 
-  if (categories.length === 0) {
+  if (leafCats.length === 0) {
     return (
       <EmptyState
         icon={UtensilsCrossed}
@@ -74,17 +78,17 @@ export function ItemsStep({
 
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="flex h-auto flex-wrap gap-1 bg-secondary/40 p-1">
-            {categories.map((c) => (
+            {leafCats.map((c) => (
               <TabsTrigger
                 key={c.id}
                 value={c.id}
                 className="data-[state=active]:bg-card data-[state=active]:shadow-sm"
               >
-                {c.name}
+                {categoryPathLabel(categories, c.id)}
               </TabsTrigger>
             ))}
           </TabsList>
-          {categories.map((c) => {
+          {leafCats.map((c) => {
             const catItems = items.filter((i) => i.category_id === c.id)
             return (
               <TabsContent key={c.id} value={c.id} className="mt-4">

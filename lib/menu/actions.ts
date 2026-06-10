@@ -15,11 +15,27 @@ import {
 import {
   createCategorySchema,
   createMenuItemSchema,
+  moveCategorySchema,
+  reorderCategoriesSchema,
   reorderItemsSchema,
-  reorderSchema,
   updateCategorySchema,
   updateMenuItemSchema,
 } from './schemas'
+
+// Estas RPCs son nuevas / cambiaron de firma y todavía no están en los tipos
+// generados (types/database.ts se parcheó a mano). Las llamamos con un cast
+// acotado hasta el próximo regen real de tipos.
+type RpcResult = { data: unknown; error: { message: string } | null }
+async function callRpc(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  fn: string,
+  args: Record<string, unknown>,
+): Promise<RpcResult> {
+  return (supabase.rpc as unknown as (f: string, a: Record<string, unknown>) => Promise<RpcResult>)(
+    fn,
+    args,
+  )
+}
 
 // Helper: lee tag_ids como CSV string o array. FormData de un <form> con
 // múltiples inputs hidden "tag_ids" devuelve sólo el último value; para
@@ -77,19 +93,36 @@ export async function createCategory(
   const parsed = createCategorySchema.safeParse({
     name: formData.get('name'),
     image_url: formData.get('image_url'),
+    parent_id: formData.get('parent_id'),
   })
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
   }
 
   const supabase = await createClient()
-  const { data: maxPos } = await supabase
+
+  // Si viene parent_id, validar que la categoría padre es del tenant.
+  if (parsed.data.parent_id) {
+    const { data: parent } = await supabase
+      .from('menu_categories')
+      .select('id')
+      .eq('id', parsed.data.parent_id)
+      .eq('tenant_id', tenant.id)
+      .maybeSingle()
+    if (!parent) return { ok: false, message: 'Categoría padre inválida.' }
+  }
+
+  // Posición = max entre hermanos (mismo parent_id) + 1.
+  const siblingQuery = supabase
     .from('menu_categories')
     .select('position')
     .eq('tenant_id', tenant.id)
     .order('position', { ascending: false })
     .limit(1)
-    .maybeSingle()
+  const { data: maxPos } = await (parsed.data.parent_id
+    ? siblingQuery.eq('parent_id', parsed.data.parent_id)
+    : siblingQuery.is('parent_id', null)
+  ).maybeSingle()
 
   const { data: created, error } = await supabase
     .from('menu_categories')
@@ -97,6 +130,7 @@ export async function createCategory(
       tenant_id: tenant.id,
       name: parsed.data.name,
       image_url: parsed.data.image_url,
+      parent_id: parsed.data.parent_id,
       position: (maxPos?.position ?? 0) + 1,
     })
     .select('id')
@@ -142,6 +176,44 @@ export async function updateCategory(
   return { ok: true }
 }
 
+export async function moveCategory(
+  slug: string,
+  payload: { id: string; parent_id: string | null },
+): Promise<MenuActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = moveCategorySchema.safeParse(payload)
+  if (!parsed.success) return { ok: false, message: 'Datos inválidos.' }
+
+  const supabase = await createClient()
+  const { error } = await callRpc(supabase, 'move_category', {
+    p_category_id: parsed.data.id,
+    p_new_parent_id: parsed.data.parent_id,
+  })
+  if (error) {
+    if (error.message.includes('cycle')) {
+      return { ok: false, message: 'No podés mover una categoría dentro de sí misma.' }
+    }
+    if (error.message.includes('invalid_parent')) {
+      return { ok: false, message: 'Categoría destino inválida.' }
+    }
+    return { ok: false, message: 'No pudimos mover la categoría.' }
+  }
+
+  await logAudit({
+    tenantId: tenant.id,
+    userId: null,
+    action: 'menu_category.moved',
+    entity: 'menu_category',
+    entityId: parsed.data.id,
+    payload: { parent_id: parsed.data.parent_id },
+  })
+
+  revalidatePath(`/${slug}/menu`)
+  return { ok: true, message: 'Categoría movida.' }
+}
+
 export async function deleteCategory(slug: string, id: string): Promise<MenuActionState> {
   const tenant = await authorizeOwner(slug)
   if (!tenant) return { ok: false, message: 'No tenés permiso.' }
@@ -150,23 +222,39 @@ export async function deleteCategory(slug: string, id: string): Promise<MenuActi
   if (!idParsed.success) return { ok: false, message: 'ID inválido.' }
 
   const supabase = await createClient()
-  const { error } = await supabase
-    .from('menu_categories')
-    .delete()
-    .eq('id', idParsed.data)
-    .eq('tenant_id', tenant.id)
+  const { data, error } = await callRpc(supabase, 'delete_category_cascade', {
+    p_category_id: idParsed.data,
+  })
   if (error) {
-    if (error.code === '23503') {
-      return {
-        ok: false,
-        message: 'No se puede borrar: hay ítems asociados. Pasalos a otra categoría primero.',
-      }
-    }
-    return { ok: false, message: 'No pudimos borrar.' }
+    console.error('[menu.deleteCategory] cascade', error.message)
+    return { ok: false, message: 'No pudimos borrar la categoría.' }
   }
 
+  const summary = (data ?? {}) as {
+    deleted_categories?: number
+    archived_items?: number
+    deleted_items?: number
+  }
+
+  const { data: userResult } = await supabase.auth.getUser()
+  await logAudit({
+    tenantId: tenant.id,
+    userId: userResult.user?.id ?? null,
+    action: 'menu_category.deleted_cascade',
+    entity: 'menu_category',
+    entityId: idParsed.data,
+    payload: summary,
+  })
+
   revalidatePath(`/${slug}/menu`)
-  return { ok: true }
+  const archived = summary.archived_items ?? 0
+  return {
+    ok: true,
+    message:
+      archived > 0
+        ? `Categoría eliminada. ${archived} ítem${archived === 1 ? '' : 's'} con historial quedaron archivados.`
+        : 'Categoría eliminada.',
+  }
 }
 
 export async function createMenuItem(
@@ -355,16 +443,20 @@ export async function deleteMenuItem(slug: string, id: string): Promise<MenuActi
   return { ok: true }
 }
 
-export async function reorderCategories(slug: string, ids: string[]): Promise<MenuActionState> {
+export async function reorderCategories(
+  slug: string,
+  parentId: string | null,
+  ids: string[],
+): Promise<MenuActionState> {
   const tenant = await authorizeOwner(slug)
   if (!tenant) return { ok: false, message: 'No tenés permiso.' }
 
-  const parsed = reorderSchema.safeParse({ ids })
+  const parsed = reorderCategoriesSchema.safeParse({ parent_id: parentId, ids })
   if (!parsed.success) return { ok: false, message: 'Datos inválidos.' }
 
   const supabase = await createClient()
-  const { error } = await supabase.rpc('reorder_menu_categories', {
-    p_tenant_id: tenant.id,
+  const { error } = await callRpc(supabase, 'reorder_menu_categories', {
+    p_parent_id: parsed.data.parent_id,
     p_ordered_ids: parsed.data.ids,
   })
   if (error) return { ok: false, message: 'No pudimos reordenar.' }

@@ -99,7 +99,7 @@ export function StaffMenuSheet({
   const filteredMenu = useMemo(() => {
     if (!menu) return null
     const q = search.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
-    if (q.length === 0) return menu
+    if (q.length === 0) return menu.filter((cat) => cat.items.length > 0)
     return menu
       .map((cat) => ({
         ...cat,
@@ -231,7 +231,7 @@ export function StaffMenuSheet({
               {filteredMenu.map((cat) => (
                 <section key={cat.id}>
                   <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    {cat.name}
+                    {cat.path}
                   </h3>
                   <ul className="space-y-2">
                     {cat.items.map((it) => {

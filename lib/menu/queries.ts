@@ -8,6 +8,7 @@ export type MenuCategory = {
   position: number
   active: boolean
   image_url: string | null
+  parent_id: string | null
 }
 
 export type MenuItem = {
@@ -43,13 +44,14 @@ export async function listMenu(opts: { tenantId: string }): Promise<{
     await Promise.all([
       supabase
         .from('menu_categories')
-        .select('id, name, position, active, image_url')
+        .select('id, name, position, active, image_url, parent_id')
         .eq('tenant_id', opts.tenantId)
         .order('position', { ascending: true }),
       supabase
         .from('menu_items')
         .select(MENU_ITEM_COLUMNS)
         .eq('tenant_id', opts.tenantId)
+        .not('category_id', 'is', null)
         .order('position', { ascending: true }),
       // featured no está aún en database.ts → cast aditivo al row tipo FeaturedRow.
       supabase
@@ -98,7 +100,7 @@ export async function listActiveMenu(opts: { tenantId: string }): Promise<{
   const [{ data: cats }, { data: items }, { data: featuredRows }] = await Promise.all([
     supabase
       .from('menu_categories')
-      .select('id, name, position, active')
+      .select('id, name, position, active, image_url, parent_id')
       .eq('tenant_id', opts.tenantId)
       .eq('active', true)
       .order('position', { ascending: true }),
@@ -107,6 +109,7 @@ export async function listActiveMenu(opts: { tenantId: string }): Promise<{
       .select(MENU_ITEM_COLUMNS)
       .eq('tenant_id', opts.tenantId)
       .eq('active', true)
+      .not('category_id', 'is', null)
       .order('position', { ascending: true }),
     supabase
       .from('menu_items')

@@ -1535,6 +1535,7 @@ export type Database = {
           id: string
           image_url: string | null
           name: string
+          parent_id: string | null
           position: number
           tenant_id: string
         }
@@ -1544,6 +1545,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           name: string
+          parent_id?: string | null
           position?: number
           tenant_id: string
         }
@@ -1553,6 +1555,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           name?: string
+          parent_id?: string | null
           position?: number
           tenant_id?: string
         }
@@ -3755,6 +3758,17 @@ export type Database = {
       }
       move_session: {
         Args: { p_new_physical_table_id: string; p_session_id: string }
+        Returns: Json
+      }
+      // STUB MANUAL (sin Docker para db:types): reemplazar al regenerar tipos
+      // tras aplicar la migración 20260608200330_move_ticket_items.
+      move_ticket_items: {
+        Args: {
+          p_idempotency_key?: string
+          p_moves: Json
+          p_source_session_id: string
+          p_target_table_id: string
+        }
         Returns: Json
       }
       recalc_event_commissions: {

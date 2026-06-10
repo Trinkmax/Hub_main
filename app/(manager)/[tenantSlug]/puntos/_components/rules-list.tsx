@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import type { MenuCategory, MenuItem } from '@/lib/menu/queries'
+import { categoryPathLabel } from '@/lib/menu/tree'
 import { deleteRule, toggleRule } from '@/lib/points/actions'
 import type { PointsRule } from '@/lib/points/types'
 
@@ -43,8 +44,8 @@ export function RulesList({
       return `Ítem "${item?.name ?? '???'}" → ${cfg.points as number} pts`
     }
     if (typeof cfg.category_id === 'string') {
-      const cat = menu.categories.find((c) => c.id === cfg.category_id)
-      return `Cat "${cat?.name ?? '???'}" → ${cfg.points as number} pts c/u`
+      const label = categoryPathLabel(menu.categories, cfg.category_id)
+      return `Cat "${label || '???'}" → ${cfg.points as number} pts c/u`
     }
     return 'Regla desconocida'
   }

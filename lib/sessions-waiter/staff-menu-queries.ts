@@ -14,6 +14,9 @@ export type StaffMenuCategory = {
   id: string
   name: string
   position: number
+  parent_id: string | null
+  /** Ruta completa "Bebidas › Vinos" para etiquetar la categoría. */
+  path: string
   items: StaffMenuItem[]
 }
 
@@ -29,7 +32,7 @@ export async function getStaffMenuForTenant(tenantId: string): Promise<StaffMenu
 
   const { data: categories, error: catErr } = await supabase
     .from('menu_categories')
-    .select('id, name, position')
+    .select('id, name, position, parent_id')
     .eq('tenant_id', tenantId)
     .eq('active', true)
     .order('position', { ascending: true })
@@ -69,10 +72,27 @@ export async function getStaffMenuForTenant(tenantId: string): Promise<StaffMenu
     itemsByCategory.set(it.category_id, arr)
   }
 
+  // Ruta completa por categoría (para etiquetar sin drill-down en el staff).
+  const nameById = new Map(categories.map((c) => [c.id, c.name]))
+  const parentById = new Map(categories.map((c) => [c.id, c.parent_id]))
+  const pathOf = (id: string): string => {
+    const parts: string[] = []
+    let cur: string | null = id
+    const seen = new Set<string>()
+    while (cur && !seen.has(cur)) {
+      seen.add(cur)
+      parts.unshift(nameById.get(cur) ?? '')
+      cur = parentById.get(cur) ?? null
+    }
+    return parts.filter(Boolean).join(' › ')
+  }
+
   return categories.map((c) => ({
     id: c.id,
     name: c.name,
     position: c.position,
+    parent_id: c.parent_id,
+    path: pathOf(c.id),
     items: itemsByCategory.get(c.id) ?? [],
   }))
 }

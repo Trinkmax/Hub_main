@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   clampToArea,
+  clampToAreaRotated,
   commitDragPosition,
   ELEMENT_DEFAULTS,
   freeDragPosition,
@@ -11,6 +12,30 @@ import {
   snapToGrid,
   stagePointFromClient,
 } from '@/lib/floor-plan/grid'
+
+describe('clampToAreaRotated', () => {
+  it('rotación 0 → idéntico a clampToArea', () => {
+    expect(clampToAreaRotated(33, 47, 80, 80, 0, 1000, 800)).toEqual(
+      clampToArea(33, 47, 80, 80, 1000, 800),
+    )
+    // clampea como siempre cuando no hay rotación
+    expect(clampToAreaRotated(-50, 0, 80, 80, 0, 1000, 800)).toEqual({ x: 0, y: 0 })
+  })
+
+  it('mesa rotada 90° llega al borde visual (x lógico negativo)', () => {
+    // w=140 h=80 rotada 90° → AABB 80×140. La esquina lógica puede ir a x=-30
+    // para que el borde visual izquierdo toque 0.
+    const r = clampToAreaRotated(-200, 100, 140, 80, 90, 1000, 800)
+    expect(r.x).toBe(-30)
+    // borde visual izquierdo = (x + w/2) - aabbW/2 = (-30 + 70) - 40 = 0
+  })
+
+  it('mesa rotada 90° no se pasa del borde derecho', () => {
+    const r = clampToAreaRotated(5000, 100, 140, 80, 90, 1000, 800)
+    // maxCx = 1000 - 40 = 960 → x = 960 - 70 = 890
+    expect(r.x).toBe(890)
+  })
+})
 
 describe('constantes', () => {
   it('GRID y RESIZE_MIN tienen los valores del spec', () => {

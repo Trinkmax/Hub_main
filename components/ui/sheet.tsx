@@ -41,9 +41,11 @@ function SheetContent({
   className,
   children,
   side = 'right',
+  showClose = true,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: 'top' | 'right' | 'bottom' | 'left'
+  showClose?: boolean
 }) {
   return (
     <SheetPortal>
@@ -65,12 +67,34 @@ function SheetContent({
         {...props}
       >
         {children}
-        <SheetPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none">
-          <XIcon className="size-4" />
-          <span className="sr-only">Close</span>
-        </SheetPrimitive.Close>
+        {showClose && (
+          <SheetPrimitive.Close className="ring-offset-background focus-visible:ring-ring absolute top-3.5 right-3.5 flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden disabled:pointer-events-none">
+            <XIcon className="size-4" />
+            <span className="sr-only">Cerrar</span>
+          </SheetPrimitive.Close>
+        )}
       </SheetPrimitive.Content>
     </SheetPortal>
+  )
+}
+
+function SheetGrabber({
+  tone = 'default',
+  className,
+}: {
+  tone?: 'default' | 'light'
+  className?: string
+}) {
+  return (
+    <div
+      aria-hidden
+      data-slot="sheet-grabber"
+      className={cn(
+        'absolute left-1/2 top-2 z-20 h-1.5 w-10 -translate-x-1/2 rounded-full',
+        tone === 'light' ? 'bg-white/70' : 'bg-foreground/25',
+        className,
+      )}
+    />
   )
 }
 
@@ -126,6 +150,7 @@ export {
   SheetContent,
   SheetDescription,
   SheetFooter,
+  SheetGrabber,
   SheetHeader,
   SheetOverlay,
   SheetPortal,

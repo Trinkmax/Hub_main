@@ -4,9 +4,26 @@ const categoryImageUrl = z
   .union([z.string().trim().url().max(2048), z.literal(''), z.null(), z.undefined()])
   .transform((v) => (v && v.length > 0 ? v : null))
 
+// parent_id: guid o null/'' (raíz). '' y undefined → null.
+const parentId = z
+  .union([z.guid(), z.literal(''), z.null()])
+  .optional()
+  .transform((v) => (typeof v === 'string' && v.length > 0 ? v : null))
+
 export const createCategorySchema = z.object({
   name: z.string().trim().min(1, 'Nombre requerido').max(60, 'Máximo 60'),
   image_url: categoryImageUrl.optional().default(null),
+  parent_id: parentId,
+})
+
+export const moveCategorySchema = z.object({
+  id: z.guid(),
+  parent_id: z.guid().nullable(),
+})
+
+export const reorderCategoriesSchema = z.object({
+  parent_id: z.guid().nullable(),
+  ids: z.array(z.guid()).min(1),
 })
 
 export const updateCategorySchema = z.object({

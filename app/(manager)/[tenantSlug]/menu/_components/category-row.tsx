@@ -15,6 +15,7 @@ import {
   MoreHorizontal,
   Pause,
   Pencil,
+  Play,
   Plus,
   Sparkles,
   Trash2,
@@ -60,6 +61,7 @@ export function CategoryRow({
   tenantId,
   allCategories,
   allTags,
+  hideAddButton = false,
 }: {
   category: MenuCategory
   items: MenuItem[]
@@ -67,6 +69,7 @@ export function CategoryRow({
   tenantId: string
   allCategories: MenuCategory[]
   allTags: ItemTagRow[]
+  hideAddButton?: boolean
 }) {
   const [items, setItems] = useState(initialItems)
   const [, startTransition] = useTransition()
@@ -182,29 +185,31 @@ export function CategoryRow({
           </SortableContext>
         </DndContext>
 
-        <Popover open={addOpen} onOpenChange={setAddOpen}>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-1.5">
-              <Plus className="size-3.5" />
-              Agregar ítem
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent
-            align="start"
-            className="w-[min(560px,calc(100vw-2rem))] p-3"
-            sideOffset={6}
-          >
-            <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-              Nuevo ítem en {category.name}
-            </p>
-            <NewItemForm
-              tenantSlug={tenantSlug}
-              tenantId={tenantId}
-              categoryId={category.id}
-              onCreated={() => setAddOpen(false)}
-            />
-          </PopoverContent>
-        </Popover>
+        {hideAddButton ? null : (
+          <Popover open={addOpen} onOpenChange={setAddOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1.5">
+                <Plus className="size-3.5" />
+                Agregar ítem
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="start"
+              className="w-[min(560px,calc(100vw-2rem))] p-3"
+              sideOffset={6}
+            >
+              <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                Nuevo ítem en {category.name}
+              </p>
+              <NewItemForm
+                tenantSlug={tenantSlug}
+                tenantId={tenantId}
+                categoryId={category.id}
+                onCreated={() => setAddOpen(false)}
+              />
+            </PopoverContent>
+          </Popover>
+        )}
       </div>
 
       {editingItem ? (
@@ -391,7 +396,7 @@ function SortableItemCard({
               {item.featured ? 'Quitar destacado' : 'Destacar'}
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={onToggleActive}>
-              <Pause className="size-3.5" />
+              {item.active ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
               {item.active ? 'Pausar' : 'Activar'}
             </DropdownMenuItem>
             <DropdownMenuSeparator />

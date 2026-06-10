@@ -364,8 +364,35 @@ export function ReservationForm({
         }
       })
     },
-    () => {
-      toast.error('Revisá los campos marcados en rojo antes de guardar.')
+    (errors) => {
+      // Nombrar los campos que fallaron (antes el toast era genérico y no se
+      // sabía cuál corregir — típicamente Cliente o Gestor sin completar).
+      const LABELS: Record<string, string> = {
+        guest_name: 'Cliente / nombre',
+        guest_phone: 'Teléfono',
+        guest_email: 'Email',
+        meal_type: 'Servicio',
+        reservation_date: 'Fecha',
+        reservation_time_local: 'Horario',
+        zone: 'Zona',
+        scheduled_event_id: 'Evento programado',
+        requested_template_id: 'Formato pedido',
+        estimated_guests: 'Comensales',
+        cake_count: 'Tortas',
+        champagne_count: 'Champagne',
+        deposit_cents: 'Seña',
+        primary_manager_id: 'Gestor',
+        assistant_manager_id: 'Asistente',
+        comments: 'Comentarios',
+      }
+      const fields = Object.keys(errors).map((k) => LABELS[k] ?? k)
+      const shown = fields.slice(0, 3).join(', ')
+      const extra = fields.length > 3 ? ` y ${fields.length - 3} más` : ''
+      toast.error(
+        fields.length > 0
+          ? `Falta completar o corregir: ${shown}${extra}.`
+          : 'Revisá los campos marcados en rojo antes de guardar.',
+      )
     },
   )
 
@@ -418,6 +445,7 @@ export function ReservationForm({
             <Input
               id="reservation_date"
               type="date"
+              aria-invalid={!!form.formState.errors.reservation_date}
               {...form.register('reservation_date')}
               className="h-11 text-base"
             />
@@ -454,6 +482,7 @@ export function ReservationForm({
                 id="reservation_time_local"
                 type="time"
                 step={900}
+                aria-invalid={!!form.formState.errors.reservation_time_local}
                 {...form.register('reservation_time_local')}
                 className="h-11 pl-9 text-base tabular-nums"
               />
@@ -518,7 +547,7 @@ export function ReservationForm({
         />
       </FieldGroup>
 
-      {/* CALENDIZADO: evento programado del día (zone=event_floating) */}
+      {/* CALENDARIZADO: evento programado del día (zone=event_floating) */}
       <AnimatePresence initial={false}>
         {values.zone === 'event_floating' && (
           <motion.div
@@ -537,7 +566,10 @@ export function ReservationForm({
                   form.setValue('scheduled_event_id', v || undefined, { shouldValidate: true })
                 }
               >
-                <SelectTrigger className="h-11 text-base">
+                <SelectTrigger
+                  className="h-11 text-base"
+                  aria-invalid={!!form.formState.errors.scheduled_event_id}
+                >
                   <SelectValue placeholder="Elegí un evento del día…" />
                 </SelectTrigger>
                 <SelectContent>
@@ -674,7 +706,7 @@ export function ReservationForm({
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.18 }}
           >
-            <FieldGroup title="¿Piden formato calendizado?" icon={Sparkles}>
+            <FieldGroup title="¿Piden formato calendarizado?" icon={Sparkles}>
               <p className="text-xs text-muted-foreground">
                 Si el cumple / recibida pide Sushi Libre, Pizza Libre, Ramen u otro formato del
                 catálogo. Si ya hay ese evento programado ese día, se suma; si no, se crea
@@ -818,7 +850,10 @@ export function ReservationForm({
                 form.setValue('primary_manager_id', v, { shouldValidate: true })
               }
             >
-              <SelectTrigger className="h-11">
+              <SelectTrigger
+                className="h-11"
+                aria-invalid={!!form.formState.errors.primary_manager_id}
+              >
                 <SelectValue placeholder="Elegí un gestor" />
               </SelectTrigger>
               <SelectContent>
@@ -1251,6 +1286,7 @@ function CustomerCombobox({
             <Input
               id="guest_name"
               autoComplete="off"
+              aria-invalid={!!error}
               value={value.guest_name}
               onChange={(e) => {
                 onChange({ ...value, guest_name: e.target.value, customer_id: undefined })

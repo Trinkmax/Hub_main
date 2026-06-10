@@ -1,9 +1,10 @@
 'use client'
 
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetGrabber, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import type { RegisterCustomerResult } from '@/lib/m-session/actions'
 import { CaptureHero } from './capture-hero'
 import { RegisterForm } from './register-form'
+import { useDismissOnBack } from './use-dismiss-on-back'
 
 export function CaptureSheet({
   qrToken,
@@ -22,12 +23,14 @@ export function CaptureSheet({
   onClose: () => void
   onRegistered: (result: Extract<RegisterCustomerResult, { ok: true }>) => void
 }) {
+  useDismissOnBack(true, onClose)
   return (
     <Sheet open onOpenChange={(o) => !o && onClose()}>
       <SheetContent
         side="bottom"
         className="mx-auto max-h-[92dvh] gap-0 overflow-y-auto rounded-t-2xl p-0 sm:max-w-md"
       >
+        <SheetGrabber tone="light" />
         <SheetHeader className="sr-only">
           <SheetTitle>{headline}</SheetTitle>
         </SheetHeader>

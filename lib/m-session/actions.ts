@@ -214,6 +214,7 @@ export type ActiveSessionStateData = {
     id: string
     name: string
     position: number
+    parent_id: string | null
     image_url: string | null
     items: Array<{
       id: string

@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowRightLeft, Bell, CircleDot, QrCode, Receipt, Users } from 'lucide-react'
+import { ArrowRightLeft, Bell, CircleDot, QrCode, Receipt, Redo2, Undo2, Users } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
@@ -37,6 +37,7 @@ import {
 } from '@/lib/floor-plan/actions'
 import {
   clampToArea,
+  clampToAreaRotated,
   ELEMENT_DEFAULTS,
   GRID,
   normalizeRotation,
@@ -209,6 +210,10 @@ export function FloorPlanEditor({
   const txnRef = useRef<GeomChange[] | null>(null)
   const undoStackRef = useRef<GeomChange[][]>([])
   const redoStackRef = useRef<GeomChange[][]>([])
+  // Fuerza re-render para refrescar el habilitado de los botones deshacer/rehacer
+  // (las pilas son refs; este tick re-evalúa canUndo/canRedo).
+  const [, setHistoryTick] = useState(0)
+  const bumpHistory = useCallback(() => setHistoryTick((v) => v + 1), [])
 
   const onQueueError = useCallback((ids: string[]) => {
     setElements((current) => {
@@ -311,24 +316,28 @@ export function FloorPlanEditor({
 
   // Agrupa los commits de una operación en una sola entrada de undo (re-entrante:
   // si ya hay una transacción abierta, no anida).
-  const runOp = useCallback((fn: () => void) => {
-    if (txnRef.current) {
-      fn()
-      return
-    }
-    txnRef.current = []
-    try {
-      fn()
-    } finally {
-      const buf = txnRef.current
-      txnRef.current = null
-      if (buf && buf.length > 0) {
-        undoStackRef.current.push(buf)
-        if (undoStackRef.current.length > 80) undoStackRef.current.shift()
-        redoStackRef.current = []
+  const runOp = useCallback(
+    (fn: () => void) => {
+      if (txnRef.current) {
+        fn()
+        return
       }
-    }
-  }, [])
+      txnRef.current = []
+      try {
+        fn()
+      } finally {
+        const buf = txnRef.current
+        txnRef.current = null
+        if (buf && buf.length > 0) {
+          undoStackRef.current.push(buf)
+          if (undoStackRef.current.length > 80) undoStackRef.current.shift()
+          redoStackRef.current = []
+          bumpHistory()
+        }
+      }
+    },
+    [bumpHistory],
+  )
 
   const undo = useCallback(() => {
     const entry = undoStackRef.current.pop()
@@ -338,7 +347,8 @@ export function FloorPlanEditor({
       if (el) commitGeometry(el, ch.prev)
     }
     redoStackRef.current.push(entry)
-  }, [commitGeometry])
+    bumpHistory()
+  }, [commitGeometry, bumpHistory])
 
   const redo = useCallback(() => {
     const entry = redoStackRef.current.pop()
@@ -348,7 +358,8 @@ export function FloorPlanEditor({
       if (el) commitGeometry(el, ch.next)
     }
     undoStackRef.current.push(entry)
-  }, [commitGeometry])
+    bumpHistory()
+  }, [commitGeometry, bumpHistory])
 
   const geomOf = useCallback(
     (el: ElementRow) => ({
@@ -372,7 +383,15 @@ export function FloorPlanEditor({
         for (const id of ids) {
           const el = elementsRef.current.find((e) => e.id === id)
           if (!el) continue
-          const c = clampToArea(el.x + dx, el.y + dy, el.width, el.height, area.width, area.height)
+          const c = clampToAreaRotated(
+            el.x + dx,
+            el.y + dy,
+            el.width,
+            el.height,
+            el.rotation,
+            area.width,
+            area.height,
+          )
           if (c.x === el.x && c.y === el.y) continue
           commitGeometry(el, { ...geomOf(el), x: c.x, y: c.y })
         }
@@ -440,7 +459,15 @@ export function FloorPlanEditor({
         if (!el) return
         const width = snapToGrid(size.width)
         const height = snapToGrid(size.height)
-        const clamped = clampToArea(el.x, el.y, width, height, area.width, area.height)
+        const clamped = clampToAreaRotated(
+          el.x,
+          el.y,
+          width,
+          height,
+          el.rotation,
+          area.width,
+          area.height,
+        )
         commitGeometry(el, { ...geomOf(el), x: clamped.x, y: clamped.y, width, height })
       })
     },
@@ -501,7 +528,15 @@ export function FloorPlanEditor({
         for (const [id, pos] of res) {
           const el = elementsRef.current.find((e) => e.id === id)
           if (!el) continue
-          const c = clampToArea(pos.x, pos.y, el.width, el.height, area.width, area.height)
+          const c = clampToAreaRotated(
+            pos.x,
+            pos.y,
+            el.width,
+            el.height,
+            el.rotation,
+            area.width,
+            area.height,
+          )
           if (c.x === el.x && c.y === el.y) continue
           commitGeometry(el, { ...geomOf(el), x: c.x, y: c.y })
         }
@@ -520,10 +555,13 @@ export function FloorPlanEditor({
         if (r.ok) newIds.push(r.data.elementId)
         else toast.error(r.message)
       }
+      // Flush de geometría pendiente ANTES de refrescar (si no, el re-seed pisa
+      // movimientos optimistas sin guardar → "se mueve todo").
+      await queue.flushNow()
       router.refresh()
       if (newIds.length) selectSet(new Set(newIds))
     })()
-  }, [slug, router, selectSet])
+  }, [slug, router, selectSet, queue])
 
   const printQrSelected = useCallback(() => {
     const ids = [...selectedIdsRef.current]
@@ -556,9 +594,11 @@ export function FloorPlanEditor({
           break
         }
       }
+      // Flush ANTES de refrescar: borrar no debe revertir los moves sin guardar.
+      await queue.flushNow()
       router.refresh()
     })()
-  }, [slug, router, clearSelection])
+  }, [slug, router, clearSelection, queue])
 
   // ── Teclado ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -667,6 +707,7 @@ export function FloorPlanEditor({
           })
           if (r.ok) {
             selectSet(new Set([r.elementId]))
+            await queue.flushNow()
             router.refresh()
           } else {
             toast.error(r.message)
@@ -688,13 +729,14 @@ export function FloorPlanEditor({
           color: null,
         })
         if (r.ok) {
+          await queue.flushNow()
           router.refresh()
         } else {
           toast.error(r.message)
         }
       })()
     },
-    [activeArea, slug, router, elements, selectSet],
+    [activeArea, slug, router, elements, selectSet, queue],
   )
 
   const handleDropKind = useCallback(
@@ -829,6 +871,8 @@ export function FloorPlanEditor({
   const hasPlacedTables = areaElements.some(
     (el) => el.kind === 'table' && el.physical_table_id !== null,
   )
+  const canUndo = undoStackRef.current.length > 0
+  const canRedo = redoStackRef.current.length > 0
 
   if (!activeArea) return null
 
@@ -906,6 +950,32 @@ export function FloorPlanEditor({
                     shouldSuppressClick={shouldSuppressClick}
                   />
                   <div className="flex shrink-0 items-center gap-2">
+                    <div className="flex items-center gap-0.5 rounded-lg border border-border/60 bg-card p-0.5">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-8"
+                        disabled={!canUndo}
+                        onClick={undo}
+                        aria-label="Deshacer"
+                        title="Deshacer (⌘Z)"
+                      >
+                        <Undo2 className="size-4" aria-hidden />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-8"
+                        disabled={!canRedo}
+                        onClick={redo}
+                        aria-label="Rehacer"
+                        title="Rehacer (⌘⇧Z)"
+                      >
+                        <Redo2 className="size-4" aria-hidden />
+                      </Button>
+                    </div>
                     <BulkCreateDialog slug={slug} areaId={activeArea.id} onCreated={onChanged} />
                     <Button
                       type="button"

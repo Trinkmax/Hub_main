@@ -235,3 +235,12 @@ npx vitest run tests/rls       # requiere Supabase local + envs (CLAUDE.md §16)
 
 Categorías sólo `name` + `image_url` (sin descripción). No se tocó puntos,
 reservas, floor plan ni KDS. Sin logging de `capture_prompt_declined` (YAGNI).
+
+## Navegación de sheets (2026-06-08)
+
+Los sheets de la carta (detalle de producto, carrito, captura) se cierran con:
+- botón ⟵ con scrim (producto) o X (carrito/captura),
+- tocar fuera del sheet,
+- el botón/gesto **"atrás"** del teléfono (vía hook `useDismissOnBack` → `lib/m-session/back-guard.ts`), que cierra el sheet abierto en vez de salir de la carta.
+
+La barrita superior (`SheetGrabber`) es una señal visual; el swipe-to-dismiss real no está implementado (requeriría `vaul`).

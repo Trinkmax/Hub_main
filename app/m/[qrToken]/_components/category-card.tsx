@@ -9,13 +9,18 @@ type Category = ActiveSessionStateData['menu'][number]
 
 export function CategoryCard({
   category,
+  subcatCount = 0,
   onSelect,
 }: {
   category: Category
+  subcatCount?: number
   onSelect: (id: string) => void
 }) {
   const count = category.items.length
-  const countLabel = `${count} ${count === 1 ? 'opción' : 'opciones'}`
+  const parts: string[] = []
+  if (subcatCount > 0) parts.push(`${subcatCount} ${subcatCount === 1 ? 'sección' : 'secciones'}`)
+  if (count > 0) parts.push(`${count} ${count === 1 ? 'opción' : 'opciones'}`)
+  const countLabel = parts.join(' · ') || 'Ver'
   // Con imagen el texto va sobre un degradé fijo oscuro → blanco en ambos temas.
   // Sin imagen va sobre bg-primary → text-primary-foreground contrasta por
   // definición en light y dark. (text-primary-foreground es oscuro en dark mode,

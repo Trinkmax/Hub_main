@@ -13,6 +13,8 @@ const sampleMenu: StaffMenuCategory[] = [
     id: 'cat-1',
     name: 'Cafetería',
     position: 0,
+    parent_id: null,
+    path: 'Cafetería',
     items: [
       {
         id: 'item-cafe',
@@ -36,6 +38,8 @@ const sampleMenu: StaffMenuCategory[] = [
     id: 'cat-2',
     name: 'Bebidas',
     position: 1,
+    parent_id: null,
+    path: 'Bebidas',
     items: [
       {
         id: 'item-agua',

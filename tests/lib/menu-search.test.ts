@@ -18,8 +18,8 @@ function item(partial: Partial<Item> & { id: string; name: string }): Item {
   }
 }
 
-function cat(id: string, items: Item[]): Category {
-  return { id, name: id, position: 0, image_url: null, items }
+function cat(id: string, items: Item[], parentId: string | null = null): Category {
+  return { id, name: id, position: 0, parent_id: parentId, image_url: null, items }
 }
 
 const MENU: Category[] = [
@@ -53,5 +53,15 @@ describe('searchMenuItems', () => {
 
   it('sin matches devuelve []', () => {
     expect(searchMenuItems(MENU, 'zzz')).toEqual([])
+  })
+
+  it('encuentra ítems en subcategorías (estructura anidada plana)', () => {
+    const nested: Category[] = [
+      cat('bebidas', []),
+      cat('vinos', [item({ id: 'malbec', name: 'Malbec' })], 'bebidas'),
+    ]
+    const r = searchMenuItems(nested, 'malbec')
+    expect(r.map((i) => i.id)).toEqual(['malbec'])
+    expect(r[0]?.path).toBe('bebidas › vinos')
   })
 })

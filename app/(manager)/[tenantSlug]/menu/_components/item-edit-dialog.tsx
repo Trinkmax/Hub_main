@@ -20,13 +20,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -41,6 +34,7 @@ import { createItemTag } from '@/lib/item-tags/actions'
 import type { ItemTagRow } from '@/lib/item-tags/queries'
 import { deleteMenuItem, updateMenuItem } from '@/lib/menu/actions'
 import type { MenuCategory, MenuItem } from '@/lib/menu/queries'
+import { CategoryTreePicker } from './category-tree-picker'
 import { MenuImageUploader } from './image-uploader'
 
 const NEW_TAG_DEFAULT_COLOR = '#94a3b8'
@@ -405,20 +399,12 @@ export function ItemEditDialog({
 
             <TabsContent value="advanced" className="m-0 grid gap-5 outline-none">
               <div className="grid gap-1.5">
-                <Label htmlFor="item-cat">Categoría</Label>
-                <Select value={categoryId} onValueChange={setCategoryId}>
-                  <SelectTrigger id="item-cat">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                        {!c.active ? ' (pausada)' : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Categoría</Label>
+                <CategoryTreePicker
+                  categories={categories}
+                  value={categoryId}
+                  onChange={(id) => id && setCategoryId(id)}
+                />
                 <p className="text-[11px] text-muted-foreground">
                   Mové el ítem a otra categoría sin perder sus datos.
                 </p>
