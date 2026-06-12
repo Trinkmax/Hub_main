@@ -69,6 +69,14 @@ describeIfRls('RLS — tickets / ticket_items', () => {
       .single()
     if (!item) throw new Error('failed seed item')
     menuItemId = item.id
+
+    // La sesión la abre el staff (ya no hay auto-create al escanear el QR).
+    await owner.client.rpc('activate_table_session', {
+      p_qr_token: qrToken,
+      p_party_size: 2,
+      p_source: 'manual',
+      p_alias: null,
+    })
   })
 
   afterAll(async () => {
@@ -247,9 +255,17 @@ describeIfRls('RLS — tickets / ticket_items', () => {
 
   it('cancel_ticket_item por kitchen marca cancelled_at', async () => {
     const service = getServiceClient()
+    // Scope a este tenant: con tests en paralelo, ticket_items de otros tenants
+    // pueden colarse en un query sin filtro y kitchen no es miembro de ellos.
+    const { data: myTickets } = await service
+      .from('tickets')
+      .select('id')
+      .eq('tenant_id', tenant.id)
+    const myTicketIds = (myTickets ?? []).map((t) => t.id)
     const { data: ti } = await service
       .from('ticket_items')
       .select('id')
+      .in('ticket_id', myTicketIds)
       .is('cancelled_at', null)
       .limit(1)
       .single()

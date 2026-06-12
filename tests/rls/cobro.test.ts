@@ -78,6 +78,14 @@ describeIfRls('RPC mark_session_paid', () => {
       active: true,
     })
 
+    // El staff abre la mesa (ya no hay auto-create al escanear el QR).
+    await owner.client.rpc('activate_table_session', {
+      p_qr_token: qrToken,
+      p_party_size: 2,
+      p_source: 'manual',
+      p_alias: null,
+    })
+
     // Comensal escanea, se registra, pide.
     const anon = getAnonClient()
     await anon.rpc('join_session_as_guest', {
@@ -182,6 +190,13 @@ describeIfRls('RPC mark_session_paid', () => {
       .select('qr_token')
       .single()
     if (!pt2) throw new Error('failed pt2')
+
+    await owner.client.rpc('activate_table_session', {
+      p_qr_token: pt2.qr_token,
+      p_party_size: 2,
+      p_source: 'manual',
+      p_alias: null,
+    })
 
     const anon = getAnonClient()
     await anon.rpc('join_session_as_guest', {
