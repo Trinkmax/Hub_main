@@ -1,4 +1,4 @@
-import { Eye, Plus, Tag, UtensilsCrossed } from 'lucide-react'
+import { Eye, Plus, QrCode, Tag, UtensilsCrossed } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -7,7 +7,6 @@ import { PageHeader } from '@/components/ui/page-header'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { listItemTags } from '@/lib/item-tags/queries'
 import { listMenu } from '@/lib/menu/queries'
-import { listPhysicalTables } from '@/lib/tables/queries'
 import {
   RoleRequiredError,
   requireRole,
@@ -33,14 +32,12 @@ export default async function MenuPage({ params }: { params: Promise<{ tenantSlu
     throw error
   }
 
-  const [{ categories, items }, tables, tags] = await Promise.all([
+  const [{ categories, items }, tags] = await Promise.all([
     listMenu({ tenantId: access.tenant.id }),
-    listPhysicalTables(access.tenant.id),
     listItemTags(access.tenant.id),
   ])
   const totalItems = items.length
   const featuredCount = items.filter((i) => i.featured).length
-  const previewTable = tables.find((t) => t.active) ?? tables[0]
 
   // Texto dinámico — guía al dueño hacia el siguiente paso.
   const headerDescription =
@@ -58,14 +55,18 @@ export default async function MenuPage({ params }: { params: Promise<{ tenantSlu
         description={headerDescription}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            {previewTable ? (
-              <Button asChild variant="outline" size="sm" className="gap-1.5">
-                <Link href={`/m/${previewTable.qr_token}`} target="_blank" rel="noopener">
-                  <Eye className="size-4" />
-                  Vista cliente
-                </Link>
-              </Button>
-            ) : null}
+            <Button asChild variant="outline" size="sm" className="gap-1.5">
+              <Link href={`/carta/${tenantSlug}`} target="_blank" rel="noopener">
+                <Eye className="size-4" />
+                Ver carta
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="sm" className="gap-1.5">
+              <Link href={`/print/carta/${tenantSlug}`} target="_blank" rel="noopener">
+                <QrCode className="size-4" />
+                QR de la carta
+              </Link>
+            </Button>
             <TagsManagerDialog
               tenantSlug={tenantSlug}
               tags={tags}

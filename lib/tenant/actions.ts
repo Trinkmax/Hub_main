@@ -88,3 +88,58 @@ export async function updateTotalSeatsAction(
     throw e
   }
 }
+
+// ──────────────────────────────────────────────────────────
+// Brand accent (color de marca para superficies públicas)
+// ──────────────────────────────────────────────────────────
+
+const brandAccentSchema = z
+  .union([
+    z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Usá un color hex #RRGGBB'),
+    z.literal(''),
+    z.null(),
+  ])
+  .transform((v) => (v ? v.toLowerCase() : null))
+
+export type UpdateBrandAccentResult =
+  | { ok: true; brandAccent: string | null }
+  | { ok: false; message: string }
+
+export async function updateBrandAccentAction(
+  slug: string,
+  raw: FormDataEntryValue | string | null | undefined,
+): Promise<UpdateBrandAccentResult> {
+  try {
+    const { tenant, role } = await requireTenantAccess(slug)
+    requireRole(role, ['owner'])
+
+    const parsed = brandAccentSchema.safeParse(raw ?? null)
+    if (!parsed.success) {
+      return { ok: false, message: parsed.error.issues[0]?.message ?? 'Color inválido' }
+    }
+
+    const supabase = await createClient()
+    const { error } = await supabase
+      .from('tenants')
+      .update({ brand_accent: parsed.data })
+      .eq('id', tenant.id)
+    if (error) {
+      console.error('[tenant.updateBrandAccent]', error.message)
+      return { ok: false, message: 'No se pudo guardar.' }
+    }
+
+    revalidatePath(`/${slug}/configuracion/apariencia`)
+    // Las superficies públicas leen el acento por slug.
+    revalidatePath(`/carta/${slug}`)
+    return { ok: true, brandAccent: parsed.data }
+  } catch (e) {
+    if (
+      e instanceof UnauthenticatedError ||
+      e instanceof TenantNotFoundError ||
+      e instanceof RoleRequiredError
+    ) {
+      return { ok: false, message: 'No tenés permiso.' }
+    }
+    throw e
+  }
+}
