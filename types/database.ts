@@ -2742,10 +2742,33 @@ export type Database = {
           },
         ]
       }
-      tenants: {
+      platform_admins: {
         Row: {
           created_at: string
+          email: string
+          id: string
+          note: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          note?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          note?: string | null
+        }
+        Relationships: []
+      }
+      tenants: {
+        Row: {
+          brand_accent: string | null
+          created_at: string
           currency: string
+          feature_flags: Json
           guest_idle_hours_to_rescan: number
           id: string
           kitchen_flow_enabled: boolean
@@ -2765,8 +2788,10 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          brand_accent?: string | null
           created_at?: string
           currency?: string
+          feature_flags?: Json
           guest_idle_hours_to_rescan?: number
           id?: string
           kitchen_flow_enabled?: boolean
@@ -2786,8 +2811,10 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          brand_accent?: string | null
           created_at?: string
           currency?: string
+          feature_flags?: Json
           guest_idle_hours_to_rescan?: number
           id?: string
           kitchen_flow_enabled?: boolean
@@ -3451,6 +3478,7 @@ export type Database = {
         Returns: Json
       }
       active_tenant_id: { Args: never; Returns: string }
+      is_platform_admin: { Args: never; Returns: boolean }
       add_staff_ticket: {
         Args: {
           p_assigned_to_guest_id?: string
