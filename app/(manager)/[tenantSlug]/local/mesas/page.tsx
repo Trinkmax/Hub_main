@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
 import type { LiveFloorData } from '@/lib/floor-plan/queries'
 import { getFloorPlan, getLiveFloor, listFloorAreas } from '@/lib/floor-plan/queries'
+import { requireFeature } from '@/lib/platform/guards'
 import { requireTenantAccess } from '@/lib/tenant'
 import { FloorPlanEditor } from './_components/floor-plan-editor'
 import { FloorPlanErrorBoundary } from './_components/floor-plan-error-boundary'
@@ -16,18 +17,17 @@ export const metadata = { title: 'Plano de mesas' }
 export default async function MesasPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
   const { tenantSlug } = await params
 
-  let tenant: { id: string; name: string }
-  let role: string
+  let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
-    const access = await requireTenantAccess(tenantSlug)
-    tenant = access.tenant
-    role = access.role
+    access = await requireTenantAccess(tenantSlug)
   } catch {
     notFound()
   }
 
-  if (role !== 'owner') notFound()
+  if (access.role !== 'owner') notFound()
+  await requireFeature(access.tenant, 'floor_plan')
 
+  const tenant = access.tenant
   const data = await getFloorPlan(tenant.id)
 
   // Áreas para el selector de la vista En vivo (mismo orden canónico que el editor).

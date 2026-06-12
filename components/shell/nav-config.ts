@@ -1,3 +1,4 @@
+import type { FeatureKey, TenantFeatures } from '@/lib/platform/features'
 import type { TenantRole } from '@/lib/tenant/types'
 import type { NavIconKey } from './nav-icons'
 
@@ -9,8 +10,12 @@ export type NavItem = {
   roles?: TenantRole[]
   /** Match exacto (true) o prefijo (false, default). */
   exact?: boolean
-  /** Abre en nueva pestaña. Para "Salón en vivo" desde el manager. */
+  /** Abre en nueva pestaña (p. ej. "Salón en vivo" desde el manager). */
   newTab?: boolean
+  /** Si está, sólo se muestra cuando la feature está ON (o quien mira es superadmin). */
+  feature?: FeatureKey
+  /** Sub-items anidados (1 nivel). El padre además navega a su propio href. */
+  children?: NavItem[]
 }
 
 export type NavGroup = {
@@ -25,6 +30,7 @@ export type ResolvedNavItem = {
   iconKey: NavIconKey
   exact?: boolean
   newTab?: boolean
+  children?: ResolvedNavItem[]
 }
 
 export type ResolvedNavGroup = {
@@ -33,92 +39,38 @@ export type ResolvedNavGroup = {
 }
 
 /**
- * Information architecture del Manager Workspace, ordenada por el FLUJO DE TRABAJO
- * del dueño (no por dominio técnico): primero el día, después se arma el mes
- * (Calendario), se gestionan las Reservas que caen, se prepara el Salón físico,
- * se atiende al Cliente, se hace Marketing para traerlos de vuelta, se mantiene
- * el Catálogo, se miran los Insights y al final los Ajustes.
+ * Information architecture del Manager Workspace para el producto loyalty-first.
+ * Orden por el FLUJO del dueño: primero el hoy (resumen, operativo del día,
+ * mensajería), después la agenda (calendario + reservas), el CRM (personas +
+ * acreditar puntos), el crecimiento (marketing, menú, club de beneficios), el
+ * negocio (estadísticas, ajustes) y, OCULTO detrás de feature-flags de superadmin,
+ * todo lo de servicio de mesa (Salón).
  *
- *   HOY        — qué está pasando ahora (resumen, salón en vivo, bandeja, acreditar)
- *   CALENDARIO — el mes de eventos programados (Sushi/Pizza Libre); los "Eventos"
- *                (ex-Templates) son una PESTAÑA adentro, no un item de nav
- *   RESERVAS   — quién reservó para esas fechas
- *   SALÓN      — disposición física: plano, QRs de mesa, flujo de comandas
- *   CLIENTES   — el CRM: quién viene y su historial
- *   MARKETING  — cómo los traigo de vuelta (shows, difusiones, audiencias, flows)
- *   CATÁLOGO   — qué vendo y cómo premio la recurrencia
- *   INSIGHTS   — qué entiendo del negocio
- *   AYUDA / AJUSTES
+ * Items con 🔁: rutas que se repuntan en fases siguientes (hoy apuntan a lo que
+ * ya existe para no dejar links muertos):
+ *   - Operativo → /salon/reservas-operativo (F5: /operativo manager)
+ *   - Marketing (padre) → /difusiones      (F5: hub /marketing)
+ *   - Club (padre) → /puntos               (F2: hub /club + Niveles/Recompensas/Bienvenida)
  */
 export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Hoy',
     items: [
-      {
-        label: 'Resumen',
-        href: (s) => `/${s}`,
-        icon: 'LayoutDashboard',
-        exact: true,
-      },
+      { label: 'Resumen', href: (s) => `/${s}`, icon: 'LayoutDashboard', exact: true },
       {
         label: 'Operativo',
         href: (s) => `/${s}/salon/reservas-operativo`,
         icon: 'MonitorSmartphone',
         newTab: true,
       },
-      {
-        label: 'Bandeja',
-        href: (s) => `/${s}/bandeja`,
-        icon: 'Inbox',
-      },
-      {
-        label: 'Acreditar',
-        href: (s) => `/${s}/acreditar`,
-        icon: 'ScanLine',
-      },
+      { label: 'Mensajería', href: (s) => `/${s}/bandeja`, icon: 'Inbox' },
     ],
   },
   {
-    label: 'Calendario',
+    label: 'Agenda',
     items: [
-      {
-        label: 'Calendario',
-        href: (s) => `/${s}/eventos/programados`,
-        icon: 'CalendarDays',
-      },
-    ],
-  },
-  {
-    label: 'Reservas',
-    items: [
-      {
-        label: 'Reservas',
-        href: (s) => `/${s}/reservas`,
-        icon: 'CalendarCheck',
-      },
-    ],
-  },
-  {
-    label: 'Salón',
-    items: [
-      {
-        label: 'Plano',
-        href: (s) => `/${s}/local/mesas`,
-        icon: 'LayoutGrid',
-        roles: ['owner'],
-      },
-      {
-        label: 'Captura QRs',
-        href: (s) => `/${s}/local/captura`,
-        icon: 'QrCode',
-        roles: ['owner'],
-      },
-      {
-        label: 'Auto-aceptación',
-        href: (s) => `/${s}/local/auto-aceptacion`,
-        icon: 'Zap',
-        roles: ['owner'],
-      },
+      { label: 'Calendario', href: (s) => `/${s}/eventos/programados`, icon: 'CalendarDays' },
+      { label: 'Reservas', href: (s) => `/${s}/reservas`, icon: 'CalendarCheck' },
     ],
   },
   {
@@ -128,119 +80,186 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'Personas',
         href: (s) => `/${s}/clientes`,
         icon: 'Users',
+        children: [
+          {
+            label: 'Reservas',
+            href: (s) => `/${s}/clientes?segment=reserva`,
+            icon: 'CalendarCheck',
+          },
+          { label: 'Walk-in', href: (s) => `/${s}/clientes?segment=walkin`, icon: 'Receipt' },
+        ],
       },
+      { label: 'Acreditar', href: (s) => `/${s}/acreditar`, icon: 'ScanLine' },
       {
-        label: 'Visitas',
-        href: (s) => `/${s}/visitas/nueva`,
-        icon: 'Receipt',
+        label: 'QR del club',
+        href: (s) => `/${s}/local/captura`,
+        icon: 'QrCode',
+        roles: ['owner'],
       },
     ],
   },
   {
-    label: 'Marketing',
+    label: 'Crecimiento',
     items: [
       {
-        label: 'Shows y fiestas',
-        href: (s) => `/${s}/eventos`,
-        icon: 'PartyPopper',
-        roles: ['owner'],
-      },
-      {
-        label: 'Difusiones',
+        label: 'Marketing',
         href: (s) => `/${s}/difusiones`,
         icon: 'Megaphone',
         roles: ['owner'],
+        children: [
+          {
+            label: 'Shows y fiestas',
+            href: (s) => `/${s}/eventos`,
+            icon: 'PartyPopper',
+            roles: ['owner'],
+          },
+          {
+            label: 'Difusiones',
+            href: (s) => `/${s}/difusiones`,
+            icon: 'Megaphone',
+            roles: ['owner'],
+          },
+          {
+            label: 'Audiencias',
+            href: (s) => `/${s}/audiencias`,
+            icon: 'UsersRound',
+            roles: ['owner'],
+          },
+          { label: 'Flows', href: (s) => `/${s}/flows`, icon: 'Workflow', roles: ['owner'] },
+        ],
       },
+      { label: 'Menú', href: (s) => `/${s}/menu`, icon: 'UtensilsCrossed', roles: ['owner'] },
       {
-        label: 'Audiencias',
-        href: (s) => `/${s}/audiencias`,
-        icon: 'UsersRound',
-        roles: ['owner'],
-      },
-      {
-        label: 'Flows',
-        href: (s) => `/${s}/flows`,
-        icon: 'Workflow',
-        roles: ['owner'],
-      },
-    ],
-  },
-  {
-    label: 'Catálogo',
-    items: [
-      {
-        label: 'Menú',
-        href: (s) => `/${s}/menu`,
-        icon: 'UtensilsCrossed',
-        roles: ['owner'],
-      },
-      {
-        label: 'Puntos',
+        label: 'Club de beneficios',
         href: (s) => `/${s}/puntos`,
         icon: 'Star',
         roles: ['owner'],
-      },
-      {
-        label: 'Punch cards',
-        href: (s) => `/${s}/punch-cards`,
-        icon: 'Stamp',
-        roles: ['owner'],
+        children: [
+          { label: 'Puntos', href: (s) => `/${s}/puntos`, icon: 'Star', roles: ['owner'] },
+          {
+            label: 'Punch cards',
+            href: (s) => `/${s}/punch-cards`,
+            icon: 'Stamp',
+            roles: ['owner'],
+          },
+        ],
       },
     ],
   },
   {
-    label: 'Insights',
+    label: 'Negocio',
     items: [
       {
         label: 'Estadísticas',
         href: (s) => `/${s}/estadisticas`,
         icon: 'BarChart3',
         roles: ['owner'],
+        children: [
+          {
+            label: 'Comisiones',
+            href: (s) => `/${s}/estadisticas/comisiones`,
+            icon: 'Coins',
+            roles: ['owner'],
+          },
+        ],
       },
-      {
-        label: 'Comisiones',
-        href: (s) => `/${s}/estadisticas/comisiones`,
-        icon: 'Coins',
-        roles: ['owner'],
-      },
-    ],
-  },
-  {
-    label: 'Ayuda',
-    items: [
-      {
-        label: 'Documentación',
-        href: (s) => `/${s}/docs`,
-        icon: 'BookOpen',
-      },
-    ],
-  },
-  {
-    label: 'Ajustes',
-    items: [
       {
         label: 'Configuración',
         href: (s) => `/${s}/configuracion`,
         icon: 'Settings2',
         roles: ['owner'],
+        children: [
+          { label: 'Documentación', href: (s) => `/${s}/docs`, icon: 'BookOpen', roles: ['owner'] },
+        ],
+      },
+    ],
+  },
+  {
+    label: 'Salón',
+    items: [
+      {
+        label: 'Salón en vivo',
+        href: (s) => `/${s}/salon/mesas`,
+        icon: 'ClipboardList',
+        roles: ['owner'],
+        newTab: true,
+        feature: 'table_service',
+      },
+      {
+        label: 'Cocina',
+        href: (s) => `/${s}/salon/cocina`,
+        icon: 'ChefHat',
+        roles: ['owner'],
+        newTab: true,
+        feature: 'kitchen',
+      },
+      {
+        label: 'Plano y QRs de mesa',
+        href: (s) => `/${s}/local/mesas`,
+        icon: 'LayoutGrid',
+        roles: ['owner'],
+        feature: 'floor_plan',
+      },
+      {
+        label: 'Auto-aceptación',
+        href: (s) => `/${s}/local/auto-aceptacion`,
+        icon: 'Zap',
+        roles: ['owner'],
+        feature: 'auto_accept',
       },
     ],
   },
 ]
 
-export function visibleGroups(role: TenantRole): NavGroup[] {
+function itemVisible(
+  item: NavItem,
+  role: TenantRole,
+  features: TenantFeatures,
+  isPlatformAdmin: boolean,
+): boolean {
+  const roleOk = !item.roles || item.roles.includes(role)
+  const featureOk = !item.feature || isPlatformAdmin || features[item.feature]
+  return roleOk && featureOk
+}
+
+/**
+ * Filtra los grupos por rol + feature-flag (+ superadmin bypass), recursando en
+ * los children. Un padre se mantiene si él pasa o si le sobrevive algún hijo.
+ */
+export function visibleGroups(
+  role: TenantRole,
+  features: TenantFeatures,
+  isPlatformAdmin: boolean,
+): NavGroup[] {
   return NAV_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => !item.roles || item.roles.includes(role)),
+    items: group.items
+      .map((item) => {
+        const children = item.children?.filter((child) =>
+          itemVisible(child, role, features, isPlatformAdmin),
+        )
+        return { item, children }
+      })
+      .filter(
+        ({ item, children }) =>
+          itemVisible(item, role, features, isPlatformAdmin) || (children?.length ?? 0) > 0,
+      )
+      .map(({ item, children }) => ({ ...item, children })),
   })).filter((group) => group.items.length > 0)
 }
 
 /**
- * Resuelve los grupos a estructuras serializables (href ejecutado, icon como
- * key string). Llamar **server-side** antes de pasar a un Client Component.
+ * Resuelve los grupos a estructuras serializables (href ejecutado, icon como key).
+ * Llamar con (role, slug, features, isPlatformAdmin); features/isPlatformAdmin
+ * vienen del tenant (requireTenantAccess) + lib/platform/is-admin.
  */
-export function resolveNavGroups(role: TenantRole, slug: string): ResolvedNavGroup[] {
-  return visibleGroups(role).map((group) => ({
+export function resolveNavGroups(
+  role: TenantRole,
+  slug: string,
+  features: TenantFeatures,
+  isPlatformAdmin: boolean,
+): ResolvedNavGroup[] {
+  return visibleGroups(role, features, isPlatformAdmin).map((group) => ({
     label: group.label,
     items: group.items.map((item) => ({
       label: item.label,
@@ -248,6 +267,13 @@ export function resolveNavGroups(role: TenantRole, slug: string): ResolvedNavGro
       iconKey: item.icon,
       exact: item.exact,
       newTab: item.newTab,
+      children: item.children?.map((child) => ({
+        label: child.label,
+        href: child.href(slug),
+        iconKey: child.icon,
+        exact: child.exact,
+        newTab: child.newTab,
+      })),
     })),
   }))
 }

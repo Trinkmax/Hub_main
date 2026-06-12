@@ -2,6 +2,8 @@ import { createServerClient } from '@supabase/ssr'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSupabaseClientEnv } from '@/lib/env'
+// Fuente ÚNICA de slugs reservados (evitamos el set duplicado/divergente de antes).
+import { RESERVED_SLUGS } from '@/lib/tenant/types'
 
 const PUBLIC_PATHS = new Set([
   '/login',
@@ -16,6 +18,8 @@ const PUBLIC_PREFIXES = [
   '/capture/',
   '/m/',
   '/c/',
+  '/carta/', // carta read-only pública (QR de la carta)
+  '/r/', // página pública de reseña
   '/api/webhooks/',
   '/_next/',
   '/auth/',
@@ -23,21 +27,6 @@ const PUBLIC_PREFIXES = [
   '/icons/',
   '/forgot-password',
 ]
-
-/**
- * Slugs que NO son tenants — paths globales o reservados de la app.
- * Si la URL empieza por uno de estos, NO aplicamos lógica de redirect-by-role.
- */
-const RESERVED_SLUGS = new Set([
-  'login',
-  'auth',
-  'capture',
-  'accept-invite',
-  'onboarding',
-  'api',
-  'm',
-  'print',
-])
 
 const STAFF_ROLES = new Set(['cashier', 'waiter', 'kitchen'])
 

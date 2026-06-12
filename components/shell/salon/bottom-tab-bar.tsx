@@ -1,8 +1,9 @@
 'use client'
 
-import { CalendarCheck, ChefHat, ClipboardList, type LucideIcon, User } from 'lucide-react'
+import { CalendarCheck, ChefHat, ClipboardList, Inbox, type LucideIcon, User } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import type { FeatureKey, TenantFeatures } from '@/lib/platform/features'
 import type { TenantRole } from '@/lib/tenant/types'
 import { cn } from '@/lib/utils'
 
@@ -12,6 +13,7 @@ type Tab = {
   href: (slug: string) => string
   match: (pathname: string, slug: string) => boolean
   roles?: TenantRole[]
+  feature?: FeatureKey
 }
 
 const TABS: Tab[] = [
@@ -29,6 +31,7 @@ const TABS: Tab[] = [
     icon: ClipboardList,
     href: (s) => `/${s}/salon/mesas`,
     match: (p, s) => p === `/${s}/salon/mesas` || p.startsWith(`/${s}/salon/mesas/`),
+    feature: 'table_service',
   },
   {
     label: 'Cocina',
@@ -36,18 +39,40 @@ const TABS: Tab[] = [
     href: (s) => `/${s}/salon/cocina`,
     match: (p, s) => p.startsWith(`/${s}/salon/cocina`),
     roles: ['owner', 'cashier', 'kitchen'],
+    feature: 'kitchen',
   },
   {
     label: 'Mi turno',
     icon: User,
     href: (s) => `/${s}/salon/mi-turno`,
     match: (p, s) => p.startsWith(`/${s}/salon/mi-turno`),
+    feature: 'table_service',
+  },
+  {
+    label: 'Mensajería',
+    icon: Inbox,
+    href: (s) => `/${s}/salon/bandeja`,
+    match: (p, s) => p.startsWith(`/${s}/salon/bandeja`),
   },
 ]
 
-export function BottomTabBar({ tenantSlug, role }: { tenantSlug: string; role: TenantRole }) {
+export function BottomTabBar({
+  tenantSlug,
+  role,
+  features,
+  isPlatformAdmin,
+}: {
+  tenantSlug: string
+  role: TenantRole
+  features: TenantFeatures
+  isPlatformAdmin: boolean
+}) {
   const pathname = usePathname()
-  const visibleTabs = TABS.filter((tab) => !tab.roles || tab.roles.includes(role))
+  const visibleTabs = TABS.filter((tab) => {
+    const roleOk = !tab.roles || tab.roles.includes(role)
+    const featureOk = !tab.feature || isPlatformAdmin || features[tab.feature]
+    return roleOk && featureOk
+  })
 
   return (
     <nav

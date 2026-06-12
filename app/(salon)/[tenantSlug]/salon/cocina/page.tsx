@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { requireFeature } from '@/lib/platform/guards'
 import { requireTenantAccess } from '@/lib/tenant'
 import { listKitchenQueue, listTicketItemsForTickets } from '@/lib/tickets/queries'
 import { KdsScreen } from './_components/kds-screen'
@@ -14,17 +15,17 @@ export default async function SalonCocinaPage({
 }) {
   const { tenantSlug } = await params
 
-  let tenantId: string
-  let role: string
+  let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
-    const access = await requireTenantAccess(tenantSlug)
-    tenantId = access.tenant.id
-    role = access.role
+    access = await requireTenantAccess(tenantSlug)
   } catch {
     notFound()
   }
 
+  const tenantId = access.tenant.id
+  const role = access.role
   if (!['kitchen', 'owner', 'cashier'].includes(role)) notFound()
+  await requireFeature(access.tenant, 'kitchen')
 
   const tickets = await listKitchenQueue(tenantId)
   const items = await listTicketItemsForTickets(tickets.map((t) => t.id))

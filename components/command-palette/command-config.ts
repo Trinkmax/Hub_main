@@ -21,6 +21,7 @@ import {
   Workflow,
   Zap,
 } from 'lucide-react'
+import type { FeatureKey } from '@/lib/platform/features'
 
 export type CommandActionType = 'navigate' | 'navigate-new'
 
@@ -34,6 +35,8 @@ export type CommandEntry = {
   href: (slug: string) => string
   /** Para narrow keyword search en cmdk. */
   keywords?: string[]
+  /** Si está, sólo se muestra cuando la feature está ON (o quien mira es superadmin). */
+  feature?: FeatureKey
 }
 
 export const commandEntries: CommandEntry[] = [
@@ -82,6 +85,7 @@ export const commandEntries: CommandEntry[] = [
     type: 'navigate',
     href: (s) => `/${s}/visitas/nueva`,
     keywords: ['cerrar', 'mesa', 'cobrar'],
+    feature: 'table_service',
   },
 
   // Operación (turno en vivo)
@@ -93,6 +97,7 @@ export const commandEntries: CommandEntry[] = [
     type: 'navigate',
     href: (s) => `/${s}/salon/mesas`,
     keywords: ['mesas', 'sesiones', 'salón', 'live'],
+    feature: 'table_service',
   },
   {
     id: 'kitchen',
@@ -102,6 +107,7 @@ export const commandEntries: CommandEntry[] = [
     type: 'navigate',
     href: (s) => `/${s}/salon/cocina`,
     keywords: ['kitchen', 'tickets', 'pedidos'],
+    feature: 'kitchen',
   },
   {
     id: 'inbox',
@@ -230,6 +236,7 @@ export const commandEntries: CommandEntry[] = [
     type: 'navigate',
     href: (s) => `/${s}/local/mesas`,
     keywords: ['mesas', 'floor', 'plano', 'salón'],
+    feature: 'floor_plan',
   },
   {
     id: 'auto-accept',
@@ -239,6 +246,7 @@ export const commandEntries: CommandEntry[] = [
     type: 'navigate',
     href: (s) => `/${s}/local/auto-aceptacion`,
     keywords: ['settings'],
+    feature: 'auto_accept',
   },
   {
     id: 'templates',

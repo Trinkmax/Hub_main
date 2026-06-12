@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
 import { getTenantConfig } from '@/lib/admin/tenant-config'
+import { requireFeature } from '@/lib/platform/guards'
 import { requireTenantAccess } from '@/lib/tenant'
 import { AutoAcceptForm } from './_components/auto-accept-form'
 
@@ -14,14 +15,14 @@ export default async function AutoAcceptPage({
 }) {
   const { tenantSlug } = await params
 
-  let role: string
+  let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
-    const access = await requireTenantAccess(tenantSlug)
-    role = access.role
+    access = await requireTenantAccess(tenantSlug)
   } catch {
     notFound()
   }
-  if (role !== 'owner') notFound()
+  if (access.role !== 'owner') notFound()
+  await requireFeature(access.tenant, 'auto_accept')
 
   const config = await getTenantConfig(tenantSlug)
   if (!config) notFound()
