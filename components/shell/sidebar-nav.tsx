@@ -2,57 +2,12 @@
 
 import { ChevronRight } from 'lucide-react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { computeActiveHrefs } from './nav-active'
 import type { ResolvedNavGroup, ResolvedNavItem } from './nav-config'
 import { NAV_ICONS } from './nav-icons'
-
-function matches(pathname: string, href: string, exact?: boolean): boolean {
-  // Ignoramos query-string (los hijos por segmento comparten pathname con el padre).
-  const path = href.split('?')[0] ?? href
-  if (exact) return pathname === path
-  if (pathname === path) return true
-  return pathname.startsWith(`${path}/`)
-}
-
-function flatten(groups: ResolvedNavGroup[]): ResolvedNavItem[] {
-  const out: ResolvedNavItem[] = []
-  for (const g of groups) {
-    for (const item of g.items) {
-      out.push(item)
-      if (item.children) out.push(...item.children)
-    }
-  }
-  return out
-}
-
-/**
- * Sólo el item con el `href` más largo (= más específico) gana cuando varios
- * matchean. Aplana padres + hijos para que el longest-prefix funcione cruzando
- * niveles de anidación.
- */
-function computeActiveHrefs(pathname: string, groups: ResolvedNavGroup[]): Set<string> {
-  const all = flatten(groups)
-  let maxLen = 0
-  for (const item of all) {
-    if (item.newTab) continue
-    const path = item.href.split('?')[0] ?? item.href
-    if (matches(pathname, item.href, item.exact) && path.length > maxLen) {
-      maxLen = path.length
-    }
-  }
-  const active = new Set<string>()
-  if (maxLen === 0) return active
-  for (const item of all) {
-    if (item.newTab) continue
-    const path = item.href.split('?')[0] ?? item.href
-    if (matches(pathname, item.href, item.exact) && path.length === maxLen) {
-      active.add(item.href)
-    }
-  }
-  return active
-}
 
 export function SidebarNav({
   groups,
@@ -62,7 +17,13 @@ export function SidebarNav({
   onNavigate?: () => void
 }) {
   const pathname = usePathname()
-  const activeHrefs = useMemo(() => computeActiveHrefs(pathname, groups), [pathname, groups])
+  // `useSearchParams` para que los hijos por `?segment=` desempaten bien y no
+  // queden dos seleccionados a la vez. El subtree se monta en rutas dynamic.
+  const search = useSearchParams().toString()
+  const activeHrefs = useMemo(
+    () => computeActiveHrefs(pathname, search, groups),
+    [pathname, search, groups],
+  )
 
   return (
     <nav className="flex flex-1 flex-col gap-5 px-3 py-4">

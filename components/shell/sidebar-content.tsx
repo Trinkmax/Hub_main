@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { Suspense } from 'react'
 import type { TenantFeatures } from '@/lib/platform/features'
 import type { Tenant, TenantRole } from '@/lib/tenant/types'
 import { resolveNavGroups } from './nav-config'
@@ -47,7 +48,9 @@ export function SidebarContent({
       <div className="mx-3 h-px bg-border/60" />
 
       <div className="flex-1 overflow-y-auto">
-        <SidebarNav groups={groups} onNavigate={onNavigate} />
+        <Suspense fallback={null}>
+          <SidebarNav groups={groups} onNavigate={onNavigate} />
+        </Suspense>
       </div>
 
       <div className="border-t border-border/60 px-4 py-3">
