@@ -176,6 +176,13 @@ export const NAV_GROUPS: NavGroup[] = [
         ],
       },
       {
+        label: 'Reseñas',
+        href: (s) => `/${s}/reviews`,
+        icon: 'Star',
+        roles: ['owner'],
+        feature: 'reviews',
+      },
+      {
         label: 'Configuración',
         href: (s) => `/${s}/configuracion`,
         icon: 'Settings2',

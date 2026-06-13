@@ -25,7 +25,10 @@ const GROUPS: Group[] = [
   {
     label: 'Fidelización',
     icon: Gift,
-    items: [{ label: 'Regalo de bienvenida', href: (s) => `/${s}/configuracion/bienvenida` }],
+    items: [
+      { label: 'Regalo de bienvenida', href: (s) => `/${s}/configuracion/bienvenida` },
+      { label: 'Reseñas', href: (s) => `/${s}/configuracion/resenas` },
+    ],
   },
   {
     label: 'Mensajería',

@@ -2056,6 +2056,42 @@ export type Database = {
           },
         ]
       }
+      reviews: {
+        Row: {
+          comment: string | null
+          created_at: string
+          customer_id: string | null
+          id: string
+          rating: number
+          redirected_to_maps: boolean
+          source: string
+          tenant_id: string
+          visit_id: string | null
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          rating: number
+          redirected_to_maps?: boolean
+          source?: string
+          tenant_id: string
+          visit_id?: string | null
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          rating?: number
+          redirected_to_maps?: boolean
+          source?: string
+          tenant_id?: string
+          visit_id?: string | null
+        }
+        Relationships: []
+      }
       reservation_managers: {
         Row: {
           active: boolean
@@ -2865,12 +2901,15 @@ export type Database = {
           feature_flags: Json
           guest_idle_hours_to_rescan: number
           id: string
+          google_maps_review_url: string | null
           kitchen_flow_enabled: boolean
           logo_url: string | null
           name: string
           points_redemption_enabled: boolean
           points_redemption_max_pct: number
           points_to_cents_rate: number
+          review_gating_enabled: boolean
+          review_reward_points: number
           session_auto_abandon_hours: number
           settings: Json
           slug: string
@@ -2889,12 +2928,15 @@ export type Database = {
           feature_flags?: Json
           guest_idle_hours_to_rescan?: number
           id?: string
+          google_maps_review_url?: string | null
           kitchen_flow_enabled?: boolean
           logo_url?: string | null
           name: string
           points_redemption_enabled?: boolean
           points_redemption_max_pct?: number
           points_to_cents_rate?: number
+          review_gating_enabled?: boolean
+          review_reward_points?: number
           session_auto_abandon_hours?: number
           settings?: Json
           slug: string
@@ -2913,12 +2955,15 @@ export type Database = {
           feature_flags?: Json
           guest_idle_hours_to_rescan?: number
           id?: string
+          google_maps_review_url?: string | null
           kitchen_flow_enabled?: boolean
           logo_url?: string | null
           name?: string
           points_redemption_enabled?: boolean
           points_redemption_max_pct?: number
           points_to_cents_rate?: number
+          review_gating_enabled?: boolean
+          review_reward_points?: number
           session_auto_abandon_hours?: number
           settings?: Json
           slug?: string

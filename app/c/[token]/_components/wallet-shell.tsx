@@ -3,6 +3,7 @@ import { HistoryAccordion } from './history-accordion'
 import { PendingBenefits } from './pending-benefits'
 import { PersonalQr } from './personal-qr'
 import { PunchCards } from './punch-cards'
+import { ReviewCta } from './review-cta'
 import { RewardsGrid } from './rewards-grid'
 import { TierHero } from './tier-hero'
 import { UpcomingEvents } from './upcoming-events'
@@ -54,6 +55,8 @@ export function WalletShell({
         <VisitsTimeline visits={visits} />
 
         <UpcomingEvents events={events} />
+
+        <ReviewCta qrToken={customer.qrToken} />
 
         <PersonalQr qrDataUrl={qrDataUrl} qrToken={customer.qrToken} />
 
