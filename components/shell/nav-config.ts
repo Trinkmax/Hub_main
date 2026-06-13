@@ -103,12 +103,6 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ['owner'],
         children: [
           {
-            label: 'Shows y fiestas',
-            href: (s) => `/${s}/eventos`,
-            icon: 'PartyPopper',
-            roles: ['owner'],
-          },
-          {
             label: 'Difusiones',
             href: (s) => `/${s}/difusiones`,
             icon: 'Megaphone',

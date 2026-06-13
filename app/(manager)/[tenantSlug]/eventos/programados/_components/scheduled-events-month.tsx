@@ -12,12 +12,21 @@ import {
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
-import { ChevronLeft, ChevronRight, GripVertical, Loader2, Plus, Sparkles } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  GripVertical,
+  Loader2,
+  PartyPopper,
+  Plus,
+  Sparkles,
+} from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import type { CalendarShow } from '@/lib/events/queries'
 import { moveScheduledEvent } from '@/lib/salon/actions'
 import type { MonthCapacity } from '@/lib/salon/month-capacity'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
@@ -60,12 +69,14 @@ export function ScheduledEventsMonth({
   tenantSlug,
   ym,
   events: initialEvents,
+  shows,
   templates,
   monthCapacity,
 }: {
   tenantSlug: string
   ym: string
   events: ScheduledEventWithTemplate[]
+  shows: CalendarShow[]
   templates: ScheduledEventTemplateRow[]
   monthCapacity: MonthCapacity
 }) {
@@ -155,16 +166,21 @@ export function ScheduledEventsMonth({
     const firstDay = new Date(Date.UTC(y, m - 1, 1))
     const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate()
     const firstDow = (firstDay.getUTCDay() + 6) % 7
-    const cells: Array<{ date: string | null; events: ScheduledEventWithTemplate[] }> = []
-    for (let i = 0; i < firstDow; i++) cells.push({ date: null, events: [] })
+    const cells: Array<{
+      date: string | null
+      events: ScheduledEventWithTemplate[]
+      shows: CalendarShow[]
+    }> = []
+    for (let i = 0; i < firstDow; i++) cells.push({ date: null, events: [], shows: [] })
     for (let d = 1; d <= lastDay; d++) {
       const dateStr = `${ym}-${String(d).padStart(2, '0')}`
       const dayEvents = events.filter((e) => e.event_date === dateStr)
-      cells.push({ date: dateStr, events: dayEvents })
+      const dayShows = shows.filter((s) => s.date === dateStr)
+      cells.push({ date: dateStr, events: dayEvents, shows: dayShows })
     }
-    while (cells.length % 7 !== 0) cells.push({ date: null, events: [] })
+    while (cells.length % 7 !== 0) cells.push({ date: null, events: [], shows: [] })
     return cells
-  }, [ym, events])
+  }, [ym, events, shows])
 
   function gotoMonth(next: string) {
     router.push(`/${tenantSlug}/eventos/programados?month=${next}`)
@@ -209,6 +225,7 @@ export function ScheduledEventsMonth({
           <MonthAgenda
             ym={ym}
             events={events}
+            shows={shows}
             tenantSlug={tenantSlug}
             monthCapacity={monthCapacity}
             onOpenDay={setDayDialogDate}
@@ -228,6 +245,7 @@ export function ScheduledEventsMonth({
               key={cell.date ?? `pad-${idx}`}
               date={cell.date}
               events={cell.events}
+              shows={cell.shows}
               tenantSlug={tenantSlug}
               isDraggingTemplate={activeDrag?.kind === 'template'}
               isDraggingEvent={activeDrag?.kind === 'event'}
@@ -310,12 +328,14 @@ function formatAgendaDate(date: string): string {
 function MonthAgenda({
   ym,
   events,
+  shows,
   tenantSlug,
   monthCapacity,
   onOpenDay,
 }: {
   ym: string
   events: ScheduledEventWithTemplate[]
+  shows: CalendarShow[]
   tenantSlug: string
   monthCapacity: MonthCapacity
   onOpenDay: (date: string) => void
@@ -324,11 +344,18 @@ function MonthAgenda({
   if (!y || !m) return null
   const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate()
 
-  const daysWithEvents: Array<{ date: string; events: ScheduledEventWithTemplate[] }> = []
+  const daysWithEvents: Array<{
+    date: string
+    events: ScheduledEventWithTemplate[]
+    shows: CalendarShow[]
+  }> = []
   for (let d = 1; d <= lastDay; d++) {
     const dateStr = `${ym}-${String(d).padStart(2, '0')}`
     const dayEvents = events.filter((e) => e.event_date === dateStr)
-    if (dayEvents.length > 0) daysWithEvents.push({ date: dateStr, events: dayEvents })
+    const dayShows = shows.filter((s) => s.date === dateStr)
+    if (dayEvents.length > 0 || dayShows.length > 0) {
+      daysWithEvents.push({ date: dateStr, events: dayEvents, shows: dayShows })
+    }
   }
 
   if (daysWithEvents.length === 0) {
@@ -341,7 +368,7 @@ function MonthAgenda({
 
   return (
     <>
-      {daysWithEvents.map(({ date, events: dayEvents }) => {
+      {daysWithEvents.map(({ date, events: dayEvents, shows: dayShows }) => {
         const capacity = monthCapacity.days[date] ?? {
           used: 0,
           total: monthCapacity.defaultTotal,
@@ -390,6 +417,19 @@ function MonthAgenda({
                   </Link>
                 )
               })}
+              {dayShows.map((s) => (
+                <Link
+                  key={s.id}
+                  href={`/${tenantSlug}/eventos/${s.id}`}
+                  className="flex items-center gap-2 rounded-md border border-dashed border-border/70 bg-secondary/60 px-2 py-1.5 text-xs font-medium leading-snug text-foreground transition-colors hover:bg-secondary"
+                >
+                  <PartyPopper className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+                  <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                    {s.time}
+                  </span>
+                  <span className="truncate">{s.name}</span>
+                </Link>
+              ))}
             </div>
           </div>
         )
@@ -516,6 +556,7 @@ function CapacityBadge({ used, total }: { used: number; total: number }) {
 function DayCell({
   date,
   events,
+  shows,
   tenantSlug,
   isDraggingTemplate,
   isDraggingEvent,
@@ -524,6 +565,7 @@ function DayCell({
 }: {
   date: string | null
   events: ScheduledEventWithTemplate[]
+  shows: CalendarShow[]
   tenantSlug: string
   isDraggingTemplate: boolean
   isDraggingEvent: boolean
@@ -579,9 +621,31 @@ function DayCell({
           {events.map((e) => (
             <DraggableEvent key={e.id} event={e} tenantSlug={tenantSlug} />
           ))}
+          {shows.map((s) => (
+            <ShowChip key={s.id} show={s} tenantSlug={tenantSlug} />
+          ))}
         </div>
       </div>
     </div>
+  )
+}
+
+// Show puntual (tabla events): chip NO arrastrable que linkea al detalle del
+// show. Estilo distinto (borde punteado + PartyPopper) para diferenciarlo de
+// los eventos programados de formato, que sí se arrastran.
+function ShowChip({ show, tenantSlug }: { show: CalendarShow; tenantSlug: string }) {
+  return (
+    <Link
+      href={`/${tenantSlug}/eventos/${show.id}`}
+      title={`${show.time} · ${show.name}`}
+      className="block rounded-md border border-dashed border-border/70 bg-secondary/60 px-1.5 py-0.5 text-[11px] font-medium leading-snug text-foreground transition-colors hover:bg-secondary"
+    >
+      <span className="flex items-center gap-1">
+        <PartyPopper className="size-2.5 shrink-0 text-muted-foreground" aria-hidden />
+        <span className="truncate">{show.name}</span>
+      </span>
+      <span className="block text-[10px] tabular-nums text-muted-foreground">{show.time}</span>
+    </Link>
   )
 }
 

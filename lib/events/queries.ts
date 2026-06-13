@@ -1,6 +1,57 @@
 import 'server-only'
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { createClient } from '@/lib/supabase/server'
 import type { EventStatus, ReservationStatus } from '@/types/database'
+
+const TZ = 'America/Argentina/Cordoba'
+
+export type CalendarShow = {
+  id: string
+  name: string
+  /** Fecha local (Córdoba) en formato yyyy-MM-dd para bucketizar en la grilla. */
+  date: string
+  /** Hora local HH:mm para mostrar en el chip. */
+  time: string
+  starts_at: string
+}
+
+/**
+ * Shows puntuales (tabla `events`, publicados) cuyo `starts_at` cae en el mes
+ * local pedido. Se mergean en el Calendario junto a los eventos programados,
+ * como chips NO arrastrables que linkean al detalle del show (/eventos/[id]).
+ * El bucketizado por día usa el reloj del bar (TZ Córdoba), no el del runtime.
+ */
+export async function listPublishedShowsForDateRange(opts: {
+  tenantId: string
+  from: string // yyyy-MM-dd local
+  to: string // yyyy-MM-dd local
+}): Promise<CalendarShow[]> {
+  const supabase = await createClient()
+  const fromInstant = fromZonedTime(`${opts.from}T00:00:00`, TZ).toISOString()
+  const toInstant = fromZonedTime(`${opts.to}T23:59:59.999`, TZ).toISOString()
+
+  const { data, error } = await supabase
+    .from('events')
+    .select('id, name, starts_at')
+    .eq('tenant_id', opts.tenantId)
+    .eq('status', 'published')
+    .gte('starts_at', fromInstant)
+    .lte('starts_at', toInstant)
+    .order('starts_at', { ascending: true })
+  if (error) throw error
+
+  return (data ?? []).map((e) => {
+    const startsAt = e.starts_at as string
+    const at = new Date(startsAt)
+    return {
+      id: e.id as string,
+      name: e.name as string,
+      starts_at: startsAt,
+      date: formatInTimeZone(at, TZ, 'yyyy-MM-dd'),
+      time: formatInTimeZone(at, TZ, 'HH:mm'),
+    }
+  })
+}
 
 export type EventListEntry = {
   id: string

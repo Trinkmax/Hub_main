@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import type { CalendarShow } from '@/lib/events/queries'
 import type { MonthCapacity } from '@/lib/salon/month-capacity'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import type { ScheduledEventTemplateRow } from '@/lib/salon/types'
@@ -14,14 +15,16 @@ import { ScheduledEventsMonth } from './scheduled-events-month'
 type Tab = 'calendario' | 'eventos'
 
 /**
- * Calendario mensual + el catálogo de "Eventos" (ex-Templates) como pestaña interna.
- * Antes "Templates" era un item de nav suelto; ahora vive acá adentro, que es el
- * mental model del dueño: definís el evento (Sushi Libre) y lo programás en el mes.
+ * Un solo calendario del mes que muestra TODO lo que pasa en el bar: los
+ * eventos programados a partir de formatos reutilizables (Sushi Libre, Pizza
+ * Libre…) y los shows puntuales (fiestas, peñas) que se gestionan aparte. La
+ * pestaña "Formatos" (ex-Templates) es el catálogo de esos formatos.
  */
 export function CalendarTabs({
   tenantSlug,
   ym,
   events,
+  shows,
   templates,
   activeTemplates,
   monthCapacity,
@@ -30,6 +33,7 @@ export function CalendarTabs({
   tenantSlug: string
   ym: string
   events: ScheduledEventWithTemplate[]
+  shows: CalendarShow[]
   templates: ScheduledEventTemplateRow[]
   activeTemplates: ScheduledEventTemplateRow[]
   monthCapacity: MonthCapacity
@@ -46,20 +50,20 @@ export function CalendarTabs({
         </TabsTrigger>
         <TabsTrigger value="eventos" className="gap-1.5 px-3">
           <Settings2 className="size-4" />
-          Eventos
+          Formatos
         </TabsTrigger>
       </TabsList>
 
       <TabsContent value="calendario" className="space-y-4">
-        {activeTemplates.length === 0 ? (
+        {activeTemplates.length === 0 && events.length === 0 && shows.length === 0 ? (
           <EmptyState
             icon={Settings2}
-            title="Creá tus eventos primero"
-            description="Sushi Libre, Pizza Libre, Ramen… definí al menos un evento en la pestaña Eventos y después arrastralo al calendario."
+            title="Creá tus formatos primero"
+            description="Sushi Libre, Pizza Libre, Ramen… definí al menos un formato en la pestaña Formatos y después arrastralo al calendario."
             action={
               <Button className="gap-2" onClick={() => setTab('eventos')}>
                 <Settings2 className="size-4" />
-                Ir a Eventos
+                Ir a Formatos
               </Button>
             }
           />
@@ -68,6 +72,7 @@ export function CalendarTabs({
             tenantSlug={tenantSlug}
             ym={ym}
             events={events}
+            shows={shows}
             templates={activeTemplates}
             monthCapacity={monthCapacity}
           />
