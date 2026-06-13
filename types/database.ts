@@ -851,6 +851,7 @@ export type Database = {
       }
       customers: {
         Row: {
+          acquisition_channel: Database["public"]["Enums"]["customer_acquisition_channel"]
           birthdate: string | null
           created_at: string
           deleted_at: string | null
@@ -877,6 +878,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          acquisition_channel?: Database["public"]["Enums"]["customer_acquisition_channel"]
           birthdate?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -903,6 +905,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          acquisition_channel?: Database["public"]["Enums"]["customer_acquisition_channel"]
           birthdate?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -4189,6 +4192,7 @@ export type Database = {
         | "cancelled"
       channel_status: "connected" | "disconnected" | "error"
       channel_type: "whatsapp" | "instagram"
+      customer_acquisition_channel: "reservation" | "walkin" | "import"
       customer_source: "qr" | "manual" | "import"
       event_status: "draft" | "published" | "finished" | "cancelled"
       tier_benefit_cadence: "none" | "birthday" | "monthly"

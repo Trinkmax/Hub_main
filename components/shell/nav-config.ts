@@ -57,12 +57,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Hoy',
     items: [
       { label: 'Resumen', href: (s) => `/${s}`, icon: 'LayoutDashboard', exact: true },
-      {
-        label: 'Operativo',
-        href: (s) => `/${s}/salon/reservas-operativo`,
-        icon: 'MonitorSmartphone',
-        newTab: true,
-      },
+      { label: 'Operativo', href: (s) => `/${s}/operativo`, icon: 'MonitorSmartphone' },
       { label: 'Mensajería', href: (s) => `/${s}/bandeja`, icon: 'Inbox' },
     ],
   },
@@ -103,7 +98,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       {
         label: 'Marketing',
-        href: (s) => `/${s}/difusiones`,
+        href: (s) => `/${s}/marketing`,
         icon: 'Megaphone',
         roles: ['owner'],
         children: [

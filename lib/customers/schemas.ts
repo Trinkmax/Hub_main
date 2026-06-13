@@ -66,6 +66,8 @@ export const listFiltersSchema = z.object({
   since: z.enum(['30d', '90d', 'never']).optional(),
   // 'all' (default), 'with_points' (total_visits > 0), 'contact_only' (sin visitas)
   programa: z.enum(['all', 'with_points', 'contact_only']).default('all'),
+  // Segmento de adquisición (nav Personas): reserva → reservation; walkin → el resto.
+  segment: z.enum(['reserva', 'walkin']).optional(),
   page: z.coerce.number().int().min(1).max(500).default(1),
 })
 

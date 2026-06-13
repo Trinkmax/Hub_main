@@ -128,6 +128,28 @@ export async function createSalonReservation(
     if (existing) customerId = (existing as { id: string }).id
   }
 
+  // Si no existe el cliente, lo creamos desde la reserva (acquisition='reservation')
+  // para que la gente que SOLO reservó aparezca en Personas → Reservas. Best-effort:
+  // si falla (RLS/constraint), la reserva igual se crea con customer_id null.
+  if (!customerId && parsed.data.guest_phone && parsed.data.guest_name?.trim()) {
+    const parts = parsed.data.guest_name.trim().split(/\s+/)
+    const firstName = parts[0] ?? parsed.data.guest_name.trim()
+    const lastName = parts.slice(1).join(' ') || '—'
+    const { data: created } = await supabase
+      .from('customers')
+      .insert({
+        tenant_id: access.tenant.id,
+        phone: parsed.data.guest_phone,
+        first_name: firstName,
+        last_name: lastName,
+        source: 'manual',
+        acquisition_channel: 'reservation',
+      })
+      .select('id')
+      .maybeSingle()
+    if (created) customerId = (created as { id: string }).id
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser()
