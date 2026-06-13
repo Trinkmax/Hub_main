@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/data-table'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
 import { listFlows } from '@/lib/flows/queries'
 import {
   RoleRequiredError,
@@ -49,7 +50,7 @@ export default async function FlowsPage({ params }: { params: Promise<{ tenantSl
   const flows = await listFlows(access.tenant.id)
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+    <PageShell width="comfortable">
       <PageHeader
         eyebrow="Marketing"
         title="Flows"
@@ -126,6 +127,6 @@ export default async function FlowsPage({ params }: { params: Promise<{ tenantSl
           </DataTableScroll>
         </DataTableShell>
       )}
-    </div>
+    </PageShell>
   )
 }

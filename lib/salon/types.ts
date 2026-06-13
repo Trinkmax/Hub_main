@@ -69,6 +69,7 @@ export type ScheduledEventRow = {
   capacity: number
   meal_type: MealType
   full_bonus_active: boolean
+  attendance_points: number
   notes: string | null
   created_at: string
   updated_at: string

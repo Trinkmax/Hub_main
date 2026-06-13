@@ -83,6 +83,7 @@ export default async function ScheduledEventPage({
           capacity: event.capacity,
           meal_type: event.meal_type,
           full_bonus_active: event.full_bonus_active,
+          attendance_points: event.attendance_points,
           notes: event.notes ?? undefined,
         }}
       />

@@ -4,14 +4,15 @@ import { cn } from '@/lib/utils'
 type PageShellProps = {
   children: ReactNode
   className?: string
-  /** width preset: `compact` (max-w-3xl), `default` (max-w-7xl), `wide` (max-w-screen-2xl) */
-  width?: 'compact' | 'default' | 'wide' | 'full'
+  /** width: `compact` 3xl · `comfortable` 6xl · `default` 7xl · `wide` 2xl · `full` none */
+  width?: 'compact' | 'comfortable' | 'default' | 'wide' | 'full'
   /** Si true, no aplica padding lateral. Útil para layouts especiales (kanbans, kitchen). */
   flush?: boolean
 }
 
 const widthClass: Record<NonNullable<PageShellProps['width']>, string> = {
   compact: 'max-w-3xl',
+  comfortable: 'max-w-6xl',
   default: 'max-w-7xl',
   wide: 'max-w-screen-2xl',
   full: 'max-w-none',

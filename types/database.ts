@@ -2523,6 +2523,7 @@ export type Database = {
       }
       scheduled_events: {
         Row: {
+          attendance_points: number
           capacity: number
           created_at: string
           ends_at_local: string | null
@@ -2538,6 +2539,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          attendance_points?: number
           capacity: number
           created_at?: string
           ends_at_local?: string | null
@@ -2553,6 +2555,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          attendance_points?: number
           capacity?: number
           created_at?: string
           ends_at_local?: string | null

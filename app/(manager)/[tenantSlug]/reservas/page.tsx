@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
 import { getDayCapacitySnapshot, listManagers, listSalonReservations } from '@/lib/salon/queries'
 import { salonStatusEnum, salonZoneEnum } from '@/lib/salon/schemas'
 import { requireTenantAccess, TenantNotFoundError } from '@/lib/tenant'
@@ -96,7 +97,7 @@ export default async function ReservasPage({
   const hasFilters = Boolean(q || status || zone || managerId)
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+    <PageShell>
       <PageHeader
         eyebrow="Operaciones"
         title="Reservas"
@@ -120,7 +121,7 @@ export default async function ReservasPage({
       />
 
       {rangeMode ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-card/60 px-4 py-2.5 text-sm">
+        <div className="card-hairline flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-card/60 px-4 py-2.5 text-sm">
           <span className="text-muted-foreground">
             Mostrando rango {fromParam ?? '…'} → {toParam ?? '…'}
           </span>
@@ -166,6 +167,6 @@ export default async function ReservasPage({
           searchParams={sp}
         />
       )}
-    </div>
+    </PageShell>
   )
 }

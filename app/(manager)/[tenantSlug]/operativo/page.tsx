@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
 import {
   getTodaySalonOverview,
   listScheduledEventsForDateRange,
@@ -74,7 +75,7 @@ export default async function OperativoPage({
   const activeReservations = reservations.filter((r) => r.status !== 'cancelled')
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+    <PageShell width="comfortable">
       <PageHeader
         eyebrow="Hoy"
         title="Operativo"
@@ -202,7 +203,7 @@ export default async function OperativoPage({
       </section>
 
       <p className="sr-only">Estados de reserva: {Object.values(STATUS_LABELS).join(', ')}.</p>
-    </div>
+    </PageShell>
   )
 }
 

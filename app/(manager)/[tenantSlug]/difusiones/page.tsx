@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/data-table'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
 import { listBroadcasts } from '@/lib/broadcasts/queries'
 import {
   RoleRequiredError,
@@ -61,7 +62,7 @@ export default async function DifusionesPage({
   const broadcasts = await listBroadcasts(access.tenant.id)
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+    <PageShell width="comfortable">
       <PageHeader
         eyebrow="Marketing"
         title="Difusiones"
@@ -159,6 +160,6 @@ export default async function DifusionesPage({
           </DataTableScroll>
         </DataTableShell>
       )}
-    </div>
+    </PageShell>
   )
 }

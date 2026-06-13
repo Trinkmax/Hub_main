@@ -231,6 +231,8 @@ export const scheduledEventSchema = z.object({
   capacity: z.coerce.number().int().min(1).max(999),
   meal_type: mealTypeEnum,
   full_bonus_active: z.coerce.boolean().default(true),
+  // Puntos de fidelización que gana quien asiste (reserva cerrada/sentada).
+  attendance_points: z.coerce.number().int().min(0).max(100000).default(0),
   notes: optionalText(500).optional(),
 })
 

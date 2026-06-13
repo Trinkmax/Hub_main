@@ -317,7 +317,7 @@ export async function listScheduledEventsForDateRange(opts: {
   const { data, error } = await supabase
     .from('scheduled_events')
     .select(
-      'id, tenant_id, template_id, name_override, event_date, starts_at_local, ends_at_local, capacity, meal_type, full_bonus_active, notes, created_at, updated_at, template:scheduled_event_templates(id, name, slug, color_hex, default_capacity, consume_special_reservations)',
+      'id, tenant_id, template_id, name_override, event_date, starts_at_local, ends_at_local, capacity, meal_type, full_bonus_active, attendance_points, notes, created_at, updated_at, template:scheduled_event_templates(id, name, slug, color_hex, default_capacity, consume_special_reservations)',
     )
     .eq('tenant_id', opts.tenantId)
     .gte('event_date', opts.from)

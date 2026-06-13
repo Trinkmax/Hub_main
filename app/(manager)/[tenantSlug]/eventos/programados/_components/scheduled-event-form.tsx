@@ -66,6 +66,7 @@ export function ScheduledEventForm({
       capacity: templates[0]?.default_capacity ?? 40,
       meal_type: templates[0]?.default_meal_type ?? 'dinner',
       full_bonus_active: true,
+      attendance_points: 0,
       name_override: undefined,
       notes: undefined,
       ...initialValues,
@@ -193,6 +194,21 @@ export function ScheduledEventForm({
             </SelectContent>
           </Select>
         </div>
+      </div>
+
+      <div className="grid gap-1.5">
+        <Label htmlFor="attendance_points">Puntos por asistir</Label>
+        <Input
+          id="attendance_points"
+          type="number"
+          min={0}
+          step={1}
+          {...form.register('attendance_points', { valueAsNumber: true })}
+        />
+        <p className="text-xs text-muted-foreground">
+          Puntos de fidelización que suma el cliente cuando asiste (su reserva se marca sentada o
+          cerrada). 0 = sin puntos.
+        </p>
       </div>
 
       <div className="grid gap-1.5">

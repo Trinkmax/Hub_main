@@ -455,6 +455,7 @@ export async function upsertScheduledEvent(
     capacity: parsed.data.capacity,
     meal_type: parsed.data.meal_type,
     full_bonus_active: parsed.data.full_bonus_active,
+    attendance_points: parsed.data.attendance_points,
     notes: parsed.data.notes ?? null,
   }
 

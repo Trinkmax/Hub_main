@@ -18,6 +18,7 @@ import { notFound } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
 import { listAudiences } from '@/lib/audiences/queries'
 import { listBroadcasts } from '@/lib/broadcasts/queries'
 import { listFlows } from '@/lib/flows/queries'
@@ -65,7 +66,7 @@ export default async function MarketingPage({
   const activeFlows = flows.filter((f) => f.active).length
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
+    <PageShell width="comfortable">
       <PageHeader
         eyebrow="Crecimiento"
         title="Marketing"
@@ -170,7 +171,7 @@ export default async function MarketingPage({
           />
         </ul>
       </section>
-    </div>
+    </PageShell>
   )
 }
 
