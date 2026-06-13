@@ -4,13 +4,13 @@ import { ListSkeleton } from '@/components/ui/skeleton-list'
 
 export default function Loading() {
   return (
-    <main className="space-y-6 py-6">
+    <div className="space-y-6">
       <PageHeader
-        eyebrow="Catálogo"
+        eyebrow="Club de beneficios"
         title="Punch cards"
         description={<Skeleton className="h-4 w-72" />}
       />
       <ListSkeleton rows={6} />
-    </main>
+    </div>
   )
 }

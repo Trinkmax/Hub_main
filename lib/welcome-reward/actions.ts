@@ -144,9 +144,8 @@ export async function updateWelcomeRewardConfig(
     },
   })
 
-  // Revalidamos la página de config y la home del tenant (que puede
+  // Revalidamos la página del club y la home del tenant (que puede
   // mostrar previews del welcome reward).
-  revalidatePath(`/${slug}/configuracion/bienvenida`)
   revalidatePath(`/${slug}/club/bienvenida`)
   revalidatePath(`/${slug}`)
 

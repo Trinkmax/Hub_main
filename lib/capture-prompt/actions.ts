@@ -76,6 +76,6 @@ export async function updateCapturePromptConfig(
     payload: { enabled: parsed.data.enabled },
   })
 
-  revalidatePath(`/${slug}/configuracion/bienvenida`)
+  revalidatePath(`/${slug}/club/bienvenida`)
   return { ok: true, message: 'Guardado.' }
 }

@@ -3,9 +3,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 export default function Loading() {
   return (
-    <main className="space-y-8 py-6">
+    <div className="space-y-8">
       <PageHeader
-        eyebrow="Configuración"
+        eyebrow="Club de beneficios"
         title="Regalo de bienvenida"
         description={<Skeleton className="h-4 w-96" />}
       />
@@ -14,6 +14,6 @@ export default function Loading() {
         <Skeleton className="h-6 w-48" />
         <Skeleton className="h-48 w-full rounded-xl" />
       </section>
-    </main>
+    </div>
   )
 }

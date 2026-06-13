@@ -73,7 +73,7 @@ export default async function ClubPage({ params }: { params: Promise<{ tenantSlu
       icon: Star,
     },
     {
-      href: `/${tenantSlug}/puntos`,
+      href: `/${tenantSlug}/club/puntos`,
       title: 'Puntos y recompensas',
       description:
         'El motor del club: cómo se ganan puntos al consumir y qué pueden canjear tus clientes con ellos.',
@@ -85,7 +85,7 @@ export default async function ClubPage({ params }: { params: Promise<{ tenantSlu
       icon: Gift,
     },
     {
-      href: `/${tenantSlug}/punch-cards`,
+      href: `/${tenantSlug}/club/punch-cards`,
       title: 'Punch cards',
       description:
         'Tarjetas de sellos para premiar la repetición: "5 almuerzos, el 6º gratis". Suman solas con cada visita.',
@@ -100,7 +100,7 @@ export default async function ClubPage({ params }: { params: Promise<{ tenantSlu
       icon: Stamp,
     },
     {
-      href: `/${tenantSlug}/configuracion/bienvenida`,
+      href: `/${tenantSlug}/club/bienvenida`,
       title: 'Regalo de bienvenida',
       description:
         'El primer gesto del club: un regalo (y puntos iniciales opcionales) para quien se registra escaneando el QR.',
@@ -112,7 +112,7 @@ export default async function ClubPage({ params }: { params: Promise<{ tenantSlu
   ]
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
+    <div className="space-y-8">
       <PageHeader
         eyebrow="Fidelización"
         title="Club de beneficios"

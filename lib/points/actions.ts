@@ -197,7 +197,7 @@ export async function createPerAmountRule(
     payload: { type: parsed.data.type, config: parsed.data.config },
   })
 
-  revalidatePath(`/${slug}/configuracion/puntos`)
+  revalidatePath(`/${slug}/club/puntos`)
   return { ok: true, message: 'Regla creada.' }
 }
 
@@ -241,7 +241,7 @@ export async function createPerItemRule(
     payload: { type: parsed.data.type, config: parsed.data.config },
   })
 
-  revalidatePath(`/${slug}/configuracion/puntos`)
+  revalidatePath(`/${slug}/club/puntos`)
   return { ok: true, message: 'Regla creada.' }
 }
 
@@ -264,7 +264,7 @@ export async function toggleRule(
     .eq('tenant_id', tenant.id)
   if (error) return { ok: false, message: 'No pudimos actualizar.' }
 
-  revalidatePath(`/${slug}/configuracion/puntos`)
+  revalidatePath(`/${slug}/club/puntos`)
   return { ok: true }
 }
 
@@ -291,7 +291,7 @@ export async function deleteRule(slug: string, ruleId: string): Promise<LoyaltyA
     entityId: idParsed.data,
   })
 
-  revalidatePath(`/${slug}/configuracion/puntos`)
+  revalidatePath(`/${slug}/club/puntos`)
   return { ok: true }
 }
 
@@ -337,7 +337,7 @@ export async function createReward(
     payload: { name: parsed.data.name, cost_points: parsed.data.cost_points },
   })
 
-  revalidatePath(`/${slug}/configuracion/puntos`)
+  revalidatePath(`/${slug}/club/puntos`)
   return { ok: true, message: 'Recompensa creada.' }
 }
 
@@ -509,7 +509,7 @@ export async function deleteReward(slug: string, id: string): Promise<LoyaltyAct
     return { ok: false, message: 'No pudimos borrar.' }
   }
 
-  revalidatePath(`/${slug}/configuracion/puntos`)
+  revalidatePath(`/${slug}/club/puntos`)
   return { ok: true }
 }
 
@@ -544,6 +544,6 @@ export async function updatePointsRedemptionConfigAction(
     return { ok: false, message: 'No se pudo guardar la configuración.' }
   }
 
-  revalidatePath(`/${slug}/puntos`)
+  revalidatePath(`/${slug}/club/puntos`)
   return { ok: true, message: 'Configuración guardada' }
 }

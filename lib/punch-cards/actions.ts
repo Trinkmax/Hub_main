@@ -123,7 +123,7 @@ export async function createPunchCard(
     console.error('[punch-cards.create]', error?.message)
     return { ok: false, message: 'No se pudo crear la card.' }
   }
-  revalidatePath(`/${slug}/punch-cards`)
+  revalidatePath(`/${slug}/club/punch-cards`)
   return { ok: true, templateId: data.id }
 }
 
@@ -187,7 +187,7 @@ export async function updatePunchCard(
     console.error('[punch-cards.update]', error.message)
     return { ok: false, message: 'No se pudo actualizar.' }
   }
-  revalidatePath(`/${slug}/punch-cards`)
+  revalidatePath(`/${slug}/club/punch-cards`)
   return { ok: true, templateId: parsed.data.id }
 }
 
@@ -282,6 +282,6 @@ export async function deletePunchCard(slug: string, id: string): Promise<PunchCa
     console.error('[punch-cards.delete]', error.message)
     return { ok: false, message: 'No se pudo eliminar.' }
   }
-  revalidatePath(`/${slug}/configuracion/punch-cards`)
+  revalidatePath(`/${slug}/club/punch-cards`)
   return { ok: true }
 }
