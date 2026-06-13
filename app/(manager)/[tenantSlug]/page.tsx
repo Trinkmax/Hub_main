@@ -174,6 +174,7 @@ export default async function TenantHomePage({
       <section aria-label="Indicadores clave" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           icon={Users}
+          iconClassName="text-primary"
           label="Clientes"
           numberValue={kpis.customers_total}
           numberFormatKind="integer"
@@ -183,6 +184,7 @@ export default async function TenantHomePage({
         />
         <StatCard
           icon={Sparkles}
+          iconClassName="text-info"
           label="Activos 30d"
           numberValue={kpis.customers_active_30d}
           numberFormatKind="integer"
@@ -202,6 +204,7 @@ export default async function TenantHomePage({
         />
         <StatCard
           icon={Receipt}
+          iconClassName="text-warning"
           label="Visitas 30d"
           numberValue={kpis.visits_30d}
           numberFormatKind="integer"
@@ -216,6 +219,7 @@ export default async function TenantHomePage({
         />
         <StatCard
           icon={Banknote}
+          iconClassName="text-success"
           label="Revenue 30d"
           numberValue={kpis.revenue_30d_cents}
           numberFormatKind="currency-cents-ars"
@@ -238,7 +242,7 @@ export default async function TenantHomePage({
         <div className="card-hairline relative overflow-hidden rounded-xl border bg-card lg:col-span-2">
           <header className="flex items-center justify-between gap-3 px-5 py-4">
             <div>
-              <h2 className="font-display text-base font-semibold tracking-tight">
+              <h2 className="font-serif text-lg font-semibold tracking-tight">
                 Visitas últimos 30 días
               </h2>
               <p className="text-xs text-muted-foreground">
