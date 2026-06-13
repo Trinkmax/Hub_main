@@ -75,7 +75,10 @@ type Props = {
   }
 }
 
-const MEAL_TYPES: MealType[] = ['breakfast', 'lunch', 'tea_time', 'dinner', 'hub_event']
+// 'hub_event' (asociar a un evento de la tabla `events`) quedó retirado: los
+// eventos viven ahora en el Calendario (scheduled_events) y la reserva se asocia
+// vía zona "event_floating". El enum/esquema lo siguen aceptando por compatibilidad.
+const MEAL_TYPES: MealType[] = ['breakfast', 'lunch', 'tea_time', 'dinner']
 const ORIGINS: ReservationOrigin[] = [
   'whatsapp',
   'instagram',
@@ -653,12 +656,12 @@ export function ReservationForm({
                     <div className="px-3 py-2 text-sm text-muted-foreground">
                       No hay eventos publicados próximos.{' '}
                       <a
-                        href={`/${tenantSlug}/eventos/nuevo`}
+                        href={`/${tenantSlug}/eventos/programados`}
                         target="_blank"
                         rel="noopener"
                         className="text-primary underline"
                       >
-                        Crear uno
+                        Ir al calendario
                       </a>
                     </div>
                   ) : (

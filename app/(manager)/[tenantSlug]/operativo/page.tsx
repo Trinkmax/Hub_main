@@ -1,12 +1,15 @@
-import { CalendarCheck, CalendarClock, PartyPopper, Users } from 'lucide-react'
+import { ArrowRight, CalendarCheck, CalendarClock, PartyPopper, Users } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
-import { listEvents } from '@/lib/events/queries'
-import { getTodaySalonOverview, listTimelineForDate } from '@/lib/salon/queries'
+import {
+  getTodaySalonOverview,
+  listScheduledEventsForDateRange,
+  listTimelineForDate,
+} from '@/lib/salon/queries'
 import { STATUS_LABELS } from '@/lib/salon/types'
 import {
   RoleRequiredError,
@@ -41,24 +44,6 @@ function formatLongDate(date: string): string {
   }).format(dt)
 }
 
-function eventTime(iso: string): string {
-  return new Intl.DateTimeFormat('es-AR', {
-    timeZone: 'America/Argentina/Cordoba',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(iso))
-}
-
-function isTodayInCordoba(iso: string, today: string): boolean {
-  const local = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Argentina/Cordoba',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date(iso))
-  return local === today
-}
-
 export default async function OperativoPage({
   params,
 }: {
@@ -79,14 +64,11 @@ export default async function OperativoPage({
   const date = todayCordoba()
   const tenantId = access.tenant.id
 
-  const [reservations, overview, upcomingEvents] = await Promise.all([
+  const [reservations, overview, todayEvents] = await Promise.all([
     listTimelineForDate({ tenantId, date }),
     getTodaySalonOverview({ tenantId, date }),
-    listEvents({ tenantId, tab: 'upcoming' }),
+    listScheduledEventsForDateRange({ tenantId, from: date, to: date }),
   ])
-
-  // Eventos publicados que arrancan/transcurren hoy (en TZ del local).
-  const todayEvents = upcomingEvents.filter((e) => isTodayInCordoba(e.starts_at, date))
 
   // Reservas operables (no canceladas) ordenadas por hora — el query ya viene ordenado.
   const activeReservations = reservations.filter((r) => r.status !== 'cancelled')
@@ -170,35 +152,46 @@ export default async function OperativoPage({
         {todayEvents.length === 0 ? (
           <EmptyState
             icon={PartyPopper}
-            title="No hay eventos publicados para hoy"
-            description="Los shows o fiestas publicados con fecha de hoy van a aparecer acá con su acceso a check-in."
+            title="No hay eventos programados para hoy"
+            description="Los eventos del calendario con fecha de hoy aparecen acá con su acceso a las reservas del día."
           />
         ) : (
           <ul className="grid gap-3 sm:grid-cols-2">
             {todayEvents.map((event) => {
-              const cupo =
-                event.capacity !== null
-                  ? `${event.confirmed_seats}/${event.capacity}`
-                  : `${event.confirmed_seats}`
+              const name = event.name_override ?? event.template?.name ?? 'Evento'
+              const color = event.template?.color_hex ?? null
               return (
                 <li
                   key={event.id}
                   className="card-hairline flex flex-col gap-3 rounded-xl border border-border/70 bg-card p-4"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-medium leading-tight">{event.name}</p>
-                      <p className="mt-1 text-xs text-muted-foreground tabular-nums">
-                        {eventTime(event.starts_at)} · {cupo} confirmadas
-                        {event.waitlist_count > 0 ? ` · ${event.waitlist_count} en espera` : ''}
-                      </p>
+                    <div className="flex min-w-0 items-center gap-2">
+                      {color ? (
+                        <span
+                          aria-hidden
+                          className="size-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: color }}
+                        />
+                      ) : null}
+                      <div className="min-w-0">
+                        <p className="truncate font-medium leading-tight">{name}</p>
+                        <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                          {event.starts_at_local.slice(0, 5)} · cupo {event.capacity}
+                        </p>
+                      </div>
                     </div>
-                    <Badge variant="success">Publicado</Badge>
                   </div>
-                  <Button asChild size="sm" className="w-full gap-2 sm:w-auto sm:self-start">
-                    <Link href={`/${tenantSlug}/eventos/${event.id}/check-in`}>
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="outline"
+                    className="w-full gap-2 sm:w-auto sm:self-start"
+                  >
+                    <Link href={`/${tenantSlug}/eventos/programados/${event.id}`}>
                       <CalendarCheck className="size-4" />
-                      Abrir check-in
+                      Ver reservas
+                      <ArrowRight className="size-3.5" />
                     </Link>
                   </Button>
                 </li>

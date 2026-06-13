@@ -55,8 +55,11 @@ describe('resolveNavGroups — rol + feature + superadmin', () => {
 
     const personas = group(groups, 'Clientes')?.items.find((i) => i.label === 'Personas')
     expect(personas?.href).toBe('/hub/clientes')
-    expect(personas?.children?.map((c) => c.label)).toEqual(['Reservas', 'Walk-in'])
-    expect(personas?.children?.[0]?.href).toBe('/hub/clientes?segment=reserva')
+    // Padre puro-agrupador: al clickearlo expande y deja elegir Todos/Reservas/Walk-in.
+    expect(personas?.expanderOnly).toBe(true)
+    expect(personas?.children?.map((c) => c.label)).toEqual(['Todos', 'Reservas', 'Walk-in'])
+    expect(personas?.children?.[0]?.href).toBe('/hub/clientes')
+    expect(personas?.children?.[1]?.href).toBe('/hub/clientes?segment=reserva')
   })
 
   it('un padre owner-only con todos los hijos owner-only se cae para cashier', () => {

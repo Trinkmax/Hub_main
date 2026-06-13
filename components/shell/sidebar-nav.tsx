@@ -71,32 +71,64 @@ function SidebarParent({
   const childActive = children.some((c) => activeHrefs.has(c.href))
   const selfActive = !item.newTab && activeHrefs.has(item.href)
   const [open, setOpen] = useState(selfActive || childActive)
+  const Icon = NAV_ICONS[item.iconKey]
 
   return (
     <li>
-      <div className="flex items-center">
-        <SidebarLink
-          item={{ ...item, children: undefined }}
-          active={selfActive && !childActive}
-          onNavigate={onNavigate}
-          className="flex-1"
-        />
+      {item.expanderOnly ? (
+        // Padre puro-agrupador: clickearlo SÓLO expande (no navega).
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          aria-label={open ? `Contraer ${item.label}` : `Expandir ${item.label}`}
           aria-expanded={open}
-          className="ml-0.5 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-[--cream-tint] hover:text-foreground"
+          className={cn(
+            'group flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-sm font-medium transition-[colors,background-color] duration-[var(--duration-fast)] ease-[var(--ease-out)]',
+            childActive && !open
+              ? 'text-foreground'
+              : 'text-muted-foreground hover:bg-[--cream-tint] hover:text-foreground',
+          )}
         >
+          <Icon
+            className={cn(
+              'size-4 transition-colors',
+              childActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground',
+            )}
+            aria-hidden
+          />
+          <span className="flex-1 truncate text-left">{item.label}</span>
           <ChevronRight
             className={cn(
-              'size-3.5 transition-transform duration-[var(--duration-fast)]',
+              'size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-[var(--duration-fast)]',
               open && 'rotate-90',
             )}
             aria-hidden
           />
         </button>
-      </div>
+      ) : (
+        <div className="flex items-center">
+          <SidebarLink
+            item={{ ...item, children: undefined }}
+            active={selfActive && !childActive}
+            onNavigate={onNavigate}
+            className="flex-1"
+          />
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-label={open ? `Contraer ${item.label}` : `Expandir ${item.label}`}
+            aria-expanded={open}
+            className="ml-0.5 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-[--cream-tint] hover:text-foreground"
+          >
+            <ChevronRight
+              className={cn(
+                'size-3.5 transition-transform duration-[var(--duration-fast)]',
+                open && 'rotate-90',
+              )}
+              aria-hidden
+            />
+          </button>
+        </div>
+      )}
       {open ? (
         <ul className="mt-0.5 space-y-0.5 border-l border-border/50 pl-3 ml-3.5">
           {children.map((child) => (

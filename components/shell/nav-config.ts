@@ -14,6 +14,12 @@ export type NavItem = {
   newTab?: boolean
   /** Si está, sólo se muestra cuando la feature está ON (o quien mira es superadmin). */
   feature?: FeatureKey
+  /**
+   * El padre NO navega: al clickearlo sólo expande/colapsa sus hijos. Para
+   * categorías-madre que son puro agrupador (ej. "Personas") y cuya "vista
+   * todo" ya es uno de los hijos.
+   */
+  expanderOnly?: boolean
   /** Sub-items anidados (1 nivel). El padre además navega a su propio href. */
   children?: NavItem[]
 }
@@ -30,6 +36,7 @@ export type ResolvedNavItem = {
   iconKey: NavIconKey
   exact?: boolean
   newTab?: boolean
+  expanderOnly?: boolean
   children?: ResolvedNavItem[]
 }
 
@@ -75,7 +82,10 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'Personas',
         href: (s) => `/${s}/clientes`,
         icon: 'Users',
+        // El padre no navega: expande y te deja elegir Todos / Reservas / Walk-in.
+        expanderOnly: true,
         children: [
+          { label: 'Todos', href: (s) => `/${s}/clientes`, icon: 'Users' },
           {
             label: 'Reservas',
             href: (s) => `/${s}/clientes?segment=reserva`,
@@ -280,6 +290,7 @@ export function resolveNavGroups(
       iconKey: item.icon,
       exact: item.exact,
       newTab: item.newTab,
+      expanderOnly: item.expanderOnly,
       children: item.children?.map((child) => ({
         label: child.label,
         href: child.href(slug),

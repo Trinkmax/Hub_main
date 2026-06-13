@@ -153,32 +153,33 @@ export async function getCustomerById(opts: { tenantId: string; id: string }) {
   }
 }
 
-export async function listCustomerProgramaCounts(opts: { tenantId: string }): Promise<{
+export async function listCustomerProgramaCounts(opts: {
+  tenantId: string
+  segment?: 'reserva' | 'walkin'
+}): Promise<{
   all: number
   with_points: number
   contact_only: number
 }> {
   const supabase = await createClient()
-  // Tres counts por separado. RLS ya filtra al tenant; aún así pasamos tenant_id
-  // explícito para que Postgres use el índice parcial (tenant_id, deleted_at).
+  // Aplica el mismo filtro de segmento (acquisition_channel) que listCustomers,
+  // así los conteos de las pestañas (Todos/Con puntos/Solo contacto) coinciden
+  // con la vista activa (Reservas / Walk-in) en vez de contar toda la base.
+  const base = () => {
+    let q = supabase
+      .from('customers')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', opts.tenantId)
+      .is('deleted_at', null)
+    if (opts.segment === 'reserva') q = q.eq('acquisition_channel', 'reservation')
+    else if (opts.segment === 'walkin') q = q.neq('acquisition_channel', 'reservation')
+    return q
+  }
+
   const [{ count: allCount }, { count: withCount }, { count: contactCount }] = await Promise.all([
-    supabase
-      .from('customers')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', opts.tenantId)
-      .is('deleted_at', null),
-    supabase
-      .from('customers')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', opts.tenantId)
-      .is('deleted_at', null)
-      .gt('total_visits', 0),
-    supabase
-      .from('customers')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', opts.tenantId)
-      .is('deleted_at', null)
-      .eq('total_visits', 0),
+    base(),
+    base().gt('total_visits', 0),
+    base().eq('total_visits', 0),
   ])
 
   return {

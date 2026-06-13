@@ -124,10 +124,10 @@ export default async function MarketingPage({
             countLabel="activos"
           />
           <ToolCard
-            href={`/${tenantSlug}/eventos`}
+            href={`/${tenantSlug}/eventos/programados`}
             icon={PartyPopper}
-            title="Shows y fiestas"
-            helper="Programá eventos y anunciálos a tu gente."
+            title="Eventos"
+            helper="Programá eventos en el calendario y anunciálos a tu gente."
           />
         </div>
       </section>

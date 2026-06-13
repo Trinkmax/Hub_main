@@ -1,10 +1,9 @@
-import { CalendarPlus, PartyPopper } from 'lucide-react'
+import { CalendarPlus } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
-import { listPublishedShowsForDateRange } from '@/lib/events/queries'
 import {
   getMonthCapacity,
   listScheduledEventsForDateRange,
@@ -60,9 +59,8 @@ export default async function CalendarioPage({
   }
 
   const { from, to, ymCurrent } = defaultRange(monthStr)
-  const [events, shows, templates, monthCapacity] = await Promise.all([
+  const [events, templates, monthCapacity] = await Promise.all([
     listScheduledEventsForDateRange({ tenantId: access.tenant.id, from, to }),
-    listPublishedShowsForDateRange({ tenantId: access.tenant.id, from, to }),
     listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: false }),
     getMonthCapacity({ tenantId: access.tenant.id, ym: ymCurrent }),
   ])
@@ -73,22 +71,14 @@ export default async function CalendarioPage({
       <PageHeader
         eyebrow="Agenda"
         title="Calendario"
-        description="Todo lo que pasa en el bar, mes a mes: los eventos programados a partir de tus formatos (Sushi Libre, Pizza Libre…) y los shows puntuales (fiestas, peñas). El catálogo de formatos vive en la pestaña Formatos."
+        description="Todo lo que pasa en el bar, mes a mes. Programá cada evento a partir de un formato (Sushi Libre, Pizza Libre…) arrastrándolo a su fecha; el catálogo de formatos vive en la pestaña Formatos."
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Button asChild variant="outline" className="gap-2">
-              <Link href={`/${tenantSlug}/eventos`}>
-                <PartyPopper className="size-4" />
-                Administrar shows
-              </Link>
-            </Button>
-            <Button asChild className="gap-2">
-              <Link href={`/${tenantSlug}/eventos/programados/nuevo`}>
-                <CalendarPlus className="size-4" />
-                Programar evento
-              </Link>
-            </Button>
-          </div>
+          <Button asChild className="gap-2">
+            <Link href={`/${tenantSlug}/eventos/programados/nuevo`}>
+              <CalendarPlus className="size-4" />
+              Programar evento
+            </Link>
+          </Button>
         }
       />
 
@@ -96,7 +86,6 @@ export default async function CalendarioPage({
         tenantSlug={tenantSlug}
         ym={ymCurrent}
         events={events}
-        shows={shows}
         templates={templates}
         activeTemplates={activeTemplates}
         monthCapacity={monthCapacity}

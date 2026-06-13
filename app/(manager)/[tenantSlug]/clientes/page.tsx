@@ -49,7 +49,7 @@ export default async function ClientesPage({
     listCustomers({ tenantId: access.tenant.id, filters }),
     listTags({ tenantId: access.tenant.id }),
     listCaptureLinks({ tenantId: access.tenant.id }),
-    listCustomerProgramaCounts({ tenantId: access.tenant.id }),
+    listCustomerProgramaCounts({ tenantId: access.tenant.id, segment: filters.segment }),
   ])
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
@@ -57,12 +57,19 @@ export default async function ClientesPage({
   const hasFilters = Boolean(filters.q || filters.tag || filters.since)
   const isEmpty = rows.length === 0
 
+  const segmentLabel =
+    filters.segment === 'reserva' ? 'Reservas' : filters.segment === 'walkin' ? 'Walk-in' : null
+  const countNoun = total === 1 ? 'cliente' : 'clientes'
+  const headerDescription = segmentLabel
+    ? `${segmentLabel} · ${total.toLocaleString('es-AR')} ${countNoun} · página ${filters.page} de ${totalPages}`
+    : `${total.toLocaleString('es-AR')} ${total === 1 ? 'cliente registrado' : 'clientes registrados'} · página ${filters.page} de ${totalPages}`
+
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <PageHeader
         eyebrow="Personas"
         title="Clientes"
-        description={`${total.toLocaleString('es-AR')} ${total === 1 ? 'cliente registrado' : 'clientes registrados'} · página ${filters.page} de ${totalPages}`}
+        description={headerDescription}
         actions={
           <>
             {!hasCaptureLinks ? (
@@ -88,14 +95,24 @@ export default async function ClientesPage({
       {isEmpty ? (
         <EmptyState
           icon={Users}
-          title={hasFilters ? 'Sin resultados' : 'Todavía no hay clientes'}
+          title={
+            hasFilters
+              ? 'Sin resultados'
+              : segmentLabel === 'Reservas'
+                ? 'Todavía no hay clientes de reservas'
+                : segmentLabel === 'Walk-in'
+                  ? 'Todavía no hay clientes walk-in'
+                  : 'Todavía no hay clientes'
+          }
           description={
             hasFilters
               ? 'Probá ajustar la búsqueda o quitar filtros para ver más clientes.'
-              : 'Empezá registrando un cliente manualmente o imprimí un QR de captura para que se carguen solos.'
+              : segmentLabel === 'Reservas'
+                ? 'Cuando cargues una reserva con teléfono, el cliente aparece acá automáticamente.'
+                : 'Empezá registrando un cliente manualmente o imprimí un QR de captura para que se carguen solos.'
           }
           action={
-            !hasFilters ? (
+            !hasFilters && !segmentLabel ? (
               <div className="flex flex-wrap justify-center gap-2">
                 <Button asChild className="gap-2">
                   <Link href={`/${tenantSlug}/clientes/nuevo`}>
@@ -114,7 +131,7 @@ export default async function ClientesPage({
           }
         />
       ) : (
-        <CustomersTable rows={rows} tenantSlug={tenantSlug} />
+        <CustomersTable rows={rows} total={total} tenantSlug={tenantSlug} />
       )}
 
       {totalPages > 1 ? (

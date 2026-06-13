@@ -5,7 +5,6 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type { CalendarShow } from '@/lib/events/queries'
 import type { MonthCapacity } from '@/lib/salon/month-capacity'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import type { ScheduledEventTemplateRow } from '@/lib/salon/types'
@@ -15,16 +14,14 @@ import { ScheduledEventsMonth } from './scheduled-events-month'
 type Tab = 'calendario' | 'eventos'
 
 /**
- * Un solo calendario del mes que muestra TODO lo que pasa en el bar: los
- * eventos programados a partir de formatos reutilizables (Sushi Libre, Pizza
- * Libre…) y los shows puntuales (fiestas, peñas) que se gestionan aparte. La
- * pestaña "Formatos" (ex-Templates) es el catálogo de esos formatos.
+ * El calendario mensual del bar: programás cada evento a partir de un formato
+ * reutilizable (Sushi Libre, Pizza Libre…) arrastrándolo a su fecha. La pestaña
+ * "Formatos" (ex-Templates) es el catálogo de esos formatos.
  */
 export function CalendarTabs({
   tenantSlug,
   ym,
   events,
-  shows,
   templates,
   activeTemplates,
   monthCapacity,
@@ -33,7 +30,6 @@ export function CalendarTabs({
   tenantSlug: string
   ym: string
   events: ScheduledEventWithTemplate[]
-  shows: CalendarShow[]
   templates: ScheduledEventTemplateRow[]
   activeTemplates: ScheduledEventTemplateRow[]
   monthCapacity: MonthCapacity
@@ -55,7 +51,7 @@ export function CalendarTabs({
       </TabsList>
 
       <TabsContent value="calendario" className="space-y-4">
-        {activeTemplates.length === 0 && events.length === 0 && shows.length === 0 ? (
+        {activeTemplates.length === 0 && events.length === 0 ? (
           <EmptyState
             icon={Settings2}
             title="Creá tus formatos primero"
@@ -72,7 +68,6 @@ export function CalendarTabs({
             tenantSlug={tenantSlug}
             ym={ym}
             events={events}
-            shows={shows}
             templates={activeTemplates}
             monthCapacity={monthCapacity}
           />

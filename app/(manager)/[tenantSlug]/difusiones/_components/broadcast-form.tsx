@@ -22,6 +22,13 @@ import { type BroadcastActionState, scheduleBroadcast } from '@/lib/broadcasts/a
 type Channel = { id: string; type: 'whatsapp' | 'instagram'; display_name: string | null }
 type Template = { id: string; name: string; language: string; channel_id: string }
 type Audience = { id: string; name: string; customer_count_cached: number }
+type EventOption = { id: string; name: string; date: string; time: string }
+
+function eventShortDate(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number)
+  if (!y || !m || !d) return ymd
+  return format(new Date(y, m - 1, d), "d 'de' MMM", { locale: es })
+}
 
 const initial: BroadcastActionState = { ok: true }
 
@@ -38,12 +45,14 @@ export function BroadcastForm({
   channels,
   templates,
   audiences,
+  events = [],
   initialName = '',
 }: {
   tenantSlug: string
   channels: Channel[]
   templates: Template[]
   audiences: Audience[]
+  events?: EventOption[]
   initialName?: string
 }) {
   const router = useRouter()
@@ -53,6 +62,7 @@ export function BroadcastForm({
   const [channelId, setChannelId] = useState<string>('')
   const [templateId, setTemplateId] = useState<string>('')
   const [audienceId, setAudienceId] = useState<string>('')
+  const [eventId, setEventId] = useState<string>('')
   const [scheduledAt, setScheduledAt] = useState<string>('')
 
   const filteredTemplates = useMemo(
@@ -200,6 +210,36 @@ export function BroadcastForm({
               <h2 className="font-display text-lg font-semibold tracking-tight">Detalles</h2>
               <p className="text-sm text-muted-foreground">Un nombre interno y cuándo enviar.</p>
             </div>
+            {events.length > 0 ? (
+              <div className="grid gap-1.5">
+                <Label htmlFor="event-input">Evento (opcional)</Label>
+                <Select
+                  value={eventId}
+                  onValueChange={(v) => {
+                    setEventId(v)
+                    const ev = events.find((e) => e.id === v)
+                    if (ev) setName(`${ev.name} · ${eventShortDate(ev.date)}`)
+                  }}
+                >
+                  <SelectTrigger id="event-input" className="h-11">
+                    <SelectValue placeholder="Anunciar un evento del calendario…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {events.map((e) => (
+                      <SelectItem key={e.id} value={e.id}>
+                        {e.name}{' '}
+                        <span className="ml-1 text-muted-foreground">
+                          · {eventShortDate(e.date)} {e.time}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">
+                  Elegir un evento completa el nombre de la difusión.
+                </p>
+              </div>
+            ) : null}
             <div className="grid gap-1.5">
               <Label htmlFor="name-input">Nombre interno</Label>
               <Input

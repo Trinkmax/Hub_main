@@ -2,6 +2,7 @@ import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { listScheduledEventsForDateRange } from '@/lib/salon/queries'
 import { createClient } from '@/lib/supabase/server'
 import {
   RoleRequiredError,
@@ -10,6 +11,17 @@ import {
   TenantNotFoundError,
 } from '@/lib/tenant'
 import { BroadcastForm } from '../_components/broadcast-form'
+
+const TZ = 'America/Argentina/Cordoba'
+
+function ymdInTz(d: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d)
+}
 
 export const metadata = { title: 'Nueva difusión' }
 export const dynamic = 'force-dynamic'
@@ -35,7 +47,10 @@ export default async function NuevaDifusionPage({
   }
 
   const supabase = await createClient()
-  const [channelsRes, templatesRes, audiencesRes] = await Promise.all([
+  const now = new Date()
+  const fromYmd = ymdInTz(now)
+  const toYmd = ymdInTz(new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000))
+  const [channelsRes, templatesRes, audiencesRes, scheduled] = await Promise.all([
     supabase
       .from('channels')
       .select('id, type, display_name, status')
@@ -52,7 +67,16 @@ export default async function NuevaDifusionPage({
       .select('id, name, customer_count_cached')
       .eq('tenant_id', access.tenant.id)
       .order('updated_at', { ascending: false }),
+    listScheduledEventsForDateRange({ tenantId: access.tenant.id, from: fromYmd, to: toYmd }),
   ])
+
+  // Próximos eventos del calendario para el dropdown "anunciar un evento".
+  const events = scheduled.map((e) => ({
+    id: e.id,
+    name: e.name_override ?? e.template?.name ?? 'Evento',
+    date: e.event_date,
+    time: e.starts_at_local.slice(0, 5),
+  }))
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
@@ -73,6 +97,7 @@ export default async function NuevaDifusionPage({
         channels={channelsRes.data ?? []}
         templates={templatesRes.data ?? []}
         audiences={audiencesRes.data ?? []}
+        events={events}
         initialName={prefillName}
       />
     </div>
