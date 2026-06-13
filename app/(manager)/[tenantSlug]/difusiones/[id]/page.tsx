@@ -142,7 +142,7 @@ export default async function BroadcastDetailPage({
 
       <DataTableShell>
         <header className="border-b border-border/60 px-5 py-4">
-          <h2 className="font-display text-base font-semibold tracking-tight">
+          <h2 className="font-serif text-lg font-semibold tracking-tight">
             Recipients <span className="text-muted-foreground">(últimos 200)</span>
           </h2>
         </header>
