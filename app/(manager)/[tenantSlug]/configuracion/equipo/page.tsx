@@ -69,7 +69,7 @@ export default async function EquipoPage({ params }: { params: Promise<{ tenantS
         <div className="border-b border-border/60 px-5 py-3.5">
           <div className="flex items-center gap-2">
             <ShieldCheck className="size-4 text-primary" />
-            <h2 className="font-display text-sm font-semibold tracking-tight">Sumar miembro</h2>
+            <h2 className="font-serif text-lg font-semibold tracking-tight">Sumar miembro</h2>
           </div>
           <p className="text-xs text-muted-foreground">
             Crear cuenta con email + contraseña. Si el email ya existe en HUB, le damos acceso al
@@ -83,7 +83,7 @@ export default async function EquipoPage({ params }: { params: Promise<{ tenantS
 
       <section className="space-y-3">
         <header className="flex items-center justify-between gap-2">
-          <h2 className="flex items-center gap-2 font-display text-sm font-semibold tracking-tight">
+          <h2 className="flex items-center gap-2 font-serif text-lg font-semibold tracking-tight">
             <UsersRound className="size-4 text-muted-foreground" />
             Miembros{' '}
             <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">

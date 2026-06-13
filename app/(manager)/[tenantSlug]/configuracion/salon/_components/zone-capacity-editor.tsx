@@ -128,7 +128,9 @@ export function ZoneCapacityEditor({
     <>
       {/* Defaults */}
       <section className="space-y-4 rounded-xl border bg-card/60 p-5">
-        <h2 className="font-serif text-base font-semibold">Capacidad default por zona</h2>
+        <h2 className="font-serif text-lg font-semibold tracking-tight">
+          Capacidad default por zona
+        </h2>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <Label className="text-[11px] uppercase tracking-wide">{ZONE_LABELS.planta_alta}</Label>
@@ -163,7 +165,7 @@ export function ZoneCapacityEditor({
 
       {/* Overrides */}
       <section className="space-y-3 rounded-xl border bg-card/60 p-5">
-        <h2 className="font-serif text-base font-semibold">Overrides por fecha</h2>
+        <h2 className="font-serif text-lg font-semibold tracking-tight">Overrides por fecha</h2>
         <p className="text-xs text-muted-foreground">
           Para días puntuales (reforma, evento privado, etc.) podés sobreescribir el cupo.
         </p>

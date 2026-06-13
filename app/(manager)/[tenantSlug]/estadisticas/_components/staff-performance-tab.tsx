@@ -80,7 +80,7 @@ export function StaffPerformanceTab({
 
       <DataTableShell>
         <header className="border-b border-border/60 px-5 py-4">
-          <h3 className="font-display text-base font-semibold tracking-tight">Ranking del rango</h3>
+          <h3 className="font-serif text-lg font-semibold tracking-tight">Ranking del rango</h3>
           <p className="text-xs text-muted-foreground">
             Apretá un mozo para ver sus mesas atendidas y el detalle de cada una.
           </p>

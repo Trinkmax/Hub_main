@@ -32,13 +32,13 @@ export default async function ResenasSettingsPage({
   const settings = await getReviewSettings(access.tenant.id)
 
   return (
-    <main className="space-y-8 py-6">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Configuración"
         title="Reseñas"
         description="Definí adónde van las reseñas de tus clientes y cuántos puntos otorgás por dejar una opinión."
       />
       <ReviewSettingsForm tenantSlug={tenantSlug} settings={settings} />
-    </main>
+    </div>
   )
 }

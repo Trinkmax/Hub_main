@@ -102,7 +102,12 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
   const lifetime = customer.lifetime_points_earned
   const balance = customer.points_balance
 
-  const nowIso = new Date().toISOString()
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Argentina/Cordoba',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
 
   const [
     { data: tenant },
@@ -163,12 +168,13 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
       .order('created_at', { ascending: false })
       .limit(50),
     service
-      .from('events')
-      .select('id, name, starts_at')
+      .from('scheduled_events')
+      .select(
+        'id, name_override, event_date, starts_at_local, template:scheduled_event_templates(name)',
+      )
       .eq('tenant_id', tenantId)
-      .eq('status', 'published')
-      .gt('starts_at', nowIso)
-      .order('starts_at', { ascending: true })
+      .gte('event_date', today)
+      .order('event_date', { ascending: true })
       .limit(5),
     service
       .from('reward_redemptions')
@@ -297,13 +303,22 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
     ledger: (
       (ledgerData ?? []) as Array<{ id: string; delta: number; reason: string; created_at: string }>
     ).map((l) => ({ id: l.id, delta: l.delta, reason: l.reason, createdAt: l.created_at })),
-    events: ((eventsData ?? []) as Array<{ id: string; name: string; starts_at: string }>).map(
-      (e) => ({
+    events: (
+      (eventsData ?? []) as Array<{
+        id: string
+        name_override: string | null
+        event_date: string
+        starts_at_local: string
+        template: { name: string } | { name: string }[] | null
+      }>
+    ).map((e) => {
+      const tpl = Array.isArray(e.template) ? e.template[0] : e.template
+      return {
         id: e.id,
-        name: e.name,
-        startsAt: e.starts_at,
-      }),
-    ),
+        name: e.name_override ?? tpl?.name ?? 'Evento',
+        startsAt: `${e.event_date}T${e.starts_at_local}`,
+      }
+    }),
     pendingBenefits: (
       (pendingData ?? []) as Array<{
         id: string

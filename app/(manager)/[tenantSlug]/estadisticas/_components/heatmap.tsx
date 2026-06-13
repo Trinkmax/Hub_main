@@ -13,7 +13,7 @@ export function Heatmap({ data }: { data: HeatmapPoint[] }) {
     <div className="card-hairline rounded-xl border bg-card">
       <header className="flex items-center justify-between gap-3 border-b border-border/60 px-5 py-4">
         <div>
-          <h2 className="font-display text-base font-semibold tracking-tight">
+          <h2 className="font-serif text-lg font-semibold tracking-tight">
             Mapa de calor de visitas
           </h2>
           <p className="text-xs text-muted-foreground">Cuándo viene tu gente, día por hora.</p>

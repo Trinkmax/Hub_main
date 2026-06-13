@@ -143,29 +143,36 @@ export type EventRanking = {
 
 export async function getEventsRanking(tenantId: string, limit = 20): Promise<EventRanking[]> {
   const supabase = await createClient()
+  // Eventos del calendario (scheduled_events) rankeados por asistencia, derivada
+  // de las reservas (salon_reservations) asociadas. Reemplaza la tabla `events`,
+  // ya retirada.
   const { data } = await supabase
-    .from('events')
-    .select('id, name, starts_at, reservations:reservations(status)')
+    .from('scheduled_events')
+    .select(
+      'id, name_override, event_date, template:scheduled_event_templates(name), reservations:salon_reservations(status)',
+    )
     .eq('tenant_id', tenantId)
-    .in('status', ['finished', 'cancelled', 'published'])
-    .order('starts_at', { ascending: false })
+    .order('event_date', { ascending: false })
     .limit(limit)
   type Joined = {
     id: string
-    name: string
-    starts_at: string
+    name_override: string | null
+    event_date: string
+    template: { name: string } | { name: string }[] | null
     reservations: Array<{ status: string }> | null
   }
+  const ATTENDED = new Set(['arrived', 'seated', 'closed'])
   return ((data ?? []) as unknown as Joined[]).map((ev) => {
+    const tpl = Array.isArray(ev.template) ? ev.template[0] : ev.template
     const list = ev.reservations ?? []
     const reservations = list.filter((r) => r.status !== 'cancelled').length
-    const attended = list.filter((r) => r.status === 'checked_in').length
+    const attended = list.filter((r) => ATTENDED.has(r.status)).length
     const noShow = list.filter((r) => r.status === 'no_show').length
     const denom = attended + noShow
     return {
       event_id: ev.id,
-      event_name: ev.name,
-      starts_at: ev.starts_at,
+      event_name: ev.name_override ?? tpl?.name ?? 'Evento',
+      starts_at: ev.event_date,
       reservations,
       attended,
       no_show: noShow,

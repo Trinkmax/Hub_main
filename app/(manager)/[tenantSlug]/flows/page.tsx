@@ -108,7 +108,7 @@ export default async function FlowsPage({ params }: { params: Promise<{ tenantSl
                     <DataTableCell className="tabular-nums">{f.step_count}</DataTableCell>
                     <DataTableCell>
                       {f.active ? (
-                        <Badge className="gap-1 bg-success text-success-foreground hover:bg-success/90">
+                        <Badge variant="success" className="gap-1">
                           <span className="size-1.5 rounded-full bg-current" />
                           Activo
                         </Badge>

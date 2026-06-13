@@ -192,7 +192,7 @@ function ChannelCard({
             {icon}
           </div>
           <div>
-            <h2 className="font-display text-base font-semibold tracking-tight">{title}</h2>
+            <h2 className="font-serif text-lg font-semibold tracking-tight">{title}</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>
           </div>
         </div>

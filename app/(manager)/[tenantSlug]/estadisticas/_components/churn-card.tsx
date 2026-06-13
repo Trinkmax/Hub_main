@@ -63,7 +63,7 @@ export function ChurnCard({ rows, tenantSlug }: { rows: ChurnRiskRow[]; tenantSl
             <TrendingDown className="size-4" />
           </div>
           <div>
-            <h2 className="font-display text-base font-semibold tracking-tight">Riesgo de churn</h2>
+            <h2 className="font-serif text-lg font-semibold tracking-tight">Riesgo de churn</h2>
             <p className="text-xs text-muted-foreground">
               Clientes que eran frecuentes y no volvieron en 2× su frecuencia habitual.
             </p>

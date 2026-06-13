@@ -115,11 +115,13 @@ export default async function EstadisticasPage({
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
               icon={Users}
+              iconClassName="text-primary"
               label="Clientes"
               value={numberFmt.format(kpis.customers_total)}
             />
             <StatCard
               icon={Sparkles}
+              iconClassName="text-info"
               label="Activos 30d"
               value={numberFmt.format(kpis.customers_active_30d)}
               hint={
@@ -130,12 +132,14 @@ export default async function EstadisticasPage({
             />
             <StatCard
               icon={Receipt}
+              iconClassName="text-warning"
               label="Visitas 30d"
               value={numberFmt.format(kpis.visits_30d)}
               hint={kpis.visits_30d > 0 ? `${(kpis.visits_30d / 30).toFixed(1)}/día` : undefined}
             />
             <StatCard
               icon={Banknote}
+              iconClassName="text-success"
               label="Ticket promedio"
               value={fmtCents(kpis.avg_ticket_30d_cents)}
             />
@@ -144,7 +148,7 @@ export default async function EstadisticasPage({
           <div className="card-hairline rounded-xl border bg-card">
             <header className="flex items-center justify-between gap-3 border-b border-border/60 px-5 py-4">
               <div>
-                <h2 className="font-display text-base font-semibold tracking-tight">
+                <h2 className="font-serif text-lg font-semibold tracking-tight">
                   Revenue últimos 90 días
                 </h2>
                 <p className="text-xs text-muted-foreground">{fmtCents(totalRevenue)} acumulado</p>
@@ -171,7 +175,7 @@ export default async function EstadisticasPage({
           <DataTableShell>
             <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 py-4">
               <div>
-                <h2 className="font-display text-base font-semibold tracking-tight">
+                <h2 className="font-serif text-lg font-semibold tracking-tight">
                   Top 50 por gasto
                 </h2>
                 <p className="text-xs text-muted-foreground">Clientes con más spent acumulado.</p>
@@ -254,11 +258,11 @@ export default async function EstadisticasPage({
         <TabsContent value="events" className="space-y-4">
           <DataTableShell>
             <header className="border-b border-border/60 px-5 py-4">
-              <h2 className="font-display text-base font-semibold tracking-tight">
+              <h2 className="font-serif text-lg font-semibold tracking-tight">
                 Eventos por asistencia
               </h2>
               <p className="text-xs text-muted-foreground">
-                Últimos 20 eventos publicados o finalizados.
+                Últimos 20 eventos del calendario, por asistencia de las reservas.
               </p>
             </header>
             {events.length === 0 ? (

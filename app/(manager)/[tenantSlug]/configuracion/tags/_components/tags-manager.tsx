@@ -77,7 +77,7 @@ export function TagsManager({
     <div className="space-y-6">
       <div>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-display text-base font-semibold">Tags disponibles</h2>
+          <h2 className="font-serif text-lg font-semibold tracking-tight">Tags disponibles</h2>
           <Dialog open={showCreate} onOpenChange={setShowCreate}>
             <DialogTrigger asChild>
               <Button size="sm">
@@ -146,7 +146,9 @@ export function TagsManager({
       </div>
 
       <div>
-        <h2 className="mb-3 font-display text-base font-semibold">Asignar tags a ítems</h2>
+        <h2 className="mb-3 font-serif text-lg font-semibold tracking-tight">
+          Asignar tags a ítems
+        </h2>
         {items.length === 0 ? (
           <p className="text-sm text-muted-foreground">Sin ítems en la carta todavía.</p>
         ) : (
