@@ -863,6 +863,8 @@ export type Database = {
           notes: string | null
           opt_in_at: string | null
           opt_in_ip: string | null
+          current_tier_id: string | null
+          lifetime_points_earned: number
           opt_in_marketing: boolean
           phone: string
           points_balance: number
@@ -887,6 +889,8 @@ export type Database = {
           notes?: string | null
           opt_in_at?: string | null
           opt_in_ip?: string | null
+          current_tier_id?: string | null
+          lifetime_points_earned?: number
           opt_in_marketing?: boolean
           phone: string
           points_balance?: number
@@ -911,6 +915,8 @@ export type Database = {
           notes?: string | null
           opt_in_at?: string | null
           opt_in_ip?: string | null
+          current_tier_id?: string | null
+          lifetime_points_earned?: number
           opt_in_marketing?: boolean
           phone?: string
           points_balance?: number
@@ -1029,6 +1035,7 @@ export type Database = {
       }
       events: {
         Row: {
+          attendance_points: number
           capacity: number | null
           cover_image_url: string | null
           created_at: string
@@ -1044,6 +1051,7 @@ export type Database = {
           waitlist_enabled: boolean
         }
         Insert: {
+          attendance_points?: number
           capacity?: number | null
           cover_image_url?: string | null
           created_at?: string
@@ -1059,6 +1067,7 @@ export type Database = {
           waitlist_enabled?: boolean
         }
         Update: {
+          attendance_points?: number
           capacity?: number | null
           cover_image_url?: string | null
           created_at?: string
@@ -2187,6 +2196,7 @@ export type Database = {
           description: string | null
           id: string
           image_url: string | null
+          min_tier_id: string | null
           name: string
           stock: number | null
           tenant_id: string
@@ -2198,6 +2208,7 @@ export type Database = {
           description?: string | null
           id?: string
           image_url?: string | null
+          min_tier_id?: string | null
           name: string
           stock?: number | null
           tenant_id: string
@@ -2209,6 +2220,7 @@ export type Database = {
           description?: string | null
           id?: string
           image_url?: string | null
+          min_tier_id?: string | null
           name?: string
           stock?: number | null
           tenant_id?: string
@@ -2763,11 +2775,93 @@ export type Database = {
         }
         Relationships: []
       }
+      loyalty_tiers: {
+        Row: {
+          active: boolean
+          badge_icon: string | null
+          benefit_cadence: Database["public"]["Enums"]["tier_benefit_cadence"]
+          benefit_reward_id: string | null
+          color: string | null
+          created_at: string
+          id: string
+          min_lifetime_points: number
+          name: string
+          perks: string | null
+          sort: number
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          badge_icon?: string | null
+          benefit_cadence?: Database["public"]["Enums"]["tier_benefit_cadence"]
+          benefit_reward_id?: string | null
+          color?: string | null
+          created_at?: string
+          id?: string
+          min_lifetime_points: number
+          name: string
+          perks?: string | null
+          sort?: number
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          badge_icon?: string | null
+          benefit_cadence?: Database["public"]["Enums"]["tier_benefit_cadence"]
+          benefit_reward_id?: string | null
+          color?: string | null
+          created_at?: string
+          id?: string
+          min_lifetime_points?: number
+          name?: string
+          perks?: string | null
+          sort?: number
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      tier_benefit_grants: {
+        Row: {
+          customer_id: string
+          granted_at: string
+          id: string
+          period_key: string
+          redemption_id: string | null
+          reward_id: string | null
+          tenant_id: string
+          tier_id: string
+        }
+        Insert: {
+          customer_id: string
+          granted_at?: string
+          id?: string
+          period_key: string
+          redemption_id?: string | null
+          reward_id?: string | null
+          tenant_id: string
+          tier_id: string
+        }
+        Update: {
+          customer_id?: string
+          granted_at?: string
+          id?: string
+          period_key?: string
+          redemption_id?: string | null
+          reward_id?: string | null
+          tenant_id?: string
+          tier_id?: string
+        }
+        Relationships: []
+      }
       tenants: {
         Row: {
           brand_accent: string | null
           created_at: string
           currency: string
+          default_event_attendance_points: number
           feature_flags: Json
           guest_idle_hours_to_rescan: number
           id: string
@@ -2791,6 +2885,7 @@ export type Database = {
           brand_accent?: string | null
           created_at?: string
           currency?: string
+          default_event_attendance_points?: number
           feature_flags?: Json
           guest_idle_hours_to_rescan?: number
           id?: string
@@ -2814,6 +2909,7 @@ export type Database = {
           brand_accent?: string | null
           created_at?: string
           currency?: string
+          default_event_attendance_points?: number
           feature_flags?: Json
           guest_idle_hours_to_rescan?: number
           id?: string
@@ -3156,6 +3252,7 @@ export type Database = {
         Row: {
           enabled: boolean
           headline: string
+          bonus_points: number
           reward_id: string | null
           subtext: string
           tenant_id: string
@@ -3163,6 +3260,7 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
+          bonus_points?: number
           enabled?: boolean
           headline?: string
           reward_id?: string | null
@@ -3172,6 +3270,7 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
+          bonus_points?: number
           enabled?: boolean
           headline?: string
           reward_id?: string | null
@@ -3479,6 +3578,8 @@ export type Database = {
       }
       active_tenant_id: { Args: never; Returns: string }
       is_platform_admin: { Args: never; Returns: boolean }
+      grant_tier_benefits: { Args: never; Returns: { granted_count: number }[] }
+      set_customer_tier: { Args: { p_customer_id: string }; Returns: string }
       add_staff_ticket: {
         Args: {
           p_assigned_to_guest_id?: string
@@ -4045,6 +4146,7 @@ export type Database = {
       channel_type: "whatsapp" | "instagram"
       customer_source: "qr" | "manual" | "import"
       event_status: "draft" | "published" | "finished" | "cancelled"
+      tier_benefit_cadence: "none" | "birthday" | "monthly"
       floor_element_kind:
         | "table"
         | "wall"

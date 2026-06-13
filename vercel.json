@@ -8,6 +8,10 @@
     {
       "path": "/api/cron/expire-punch-cards",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/grant-tier-benefits",
+      "schedule": "0 6 * * *"
     }
   ]
 }

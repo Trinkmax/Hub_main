@@ -63,6 +63,7 @@ export async function updateWelcomeRewardConfig(
     reward_id: formData.get('reward_id'),
     headline: formData.get('headline'),
     subtext: formData.get('subtext'),
+    bonus_points: formData.get('bonus_points') ?? 0,
   })
   if (!parsed.success) {
     return {
@@ -118,6 +119,7 @@ export async function updateWelcomeRewardConfig(
         reward_id: parsed.data.reward_id,
         headline: parsed.data.headline,
         subtext: parsed.data.subtext,
+        bonus_points: parsed.data.bonus_points,
         updated_by: userId,
       },
       { onConflict: 'tenant_id' },
@@ -145,6 +147,7 @@ export async function updateWelcomeRewardConfig(
   // Revalidamos la página de config y la home del tenant (que puede
   // mostrar previews del welcome reward).
   revalidatePath(`/${slug}/configuracion/bienvenida`)
+  revalidatePath(`/${slug}/club/bienvenida`)
   revalidatePath(`/${slug}`)
 
   return { ok: true, message: 'Configuración guardada.' }
