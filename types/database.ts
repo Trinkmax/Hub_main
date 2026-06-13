@@ -854,6 +854,7 @@ export type Database = {
           acquisition_channel: Database["public"]["Enums"]["customer_acquisition_channel"]
           birthdate: string | null
           created_at: string
+          current_tier_id: string | null
           deleted_at: string | null
           email: string | null
           email_opt_in_at: string | null
@@ -861,11 +862,10 @@ export type Database = {
           id: string
           last_name: string
           last_visit_at: string | null
+          lifetime_points_earned: number
           notes: string | null
           opt_in_at: string | null
           opt_in_ip: string | null
-          current_tier_id: string | null
-          lifetime_points_earned: number
           opt_in_marketing: boolean
           phone: string
           points_balance: number
@@ -881,6 +881,7 @@ export type Database = {
           acquisition_channel?: Database["public"]["Enums"]["customer_acquisition_channel"]
           birthdate?: string | null
           created_at?: string
+          current_tier_id?: string | null
           deleted_at?: string | null
           email?: string | null
           email_opt_in_at?: string | null
@@ -888,11 +889,10 @@ export type Database = {
           id?: string
           last_name: string
           last_visit_at?: string | null
+          lifetime_points_earned?: number
           notes?: string | null
           opt_in_at?: string | null
           opt_in_ip?: string | null
-          current_tier_id?: string | null
-          lifetime_points_earned?: number
           opt_in_marketing?: boolean
           phone: string
           points_balance?: number
@@ -908,6 +908,7 @@ export type Database = {
           acquisition_channel?: Database["public"]["Enums"]["customer_acquisition_channel"]
           birthdate?: string | null
           created_at?: string
+          current_tier_id?: string | null
           deleted_at?: string | null
           email?: string | null
           email_opt_in_at?: string | null
@@ -915,11 +916,10 @@ export type Database = {
           id?: string
           last_name?: string
           last_visit_at?: string | null
+          lifetime_points_earned?: number
           notes?: string | null
           opt_in_at?: string | null
           opt_in_ip?: string | null
-          current_tier_id?: string | null
-          lifetime_points_earned?: number
           opt_in_marketing?: boolean
           phone?: string
           points_balance?: number
@@ -933,161 +933,14 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "customers_current_tier_id_fkey"
+            columns: ["current_tier_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_tiers"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "customers_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: false
-            referencedRelation: "tenants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      event_attendees: {
-        Row: {
-          checked_in_at: string | null
-          checked_in_by: string | null
-          created_at: string
-          customer_id: string | null
-          event_id: string
-          guests_count: number
-          id: string
-          salon_reservation_id: string | null
-          status: Database["public"]["Enums"]["reservation_status"]
-          tenant_id: string
-          updated_at: string
-          waitlist_position: number | null
-        }
-        Insert: {
-          checked_in_at?: string | null
-          checked_in_by?: string | null
-          created_at?: string
-          customer_id?: string | null
-          event_id: string
-          guests_count?: number
-          id?: string
-          salon_reservation_id?: string | null
-          status?: Database["public"]["Enums"]["reservation_status"]
-          tenant_id: string
-          updated_at?: string
-          waitlist_position?: number | null
-        }
-        Update: {
-          checked_in_at?: string | null
-          checked_in_by?: string | null
-          created_at?: string
-          customer_id?: string | null
-          event_id?: string
-          guests_count?: number
-          id?: string
-          salon_reservation_id?: string | null
-          status?: Database["public"]["Enums"]["reservation_status"]
-          tenant_id?: string
-          updated_at?: string
-          waitlist_position?: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "event_attendees_salon_reservation_id_fkey"
-            columns: ["salon_reservation_id"]
-            isOneToOne: false
-            referencedRelation: "salon_reservations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "reservations_customer_id_fkey"
-            columns: ["customer_id"]
-            isOneToOne: false
-            referencedRelation: "customers"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "reservations_customer_id_fkey"
-            columns: ["customer_id"]
-            isOneToOne: false
-            referencedRelation: "mv_customer_stats"
-            referencedColumns: ["customer_id"]
-          },
-          {
-            foreignKeyName: "reservations_customer_id_fkey"
-            columns: ["customer_id"]
-            isOneToOne: false
-            referencedRelation: "v_churn_risk"
-            referencedColumns: ["customer_id"]
-          },
-          {
-            foreignKeyName: "reservations_customer_id_fkey"
-            columns: ["customer_id"]
-            isOneToOne: false
-            referencedRelation: "v_customer_stats"
-            referencedColumns: ["customer_id"]
-          },
-          {
-            foreignKeyName: "reservations_event_id_fkey"
-            columns: ["event_id"]
-            isOneToOne: false
-            referencedRelation: "events"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "reservations_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: false
-            referencedRelation: "tenants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      events: {
-        Row: {
-          attendance_points: number
-          capacity: number | null
-          cover_image_url: string | null
-          created_at: string
-          created_by: string | null
-          description: string | null
-          ends_at: string
-          id: string
-          name: string
-          starts_at: string
-          status: Database["public"]["Enums"]["event_status"]
-          tenant_id: string
-          updated_at: string
-          waitlist_enabled: boolean
-        }
-        Insert: {
-          attendance_points?: number
-          capacity?: number | null
-          cover_image_url?: string | null
-          created_at?: string
-          created_by?: string | null
-          description?: string | null
-          ends_at: string
-          id?: string
-          name: string
-          starts_at: string
-          status?: Database["public"]["Enums"]["event_status"]
-          tenant_id: string
-          updated_at?: string
-          waitlist_enabled?: boolean
-        }
-        Update: {
-          attendance_points?: number
-          capacity?: number | null
-          cover_image_url?: string | null
-          created_at?: string
-          created_by?: string | null
-          description?: string | null
-          ends_at?: string
-          id?: string
-          name?: string
-          starts_at?: string
-          status?: Database["public"]["Enums"]["event_status"]
-          tenant_id?: string
-          updated_at?: string
-          waitlist_enabled?: boolean
-        }
-        Relationships: [
-          {
-            foreignKeyName: "events_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -1508,6 +1361,69 @@ export type Database = {
           },
         ]
       }
+      loyalty_tiers: {
+        Row: {
+          active: boolean
+          badge_icon: string | null
+          benefit_cadence: Database["public"]["Enums"]["tier_benefit_cadence"]
+          benefit_reward_id: string | null
+          color: string | null
+          created_at: string
+          id: string
+          min_lifetime_points: number
+          name: string
+          perks: string | null
+          sort: number
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          badge_icon?: string | null
+          benefit_cadence?: Database["public"]["Enums"]["tier_benefit_cadence"]
+          benefit_reward_id?: string | null
+          color?: string | null
+          created_at?: string
+          id?: string
+          min_lifetime_points: number
+          name: string
+          perks?: string | null
+          sort?: number
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          badge_icon?: string | null
+          benefit_cadence?: Database["public"]["Enums"]["tier_benefit_cadence"]
+          benefit_reward_id?: string | null
+          color?: string | null
+          created_at?: string
+          id?: string
+          min_lifetime_points?: number
+          name?: string
+          perks?: string | null
+          sort?: number
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_tiers_benefit_reward_id_fkey"
+            columns: ["benefit_reward_id"]
+            isOneToOne: false
+            referencedRelation: "rewards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_tiers_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       memberships: {
         Row: {
           created_at: string
@@ -1573,6 +1489,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "menu_categories_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "menu_categories"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "menu_categories_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
@@ -1628,7 +1551,7 @@ export type Database = {
       menu_items: {
         Row: {
           active: boolean
-          category_id: string
+          category_id: string | null
           created_at: string
           description: string | null
           featured: boolean
@@ -1643,7 +1566,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean
-          category_id: string
+          category_id?: string | null
           created_at?: string
           description?: string | null
           featured?: boolean
@@ -1658,7 +1581,7 @@ export type Database = {
         }
         Update: {
           active?: boolean
-          category_id?: string
+          category_id?: string | null
           created_at?: string
           description?: string | null
           featured?: boolean
@@ -1869,6 +1792,27 @@ export type Database = {
           },
         ]
       }
+      platform_admins: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          note: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          note?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          note?: string | null
+        }
+        Relationships: []
+      }
       points_rules: {
         Row: {
           active: boolean
@@ -2059,42 +2003,6 @@ export type Database = {
           },
         ]
       }
-      reviews: {
-        Row: {
-          comment: string | null
-          created_at: string
-          customer_id: string | null
-          id: string
-          rating: number
-          redirected_to_maps: boolean
-          source: string
-          tenant_id: string
-          visit_id: string | null
-        }
-        Insert: {
-          comment?: string | null
-          created_at?: string
-          customer_id?: string | null
-          id?: string
-          rating: number
-          redirected_to_maps?: boolean
-          source?: string
-          tenant_id: string
-          visit_id?: string | null
-        }
-        Update: {
-          comment?: string | null
-          created_at?: string
-          customer_id?: string | null
-          id?: string
-          rating?: number
-          redirected_to_maps?: boolean
-          source?: string
-          tenant_id?: string
-          visit_id?: string | null
-        }
-        Relationships: []
-      }
       reservation_managers: {
         Row: {
           active: boolean
@@ -2141,6 +2049,85 @@ export type Database = {
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reviews: {
+        Row: {
+          comment: string | null
+          created_at: string
+          customer_id: string | null
+          id: string
+          rating: number
+          redirected_to_maps: boolean
+          source: string
+          tenant_id: string
+          visit_id: string | null
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          rating: number
+          redirected_to_maps?: boolean
+          source?: string
+          tenant_id: string
+          visit_id?: string | null
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          rating?: number
+          redirected_to_maps?: boolean
+          source?: string
+          tenant_id?: string
+          visit_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reviews_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reviews_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "mv_customer_stats"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "reviews_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_churn_risk"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "reviews_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customer_stats"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "reviews_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reviews_visit_id_fkey"
+            columns: ["visit_id"]
+            isOneToOne: false
+            referencedRelation: "visits"
             referencedColumns: ["id"]
           },
         ]
@@ -2266,6 +2253,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "rewards_min_tier_id_fkey"
+            columns: ["min_tier_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_tiers"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "rewards_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
@@ -2295,7 +2289,6 @@ export type Database = {
           guest_email: string | null
           guest_name: string
           guest_phone: string | null
-          hub_event_id: string | null
           id: string
           kind: Database["public"]["Enums"]["reservation_kind"]
           meal_type: Database["public"]["Enums"]["meal_type"]
@@ -2331,7 +2324,6 @@ export type Database = {
           guest_email?: string | null
           guest_name: string
           guest_phone?: string | null
-          hub_event_id?: string | null
           id?: string
           kind?: Database["public"]["Enums"]["reservation_kind"]
           meal_type: Database["public"]["Enums"]["meal_type"]
@@ -2367,7 +2359,6 @@ export type Database = {
           guest_email?: string | null
           guest_name?: string
           guest_phone?: string | null
-          hub_event_id?: string | null
           id?: string
           kind?: Database["public"]["Enums"]["reservation_kind"]
           meal_type?: Database["public"]["Enums"]["meal_type"]
@@ -2418,13 +2409,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_customer_stats"
             referencedColumns: ["customer_id"]
-          },
-          {
-            foreignKeyName: "salon_reservations_hub_event_id_fkey"
-            columns: ["hub_event_id"]
-            isOneToOne: false
-            referencedRelation: "events"
-            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "salon_reservations_primary_manager_id_fkey"
@@ -2793,108 +2777,6 @@ export type Database = {
           },
         ]
       }
-      platform_admins: {
-        Row: {
-          created_at: string
-          email: string
-          id: string
-          note: string | null
-        }
-        Insert: {
-          created_at?: string
-          email: string
-          id?: string
-          note?: string | null
-        }
-        Update: {
-          created_at?: string
-          email?: string
-          id?: string
-          note?: string | null
-        }
-        Relationships: []
-      }
-      loyalty_tiers: {
-        Row: {
-          active: boolean
-          badge_icon: string | null
-          benefit_cadence: Database["public"]["Enums"]["tier_benefit_cadence"]
-          benefit_reward_id: string | null
-          color: string | null
-          created_at: string
-          id: string
-          min_lifetime_points: number
-          name: string
-          perks: string | null
-          sort: number
-          tenant_id: string
-          updated_at: string
-        }
-        Insert: {
-          active?: boolean
-          badge_icon?: string | null
-          benefit_cadence?: Database["public"]["Enums"]["tier_benefit_cadence"]
-          benefit_reward_id?: string | null
-          color?: string | null
-          created_at?: string
-          id?: string
-          min_lifetime_points: number
-          name: string
-          perks?: string | null
-          sort?: number
-          tenant_id: string
-          updated_at?: string
-        }
-        Update: {
-          active?: boolean
-          badge_icon?: string | null
-          benefit_cadence?: Database["public"]["Enums"]["tier_benefit_cadence"]
-          benefit_reward_id?: string | null
-          color?: string | null
-          created_at?: string
-          id?: string
-          min_lifetime_points?: number
-          name?: string
-          perks?: string | null
-          sort?: number
-          tenant_id?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      tier_benefit_grants: {
-        Row: {
-          customer_id: string
-          granted_at: string
-          id: string
-          period_key: string
-          redemption_id: string | null
-          reward_id: string | null
-          tenant_id: string
-          tier_id: string
-        }
-        Insert: {
-          customer_id: string
-          granted_at?: string
-          id?: string
-          period_key: string
-          redemption_id?: string | null
-          reward_id?: string | null
-          tenant_id: string
-          tier_id: string
-        }
-        Update: {
-          customer_id?: string
-          granted_at?: string
-          id?: string
-          period_key?: string
-          redemption_id?: string | null
-          reward_id?: string | null
-          tenant_id?: string
-          tier_id?: string
-        }
-        Relationships: []
-      }
       tenants: {
         Row: {
           brand_accent: string | null
@@ -2902,9 +2784,9 @@ export type Database = {
           currency: string
           default_event_attendance_points: number
           feature_flags: Json
+          google_maps_review_url: string | null
           guest_idle_hours_to_rescan: number
           id: string
-          google_maps_review_url: string | null
           kitchen_flow_enabled: boolean
           logo_url: string | null
           name: string
@@ -2929,9 +2811,9 @@ export type Database = {
           currency?: string
           default_event_attendance_points?: number
           feature_flags?: Json
+          google_maps_review_url?: string | null
           guest_idle_hours_to_rescan?: number
           id?: string
-          google_maps_review_url?: string | null
           kitchen_flow_enabled?: boolean
           logo_url?: string | null
           name: string
@@ -2956,9 +2838,9 @@ export type Database = {
           currency?: string
           default_event_attendance_points?: number
           feature_flags?: Json
+          google_maps_review_url?: string | null
           guest_idle_hours_to_rescan?: number
           id?: string
-          google_maps_review_url?: string | null
           kitchen_flow_enabled?: boolean
           logo_url?: string | null
           name?: string
@@ -3139,6 +3021,96 @@ export type Database = {
           },
         ]
       }
+      tier_benefit_grants: {
+        Row: {
+          customer_id: string
+          granted_at: string
+          id: string
+          period_key: string
+          redemption_id: string | null
+          reward_id: string | null
+          tenant_id: string
+          tier_id: string
+        }
+        Insert: {
+          customer_id: string
+          granted_at?: string
+          id?: string
+          period_key: string
+          redemption_id?: string | null
+          reward_id?: string | null
+          tenant_id: string
+          tier_id: string
+        }
+        Update: {
+          customer_id?: string
+          granted_at?: string
+          id?: string
+          period_key?: string
+          redemption_id?: string | null
+          reward_id?: string | null
+          tenant_id?: string
+          tier_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tier_benefit_grants_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tier_benefit_grants_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "mv_customer_stats"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "tier_benefit_grants_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_churn_risk"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "tier_benefit_grants_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customer_stats"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "tier_benefit_grants_redemption_id_fkey"
+            columns: ["redemption_id"]
+            isOneToOne: false
+            referencedRelation: "reward_redemptions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tier_benefit_grants_reward_id_fkey"
+            columns: ["reward_id"]
+            isOneToOne: false
+            referencedRelation: "rewards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tier_benefit_grants_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tier_benefit_grants_tier_id_fkey"
+            columns: ["tier_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_tiers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_active_tenant: {
         Row: {
           tenant_id: string
@@ -3298,9 +3270,9 @@ export type Database = {
       }
       welcome_reward_configs: {
         Row: {
+          bonus_points: number
           enabled: boolean
           headline: string
-          bonus_points: number
           reward_id: string | null
           subtext: string
           tenant_id: string
@@ -3625,9 +3597,6 @@ export type Database = {
         Returns: Json
       }
       active_tenant_id: { Args: never; Returns: string }
-      is_platform_admin: { Args: never; Returns: boolean }
-      grant_tier_benefits: { Args: never; Returns: { granted_count: number }[] }
-      set_customer_tier: { Args: { p_customer_id: string }; Returns: string }
       add_staff_ticket: {
         Args: {
           p_assigned_to_guest_id?: string
@@ -3648,13 +3617,6 @@ export type Database = {
           delta: number
         }[]
       }
-      cancel_event: { Args: { p_event_id: string }; Returns: undefined }
-      cancel_event_attendance: {
-        Args: { p_reservation_id: string }
-        Returns: {
-          promoted_id: string
-        }[]
-      }
       cancel_pending_ticket: {
         Args: { p_browser_token: string; p_ticket_id: string }
         Returns: Json
@@ -3662,10 +3624,6 @@ export type Database = {
       cancel_ticket_item: {
         Args: { p_reason: string; p_ticket_item_id: string }
         Returns: Json
-      }
-      check_in_event_attendance: {
-        Args: { p_reservation_id: string }
-        Returns: undefined
       }
       check_slug_available: { Args: { p_slug: string }; Returns: boolean }
       claim_jobs: {
@@ -3699,19 +3657,15 @@ export type Database = {
         }[]
       }
       complete_job: { Args: { p_id: string }; Returns: undefined }
-      create_event_attendance: {
-        Args: { p_customer_id: string; p_event_id: string; p_guests?: number }
-        Returns: {
-          reservation_id: string
-          status: Database["public"]["Enums"]["reservation_status"]
-          waitlist_position: number
-        }[]
-      }
       create_tenant_with_owner: {
         Args: { p_name: string; p_slug: string }
         Returns: {
+          brand_accent: string | null
           created_at: string
           currency: string
+          default_event_attendance_points: number
+          feature_flags: Json
+          google_maps_review_url: string | null
           guest_idle_hours_to_rescan: number
           id: string
           kitchen_flow_enabled: boolean
@@ -3720,6 +3674,8 @@ export type Database = {
           points_redemption_enabled: boolean
           points_redemption_max_pct: number
           points_to_cents_rate: number
+          review_gating_enabled: boolean
+          review_reward_points: number
           session_auto_abandon_hours: number
           settings: Json
           slug: string
@@ -3753,6 +3709,10 @@ export type Database = {
       decrypt_meta_token: {
         Args: { ciphertext: string; key: string }
         Returns: string
+      }
+      delete_category_cascade: {
+        Args: { p_category_id: string }
+        Returns: Json
       }
       encrypt_meta_token: {
         Args: { key: string; plaintext: string }
@@ -3798,7 +3758,6 @@ export type Database = {
           used: number
         }[]
       }
-      event_lock_key: { Args: { p_event_id: string }; Returns: number }
       expire_punch_cards: { Args: never; Returns: Json }
       f_unaccent: { Args: { "": string }; Returns: string }
       fail_job: {
@@ -3806,13 +3765,6 @@ export type Database = {
         Returns: undefined
       }
       find_user_id_by_email: { Args: { p_email: string }; Returns: string }
-      finish_past_events: {
-        Args: never
-        Returns: {
-          finished_events: number
-          no_show_reservations: number
-        }[]
-      }
       fp_create_table: {
         Args: {
           p_area_id: string
@@ -3874,6 +3826,12 @@ export type Database = {
           user_id: string
         }[]
       }
+      grant_tier_benefits: {
+        Args: never
+        Returns: {
+          granted_count: number
+        }[]
+      }
       ingest_inbound_message: {
         Args: {
           p_channel_id: string
@@ -3901,6 +3859,7 @@ export type Database = {
         }
         Returns: Json
       }
+      is_platform_admin: { Args: never; Returns: boolean }
       join_session_as_guest: {
         Args: {
           p_browser_token: string
@@ -3908,14 +3867,6 @@ export type Database = {
           p_qr_token: string
         }
         Returns: Json
-      }
-      link_salon_reservation_to_event: {
-        Args: { p_event_id: string; p_reservation_id: string }
-        Returns: {
-          attendee_id: string
-          status: Database["public"]["Enums"]["reservation_status"]
-          waitlist_position: number
-        }[]
       }
       mark_commission_paid: {
         Args: { p_ledger_ids: string[]; p_paid_at?: string }
@@ -3933,19 +3884,12 @@ export type Database = {
         Args: { p_absorbed_ids: string[]; p_survivor_id: string }
         Returns: Json
       }
+      move_category: {
+        Args: { p_category_id: string; p_new_parent_id: string }
+        Returns: undefined
+      }
       move_session: {
         Args: { p_new_physical_table_id: string; p_session_id: string }
-        Returns: Json
-      }
-      // STUB MANUAL (sin Docker para db:types): reemplazar al regenerar tipos
-      // tras aplicar la migración 20260608200330_move_ticket_items.
-      move_ticket_items: {
-        Args: {
-          p_idempotency_key?: string
-          p_moves: Json
-          p_source_session_id: string
-          p_target_table_id: string
-        }
         Returns: Json
       }
       recalc_event_commissions: {
@@ -3988,7 +3932,7 @@ export type Database = {
         Returns: Json
       }
       reorder_menu_categories: {
-        Args: { p_ordered_ids: string[]; p_tenant_id: string }
+        Args: { p_ordered_ids: string[]; p_parent_id: string }
         Returns: undefined
       }
       reorder_menu_items: {
@@ -4012,6 +3956,7 @@ export type Database = {
         Returns: string
       }
       set_active_tenant: { Args: { p_tenant: string }; Returns: undefined }
+      set_customer_tier: { Args: { p_customer_id: string }; Returns: string }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       split_session: {
@@ -4076,7 +4021,6 @@ export type Database = {
           guest_email: string | null
           guest_name: string
           guest_phone: string | null
-          hub_event_id: string | null
           id: string
           kind: Database["public"]["Enums"]["reservation_kind"]
           meal_type: Database["public"]["Enums"]["meal_type"]
@@ -4100,12 +4044,6 @@ export type Database = {
         }
       }
       unaccent: { Args: { "": string }; Returns: string }
-      unlink_salon_reservation_from_event: {
-        Args: { p_reservation_id: string }
-        Returns: {
-          promoted_id: string
-        }[]
-      }
       update_message_status: {
         Args: {
           p_error: string
@@ -4137,7 +4075,6 @@ export type Database = {
           guest_email: string | null
           guest_name: string
           guest_phone: string | null
-          hub_event_id: string | null
           id: string
           kind: Database["public"]["Enums"]["reservation_kind"]
           meal_type: Database["public"]["Enums"]["meal_type"]
@@ -4194,8 +4131,6 @@ export type Database = {
       channel_type: "whatsapp" | "instagram"
       customer_acquisition_channel: "reservation" | "walkin" | "import"
       customer_source: "qr" | "manual" | "import"
-      event_status: "draft" | "published" | "finished" | "cancelled"
-      tier_benefit_cadence: "none" | "birthday" | "monthly"
       floor_element_kind:
         | "table"
         | "wall"
@@ -4236,12 +4171,6 @@ export type Database = {
         | "messenger"
         | "in_person"
         | "partner_referral"
-      reservation_status:
-        | "confirmed"
-        | "waitlist"
-        | "cancelled"
-        | "checked_in"
-        | "no_show"
       salon_reservation_status:
         | "pending"
         | "arrived"
@@ -4277,6 +4206,7 @@ export type Database = {
         | "ready"
         | "served"
         | "cancelled"
+      tier_benefit_cadence: "none" | "birthday" | "monthly"
       visit_source: "cashier" | "import"
     }
     CompositeTypes: {
@@ -4415,8 +4345,8 @@ export const Constants = {
       ],
       channel_status: ["connected", "disconnected", "error"],
       channel_type: ["whatsapp", "instagram"],
+      customer_acquisition_channel: ["reservation", "walkin", "import"],
       customer_source: ["qr", "manual", "import"],
-      event_status: ["draft", "published", "finished", "cancelled"],
       floor_element_kind: [
         "table",
         "wall",
@@ -4461,13 +4391,6 @@ export const Constants = {
         "in_person",
         "partner_referral",
       ],
-      reservation_status: [
-        "confirmed",
-        "waitlist",
-        "cancelled",
-        "checked_in",
-        "no_show",
-      ],
       salon_reservation_status: [
         "pending",
         "arrived",
@@ -4501,19 +4424,16 @@ export const Constants = {
         "served",
         "cancelled",
       ],
+      tier_benefit_cadence: ["none", "birthday", "monthly"],
       visit_source: ["cashier", "import"],
     },
   },
 } as const
 
-// ────────────────────────────────────────────────────────────
-// Enum aliases (mantienen compatibilidad con imports existentes)
-// ────────────────────────────────────────────────────────────
 export type BroadcastStatus = Database["public"]["Enums"]["broadcast_status"]
 export type ChannelStatus = Database["public"]["Enums"]["channel_status"]
 export type ChannelType = Database["public"]["Enums"]["channel_type"]
 export type CustomerSource = Database["public"]["Enums"]["customer_source"]
-export type EventStatus = Database["public"]["Enums"]["event_status"]
 export type FlowExecutionStatus = Database["public"]["Enums"]["flow_execution_status"]
 export type FlowStepType = Database["public"]["Enums"]["flow_step_type"]
 export type FlowTriggerType = Database["public"]["Enums"]["flow_trigger_type"]
@@ -4527,7 +4447,6 @@ export type RecipientStatus = Database["public"]["Enums"]["recipient_status"]
 export type RedemptionStatus = Database["public"]["Enums"]["redemption_status"]
 export type ReservationKind = Database["public"]["Enums"]["reservation_kind"]
 export type ReservationOrigin = Database["public"]["Enums"]["reservation_origin"]
-export type ReservationStatus = Database["public"]["Enums"]["reservation_status"]
 export type SalonReservationStatus = Database["public"]["Enums"]["salon_reservation_status"]
 export type SalonZone = Database["public"]["Enums"]["salon_zone"]
 export type SessionEventType = Database["public"]["Enums"]["session_event_type"]

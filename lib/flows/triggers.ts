@@ -1,9 +1,12 @@
 import 'server-only'
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { enqueueJob } from '@/lib/jobs/queue'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { Database, FlowTriggerType } from '@/types/database'
 
 type FlowRow = Database['public']['Tables']['flows']['Row']
+
+const TZ = 'America/Argentina/Cordoba'
 
 // Recorre flows activos por tipo y encola jobs `start_flow` para cada
 // (flow, customer) que cumpla el criterio. Idempotencia garantizada por
@@ -59,20 +62,51 @@ async function evaluateOneFlow(flow: FlowRow): Promise<number> {
   return candidates.length
 }
 
+// Clientes con reserva (con CRM) para un evento del calendario que arranca en
+// ~hoursBefore. Los scheduled_events guardan fecha + hora local, así que
+// computamos el instante de inicio en el reloj del bar (TZ Córdoba).
 async function customersForEventStarting(
   flow: FlowRow,
   hoursBefore: number,
 ): Promise<Array<{ customer_id: string }>> {
   const service = createServiceClient()
-  const lower = new Date(Date.now() + (hoursBefore - 1) * 3600_000).toISOString()
-  const upper = new Date(Date.now() + hoursBefore * 3600_000).toISOString()
+  const now = Date.now()
+  const lower = new Date(now + (hoursBefore - 1) * 3600_000)
+  const upper = new Date(now + hoursBefore * 3600_000)
+
+  // La ventana abarca a lo sumo 2 fechas locales.
+  const dates = Array.from(
+    new Set([formatInTimeZone(lower, TZ, 'yyyy-MM-dd'), formatInTimeZone(upper, TZ, 'yyyy-MM-dd')]),
+  )
+  const { data: scheduled } = await service
+    .from('scheduled_events')
+    .select('id, event_date, starts_at_local')
+    .eq('tenant_id', flow.tenant_id)
+    .in('event_date', dates)
+  const eventIds = (scheduled ?? [])
+    .filter((e) => {
+      const start = fromZonedTime(`${e.event_date}T${e.starts_at_local}`, TZ)
+      return start >= lower && start <= upper
+    })
+    .map((e) => e.id)
+  if (eventIds.length === 0) return []
+
   const { data } = await service
-    .from('event_attendees')
-    .select('customer_id, event:events!inner(tenant_id, starts_at, status)')
-    .eq('event.tenant_id', flow.tenant_id)
-    .gt('event.starts_at', lower)
-    .lte('event.starts_at', upper)
-    .in('status', ['confirmed', 'checked_in'])
+    .from('salon_reservations')
+    .select('customer_id')
+    .eq('tenant_id', flow.tenant_id)
+    .in('scheduled_event_id', eventIds)
+    .not('customer_id', 'is', null)
+    .in('status', ['pending', 'arrived', 'seated'])
     .limit(1000)
-  return (data ?? []).map((r) => ({ customer_id: r.customer_id }))
+
+  const seen = new Set<string>()
+  const out: Array<{ customer_id: string }> = []
+  for (const r of data ?? []) {
+    if (r.customer_id && !seen.has(r.customer_id)) {
+      seen.add(r.customer_id)
+      out.push({ customer_id: r.customer_id })
+    }
+  }
+  return out
 }

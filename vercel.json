@@ -34,10 +34,6 @@
       "schedule": "0 3 * * *"
     },
     {
-      "path": "/api/cron/finish-past-events",
-      "schedule": "30 * * * *"
-    },
-    {
       "path": "/api/cron/refresh-stats",
       "schedule": "0 2 * * *"
     }

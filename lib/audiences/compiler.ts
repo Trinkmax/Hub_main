@@ -208,11 +208,13 @@ class Compiler {
     }
     if (field === 'attended_event_id') {
       const ph = this.addParam(coerce('uuid', value))
-      // La tabla `reservations` se renombró a `event_attendees` (migración
-      // 20260520000000); apuntar a la vieja crasheaba el preview en runtime.
+      // "Asistió a un evento del calendario": tiene una reserva para ese
+      // scheduled_event y efectivamente llegó (arrived/seated/closed). Antes
+      // apuntaba a la tabla `events`/`event_attendees`, ya retirada.
       const inner =
-        `select 1 from public.event_attendees r` +
-        ` where r.customer_id = c.id and r.event_id = ${ph} and r.status = 'checked_in'`
+        `select 1 from public.salon_reservations r` +
+        ` where r.customer_id = c.id and r.scheduled_event_id = ${ph}` +
+        ` and r.status in ('arrived', 'seated', 'closed')`
       return negate ? `NOT EXISTS (${inner})` : `EXISTS (${inner})`
     }
     throw new InvalidFilterError(`unhandled subquery field ${field}`)

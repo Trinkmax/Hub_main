@@ -40,17 +40,26 @@ export type AudienceBuilderOptions = {
   tiers: { id: string; name: string }[]
   /** Tags de clientes para el campo "Tiene tag". */
   tags: { id: string; name: string }[]
-  /** Eventos (shows) para el campo "Asistió a un evento". */
+  /** Eventos del calendario para el campo "Asistió a un evento". */
   events: { id: string; name: string }[]
+}
+
+function shortEventDate(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number)
+  if (!y || !m || !d) return ymd
+  return new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short' }).format(
+    new Date(y, m - 1, d),
+  )
 }
 
 /**
  * Opciones para los selects del builder de audiencias: niveles, tags y eventos
- * del tenant. Reemplaza los inputs de UUID crudo por dropdowns legibles.
+ * del calendario (scheduled_events) del tenant. Reemplaza UUIDs crudos por
+ * dropdowns legibles.
  */
 export async function getAudienceBuilderOptions(tenantId: string): Promise<AudienceBuilderOptions> {
   const supabase = await createClient()
-  const [tiers, tags, events] = await Promise.all([
+  const [tiers, tags, scheduled] = await Promise.all([
     supabase
       .from('loyalty_tiers')
       .select('id, name')
@@ -58,17 +67,23 @@ export async function getAudienceBuilderOptions(tenantId: string): Promise<Audie
       .order('min_lifetime_points', { ascending: true }),
     supabase.from('customer_tags').select('id, name').eq('tenant_id', tenantId).order('name'),
     supabase
-      .from('events')
-      .select('id, name')
+      .from('scheduled_events')
+      .select('id, name_override, event_date, template:scheduled_event_templates(name)')
       .eq('tenant_id', tenantId)
-      .in('status', ['published', 'finished'])
-      .order('starts_at', { ascending: false })
+      .order('event_date', { ascending: false })
       .limit(100),
   ])
+
+  const events = (scheduled.data ?? []).map((e) => {
+    const tpl = e.template as { name: string } | { name: string }[] | null
+    const tplName = Array.isArray(tpl) ? tpl[0]?.name : tpl?.name
+    const label = e.name_override ?? tplName ?? 'Evento'
+    return { id: e.id, name: `${label} · ${shortEventDate(e.event_date)}` }
+  })
 
   return {
     tiers: tiers.data ?? [],
     tags: tags.data ?? [],
-    events: events.data ?? [],
+    events,
   }
 }

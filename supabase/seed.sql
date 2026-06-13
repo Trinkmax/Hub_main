@@ -185,8 +185,6 @@ begin
   delete from public.conversations where tenant_id = v_tenant_id;
   delete from public.message_templates where tenant_id = v_tenant_id;
   delete from public.channels where tenant_id = v_tenant_id;
-  delete from public.event_attendees where tenant_id = v_tenant_id;
-  delete from public.events where tenant_id = v_tenant_id;
   delete from public.reward_redemptions where tenant_id = v_tenant_id;
   delete from public.rewards where tenant_id = v_tenant_id;
   delete from public.points_transactions where tenant_id = v_tenant_id;
@@ -675,66 +673,10 @@ begin
   end;
 
   -- ───────────────────────────────────────────────────────────
-  -- 9. EVENTS + RESERVATIONS
+  -- 9. (Eventos retirados) — los eventos viven ahora en el Calendario
+  --    (scheduled_events), sembrados más arriba. La tabla `events` /
+  --    `event_attendees` se eliminó del modelo.
   -- ───────────────────────────────────────────────────────────
-  insert into public.events (tenant_id, name, description, starts_at, ends_at, capacity, waitlist_enabled, status, created_by) values
-    (v_tenant_id, 'Karaoke Night',
-      'Cantá tus clásicos con la banda en vivo. Entrada libre, reservá tu mesa.',
-      v_now + '4 days'::interval + '21 hours'::interval,
-      v_now + '5 days'::interval + '02 hours'::interval,
-      40, true, 'published', v_owner_id),
-    (v_tenant_id, 'Noche de Tango',
-      'Milonga con DJ y clase abierta a las 21h.',
-      v_now + '11 days'::interval + '21 hours'::interval,
-      v_now + '12 days'::interval + '01 hours'::interval,
-      30, true, 'published', v_owner_id),
-    (v_tenant_id, 'After Office HUB',
-      '2x1 en tragos hasta las 22h. Pasen sin reserva, vengan con amigos.',
-      v_now + '2 days'::interval + '19 hours'::interval,
-      v_now + '2 days'::interval + '23 hours'::interval,
-      null, true, 'published', v_owner_id),
-    (v_tenant_id, 'Cena Maridaje Patagonia',
-      'Cinco pasos con cervezas Patagonia.',
-      v_now - '7 days'::interval + '20 hours'::interval,
-      v_now - '7 days'::interval + '23 hours'::interval,
-      24, true, 'finished', v_owner_id),
-    (v_tenant_id, 'Stand Up de los Jueves',
-      'Show de stand up con artistas locales.',
-      v_now - '14 days'::interval + '21 hours'::interval,
-      v_now - '14 days'::interval + '23 hours'::interval,
-      35, true, 'finished', v_owner_id),
-    (v_tenant_id, 'Cumple HUB',
-      'Festejamos un año del bar. DJs y barra libre primera hora.',
-      v_now + '25 days'::interval + '20 hours'::interval,
-      v_now + '26 days'::interval + '03 hours'::interval,
-      120, true, 'draft', v_owner_id);
-
-  -- Reservas para los 2 eventos próximos (Karaoke + Tango) y un finished
-  for v_event_id in
-    select id from public.events where tenant_id = v_tenant_id
-      and name in ('Karaoke Night', 'Noche de Tango', 'Cena Maridaje Patagonia')
-  loop
-    -- 8 reservas confirmed (tomamos un slice variado de customers)
-    for i in 1..8 loop
-      insert into public.event_attendees (tenant_id, event_id, customer_id, guests_count, status)
-      values (
-        v_tenant_id, v_event_id, v_active_customer_ids[i],
-        case when i % 3 = 0 then 4 else 2 end,
-        case
-          when (select name from public.events where id = v_event_id) = 'Cena Maridaje Patagonia'
-            then 'checked_in'::public.reservation_status
-          else 'confirmed'::public.reservation_status
-        end
-      );
-    end loop;
-    -- 2 waitlist en eventos con capacity
-    if exists (select 1 from public.events where id = v_event_id and capacity is not null) then
-      insert into public.event_attendees (tenant_id, event_id, customer_id, guests_count, status, waitlist_position)
-      values
-        (v_tenant_id, v_event_id, v_active_customer_ids[20], 2, 'waitlist', 1),
-        (v_tenant_id, v_event_id, v_active_customer_ids[22], 3, 'waitlist', 2);
-    end if;
-  end loop;
 
   -- ───────────────────────────────────────────────────────────
   -- 10. CHANNEL (WhatsApp connected mock) + TEMPLATES

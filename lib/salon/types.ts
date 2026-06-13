@@ -97,7 +97,6 @@ export type SalonReservationRow = {
   reservation_time_local: string
   zone: SalonZone
   scheduled_event_id: string | null
-  hub_event_id: string | null
   estimated_guests: number
   actual_guests: number | null
   cake_count: number

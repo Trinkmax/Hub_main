@@ -35,7 +35,6 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { calculateCommission, type RateTier } from '@/lib/commissions/calculate'
 import { type CustomerSearchResult, searchCustomers } from '@/lib/customers/search'
-import type { HubEventOption } from '@/lib/events/queries'
 import { createSalonReservation, updateSalonReservation } from '@/lib/salon/actions'
 import { fetchDayCapacity, fetchScheduledEventsForDate } from '@/lib/salon/client-actions'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
@@ -65,7 +64,6 @@ type Props = {
   managers: ReservationManagerRow[]
   templates: ScheduledEventTemplateRow[]
   initialEventsForDate: ScheduledEventWithTemplate[]
-  hubEvents: HubEventOption[]
   rateTiers: RateTier[]
   bonusPerGuestCents: number
   // Edit mode props
@@ -131,30 +129,6 @@ function quickChips(today: string): Array<{ label: string; date: string }> {
   return out
 }
 
-function eventLocalDate(iso: string): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Argentina/Cordoba',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date(iso))
-}
-function eventLocalTime(iso: string): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'America/Argentina/Cordoba',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(new Date(iso))
-}
-function eventDateShort(iso: string): string {
-  return new Intl.DateTimeFormat('es-AR', {
-    timeZone: 'America/Argentina/Cordoba',
-    day: '2-digit',
-    month: '2-digit',
-  }).format(new Date(iso))
-}
-
 export function ReservationForm({
   mode,
   tenantSlug,
@@ -162,7 +136,6 @@ export function ReservationForm({
   managers,
   templates: templatesProp,
   initialEventsForDate,
-  hubEvents,
   rateTiers,
   bonusPerGuestCents,
   reservationId,
@@ -199,7 +172,6 @@ export function ReservationForm({
       reservation_time_local: '21:30',
       zone: 'planta_alta',
       scheduled_event_id: undefined,
-      hub_event_id: initialValues?.hub_event_id ?? undefined,
       requested_template_id: undefined,
       estimated_guests: 2,
       cake_count: 0,
@@ -612,87 +584,6 @@ export function ReservationForm({
               {form.formState.errors.scheduled_event_id?.message ? (
                 <p className="text-sm text-destructive">
                   {form.formState.errors.scheduled_event_id.message}
-                </p>
-              ) : null}
-            </FieldGroup>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* EVENTO HUB: asociar a un evento publicado del calendario */}
-      <AnimatePresence initial={false}>
-        {values.meal_type === 'hub_event' && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.18 }}
-          >
-            <FieldGroup title="Evento del calendario" icon={Sparkles}>
-              <p className="text-xs text-muted-foreground">
-                Asociá esta reserva a un evento publicado. Las personas cuentan contra el cupo del
-                evento; si está lleno entra a lista de espera.
-              </p>
-              <Select
-                value={values.hub_event_id ?? ''}
-                onValueChange={(v) => {
-                  form.setValue('hub_event_id', v || undefined, { shouldValidate: true })
-                  const ev = hubEvents.find((e) => e.id === v)
-                  if (ev) {
-                    form.setValue('reservation_date', eventLocalDate(ev.starts_at), {
-                      shouldValidate: true,
-                    })
-                    form.setValue('reservation_time_local', eventLocalTime(ev.starts_at), {
-                      shouldValidate: true,
-                    })
-                  }
-                }}
-              >
-                <SelectTrigger className="h-11 text-base">
-                  <SelectValue placeholder="Elegí un evento…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {hubEvents.length === 0 ? (
-                    <div className="px-3 py-2 text-sm text-muted-foreground">
-                      No hay eventos publicados próximos.{' '}
-                      <a
-                        href={`/${tenantSlug}/eventos/programados`}
-                        target="_blank"
-                        rel="noopener"
-                        className="text-primary underline"
-                      >
-                        Ir al calendario
-                      </a>
-                    </div>
-                  ) : (
-                    hubEvents.map((e) => {
-                      const remaining =
-                        e.capacity == null ? null : Math.max(0, e.capacity - e.confirmed_seats)
-                      const full = remaining !== null && remaining <= 0
-                      return (
-                        <SelectItem key={e.id} value={e.id} disabled={full && !e.waitlist_enabled}>
-                          <span className="flex items-center gap-2">
-                            {e.name}
-                            <span className="text-xs text-muted-foreground">
-                              · {eventDateShort(e.starts_at)} {eventLocalTime(e.starts_at)}
-                              {remaining === null
-                                ? ''
-                                : full
-                                  ? e.waitlist_enabled
-                                    ? ' · lleno (lista de espera)'
-                                    : ' · lleno'
-                                  : ` · ${remaining} lugares`}
-                            </span>
-                          </span>
-                        </SelectItem>
-                      )
-                    })
-                  )}
-                </SelectContent>
-              </Select>
-              {form.formState.errors.hub_event_id?.message ? (
-                <p className="text-sm text-destructive">
-                  {form.formState.errors.hub_event_id.message}
                 </p>
               ) : null}
             </FieldGroup>

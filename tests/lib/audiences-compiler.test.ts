@@ -84,24 +84,17 @@ describe('compileFilter', () => {
     expect(out.params).toEqual([{ type: 'uuid', value: TAG }])
   })
 
-  it('attended_event_id genera EXISTS con status checked_in', () => {
+  it('attended_event_id consulta salon_reservations del scheduled_event (asistió)', () => {
     const out = compileFilter({
       kind: 'group',
       op: 'AND',
       nodes: [{ kind: 'condition', field: 'attended_event_id', op: 'eq', value: UID }],
     })
-    expect(out.where).toContain("r.status = 'checked_in'")
-    expect(out.where).toContain('r.event_id = $2')
-  })
-
-  it('attended_event_id apunta a event_attendees, NO a la tabla vieja reservations (P1)', () => {
-    const out = compileFilter({
-      kind: 'group',
-      op: 'AND',
-      nodes: [{ kind: 'condition', field: 'attended_event_id', op: 'eq', value: UID }],
-    })
-    expect(out.where).toContain('public.event_attendees r')
-    expect(out.where).not.toContain('public.reservations')
+    expect(out.where).toContain('public.salon_reservations r')
+    expect(out.where).toContain('r.scheduled_event_id = $2')
+    expect(out.where).toContain("r.status in ('arrived', 'seated', 'closed')")
+    // Ya no usa la tabla events/event_attendees retirada.
+    expect(out.where).not.toContain('event_attendees')
   })
 
   it('acquisition_channel compila a c.acquisition_channel::text con valor de texto', () => {

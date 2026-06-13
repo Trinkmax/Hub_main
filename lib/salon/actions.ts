@@ -221,44 +221,9 @@ export async function createSalonReservation(
     },
   })
 
-  // Asociar al evento del calendario (cuenta contra cupo / waitlist).
-  let hubMessage = 'Reserva creada.'
-  if (parsed.data.meal_type === 'hub_event' && parsed.data.hub_event_id) {
-    const { data: linkData, error: linkErr } = await supabase.rpc(
-      'link_salon_reservation_to_event',
-      {
-        p_reservation_id: newId,
-        p_event_id: parsed.data.hub_event_id,
-      },
-    )
-    if (linkErr) {
-      revalidatePath(`/${slug}/reservas`)
-      return {
-        ok: true,
-        message: `Reserva creada, pero no se pudo asociar al evento: ${humanizeSalonError(linkErr.message)}`,
-        data: { id: newId },
-      }
-    }
-    const link = Array.isArray(linkData) ? linkData[0] : linkData
-    if (link?.status === 'waitlist') {
-      hubMessage = `Reserva creada — en lista de espera (puesto ${link.waitlist_position}).`
-    } else if (link?.status === 'confirmed') {
-      hubMessage = 'Reserva creada y confirmada en el evento.'
-    }
-    await logAudit({
-      tenantId: access.tenant.id,
-      userId: user?.id ?? null,
-      action: 'salon_reservation.linked_to_event',
-      entity: 'salon_reservation',
-      entityId: newId,
-      payload: { event_id: parsed.data.hub_event_id, status: link?.status ?? null },
-    })
-  }
-
   revalidatePath(`/${slug}/reservas`)
   revalidatePath(`/${slug}/salon/reservas-operativo`)
-  revalidatePath(`/${slug}/eventos`)
-  return { ok: true, message: hubMessage, data: { id: newId } }
+  return { ok: true, message: 'Reserva creada.', data: { id: newId } }
 }
 
 export async function updateSalonReservation(
@@ -276,13 +241,6 @@ export async function updateSalonReservation(
 
   const supabase = (await createClient()) as SBAny
   const { id, ...patch } = parsed.data
-  const { data: prevRow } = await supabase
-    .from('salon_reservations')
-    .select('hub_event_id')
-    .eq('tenant_id', access.tenant.id)
-    .eq('id', id)
-    .maybeSingle()
-  const prevHubEventId = (prevRow as { hub_event_id: string | null } | null)?.hub_event_id ?? null
   const { error } = await supabase
     .from('salon_reservations')
     .update({
@@ -313,22 +271,6 @@ export async function updateSalonReservation(
   // Si cambió gestor / actual_guests / meal_type, recalc.
   await supabase.rpc('recalc_reservation_commission', { p_reservation_id: id })
 
-  // Reconciliar asociación a evento (el UPDATE ya guardó meal_type/estimated_guests).
-  const wantsLink = patch.meal_type === 'hub_event' && !!patch.hub_event_id
-  if (wantsLink) {
-    if (prevHubEventId && prevHubEventId !== patch.hub_event_id) {
-      await supabase.rpc('unlink_salon_reservation_from_event', { p_reservation_id: id })
-    }
-    const { error: linkErr } = await supabase.rpc('link_salon_reservation_to_event', {
-      p_reservation_id: id,
-      p_event_id: patch.hub_event_id,
-    })
-    if (linkErr)
-      return { ok: false, message: humanizeSalonError(linkErr.message), code: linkErr.message }
-  } else if (prevHubEventId) {
-    await supabase.rpc('unlink_salon_reservation_from_event', { p_reservation_id: id })
-  }
-
   await logAudit({
     tenantId: access.tenant.id,
     userId: null,
@@ -340,7 +282,6 @@ export async function updateSalonReservation(
   revalidatePath(`/${slug}/reservas`)
   revalidatePath(`/${slug}/reservas/${id}`)
   revalidatePath(`/${slug}/salon/reservas-operativo`)
-  revalidatePath(`/${slug}/eventos`)
   return { ok: true, message: 'Reserva actualizada.' }
 }
 
@@ -367,9 +308,6 @@ export async function cancelSalonReservation(
   if (error) return { ok: false, message: humanizeSalonError(error.message) }
 
   await supabase.rpc('recalc_reservation_commission', { p_reservation_id: parsed.data.id })
-
-  // Liberar cupo del evento si estaba asociada (no-op si no lo estaba).
-  await supabase.rpc('unlink_salon_reservation_from_event', { p_reservation_id: parsed.data.id })
 
   await logAudit({
     tenantId: access.tenant.id,

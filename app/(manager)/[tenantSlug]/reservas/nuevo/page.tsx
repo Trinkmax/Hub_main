@@ -2,7 +2,6 @@ import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
-import { listLinkableHubEvents } from '@/lib/events/queries'
 import {
   getBonusRule,
   listManagers,
@@ -58,13 +57,12 @@ export default async function NuevaReservaPage({
     typeof sp.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : undefined
   const initialDate = dateParam ?? today
 
-  const [managers, templates, eventsToday, tiers, bonus, hubEvents] = await Promise.all([
+  const [managers, templates, eventsToday, tiers, bonus] = await Promise.all([
     listManagers({ tenantId: access.tenant.id, onlyActive: true }),
     listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: true }),
     listScheduledEventsForDate({ tenantId: access.tenant.id, date: initialDate }),
     listRateTiers({ tenantId: access.tenant.id }),
     getBonusRule({ tenantId: access.tenant.id }),
-    listLinkableHubEvents({ tenantId: access.tenant.id }),
   ])
 
   return (
@@ -89,7 +87,6 @@ export default async function NuevaReservaPage({
         managers={managers}
         templates={templates}
         initialEventsForDate={eventsToday}
-        hubEvents={hubEvents}
         rateTiers={tiers}
         bonusPerGuestCents={bonus?.bonus_per_guest_cents ?? 0}
       />
