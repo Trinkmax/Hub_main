@@ -34,3 +34,41 @@ export async function getAudience(tenantId: string, id: string) {
   if (error) return null
   return data
 }
+
+export type AudienceBuilderOptions = {
+  /** Niveles del club para el campo "Nivel actual". */
+  tiers: { id: string; name: string }[]
+  /** Tags de clientes para el campo "Tiene tag". */
+  tags: { id: string; name: string }[]
+  /** Eventos (shows) para el campo "Asistió a un evento". */
+  events: { id: string; name: string }[]
+}
+
+/**
+ * Opciones para los selects del builder de audiencias: niveles, tags y eventos
+ * del tenant. Reemplaza los inputs de UUID crudo por dropdowns legibles.
+ */
+export async function getAudienceBuilderOptions(tenantId: string): Promise<AudienceBuilderOptions> {
+  const supabase = await createClient()
+  const [tiers, tags, events] = await Promise.all([
+    supabase
+      .from('loyalty_tiers')
+      .select('id, name')
+      .eq('tenant_id', tenantId)
+      .order('min_lifetime_points', { ascending: true }),
+    supabase.from('customer_tags').select('id, name').eq('tenant_id', tenantId).order('name'),
+    supabase
+      .from('events')
+      .select('id, name')
+      .eq('tenant_id', tenantId)
+      .in('status', ['published', 'finished'])
+      .order('starts_at', { ascending: false })
+      .limit(100),
+  ])
+
+  return {
+    tiers: tiers.data ?? [],
+    tags: tags.data ?? [],
+    events: events.data ?? [],
+  }
+}

@@ -2,7 +2,7 @@ import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
-import { getAudience } from '@/lib/audiences/queries'
+import { getAudience, getAudienceBuilderOptions } from '@/lib/audiences/queries'
 import type { AudienceFilter } from '@/lib/audiences/schemas'
 import {
   RoleRequiredError,
@@ -31,7 +31,10 @@ export default async function EditAudiencePage({
     throw error
   }
 
-  const audience = await getAudience(access.tenant.id, id)
+  const [audience, options] = await Promise.all([
+    getAudience(access.tenant.id, id),
+    getAudienceBuilderOptions(access.tenant.id),
+  ])
   if (!audience) notFound()
 
   return (
@@ -50,6 +53,7 @@ export default async function EditAudiencePage({
       />
       <AudienceForm
         tenantSlug={tenantSlug}
+        options={options}
         audienceId={audience.id}
         initialName={audience.name}
         initialFilters={audience.filters as unknown as AudienceFilter}

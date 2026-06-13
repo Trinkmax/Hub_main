@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useActionState, useEffect } from 'react'
 import { toast } from 'sonner'
 import { type AudienceActionState, createAudience, updateAudience } from '@/lib/audiences/actions'
+import type { AudienceBuilderOptions } from '@/lib/audiences/queries'
 import type { AudienceFilter } from '@/lib/audiences/schemas'
 import { AudienceBuilder } from './builder'
 
@@ -11,11 +12,13 @@ const initial: AudienceActionState = { ok: true }
 
 export function AudienceForm({
   tenantSlug,
+  options,
   audienceId,
   initialName,
   initialFilters,
 }: {
   tenantSlug: string
+  options: AudienceBuilderOptions
   audienceId?: string
   initialName?: string
   initialFilters?: AudienceFilter
@@ -40,6 +43,7 @@ export function AudienceForm({
     <form action={formAction} className="space-y-4">
       <AudienceBuilder
         tenantSlug={tenantSlug}
+        options={options}
         initialName={initialName}
         initialFilters={initialFilters}
         hiddenIdField={audienceId}

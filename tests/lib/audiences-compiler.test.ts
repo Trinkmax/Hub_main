@@ -94,6 +94,56 @@ describe('compileFilter', () => {
     expect(out.where).toContain('r.event_id = $2')
   })
 
+  it('attended_event_id apunta a event_attendees, NO a la tabla vieja reservations (P1)', () => {
+    const out = compileFilter({
+      kind: 'group',
+      op: 'AND',
+      nodes: [{ kind: 'condition', field: 'attended_event_id', op: 'eq', value: UID }],
+    })
+    expect(out.where).toContain('public.event_attendees r')
+    expect(out.where).not.toContain('public.reservations')
+  })
+
+  it('acquisition_channel compila a c.acquisition_channel::text con valor de texto', () => {
+    const out = compileFilter({
+      kind: 'group',
+      op: 'AND',
+      nodes: [{ kind: 'condition', field: 'acquisition_channel', op: 'eq', value: 'walkin' }],
+    })
+    expect(out.where).toContain('c.acquisition_channel::text = $2')
+    expect(out.params).toEqual([{ type: 'text', value: 'walkin' }])
+  })
+
+  it('current_tier_id eq coacciona a uuid', () => {
+    const out = compileFilter({
+      kind: 'group',
+      op: 'AND',
+      nodes: [{ kind: 'condition', field: 'current_tier_id', op: 'eq', value: TAG }],
+    })
+    expect(out.where).toContain('c.current_tier_id = $2')
+    expect(out.params).toEqual([{ type: 'uuid', value: TAG }])
+  })
+
+  it('current_tier_id is_null no agrega params (clientes sin nivel)', () => {
+    const out = compileFilter({
+      kind: 'group',
+      op: 'AND',
+      nodes: [{ kind: 'condition', field: 'current_tier_id', op: 'is_null', value: null }],
+    })
+    expect(out.where).toContain('c.current_tier_id IS NULL')
+    expect(out.params).toEqual([])
+  })
+
+  it('lifetime_points compila a c.lifetime_points_earned', () => {
+    const out = compileFilter({
+      kind: 'group',
+      op: 'AND',
+      nodes: [{ kind: 'condition', field: 'lifetime_points', op: 'gte', value: 500 }],
+    })
+    expect(out.where).toContain('c.lifetime_points_earned >= $2')
+    expect(out.params).toEqual([{ type: 'int', value: 500 }])
+  })
+
   it('rechaza un op no permitido para el field', () => {
     expect(() =>
       compileFilter({

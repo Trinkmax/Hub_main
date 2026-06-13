@@ -105,6 +105,24 @@ const FIELDS: Record<ConditionField, FieldDef> = {
     paramType: 'text',
     allowedOps: ['eq', 'neq', 'in', 'not_in'],
   },
+  acquisition_channel: {
+    kind: 'scalar',
+    expr: 'c.acquisition_channel::text',
+    paramType: 'text',
+    allowedOps: ['eq', 'neq', 'in', 'not_in'],
+  },
+  lifetime_points: {
+    kind: 'scalar',
+    expr: 'c.lifetime_points_earned',
+    paramType: 'int',
+    allowedOps: ['eq', 'neq', 'gt', 'gte', 'lt', 'lte'],
+  },
+  current_tier_id: {
+    kind: 'scalar',
+    expr: 'c.current_tier_id',
+    paramType: 'uuid',
+    allowedOps: ['eq', 'neq', 'in', 'not_in', 'is_null', 'is_not_null'],
+  },
   has_tag: { kind: 'subquery', allowedOps: ['eq', 'neq'] },
   attended_event_id: { kind: 'subquery', allowedOps: ['eq', 'neq'] },
 }
@@ -190,8 +208,10 @@ class Compiler {
     }
     if (field === 'attended_event_id') {
       const ph = this.addParam(coerce('uuid', value))
+      // La tabla `reservations` se renombró a `event_attendees` (migración
+      // 20260520000000); apuntar a la vieja crasheaba el preview en runtime.
       const inner =
-        `select 1 from public.reservations r` +
+        `select 1 from public.event_attendees r` +
         ` where r.customer_id = c.id and r.event_id = ${ph} and r.status = 'checked_in'`
       return negate ? `NOT EXISTS (${inner})` : `EXISTS (${inner})`
     }

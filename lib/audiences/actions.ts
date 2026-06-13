@@ -138,11 +138,34 @@ export async function previewAudience(
     return { ok: false, message: (e as Error).message }
   }
   try {
-    const result = await evaluateAudience(access.tenant.id, parsed.filters, { limit: 20 })
-    return { ok: true, total: result.total, sample: result.customerIds }
+    // limit 8 = la muestra que mostramos; total viene del count_total del RPC.
+    const result = await evaluateAudience(access.tenant.id, parsed.filters, { limit: 8 })
+    const sample = await sampleNames(access.tenant.id, result.customerIds)
+    return { ok: true, total: result.total, sample }
   } catch (e) {
     return { ok: false, message: (e as Error).message }
   }
+}
+
+/**
+ * Resuelve nombres legibles para los IDs de la muestra del preview (en vez de
+ * mostrar UUIDs crudos). Preserva el orden devuelto por el evaluador.
+ */
+async function sampleNames(tenantId: string, ids: string[]): Promise<string[]> {
+  if (ids.length === 0) return []
+  const service = createServiceClient()
+  const { data } = await service
+    .from('customers')
+    .select('id, first_name, last_name')
+    .eq('tenant_id', tenantId)
+    .in('id', ids)
+  const byId = new Map((data ?? []).map((c) => [c.id, c]))
+  return ids.map((id) => {
+    const c = byId.get(id)
+    if (!c) return 'Cliente'
+    const full = `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim()
+    return full.length > 0 ? full : 'Cliente'
+  })
 }
 
 const idSchema = z.object({ id: z.string().uuid() })

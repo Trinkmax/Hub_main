@@ -2,6 +2,7 @@ import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { getAudienceBuilderOptions } from '@/lib/audiences/queries'
 import {
   RoleRequiredError,
   requireRole,
@@ -18,14 +19,17 @@ export default async function NewAudiencePage({
   params: Promise<{ tenantSlug: string }>
 }) {
   const { tenantSlug } = await params
+  let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
-    const access = await requireTenantAccess(tenantSlug)
+    access = await requireTenantAccess(tenantSlug)
     requireRole(access.role, ['owner'])
   } catch (error) {
     if (error instanceof TenantNotFoundError) notFound()
     if (error instanceof RoleRequiredError) notFound()
     throw error
   }
+
+  const options = await getAudienceBuilderOptions(access.tenant.id)
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
@@ -41,7 +45,7 @@ export default async function NewAudiencePage({
         title="Nueva audiencia"
         description="Combiná condiciones con Y / O para armar el grupo. La preview se actualiza mientras escribís."
       />
-      <AudienceForm tenantSlug={tenantSlug} />
+      <AudienceForm tenantSlug={tenantSlug} options={options} />
     </div>
   )
 }
