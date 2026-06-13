@@ -49,6 +49,7 @@ export function WelcomeRewardForm({
   const [rewardId, setRewardId] = useState<string | null>(initialConfig.reward_id)
   const [headline, setHeadline] = useState(initialConfig.headline)
   const [subtext, setSubtext] = useState(initialConfig.subtext)
+  const [bonusPoints, setBonusPoints] = useState<string>(String(initialConfig.bonus_points ?? 0))
 
   const [state, formAction] = useActionState<WelcomeRewardActionState, FormData>(
     (prev, fd) => updateWelcomeRewardConfig(tenantSlug, prev, fd),
@@ -74,13 +75,15 @@ export function WelcomeRewardForm({
     setRewardId(initialConfig.reward_id)
     setHeadline(initialConfig.headline)
     setSubtext(initialConfig.subtext)
+    setBonusPoints(String(initialConfig.bonus_points ?? 0))
   }
 
   const hasChanges =
     enabled !== initialConfig.enabled ||
     rewardId !== initialConfig.reward_id ||
     headline !== initialConfig.headline ||
-    subtext !== initialConfig.subtext
+    subtext !== initialConfig.subtext ||
+    Number(bonusPoints || 0) !== (initialConfig.bonus_points ?? 0)
 
   // Warning de stock: solo si está seleccionado y tiene stock controlado.
   const isLowStock =
@@ -238,6 +241,46 @@ export function WelcomeRewardForm({
               </p>
             </div>
           ) : null}
+        </div>
+
+        {/* Card 2b: Bonus de puntos de bienvenida */}
+        <div
+          className={cn(
+            'card-hairline rounded-xl border bg-card p-5 space-y-3 transition-opacity',
+            !enabled && 'opacity-60',
+          )}
+        >
+          <div className="space-y-1">
+            <h2 className="font-display text-base font-semibold tracking-tight">
+              Puntos de bienvenida
+            </h2>
+            <p className="text-xs text-muted-foreground text-pretty">
+              Sumá puntos iniciales a la cuenta del cliente al unirse al club. Es un empujón para
+              que arranque a acumular desde el primer día.
+            </p>
+          </div>
+          <div className="grid gap-1.5 sm:max-w-[200px]">
+            <Label htmlFor="bonus_points" className="text-[11px] text-muted-foreground">
+              Puntos iniciales
+            </Label>
+            <Input
+              id="bonus_points"
+              name="bonus_points"
+              type="number"
+              min={0}
+              step={1}
+              inputMode="numeric"
+              value={bonusPoints}
+              onChange={(e) => setBonusPoints(e.target.value)}
+              disabled={!enabled}
+              className="tabular-nums"
+              placeholder="0"
+              aria-describedby="bonus_points-hint"
+            />
+            <p id="bonus_points-hint" className="text-[11px] text-muted-foreground">
+              0 = ninguno.
+            </p>
+          </div>
         </div>
 
         {/* Card 3: Mensaje al cliente */}

@@ -2,7 +2,7 @@ import { Gift, Info, Star } from 'lucide-react'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { listMenu } from '@/lib/menu/queries'
-import { getPointsRedemptionConfig, listRewards, listRules } from '@/lib/points/queries'
+import { getPointsRedemptionConfig, listRewards, listRules, listTiers } from '@/lib/points/queries'
 import {
   RoleRequiredError,
   requireRole,
@@ -56,11 +56,12 @@ export default async function PuntosPage({ params }: { params: Promise<{ tenantS
     throw error
   }
 
-  const [rules, rewards, menu, redemptionConfig] = await Promise.all([
+  const [rules, rewards, menu, redemptionConfig, tiers] = await Promise.all([
     listRules({ tenantId: access.tenant.id }),
     listRewards({ tenantId: access.tenant.id }),
     listMenu({ tenantId: access.tenant.id }),
     getPointsRedemptionConfig(access.tenant.id),
+    listTiers({ tenantId: access.tenant.id }),
   ])
 
   const activeRuleSummary = describeActivePerAmountRule(rules as Rule[])
@@ -146,8 +147,8 @@ export default async function PuntosPage({ params }: { params: Promise<{ tenantS
             <Gift className="size-4 text-primary" />
             <h2 className="font-display text-base font-semibold tracking-tight">Recompensas</h2>
           </header>
-          <NewRewardForm tenantSlug={tenantSlug} />
-          <RewardsList tenantSlug={tenantSlug} rewards={rewards} />
+          <NewRewardForm tenantSlug={tenantSlug} tiers={tiers} />
+          <RewardsList tenantSlug={tenantSlug} rewards={rewards} tiers={tiers} />
         </section>
       </div>
     </div>

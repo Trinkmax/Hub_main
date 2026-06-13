@@ -131,15 +131,27 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Menú', href: (s) => `/${s}/menu`, icon: 'UtensilsCrossed', roles: ['owner'] },
       {
         label: 'Club de beneficios',
-        href: (s) => `/${s}/puntos`,
+        href: (s) => `/${s}/club`,
         icon: 'Star',
         roles: ['owner'],
         children: [
+          {
+            label: 'Niveles',
+            href: (s) => `/${s}/club/niveles`,
+            icon: 'Sparkles',
+            roles: ['owner'],
+          },
           { label: 'Puntos', href: (s) => `/${s}/puntos`, icon: 'Star', roles: ['owner'] },
           {
             label: 'Punch cards',
             href: (s) => `/${s}/punch-cards`,
             icon: 'Stamp',
+            roles: ['owner'],
+          },
+          {
+            label: 'Bienvenida',
+            href: (s) => `/${s}/configuracion/bienvenida`,
+            icon: 'Gift',
             roles: ['owner'],
           },
         ],
