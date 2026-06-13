@@ -3,6 +3,14 @@ import { requireEnv } from '@/lib/env'
 
 const DEFAULT_GRAPH_VERSION = 'v23.0'
 
+/**
+ * ¿Está configurada la app de Meta a nivel plataforma? (sin throw — para decidir
+ * la UX antes de intentar el OAuth). Sin META_APP_ID/SECRET no se puede conectar.
+ */
+export function isMetaConfigured(): boolean {
+  return Boolean(process.env.META_APP_ID && process.env.META_APP_SECRET)
+}
+
 export function getMetaConfig() {
   return {
     appId: requireEnv('META_APP_ID'),
