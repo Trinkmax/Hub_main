@@ -1,6 +1,5 @@
 import { Globe2, Palette, Type } from 'lucide-react'
 import { notFound } from 'next/navigation'
-import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { PageHeader } from '@/components/ui/page-header'
 import {
@@ -9,6 +8,7 @@ import {
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
+import { BrandAccentPicker } from './_components/brand-accent-picker'
 import { LogoUploader } from './_components/logo-uploader'
 
 export const metadata = { title: 'Apariencia' }
@@ -66,15 +66,15 @@ export default async function AparienciaPage({
             <Palette className="size-5" aria-hidden />
           </div>
           <div className="flex-1 space-y-1">
-            <div className="flex items-center gap-2">
-              <h2 className="font-serif text-lg font-semibold tracking-tight">Acento del bar</h2>
-              <Badge variant="muted">Próximamente</Badge>
-            </div>
+            <h2 className="font-serif text-lg font-semibold tracking-tight">Acento del bar</h2>
             <p className="text-sm text-muted-foreground">
-              HUB hereda forest green como acento. Cuando se habilite, vas a poder elegir un color
-              de marca propio que aparece en sidebar, botones primarios y emails.
+              Elegí el color de marca de tu bar. Se aplica en las superficies que ven tus clientes:
+              la carta, la wallet de puntos y la pantalla de reseñas.
             </p>
           </div>
+        </div>
+        <div className="px-1">
+          <BrandAccentPicker tenantSlug={tenantSlug} initial={access.tenant.brand_accent ?? null} />
         </div>
       </Card>
 

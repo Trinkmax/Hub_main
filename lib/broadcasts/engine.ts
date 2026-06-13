@@ -132,7 +132,7 @@ export async function handleSendBroadcastMessage(payload: unknown): Promise<void
   const { data: recipient, error: recErr } = await service
     .from('broadcast_recipients')
     .select(
-      'id, broadcast_id, customer_id, status, broadcast:broadcasts(id, tenant_id, channel_id, template_id), customer:customers(phone, first_name, last_name)',
+      'id, broadcast_id, customer_id, status, broadcast:broadcasts(id, tenant_id, channel_id, template_id), customer:customers(phone, first_name, last_name, opt_in_marketing)',
     )
     .eq('id', data.recipient_id)
     .maybeSingle()
@@ -145,14 +145,24 @@ export async function handleSendBroadcastMessage(payload: unknown): Promise<void
       | { id: string; tenant_id: string; channel_id: string; template_id: string }[]
       | null
     customer:
-      | { phone: string; first_name: string; last_name: string }
-      | { phone: string; first_name: string; last_name: string }[]
+      | { phone: string; first_name: string; last_name: string; opt_in_marketing: boolean }
+      | { phone: string; first_name: string; last_name: string; opt_in_marketing: boolean }[]
       | null
   }
   const r = recipient as Joined
   const broadcast = Array.isArray(r.broadcast) ? r.broadcast[0] : r.broadcast
   const customer = Array.isArray(r.customer) ? r.customer[0] : r.customer
   if (!broadcast || !customer) throw new Error('broadcast/customer missing')
+
+  // Compliance §8: re-chequeo de opt-in al ENVIAR (no solo al armar la audiencia).
+  // Si el cliente revocó el opt-in entre la materialización y el envío, no se manda.
+  if (!customer.opt_in_marketing) {
+    await service
+      .from('broadcast_recipients')
+      .update({ status: 'failed', error: 'opt_out' })
+      .eq('id', recipient.id)
+    return
+  }
 
   const { data: channel } = await service
     .from('channels')

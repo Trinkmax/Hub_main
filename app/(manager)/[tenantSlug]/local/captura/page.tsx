@@ -38,9 +38,9 @@ export default async function CapturaConfigPage({
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <PageHeader
-        eyebrow="Configuración"
-        title="Captura de clientes"
-        description="Generá QRs únicos por mesa, barra o evento. Los clientes los escanean y cargan sus datos solos."
+        eyebrow="Club de beneficios"
+        title="QR para unirse al club"
+        description="Generá el QR que tus mozos muestran para invitar a los clientes a unirse al club. Lo escanean y cargan sus datos solos."
       />
 
       <div className="card-hairline rounded-xl border bg-card p-5">

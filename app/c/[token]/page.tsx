@@ -1,23 +1,24 @@
 import { notFound } from 'next/navigation'
 import QRCode from 'qrcode'
+import { BrandAccent } from '@/components/theme/brand-accent-provider'
 import { getAppUrl } from '@/lib/app-url'
-import { getCustomerPanelByToken } from '@/lib/c-panel/queries'
-import { CustomerPanelLayout } from './_components/customer-panel-layout'
+import { getWalletByToken } from '@/lib/wallet/queries'
+import { WalletShell } from './_components/wallet-shell'
 
-export const metadata = { title: 'Mi cuenta' }
+export const metadata = { title: 'Mi wallet' }
 export const dynamic = 'force-dynamic'
 
-export default async function CustomerPanelPage({
+export default async function CustomerWalletPage({
   params,
 }: {
   params: Promise<{ token: string }>
 }) {
   const { token } = await params
-  const data = await getCustomerPanelByToken(token)
+  const data = await getWalletByToken(token)
   if (!data) notFound()
 
   const appUrl = await getAppUrl()
-  const qrUrl = `${appUrl}/c/${data.customer.qr_token}`
+  const qrUrl = `${appUrl}/c/${data.customer.qrToken}`
   const qrDataUrl = await QRCode.toDataURL(qrUrl, {
     width: 360,
     margin: 1,
@@ -26,15 +27,8 @@ export default async function CustomerPanelPage({
   })
 
   return (
-    <CustomerPanelLayout
-      tenantName={data.tenant.name}
-      firstName={data.customer.first_name}
-      lastName={data.customer.last_name}
-      pointsBalance={data.customer.points_balance}
-      lunchCard={data.active_lunch_card}
-      upcomingEvents={data.upcoming_events}
-      qrDataUrl={qrDataUrl}
-      qrToken={data.customer.qr_token}
-    />
+    <BrandAccent accent={data.tenant.brandAccent} className="min-h-[100dvh] bg-background">
+      <WalletShell data={data} qrDataUrl={qrDataUrl} />
+    </BrandAccent>
   )
 }

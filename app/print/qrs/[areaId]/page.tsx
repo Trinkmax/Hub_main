@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { getAppUrl } from '@/lib/app-url'
+import { requireFeatureByTenantId } from '@/lib/platform/guards'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { buildQrSheet, type QrSheet } from '@/lib/tables/qr-pdf'
@@ -39,6 +40,9 @@ export default async function PrintAreaQrsPage({
     .eq('tenant_id', area.tenant_id)
     .maybeSingle()
   if (!membership || membership.role !== 'owner') notFound()
+
+  // QR por mesa oculto detrás del feature-flag table_qr (superadmin lo ve igual).
+  await requireFeatureByTenantId(area.tenant_id, 'table_qr')
 
   const { data: tenant } = await service
     .from('tenants')

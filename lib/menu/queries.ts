@@ -1,6 +1,7 @@
 import 'server-only'
 import { getTagsByItemIds, type ItemTag } from '@/lib/item-tags/queries'
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 
 export type MenuCategory = {
   id: string
@@ -83,6 +84,78 @@ export async function listMenu(opts: { tenantId: string }): Promise<{
     active: i.active,
     image_url: i.image_url,
     featured: featuredById.get(i.id) ?? false,
+    tags: tagsByItem.get(i.id) ?? [],
+  }))
+
+  return {
+    categories: (cats ?? []) as MenuCategory[],
+    items: mergedItems,
+  }
+}
+
+/**
+ * Variante PÚBLICA de la carta activa: lee con service-role porque la carta
+ * read-only (/carta/[slug]) la ve un visitante anónimo y las tablas de menú no
+ * están en el allow-list de `anon` (RLS las bloquearía). Sólo categorías/ítems
+ * activos. Nunca expone datos sensibles del tenant.
+ */
+export async function listActiveMenuPublic(opts: { tenantId: string }): Promise<{
+  categories: MenuCategory[]
+  items: MenuItem[]
+}> {
+  const service = createServiceClient()
+  const [{ data: cats }, { data: items }] = await Promise.all([
+    service
+      .from('menu_categories')
+      .select('id, name, position, active, image_url, parent_id')
+      .eq('tenant_id', opts.tenantId)
+      .eq('active', true)
+      .order('position', { ascending: true }),
+    service
+      .from('menu_items')
+      .select(
+        'id, category_id, name, description, price_cents, points_override, position, active, image_url, featured',
+      )
+      .eq('tenant_id', opts.tenantId)
+      .eq('active', true)
+      .not('category_id', 'is', null)
+      .order('position', { ascending: true }),
+  ])
+
+  const rawItems = (items ?? []) as Array<Omit<MenuItem, 'tags'>>
+
+  // Tags vía service (mismo client, bypass RLS) — un round-trip indexado por item.
+  const tagsByItem = new Map<string, ItemTag[]>()
+  if (rawItems.length > 0) {
+    const { data: assigns } = await service
+      .from('menu_item_tag_assignments')
+      .select('menu_item_id, tag:item_tags(id, tenant_id, name, color)')
+      .in(
+        'menu_item_id',
+        rawItems.map((i) => i.id),
+      )
+    type Joined = { menu_item_id: string; tag: ItemTag | ItemTag[] | null }
+    for (const row of (assigns ?? []) as unknown as Joined[]) {
+      const t = Array.isArray(row.tag) ? row.tag[0] : row.tag
+      if (!t) continue
+      const list = tagsByItem.get(row.menu_item_id)
+      if (list) list.push(t)
+      else tagsByItem.set(row.menu_item_id, [t])
+    }
+    for (const list of tagsByItem.values()) list.sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  const mergedItems: MenuItem[] = rawItems.map((i) => ({
+    id: i.id,
+    category_id: i.category_id,
+    name: i.name,
+    description: i.description,
+    price_cents: i.price_cents,
+    points_override: i.points_override,
+    position: i.position,
+    active: i.active,
+    image_url: i.image_url,
+    featured: i.featured ?? false,
     tags: tagsByItem.get(i.id) ?? [],
   }))
 

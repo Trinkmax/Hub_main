@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import { requireFeatureByTenantId } from '@/lib/platform/guards'
 import { createServiceClient } from '@/lib/supabase/service'
 import { MesaScreen } from './_components/mesa-screen'
 import { WaitingForWaiter } from './_components/waiting-for-waiter'
@@ -18,6 +19,10 @@ export default async function MesaPage({ params }: { params: Promise<{ qrToken: 
     .maybeSingle()
 
   if (!table?.active) notFound()
+
+  // Auto-pedido por mesa oculto detrás del feature-flag table_qr (producto
+  // loyalty-first: el QR de mesa no se autogestiona salvo que el bar lo habilite).
+  await requireFeatureByTenantId(table.tenant_id, 'table_qr')
 
   const { data: tenant } = await service
     .from('tenants')

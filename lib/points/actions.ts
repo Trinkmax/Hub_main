@@ -14,9 +14,11 @@ import {
 import {
   createRewardSchema,
   createRuleSchema,
+  createTierSchema,
   type UpdatePointsRedemptionConfigInput,
   updatePointsRedemptionConfigSchema,
   updateRewardSchema,
+  updateTierSchema,
 } from './schemas'
 
 export type LoyaltyActionState = { ok: true; message?: string } | { ok: false; message: string }
@@ -310,6 +312,7 @@ export async function createReward(
     description: formData.get('description'),
     cost_points: formData.get('cost_points'),
     stock: formData.get('stock'),
+    min_tier_id: formData.get('min_tier_id'),
   })
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
@@ -322,6 +325,7 @@ export async function createReward(
     description: parsed.data.description,
     cost_points: parsed.data.cost_points,
     stock: parsed.data.stock,
+    min_tier_id: parsed.data.min_tier_id,
   })
   if (error) return { ok: false, message: 'No pudimos crear la recompensa.' }
 
@@ -346,6 +350,7 @@ export async function updateReward(
     cost_points: number
     stock: number | null
     active: boolean
+    min_tier_id?: string | null
   },
 ): Promise<LoyaltyActionState> {
   const tenant = await authorizeOwner(slug)
@@ -363,12 +368,121 @@ export async function updateReward(
       cost_points: parsed.data.cost_points,
       stock: parsed.data.stock,
       active: parsed.data.active,
+      min_tier_id: parsed.data.min_tier_id,
     })
     .eq('id', parsed.data.id)
     .eq('tenant_id', tenant.id)
   if (error) return { ok: false, message: 'No pudimos actualizar.' }
 
-  revalidatePath(`/${slug}/configuracion/puntos`)
+  revalidatePath(`/${slug}/club`)
+  return { ok: true }
+}
+
+// ──────────────────────────────────────────────────────────
+// Niveles del club (loyalty_tiers)
+// ──────────────────────────────────────────────────────────
+
+export async function createTier(slug: string, input: unknown): Promise<LoyaltyActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = createTierSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase.from('loyalty_tiers').insert({
+    tenant_id: tenant.id,
+    name: parsed.data.name,
+    color: parsed.data.color,
+    badge_icon: parsed.data.badge_icon,
+    min_lifetime_points: parsed.data.min_lifetime_points,
+    sort: parsed.data.sort,
+    benefit_cadence: parsed.data.benefit_cadence,
+    benefit_reward_id: parsed.data.benefit_reward_id,
+    perks: parsed.data.perks,
+    active: parsed.data.active,
+  })
+  if (error) {
+    if (error.code === '23505') {
+      return { ok: false, message: 'Ya existe un nivel con ese umbral de puntos.' }
+    }
+    return { ok: false, message: 'No pudimos crear el nivel.' }
+  }
+
+  await logAudit({
+    tenantId: tenant.id,
+    userId: null,
+    action: 'loyalty_tier.created',
+    entity: 'loyalty_tier',
+    payload: { name: parsed.data.name, min_lifetime_points: parsed.data.min_lifetime_points },
+  })
+
+  revalidatePath(`/${slug}/club/niveles`)
+  return { ok: true, message: 'Nivel creado.' }
+}
+
+export async function updateTier(slug: string, input: unknown): Promise<LoyaltyActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = updateTierSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('loyalty_tiers')
+    .update({
+      name: parsed.data.name,
+      color: parsed.data.color,
+      badge_icon: parsed.data.badge_icon,
+      min_lifetime_points: parsed.data.min_lifetime_points,
+      sort: parsed.data.sort,
+      benefit_cadence: parsed.data.benefit_cadence,
+      benefit_reward_id: parsed.data.benefit_reward_id,
+      perks: parsed.data.perks,
+      active: parsed.data.active,
+    })
+    .eq('id', parsed.data.id)
+    .eq('tenant_id', tenant.id)
+  if (error) {
+    if (error.code === '23505') {
+      return { ok: false, message: 'Ya existe un nivel con ese umbral de puntos.' }
+    }
+    return { ok: false, message: 'No pudimos actualizar el nivel.' }
+  }
+
+  revalidatePath(`/${slug}/club/niveles`)
+  return { ok: true }
+}
+
+export async function deleteTier(slug: string, id: string): Promise<LoyaltyActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+
+  const idParsed = z.string().uuid().safeParse(id)
+  if (!idParsed.success) return { ok: false, message: 'ID inválido.' }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('loyalty_tiers')
+    .delete()
+    .eq('id', idParsed.data)
+    .eq('tenant_id', tenant.id)
+  if (error) return { ok: false, message: 'No pudimos borrar el nivel.' }
+
+  await logAudit({
+    tenantId: tenant.id,
+    userId: null,
+    action: 'loyalty_tier.deleted',
+    entity: 'loyalty_tier',
+    entityId: idParsed.data,
+  })
+
+  revalidatePath(`/${slug}/club/niveles`)
   return { ok: true }
 }
 

@@ -72,6 +72,13 @@ export async function listCustomers(opts: {
     query = query.eq('total_visits', 0)
   }
 
+  // Segmento de adquisición (nav Personas → Reservas / Walk-in).
+  if (filters.segment === 'reserva') {
+    query = query.eq('acquisition_channel', 'reservation')
+  } else if (filters.segment === 'walkin') {
+    query = query.neq('acquisition_channel', 'reservation')
+  }
+
   const from = (filters.page - 1) * PAGE_SIZE
   const to = from + PAGE_SIZE - 1
   query = query.range(from, to)

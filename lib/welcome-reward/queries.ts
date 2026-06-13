@@ -19,6 +19,7 @@ export type WelcomeRewardConfigWithReward = {
   reward_id: string | null
   headline: string
   subtext: string
+  bonus_points: number
   updated_at: string | null
   reward: WelcomeRewardRewardInfo | null
 }
@@ -37,7 +38,7 @@ export async function getWelcomeRewardConfig(
     // biome-ignore lint/suspicious/noExplicitAny: tabla nueva sin tipos regenerados
     .from('welcome_reward_configs' as any)
     .select(
-      'tenant_id, enabled, reward_id, headline, subtext, updated_at, reward:rewards(id, name, description, image_url, stock, active, cost_points)',
+      'tenant_id, enabled, reward_id, headline, subtext, bonus_points, updated_at, reward:rewards(id, name, description, image_url, stock, active, cost_points)',
     )
     .eq('tenant_id', tenantId)
     .maybeSingle()
@@ -50,6 +51,7 @@ export async function getWelcomeRewardConfig(
       reward_id: null,
       headline: DEFAULT_HEADLINE,
       subtext: DEFAULT_SUBTEXT,
+      bonus_points: 0,
       updated_at: null,
       reward: null,
     }
@@ -62,6 +64,7 @@ export async function getWelcomeRewardConfig(
       reward_id: null,
       headline: DEFAULT_HEADLINE,
       subtext: DEFAULT_SUBTEXT,
+      bonus_points: 0,
       updated_at: null,
       reward: null,
     }
@@ -73,6 +76,7 @@ export async function getWelcomeRewardConfig(
     reward_id: string | null
     headline: string
     subtext: string
+    bonus_points: number | null
     updated_at: string | null
     reward: WelcomeRewardRewardInfo | WelcomeRewardRewardInfo[] | null
   }
@@ -85,6 +89,7 @@ export async function getWelcomeRewardConfig(
     reward_id: r.reward_id,
     headline: r.headline,
     subtext: r.subtext,
+    bonus_points: r.bonus_points ?? 0,
     updated_at: r.updated_at,
     reward,
   }

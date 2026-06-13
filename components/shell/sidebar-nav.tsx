@@ -1,41 +1,54 @@
 'use client'
 
+import { ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import type { ResolvedNavGroup, ResolvedNavItem } from './nav-config'
 import { NAV_ICONS } from './nav-icons'
 
 function matches(pathname: string, href: string, exact?: boolean): boolean {
-  if (exact) return pathname === href
-  if (pathname === href) return true
-  return pathname.startsWith(`${href}/`)
+  // Ignoramos query-string (los hijos por segmento comparten pathname con el padre).
+  const path = href.split('?')[0] ?? href
+  if (exact) return pathname === path
+  if (pathname === path) return true
+  return pathname.startsWith(`${path}/`)
+}
+
+function flatten(groups: ResolvedNavGroup[]): ResolvedNavItem[] {
+  const out: ResolvedNavItem[] = []
+  for (const g of groups) {
+    for (const item of g.items) {
+      out.push(item)
+      if (item.children) out.push(...item.children)
+    }
+  }
+  return out
 }
 
 /**
  * Sólo el item con el `href` más largo (= más específico) gana cuando varios
- * matchean. Evita que `/estadisticas/comisiones` active además a `Estadísticas`
- * cuyo href `/estadisticas` también es prefix válido.
+ * matchean. Aplana padres + hijos para que el longest-prefix funcione cruzando
+ * niveles de anidación.
  */
 function computeActiveHrefs(pathname: string, groups: ResolvedNavGroup[]): Set<string> {
+  const all = flatten(groups)
   let maxLen = 0
-  for (const g of groups) {
-    for (const item of g.items) {
-      if (item.newTab) continue
-      if (matches(pathname, item.href, item.exact) && item.href.length > maxLen) {
-        maxLen = item.href.length
-      }
+  for (const item of all) {
+    if (item.newTab) continue
+    const path = item.href.split('?')[0] ?? item.href
+    if (matches(pathname, item.href, item.exact) && path.length > maxLen) {
+      maxLen = path.length
     }
   }
   const active = new Set<string>()
   if (maxLen === 0) return active
-  for (const g of groups) {
-    for (const item of g.items) {
-      if (item.newTab) continue
-      if (matches(pathname, item.href, item.exact) && item.href.length === maxLen) {
-        active.add(item.href)
-      }
+  for (const item of all) {
+    if (item.newTab) continue
+    const path = item.href.split('?')[0] ?? item.href
+    if (matches(pathname, item.href, item.exact) && path.length === maxLen) {
+      active.add(item.href)
     }
   }
   return active
@@ -59,15 +72,24 @@ export function SidebarNav({
             {group.label}
           </div>
           <ul className="space-y-0.5">
-            {group.items.map((item) => (
-              <li key={item.label}>
-                <SidebarLink
+            {group.items.map((item) =>
+              item.children?.length ? (
+                <SidebarParent
+                  key={item.label}
                   item={item}
-                  active={!item.newTab && activeHrefs.has(item.href)}
+                  activeHrefs={activeHrefs}
                   onNavigate={onNavigate}
                 />
-              </li>
-            ))}
+              ) : (
+                <li key={item.label}>
+                  <SidebarLink
+                    item={item}
+                    active={!item.newTab && activeHrefs.has(item.href)}
+                    onNavigate={onNavigate}
+                  />
+                </li>
+              ),
+            )}
           </ul>
         </div>
       ))}
@@ -75,14 +97,75 @@ export function SidebarNav({
   )
 }
 
+function SidebarParent({
+  item,
+  activeHrefs,
+  onNavigate,
+}: {
+  item: ResolvedNavItem
+  activeHrefs: Set<string>
+  onNavigate?: () => void
+}) {
+  const children = item.children ?? []
+  const childActive = children.some((c) => activeHrefs.has(c.href))
+  const selfActive = !item.newTab && activeHrefs.has(item.href)
+  const [open, setOpen] = useState(selfActive || childActive)
+
+  return (
+    <li>
+      <div className="flex items-center">
+        <SidebarLink
+          item={{ ...item, children: undefined }}
+          active={selfActive && !childActive}
+          onNavigate={onNavigate}
+          className="flex-1"
+        />
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-label={open ? `Contraer ${item.label}` : `Expandir ${item.label}`}
+          aria-expanded={open}
+          className="ml-0.5 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-[--cream-tint] hover:text-foreground"
+        >
+          <ChevronRight
+            className={cn(
+              'size-3.5 transition-transform duration-[var(--duration-fast)]',
+              open && 'rotate-90',
+            )}
+            aria-hidden
+          />
+        </button>
+      </div>
+      {open ? (
+        <ul className="mt-0.5 space-y-0.5 border-l border-border/50 pl-3 ml-3.5">
+          {children.map((child) => (
+            <li key={child.label}>
+              <SidebarLink
+                item={child}
+                active={!child.newTab && activeHrefs.has(child.href)}
+                onNavigate={onNavigate}
+                compact
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  )
+}
+
 function SidebarLink({
   item,
   active,
   onNavigate,
+  className,
+  compact,
 }: {
   item: ResolvedNavItem
   active: boolean
   onNavigate?: () => void
+  className?: string
+  compact?: boolean
 }) {
   const Icon = NAV_ICONS[item.iconKey]
   const ArrowOut = NAV_ICONS.ArrowUpRight
@@ -94,7 +177,10 @@ function SidebarLink({
         target="_blank"
         rel="noopener noreferrer"
         onClick={onNavigate}
-        className="group relative flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-muted-foreground transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[--cream-tint] hover:text-foreground"
+        className={cn(
+          'group relative flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-muted-foreground transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[--cream-tint] hover:text-foreground',
+          className,
+        )}
       >
         <Icon className="size-4 transition-colors group-hover:text-primary" aria-hidden />
         <span className="truncate">{item.label}</span>
@@ -112,11 +198,13 @@ function SidebarLink({
       onClick={onNavigate}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group relative flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium',
+        'group relative flex items-center gap-2.5 rounded-md px-2.5 text-sm font-medium',
+        compact ? 'h-8' : 'h-9',
         'transition-[colors,background-color] duration-[var(--duration-fast)] ease-[var(--ease-out)]',
         active
           ? 'bg-secondary text-foreground'
           : 'text-muted-foreground hover:bg-[--cream-tint] hover:text-foreground',
+        className,
       )}
     >
       {active ? (

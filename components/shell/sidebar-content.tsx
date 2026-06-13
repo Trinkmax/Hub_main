@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import type { TenantFeatures } from '@/lib/platform/features'
 import type { Tenant, TenantRole } from '@/lib/tenant/types'
 import { resolveNavGroups } from './nav-config'
 import { SidebarNav } from './sidebar-nav'
@@ -6,13 +7,17 @@ import { SidebarNav } from './sidebar-nav'
 export function SidebarContent({
   tenant,
   role,
+  features,
+  isPlatformAdmin,
   onNavigate,
 }: {
   tenant: Pick<Tenant, 'id' | 'name' | 'slug' | 'logo_url'>
   role: TenantRole
+  features: TenantFeatures
+  isPlatformAdmin: boolean
   onNavigate?: () => void
 }) {
-  const groups = resolveNavGroups(role, tenant.slug)
+  const groups = resolveNavGroups(role, tenant.slug, features, isPlatformAdmin)
 
   return (
     <>

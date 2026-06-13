@@ -41,6 +41,7 @@ export default async function ClientesPage({
     tag: sp.tag,
     since: sp.since,
     programa: sp.programa,
+    segment: sp.segment,
     page: sp.page ?? 1,
   })
 

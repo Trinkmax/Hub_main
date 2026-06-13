@@ -6,6 +6,7 @@ import { ThemeToggle } from '@/components/theme/theme-toggle'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { PageHeader } from '@/components/ui/page-header'
+import { requireFeature } from '@/lib/platform/guards'
 import { createClient } from '@/lib/supabase/server'
 import { requireTenantAccess, TenantNotFoundError } from '@/lib/tenant'
 
@@ -28,6 +29,8 @@ export default async function MiTurnoPage({ params }: { params: Promise<{ tenant
     if (error instanceof TenantNotFoundError) notFound()
     throw error
   }
+
+  await requireFeature(access.tenant, 'table_service')
 
   const supabase = await createClient()
   const {

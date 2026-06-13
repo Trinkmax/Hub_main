@@ -8,6 +8,38 @@
     {
       "path": "/api/cron/expire-punch-cards",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/grant-tier-benefits",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/process-jobs",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/process-broadcasts",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/process-flows",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/evaluate-time-flows",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/sync-templates",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/finish-past-events",
+      "schedule": "30 * * * *"
+    },
+    {
+      "path": "/api/cron/refresh-stats",
+      "schedule": "0 2 * * *"
     }
   ]
 }

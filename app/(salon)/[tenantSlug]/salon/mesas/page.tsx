@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import type { LiveFloorData } from '@/lib/floor-plan/queries'
 import { getLiveFloor, listFloorAreas } from '@/lib/floor-plan/queries'
+import { requireFeature } from '@/lib/platform/guards'
 import { getSalonOccupancy, listSalonTables } from '@/lib/sessions-waiter/queries'
 import { requireTenantAccess } from '@/lib/tenant'
 import { SalonView } from './_components/salon-view'
@@ -16,17 +17,17 @@ export default async function SalonMesasPage({
 }) {
   const { tenantSlug } = await params
 
-  let tenantId: string
-  let role: string
+  let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
-    const access = await requireTenantAccess(tenantSlug)
-    tenantId = access.tenant.id
-    role = access.role
+    access = await requireTenantAccess(tenantSlug)
   } catch {
     notFound()
   }
 
+  const tenantId = access.tenant.id
+  const role = access.role
   if (!['waiter', 'owner', 'cashier'].includes(role)) notFound()
+  await requireFeature(access.tenant, 'table_service')
 
   const [tables, occupancy, liveAreas] = await Promise.all([
     listSalonTables(tenantId),

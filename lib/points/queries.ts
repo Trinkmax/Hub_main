@@ -1,6 +1,9 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
+import type { LoyaltyTier } from './tiers'
 import type { PointsRule } from './types'
+
+export type { LoyaltyTier } from './tiers'
 
 export type Reward = {
   id: string
@@ -10,7 +13,10 @@ export type Reward = {
   stock: number | null
   active: boolean
   image_url: string | null
+  min_tier_id: string | null
 }
+
+const REWARD_COLUMNS = 'id, name, description, cost_points, stock, active, image_url, min_tier_id'
 
 export async function listRules(opts: { tenantId: string }): Promise<PointsRule[]> {
   const supabase = await createClient()
@@ -27,7 +33,7 @@ export async function listRewards(opts: { tenantId: string }): Promise<Reward[]>
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('rewards')
-    .select('id, name, description, cost_points, stock, active, image_url')
+    .select(REWARD_COLUMNS)
     .eq('tenant_id', opts.tenantId)
     .order('cost_points', { ascending: true })
   if (error) throw error
@@ -38,11 +44,24 @@ export async function listActiveRewards(opts: { tenantId: string }): Promise<Rew
   const supabase = await createClient()
   const { data } = await supabase
     .from('rewards')
-    .select('id, name, description, cost_points, stock, active, image_url')
+    .select(REWARD_COLUMNS)
     .eq('tenant_id', opts.tenantId)
     .eq('active', true)
     .order('cost_points', { ascending: true })
   return (data ?? []) as Reward[]
+}
+
+export async function listTiers(opts: { tenantId: string }): Promise<LoyaltyTier[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('loyalty_tiers')
+    .select(
+      'id, name, color, badge_icon, min_lifetime_points, sort, benefit_cadence, benefit_reward_id, perks, active',
+    )
+    .eq('tenant_id', opts.tenantId)
+    .order('min_lifetime_points', { ascending: true })
+  if (error) throw error
+  return (data ?? []) as LoyaltyTier[]
 }
 
 export type LedgerEntry = {

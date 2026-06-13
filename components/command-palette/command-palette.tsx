@@ -13,16 +13,19 @@ import {
   CommandSeparator,
 } from '@/components/ui/command'
 import { Kbd } from '@/components/ui/kbd'
+import type { TenantFeatures } from '@/lib/platform/features'
 import { commandEntries } from './command-config'
 import { useCommandShortcuts } from './use-command-shortcuts'
 
 type CommandPaletteProps = {
   tenantSlug: string
+  features: TenantFeatures
+  isPlatformAdmin: boolean
 }
 
 const GROUPS_ORDER = ['Acciones rápidas', 'Operación', 'Ir a'] as const
 
-export function CommandPalette({ tenantSlug }: CommandPaletteProps) {
+export function CommandPalette({ tenantSlug, features, isPlatformAdmin }: CommandPaletteProps) {
   const [open, setOpen] = useState(false)
   const router = useRouter()
 
@@ -30,11 +33,14 @@ export function CommandPalette({ tenantSlug }: CommandPaletteProps) {
   useCommandShortcuts(toggle)
 
   const groupedEntries = useMemo(() => {
+    const visible = commandEntries.filter(
+      (entry) => !entry.feature || isPlatformAdmin || features[entry.feature],
+    )
     return GROUPS_ORDER.map((group) => ({
       group,
-      items: commandEntries.filter((entry) => entry.group === group),
+      items: visible.filter((entry) => entry.group === group),
     })).filter((g) => g.items.length > 0)
-  }, [])
+  }, [features, isPlatformAdmin])
 
   const handleSelect = useCallback(
     (href: string) => {

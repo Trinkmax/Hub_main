@@ -851,6 +851,7 @@ export type Database = {
       }
       customers: {
         Row: {
+          acquisition_channel: Database["public"]["Enums"]["customer_acquisition_channel"]
           birthdate: string | null
           created_at: string
           deleted_at: string | null
@@ -863,6 +864,8 @@ export type Database = {
           notes: string | null
           opt_in_at: string | null
           opt_in_ip: string | null
+          current_tier_id: string | null
+          lifetime_points_earned: number
           opt_in_marketing: boolean
           phone: string
           points_balance: number
@@ -875,6 +878,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          acquisition_channel?: Database["public"]["Enums"]["customer_acquisition_channel"]
           birthdate?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -887,6 +891,8 @@ export type Database = {
           notes?: string | null
           opt_in_at?: string | null
           opt_in_ip?: string | null
+          current_tier_id?: string | null
+          lifetime_points_earned?: number
           opt_in_marketing?: boolean
           phone: string
           points_balance?: number
@@ -899,6 +905,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          acquisition_channel?: Database["public"]["Enums"]["customer_acquisition_channel"]
           birthdate?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -911,6 +918,8 @@ export type Database = {
           notes?: string | null
           opt_in_at?: string | null
           opt_in_ip?: string | null
+          current_tier_id?: string | null
+          lifetime_points_earned?: number
           opt_in_marketing?: boolean
           phone?: string
           points_balance?: number
@@ -1029,6 +1038,7 @@ export type Database = {
       }
       events: {
         Row: {
+          attendance_points: number
           capacity: number | null
           cover_image_url: string | null
           created_at: string
@@ -1044,6 +1054,7 @@ export type Database = {
           waitlist_enabled: boolean
         }
         Insert: {
+          attendance_points?: number
           capacity?: number | null
           cover_image_url?: string | null
           created_at?: string
@@ -1059,6 +1070,7 @@ export type Database = {
           waitlist_enabled?: boolean
         }
         Update: {
+          attendance_points?: number
           capacity?: number | null
           cover_image_url?: string | null
           created_at?: string
@@ -2047,6 +2059,42 @@ export type Database = {
           },
         ]
       }
+      reviews: {
+        Row: {
+          comment: string | null
+          created_at: string
+          customer_id: string | null
+          id: string
+          rating: number
+          redirected_to_maps: boolean
+          source: string
+          tenant_id: string
+          visit_id: string | null
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          rating: number
+          redirected_to_maps?: boolean
+          source?: string
+          tenant_id: string
+          visit_id?: string | null
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          rating?: number
+          redirected_to_maps?: boolean
+          source?: string
+          tenant_id?: string
+          visit_id?: string | null
+        }
+        Relationships: []
+      }
       reservation_managers: {
         Row: {
           active: boolean
@@ -2187,6 +2235,7 @@ export type Database = {
           description: string | null
           id: string
           image_url: string | null
+          min_tier_id: string | null
           name: string
           stock: number | null
           tenant_id: string
@@ -2198,6 +2247,7 @@ export type Database = {
           description?: string | null
           id?: string
           image_url?: string | null
+          min_tier_id?: string | null
           name: string
           stock?: number | null
           tenant_id: string
@@ -2209,6 +2259,7 @@ export type Database = {
           description?: string | null
           id?: string
           image_url?: string | null
+          min_tier_id?: string | null
           name?: string
           stock?: number | null
           tenant_id?: string
@@ -2742,18 +2793,126 @@ export type Database = {
           },
         ]
       }
-      tenants: {
+      platform_admins: {
         Row: {
           created_at: string
+          email: string
+          id: string
+          note: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          note?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          note?: string | null
+        }
+        Relationships: []
+      }
+      loyalty_tiers: {
+        Row: {
+          active: boolean
+          badge_icon: string | null
+          benefit_cadence: Database["public"]["Enums"]["tier_benefit_cadence"]
+          benefit_reward_id: string | null
+          color: string | null
+          created_at: string
+          id: string
+          min_lifetime_points: number
+          name: string
+          perks: string | null
+          sort: number
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          badge_icon?: string | null
+          benefit_cadence?: Database["public"]["Enums"]["tier_benefit_cadence"]
+          benefit_reward_id?: string | null
+          color?: string | null
+          created_at?: string
+          id?: string
+          min_lifetime_points: number
+          name: string
+          perks?: string | null
+          sort?: number
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          badge_icon?: string | null
+          benefit_cadence?: Database["public"]["Enums"]["tier_benefit_cadence"]
+          benefit_reward_id?: string | null
+          color?: string | null
+          created_at?: string
+          id?: string
+          min_lifetime_points?: number
+          name?: string
+          perks?: string | null
+          sort?: number
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      tier_benefit_grants: {
+        Row: {
+          customer_id: string
+          granted_at: string
+          id: string
+          period_key: string
+          redemption_id: string | null
+          reward_id: string | null
+          tenant_id: string
+          tier_id: string
+        }
+        Insert: {
+          customer_id: string
+          granted_at?: string
+          id?: string
+          period_key: string
+          redemption_id?: string | null
+          reward_id?: string | null
+          tenant_id: string
+          tier_id: string
+        }
+        Update: {
+          customer_id?: string
+          granted_at?: string
+          id?: string
+          period_key?: string
+          redemption_id?: string | null
+          reward_id?: string | null
+          tenant_id?: string
+          tier_id?: string
+        }
+        Relationships: []
+      }
+      tenants: {
+        Row: {
+          brand_accent: string | null
+          created_at: string
           currency: string
+          default_event_attendance_points: number
+          feature_flags: Json
           guest_idle_hours_to_rescan: number
           id: string
+          google_maps_review_url: string | null
           kitchen_flow_enabled: boolean
           logo_url: string | null
           name: string
           points_redemption_enabled: boolean
           points_redemption_max_pct: number
           points_to_cents_rate: number
+          review_gating_enabled: boolean
+          review_reward_points: number
           session_auto_abandon_hours: number
           settings: Json
           slug: string
@@ -2765,16 +2924,22 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          brand_accent?: string | null
           created_at?: string
           currency?: string
+          default_event_attendance_points?: number
+          feature_flags?: Json
           guest_idle_hours_to_rescan?: number
           id?: string
+          google_maps_review_url?: string | null
           kitchen_flow_enabled?: boolean
           logo_url?: string | null
           name: string
           points_redemption_enabled?: boolean
           points_redemption_max_pct?: number
           points_to_cents_rate?: number
+          review_gating_enabled?: boolean
+          review_reward_points?: number
           session_auto_abandon_hours?: number
           settings?: Json
           slug: string
@@ -2786,16 +2951,22 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          brand_accent?: string | null
           created_at?: string
           currency?: string
+          default_event_attendance_points?: number
+          feature_flags?: Json
           guest_idle_hours_to_rescan?: number
           id?: string
+          google_maps_review_url?: string | null
           kitchen_flow_enabled?: boolean
           logo_url?: string | null
           name?: string
           points_redemption_enabled?: boolean
           points_redemption_max_pct?: number
           points_to_cents_rate?: number
+          review_gating_enabled?: boolean
+          review_reward_points?: number
           session_auto_abandon_hours?: number
           settings?: Json
           slug?: string
@@ -3129,6 +3300,7 @@ export type Database = {
         Row: {
           enabled: boolean
           headline: string
+          bonus_points: number
           reward_id: string | null
           subtext: string
           tenant_id: string
@@ -3136,6 +3308,7 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
+          bonus_points?: number
           enabled?: boolean
           headline?: string
           reward_id?: string | null
@@ -3145,6 +3318,7 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
+          bonus_points?: number
           enabled?: boolean
           headline?: string
           reward_id?: string | null
@@ -3451,6 +3625,9 @@ export type Database = {
         Returns: Json
       }
       active_tenant_id: { Args: never; Returns: string }
+      is_platform_admin: { Args: never; Returns: boolean }
+      grant_tier_benefits: { Args: never; Returns: { granted_count: number }[] }
+      set_customer_tier: { Args: { p_customer_id: string }; Returns: string }
       add_staff_ticket: {
         Args: {
           p_assigned_to_guest_id?: string
@@ -4015,8 +4192,10 @@ export type Database = {
         | "cancelled"
       channel_status: "connected" | "disconnected" | "error"
       channel_type: "whatsapp" | "instagram"
+      customer_acquisition_channel: "reservation" | "walkin" | "import"
       customer_source: "qr" | "manual" | "import"
       event_status: "draft" | "published" | "finished" | "cancelled"
+      tier_benefit_cadence: "none" | "birthday" | "monthly"
       floor_element_kind:
         | "table"
         | "wall"
