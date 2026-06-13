@@ -62,12 +62,15 @@ export function ScheduledEventsMonth({
   events: initialEvents,
   templates,
   monthCapacity,
+  today,
 }: {
   tenantSlug: string
   ym: string
   events: ScheduledEventWithTemplate[]
   templates: ScheduledEventTemplateRow[]
   monthCapacity: MonthCapacity
+  /** Fecha de hoy (yyyy-MM-dd, TZ del local) para marcar el día actual. */
+  today: string
 }) {
   const router = useRouter()
   const [events, setEvents] = useState(initialEvents)
@@ -185,8 +188,18 @@ export function ScheduledEventsMonth({
           >
             <ChevronLeft className="size-4" />
           </Button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <h2 className="font-serif text-xl font-semibold capitalize">{formatYM(ym)}</h2>
+            {ym !== today.slice(0, 7) ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2.5 text-xs"
+                onClick={() => gotoMonth(today.slice(0, 7))}
+              >
+                Hoy
+              </Button>
+            ) : null}
             {moving ? (
               <Loader2
                 className="size-3.5 animate-spin text-muted-foreground"
@@ -211,6 +224,7 @@ export function ScheduledEventsMonth({
             events={events}
             tenantSlug={tenantSlug}
             monthCapacity={monthCapacity}
+            today={today}
             onOpenDay={setDayDialogDate}
           />
         </div>
@@ -229,6 +243,8 @@ export function ScheduledEventsMonth({
               date={cell.date}
               events={cell.events}
               tenantSlug={tenantSlug}
+              isToday={cell.date === today}
+              isWeekend={idx % 7 >= 5}
               isDraggingTemplate={activeDrag?.kind === 'template'}
               isDraggingEvent={activeDrag?.kind === 'event'}
               capacity={
@@ -312,12 +328,14 @@ function MonthAgenda({
   events,
   tenantSlug,
   monthCapacity,
+  today,
   onOpenDay,
 }: {
   ym: string
   events: ScheduledEventWithTemplate[]
   tenantSlug: string
   monthCapacity: MonthCapacity
+  today: string
   onOpenDay: (date: string) => void
 }) {
   const [y, m] = ym.split('-').map(Number)
@@ -346,8 +364,15 @@ function MonthAgenda({
           used: 0,
           total: monthCapacity.defaultTotal,
         }
+        const isToday = date === today
         return (
-          <div key={date} className="rounded-lg border border-border/60 bg-card/40 p-2">
+          <div
+            key={date}
+            className={cn(
+              'rounded-lg border bg-card/40 p-2',
+              isToday ? 'border-primary/40 ring-1 ring-primary/30' : 'border-border/60',
+            )}
+          >
             <div className="mb-1.5 flex items-center justify-between gap-2">
               <button
                 type="button"
@@ -358,7 +383,14 @@ function MonthAgenda({
                 <span className="text-sm font-semibold capitalize tabular-nums">
                   {formatAgendaDate(date)}
                 </span>
-                <CapacityBadge used={capacity.used} total={capacity.total} />
+                {isToday ? (
+                  <span className="rounded-full bg-primary px-1.5 py-px text-[10px] font-semibold text-primary-foreground">
+                    Hoy
+                  </span>
+                ) : null}
+                {capacity.used > 0 ? (
+                  <CapacityBadge used={capacity.used} total={capacity.total} />
+                ) : null}
               </button>
               <Link
                 href={`/${tenantSlug}/eventos/programados/nuevo?date=${date}`}
@@ -517,6 +549,8 @@ function DayCell({
   date,
   events,
   tenantSlug,
+  isToday,
+  isWeekend,
   isDraggingTemplate,
   isDraggingEvent,
   capacity,
@@ -525,6 +559,8 @@ function DayCell({
   date: string | null
   events: ScheduledEventWithTemplate[]
   tenantSlug: string
+  isToday: boolean
+  isWeekend: boolean
   isDraggingTemplate: boolean
   isDraggingEvent: boolean
   capacity: { used: number; total: number } | null
@@ -537,23 +573,35 @@ function DayCell({
   })
 
   if (!date) {
-    return (
-      <div className="min-h-[88px] rounded-lg border border-transparent bg-transparent p-1.5" />
-    )
+    return <div className="min-h-[92px] rounded-lg border border-transparent bg-transparent p-2" />
   }
 
   const dragging = isDraggingTemplate || isDraggingEvent
+  const hasEvents = events.length > 0
+  // Acento de borde-izquierdo con el color del primer evento del día.
+  const accent = hasEvents ? (events[0]?.template?.color_hex ?? null) : null
+
   return (
     <div
       ref={setNodeRef}
       className={cn(
-        'group min-h-[88px] rounded-lg border p-1.5 transition-colors',
-        'border-border/60 bg-card/40',
+        'group relative min-h-[92px] overflow-hidden rounded-lg border p-2 transition-colors',
+        // Día con actividad resalta; día vacío queda liviano.
+        hasEvents ? 'border-border/70 bg-card/70' : 'border-border/40 bg-transparent',
+        isWeekend && !hasEvents && 'bg-[--cream-tint]/40',
+        isToday && 'ring-1 ring-primary/40',
         // Resalta destinos válidos al arrastrar
-        dragging && !isOver && 'border-dashed border-border/40 bg-card/20',
+        dragging && !isOver && 'border-dashed border-border/40',
         isOver && 'border-primary/70 bg-primary/10 ring-2 ring-primary/30',
       )}
     >
+      {accent ? (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 left-0 w-0.5"
+          style={{ backgroundColor: accent }}
+        />
+      ) : null}
       <div className="flex h-full flex-col gap-1">
         <div className="flex items-center justify-between gap-1">
           <button
@@ -562,10 +610,17 @@ function DayCell({
             className="-mx-1 flex items-center gap-1.5 rounded px-1 py-0.5 transition-colors hover:bg-secondary"
             aria-label={`Ver reservas del ${date}`}
           >
-            <span className="font-mono text-[11px] font-semibold tabular-nums text-muted-foreground">
+            <span
+              className={cn(
+                'flex size-5 items-center justify-center rounded-full font-mono text-[11px] font-semibold tabular-nums',
+                isToday ? 'bg-primary text-primary-foreground' : 'text-muted-foreground',
+              )}
+            >
               {Number(date.slice(-2))}
             </span>
-            {capacity ? <CapacityBadge used={capacity.used} total={capacity.total} /> : null}
+            {capacity && capacity.used > 0 ? (
+              <CapacityBadge used={capacity.used} total={capacity.total} />
+            ) : null}
           </button>
           <Link
             href={`/${tenantSlug}/eventos/programados/nuevo?date=${date}`}
@@ -624,16 +679,23 @@ function DraggableEvent({
           // En la práctica esto rara vez se ejecuta porque drag cancela el click.
           e.stopPropagation()
         }}
-        className="block rounded-md px-1.5 py-0.5 text-[11px] font-medium leading-snug transition-transform hover:scale-[1.02]"
+        className="block rounded-md px-1.5 py-1 text-[11px] font-medium leading-snug transition-transform hover:scale-[1.02]"
         style={{
-          backgroundColor: `${color}1f`,
+          backgroundColor: `${color}2e`,
           color,
         }}
       >
-        <span className="block truncate">
-          {event.name_override ?? event.template?.name ?? 'Evento'}
+        <span className="flex items-center gap-1">
+          <span
+            aria-hidden
+            className="size-1.5 shrink-0 rounded-full"
+            style={{ backgroundColor: color }}
+          />
+          <span className="truncate">
+            {event.name_override ?? event.template?.name ?? 'Evento'}
+          </span>
         </span>
-        <span className="block text-[10px] opacity-70 tabular-nums">
+        <span className="block pl-2.5 text-[10px] opacity-80 tabular-nums">
           {event.starts_at_local.slice(0, 5)} · {event.capacity}
         </span>
       </Link>

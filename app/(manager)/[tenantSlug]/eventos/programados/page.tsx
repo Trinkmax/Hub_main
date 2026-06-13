@@ -20,6 +20,16 @@ import { CalendarTabs } from './_components/calendar-tabs'
 export const metadata = { title: 'Calendario' }
 export const dynamic = 'force-dynamic'
 
+/** Hoy en el reloj del local (Córdoba), yyyy-MM-dd — para marcar el día actual. */
+function todayCordoba(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Argentina/Cordoba',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+}
+
 function defaultRange(monthStr?: string): { from: string; to: string; ymCurrent: string } {
   const now = new Date()
   const ym =
@@ -89,6 +99,7 @@ export default async function CalendarioPage({
         templates={templates}
         activeTemplates={activeTemplates}
         monthCapacity={monthCapacity}
+        today={todayCordoba()}
         defaultTab={defaultTab}
       />
     </PageShell>

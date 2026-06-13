@@ -25,6 +25,7 @@ export function CalendarTabs({
   templates,
   activeTemplates,
   monthCapacity,
+  today,
   defaultTab,
 }: {
   tenantSlug: string
@@ -33,6 +34,7 @@ export function CalendarTabs({
   templates: ScheduledEventTemplateRow[]
   activeTemplates: ScheduledEventTemplateRow[]
   monthCapacity: MonthCapacity
+  today: string
   defaultTab: Tab
 }) {
   const [tab, setTab] = useState<Tab>(defaultTab)
@@ -70,6 +72,7 @@ export function CalendarTabs({
             events={events}
             templates={activeTemplates}
             monthCapacity={monthCapacity}
+            today={today}
           />
         )}
       </TabsContent>

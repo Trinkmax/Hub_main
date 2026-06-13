@@ -1,6 +1,7 @@
 import { ArrowRight, Cake, CalendarClock, Gift, Sparkles, Stamp, Star } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { PageHeader } from '@/components/ui/page-header'
 import { StatCard } from '@/components/ui/stat-card'
 import { listRewards, listRules, listTiers } from '@/lib/points/queries'
 import { sortedActiveTiers } from '@/lib/points/tiers'
@@ -47,30 +48,45 @@ export default async function ClubPage({ params }: { params: Promise<{ tenantSlu
 
   return (
     <div className="space-y-7">
-      <header className="space-y-1.5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
-          Fidelización
-        </p>
-        <h1 className="font-serif text-3xl font-semibold tracking-tight">Club de beneficios</h1>
-        <p className="max-w-2xl text-sm text-muted-foreground text-pretty">
-          El centro de tu programa de lealtad: cómo ganan puntos tus clientes, cómo suben de nivel y
-          qué pueden canjear. Todo en un solo lugar.
-        </p>
-      </header>
+      <PageHeader
+        eyebrow="Fidelización"
+        title="Club de beneficios"
+        description="El centro de tu programa de lealtad: cómo ganan puntos tus clientes, cómo suben de nivel y qué pueden canjear. Todo en un solo lugar."
+      />
 
       {/* Stats vivos del programa — clickeables para ir a configurar */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Link href={`/${tenantSlug}/club/niveles`} className="rounded-xl">
-          <StatCard label="Niveles activos" numberValue={activeTiers.length} icon={Star} />
+          <StatCard
+            label="Niveles activos"
+            numberValue={activeTiers.length}
+            icon={Star}
+            iconClassName="text-primary"
+          />
         </Link>
         <Link href={`/${tenantSlug}/club/puntos`} className="rounded-xl">
-          <StatCard label="Reglas de puntos" numberValue={activeRules} icon={Sparkles} />
+          <StatCard
+            label="Reglas de puntos"
+            numberValue={activeRules}
+            icon={Sparkles}
+            iconClassName="text-info"
+          />
         </Link>
         <Link href={`/${tenantSlug}/club/puntos`} className="rounded-xl">
-          <StatCard label="Recompensas" numberValue={activeRewards} icon={Gift} />
+          <StatCard
+            label="Recompensas"
+            numberValue={activeRewards}
+            icon={Gift}
+            iconClassName="text-success"
+          />
         </Link>
         <Link href={`/${tenantSlug}/club/punch-cards`} className="rounded-xl">
-          <StatCard label="Punch cards activas" numberValue={activePunchCards} icon={Stamp} />
+          <StatCard
+            label="Punch cards activas"
+            numberValue={activePunchCards}
+            icon={Stamp}
+            iconClassName="text-warning"
+          />
         </Link>
       </div>
 

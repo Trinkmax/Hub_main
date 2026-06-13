@@ -29,6 +29,8 @@ type StatCardProps = {
   delta?: ReactNode
   deltaTone?: Tone
   icon?: LucideIcon
+  /** Clase extra para el ícono (p. ej. un tono semántico: `text-primary`). */
+  iconClassName?: string
   sparkline?: ReactNode
   className?: string
 }
@@ -43,6 +45,7 @@ export function StatCard({
   delta,
   deltaTone = 'muted',
   icon: Icon,
+  iconClassName,
   sparkline,
   className,
 }: StatCardProps) {
@@ -69,7 +72,7 @@ export function StatCard({
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1.5">
           <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-            {Icon ? <Icon className="size-3.5" aria-hidden /> : null}
+            {Icon ? <Icon className={cn('size-3.5', iconClassName)} aria-hidden /> : null}
             {label}
           </div>
           <div className="font-serif text-3xl font-semibold tracking-tight tabular-nums leading-tight">

@@ -514,8 +514,8 @@ function SectionCocina({ slug }: { slug: string }) {
       <H2>Panel de cocina (KDS)</H2>
       <P>
         Pensado para tener una tablet en cocina abierta toda la noche. URL:{' '}
-        <a href={`/${slug}/cocina`} className="text-primary underline">
-          /{slug}/cocina
+        <a href={`/${slug}/salon/cocina`} className="text-primary underline">
+          /{slug}/salon/cocina
         </a>
         .
       </P>
