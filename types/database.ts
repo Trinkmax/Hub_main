@@ -1172,10 +1172,60 @@ export type Database = {
           },
         ]
       }
+      flow_edges: {
+        Row: {
+          created_at: string
+          flow_id: string
+          id: string
+          source_handle: string | null
+          source_node_id: string
+          target_node_id: string
+        }
+        Insert: {
+          created_at?: string
+          flow_id: string
+          id?: string
+          source_handle?: string | null
+          source_node_id: string
+          target_node_id: string
+        }
+        Update: {
+          created_at?: string
+          flow_id?: string
+          id?: string
+          source_handle?: string | null
+          source_node_id?: string
+          target_node_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flow_edges_flow_id_fkey"
+            columns: ["flow_id"]
+            isOneToOne: false
+            referencedRelation: "flows"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flow_edges_source_node_id_fkey"
+            columns: ["source_node_id"]
+            isOneToOne: false
+            referencedRelation: "flow_nodes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flow_edges_target_node_id_fkey"
+            columns: ["target_node_id"]
+            isOneToOne: false
+            referencedRelation: "flow_nodes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       flow_executions: {
         Row: {
           completed_at: string | null
           context: Json
+          current_node_id: string | null
           current_step: number
           customer_id: string
           error: string | null
@@ -1189,6 +1239,7 @@ export type Database = {
         Insert: {
           completed_at?: string | null
           context?: Json
+          current_node_id?: string | null
           current_step?: number
           customer_id: string
           error?: string | null
@@ -1202,6 +1253,7 @@ export type Database = {
         Update: {
           completed_at?: string | null
           context?: Json
+          current_node_id?: string | null
           current_step?: number
           customer_id?: string
           error?: string | null
@@ -1213,6 +1265,13 @@ export type Database = {
           tenant_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "flow_executions_current_node_id_fkey"
+            columns: ["current_node_id"]
+            isOneToOne: false
+            referencedRelation: "flow_nodes"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "flow_executions_customer_id_fkey"
             columns: ["customer_id"]
@@ -1253,6 +1312,41 @@ export type Database = {
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      flow_nodes: {
+        Row: {
+          config: Json
+          created_at: string
+          flow_id: string
+          id: string
+          kind: string
+          position: Json
+        }
+        Insert: {
+          config?: Json
+          created_at?: string
+          flow_id: string
+          id?: string
+          kind: string
+          position?: Json
+        }
+        Update: {
+          config?: Json
+          created_at?: string
+          flow_id?: string
+          id?: string
+          kind?: string
+          position?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flow_nodes_flow_id_fkey"
+            columns: ["flow_id"]
+            isOneToOne: false
+            referencedRelation: "flows"
             referencedColumns: ["id"]
           },
         ]
