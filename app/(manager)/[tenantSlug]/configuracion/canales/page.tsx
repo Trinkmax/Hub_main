@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { PageHeader } from '@/components/ui/page-header'
 import { getChannelsForTenant } from '@/lib/meta/channels'
 import { isMetaConfigured } from '@/lib/meta/env'
+import { isTokenExpiringSoon } from '@/lib/meta/token-refresh'
 import {
   RoleRequiredError,
   requireRole,
@@ -51,6 +52,7 @@ export default async function CanalesPage({
   const channels = await getChannelsForTenant(access.tenant.id)
   const wa = channels.find((c) => c.type === 'whatsapp')
   const ig = channels.find((c) => c.type === 'instagram')
+  const now = new Date()
   const errorMsg = meta_error
     ? (ERROR_MESSAGES[meta_error] ?? `Error de conexión: ${meta_error}`)
     : null
@@ -112,6 +114,7 @@ export default async function CanalesPage({
         displayName={wa?.display_name ? wa.display_name : null}
         displayPrefix=""
         lastError={wa?.last_error ?? null}
+        tokenExpiringSoon={isTokenExpiringSoon(wa?.token_expires_at ?? null, now)}
       >
         {wa && wa.status === 'connected' ? (
           <ChannelCardActions channelId={wa.id} type="whatsapp" tenantSlug={tenantSlug} />
@@ -130,6 +133,7 @@ export default async function CanalesPage({
         displayName={ig?.display_name ? ig.display_name : null}
         displayPrefix="@"
         lastError={ig?.last_error ?? null}
+        tokenExpiringSoon={isTokenExpiringSoon(ig?.token_expires_at ?? null, now)}
       >
         {ig && ig.status === 'connected' ? (
           <ChannelCardActions channelId={ig.id} type="instagram" tenantSlug={tenantSlug} />
@@ -172,6 +176,7 @@ function ChannelCard({
   displayName,
   displayPrefix,
   lastError,
+  tokenExpiringSoon,
   children,
 }: {
   icon: React.ReactNode
@@ -182,6 +187,7 @@ function ChannelCard({
   displayName: string | null
   displayPrefix: string
   lastError: string | null
+  tokenExpiringSoon: boolean
   children: React.ReactNode
 }) {
   return (
@@ -207,6 +213,15 @@ function ChannelCard({
               {displayName}
             </strong>
           </p>
+        ) : null}
+        {tokenExpiringSoon && status === 'connected' ? (
+          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+            <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+            <span>
+              El token de acceso expira pronto o ya expiró. Reconectá el canal para restaurar el
+              envío de mensajes.
+            </span>
+          </div>
         ) : null}
         {lastError ? <p className="text-sm text-destructive">Último error: {lastError}</p> : null}
         <div className="flex flex-wrap gap-2">{children}</div>
