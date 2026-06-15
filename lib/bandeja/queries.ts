@@ -108,6 +108,7 @@ export async function getConversation(
       id,
       channel_id,
       external_user_id,
+      last_inbound_at,
       customer:customers(first_name, last_name),
       channel:channels!inner(type)
     `,
@@ -117,18 +118,11 @@ export async function getConversation(
     .maybeSingle()
   if (error || !data) return null
 
-  const { data: lastIn } = await supabase
-    .from('messages')
-    .select('created_at')
-    .eq('conversation_id', conversationId)
-    .eq('direction', 'inbound')
-    .order('created_at', { ascending: false })
-    .limit(1)
-
   type Joined = {
     id: string
     channel_id: string
     external_user_id: string
+    last_inbound_at: string | null
     customer:
       | { first_name: string; last_name: string }
       | { first_name: string; last_name: string }[]
@@ -145,7 +139,7 @@ export async function getConversation(
     channel_type: channel?.type ?? 'whatsapp',
     external_user_id: row.external_user_id,
     customer_name: customer ? `${customer.first_name} ${customer.last_name}`.trim() : null,
-    last_inbound_at: lastIn?.[0]?.created_at ?? null,
+    last_inbound_at: row.last_inbound_at,
   }
 }
 

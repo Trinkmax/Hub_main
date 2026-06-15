@@ -79,7 +79,11 @@ export default async function SalonConversationPage({
           </div>
         </header>
 
-        <MessageThread conversationId={convo.id} initialMessages={messages} />
+        <MessageThread
+          tenantSlug={tenantSlug}
+          conversationId={convo.id}
+          initialMessages={messages}
+        />
 
         <Composer
           tenantSlug={tenantSlug}

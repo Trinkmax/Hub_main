@@ -4,6 +4,7 @@ import { format } from 'date-fns'
 import { Check, CheckCheck, Clock3, TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { MessageRow } from '@/lib/bandeja/queries'
+import { markConversationRead } from '@/lib/meta/actions'
 import { createClient } from '@/lib/supabase/browser'
 import { cn } from '@/lib/utils'
 
@@ -18,9 +19,11 @@ function StatusIcon({ status }: { status: MessageRow['status'] }) {
 }
 
 export function MessageThread({
+  tenantSlug,
   conversationId,
   initialMessages,
 }: {
+  tenantSlug: string
   conversationId: string
   initialMessages: MessageRow[]
 }) {
@@ -30,6 +33,11 @@ export function MessageThread({
   useEffect(() => {
     setMessages(initialMessages)
   }, [initialMessages])
+
+  // Fire-and-forget: mark conversation as read when the thread is opened
+  useEffect(() => {
+    void markConversationRead(tenantSlug, conversationId)
+  }, [tenantSlug, conversationId])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: queremos disparar scroll cuando cambia la lista
   useEffect(() => {

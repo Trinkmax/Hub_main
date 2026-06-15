@@ -121,6 +121,19 @@ export async function sendMedia(
   return { meta_message_id: id }
 }
 
+export async function markRead(channel: WhatsAppChannelLike, metaMessageId: string): Promise<void> {
+  const accessToken = await getAccessToken(channel)
+  const url = graphUrl(`${requirePhoneId(channel)}/messages`)
+  await metaFetch(url, {
+    accessToken,
+    body: {
+      messaging_product: 'whatsapp',
+      status: 'read',
+      message_id: metaMessageId,
+    },
+  })
+}
+
 // Suscribir nuestra app a los webhooks del WABA (después de Embedded Signup).
 export async function subscribeAppToWaba(wabaId: string, accessToken: string): Promise<void> {
   await metaFetch(graphUrl(`${wabaId}/subscribed_apps`), {

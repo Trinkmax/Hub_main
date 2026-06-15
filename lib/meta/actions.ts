@@ -6,7 +6,7 @@ import { logAudit } from '@/lib/audit'
 import { MetaApiError, mapMetaErrorToStatus } from '@/lib/meta/errors'
 import { sendDM } from '@/lib/meta/instagram'
 import { syncTemplates } from '@/lib/meta/templates'
-import { sendTemplate, sendText, type WhatsAppChannelLike } from '@/lib/meta/whatsapp'
+import { markRead, sendTemplate, sendText, type WhatsAppChannelLike } from '@/lib/meta/whatsapp'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import {
@@ -172,7 +172,12 @@ async function recordOutbound(opts: {
   if (opts.status === 'sent') {
     await service
       .from('conversations')
-      .update({ last_message_at: sentAt, unread_count: 0 })
+      .update({
+        last_message_at: sentAt,
+        unread_count: 0,
+        last_message_preview: (opts.body ?? '[plantilla]').slice(0, 120),
+        last_message_direction: 'outbound',
+      })
       .eq('id', opts.conversationId)
   }
 }
@@ -282,5 +287,63 @@ export async function sendTemplateMessage(
       error: reason,
     })
     return { ok: false, message: reason }
+  }
+}
+
+export async function markConversationRead(
+  slug: string,
+  conversationId: string,
+): Promise<{ ok: boolean }> {
+  try {
+    const access = await requireTenantAccess(slug)
+    requireRole(access.role, ['owner', 'cashier', 'waiter'])
+
+    const service = createServiceClient()
+
+    const { data: conversation, error: convErr } = await service
+      .from('conversations')
+      .select('id, tenant_id, channel_id')
+      .eq('id', conversationId)
+      .eq('tenant_id', access.tenant.id)
+      .maybeSingle()
+
+    if (convErr || !conversation) return { ok: false }
+
+    await service
+      .from('conversations')
+      .update({ unread_count: 0, last_read_at: new Date().toISOString() })
+      .eq('id', conversationId)
+      .eq('tenant_id', access.tenant.id)
+
+    // Best-effort: send read receipt to Meta for the most recent inbound message
+    const { data: channel } = await service
+      .from('channels')
+      .select('*')
+      .eq('id', conversation.channel_id)
+      .maybeSingle()
+
+    if (channel?.type === 'whatsapp') {
+      const { data: lastInbound } = await service
+        .from('messages')
+        .select('meta_message_id')
+        .eq('conversation_id', conversationId)
+        .eq('direction', 'inbound')
+        .not('meta_message_id', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (lastInbound?.meta_message_id) {
+        try {
+          await markRead(channel as WhatsAppChannelLike, lastInbound.meta_message_id)
+        } catch {
+          // best-effort: ignore read receipt failures
+        }
+      }
+    }
+
+    return { ok: true }
+  } catch {
+    return { ok: false }
   }
 }
