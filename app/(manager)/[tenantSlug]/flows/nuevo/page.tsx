@@ -9,7 +9,7 @@ import {
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
-import { FlowBuilder } from '../_components/flow-builder'
+import { FlowGraphEditor } from '../_components/flow-graph-editor'
 
 export const metadata = { title: 'Nuevo flow' }
 export const dynamic = 'force-dynamic'
@@ -42,20 +42,22 @@ export default async function NewFlowPage({ params }: { params: Promise<{ tenant
   ])
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
-      <Link
-        href={`/${tenantSlug}/flows`}
-        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-3" />
-        Volver a flows
-      </Link>
-      <PageHeader
-        eyebrow="Marketing"
-        title="Nuevo flow"
-        description="Definí cuándo se dispara y qué pasos ejecuta. Activalo solo cuando esté listo."
-      />
-      <FlowBuilder
+    <div className="flex h-[calc(100vh-4rem)] flex-col px-4 py-4 sm:px-6">
+      <div className="mb-4 flex shrink-0 flex-col gap-3">
+        <Link
+          href={`/${tenantSlug}/flows`}
+          className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="size-3" />
+          Volver a flows
+        </Link>
+        <PageHeader
+          eyebrow="Marketing"
+          title="Nuevo flow"
+          description="Diseñá el grafo de automatización. El trigger dispara; el grafo define el camino."
+        />
+      </div>
+      <FlowGraphEditor
         tenantSlug={tenantSlug}
         channels={chRes.data ?? []}
         templates={tplRes.data ?? []}
