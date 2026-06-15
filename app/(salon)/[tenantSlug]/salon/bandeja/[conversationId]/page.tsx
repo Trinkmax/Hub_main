@@ -6,6 +6,7 @@ import { MessageThread } from '@/app/(manager)/[tenantSlug]/bandeja/_components/
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { getConversation, listApprovedTemplates, listMessages } from '@/lib/bandeja/queries'
+import { listQuickMessages } from '@/lib/quick-messages/queries'
 import { requireTenantAccess } from '@/lib/tenant'
 
 export const metadata = { title: 'Salón · Conversación' }
@@ -25,10 +26,11 @@ export default async function SalonConversationPage({
     notFound()
   }
 
-  const [convo, messages, templates] = await Promise.all([
+  const [convo, messages, templates, quickMessages] = await Promise.all([
     getConversation(access.tenant.id, conversationId),
     listMessages(access.tenant.id, conversationId),
     listApprovedTemplates(access.tenant.id),
+    listQuickMessages(access.tenant.id),
   ])
 
   if (!convo) notFound()
@@ -91,6 +93,7 @@ export default async function SalonConversationPage({
           channelType={convo.channel_type}
           insideWindow={insideWindow}
           templates={templates}
+          quickMessages={quickMessages}
         />
       </div>
     </div>

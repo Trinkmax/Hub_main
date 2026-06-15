@@ -3,6 +3,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { getConversation, listMessages } from '@/lib/bandeja/queries'
 import { getTagsForConversationIds, listConversationTags } from '@/lib/conversation-tags/queries'
+import { listQuickMessages } from '@/lib/quick-messages/queries'
 import { Composer } from './composer'
 import { ConversationTagPicker } from './conversation-tag-picker'
 import { MessageThread } from './message-thread'
@@ -26,11 +27,12 @@ export async function ConversationView({
   conversationId: string
   templates: Template[]
 }) {
-  const [convo, messages, allTags, tagsMap] = await Promise.all([
+  const [convo, messages, allTags, tagsMap, quickMessages] = await Promise.all([
     getConversation(tenantId, conversationId),
     listMessages(tenantId, conversationId),
     listConversationTags(tenantId),
     getTagsForConversationIds(tenantId, [conversationId]),
+    listQuickMessages(tenantId),
   ])
   if (!convo) {
     return (
@@ -88,6 +90,7 @@ export async function ConversationView({
         channelType={convo.channel_type}
         insideWindow={insideWindow}
         templates={templates}
+        quickMessages={quickMessages}
       />
     </div>
   )

@@ -1,7 +1,7 @@
 'use client'
 
-import { Send, Sparkles } from 'lucide-react'
-import { useActionState, useEffect, useMemo, useState } from 'react'
+import { Send, Sparkles, Zap } from 'lucide-react'
+import { useActionState, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { type MetaActionState, sendTemplateMessage, sendTextMessage } from '@/lib/meta/actions'
+import type { QuickMessageRow } from '@/lib/quick-messages/queries'
 import type { ChannelType } from '@/types/database'
 
 type Template = {
@@ -38,18 +39,103 @@ function countBodyVariables(components: unknown): number {
   return 0
 }
 
+function QuickMessagePicker({
+  query,
+  quickMessages,
+  onSelect,
+  onClose,
+}: {
+  query: string
+  quickMessages: QuickMessageRow[]
+  onSelect: (body: string) => void
+  onClose: () => void
+}) {
+  const lower = query.toLowerCase()
+  const filtered = quickMessages.filter(
+    (m) => m.shortcut.includes(lower) || m.title.toLowerCase().includes(lower),
+  )
+  const [highlighted, setHighlighted] = useState(0)
+
+  // Reset highlight when filter changes (query es prop, Biome no lo detecta como outer dep)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: query es la prop que dispara el reset
+  useEffect(() => {
+    setHighlighted(0)
+  }, [query])
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onClose()
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setHighlighted((h) => Math.min(h + 1, filtered.length - 1))
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setHighlighted((h) => Math.max(h - 1, 0))
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault()
+        const selected = filtered[highlighted]
+        if (selected) onSelect(selected.body)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [filtered, highlighted, onSelect, onClose])
+
+  if (filtered.length === 0) {
+    return (
+      <div className="absolute bottom-full left-0 right-0 mb-1 rounded-lg border border-border bg-popover p-3 shadow-md">
+        <p className="text-xs text-muted-foreground">Sin resultados para «/{query}»</p>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      role="listbox"
+      aria-label="Mensajes rápidos"
+      className="absolute bottom-full left-0 right-0 mb-1 max-h-52 overflow-y-auto rounded-lg border border-border bg-popover shadow-md"
+    >
+      {filtered.map((msg, i) => (
+        <button
+          key={msg.id}
+          type="button"
+          role="option"
+          aria-selected={i === highlighted}
+          className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
+            i === highlighted ? 'bg-accent text-accent-foreground' : ''
+          }`}
+          onClick={() => onSelect(msg.body)}
+          onMouseEnter={() => setHighlighted(i)}
+        >
+          <span className="flex items-center gap-1.5">
+            <span className="font-medium leading-tight">{msg.title}</span>
+            <span className="font-mono rounded bg-secondary/60 px-1 text-[10px] text-muted-foreground">
+              /{msg.shortcut}
+            </span>
+          </span>
+          <span className="truncate text-xs text-muted-foreground">{msg.body}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function Composer({
   tenantSlug,
   conversationId,
   channelType,
   insideWindow,
   templates,
+  quickMessages,
 }: {
   tenantSlug: string
   conversationId: string
   channelType: ChannelType
   insideWindow: boolean
   templates: Template[]
+  quickMessages: QuickMessageRow[]
 }) {
   const canSendText = insideWindow || channelType === 'instagram'
 
@@ -77,19 +163,92 @@ export function Composer({
   )
   const variableCount = selectedTemplate ? countBodyVariables(selectedTemplate.components) : 0
 
+  // Quick-message picker state
+  const [bodyValue, setBodyValue] = useState('')
+  const [pickerQuery, setPickerQuery] = useState<string | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const formRef = useRef<HTMLFormElement>(null)
+
+  function handleBodyChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const val = e.target.value
+    setBodyValue(val)
+    // Show picker only when the textarea starts with "/" (optionally followed by query chars)
+    if (val.startsWith('/')) {
+      setPickerQuery(val.slice(1))
+    } else {
+      setPickerQuery(null)
+    }
+  }
+
+  function handleQuickMessageSelect(body: string) {
+    setBodyValue(body)
+    setPickerQuery(null)
+    // Focus back on textarea
+    textareaRef.current?.focus()
+  }
+
+  function handlePickerClose() {
+    setPickerQuery(null)
+    textareaRef.current?.focus()
+  }
+
+  // Clear body after successful send
+  useEffect(() => {
+    if (textState.ok) {
+      setBodyValue('')
+      setPickerQuery(null)
+    }
+  }, [textState])
+
   if (canSendText) {
     return (
-      <form action={textAction} className="border-t border-border/60 bg-card p-3">
+      <form ref={formRef} action={textAction} className="border-t border-border/60 bg-card p-3">
         <input type="hidden" name="conversation_id" value={conversationId} />
-        <div className="flex items-end gap-2">
-          <Textarea
-            name="body"
-            placeholder="Escribí tu mensaje…"
-            rows={2}
-            required
-            maxLength={4096}
-            className="flex-1 resize-none"
-          />
+        <div className="relative flex items-end gap-2">
+          {pickerQuery !== null && quickMessages.length > 0 && (
+            <QuickMessagePicker
+              query={pickerQuery}
+              quickMessages={quickMessages}
+              onSelect={handleQuickMessageSelect}
+              onClose={handlePickerClose}
+            />
+          )}
+          <div className="relative flex-1">
+            <Textarea
+              ref={textareaRef}
+              name="body"
+              value={bodyValue}
+              onChange={handleBodyChange}
+              placeholder={
+                quickMessages.length > 0
+                  ? 'Escribí tu mensaje… o / para mensajes rápidos'
+                  : 'Escribí tu mensaje…'
+              }
+              rows={2}
+              required
+              maxLength={4096}
+              className="resize-none"
+            />
+            {quickMessages.length > 0 && (
+              <button
+                type="button"
+                title="Mensajes rápidos (/)"
+                aria-label="Abrir mensajes rápidos"
+                className="absolute bottom-2 right-2 flex size-5 items-center justify-center rounded text-muted-foreground opacity-50 transition-opacity hover:opacity-100"
+                onClick={() => {
+                  if (pickerQuery !== null) {
+                    handlePickerClose()
+                  } else {
+                    setBodyValue('/')
+                    setPickerQuery('')
+                    textareaRef.current?.focus()
+                  }
+                }}
+              >
+                <Zap className="size-3.5" />
+              </button>
+            )}
+          </div>
           <Button type="submit" disabled={textPending} className="gap-1.5" size="lg">
             <Send className="size-4" />
             {textPending ? 'Enviando…' : 'Enviar'}

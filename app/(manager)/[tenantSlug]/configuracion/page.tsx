@@ -31,8 +31,9 @@ const CARDS: SettingsCard[] = [
   {
     icon: MessageCircle,
     title: 'Mensajería',
-    description: 'Conexión con WhatsApp e Instagram, plantillas aprobadas y tags de carta.',
-    topics: ['Canales', 'Plantillas', 'Tags de carta'],
+    description:
+      'Conexión con WhatsApp e Instagram, plantillas aprobadas, mensajes rápidos y tags de carta.',
+    topics: ['Canales', 'Plantillas', 'Mensajes rápidos', 'Tags de carta'],
     href: (s) => `/${s}/configuracion/canales`,
   },
   {

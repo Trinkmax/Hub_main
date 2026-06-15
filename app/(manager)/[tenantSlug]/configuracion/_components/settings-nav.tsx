@@ -28,6 +28,7 @@ const GROUPS: Group[] = [
     items: [
       { label: 'Canales (WA · IG)', href: (s) => `/${s}/configuracion/canales` },
       { label: 'Plantillas WhatsApp', href: (s) => `/${s}/configuracion/templates` },
+      { label: 'Mensajes rápidos', href: (s) => `/${s}/configuracion/mensajes-rapidos` },
       { label: 'Tags de carta', href: (s) => `/${s}/configuracion/tags` },
     ],
   },
