@@ -3883,6 +3883,10 @@ export type Database = {
         }
         Returns: Json
       }
+      mark_broadcast_replied: {
+        Args: { p_conversation_id: string }
+        Returns: undefined
+      }
       mark_commission_paid: {
         Args: { p_ledger_ids: string[]; p_paid_at?: string }
         Returns: number
@@ -4009,6 +4013,10 @@ export type Database = {
           p_qr_token: string
         }
         Returns: Json
+      }
+      sync_broadcast_recipient_status: {
+        Args: { p_message_id: string; p_status: string; p_timestamp: string }
+        Returns: undefined
       }
       transition_reservation_status: {
         Args: {
