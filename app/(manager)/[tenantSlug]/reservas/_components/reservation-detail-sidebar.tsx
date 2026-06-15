@@ -1,6 +1,7 @@
 'use client'
 
 import { AlertTriangle, CheckCircle2, Circle, Clock4 } from 'lucide-react'
+import { ContactButton } from '@/components/messaging/contact-button'
 import { ReservationStatusControls } from '@/components/reservations/reservation-status-controls'
 import type { ReservationWithJoins } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
@@ -23,9 +24,22 @@ export function ReservationDetailSidebar({
   tenantSlug: string
   reservation: ReservationWithJoins
 }) {
+  const contactPhone = reservation.customer?.phone ?? reservation.guest_phone ?? null
+
   return (
     <aside className="space-y-4">
       <ReservationStatusControls tenantSlug={tenantSlug} reservation={reservation} />
+
+      {contactPhone ? (
+        <div className="flex justify-end">
+          <ContactButton
+            tenantSlug={tenantSlug}
+            phone={contactPhone}
+            customerId={reservation.customer?.id}
+            name={reservation.guest_name}
+          />
+        </div>
+      ) : null}
 
       {/* Timeline operativo */}
       <section className="rounded-xl border border-border/70 bg-card p-4">

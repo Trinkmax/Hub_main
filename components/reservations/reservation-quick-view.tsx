@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
+import { ContactButton } from '@/components/messaging/contact-button'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -113,9 +114,19 @@ export function ReservationQuickView({
         <ReservationStatusControls tenantSlug={tenantSlug} reservation={r} onChanged={onChanged} />
 
         <DialogFooter className="gap-2 sm:justify-between">
-          <Button asChild variant="outline">
-            <Link href={`/${tenantSlug}/reservas/${r.id}`}>Editar reserva</Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button asChild variant="outline">
+              <Link href={`/${tenantSlug}/reservas/${r.id}`}>Editar reserva</Link>
+            </Button>
+            {r.customer?.phone || r.guest_phone ? (
+              <ContactButton
+                tenantSlug={tenantSlug}
+                phone={r.customer?.phone ?? r.guest_phone ?? ''}
+                customerId={r.customer?.id}
+                name={r.guest_name}
+              />
+            ) : null}
+          </div>
           <DialogClose asChild>
             <Button variant="ghost">Cerrar</Button>
           </DialogClose>

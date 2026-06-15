@@ -121,6 +121,19 @@ export function tryNormalizePhone(raw: string): string | null {
 }
 
 /**
+ * Construye una URL de wa.me a partir de cualquier string de teléfono.
+ * Stripea todo lo que no sea dígito y arma `https://wa.me/<digits>?text=<encoded>`.
+ * Si `phone` está vacío devuelve null.
+ */
+export function buildWaMeUrl(phone: string, text?: string): string | null {
+  const digits = phone.replace(/\D/g, '')
+  if (!digits) return null
+  const base = `https://wa.me/${digits}`
+  if (!text) return base
+  return `${base}?text=${encodeURIComponent(text)}`
+}
+
+/**
  * Formatea un E.164 para mostrar al usuario.
  * Solo cosmético — la fuente de verdad es siempre el E.164.
  */

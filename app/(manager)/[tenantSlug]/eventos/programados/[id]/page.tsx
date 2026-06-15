@@ -13,6 +13,7 @@ import {
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
+import { EventReservationsList } from '../_components/event-reservations-list'
 import { ScheduledEventForm } from '../_components/scheduled-event-form'
 
 export const metadata = { title: 'Evento programado' }
@@ -92,26 +93,7 @@ export default async function ScheduledEventPage({
         <h2 className="mb-3 font-serif text-lg font-semibold">
           Reservas asociadas ({eventReservations.length})
         </h2>
-        {eventReservations.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Sin reservas todavía.</p>
-        ) : (
-          <ul className="divide-y divide-border/60">
-            {eventReservations.map((r) => (
-              <li key={r.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                <div className="flex flex-col">
-                  <span className="font-medium">{r.guest_name}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {r.reservation_time_local.slice(0, 5)} ·{' '}
-                    {r.primary_manager?.display_name ?? '—'}
-                  </span>
-                </div>
-                <span className="font-mono text-base tabular-nums font-semibold">
-                  {r.actual_guests ?? r.estimated_guests}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
+        <EventReservationsList tenantSlug={tenantSlug} reservations={eventReservations} />
       </section>
     </div>
   )

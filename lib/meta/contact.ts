@@ -1,5 +1,6 @@
 'use server'
 
+import { listApprovedTemplates } from '@/lib/bandeja/queries'
 import { MetaApiError, mapMetaErrorToStatus } from '@/lib/meta/errors'
 import { sendTemplate, sendText, type WhatsAppChannelLike } from '@/lib/meta/whatsapp'
 import { tryNormalizePhone } from '@/lib/phone'
@@ -7,6 +8,19 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { requireRole, requireTenantAccess } from '@/lib/tenant'
 import { type ContactCustomerInput, contactCustomerInputSchema } from './contact-schemas'
 import { findOrCreateConversation, recordOutboundMessage } from './conversations'
+
+export type ContactTemplateItem = {
+  id: string
+  name: string
+  language: string
+}
+
+export async function getContactTemplates(slug: string): Promise<ContactTemplateItem[]> {
+  const access = await requireTenantAccess(slug)
+  requireRole(access.role, ['owner', 'cashier', 'waiter'])
+  const templates = await listApprovedTemplates(access.tenant.id)
+  return templates.map((t) => ({ id: t.id, name: t.name, language: t.language }))
+}
 
 export type ContactCustomerResult =
   | { ok: true; conversationId: string }

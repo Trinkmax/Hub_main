@@ -3,6 +3,7 @@ import { es } from 'date-fns/locale'
 import { ArrowLeft, Banknote, Phone, Receipt, Sparkles, Star } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { ContactButton } from '@/components/messaging/contact-button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -139,6 +140,12 @@ export default async function CustomerDetailPage({
                 Canjear puntos
               </Link>
             </Button>
+            <ContactButton
+              tenantSlug={tenantSlug}
+              phone={c.phone}
+              customerId={c.id}
+              name={`${c.first_name} ${c.last_name}`.trim()}
+            />
             {access.role === 'owner' ? (
               <DeleteButton tenantSlug={tenantSlug} customerId={c.id} />
             ) : null}
@@ -300,11 +307,27 @@ export default async function CustomerDetailPage({
         </TabsContent>
 
         <TabsContent value="comunicaciones" className="mt-4">
-          <EmptyState
-            icon={Phone}
-            title="Sin comunicaciones aún"
-            description="Cuando le mandes un broadcast o reciba un mensaje 1-a-1, va a aparecer acá."
-          />
+          <div className="card-hairline rounded-xl border bg-card p-5 sm:p-6">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="font-display text-base font-semibold tracking-tight">Mensajes</h2>
+                <p className="text-sm text-muted-foreground">
+                  Enviá un mensaje directo o plantilla por WhatsApp.
+                </p>
+              </div>
+              <ContactButton
+                tenantSlug={tenantSlug}
+                phone={c.phone}
+                customerId={c.id}
+                name={`${c.first_name} ${c.last_name}`.trim()}
+              />
+            </div>
+            <EmptyState
+              icon={Phone}
+              title="Sin comunicaciones aún"
+              description="Cuando le mandes un broadcast o reciba un mensaje 1-a-1, va a aparecer acá."
+            />
+          </div>
         </TabsContent>
 
         <TabsContent value="notas" className="mt-4">
