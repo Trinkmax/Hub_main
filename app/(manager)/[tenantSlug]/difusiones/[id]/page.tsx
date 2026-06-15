@@ -1,4 +1,12 @@
-import { ArrowLeft, CheckCircle2, Send, TriangleAlert, Users } from 'lucide-react'
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Eye,
+  MessageCircle,
+  Send,
+  TriangleAlert,
+  Users,
+} from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
@@ -21,6 +29,8 @@ import {
   TenantNotFoundError,
 } from '@/lib/tenant'
 import type { RecipientStatus } from '@/types/database'
+import { BroadcastActions } from './_components/broadcast-actions'
+import { LiveStats } from './_components/live-stats'
 
 export const metadata = { title: 'Detalle difusión' }
 export const dynamic = 'force-dynamic'
@@ -85,10 +95,14 @@ export default async function BroadcastDetailPage({
   const total = stats.total ?? 0
   const sent = stats.sent ?? 0
   const failed = stats.failed ?? 0
+  const delivered = stats.delivered ?? 0
+  const read = stats.read ?? 0
+  const replied = stats.replied ?? 0
   const pct = total > 0 ? Math.round((sent / total) * 100) : 0
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      <LiveStats broadcastId={id} />
       <Link
         href={`/${tenantSlug}/difusiones`}
         className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
@@ -113,13 +127,21 @@ export default async function BroadcastDetailPage({
           </span>
         }
         actions={
-          <Badge variant="secondary" className="capitalize">
-            {b.status}
-          </Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="secondary" className="capitalize">
+              {b.status}
+            </Badge>
+            <BroadcastActions
+              tenantSlug={tenantSlug}
+              broadcastId={id}
+              status={b.status}
+              failedCount={failed}
+            />
+          </div>
         }
       />
 
-      <section className="grid gap-4 sm:grid-cols-3">
+      <section className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard
           icon={Users}
           label="Total"
@@ -138,6 +160,13 @@ export default async function BroadcastDetailPage({
           value={failed.toLocaleString('es-AR')}
           deltaTone={failed > 0 ? 'negative' : 'positive'}
         />
+        <StatCard
+          icon={CheckCircle2}
+          label="Entregados"
+          value={delivered.toLocaleString('es-AR')}
+        />
+        <StatCard icon={Eye} label="Leídos" value={read.toLocaleString('es-AR')} />
+        <StatCard icon={MessageCircle} label="Respondió" value={replied.toLocaleString('es-AR')} />
       </section>
 
       <DataTableShell>

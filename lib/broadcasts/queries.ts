@@ -42,7 +42,9 @@ export async function getBroadcastDetail(tenantId: string, id: string) {
   if (!broadcast) return null
   const { data: recipients } = await supabase
     .from('broadcast_recipients')
-    .select('id, status, sent_at, error, customer:customers(first_name, last_name, phone)')
+    .select(
+      'id, status, sent_at, delivered_at, read_at, replied_at, error, customer:customers(first_name, last_name, phone)',
+    )
     .eq('broadcast_id', id)
     .order('sent_at', { ascending: false, nullsFirst: false })
     .limit(200)
@@ -52,6 +54,9 @@ export async function getBroadcastDetail(tenantId: string, id: string) {
       id: string
       status: RecipientStatus
       sent_at: string | null
+      delivered_at: string | null
+      read_at: string | null
+      replied_at: string | null
       error: string | null
       customer:
         | { first_name: string; last_name: string; phone: string }
