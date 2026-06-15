@@ -96,6 +96,24 @@ export function ConversationList({
                     </span>
                   ) : null}
                 </div>
+                {c.tags.length > 0 ? (
+                  <div className="flex flex-wrap gap-1 pt-0.5">
+                    {c.tags.map((tag) => (
+                      <span
+                        key={tag.id}
+                        className="inline-flex items-center gap-1 rounded-full px-1.5 py-0 text-[10px] font-medium leading-5"
+                        style={{ backgroundColor: `${tag.color}26`, color: tag.color }}
+                      >
+                        <span
+                          className="size-1.5 rounded-full shrink-0"
+                          style={{ backgroundColor: tag.color }}
+                          aria-hidden
+                        />
+                        {tag.name}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </Link>
           </li>

@@ -1,4 +1,5 @@
 import 'server-only'
+import { type ConversationTag, getTagsForConversationIds } from '@/lib/conversation-tags/queries'
 import { createClient } from '@/lib/supabase/server'
 import type { ChannelType, MessageDirection, MessageStatus } from '@/types/database'
 
@@ -12,6 +13,7 @@ export type ConversationListRow = {
   last_message_at: string | null
   unread_count: number
   preview: string | null
+  tags: ConversationTag[]
 }
 
 export type MessageRow = {
@@ -28,10 +30,12 @@ export type MessageRow = {
 
 export async function listConversations(
   tenantId: string,
-  limit = 50,
+  opts: { tagId?: string; limit?: number } = {},
 ): Promise<ConversationListRow[]> {
+  const { tagId, limit = 50 } = opts
   const supabase = await createClient()
-  const { data, error } = await supabase
+
+  let query = supabase
     .from('conversations')
     .select(
       `
@@ -49,10 +53,31 @@ export async function listConversations(
     .eq('tenant_id', tenantId)
     .order('last_message_at', { ascending: false, nullsFirst: false })
     .limit(limit)
+
+  // Filtro por etiqueta: solo conversaciones que tienen esa tag asignada
+  if (tagId) {
+    // conversation_tag_assignments tiene conversation_id → filtrar con subquery vía RPC
+    // La forma más directa con supabase-js es filtrar en dos pasos:
+    // 1. Obtener los conversation_ids que tienen ese tag
+    const { data: assignments } = await supabase
+      .from('conversation_tag_assignments')
+      .select('conversation_id')
+      .eq('tag_id', tagId)
+
+    const ids = (assignments ?? []).map((a) => a.conversation_id)
+    if (ids.length === 0) {
+      // Sin conversaciones con esa etiqueta
+      return []
+    }
+    query = query.in('id', ids)
+  }
+
+  const { data, error } = await query
   if (error) {
     console.error('[bandeja.listConversations]', error.message)
     return []
   }
+
   type Joined = {
     id: string
     channel_id: string
@@ -67,7 +92,8 @@ export async function listConversations(
       | null
     preview: Array<{ content: string | null; created_at: string }> | null
   }
-  return (data as unknown as Joined[]).map((row) => {
+
+  const rows = (data as unknown as Joined[]).map((row) => {
     const channel = Array.isArray(row.channel) ? row.channel[0] : row.channel
     const customer = Array.isArray(row.customer) ? row.customer[0] : row.customer
     const last = (row.preview ?? [])
@@ -83,8 +109,22 @@ export async function listConversations(
       last_message_at: row.last_message_at,
       unread_count: row.unread_count,
       preview: last?.content ?? null,
+      tags: [] as ConversationTag[],
     }
   })
+
+  // Batch-fetch de tags para todas las conversaciones (una sola query, sin N+1)
+  if (rows.length > 0) {
+    const tagsMap = await getTagsForConversationIds(
+      tenantId,
+      rows.map((r) => r.id),
+    )
+    for (const row of rows) {
+      row.tags = tagsMap.get(row.id) ?? []
+    }
+  }
+
+  return rows
 }
 
 export type ConversationDetail = {

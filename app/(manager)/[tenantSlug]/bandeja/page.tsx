@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
 import { listApprovedTemplates, listConversations } from '@/lib/bandeja/queries'
+import { listConversationTags } from '@/lib/conversation-tags/queries'
 import {
   RoleRequiredError,
   requireRole,
@@ -13,6 +14,7 @@ import {
 import { cn } from '@/lib/utils'
 import { ConversationList } from './_components/conversation-list'
 import { ConversationView } from './_components/conversation-view'
+import { TagFilterBar } from './_components/tag-filter-bar'
 
 export const metadata = { title: 'Bandeja' }
 export const dynamic = 'force-dynamic'
@@ -22,10 +24,10 @@ export default async function BandejaPage({
   searchParams,
 }: {
   params: Promise<{ tenantSlug: string }>
-  searchParams: Promise<{ c?: string }>
+  searchParams: Promise<{ c?: string; tag?: string }>
 }) {
   const { tenantSlug } = await params
-  const { c: selectedId } = await searchParams
+  const { c: selectedId, tag: tagId } = await searchParams
 
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
@@ -37,8 +39,11 @@ export default async function BandejaPage({
     throw error
   }
 
-  const conversations = await listConversations(access.tenant.id)
-  const templates = await listApprovedTemplates(access.tenant.id)
+  const [conversations, templates, allTags] = await Promise.all([
+    listConversations(access.tenant.id, { tagId }),
+    listApprovedTemplates(access.tenant.id),
+    listConversationTags(access.tenant.id),
+  ])
 
   return (
     <div className="mx-auto flex h-[calc(100dvh-3.5rem)] w-full max-w-7xl flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
@@ -65,6 +70,7 @@ export default async function BandejaPage({
               {conversations.length}
             </span>
           </header>
+          <TagFilterBar tags={allTags} tenantSlug={tenantSlug} activeTagId={tagId ?? null} />
           <ConversationList
             conversations={conversations}
             tenantSlug={tenantSlug}

@@ -2,7 +2,9 @@ import { Clock, MessageSquare } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { getConversation, listMessages } from '@/lib/bandeja/queries'
+import { getTagsForConversationIds, listConversationTags } from '@/lib/conversation-tags/queries'
 import { Composer } from './composer'
+import { ConversationTagPicker } from './conversation-tag-picker'
 import { MessageThread } from './message-thread'
 
 type Template = {
@@ -24,9 +26,11 @@ export async function ConversationView({
   conversationId: string
   templates: Template[]
 }) {
-  const [convo, messages] = await Promise.all([
+  const [convo, messages, allTags, tagsMap] = await Promise.all([
     getConversation(tenantId, conversationId),
     listMessages(tenantId, conversationId),
+    listConversationTags(tenantId),
+    getTagsForConversationIds(tenantId, [conversationId]),
   ])
   if (!convo) {
     return (
@@ -40,6 +44,8 @@ export async function ConversationView({
   const insideWindow = lastInboundMs > 0 && Date.now() - lastInboundMs < 24 * 3600 * 1000
   const display = convo.customer_name ?? convo.external_user_id
   const initials = (display || '?').charAt(0).toUpperCase()
+  const assignedTags = tagsMap.get(conversationId) ?? []
+  const assignedTagIds = assignedTags.map((t) => t.id)
 
   return (
     <div className="flex h-full flex-1 flex-col">
@@ -68,6 +74,12 @@ export async function ConversationView({
             </Badge>
           </p>
         </div>
+        <ConversationTagPicker
+          tenantSlug={tenantSlug}
+          conversationId={conversationId}
+          allTags={allTags}
+          assignedTagIds={assignedTagIds}
+        />
       </header>
       <MessageThread tenantSlug={tenantSlug} conversationId={convo.id} initialMessages={messages} />
       <Composer
