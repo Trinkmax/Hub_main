@@ -191,6 +191,10 @@ export async function handleSendBroadcastMessage(payload: unknown): Promise<void
       .from('broadcast_recipients')
       .update({ status: 'failed', error: 'opt_out' })
       .eq('id', recipient.id)
+    // Importante: recalcular stats y finalizar — si todos los pendientes
+    // revocan el opt-in, sin esto la difusión quedaría colgada en 'sending'.
+    await recomputeBroadcastStats(broadcast.id)
+    await maybeFinalizeBroadcast(broadcast.id)
     return
   }
 
