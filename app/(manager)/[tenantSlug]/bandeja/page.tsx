@@ -19,15 +19,18 @@ import { TagFilterBar } from './_components/tag-filter-bar'
 export const metadata = { title: 'Bandeja' }
 export const dynamic = 'force-dynamic'
 
+const PAGE_SIZE = 30
+
 export default async function BandejaPage({
   params,
   searchParams,
 }: {
   params: Promise<{ tenantSlug: string }>
-  searchParams: Promise<{ c?: string; tag?: string }>
+  searchParams: Promise<{ c?: string; tag?: string; n?: string }>
 }) {
   const { tenantSlug } = await params
-  const { c: selectedId, tag: tagId } = await searchParams
+  const { c: selectedId, tag: tagId, n: nParam } = await searchParams
+  const limit = Math.max(PAGE_SIZE, Math.min(Number(nParam) || PAGE_SIZE, 300))
 
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
@@ -39,11 +42,12 @@ export default async function BandejaPage({
     throw error
   }
 
-  const [conversations, templates, allTags] = await Promise.all([
-    listConversations(access.tenant.id, { tagId }),
+  const [conversationsResult, templates, allTags] = await Promise.all([
+    listConversations(access.tenant.id, { tagId, limit }),
     listApprovedTemplates(access.tenant.id),
     listConversationTags(access.tenant.id),
   ])
+  const { rows: conversations, hasMore } = conversationsResult
 
   return (
     <div className="mx-auto flex h-[calc(100dvh-3.5rem)] w-full max-w-7xl flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
@@ -74,7 +78,11 @@ export default async function BandejaPage({
           <ConversationList
             conversations={conversations}
             tenantSlug={tenantSlug}
+            tenantId={access.tenant.id}
             selectedId={selectedId ?? null}
+            hasMore={hasMore}
+            currentN={limit}
+            selectedTag={tagId ?? null}
           />
         </aside>
         <section

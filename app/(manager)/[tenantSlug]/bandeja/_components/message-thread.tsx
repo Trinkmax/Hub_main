@@ -1,12 +1,17 @@
 'use client'
 
 import { format } from 'date-fns'
-import { Check, CheckCheck, Clock3, TriangleAlert } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { Check, CheckCheck, Clock3, Loader2, TriangleAlert } from 'lucide-react'
+import { useEffect, useRef, useState, useTransition } from 'react'
+import { loadOlderMessages } from '@/lib/bandeja/actions'
 import type { MessageRow } from '@/lib/bandeja/queries'
 import { markConversationRead } from '@/lib/meta/actions'
 import { createClient } from '@/lib/supabase/browser'
 import { cn } from '@/lib/utils'
+
+/** How many messages we load initially — if the initial batch is this size,
+ *  there are probably older messages to paginate. */
+const INITIAL_LIMIT = 50
 
 function StatusIcon({ status }: { status: MessageRow['status'] }) {
   if (!status) return null
@@ -28,10 +33,14 @@ export function MessageThread({
   initialMessages: MessageRow[]
 }) {
   const [messages, setMessages] = useState<MessageRow[]>(initialMessages)
+  const [hasOlder, setHasOlder] = useState(initialMessages.length >= INITIAL_LIMIT)
+  const [isPending, startTransition] = useTransition()
   const bottomRef = useRef<HTMLDivElement | null>(null)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     setMessages(initialMessages)
+    setHasOlder(initialMessages.length >= INITIAL_LIMIT)
   }, [initialMessages])
 
   // Fire-and-forget: mark conversation as read when the thread is opened
@@ -44,6 +53,7 @@ export function MessageThread({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  // Realtime: append new messages and update status changes
   useEffect(() => {
     const supabase = createClient()
     const channel = supabase
@@ -80,8 +90,54 @@ export function MessageThread({
     }
   }, [conversationId])
 
+  function handleLoadOlder() {
+    const oldest = messages[0]
+    if (!oldest) return
+    // Save current scroll height before prepending so we can restore position
+    const container = scrollRef.current
+    const prevScrollHeight = container?.scrollHeight ?? 0
+
+    startTransition(async () => {
+      const result = await loadOlderMessages(tenantSlug, conversationId, oldest.created_at)
+      if (!result.ok) return
+      const older = result.messages
+      if (older.length === 0) {
+        setHasOlder(false)
+        return
+      }
+      setMessages((prev) => {
+        // De-duplicate in case of overlaps
+        const existingIds = new Set(prev.map((m) => m.id))
+        const fresh = older.filter((m) => !existingIds.has(m.id))
+        return [...fresh, ...prev]
+      })
+      // If fewer messages than the page size came back, we've reached the top
+      if (older.length < 50) setHasOlder(false)
+
+      // Restore scroll so the user stays at the same message they were reading
+      requestAnimationFrame(() => {
+        if (container) {
+          container.scrollTop = container.scrollHeight - prevScrollHeight
+        }
+      })
+    })
+  }
+
   return (
-    <div className="flex-1 space-y-2 overflow-y-auto bg-secondary/15 px-5 py-6">
+    <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto bg-secondary/15 px-5 py-6">
+      {hasOlder ? (
+        <div className="flex justify-center pb-2">
+          <button
+            type="button"
+            onClick={handleLoadOlder}
+            disabled={isPending}
+            className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm transition-colors hover:bg-secondary/60 hover:text-foreground disabled:opacity-60"
+          >
+            {isPending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
+            Cargar mensajes anteriores
+          </button>
+        </div>
+      ) : null}
       {messages.length === 0 ? (
         <p className="text-center text-xs text-muted-foreground">Sin mensajes.</p>
       ) : null}

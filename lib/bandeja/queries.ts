@@ -28,11 +28,18 @@ export type MessageRow = {
   created_at: string
 }
 
+export type ConversationListResult = {
+  rows: ConversationListRow[]
+  hasMore: boolean
+}
+
 export async function listConversations(
   tenantId: string,
   opts: { tagId?: string; limit?: number } = {},
-): Promise<ConversationListRow[]> {
-  const { tagId, limit = 50 } = opts
+): Promise<ConversationListResult> {
+  const { tagId, limit = 30 } = opts
+  // Fetch one extra to detect if there are more pages
+  const fetchLimit = limit + 1
   const supabase = await createClient()
 
   let query = supabase
@@ -52,7 +59,7 @@ export async function listConversations(
     )
     .eq('tenant_id', tenantId)
     .order('last_message_at', { ascending: false, nullsFirst: false })
-    .limit(limit)
+    .limit(fetchLimit)
 
   // Filtro por etiqueta: solo conversaciones que tienen esa tag asignada
   if (tagId) {
@@ -67,7 +74,7 @@ export async function listConversations(
     const ids = (assignments ?? []).map((a) => a.conversation_id)
     if (ids.length === 0) {
       // Sin conversaciones con esa etiqueta
-      return []
+      return { rows: [], hasMore: false }
     }
     query = query.in('id', ids)
   }
@@ -75,7 +82,7 @@ export async function listConversations(
   const { data, error } = await query
   if (error) {
     console.error('[bandeja.listConversations]', error.message)
-    return []
+    return { rows: [], hasMore: false }
   }
 
   type Joined = {
@@ -93,7 +100,12 @@ export async function listConversations(
     preview: Array<{ content: string | null; created_at: string }> | null
   }
 
-  const rows = (data as unknown as Joined[]).map((row) => {
+  const raw = data as unknown as Joined[]
+  const hasMore = raw.length > limit
+  // Trim the extra sentinel row
+  const slice = hasMore ? raw.slice(0, limit) : raw
+
+  const rows = slice.map((row) => {
     const channel = Array.isArray(row.channel) ? row.channel[0] : row.channel
     const customer = Array.isArray(row.customer) ? row.customer[0] : row.customer
     const last = (row.preview ?? [])
@@ -124,7 +136,7 @@ export async function listConversations(
     }
   }
 
-  return rows
+  return { rows, hasMore }
 }
 
 export type ConversationDetail = {
@@ -183,24 +195,39 @@ export async function getConversation(
   }
 }
 
+export type ListMessagesOpts = {
+  /** Only return messages with created_at strictly before this ISO timestamp (for loading older messages). */
+  before?: string
+  limit?: number
+}
+
 export async function listMessages(
   tenantId: string,
   conversationId: string,
-  limit = 100,
+  opts: ListMessagesOpts | number = {},
 ): Promise<MessageRow[]> {
+  // Accept legacy numeric `limit` arg for backward compat
+  const { before, limit = 50 } = typeof opts === 'number' ? { limit: opts } : opts
   const supabase = await createClient()
-  const { data, error } = await supabase
+  let query = supabase
     .from('messages')
     .select('id, direction, content, status, error, sent_at, delivered_at, read_at, created_at')
     .eq('tenant_id', tenantId)
     .eq('conversation_id', conversationId)
-    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: false })
     .limit(limit)
+
+  if (before) {
+    query = query.lt('created_at', before)
+  }
+
+  const { data, error } = await query
   if (error) {
     console.error('[bandeja.listMessages]', error.message)
     return []
   }
-  return (data ?? []) as MessageRow[]
+  // Return ascending so UI renders oldest → newest
+  return ((data ?? []) as MessageRow[]).reverse()
 }
 
 export async function listApprovedTemplates(tenantId: string) {

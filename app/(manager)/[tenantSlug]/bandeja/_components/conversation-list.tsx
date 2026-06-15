@@ -1,8 +1,13 @@
 'use client'
 
+import { ChevronDown } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useEffect } from 'react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import type { ConversationListRow } from '@/lib/bandeja/queries'
+import { buildListHref } from '@/lib/bandeja/utils'
+import { createClient } from '@/lib/supabase/browser'
 import { cn } from '@/lib/utils'
 
 function formatRelative(iso: string | null): string {
@@ -19,12 +24,45 @@ function formatRelative(iso: string | null): string {
 export function ConversationList({
   conversations,
   tenantSlug,
+  tenantId,
   selectedId,
+  hasMore,
+  currentN,
+  selectedTag,
 }: {
   conversations: ConversationListRow[]
   tenantSlug: string
+  tenantId: string
   selectedId: string | null
+  hasMore: boolean
+  currentN: number
+  selectedTag: string | null
 }) {
+  const router = useRouter()
+
+  // Live updates: refresh the list whenever any conversation in this tenant changes
+  useEffect(() => {
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`conversations-list:${tenantId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversations',
+          filter: `tenant_id=eq.${tenantId}`,
+        },
+        () => {
+          router.refresh()
+        },
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [tenantId, router])
+
   if (conversations.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center px-4 py-10 text-center text-xs text-muted-foreground">
@@ -32,6 +70,13 @@ export function ConversationList({
       </div>
     )
   }
+
+  const loadMoreHref = buildListHref(tenantSlug, {
+    n: currentN + 30,
+    c: selectedId,
+    tag: selectedTag,
+  })
+
   return (
     <ul className="divide-y divide-border/40 overflow-y-auto">
       {conversations.map((c) => {
@@ -119,6 +164,17 @@ export function ConversationList({
           </li>
         )
       })}
+      {hasMore ? (
+        <li>
+          <Link
+            href={loadMoreHref}
+            className="flex w-full items-center justify-center gap-1.5 px-3 py-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary/40 hover:text-foreground"
+          >
+            <ChevronDown className="size-3.5" aria-hidden />
+            Cargar más conversaciones
+          </Link>
+        </li>
+      ) : null}
     </ul>
   )
 }

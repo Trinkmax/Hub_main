@@ -23,7 +23,7 @@ export default async function SalonBandejaPage({
     notFound()
   }
 
-  const conversations = await listConversations(access.tenant.id)
+  const { rows: conversations } = await listConversations(access.tenant.id)
 
   return (
     <div className="space-y-6">
