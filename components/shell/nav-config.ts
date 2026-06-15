@@ -65,7 +65,41 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'Resumen', href: (s) => `/${s}`, icon: 'LayoutDashboard', exact: true },
       { label: 'Operativo', href: (s) => `/${s}/operativo`, icon: 'MonitorSmartphone' },
-      { label: 'Mensajería', href: (s) => `/${s}/bandeja`, icon: 'Inbox' },
+      {
+        // Hub único de comunicación con el cliente. El padre navega al inbox y
+        // expande las sub-secciones (consolidación: ex-bandeja + ex-Marketing).
+        label: 'Mensajería',
+        href: (s) => `/${s}/bandeja`,
+        icon: 'MessageCircle',
+        children: [
+          { label: 'Inbox', href: (s) => `/${s}/bandeja`, icon: 'Inbox' },
+          {
+            label: 'Difusiones',
+            href: (s) => `/${s}/difusiones`,
+            icon: 'Megaphone',
+            roles: ['owner'],
+          },
+          {
+            label: 'Audiencias',
+            href: (s) => `/${s}/audiencias`,
+            icon: 'UsersRound',
+            roles: ['owner'],
+          },
+          { label: 'Flows', href: (s) => `/${s}/flows`, icon: 'Workflow', roles: ['owner'] },
+          {
+            label: 'Mensajes rápidos',
+            href: (s) => `/${s}/configuracion/mensajes-rapidos`,
+            icon: 'MessageSquareText',
+            roles: ['owner', 'cashier'],
+          },
+          {
+            label: 'Canales y plantillas',
+            href: (s) => `/${s}/configuracion/canales`,
+            icon: 'Settings2',
+            roles: ['owner'],
+          },
+        ],
+      },
     ],
   },
   {
@@ -106,27 +140,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Crecimiento',
     items: [
-      {
-        label: 'Marketing',
-        href: (s) => `/${s}/marketing`,
-        icon: 'Megaphone',
-        roles: ['owner'],
-        children: [
-          {
-            label: 'Difusiones',
-            href: (s) => `/${s}/difusiones`,
-            icon: 'Megaphone',
-            roles: ['owner'],
-          },
-          {
-            label: 'Audiencias',
-            href: (s) => `/${s}/audiencias`,
-            icon: 'UsersRound',
-            roles: ['owner'],
-          },
-          { label: 'Flows', href: (s) => `/${s}/flows`, icon: 'Workflow', roles: ['owner'] },
-        ],
-      },
+      // Difusiones / Audiencias / Flows se movieron al hub "Mensajería" (grupo Hoy).
       { label: 'Menú', href: (s) => `/${s}/menu`, icon: 'UtensilsCrossed', roles: ['owner'] },
       {
         label: 'Club de beneficios',
