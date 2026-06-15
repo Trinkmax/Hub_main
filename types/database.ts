@@ -484,6 +484,74 @@ export type Database = {
           },
         ]
       }
+      conversation_tag_assignments: {
+        Row: {
+          assigned_at: string
+          assigned_by: string | null
+          conversation_id: string
+          tag_id: string
+        }
+        Insert: {
+          assigned_at?: string
+          assigned_by?: string | null
+          conversation_id: string
+          tag_id: string
+        }
+        Update: {
+          assigned_at?: string
+          assigned_by?: string | null
+          conversation_id?: string
+          tag_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_tag_assignments_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_tag_assignments_tag_id_fkey"
+            columns: ["tag_id"]
+            isOneToOne: false
+            referencedRelation: "conversation_tags"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversation_tags: {
+        Row: {
+          color: string
+          created_at: string
+          id: string
+          name: string
+          tenant_id: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          id?: string
+          name: string
+          tenant_id: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          id?: string
+          name?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_tags_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversations: {
         Row: {
           channel_id: string
@@ -491,7 +559,13 @@ export type Database = {
           customer_id: string | null
           external_user_id: string
           id: string
+          last_inbound_at: string | null
           last_message_at: string | null
+          last_message_direction:
+            | Database["public"]["Enums"]["message_direction"]
+            | null
+          last_message_preview: string | null
+          last_read_at: string | null
           tenant_id: string
           unread_count: number
         }
@@ -501,7 +575,13 @@ export type Database = {
           customer_id?: string | null
           external_user_id: string
           id?: string
+          last_inbound_at?: string | null
           last_message_at?: string | null
+          last_message_direction?:
+            | Database["public"]["Enums"]["message_direction"]
+            | null
+          last_message_preview?: string | null
+          last_read_at?: string | null
           tenant_id: string
           unread_count?: number
         }
@@ -511,7 +591,13 @@ export type Database = {
           customer_id?: string | null
           external_user_id?: string
           id?: string
+          last_inbound_at?: string | null
           last_message_at?: string | null
+          last_message_direction?:
+            | Database["public"]["Enums"]["message_direction"]
+            | null
+          last_message_preview?: string | null
+          last_read_at?: string | null
           tenant_id?: string
           unread_count?: number
         }
@@ -2008,6 +2094,50 @@ export type Database = {
           },
           {
             foreignKeyName: "punch_card_templates_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quick_messages: {
+        Row: {
+          body: string
+          created_at: string
+          created_by: string | null
+          id: string
+          shortcut: string
+          sort_order: number
+          tenant_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          shortcut: string
+          sort_order?: number
+          tenant_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          shortcut?: string
+          sort_order?: number
+          tenant_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quick_messages_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
