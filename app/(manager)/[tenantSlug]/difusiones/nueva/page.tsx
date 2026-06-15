@@ -58,7 +58,7 @@ export default async function NuevaDifusionPage({
       .eq('status', 'connected'),
     supabase
       .from('message_templates')
-      .select('id, name, language, channel_id, status')
+      .select('id, name, language, channel_id, status, components')
       .eq('tenant_id', access.tenant.id)
       .eq('status', 'approved')
       .order('name'),
