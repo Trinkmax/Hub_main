@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { enqueueJob } from '@/lib/jobs/queue'
 import { getMetaConfig } from '@/lib/meta/env'
 import { ingestInboundMessage } from '@/lib/meta/inbound'
 import { verifyMetaSignature } from '@/lib/meta/signature'
@@ -76,6 +77,25 @@ export async function POST(request: Request) {
       await service.rpc('mark_broadcast_replied', {
         p_conversation_id: ingest.conversation_id,
       })
+      // Encolar descarga de media si el mensaje tiene adjunto y fue nuevo
+      if (ingest.was_new && ingest.message_id && msg.media) {
+        const mediaEnv = msg.media as Record<string, unknown>
+        const mediaId = mediaEnv.id as string | undefined
+        const mediaType = mediaEnv.type as string | undefined
+        if (mediaId && mediaType) {
+          await enqueueJob({
+            tenantId: channel.tenant_id,
+            kind: 'download_media',
+            payload: {
+              message_id: ingest.message_id,
+              channel_id: channel.id,
+              media_id: mediaId,
+              media_type: mediaType,
+              tenant_id: channel.tenant_id,
+            },
+          })
+        }
+      }
       processed += 1
     } catch (e) {
       console.error('[webhook.whatsapp] ingest', (e as Error).message)

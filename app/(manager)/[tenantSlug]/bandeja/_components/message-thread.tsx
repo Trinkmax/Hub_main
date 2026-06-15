@@ -1,7 +1,7 @@
 'use client'
 
 import { format } from 'date-fns'
-import { Check, CheckCheck, Clock3, Loader2, TriangleAlert } from 'lucide-react'
+import { Check, CheckCheck, Clock3, FileText, Loader2, TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { loadOlderMessages } from '@/lib/bandeja/actions'
 import type { MessageRow } from '@/lib/bandeja/queries'
@@ -12,6 +12,72 @@ import { cn } from '@/lib/utils'
 /** How many messages we load initially — if the initial batch is this size,
  *  there are probably older messages to paginate. */
 const INITIAL_LIMIT = 50
+
+// Placeholders cuando la descarga todavía no completó
+const MEDIA_PLACEHOLDER: Record<string, string> = {
+  image: '📷 Imagen…',
+  video: '🎥 Video…',
+  audio: '🎵 Audio…',
+  sticker: '🖼 Sticker…',
+  document: '📎 Documento',
+}
+
+function MediaBubble({ message, outbound }: { message: MessageRow; outbound: boolean }) {
+  const { media, media_url, media_type, media_mime } = message
+
+  // Sin media en absoluto → no renderizar nada; el texto (o "sin contenido")
+  // lo maneja el bloque de content abajo
+  if (!media || typeof media !== 'object') return null
+
+  const type = media_type ?? ((media as Record<string, unknown>).type as string | undefined)
+
+  // Media descargada: renderizar según tipo
+  if (media_url) {
+    if (type === 'image' || type === 'sticker') {
+      return (
+        <img
+          src={media_url}
+          alt={type === 'sticker' ? 'Sticker' : 'Imagen'}
+          className="mb-1 max-h-60 max-w-full rounded-lg object-contain"
+        />
+      )
+    }
+    if (type === 'video') {
+      return (
+        // biome-ignore lint/a11y/useMediaCaption: no hay transcripción disponible para mensajes de usuario
+        <video src={media_url} controls className="mb-1 max-h-60 max-w-full rounded-lg" />
+      )
+    }
+    if (type === 'audio') {
+      return (
+        // biome-ignore lint/a11y/useMediaCaption: audio de WhatsApp no tiene transcripción
+        <audio src={media_url} controls className="mb-1 w-full min-w-[200px]" />
+      )
+    }
+    // document / fallback → link de descarga
+    const filename = (media as Record<string, unknown>).filename as string | undefined
+    return (
+      <a
+        href={media_url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={cn(
+          'mb-1 flex items-center gap-2 rounded-lg border px-3 py-2 text-sm underline-offset-2 hover:underline',
+          outbound
+            ? 'border-primary-foreground/30 text-primary-foreground'
+            : 'border-border text-foreground',
+        )}
+      >
+        <FileText className="size-4 shrink-0" aria-hidden />
+        <span className="truncate">{filename ?? media_mime ?? 'Documento'}</span>
+      </a>
+    )
+  }
+
+  // Pendiente de descarga o sin storage_path → placeholder
+  const placeholder = MEDIA_PLACEHOLDER[type ?? ''] ?? '📎 Adjunto'
+  return <p className="mb-1 text-xs italic opacity-70">{placeholder}</p>
+}
 
 function StatusIcon({ status }: { status: MessageRow['status'] }) {
   if (!status) return null
@@ -153,7 +219,8 @@ export function MessageThread({
                   : 'rounded-bl-sm bg-card text-card-foreground border border-border/60',
               )}
             >
-              <p className="whitespace-pre-wrap text-pretty">{m.content ?? '(sin contenido)'}</p>
+              <MediaBubble message={m} outbound={outbound} />
+              {m.content ? <p className="whitespace-pre-wrap text-pretty">{m.content}</p> : null}
               <p
                 className={cn(
                   'mt-1 flex items-center justify-end gap-1 text-[10px]',

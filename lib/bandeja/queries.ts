@@ -1,6 +1,7 @@
 import 'server-only'
 import { type ConversationTag, getTagsForConversationIds } from '@/lib/conversation-tags/queries'
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import type { ChannelType, MessageDirection, MessageStatus } from '@/types/database'
 
 export type ConversationListRow = {
@@ -20,12 +21,17 @@ export type MessageRow = {
   id: string
   direction: MessageDirection
   content: string | null
+  media: Record<string, unknown> | null
   status: MessageStatus | null
   error: string | null
   sent_at: string | null
   delivered_at: string | null
   read_at: string | null
   created_at: string
+  // Campos derivados — se rellenan en listMessages cuando hay storage_path
+  media_url?: string | null
+  media_type?: string | null
+  media_mime?: string | null
 }
 
 export type ConversationListResult = {
@@ -211,7 +217,9 @@ export async function listMessages(
   const supabase = await createClient()
   let query = supabase
     .from('messages')
-    .select('id, direction, content, status, error, sent_at, delivered_at, read_at, created_at')
+    .select(
+      'id, direction, content, media, status, error, sent_at, delivered_at, read_at, created_at',
+    )
     .eq('tenant_id', tenantId)
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
@@ -226,8 +234,31 @@ export async function listMessages(
     console.error('[bandeja.listMessages]', error.message)
     return []
   }
-  // Return ascending so UI renders oldest → newest
-  return ((data ?? []) as MessageRow[]).reverse()
+
+  const rows = ((data ?? []) as MessageRow[]).reverse()
+
+  // Generar signed URLs para mensajes con media descargada en Storage
+  const withMedia = rows.filter(
+    (r) =>
+      r.media && typeof r.media === 'object' && (r.media as Record<string, unknown>).storage_path,
+  )
+  if (withMedia.length > 0) {
+    const service = createServiceClient()
+    await Promise.all(
+      withMedia.map(async (row) => {
+        const env = row.media as Record<string, unknown>
+        const storagePath = env.storage_path as string
+        const { data: signed } = await service.storage
+          .from('message-media')
+          .createSignedUrl(storagePath, 3600)
+        row.media_url = signed?.signedUrl ?? null
+        row.media_type = (env.type as string | undefined) ?? null
+        row.media_mime = (env.mime as string | undefined) ?? null
+      }),
+    )
+  }
+
+  return rows
 }
 
 export async function listApprovedTemplates(tenantId: string) {

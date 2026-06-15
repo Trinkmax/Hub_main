@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { handleSendBroadcastMessage } from '@/lib/broadcasts/engine'
 import { runWorker } from '@/lib/jobs/runner'
+import { type DownloadAndStoreOpts, downloadAndStoreMedia } from '@/lib/meta/media'
 import { createServiceClient } from '@/lib/supabase/service'
 
 export const runtime = 'nodejs'
@@ -24,6 +25,10 @@ export async function GET(request: Request) {
         }
         if (job.kind === 'start_flow') {
           await handleStartFlow(job.payload)
+          return
+        }
+        if (job.kind === 'download_media') {
+          await downloadAndStoreMedia(job.payload as DownloadAndStoreOpts)
           return
         }
         // Kinds desconocidos se marcan failed no-recoverable.
