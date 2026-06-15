@@ -35,6 +35,7 @@ function MediaBubble({ message, outbound }: { message: MessageRow; outbound: boo
   if (media_url) {
     if (type === 'image' || type === 'sticker') {
       return (
+        // biome-ignore lint/performance/noImgElement: media de chat con dimensiones desconocidas (signed URL), no apto para next/image
         <img
           src={media_url}
           alt={type === 'sticker' ? 'Sticker' : 'Imagen'}

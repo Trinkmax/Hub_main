@@ -212,12 +212,17 @@ async function executeGraphNode(
     case 'wait': {
       const config = parseNodeConfig(node, 'wait')
       const nextId = nextNodeId(edges, node.id, null)
+      // Wait sin sucesor = fin del flow. Sin esto current_node_id quedaría en
+      // null y el próximo tick reiniciaría desde el trigger (loop de reenvío).
+      if (!nextId) {
+        await markCompleted(execution.id)
+        return
+      }
       const nextRun = new Date(Date.now() + config.minutes * 60 * 1000).toISOString()
-      // Advance the pointer to the node that should run after the delay, then
-      // set next_run_at so the cron re-visits at the right time.
+      // Avanzar el puntero al nodo posterior al delay y programar next_run_at.
       await service
         .from('flow_executions')
-        .update({ current_node_id: nextId ?? null, next_run_at: nextRun })
+        .update({ current_node_id: nextId, next_run_at: nextRun })
         .eq('id', execution.id)
       return
     }
