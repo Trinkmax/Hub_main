@@ -22,6 +22,8 @@ import {
   TenantNotFoundError,
 } from '@/lib/tenant'
 import type { TemplateStatus } from '@/types/database'
+import { CreateTemplateDialog } from './_create-template-dialog'
+import { DeleteTemplateButton } from './_delete-template-button'
 import { TemplateSyncButton } from './_sync-button'
 
 export const metadata = { title: 'Plantillas' }
@@ -87,9 +89,14 @@ export default async function TemplatesPage({
       <PageHeader
         eyebrow="Configuración"
         title="Plantillas de WhatsApp"
-        description="Sincronizá los templates aprobados por Meta para usarlos en difusiones y mensajes fuera de la ventana de 24h."
+        description="Creá y enviá templates a revisión de Meta, o sincronizá los ya aprobados para usarlos en difusiones y mensajes fuera de la ventana de 24h."
         actions={
-          channel ? <TemplateSyncButton channelId={channel.id} tenantSlug={tenantSlug} /> : null
+          channel ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <TemplateSyncButton channelId={channel.id} tenantSlug={tenantSlug} />
+              <CreateTemplateDialog tenantSlug={tenantSlug} channelId={channel.id} />
+            </div>
+          ) : null
         }
       />
 
@@ -111,7 +118,7 @@ export default async function TemplatesPage({
         <EmptyState
           icon={MessageSquareText}
           title="Sin templates sincronizados"
-          description="Tocá Sincronizar arriba para traer los templates aprobados por Meta."
+          description="Tocá Nueva plantilla para crear una, o Sincronizar para traer los templates aprobados por Meta."
         />
       ) : (
         <DataTableShell>
@@ -124,6 +131,9 @@ export default async function TemplatesPage({
                   <DataTableHeader>Categoría</DataTableHeader>
                   <DataTableHeader>Estado</DataTableHeader>
                   <DataTableHeader>Última sync</DataTableHeader>
+                  <DataTableHeader>
+                    <span className="sr-only">Acciones</span>
+                  </DataTableHeader>
                 </tr>
               </DataTableHead>
               <DataTableBody>
@@ -143,6 +153,13 @@ export default async function TemplatesPage({
                     </DataTableCell>
                     <DataTableCell className="text-xs text-muted-foreground">
                       {t.last_synced_at ? new Date(t.last_synced_at).toLocaleString('es-AR') : '—'}
+                    </DataTableCell>
+                    <DataTableCell>
+                      <DeleteTemplateButton
+                        tenantSlug={tenantSlug}
+                        channelId={channel.id}
+                        templateName={t.name}
+                      />
                     </DataTableCell>
                   </tr>
                 ))}

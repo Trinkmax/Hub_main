@@ -4,6 +4,7 @@ import type { Database, Json, TemplateStatus } from '@/types/database'
 import { decryptToken } from './crypto'
 import { graphUrl } from './env'
 import { metaFetch } from './http'
+import type { CreateTemplateInput } from './template-schemas'
 
 type ChannelRow = Database['public']['Tables']['channels']['Row']
 
@@ -92,4 +93,93 @@ export async function syncTemplates(channel: ChannelRow): Promise<{ synced: numb
   }
 
   return { synced }
+}
+
+type CreateTemplateResponse = {
+  id?: string
+  status?: string
+  // Meta may return error fields for non-2xx; those are handled by metaFetch throw
+}
+
+export async function createTemplate(
+  channel: ChannelRow,
+  input: CreateTemplateInput,
+): Promise<{ meta_template_id: string; status: string }> {
+  if (channel.type !== 'whatsapp') throw new Error('Solo canales WhatsApp admiten templates.')
+  if (!channel.encrypted_access_token) throw new Error('Canal sin token; reconectá el canal.')
+
+  const accessToken = await decryptToken(channel.encrypted_access_token)
+
+  // Build components array — HEADER (optional), BODY (required), FOOTER (optional)
+  const components: Array<{ type: string; format?: string; text: string }> = []
+
+  if (input.headerText?.trim()) {
+    components.push({ type: 'HEADER', format: 'TEXT', text: input.headerText.trim() })
+  }
+
+  components.push({ type: 'BODY', text: input.bodyText })
+
+  if (input.footerText?.trim()) {
+    components.push({ type: 'FOOTER', text: input.footerText.trim() })
+  }
+
+  const res = await metaFetch<CreateTemplateResponse>(
+    graphUrl(`${channel.external_account_id}/message_templates`),
+    {
+      method: 'POST',
+      accessToken,
+      body: {
+        name: input.name,
+        language: input.language,
+        category: input.category,
+        components,
+      },
+    },
+  )
+
+  const metaTemplateId = res.id ?? ''
+  const metaStatus = res.status ?? 'PENDING'
+
+  // Upsert into local DB so the template shows immediately as pending
+  const service = createServiceClient()
+  const now = new Date().toISOString()
+
+  const { error } = await service.from('message_templates').upsert(
+    {
+      tenant_id: channel.tenant_id,
+      channel_id: channel.id,
+      meta_template_id: metaTemplateId,
+      name: input.name,
+      language: input.language,
+      category: input.category,
+      components: components as unknown as Json,
+      status: mapStatus(metaStatus as MetaTemplateStatus),
+      last_synced_at: now,
+    },
+    { onConflict: 'channel_id,name,language' },
+  )
+  if (error) throw new Error(`Local upsert failed: ${error.message}`)
+
+  return { meta_template_id: metaTemplateId, status: metaStatus }
+}
+
+export async function deleteTemplate(channel: ChannelRow, name: string): Promise<void> {
+  if (channel.type !== 'whatsapp') throw new Error('Solo canales WhatsApp admiten templates.')
+  if (!channel.encrypted_access_token) throw new Error('Canal sin token; reconectá el canal.')
+
+  const accessToken = await decryptToken(channel.encrypted_access_token)
+
+  await metaFetch<unknown>(
+    graphUrl(`${channel.external_account_id}/message_templates?name=${encodeURIComponent(name)}`),
+    { method: 'DELETE', accessToken },
+  )
+
+  // Remove local rows for this channel+name (all languages)
+  const service = createServiceClient()
+  const { error } = await service
+    .from('message_templates')
+    .delete()
+    .eq('channel_id', channel.id)
+    .eq('name', name)
+  if (error) throw new Error(`Local delete failed: ${error.message}`)
 }
