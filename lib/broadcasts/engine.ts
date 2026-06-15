@@ -5,13 +5,12 @@ import { MetaApiError, mapMetaErrorToStatus } from '@/lib/meta/errors'
 import { sendTemplate, type WhatsAppChannelLike } from '@/lib/meta/whatsapp'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { Database, Json } from '@/types/database'
+import { computeRunAtOffsetMs, DEFAULT_BROADCAST_RATE_PER_SEC } from './throttle'
+import { resolveTemplateVariables, templateBodyParamCount, type VariableMapping } from './variables'
 
 type BroadcastRow = Database['public']['Tables']['broadcasts']['Row']
 
 const BROADCAST_JOB_KIND = 'send_broadcast_message'
-// Distribuimos el envío para no exceder rate limits del WABA
-// (WhatsApp tier 1: 80 msg/s; con 5s de jitter para 1000 dest dura ~5s).
-const JITTER_WINDOW_SECONDS = 5
 
 // Toma broadcasts scheduled cuyo scheduled_at ya pasó: materializa los
 // recipients y encola un job por cada uno.
@@ -59,20 +58,39 @@ export async function processScheduledBroadcasts(): Promise<{
 async function materializeBroadcast(broadcast: BroadcastRow): Promise<number> {
   const service = createServiceClient()
   const customerIds = await materializeAudience(broadcast.audience_id)
-  if (customerIds.length === 0) {
+
+  // Pre-filtro de opt-in: sólo clientes que consienten marketing y no fueron borrados.
+  // Se procesa en lotes de 500 para evitar IN() gigantes.
+  const BATCH = 500
+  const eligible: string[] = []
+  for (let i = 0; i < customerIds.length; i += BATCH) {
+    const slice = customerIds.slice(i, i + BATCH)
+    const { data, error } = await service
+      .from('customers')
+      .select('id')
+      .in('id', slice)
+      .eq('opt_in_marketing', true)
+      .is('deleted_at', null)
+    if (error) throw new Error(`opt-in pre-filter: ${error.message}`)
+    for (const row of data ?? []) eligible.push(row.id)
+  }
+
+  const excluded = customerIds.length - eligible.length
+
+  if (eligible.length === 0) {
     await service
       .from('broadcasts')
       .update({
         status: 'sent',
         completed_at: new Date().toISOString(),
-        stats: { total: 0, sent: 0, failed: 0 } as unknown as Json,
+        stats: { total: 0, sent: 0, failed: 0, excluded } as unknown as Json,
       })
       .eq('id', broadcast.id)
     return 0
   }
 
   // Insert recipients en lote (idempotente vía unique).
-  const rows = customerIds.map((cid) => ({
+  const rows = eligible.map((cid) => ({
     broadcast_id: broadcast.id,
     customer_id: cid,
     status: 'pending' as const,
@@ -92,13 +110,13 @@ async function materializeBroadcast(broadcast: BroadcastRow): Promise<number> {
   const recipientIds = (created ?? []).map((r) => r.id)
 
   const baseTime = Date.now()
-  for (const recipientId of recipientIds) {
-    const jitterMs = Math.floor(Math.random() * JITTER_WINDOW_SECONDS * 1000)
+  for (let i = 0; i < recipientIds.length; i++) {
+    const recipientId = recipientIds[i]
     await enqueueJob({
       tenantId: broadcast.tenant_id,
       kind: BROADCAST_JOB_KIND,
       payload: { recipient_id: recipientId, broadcast_id: broadcast.id } as Json,
-      runAt: new Date(baseTime + jitterMs),
+      runAt: new Date(baseTime + computeRunAtOffsetMs(i, DEFAULT_BROADCAST_RATE_PER_SEC)),
     })
   }
 
@@ -111,7 +129,7 @@ async function materializeBroadcast(broadcast: BroadcastRow): Promise<number> {
   await service
     .from('broadcasts')
     .update({
-      stats: { total: recipientIds.length, sent: 0, failed: 0 } as unknown as Json,
+      stats: { total: recipientIds.length, sent: 0, failed: 0, excluded } as unknown as Json,
     })
     .eq('id', broadcast.id)
 
@@ -132,7 +150,7 @@ export async function handleSendBroadcastMessage(payload: unknown): Promise<void
   const { data: recipient, error: recErr } = await service
     .from('broadcast_recipients')
     .select(
-      'id, broadcast_id, customer_id, status, broadcast:broadcasts(id, tenant_id, channel_id, template_id), customer:customers(phone, first_name, last_name, opt_in_marketing)',
+      'id, broadcast_id, customer_id, status, broadcast:broadcasts(id, tenant_id, channel_id, template_id, variable_mapping), customer:customers(phone, first_name, last_name, opt_in_marketing)',
     )
     .eq('id', data.recipient_id)
     .maybeSingle()
@@ -141,8 +159,20 @@ export async function handleSendBroadcastMessage(payload: unknown): Promise<void
 
   type Joined = typeof recipient & {
     broadcast:
-      | { id: string; tenant_id: string; channel_id: string; template_id: string }
-      | { id: string; tenant_id: string; channel_id: string; template_id: string }[]
+      | {
+          id: string
+          tenant_id: string
+          channel_id: string
+          template_id: string
+          variable_mapping: unknown
+        }
+      | {
+          id: string
+          tenant_id: string
+          channel_id: string
+          template_id: string
+          variable_mapping: unknown
+        }[]
       | null
     customer:
       | { phone: string; first_name: string; last_name: string; opt_in_marketing: boolean }
@@ -173,14 +203,14 @@ export async function handleSendBroadcastMessage(payload: unknown): Promise<void
 
   const { data: template } = await service
     .from('message_templates')
-    .select('id, name, language')
+    .select('id, name, language, components')
     .eq('id', broadcast.template_id)
     .maybeSingle()
   if (!template) throw new Error('template not found')
 
-  // Variables: {{1}} = first_name (default v1; broadcast variable_mapping
-  // se agrega cuando ampliemos UI).
-  const variables = [customer.first_name]
+  const count = templateBodyParamCount(template.components)
+  const mapping = (broadcast.variable_mapping ?? {}) as VariableMapping
+  const variables = resolveTemplateVariables(mapping, customer, count)
 
   try {
     const { meta_message_id } = await sendTemplate(
@@ -222,7 +252,7 @@ export async function handleSendBroadcastMessage(payload: unknown): Promise<void
       })
       .eq('id', recipient.id)
 
-    await bumpBroadcastStats(broadcast.id, 'sent')
+    await recomputeBroadcastStats(broadcast.id)
     await maybeFinalizeBroadcast(broadcast.id)
   } catch (err) {
     if (err instanceof MetaApiError) {
@@ -231,7 +261,7 @@ export async function handleSendBroadcastMessage(payload: unknown): Promise<void
         .from('broadcast_recipients')
         .update({ status: 'failed', error: mapped.reason })
         .eq('id', recipient.id)
-      await bumpBroadcastStats(broadcast.id, 'failed')
+      await recomputeBroadcastStats(broadcast.id)
       await maybeFinalizeBroadcast(broadcast.id)
     }
     throw err
@@ -267,18 +297,47 @@ async function ensureConversationId(
   return created.id
 }
 
-async function bumpBroadcastStats(broadcastId: string, key: 'sent' | 'failed'): Promise<void> {
+async function recomputeBroadcastStats(broadcastId: string): Promise<void> {
   const service = createServiceClient()
-  const { data } = await service
+
+  // Preservar el valor de `excluded` de las stats actuales.
+  const { data: current } = await service
     .from('broadcasts')
     .select('stats')
     .eq('id', broadcastId)
     .maybeSingle()
-  const stats = (data?.stats ?? {}) as Record<string, number>
-  stats[key] = (stats[key] ?? 0) + 1
+  const currentStats = (current?.stats ?? {}) as Record<string, number>
+  const excluded = currentStats.excluded ?? 0
+
+  // Contar cada status en broadcast_recipients de forma exacta.
+  const countByStatus = async (status: string): Promise<number> => {
+    const { count } = await service
+      .from('broadcast_recipients')
+      .select('id', { head: true, count: 'exact' })
+      .eq('broadcast_id', broadcastId)
+      .eq('status', status)
+    return count ?? 0
+  }
+
+  const [sent, failed, delivered, read, replied, total] = await Promise.all([
+    countByStatus('sent'),
+    countByStatus('failed'),
+    countByStatus('delivered'),
+    countByStatus('read'),
+    countByStatus('replied'),
+    // total = todos los recipients (sin importar status)
+    service
+      .from('broadcast_recipients')
+      .select('id', { head: true, count: 'exact' })
+      .eq('broadcast_id', broadcastId)
+      .then(({ count }) => count ?? 0),
+  ])
+
   await service
     .from('broadcasts')
-    .update({ stats: stats as unknown as Json })
+    .update({
+      stats: { total, sent, failed, delivered, read, replied, excluded } as unknown as Json,
+    })
     .eq('id', broadcastId)
 }
 
@@ -290,9 +349,23 @@ async function maybeFinalizeBroadcast(broadcastId: string): Promise<void> {
     .eq('broadcast_id', broadcastId)
     .eq('status', 'pending')
   if ((pending ?? 0) > 0) return
+
+  const { count: failed } = await service
+    .from('broadcast_recipients')
+    .select('id', { head: true, count: 'exact' })
+    .eq('broadcast_id', broadcastId)
+    .eq('status', 'failed')
+
+  const finalStatus = (failed ?? 0) > 0 ? 'partial' : 'sent'
+
   await service
     .from('broadcasts')
-    .update({ status: 'sent', completed_at: new Date().toISOString() })
+    .update({ status: finalStatus, completed_at: new Date().toISOString() })
     .eq('id', broadcastId)
     .eq('status', 'sending')
+}
+
+// Export de test para ejercitar materializeBroadcast sin enviar mensajes.
+export async function materializeBroadcastForTest(broadcast: BroadcastRow): Promise<number> {
+  return materializeBroadcast(broadcast)
 }
