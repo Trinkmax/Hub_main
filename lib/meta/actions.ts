@@ -16,6 +16,7 @@ import {
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
+import { recordOutboundMessage } from './conversations'
 
 export type MetaActionState = { ok: true; message?: string } | { ok: false; message: string }
 
@@ -149,38 +150,8 @@ async function loadConversationContext(slug: string, conversationId: string) {
   return { access, conversation, channel }
 }
 
-async function recordOutbound(opts: {
-  tenantId: string
-  conversationId: string
-  body: string | null
-  metaMessageId: string | null
-  status: 'sent' | 'failed'
-  error?: string | null
-}) {
-  const service = createServiceClient()
-  const sentAt = new Date().toISOString()
-  await service.from('messages').insert({
-    tenant_id: opts.tenantId,
-    conversation_id: opts.conversationId,
-    direction: 'outbound',
-    content: opts.body,
-    meta_message_id: opts.metaMessageId,
-    status: opts.status,
-    error: opts.error ?? null,
-    sent_at: opts.status === 'sent' ? sentAt : null,
-  })
-  if (opts.status === 'sent') {
-    await service
-      .from('conversations')
-      .update({
-        last_message_at: sentAt,
-        unread_count: 0,
-        last_message_preview: (opts.body ?? '[plantilla]').slice(0, 120),
-        last_message_direction: 'outbound',
-      })
-      .eq('id', opts.conversationId)
-  }
-}
+// Delegado a recordOutboundMessage de lib/meta/conversations.ts
+const recordOutbound = recordOutboundMessage
 
 export async function sendTextMessage(
   slug: string,

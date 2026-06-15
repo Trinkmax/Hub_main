@@ -1,4 +1,5 @@
 import 'server-only'
+import { findOrCreateConversation } from '@/lib/meta/conversations'
 import { sendTemplate, type WhatsAppChannelLike } from '@/lib/meta/whatsapp'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { Database, Json } from '@/types/database'
@@ -108,12 +109,12 @@ async function runSendTemplate(
   // Insert message para auditar.
   await service.from('messages').insert({
     tenant_id: execution.tenant_id,
-    conversation_id: await ensureConversationId(
-      execution.tenant_id,
-      channel.id,
-      customer.phone,
-      customer.id,
-    ),
+    conversation_id: await findOrCreateConversation({
+      tenantId: execution.tenant_id,
+      channelId: channel.id,
+      externalUserId: customer.phone,
+      customerId: customer.id,
+    }),
     direction: 'outbound',
     content: `[template:${template.name}] ${variables.join(' | ')}`,
     meta_message_id,
@@ -133,35 +134,6 @@ function resolveVariable(
     .replace(/\{\{first_name\}\}/g, customer.first_name)
     .replace(/\{\{last_name\}\}/g, customer.last_name)
     .replace(/\{\{phone\}\}/g, customer.phone)
-}
-
-async function ensureConversationId(
-  tenantId: string,
-  channelId: string,
-  phone: string,
-  customerId: string,
-): Promise<string> {
-  const service = createServiceClient()
-  const { data: existing } = await service
-    .from('conversations')
-    .select('id')
-    .eq('channel_id', channelId)
-    .eq('external_user_id', phone)
-    .maybeSingle()
-  if (existing) return existing.id
-  const { data: created, error } = await service
-    .from('conversations')
-    .insert({
-      tenant_id: tenantId,
-      channel_id: channelId,
-      external_user_id: phone,
-      customer_id: customerId,
-      last_message_at: new Date().toISOString(),
-    })
-    .select('id')
-    .single()
-  if (error || !created) throw new RecoverableFlowError(`conversation create: ${error?.message}`)
-  return created.id
 }
 
 async function scheduleWait(execution: FlowExecutionRow, minutes: number): Promise<void> {

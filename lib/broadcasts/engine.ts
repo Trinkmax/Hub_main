@@ -1,6 +1,7 @@
 import 'server-only'
 import { materializeAudience } from '@/lib/audiences/engine'
 import { enqueueJob } from '@/lib/jobs/queue'
+import { findOrCreateConversation } from '@/lib/meta/conversations'
 import { MetaApiError, mapMetaErrorToStatus } from '@/lib/meta/errors'
 import { sendTemplate, type WhatsAppChannelLike } from '@/lib/meta/whatsapp'
 import { createServiceClient } from '@/lib/supabase/service'
@@ -230,12 +231,12 @@ export async function handleSendBroadcastMessage(payload: unknown): Promise<void
       .from('messages')
       .insert({
         tenant_id: broadcast.tenant_id,
-        conversation_id: await ensureConversationId(
-          broadcast.tenant_id,
-          channel.id,
-          customer.phone,
-          recipient.customer_id,
-        ),
+        conversation_id: await findOrCreateConversation({
+          tenantId: broadcast.tenant_id,
+          channelId: channel.id,
+          externalUserId: customer.phone,
+          customerId: recipient.customer_id,
+        }),
         direction: 'outbound',
         content: `[template:${template.name}] ${variables.join(' | ')}`,
         meta_message_id,
@@ -270,35 +271,6 @@ export async function handleSendBroadcastMessage(payload: unknown): Promise<void
     }
     throw err
   }
-}
-
-async function ensureConversationId(
-  tenantId: string,
-  channelId: string,
-  phone: string,
-  customerId: string,
-): Promise<string> {
-  const service = createServiceClient()
-  const { data: existing } = await service
-    .from('conversations')
-    .select('id')
-    .eq('channel_id', channelId)
-    .eq('external_user_id', phone)
-    .maybeSingle()
-  if (existing) return existing.id
-  const { data: created, error } = await service
-    .from('conversations')
-    .insert({
-      tenant_id: tenantId,
-      channel_id: channelId,
-      external_user_id: phone,
-      customer_id: customerId,
-      last_message_at: new Date().toISOString(),
-    })
-    .select('id')
-    .single()
-  if (error || !created) throw new Error(`conversation create: ${error?.message}`)
-  return created.id
 }
 
 async function recomputeBroadcastStats(broadcastId: string): Promise<void> {
