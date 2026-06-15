@@ -64,7 +64,7 @@ export async function POST(request: Request) {
       continue
     }
     try {
-      await ingestInboundMessage({
+      const ingest = await ingestInboundMessage({
         channel,
         externalUserId: msg.from,
         metaMessageId: msg.metaMessageId,
@@ -72,6 +72,9 @@ export async function POST(request: Request) {
         media: (msg.media ?? null) as Json | null,
         sentAt: msg.timestamp,
         matchPhone: msg.from,
+      })
+      await service.rpc('mark_broadcast_replied', {
+        p_conversation_id: ingest.conversation_id,
       })
       processed += 1
     } catch (e) {
@@ -81,12 +84,19 @@ export async function POST(request: Request) {
 
   for (const st of parsed.statuses) {
     try {
-      await service.rpc('update_message_status', {
+      const { data: msgId } = await service.rpc('update_message_status', {
         p_meta_message_id: st.metaMessageId,
         p_status: st.status,
         p_error: st.errorMessage,
         p_timestamp: st.timestamp,
       })
+      if (msgId) {
+        await service.rpc('sync_broadcast_recipient_status', {
+          p_message_id: msgId,
+          p_status: st.status,
+          p_timestamp: st.timestamp,
+        })
+      }
       processed += 1
     } catch (e) {
       console.error('[webhook.whatsapp] status', (e as Error).message)
