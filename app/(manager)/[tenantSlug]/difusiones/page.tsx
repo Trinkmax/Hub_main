@@ -32,13 +32,14 @@ const STATUS_LABEL: Record<BroadcastStatus, string> = {
   scheduled: 'Programada',
   sending: 'Enviando',
   sent: 'Enviada',
+  partial: 'Parcial',
   failed: 'Fallida',
   cancelled: 'Cancelada',
 }
 
 function statusVariant(s: BroadcastStatus): 'default' | 'secondary' | 'destructive' | 'outline' {
   if (s === 'sent') return 'default'
-  if (s === 'sending' || s === 'scheduled') return 'secondary'
+  if (s === 'sending' || s === 'scheduled' || s === 'partial') return 'secondary'
   if (s === 'failed' || s === 'cancelled') return 'destructive'
   return 'outline'
 }

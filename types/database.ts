@@ -100,30 +100,39 @@ export type Database = {
         Row: {
           broadcast_id: string
           customer_id: string
+          delivered_at: string | null
           error: string | null
           id: string
           message_id: string | null
           queued_at: string | null
+          read_at: string | null
+          replied_at: string | null
           sent_at: string | null
           status: Database["public"]["Enums"]["recipient_status"]
         }
         Insert: {
           broadcast_id: string
           customer_id: string
+          delivered_at?: string | null
           error?: string | null
           id?: string
           message_id?: string | null
           queued_at?: string | null
+          read_at?: string | null
+          replied_at?: string | null
           sent_at?: string | null
           status?: Database["public"]["Enums"]["recipient_status"]
         }
         Update: {
           broadcast_id?: string
           customer_id?: string
+          delivered_at?: string | null
           error?: string | null
           id?: string
           message_id?: string | null
           queued_at?: string | null
+          read_at?: string | null
+          replied_at?: string | null
           sent_at?: string | null
           status?: Database["public"]["Enums"]["recipient_status"]
         }
@@ -188,6 +197,7 @@ export type Database = {
           template_id: string
           tenant_id: string
           updated_at: string
+          variable_mapping: Json
         }
         Insert: {
           audience_id: string
@@ -204,6 +214,7 @@ export type Database = {
           template_id: string
           tenant_id: string
           updated_at?: string
+          variable_mapping?: Json
         }
         Update: {
           audience_id?: string
@@ -220,6 +231,7 @@ export type Database = {
           template_id?: string
           tenant_id?: string
           updated_at?: string
+          variable_mapping?: Json
         }
         Relationships: [
           {
@@ -4130,6 +4142,7 @@ export type Database = {
         | "sent"
         | "failed"
         | "cancelled"
+        | "partial"
       channel_status: "connected" | "disconnected" | "error"
       channel_type: "whatsapp" | "instagram"
       customer_acquisition_channel: "reservation" | "walkin" | "import"
@@ -4345,6 +4358,7 @@ export const Constants = {
         "sent",
         "failed",
         "cancelled",
+        "partial",
       ],
       channel_status: ["connected", "disconnected", "error"],
       channel_type: ["whatsapp", "instagram"],
