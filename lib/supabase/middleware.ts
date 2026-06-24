@@ -21,6 +21,7 @@ const PUBLIC_PREFIXES = [
   '/carta/', // carta read-only pública (QR de la carta)
   '/r/', // página pública de reseña
   '/api/webhooks/',
+  '/api/cron/', // jobs de fondo: se auto-protegen con Bearer CRON_SECRET en cada route handler
   '/_next/',
   '/auth/',
   '/accept-invite/',
@@ -30,7 +31,7 @@ const PUBLIC_PREFIXES = [
 
 const STAFF_ROLES = new Set(['cashier', 'waiter', 'kitchen'])
 
-function isPublicPath(pathname: string) {
+export function isPublicPath(pathname: string) {
   if (PUBLIC_PATHS.has(pathname)) return true
   if (PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return true
   if (pathname === '/favicon.ico' || pathname.startsWith('/static/')) return true
