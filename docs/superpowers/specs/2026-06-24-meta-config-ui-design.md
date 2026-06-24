@@ -46,8 +46,8 @@ mover la llave de cifrado o la URL pública a la UI (no es seguro/posible — ve
 |---|----------|----------|
 | 1 | Alcance | **Plataforma**: una sola Meta App de HUB, configurable por superadmin. NO por-tenant (cada dueño tendría que crear su app de FB Developer → fricción inviable). |
 | 2 | Estrategia de resolución | **DB con fallback a env** (enfoque A): `getMetaConfig` usa el valor de DB y, si falta, cae al env var. Aditivo, sin disrupción. |
-| 3 | Campos editables en UI | `META_APP_ID`, `META_APP_SECRET` (cifrado), `META_WEBHOOK_VERIFY_TOKEN`, `META_GRAPH_VERSION`. |
-| 4 | Campos que NO van a la UI | **`META_TOKEN_KEY`** (es la llave que cifra/descifra todo en la DB — guardarla en la DB anula el cifrado; queda en env) y **`NEXT_PUBLIC_APP_URL`** (build-time/pública; no es config de runtime). |
+| 3 | Campos editables en UI | `META_APP_ID`, `META_APP_SECRET` (cifrado), `META_WEBHOOK_VERIFY_TOKEN`. (`META_GRAPH_VERSION` se difiere a v2 — ver decisión 4.) |
+| 4 | Campos que NO van a la UI | **`META_TOKEN_KEY`** (es la llave que cifra/descifra todo en la DB — guardarla en la DB anula el cifrado; queda en env), **`NEXT_PUBLIC_APP_URL`** (build-time/pública; no es config de runtime), y **`META_GRAPH_VERSION`** (queda en env en v1: hacerlo configurable obliga a volver async `graphUrl`/`instagramGraphUrl` —usadas en ~15 lugares— por un beneficio mínimo; casi nunca cambia). |
 | 5 | Quién edita | Sólo **superadmins de plataforma** (`requirePlatformAdmin()` + RLS `is_platform_admin()`). Un dueño de bar nunca la ve ni la edita. |
 | 6 | "Probar credenciales" | **Fuera de v1** (YAGNI). Posible v2: validar App ID/Secret contra Meta al guardar. |
 
@@ -71,7 +71,6 @@ create table public.platform_meta_config (
   app_id text,
   app_secret_encrypted text,        -- pgp_sym_encrypt(app_secret, META_TOKEN_KEY) vía encrypt_meta_token
   webhook_verify_token text,        -- handshake con Meta (menor sensibilidad; texto plano)
-  graph_version text,               -- null → el código usa el default v23.0
   updated_at timestamptz not null default now(),
   updated_by uuid references auth.users(id)
 );
@@ -98,7 +97,12 @@ grant select, insert, update on public.platform_meta_config to authenticated;
 - `getMetaConfig()` pasa a **async**. Carga la fila de `platform_meta_config` (service client),
   descifra `app_secret_encrypted` con `decrypt_meta_token(..., META_TOKEN_KEY)`, y resuelve **por campo**:
   `valorDeDB ?? process.env.<VAR>`. Lanza error claro si un campo requerido falta en **ambos**.
-  `META_TOKEN_KEY` y `NEXT_PUBLIC_APP_URL` se siguen leyendo **sólo de env** (no están en la tabla).
+  Sólo aplica a los 3 campos credenciales (`appId`, `appSecret`, `webhookVerifyToken`).
+- **Desacople (clave):** `tokenKey`, `appUrl` y `graphVersion` se leen **sólo de env** y se sacan de
+  `getMetaConfig`/`graphUrl` para que:
+  (a) `graphUrl`/`instagramGraphUrl` sigan **sync** (no hay ripple async en sus ~15 usos), leyendo `META_GRAPH_VERSION` de env;
+  (b) `lib/meta/crypto.ts` tome `META_TOKEN_KEY` de env directo — **rompe la dependencia circular**:
+  `getMetaConfig` (async) descifra el secret con `decryptToken`, que ya NO vuelve a llamar a `getMetaConfig`.
 - **Cache por instancia:** memo a nivel módulo `{ value, expiresAt }` con TTL corto (p.ej. 60s) para no
   pegarle a la DB en cada request; se invalida al guardar desde el panel. (En serverless el cache vive por
   instancia caliente.)
@@ -124,7 +128,7 @@ grant select, insert, update on public.platform_meta_config to authenticated;
 
 - `app_secret` cifrado en reposo (`META_TOKEN_KEY`); **nunca** vuelve al cliente en texto plano (campo write-only/enmascarado).
 - Acceso restringido a superadmins de plataforma (RLS `is_platform_admin()` + `requirePlatformAdmin()` en el server action).
-- Toda escritura escribe `audit_log` (sin PII; sin loguear el secret).
+- Toda escritura se loguea server-side sin PII ni el secret. (`audit_log` es tenant-scoped y esto es global de plataforma; un audit de plataforma queda para v2.)
 - `META_TOKEN_KEY` permanece como secreto de entorno (no se persiste). Sin esto, el cifrado no tiene sentido.
 - zod en el borde del server action.
 
