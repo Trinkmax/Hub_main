@@ -26,13 +26,13 @@ export async function GET(request: Request) {
   }
 
   // Falta la app de Meta a nivel plataforma (META_APP_ID/SECRET): UX clara, sin crash.
-  if (!isMetaConfigured()) return back('not_configured')
+  if (!(await isMetaConfigured())) return back('not_configured')
 
   try {
-    const { appUrl } = getMetaConfig()
+    const { appUrl } = await getMetaConfig()
     const redirectUri = `${appUrl}/api/meta/whatsapp/callback`
-    const state = signState(tenantId)
-    const target = buildWhatsAppEmbeddedSignupUrl({ redirectUri, state })
+    const state = await signState(tenantId)
+    const target = await buildWhatsAppEmbeddedSignupUrl({ redirectUri, state })
     return NextResponse.redirect(target)
   } catch (e) {
     console.error('[meta.whatsapp.connect]', (e as Error).message)

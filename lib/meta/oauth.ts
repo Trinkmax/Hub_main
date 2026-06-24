@@ -4,8 +4,8 @@ import { metaFetch } from './http'
 
 // ───────────── WhatsApp / Facebook OAuth (Embedded Signup) ─────────────
 
-export function buildWhatsAppEmbeddedSignupUrl(opts: { redirectUri: string; state: string }) {
-  const { appId, graphVersion } = getMetaConfig()
+export async function buildWhatsAppEmbeddedSignupUrl(opts: { redirectUri: string; state: string }) {
+  const { appId, graphVersion } = await getMetaConfig()
   const params = new URLSearchParams({
     client_id: appId,
     redirect_uri: opts.redirectUri,
@@ -24,7 +24,7 @@ export async function exchangeFacebookCode(opts: {
   code: string
   redirectUri: string
 }): Promise<{ access_token: string; expires_in?: number; token_type?: string }> {
-  const { appId, appSecret } = getMetaConfig()
+  const { appId, appSecret } = await getMetaConfig()
   const url = graphUrl(
     `oauth/access_token?client_id=${encodeURIComponent(appId)}&client_secret=${encodeURIComponent(
       appSecret,
@@ -46,7 +46,7 @@ export type DebugTokenResponse = {
 
 // Encuentra el WABA al que el usuario dio acceso al instalar la app.
 export async function findWabaIdsFromToken(accessToken: string): Promise<string[]> {
-  const { appId, appSecret } = getMetaConfig()
+  const { appId, appSecret } = await getMetaConfig()
   const appAccessToken = `${appId}|${appSecret}`
   const res = await metaFetch<DebugTokenResponse>(
     graphUrl(`debug_token?input_token=${encodeURIComponent(accessToken)}`),
@@ -59,8 +59,8 @@ export async function findWabaIdsFromToken(accessToken: string): Promise<string[
 
 // ───────────── Instagram Login ─────────────
 
-export function buildInstagramLoginUrl(opts: { redirectUri: string; state: string }) {
-  const { appId } = getMetaConfig()
+export async function buildInstagramLoginUrl(opts: { redirectUri: string; state: string }) {
+  const { appId } = await getMetaConfig()
   const params = new URLSearchParams({
     client_id: appId,
     redirect_uri: opts.redirectUri,
@@ -76,7 +76,7 @@ export async function exchangeInstagramCode(opts: {
   code: string
   redirectUri: string
 }): Promise<{ access_token: string; user_id: string }> {
-  const { appId, appSecret } = getMetaConfig()
+  const { appId, appSecret } = await getMetaConfig()
   const form = new URLSearchParams()
   form.set('client_id', appId)
   form.set('client_secret', appSecret)
@@ -112,7 +112,7 @@ export async function exchangeInstagramCode(opts: {
 export async function exchangeForLongLivedInstagramToken(
   shortLivedToken: string,
 ): Promise<{ access_token: string; expires_in: number }> {
-  const { appSecret } = getMetaConfig()
+  const { appSecret } = await getMetaConfig()
   const url = `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${encodeURIComponent(
     appSecret,
   )}&access_token=${encodeURIComponent(shortLivedToken)}`

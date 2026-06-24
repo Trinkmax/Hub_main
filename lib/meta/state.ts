@@ -4,16 +4,16 @@ import { getMetaConfig } from './env'
 
 // State firmado para OAuth callbacks. Formato: <tenantId>.<nonce>.<sig>
 // Firmado con META_APP_SECRET para evitar CSRF.
-export function signState(tenantId: string): string {
-  const { appSecret } = getMetaConfig()
+export async function signState(tenantId: string): Promise<string> {
+  const { appSecret } = await getMetaConfig()
   const nonce = randomBytes(12).toString('hex')
   const data = `${tenantId}.${nonce}`
   const sig = createHmac('sha256', appSecret).update(data).digest('hex').slice(0, 32)
   return `${data}.${sig}`
 }
 
-export function verifyState(state: string): { tenantId: string } | null {
-  const { appSecret } = getMetaConfig()
+export async function verifyState(state: string): Promise<{ tenantId: string } | null> {
+  const { appSecret } = await getMetaConfig()
   const parts = state.split('.')
   if (parts.length !== 3) return null
   const [tenantId, nonce, sig] = parts

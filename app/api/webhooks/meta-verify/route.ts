@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 // Endpoint compartido para handshake de WhatsApp/Instagram (los dashboards
 // permiten apuntar el verify a la misma URL ya que el flujo es idéntico).
 export async function GET(request: Request) {
-  const { webhookVerifyToken } = getMetaConfig()
+  const { webhookVerifyToken } = await getMetaConfig()
   const url = new URL(request.url)
   const mode = url.searchParams.get('hub.mode')
   const token = url.searchParams.get('hub.verify_token')

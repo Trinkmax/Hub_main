@@ -5,7 +5,7 @@ vi.mock('@/lib/meta/crypto', () => ({
 }))
 
 vi.mock('@/lib/meta/env', () => ({
-  getMetaConfig: () => ({
+  getMetaConfig: async () => ({
     appId: 'APP',
     appSecret: 'SECRET',
     webhookVerifyToken: 'VERIFY',

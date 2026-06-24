@@ -35,7 +35,7 @@ type TokenRefreshResult = { access_token: string; expires_in: number }
  *   &fb_exchange_token={current_token}
  */
 async function refreshWhatsAppToken(currentToken: string): Promise<TokenRefreshResult> {
-  const { appId, appSecret, graphVersion } = getMetaConfig()
+  const { appId, appSecret, graphVersion } = await getMetaConfig()
   const url =
     `https://graph.facebook.com/${graphVersion}/oauth/access_token` +
     `?grant_type=fb_exchange_token` +

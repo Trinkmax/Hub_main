@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic'
 export async function POST(request: Request) {
   const rawBody = await request.text()
   const signature = request.headers.get('x-hub-signature-256')
-  const { appSecret } = getMetaConfig()
+  const { appSecret } = await getMetaConfig()
 
   if (!verifyMetaSignature(rawBody, signature, appSecret)) {
     console.error('[webhook.whatsapp] invalid signature')

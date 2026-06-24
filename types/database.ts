@@ -2005,6 +2005,33 @@ export type Database = {
         }
         Relationships: []
       }
+      platform_meta_config: {
+        Row: {
+          app_id: string | null
+          app_secret_encrypted: string | null
+          id: boolean
+          updated_at: string
+          updated_by: string | null
+          webhook_verify_token: string | null
+        }
+        Insert: {
+          app_id?: string | null
+          app_secret_encrypted?: string | null
+          id?: boolean
+          updated_at?: string
+          updated_by?: string | null
+          webhook_verify_token?: string | null
+        }
+        Update: {
+          app_id?: string | null
+          app_secret_encrypted?: string | null
+          id?: boolean
+          updated_at?: string
+          updated_by?: string | null
+          webhook_verify_token?: string | null
+        }
+        Relationships: []
+      }
       points_rules: {
         Row: {
           active: boolean

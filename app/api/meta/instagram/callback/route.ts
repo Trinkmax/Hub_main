@@ -18,7 +18,7 @@ function redirectToConfigError(appUrl: string, slug: string | null, msg: string)
 type IgUserResp = { id?: string; username?: string }
 
 export async function GET(request: Request) {
-  const { appUrl } = getMetaConfig()
+  const { appUrl } = await getMetaConfig()
   const url = new URL(request.url)
   const code = url.searchParams.get('code')
   const state = url.searchParams.get('state')
@@ -30,7 +30,7 @@ export async function GET(request: Request) {
   if (!code || !state) {
     return redirectToConfigError(appUrl, null, 'missing_code_or_state')
   }
-  const verified = verifyState(state)
+  const verified = await verifyState(state)
   if (!verified) {
     return redirectToConfigError(appUrl, null, 'invalid_state')
   }

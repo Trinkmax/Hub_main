@@ -24,13 +24,13 @@ export async function GET(request: Request) {
     return back('forbidden')
   }
 
-  if (!isMetaConfigured()) return back('not_configured')
+  if (!(await isMetaConfigured())) return back('not_configured')
 
   try {
-    const { appUrl } = getMetaConfig()
+    const { appUrl } = await getMetaConfig()
     const redirectUri = `${appUrl}/api/meta/instagram/callback`
-    const state = signState(tenantId)
-    const target = buildInstagramLoginUrl({ redirectUri, state })
+    const state = await signState(tenantId)
+    const target = await buildInstagramLoginUrl({ redirectUri, state })
     return NextResponse.redirect(target)
   } catch (e) {
     console.error('[meta.instagram.connect]', (e as Error).message)

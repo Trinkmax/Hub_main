@@ -48,7 +48,7 @@ export default async function CanalesPage({
     throw error
   }
 
-  const configured = isMetaConfigured()
+  const configured = await isMetaConfigured()
   const channels = await getChannelsForTenant(access.tenant.id)
   const wa = channels.find((c) => c.type === 'whatsapp')
   const ig = channels.find((c) => c.type === 'instagram')

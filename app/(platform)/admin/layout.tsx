@@ -18,6 +18,20 @@ export default async function PlatformAdminLayout({ children }: { children: Reac
           <span className="ml-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             superadmin
           </span>
+          <nav className="ml-auto flex items-center gap-4 text-sm">
+            <Link
+              href="/admin"
+              className="text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Bares
+            </Link>
+            <Link
+              href="/admin/meta"
+              className="text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Credenciales de Meta
+            </Link>
+          </nav>
         </div>
       </header>
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">{children}</main>
