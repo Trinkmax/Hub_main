@@ -6,8 +6,8 @@ import { useDismissOnBack } from './use-dismiss-on-back'
 
 /**
  * Sheet full-height que muestra la wallet del cliente (pre-renderizada en el
- * server como `children`: el WalletShell). Se abre desde la botonera de la carta
- * cuando el cliente ya está identificado por cookie.
+ * server como `children`: el WalletShell). El botón de cerrar vive en una barra
+ * superior fija (no scrollea ni queda recortada por la esquina redondeada).
  */
 export function WalletSheet({
   open,
@@ -25,19 +25,23 @@ export function WalletSheet({
       <SheetContent
         side="bottom"
         showClose={false}
-        className="h-[96dvh] gap-0 overflow-y-auto rounded-t-3xl p-0"
+        className="force-light h-[96dvh] gap-0 overflow-hidden rounded-t-3xl p-0"
         aria-describedby={undefined}
       >
         <SheetTitle className="sr-only">Mi billetera</SheetTitle>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Cerrar"
-          className="fixed right-4 top-[max(env(safe-area-inset-top),16px)] z-50 flex size-9 items-center justify-center rounded-full bg-black/55 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-        >
-          <X className="size-5" />
-        </button>
-        {children}
+        <div className="flex h-full flex-col bg-background">
+          <div className="flex shrink-0 justify-end px-4 pb-2 pt-[max(env(safe-area-inset-top),28px)]">
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Cerrar"
+              className="flex size-9 items-center justify-center rounded-full bg-foreground/10 text-foreground/70 transition-colors hover:bg-foreground/20 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <X className="size-5" />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+        </div>
       </SheetContent>
     </Sheet>
   )

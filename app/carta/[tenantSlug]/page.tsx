@@ -93,7 +93,7 @@ export default async function CartaPage({
     wantsWallet && wallet ? 'wallet' : wantsClub ? (wallet ? 'wallet' : 'club') : 'none'
 
   return (
-    <BrandAccent accent={tenant.brand_accent} className="min-h-[100dvh] bg-background">
+    <BrandAccent accent={tenant.brand_accent} className="force-light min-h-[100dvh] bg-background">
       <CartaExperience
         tenantName={tenant.name}
         logoUrl={tenant.logo_url}

@@ -215,6 +215,62 @@
   --brand-teal:  var(--info);
 }
 
+/* Fuerza modo claro en un subárbol aunque <html> esté en .dark (la carta pública
+   siempre va clara). Re-declara los tokens claros: como son una declaración
+   directa en el elemento, ganan sobre los heredados de .dark. Sirve también para
+   sheets que portalizan a <body> si llevan la clase. */
+.force-light {
+  color-scheme: light;
+
+  --background:        oklch(0.965 0.022 88);
+  --foreground:        oklch(0.205 0.035 165);
+
+  --surface:           oklch(0.952 0.026 88);
+  --surface-foreground: oklch(0.205 0.035 165);
+
+  --card:              oklch(0.985 0.014 88);
+  --card-foreground:   oklch(0.205 0.035 165);
+
+  --popover:           oklch(0.99 0.008 88);
+  --popover-foreground: oklch(0.205 0.035 165);
+
+  --primary:           oklch(0.355 0.058 165);
+  --primary-foreground: oklch(0.965 0.022 88);
+
+  --secondary:         oklch(0.92 0.022 88);
+  --secondary-foreground: oklch(0.245 0.035 165);
+
+  --muted:             oklch(0.92 0.018 88);
+  --muted-foreground:  oklch(0.45 0.022 165);
+
+  --accent:            oklch(0.91 0.04 165);
+  --accent-foreground: oklch(0.245 0.05 165);
+
+  --destructive:           oklch(0.555 0.155 35);
+  --destructive-foreground: oklch(0.985 0.012 88);
+
+  --success:           oklch(0.5 0.12 155);
+  --success-foreground: oklch(0.985 0.012 88);
+  --warning:           oklch(0.71 0.135 70);
+  --warning-foreground: oklch(0.225 0.05 70);
+  --info:              oklch(0.55 0.075 215);
+  --info-foreground:   oklch(0.985 0.012 88);
+
+  --border:            oklch(0.86 0.018 88);
+  --input:             oklch(0.88 0.018 88);
+  --ring:              oklch(0.355 0.058 165 / 55%);
+
+  --tenant-accent:           var(--primary);
+  --tenant-accent-foreground: var(--primary-foreground);
+
+  --cream-tint:        oklch(0.965 0.022 88 / 65%);
+  --forest-glow:       oklch(0.355 0.058 165 / 18%);
+
+  --brand-rose:  var(--destructive);
+  --brand-amber: var(--warning);
+  --brand-teal:  var(--info);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

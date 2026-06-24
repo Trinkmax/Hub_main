@@ -34,7 +34,7 @@ export function ItemDetailSheet({
       <SheetContent
         side="bottom"
         showClose={false}
-        className="max-h-[92dvh] gap-0 overflow-hidden rounded-t-3xl border-t-0 p-0"
+        className="force-light max-h-[92dvh] gap-0 overflow-hidden rounded-t-3xl border-t-0 p-0"
         aria-describedby={undefined}
       >
         <AnimatePresence mode="wait">

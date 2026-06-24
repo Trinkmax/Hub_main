@@ -6,7 +6,6 @@ import { useFormStatus } from 'react-dom'
 import PhoneInput from 'react-phone-number-input'
 import 'react-phone-number-input/style.css'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -57,6 +56,9 @@ export function ClubSheet({
   const [phone, setPhone] = useState<string | undefined>(undefined)
   useDismissOnBack(open, onClose)
 
+  // Máximo del input de fecha = hoy (no se aceptan fechas futuras).
+  const today = new Date().toISOString().slice(0, 10)
+
   const goToWallet = () => {
     window.location.assign(`/carta/${tenantSlug}?wallet=1`)
   }
@@ -70,7 +72,7 @@ export function ClubSheet({
       <SheetContent
         side="bottom"
         showClose={!state?.ok}
-        className="max-h-[94dvh] gap-0 overflow-y-auto rounded-t-3xl p-0"
+        className="force-light max-h-[94dvh] gap-0 overflow-y-auto rounded-t-3xl p-0"
         aria-describedby={undefined}
       >
         <SheetGrabber />
@@ -182,22 +184,34 @@ export function ClubSheet({
                   </div>
                 </div>
 
-                <Label className="flex items-start gap-3 rounded-lg border border-border/60 bg-background/40 p-3.5">
-                  <Checkbox
-                    name="opt_in_marketing"
-                    id="club-optin"
-                    defaultChecked
-                    className="mt-0.5"
+                <div className="grid gap-1.5">
+                  <Label htmlFor="club-email">Email</Label>
+                  <Input
+                    id="club-email"
+                    name="email"
+                    type="email"
+                    inputMode="email"
+                    required
+                    maxLength={120}
+                    autoComplete="email"
+                    placeholder="vos@email.com"
+                    className="h-11 text-base"
                   />
-                  <span className="space-y-0.5">
-                    <span className="block text-sm font-medium leading-none">
-                      Quiero recibir promos por WhatsApp
-                    </span>
-                    <span className="block text-xs text-muted-foreground">
-                      Eventos y descuentos. Te podés dar de baja cuando quieras.
-                    </span>
-                  </span>
-                </Label>
+                </div>
+
+                <div className="grid gap-1.5">
+                  <Label htmlFor="club-birthdate">Fecha de nacimiento</Label>
+                  <Input
+                    id="club-birthdate"
+                    name="birthdate"
+                    type="date"
+                    required
+                    min="1900-01-01"
+                    max={today}
+                    autoComplete="bday"
+                    className="h-11 text-base"
+                  />
+                </div>
 
                 {state && !state.ok ? (
                   <p

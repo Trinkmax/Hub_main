@@ -4216,6 +4216,8 @@ export type Database = {
       }
       submit_capture: {
         Args: {
+          p_birthdate?: string
+          p_email?: string
           p_first_name: string
           p_ip: string
           p_last_name: string

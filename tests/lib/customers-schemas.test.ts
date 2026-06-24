@@ -68,48 +68,44 @@ describe('updateCustomerSchema', () => {
 })
 
 describe('captureSubmitSchema', () => {
+  const valid = {
+    link_slug: 'mesa-1',
+    phone: '3515551234',
+    first_name: 'Ana',
+    last_name: 'García',
+    email: 'ana@mail.com',
+    birthdate: '1990-05-15',
+  }
+
   it('honeypot vacío permite pasar', () => {
-    const r = captureSubmitSchema.safeParse({
-      link_slug: 'mesa-1',
-      phone: '3515551234',
-      first_name: 'Ana',
-      last_name: 'García',
-      opt_in_marketing: true,
-      website: '',
-    })
+    const r = captureSubmitSchema.safeParse({ ...valid, website: '' })
     expect(r.success).toBe(true)
   })
 
   it('honeypot relleno se rechaza', () => {
-    const r = captureSubmitSchema.safeParse({
-      link_slug: 'mesa-1',
-      phone: '3515551234',
-      first_name: 'Ana',
-      last_name: 'García',
-      opt_in_marketing: true,
-      website: 'http://spammer.com',
-    })
+    const r = captureSubmitSchema.safeParse({ ...valid, website: 'http://spammer.com' })
     expect(r.success).toBe(false)
   })
 
-  it('opt_in default es false', () => {
-    const r = captureSubmitSchema.safeParse({
-      link_slug: 'mesa-1',
-      phone: '3515551234',
-      first_name: 'Ana',
-      last_name: 'García',
-    })
+  it('email es obligatorio y debe ser válido', () => {
+    expect(captureSubmitSchema.safeParse({ ...valid, email: undefined }).success).toBe(false)
+    expect(captureSubmitSchema.safeParse({ ...valid, email: 'no-es-email' }).success).toBe(false)
+  })
+
+  it('fecha de nacimiento es obligatoria, válida y no futura', () => {
+    expect(captureSubmitSchema.safeParse({ ...valid, birthdate: undefined }).success).toBe(false)
+    expect(captureSubmitSchema.safeParse({ ...valid, birthdate: '2999-01-01' }).success).toBe(false)
+    expect(captureSubmitSchema.safeParse({ ...valid, birthdate: '15/05/1990' }).success).toBe(false)
+  })
+
+  it('email se normaliza a minúsculas', () => {
+    const r = captureSubmitSchema.safeParse({ ...valid, email: 'ANA@Mail.com' })
     expect(r.success).toBe(true)
-    if (r.success) expect(r.data.opt_in_marketing).toBe(false)
+    if (r.success) expect(r.data.email).toBe('ana@mail.com')
   })
 
   it('rechaza slug con caracteres raros', () => {
-    const r = captureSubmitSchema.safeParse({
-      link_slug: 'mesa/../1',
-      phone: '3515551234',
-      first_name: 'Ana',
-      last_name: 'García',
-    })
+    const r = captureSubmitSchema.safeParse({ ...valid, link_slug: 'mesa/../1' })
     expect(r.success).toBe(false)
   })
 })

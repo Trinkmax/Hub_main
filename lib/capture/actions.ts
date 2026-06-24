@@ -52,7 +52,8 @@ export async function submitCapture(formData: FormData): Promise<CaptureActionSt
     phone: formData.get('phone'),
     first_name: formData.get('first_name'),
     last_name: formData.get('last_name'),
-    opt_in_marketing: formData.get('opt_in_marketing') === 'on',
+    email: formData.get('email'),
+    birthdate: formData.get('birthdate'),
     website: formData.get('website') ?? '',
   })
   if (!parsed.success) {
@@ -65,12 +66,19 @@ export async function submitCapture(formData: FormData): Promise<CaptureActionSt
     p_phone: parsed.data.phone,
     p_first_name: parsed.data.first_name,
     p_last_name: parsed.data.last_name,
-    p_opt_in: parsed.data.opt_in_marketing,
+    p_email: parsed.data.email,
+    p_birthdate: parsed.data.birthdate,
+    // Sumarse al club implica el opt-in (se registra con timestamp + IP).
+    p_opt_in: true,
     p_ip: ip,
     p_user_agent: userAgent ?? '',
   })
 
   if (error) {
+    // Email ya usado por otro cliente del bar (índice único por tenant).
+    if (error.message.includes('customers_tenant_email_uidx') || error.code === '23505') {
+      return { ok: false, message: 'Ese email ya está registrado con otro teléfono.' }
+    }
     console.error('[capture] submit_capture failed', error.message)
     return { ok: false, message: 'No pudimos guardar tus datos. Probá de nuevo.' }
   }
