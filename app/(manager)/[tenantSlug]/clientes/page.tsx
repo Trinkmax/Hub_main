@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
 import {
-  listCaptureLinks,
   listCustomerProgramaCounts,
   listCustomers,
   listTags,
@@ -45,15 +44,13 @@ export default async function ClientesPage({
     page: sp.page ?? 1,
   })
 
-  const [{ rows, total }, tags, links, programaCounts] = await Promise.all([
+  const [{ rows, total }, tags, programaCounts] = await Promise.all([
     listCustomers({ tenantId: access.tenant.id, filters }),
     listTags({ tenantId: access.tenant.id }),
-    listCaptureLinks({ tenantId: access.tenant.id }),
     listCustomerProgramaCounts({ tenantId: access.tenant.id, segment: filters.segment }),
   ])
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
-  const hasCaptureLinks = links.length > 0
   const hasFilters = Boolean(filters.q || filters.tag || filters.since)
   const isEmpty = rows.length === 0
 
@@ -72,14 +69,12 @@ export default async function ClientesPage({
         description={headerDescription}
         actions={
           <>
-            {!hasCaptureLinks ? (
-              <Button asChild variant="outline" className="gap-2">
-                <Link href={`/${tenantSlug}/local/captura`}>
-                  <QrCode className="size-4" />
-                  Crear QR de captura
-                </Link>
-              </Button>
-            ) : null}
+            <Button asChild variant="outline" className="gap-2">
+              <Link href={`/${tenantSlug}/local/captura`}>
+                <QrCode className="size-4" />
+                QR del club
+              </Link>
+            </Button>
             <Button asChild className="gap-2">
               <Link href={`/${tenantSlug}/clientes/nuevo`}>
                 <UserPlus className="size-4" />
@@ -123,7 +118,7 @@ export default async function ClientesPage({
                 <Button asChild variant="outline" className="gap-2">
                   <Link href={`/${tenantSlug}/local/captura`}>
                     <QrCode className="size-4" />
-                    Crear QR
+                    QR del club
                   </Link>
                 </Button>
               </div>

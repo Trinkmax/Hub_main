@@ -4224,10 +4224,7 @@ export type Database = {
           p_phone: string
           p_user_agent: string
         }
-        Returns: {
-          customer_id: string
-          was_new: boolean
-        }[]
+        Returns: Json
       }
       submit_ticket: {
         Args: {

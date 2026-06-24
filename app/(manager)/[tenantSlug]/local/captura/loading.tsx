@@ -5,19 +5,15 @@ export default function Loading() {
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <PageHeader
-        eyebrow="Configuración"
-        title="Captura de clientes"
+        eyebrow="Tu local"
+        title="QR de la carta y del club"
         description={<Skeleton className="h-4 w-96" />}
       />
-      <Skeleton className="h-40 w-full rounded-xl" />
-      <section className="space-y-3">
-        <Skeleton className="h-6 w-40" />
-        <div className="space-y-2">
-          {['l1', 'l2', 'l3'].map((k) => (
-            <Skeleton key={k} className="h-16 w-full rounded-lg" />
-          ))}
-        </div>
-      </section>
+      <div className="grid gap-5 sm:grid-cols-2">
+        {['carta', 'club'].map((k) => (
+          <Skeleton key={k} className="h-80 w-full rounded-xl" />
+        ))}
+      </div>
     </div>
   )
 }

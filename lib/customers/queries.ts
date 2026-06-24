@@ -225,14 +225,3 @@ export async function listTags(opts: { tenantId: string }) {
   if (error) throw error
   return data ?? []
 }
-
-export async function listCaptureLinks(opts: { tenantId: string }) {
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('customer_capture_links')
-    .select('id, slug, label, active, created_at')
-    .eq('tenant_id', opts.tenantId)
-    .order('created_at', { ascending: false })
-  if (error) throw error
-  return data ?? []
-}

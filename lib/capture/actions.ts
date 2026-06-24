@@ -1,27 +1,38 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
-import { z } from 'zod'
-import { logAudit } from '@/lib/audit'
+import { cookies } from 'next/headers'
 import { getRequestIp, getRequestUserAgent } from '@/lib/ip'
 import { RateLimitedError, rateLimit } from '@/lib/rate-limit'
 import { createClient } from '@/lib/supabase/server'
-import {
-  RoleRequiredError,
-  requireRole,
-  requireTenantAccess,
-  TenantNotFoundError,
-  UnauthenticatedError,
-} from '@/lib/tenant'
+import { walletCookieName } from './cookie'
 import { captureSubmitSchema } from './schemas'
 
-export type CaptureActionState = { ok: true; was_new: boolean } | { ok: false; message: string }
+export type CaptureActionState =
+  | {
+      ok: true
+      was_new: boolean
+      welcome_bonus_points?: number
+      welcome_reward_name?: string | null
+    }
+  | { ok: false; message: string }
+
+type SubmitCaptureResult = {
+  customer_id: string | null
+  tenant_id: string | null
+  qr_token: string | null
+  was_new: boolean
+  welcome_reward_name: string | null
+  welcome_bonus_points: number | null
+}
 
 /**
- * Acción pública sin autenticación: la consume el form de `/capture/[slug]`.
- * Usa `createClient` de browser (anon) en server context — el cliente anon
- * es seguro acá porque la única vía de escritura es la RPC `submit_capture`
+ * Acción pública sin autenticación: la consume el formulario del club embebido
+ * en la carta (`/carta/[slug]`). Usa `createClient` (anon) en server context — es
+ * seguro porque la única vía de escritura es la RPC `submit_capture`
  * (SECURITY DEFINER) y la lectura del link valida `active = true` por RLS.
+ *
+ * Al sumarse, se setea una cookie httpOnly con el `qr_token` del cliente para que
+ * la carta pueda abrir su wallet (/c/[token]) sin login.
  */
 export async function submitCapture(formData: FormData): Promise<CaptureActionState> {
   const ip = await getRequestIp()
@@ -64,135 +75,24 @@ export async function submitCapture(formData: FormData): Promise<CaptureActionSt
     return { ok: false, message: 'No pudimos guardar tus datos. Probá de nuevo.' }
   }
 
-  const result = Array.isArray(data) ? data[0] : data
-  return { ok: true, was_new: Boolean(result?.was_new) }
-}
+  const result = data as SubmitCaptureResult | null
 
-// ──────────────────────────────────────────────────────────
-// ABM de capture links (autenticado, owner)
-// ──────────────────────────────────────────────────────────
-
-const slugSchema = z
-  .string()
-  .trim()
-  .min(4, 'Mínimo 4 caracteres')
-  .max(32, 'Máximo 32 caracteres')
-  .regex(/^[a-zA-Z0-9_-]+$/, 'Sólo letras, números, `-` y `_`')
-
-const createLinkSchema = z.object({
-  slug: slugSchema,
-  label: z.string().trim().min(1, 'Etiqueta requerida').max(60),
-})
-
-const idSchema = z.object({ id: z.string().uuid() })
-const toggleSchema = idSchema.extend({ active: z.coerce.boolean() })
-
-export type LinkActionState = { ok: true; message?: string } | { ok: false; message: string }
-
-async function authorizeOwner(slug: string) {
-  try {
-    const { tenant, role } = await requireTenantAccess(slug)
-    requireRole(role, ['owner'])
-    return tenant
-  } catch (error) {
-    if (
-      error instanceof RoleRequiredError ||
-      error instanceof TenantNotFoundError ||
-      error instanceof UnauthenticatedError
-    ) {
-      return null
-    }
-    throw error
-  }
-}
-
-export async function createCaptureLink(
-  tenantSlug: string,
-  _prev: LinkActionState,
-  formData: FormData,
-): Promise<LinkActionState> {
-  const tenant = await authorizeOwner(tenantSlug)
-  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
-
-  const parsed = createLinkSchema.safeParse({
-    slug: formData.get('slug'),
-    label: formData.get('label'),
-  })
-  if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  // Identidad por cookie: la carta lee este token para mostrar la wallet sin login.
+  if (result?.qr_token && result.tenant_id) {
+    const store = await cookies()
+    store.set(walletCookieName(result.tenant_id), result.qr_token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 180, // 180 días
+    })
   }
 
-  const supabase = await createClient()
-  const { data: user } = await supabase.auth.getUser()
-
-  const { error } = await supabase.from('customer_capture_links').insert({
-    tenant_id: tenant.id,
-    slug: parsed.data.slug,
-    label: parsed.data.label,
-  })
-
-  if (error) {
-    if (error.code === '23505') {
-      return { ok: false, message: 'Ese slug ya está usado.' }
-    }
-    return { ok: false, message: 'No pudimos crear el link.' }
+  return {
+    ok: true,
+    was_new: Boolean(result?.was_new),
+    welcome_bonus_points: result?.welcome_bonus_points ?? 0,
+    welcome_reward_name: result?.welcome_reward_name ?? null,
   }
-
-  await logAudit({
-    tenantId: tenant.id,
-    userId: user.user?.id ?? null,
-    action: 'capture_link.created',
-    entity: 'capture_link',
-    payload: { slug: parsed.data.slug, label: parsed.data.label },
-  })
-
-  revalidatePath(`/${tenantSlug}/local/captura`)
-  return { ok: true, message: 'Link creado.' }
-}
-
-export async function toggleCaptureLink(
-  tenantSlug: string,
-  linkId: string,
-  active: boolean,
-): Promise<LinkActionState> {
-  const tenant = await authorizeOwner(tenantSlug)
-  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
-
-  const parsed = toggleSchema.safeParse({ id: linkId, active })
-  if (!parsed.success) return { ok: false, message: 'Datos inválidos.' }
-
-  const supabase = await createClient()
-  const { error } = await supabase
-    .from('customer_capture_links')
-    .update({ active: parsed.data.active })
-    .eq('id', parsed.data.id)
-    .eq('tenant_id', tenant.id)
-
-  if (error) return { ok: false, message: 'No pudimos actualizar.' }
-
-  revalidatePath(`/${tenantSlug}/local/captura`)
-  return { ok: true }
-}
-
-export async function deleteCaptureLink(
-  tenantSlug: string,
-  linkId: string,
-): Promise<LinkActionState> {
-  const tenant = await authorizeOwner(tenantSlug)
-  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
-
-  const parsed = idSchema.safeParse({ id: linkId })
-  if (!parsed.success) return { ok: false, message: 'Datos inválidos.' }
-
-  const supabase = await createClient()
-  const { error } = await supabase
-    .from('customer_capture_links')
-    .delete()
-    .eq('id', parsed.data.id)
-    .eq('tenant_id', tenant.id)
-
-  if (error) return { ok: false, message: 'No pudimos borrar.' }
-
-  revalidatePath(`/${tenantSlug}/local/captura`)
-  return { ok: true }
 }
