@@ -1,4 +1,5 @@
 import 'server-only'
+import { formatForWhatsApp } from '@/lib/phone'
 import { decryptToken } from './crypto'
 import { graphUrl } from './env'
 import { metaFetch } from './http'
@@ -42,7 +43,7 @@ export async function sendText(
     body: {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
-      to,
+      to: formatForWhatsApp(to),
       type: 'text',
       text: { body: text, preview_url: true },
     },
@@ -77,7 +78,7 @@ export async function sendTemplate(
     body: {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
-      to,
+      to: formatForWhatsApp(to),
       type: 'template',
       template: {
         name: templateName,
@@ -111,7 +112,7 @@ export async function sendMedia(
     body: {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
-      to,
+      to: formatForWhatsApp(to),
       type,
       [type]: mediaPayload,
     },

@@ -149,3 +149,18 @@ export function formatPhoneForDisplay(e164: string): string {
   }
   return e164
 }
+
+/**
+ * Formato que espera la WhatsApp Cloud API para números argentinos: SIN el `9`
+ * de celular. El app guarda E.164 con `9` (+549...), pero en AR el `9` no es
+ * parte del "WhatsApp ID" (Meta normaliza +54<area><número>). Si se manda con el
+ * 9, el envío falla (ej. #131030 al estar fuera de la allowed-list del número de
+ * prueba). Otros países y AR sin 9 (fijos) se devuelven igual.
+ *   +5493512345678 → +543512345678
+ */
+export function formatForWhatsApp(e164: string): string {
+  if (e164.startsWith(`+${AR_CC}9`) && e164.length === 14) {
+    return `+${AR_CC}${e164.slice(4)}`
+  }
+  return e164
+}
