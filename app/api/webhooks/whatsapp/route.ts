@@ -10,6 +10,23 @@ import type { Json } from '@/types/database'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+// Verify handshake de Meta (GET). Permite usar /api/webhooks/whatsapp como ÚNICA
+// URL de devolución de llamada (Meta usa la misma para el verify y los eventos).
+export async function GET(request: Request) {
+  const { webhookVerifyToken } = await getMetaConfig()
+  const url = new URL(request.url)
+  const mode = url.searchParams.get('hub.mode')
+  const token = url.searchParams.get('hub.verify_token')
+  const challenge = url.searchParams.get('hub.challenge')
+  if (mode === 'subscribe' && token === webhookVerifyToken && challenge) {
+    return new NextResponse(challenge, {
+      status: 200,
+      headers: { 'Content-Type': 'text/plain' },
+    })
+  }
+  return new NextResponse('forbidden', { status: 403 })
+}
+
 export async function POST(request: Request) {
   const rawBody = await request.text()
   const signature = request.headers.get('x-hub-signature-256')
