@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils'
 import type { WalletData } from '@/lib/wallet/queries'
 import { HistoryAccordion } from './history-accordion'
 import { PendingBenefits } from './pending-benefits'
@@ -18,9 +19,13 @@ import { WalletHeader } from './wallet-header'
 export function WalletShell({
   data,
   qrDataUrl,
+  embedded = false,
 }: {
   data: WalletData
   qrDataUrl: string
+  /** Render embebido en el WalletSheet: el sheet provee el header de identidad
+   *  (logo + saludo) y el frame full-screen, así que acá lo omitimos. */
+  embedded?: boolean
 }): React.JSX.Element {
   const {
     customer,
@@ -36,9 +41,14 @@ export function WalletShell({
   } = data
 
   return (
-    <main className="bg-app-gradient min-h-[100dvh]">
-      <div className="mx-auto flex max-w-md flex-col gap-6 px-4 pb-16 pt-8 sm:pt-12">
-        <WalletHeader tenant={tenant} firstName={customer.firstName} />
+    <main className={embedded ? 'bg-transparent' : 'bg-app-gradient min-h-[100dvh]'}>
+      <div
+        className={cn(
+          'mx-auto flex max-w-md flex-col gap-6 px-4 pb-16',
+          embedded ? 'pt-2' : 'pt-8 sm:pt-12',
+        )}
+      >
+        {!embedded ? <WalletHeader tenant={tenant} firstName={customer.firstName} /> : null}
 
         <TierHero
           tier={tier}

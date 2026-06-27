@@ -84,8 +84,19 @@ export default async function CartaPage({
       errorCorrectionLevel: 'M',
       color: { dark: '#000000', light: '#ffffff' },
     })
-    walletContent = <WalletShell data={wallet} qrDataUrl={qrDataUrl} />
+    walletContent = <WalletShell data={wallet} qrDataUrl={qrDataUrl} embedded />
   }
+
+  // Resumen serializable para el header del sheet (logo, saludo, nivel).
+  const walletSummary = wallet
+    ? {
+        tenantName: wallet.tenant.name,
+        logoUrl: wallet.tenant.logoUrl,
+        firstName: wallet.customer.firstName,
+        tierName: wallet.tier.current?.name ?? null,
+        tierColor: wallet.tier.current?.color ?? null,
+      }
+    : null
 
   const wantsClub = sp.club != null
   const wantsWallet = sp.wallet != null
@@ -102,6 +113,7 @@ export default async function CartaPage({
         captureLinkSlug={captureLinkSlug}
         hasWallet={Boolean(wallet)}
         walletContent={walletContent}
+        walletSummary={walletSummary}
         initialSheet={initialSheet}
       />
     </BrandAccent>

@@ -12,7 +12,7 @@ import { ClubSheet } from './club-sheet'
 import { FeaturedCarousel } from './featured-carousel'
 import { ItemCard } from './item-card'
 import { ItemDetailSheet } from './item-detail-sheet'
-import { WalletSheet } from './wallet-sheet'
+import { WalletSheet, type WalletSummary } from './wallet-sheet'
 
 type SheetView = 'none' | 'club' | 'wallet'
 
@@ -60,9 +60,11 @@ export function CartaExperience(props: {
   captureLinkSlug: string | null
   hasWallet: boolean
   walletContent: React.ReactNode | null
+  walletSummary: WalletSummary | null
   initialSheet: SheetView
 }): React.JSX.Element {
   const { tenantName, logoUrl, tree, tenantSlug, captureLinkSlug, hasWallet, walletContent } = props
+  const { walletSummary } = props
 
   const [path, setPath] = useState<string[]>([])
   const [query, setQuery] = useState('')
@@ -280,8 +282,12 @@ export function CartaExperience(props: {
         linkSlug={captureLinkSlug}
       />
 
-      {walletContent ? (
-        <WalletSheet open={sheet === 'wallet'} onClose={() => setSheet('none')}>
+      {walletContent && walletSummary ? (
+        <WalletSheet
+          open={sheet === 'wallet'}
+          onClose={() => setSheet('none')}
+          summary={walletSummary}
+        >
           {walletContent}
         </WalletSheet>
       ) : null}
