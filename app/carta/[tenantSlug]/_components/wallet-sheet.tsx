@@ -108,7 +108,10 @@ function WalletSheetBody({
       className="bg-app-gradient relative flex h-full flex-col overflow-hidden rounded-t-3xl"
     >
       {/* CHROME superior fijo = zona de arrastre (asa + barra compacta). */}
-      <div onPointerDown={startDrag} className="absolute inset-x-0 top-0 z-30 touch-none select-none">
+      <div
+        onPointerDown={startDrag}
+        className="absolute inset-x-0 top-0 z-30 touch-none select-none"
+      >
         {/* Fondo blur de toda la barra: aparece al scrollear y tapa el contenido
             que pasa por debajo (incluida la zona del asa). */}
         <motion.div
@@ -140,7 +143,9 @@ function WalletSheetBody({
               </span>
             )}
             <span className="flex-1" />
-            {summary.tierName ? <TierChip name={summary.tierName} color={summary.tierColor} /> : null}
+            {summary.tierName ? (
+              <TierChip name={summary.tierName} color={summary.tierColor} />
+            ) : null}
           </motion.div>
         </div>
       </div>
