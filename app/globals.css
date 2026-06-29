@@ -221,6 +221,11 @@
    sheets que portalizan a <body> si llevan la clase. */
 .force-light {
   color-scheme: light;
+  /* Re-establece la propiedad `color` (no solo la variable): el subárbol force-light
+     suele portalizarse a <body>, que en dark mode tiene `color` claro. Sin esto, el
+     texto que HEREDA color (títulos serif sin clase de color) quedaba lavado/invisible
+     sobre el fondo claro. Los `text-*` explícitos ya andaban; esto cubre el resto. */
+  color: var(--foreground);
 
   --background:        oklch(0.965 0.022 88);
   --foreground:        oklch(0.205 0.035 165);
