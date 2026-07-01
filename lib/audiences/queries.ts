@@ -64,7 +64,7 @@ export async function getAudienceBuilderOptions(tenantId: string): Promise<Audie
       .from('loyalty_tiers')
       .select('id, name')
       .eq('tenant_id', tenantId)
-      .order('min_lifetime_points', { ascending: true }),
+      .order('min_category_points', { ascending: true }),
     supabase.from('customer_tags').select('id, name').eq('tenant_id', tenantId).order('name'),
     supabase
       .from('scheduled_events')

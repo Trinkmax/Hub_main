@@ -153,3 +153,29 @@ Diferidas del review final (ninguna bloquea; la feature es correcta y testeada):
   ciclo solo es alcanzable por escritura raw/seed (la app lo previene en `move_category`). Aceptable.
 - **Unicidad de nombres entre hermanos** no se enforce (`unique(tenant_id, parent_id, name)`).
   Opcional con warning suave en UI.
+
+## Bugs pre-existentes detectados (fuera del scope del sistema de puntos, jul 2026)
+
+Hallados al documentar el rediseño de puntos; **no** los introduce ese trabajo y no
+bloquean su merge. Tocan la operativa de mesa (hoy oculta por feature-flag).
+
+- **Las punch cards item/category/tag no avanzan al cobrar una sesión.** La versión
+  vigente de `mark_session_paid(uuid, jsonb)`
+  (`supabase/migrations/20260529120100_mark_session_paid_with_redemptions.sql`) **ya no
+  llama** a `_advance_punch_cards_for_visit` — sí lo hacía la versión anterior
+  (`20260506130200_plan4_punch_cards_in_mark_paid.sql`, con 3 invocaciones). Resultado:
+  al cerrar/cobrar una mesa, las punch cards de tipo `item` / `category` / `tag` **no
+  suman sello**. Solo avanza el `visit_window`, y solo por la vía manual
+  `register_lunch_visit`. Rehabilitar el avance de punch cards dentro de
+  `mark_session_paid` (reintroducir la llamada) o mover esa lógica a un lugar que el
+  cobro sí ejecute.
+
+- **`register_lunch_visit` inserta `points_transactions` con `delta = 0`.** En
+  `supabase/migrations/20260511000100_phase9b_punch_window_and_rpcs.sql`, tras marcar el
+  sello del `visit_window`, la función inserta una `points_transactions` con `delta = 0`
+  y `reason = 'lunch_visit'`, lo que **viola el CHECK `delta <> 0`**
+  (`20260504030000_phase3_consumption_loyalty.sql`, línea 116) → la transacción
+  abortaría. Es un bug **latente** (no hay datos/flujos que hoy ejerciten esa rama del
+  RPC), pero explota si alguien registra un almuerzo por esa vía. Arreglar: no insertar
+  la fila de puntos cuando `delta = 0` (registrar el sello sin ledger), o usar otra tabla
+  de auditoría para el evento `lunch_visit`.

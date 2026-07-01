@@ -1,6 +1,6 @@
 'use client'
 
-import { Gift, Lock, Pause, Pencil, Play, Trash2 } from 'lucide-react'
+import { EyeOff, Gift, Lock, Pause, Pencil, Play, Trash2 } from 'lucide-react'
 import { useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import {
@@ -26,13 +26,41 @@ import {
 import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { deleteReward, type LoyaltyActionState, updateReward } from '@/lib/points/actions'
 import type { Reward } from '@/lib/points/queries'
+import { REWARD_CATEGORIES } from '@/lib/points/schemas'
 import type { LoyaltyTier } from '@/lib/points/tiers'
 
 const SELECT_CLASS =
   'border-input h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
+
+/** Etiquetas legibles para las categorías canónicas del catálogo. */
+const CATEGORY_LABELS: Record<string, string> = {
+  desayuno: 'Desayuno y merienda',
+  almuerzo: 'Almuerzo',
+  cena: 'Cena',
+  evento: 'Eventos',
+}
+
+/** Orden de las secciones de la lista agrupada. */
+const CATEGORY_ORDER = ['desayuno', 'almuerzo', 'cena', 'evento'] as const
+const KNOWN_CATEGORIES = new Set<string>(CATEGORY_ORDER)
+
+type RewardGroup = { key: string; label: string; items: Reward[] }
+
+/** Agrupa las recompensas por categoría respetando el orden canónico + "Otras". */
+function groupRewards(rewards: Reward[]): RewardGroup[] {
+  const groups: RewardGroup[] = []
+  for (const key of CATEGORY_ORDER) {
+    const items = rewards.filter((r) => r.category === key)
+    if (items.length > 0) groups.push({ key, label: CATEGORY_LABELS[key] ?? key, items })
+  }
+  const otras = rewards.filter((r) => !r.category || !KNOWN_CATEGORIES.has(r.category))
+  if (otras.length > 0) groups.push({ key: '__otras', label: 'Otras', items: otras })
+  return groups
+}
 
 export function RewardsList({
   tenantSlug,
@@ -49,12 +77,12 @@ export function RewardsList({
 
   const sortedTiers = tiers
     .slice()
-    .sort((a, b) => a.min_lifetime_points - b.min_lifetime_points || a.sort - b.sort)
+    .sort((a, b) => a.min_category_points - b.min_category_points || a.sort - b.sort)
   const tierName = (id: string | null): string | null =>
     id ? (tiers.find((t) => t.id === id)?.name ?? 'Nivel eliminado') : null
 
-  // Toggle activo/pausado. Importante: reenviamos min_tier_id existente para
-  // NO perder el gating por nivel al pausar/activar.
+  // Toggle activo/pausado. Importante: reenviamos min_tier_id, category y
+  // visible_in_catalog existentes para NO perderlos al pausar/activar.
   const onToggle = (r: Reward) => {
     start(async () => {
       const result = await updateReward(tenantSlug, {
@@ -64,6 +92,8 @@ export function RewardsList({
         cost_points: r.cost_points,
         stock: r.stock,
         active: !r.active,
+        category: r.category,
+        visible_in_catalog: r.visible_in_catalog,
         min_tier_id: r.min_tier_id,
       })
       if (!result.ok) toast.error(result.message)
@@ -90,62 +120,79 @@ export function RewardsList({
     )
   }
 
+  const groups = groupRewards(rewards)
+
   return (
-    <div className="card-hairline divide-y divide-border/60 overflow-hidden rounded-xl border bg-card">
-      {rewards.map((r) => {
-        const lockedTier = tierName(r.min_tier_id)
-        return (
-          <div key={r.id} className="flex flex-wrap items-center gap-2 px-4 py-3 text-sm">
-            {r.active ? (
-              <Badge className="gap-1 bg-success text-success-foreground hover:bg-success/90">
-                Activa
-              </Badge>
-            ) : (
-              <Badge variant="outline">Pausada</Badge>
-            )}
-            <span className="flex-1 truncate font-medium">{r.name}</span>
-            {lockedTier ? (
-              <Badge variant="muted" className="gap-1">
-                <Lock className="size-3" aria-hidden />
-                {lockedTier}
-              </Badge>
-            ) : null}
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-primary">
-              {r.cost_points} pts
-            </span>
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              stock: {r.stock === null ? '∞' : r.stock}
-            </span>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="size-7 text-muted-foreground hover:text-foreground"
-              onClick={() => setEditing(r)}
-              aria-label={`Editar ${r.name}`}
-            >
-              <Pencil className="size-3.5" />
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="size-7 text-muted-foreground hover:text-foreground"
-              onClick={() => onToggle(r)}
-              aria-label={r.active ? 'Pausar' : 'Activar'}
-            >
-              {r.active ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="size-7 text-muted-foreground hover:text-destructive"
-              onClick={() => setPendingDelete(r.id)}
-              aria-label="Borrar"
-            >
-              <Trash2 className="size-3.5" />
-            </Button>
+    <div className="space-y-4">
+      {groups.map((group) => (
+        <div key={group.key} className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            {group.label}
+          </h3>
+          <div className="card-hairline divide-y divide-border/60 overflow-hidden rounded-xl border bg-card">
+            {group.items.map((r) => {
+              const lockedTier = tierName(r.min_tier_id)
+              return (
+                <div key={r.id} className="flex flex-wrap items-center gap-2 px-4 py-3 text-sm">
+                  {r.active ? (
+                    <Badge className="gap-1 bg-success text-success-foreground hover:bg-success/90">
+                      Activa
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline">Pausada</Badge>
+                  )}
+                  <span className="flex-1 truncate font-medium">{r.name}</span>
+                  {!r.visible_in_catalog ? (
+                    <Badge variant="muted" className="gap-1">
+                      <EyeOff className="size-3" aria-hidden />
+                      Oculta
+                    </Badge>
+                  ) : null}
+                  {lockedTier ? (
+                    <Badge variant="muted" className="gap-1">
+                      <Lock className="size-3" aria-hidden />
+                      {lockedTier}
+                    </Badge>
+                  ) : null}
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-primary">
+                    {r.cost_points} pts
+                  </span>
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    stock: {r.stock === null ? '∞' : r.stock}
+                  </span>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="size-7 text-muted-foreground hover:text-foreground"
+                    onClick={() => setEditing(r)}
+                    aria-label={`Editar ${r.name}`}
+                  >
+                    <Pencil className="size-3.5" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="size-7 text-muted-foreground hover:text-foreground"
+                    onClick={() => onToggle(r)}
+                    aria-label={r.active ? 'Pausar' : 'Activar'}
+                  >
+                    {r.active ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="size-7 text-muted-foreground hover:text-destructive"
+                    onClick={() => setPendingDelete(r.id)}
+                    aria-label="Borrar"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
+              )
+            })}
           </div>
-        )
-      })}
+        </div>
+      ))}
 
       {/* Diálogo de edición de recompensa */}
       <EditRewardDialog
@@ -203,10 +250,14 @@ function EditRewardDialog({
 }) {
   const [pending, start] = useTransition()
   const [minTierId, setMinTierId] = useState<string>('')
+  const [category, setCategory] = useState<string>('')
+  const [visible, setVisible] = useState(true)
 
-  // Sincronizamos el selector controlado cada vez que cambia la recompensa.
+  // Sincronizamos los selectores controlados cada vez que cambia la recompensa.
   useEffect(() => {
     setMinTierId(reward?.min_tier_id ?? '')
+    setCategory(reward?.category ?? '')
+    setVisible(reward?.visible_in_catalog ?? true)
   }, [reward])
 
   const handleSubmit = (formData: FormData) => {
@@ -224,6 +275,8 @@ function EditRewardDialog({
         cost_points: costPoints,
         stock: stockRaw.length > 0 ? Number(stockRaw) : null,
         active: reward.active,
+        category: category.length > 0 ? category : null,
+        visible_in_catalog: visible,
         min_tier_id: minTierId.length > 0 ? minTierId : null,
       })
       if (result.ok) {
@@ -276,6 +329,24 @@ function EditRewardDialog({
                 className="resize-none"
                 defaultValue={reward.description ?? ''}
               />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="edit-rw-category" className="text-[11px] text-muted-foreground">
+                Categoría
+              </Label>
+              <select
+                id="edit-rw-category"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className={selectClass}
+              >
+                <option value="">Sin categoría</option>
+                {REWARD_CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {CATEGORY_LABELS[cat] ?? cat}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               <div className="grid gap-1.5">
@@ -332,6 +403,18 @@ function EditRewardDialog({
                 </p>
               </div>
             ) : null}
+
+            <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2">
+              <div className="grid gap-0.5">
+                <Label htmlFor="edit-rw-visible" className="text-xs font-medium">
+                  Mostrar en el catálogo de canje
+                </Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Si la ocultás, sigue vigente pero no aparece en la carta pública.
+                </p>
+              </div>
+              <Switch id="edit-rw-visible" checked={visible} onCheckedChange={setVisible} />
+            </div>
 
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={onClose}>

@@ -12,12 +12,16 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 import {
+  createPartnerSchema,
   createRewardSchema,
   createRuleSchema,
+  createTierBenefitSchema,
   createTierSchema,
   type UpdatePointsRedemptionConfigInput,
+  updatePartnerSchema,
   updatePointsRedemptionConfigSchema,
   updateRewardSchema,
+  updateTierBenefitSchema,
   updateTierSchema,
 } from './schemas'
 
@@ -312,6 +316,8 @@ export async function createReward(
     description: formData.get('description'),
     cost_points: formData.get('cost_points'),
     stock: formData.get('stock'),
+    category: formData.get('category'),
+    visible_in_catalog: formData.get('visible_in_catalog') !== 'false',
     min_tier_id: formData.get('min_tier_id'),
   })
   if (!parsed.success) {
@@ -325,6 +331,8 @@ export async function createReward(
     description: parsed.data.description,
     cost_points: parsed.data.cost_points,
     stock: parsed.data.stock,
+    category: parsed.data.category,
+    visible_in_catalog: parsed.data.visible_in_catalog,
     min_tier_id: parsed.data.min_tier_id,
   })
   if (error) return { ok: false, message: 'No pudimos crear la recompensa.' }
@@ -350,6 +358,8 @@ export async function updateReward(
     cost_points: number
     stock: number | null
     active: boolean
+    category?: string | null
+    visible_in_catalog?: boolean
     min_tier_id?: string | null
   },
 ): Promise<LoyaltyActionState> {
@@ -368,6 +378,8 @@ export async function updateReward(
       cost_points: parsed.data.cost_points,
       stock: parsed.data.stock,
       active: parsed.data.active,
+      category: parsed.data.category,
+      visible_in_catalog: parsed.data.visible_in_catalog,
       min_tier_id: parsed.data.min_tier_id,
     })
     .eq('id', parsed.data.id)
@@ -397,10 +409,8 @@ export async function createTier(slug: string, input: unknown): Promise<LoyaltyA
     name: parsed.data.name,
     color: parsed.data.color,
     badge_icon: parsed.data.badge_icon,
-    min_lifetime_points: parsed.data.min_lifetime_points,
+    min_category_points: parsed.data.min_category_points,
     sort: parsed.data.sort,
-    benefit_cadence: parsed.data.benefit_cadence,
-    benefit_reward_id: parsed.data.benefit_reward_id,
     perks: parsed.data.perks,
     active: parsed.data.active,
   })
@@ -416,7 +426,7 @@ export async function createTier(slug: string, input: unknown): Promise<LoyaltyA
     userId: null,
     action: 'loyalty_tier.created',
     entity: 'loyalty_tier',
-    payload: { name: parsed.data.name, min_lifetime_points: parsed.data.min_lifetime_points },
+    payload: { name: parsed.data.name, min_category_points: parsed.data.min_category_points },
   })
 
   revalidatePath(`/${slug}/club/niveles`)
@@ -439,10 +449,8 @@ export async function updateTier(slug: string, input: unknown): Promise<LoyaltyA
       name: parsed.data.name,
       color: parsed.data.color,
       badge_icon: parsed.data.badge_icon,
-      min_lifetime_points: parsed.data.min_lifetime_points,
+      min_category_points: parsed.data.min_category_points,
       sort: parsed.data.sort,
-      benefit_cadence: parsed.data.benefit_cadence,
-      benefit_reward_id: parsed.data.benefit_reward_id,
       perks: parsed.data.perks,
       active: parsed.data.active,
     })
@@ -546,4 +554,229 @@ export async function updatePointsRedemptionConfigAction(
 
   revalidatePath(`/${slug}/club/puntos`)
   return { ok: true, message: 'Configuración guardada' }
+}
+
+// ──────────────────────────────────────────────────────────
+// Beneficios de nivel (tier_benefits)
+// ──────────────────────────────────────────────────────────
+
+type TierBenefitData = {
+  tier_id: string
+  kind: 'recurring_reward' | 'discount' | 'perk' | 'partner'
+  label: string
+  description: string | null
+  icon: string | null
+  reward_id: string | null
+  cadence: 'none' | 'birthday' | 'monthly'
+  quantity: number
+  discount_pct: number | null
+  discount_scope: string | null
+  partner_id: string | null
+  sort: number
+  active: boolean
+}
+
+/** Normaliza los campos según el kind (nulea lo que no aplica). */
+function tierBenefitRow(tenantId: string, d: TierBenefitData) {
+  return {
+    tenant_id: tenantId,
+    tier_id: d.tier_id,
+    kind: d.kind,
+    label: d.label,
+    description: d.description,
+    icon: d.icon,
+    reward_id: d.kind === 'recurring_reward' ? d.reward_id : null,
+    cadence: d.kind === 'recurring_reward' ? d.cadence : 'none',
+    quantity: d.kind === 'recurring_reward' ? d.quantity : 1,
+    discount_pct: d.kind === 'discount' ? d.discount_pct : null,
+    discount_scope: d.kind === 'discount' ? d.discount_scope : null,
+    partner_id: d.kind === 'partner' ? d.partner_id : null,
+    sort: d.sort,
+    active: d.active,
+  }
+}
+
+export async function createTierBenefit(slug: string, input: unknown): Promise<LoyaltyActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = createTierBenefitSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('tier_benefits')
+    .insert(tierBenefitRow(tenant.id, parsed.data))
+  if (error) return { ok: false, message: 'No pudimos crear el beneficio.' }
+
+  revalidatePath(`/${slug}/club/niveles`)
+  return { ok: true, message: 'Beneficio agregado.' }
+}
+
+export async function updateTierBenefit(slug: string, input: unknown): Promise<LoyaltyActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = updateTierBenefitSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { id, ...rest } = parsed.data
+  const { error } = await supabase
+    .from('tier_benefits')
+    .update(tierBenefitRow(tenant.id, rest))
+    .eq('id', id)
+    .eq('tenant_id', tenant.id)
+  if (error) return { ok: false, message: 'No pudimos actualizar el beneficio.' }
+
+  revalidatePath(`/${slug}/club/niveles`)
+  return { ok: true }
+}
+
+export async function toggleTierBenefit(
+  slug: string,
+  id: string,
+  active: boolean,
+): Promise<LoyaltyActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+  const idParsed = z.string().uuid().safeParse(id)
+  if (!idParsed.success) return { ok: false, message: 'ID inválido.' }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('tier_benefits')
+    .update({ active })
+    .eq('id', idParsed.data)
+    .eq('tenant_id', tenant.id)
+  if (error) return { ok: false, message: 'No pudimos actualizar.' }
+
+  revalidatePath(`/${slug}/club/niveles`)
+  return { ok: true }
+}
+
+export async function deleteTierBenefit(slug: string, id: string): Promise<LoyaltyActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+  const idParsed = z.string().uuid().safeParse(id)
+  if (!idParsed.success) return { ok: false, message: 'ID inválido.' }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('tier_benefits')
+    .delete()
+    .eq('id', idParsed.data)
+    .eq('tenant_id', tenant.id)
+  if (error) return { ok: false, message: 'No pudimos borrar.' }
+
+  revalidatePath(`/${slug}/club/niveles`)
+  return { ok: true }
+}
+
+// ──────────────────────────────────────────────────────────
+// Marcas aliadas (partners)
+// ──────────────────────────────────────────────────────────
+
+export async function createPartner(slug: string, input: unknown): Promise<LoyaltyActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = createPartnerSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase.from('partners').insert({
+    tenant_id: tenant.id,
+    name: parsed.data.name,
+    logo_url: parsed.data.logo_url,
+    discount_label: parsed.data.discount_label,
+    category: parsed.data.category,
+    url: parsed.data.url,
+    active: parsed.data.active,
+    sort: parsed.data.sort,
+  })
+  if (error) return { ok: false, message: 'No pudimos crear la marca.' }
+
+  revalidatePath(`/${slug}/club/aliados`)
+  return { ok: true, message: 'Marca agregada.' }
+}
+
+export async function updatePartner(slug: string, input: unknown): Promise<LoyaltyActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = updatePartnerSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('partners')
+    .update({
+      name: parsed.data.name,
+      logo_url: parsed.data.logo_url,
+      discount_label: parsed.data.discount_label,
+      category: parsed.data.category,
+      url: parsed.data.url,
+      active: parsed.data.active,
+      sort: parsed.data.sort,
+    })
+    .eq('id', parsed.data.id)
+    .eq('tenant_id', tenant.id)
+  if (error) return { ok: false, message: 'No pudimos actualizar la marca.' }
+
+  revalidatePath(`/${slug}/club/aliados`)
+  return { ok: true }
+}
+
+export async function togglePartner(
+  slug: string,
+  id: string,
+  active: boolean,
+): Promise<LoyaltyActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+  const idParsed = z.string().uuid().safeParse(id)
+  if (!idParsed.success) return { ok: false, message: 'ID inválido.' }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('partners')
+    .update({ active })
+    .eq('id', idParsed.data)
+    .eq('tenant_id', tenant.id)
+  if (error) return { ok: false, message: 'No pudimos actualizar.' }
+
+  revalidatePath(`/${slug}/club/aliados`)
+  return { ok: true }
+}
+
+export async function deletePartner(slug: string, id: string): Promise<LoyaltyActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+  const idParsed = z.string().uuid().safeParse(id)
+  if (!idParsed.success) return { ok: false, message: 'ID inválido.' }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('partners')
+    .delete()
+    .eq('id', idParsed.data)
+    .eq('tenant_id', tenant.id)
+  if (error) {
+    if (error.code === '23503') {
+      return { ok: false, message: 'No se puede borrar: hay beneficios usando esta marca.' }
+    }
+    return { ok: false, message: 'No pudimos borrar.' }
+  }
+
+  revalidatePath(`/${slug}/club/aliados`)
+  return { ok: true }
 }

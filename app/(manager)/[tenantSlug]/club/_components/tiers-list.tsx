@@ -1,7 +1,7 @@
 'use client'
 
-import { Cake, CalendarClock, Pencil, Plus, Trash2, Trophy } from 'lucide-react'
-import { useState, useTransition } from 'react'
+import { Gift, Handshake, Pencil, Percent, Plus, Sparkles, Trash2, Trophy } from 'lucide-react'
+import { type ComponentType, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import {
   AlertDialog,
@@ -18,60 +18,84 @@ import { Button } from '@/components/ui/button'
 import { DialogTrigger } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
 import { deleteTier, type LoyaltyActionState } from '@/lib/points/actions'
-import type { Reward } from '@/lib/points/queries'
-import type { LoyaltyTier, TierBenefitCadence } from '@/lib/points/tiers'
+import {
+  BENEFIT_KIND_META,
+  groupBenefitsByKind,
+  type TierBenefit,
+  type TierBenefitKind,
+} from '@/lib/points/benefits'
+import type { LoyaltyTier } from '@/lib/points/tiers'
 import { cn } from '@/lib/utils'
+import { BenefitsEditor } from './benefits-editor'
 import { TierForm } from './tier-form'
 
 const DEFAULT_COLOR = '#8a6d3b'
 
-const CADENCE_LABEL: Record<TierBenefitCadence, string> = {
-  none: 'Ninguno',
-  birthday: 'Cumpleaños',
-  monthly: 'Mensual',
+type IdName = { id: string; name: string }
+
+/** Icono Lucide por tipo de beneficio (espejo de BENEFIT_KIND_META[k].icon). */
+const KIND_ICON: Record<TierBenefitKind, ComponentType<{ className?: string }>> = {
+  recurring_reward: Gift,
+  discount: Percent,
+  perk: Sparkles,
+  partner: Handshake,
 }
 
 // Niveles sugeridos para el arranque rápido (orden de menor a mayor umbral).
 const STARTER_TIERS: Array<{ name: string; color: string; min: number }> = [
   { name: 'Bronce', color: '#a06a3f', min: 0 },
-  { name: 'Plata', color: '#9aa3ad', min: 500 },
-  { name: 'Oro', color: '#c79a2e', min: 1500 },
+  { name: 'Plata', color: '#9aa3ad', min: 400 },
+  { name: 'Oro', color: '#c79a2e', min: 1000 },
 ]
 
-function CadenceBadge({ cadence }: { cadence: TierBenefitCadence }) {
-  if (cadence === 'none') return null
-  const Icon = cadence === 'birthday' ? Cake : CalendarClock
+function BenefitChips({ benefits }: { benefits: TierBenefit[] }) {
+  const groups = groupBenefitsByKind(benefits)
+  if (groups.length === 0) return null
   return (
-    <Badge variant="muted" className="gap-1">
-      <Icon className="size-3" aria-hidden />
-      {CADENCE_LABEL[cadence]}
-    </Badge>
+    <div className="flex flex-wrap items-center gap-1.5">
+      {groups.map(({ kind, items }) => {
+        const Icon = KIND_ICON[kind]
+        return (
+          <span
+            key={kind}
+            className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-secondary/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+          >
+            <Icon className="size-3" aria-hidden />
+            {BENEFIT_KIND_META[kind].label}
+            {items.length > 1 ? (
+              <span className="tabular-nums text-foreground">·{items.length}</span>
+            ) : null}
+          </span>
+        )
+      })}
+    </div>
   )
 }
 
 export function TiersList({
   tenantSlug,
   tiers,
+  benefitsByTier,
   rewards,
+  partners,
 }: {
   tenantSlug: string
   tiers: LoyaltyTier[]
-  rewards: Reward[]
+  /** Beneficios de cada nivel, agrupados por tier_id. */
+  benefitsByTier: Record<string, TierBenefit[]>
+  /** Recompensas activas (para el beneficio `recurring_reward`). */
+  rewards: IdName[]
+  /** Marcas aliadas (para el beneficio `partner`). */
+  partners: IdName[]
 }) {
   const [pending, startTransition] = useTransition()
   const [editing, setEditing] = useState<LoyaltyTier | null>(null)
   const [pendingDelete, setPendingDelete] = useState<LoyaltyTier | null>(null)
 
-  // Map id → nombre de recompensa para mostrar el beneficio recurrente.
-  const rewardName = (id: string | null): string | null => {
-    if (!id) return null
-    return rewards.find((r) => r.id === id)?.name ?? 'Recompensa eliminada'
-  }
-
   // Orden visual: por umbral asc, desempate por sort asc.
   const ordered = tiers
     .slice()
-    .sort((a, b) => a.min_lifetime_points - b.min_lifetime_points || a.sort - b.sort)
+    .sort((a, b) => a.min_category_points - b.min_category_points || a.sort - b.sort)
 
   const onConfirmDelete = () => {
     if (!pendingDelete) return
@@ -94,11 +118,10 @@ export function TiersList({
         <EmptyState
           icon={Trophy}
           title="Todavía no hay niveles"
-          description="Los niveles convierten a tus clientes habituales en VIPs: cuanto más acumulan, más beneficios desbloquean. Empezá creando el primero o usá el arranque rápido."
+          description="Los niveles convierten a tus clientes habituales en VIPs: cuantos más puntos de categoría suman (los ganados en los últimos 4 meses), más beneficios desbloquean. Empezá creando el primero o usá el arranque rápido."
           action={
             <TierForm
               tenantSlug={tenantSlug}
-              rewards={rewards}
               trigger={
                 <DialogTrigger asChild>
                   <Button>
@@ -117,8 +140,8 @@ export function TiersList({
             Arranque rápido sugerido
           </h3>
           <p className="mt-1 text-sm text-muted-foreground text-pretty">
-            Un esquema clásico de tres niveles. Creá cada uno con el botón y ajustá los umbrales a
-            tu medida.
+            Un esquema clásico de tres niveles. Creá cada uno con el botón y ajustá los umbrales de
+            puntos de categoría a tu medida.
           </p>
           <ol className="mt-4 space-y-2">
             {STARTER_TIERS.map((s) => (
@@ -137,12 +160,11 @@ export function TiersList({
                 </span>
                 <TierForm
                   tenantSlug={tenantSlug}
-                  rewards={rewards}
                   seed={{
                     name: s.name,
                     color: s.color,
                     badge_icon: null,
-                    min_lifetime_points: s.min,
+                    min_category_points: s.min,
                     sort: 0,
                     perks: null,
                   }}
@@ -171,7 +193,6 @@ export function TiersList({
         </p>
         <TierForm
           tenantSlug={tenantSlug}
-          rewards={rewards}
           trigger={
             <DialogTrigger asChild>
               <Button size="sm">
@@ -185,8 +206,8 @@ export function TiersList({
 
       <ol className="space-y-3">
         {ordered.map((tier, index) => {
-          const benefit = rewardName(tier.benefit_reward_id)
           const swatch = tier.color ?? DEFAULT_COLOR
+          const tierBenefits = benefitsByTier[tier.id] ?? []
           return (
             <li
               key={tier.id}
@@ -223,7 +244,6 @@ export function TiersList({
                     ) : (
                       <Badge variant="outline">Inactivo</Badge>
                     )}
-                    <CadenceBadge cadence={tier.benefit_cadence} />
                     {tier.badge_icon ? (
                       <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                         {tier.badge_icon}
@@ -234,25 +254,27 @@ export function TiersList({
                   <p className="text-sm text-muted-foreground">
                     Desde{' '}
                     <span className="font-semibold tabular-nums text-foreground">
-                      {tier.min_lifetime_points.toLocaleString('es-AR')}
+                      {tier.min_category_points.toLocaleString('es-AR')}
                     </span>{' '}
-                    pts acumulados
+                    pts de categoría
                   </p>
-
-                  {tier.benefit_cadence !== 'none' && benefit ? (
-                    <p className="text-xs text-muted-foreground">
-                      Beneficio {CADENCE_LABEL[tier.benefit_cadence].toLowerCase()}:{' '}
-                      <span className="font-medium text-foreground">{benefit}</span>
-                    </p>
-                  ) : null}
 
                   {tier.perks ? (
                     <p className="text-xs text-muted-foreground text-pretty">{tier.perks}</p>
                   ) : null}
+
+                  <BenefitChips benefits={tierBenefits} />
                 </div>
 
                 {/* Acciones */}
                 <div className="flex shrink-0 items-center gap-1">
+                  <BenefitsEditor
+                    tenantSlug={tenantSlug}
+                    tier={{ id: tier.id, name: tier.name }}
+                    benefits={tierBenefits}
+                    rewards={rewards}
+                    partners={partners}
+                  />
                   <Button
                     size="icon"
                     variant="ghost"
@@ -281,7 +303,6 @@ export function TiersList({
       {/* Form de edición controlado: una sola instancia para todas las filas */}
       <TierForm
         tenantSlug={tenantSlug}
-        rewards={rewards}
         tier={editing ?? undefined}
         open={editing !== null}
         onOpenChange={(open) => {
@@ -300,8 +321,8 @@ export function TiersList({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Borrar el nivel "{pendingDelete?.name}"?</AlertDialogTitle>
             <AlertDialogDescription>
-              Los clientes que estaban en este nivel pasarán al nivel inferior según sus puntos.
-              Esta acción no se puede deshacer.
+              Los clientes que estaban en este nivel pasarán al nivel inferior según sus puntos de
+              categoría. Se borran también sus beneficios. Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

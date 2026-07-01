@@ -1,4 +1,4 @@
-import { ArrowRight, Cake, CalendarClock, Gift, Sparkles, Stamp, Star } from 'lucide-react'
+import { ArrowRight, Gift, Sparkles, Stamp, Star } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
@@ -98,7 +98,7 @@ export default async function ClubPage({ params }: { params: Promise<{ tenantSlu
               Niveles del club
             </h2>
             <p className="text-xs text-muted-foreground">
-              Se alcanzan por puntos acumulados de por vida — nunca bajan.
+              Se alcanzan por puntos de categoría — la suma de los últimos meses. Pueden bajar.
             </p>
           </div>
           <Link
@@ -149,27 +149,17 @@ export default async function ClubPage({ params }: { params: Promise<{ tenantSlu
   )
 }
 
-const CADENCE_LABEL: Record<'none' | 'birthday' | 'monthly', { label: string; icon: typeof Cake }> =
-  {
-    none: { label: '', icon: CalendarClock },
-    birthday: { label: 'Beneficio de cumpleaños', icon: Cake },
-    monthly: { label: 'Beneficio mensual', icon: CalendarClock },
-  }
-
 function TierBadgeCard({
   tier,
 }: {
   tier: {
     name: string
     color: string | null
-    min_lifetime_points: number
+    min_category_points: number
     perks: string | null
-    benefit_cadence: 'none' | 'birthday' | 'monthly'
   }
 }) {
   const color = tier.color ?? '#8a6d3b'
-  const cadence = CADENCE_LABEL[tier.benefit_cadence]
-  const CadenceIcon = cadence.icon
   return (
     <div
       className={cn(
@@ -198,20 +188,11 @@ function TierBadgeCard({
             backgroundColor: `color-mix(in oklch, ${color} 14%, transparent)`,
           }}
         >
-          desde {tier.min_lifetime_points.toLocaleString('es-AR')} pts
+          Desde {tier.min_category_points.toLocaleString('es-AR')} pts
         </span>
       </div>
       {tier.perks ? (
         <p className="mt-2 pl-1.5 text-sm text-muted-foreground text-pretty">{tier.perks}</p>
-      ) : null}
-      {tier.benefit_cadence !== 'none' ? (
-        <div
-          className="mt-2 flex items-center gap-1.5 pl-1.5 text-xs font-medium"
-          style={{ color }}
-        >
-          <CadenceIcon className="size-3.5" aria-hidden />
-          {cadence.label}
-        </div>
       ) : null}
     </div>
   )

@@ -30,6 +30,11 @@ export function formatEventDate(iso: string): string {
   return format(new Date(iso), "EEE d 'de' MMM · HH:mm", { locale: es })
 }
 
+/** dd/MM corto (vencimiento de puntos de categoría). */
+export function formatDayMonth(iso: string): string {
+  return format(new Date(iso), 'dd/MM', { locale: es })
+}
+
 /** dd/MM con hora corta para movimientos del historial. */
 export function formatDateTime(iso: string): string {
   return format(new Date(iso), 'dd/MM/yy · HH:mm', { locale: es })

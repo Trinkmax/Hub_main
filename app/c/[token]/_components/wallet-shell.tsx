@@ -6,6 +6,7 @@ import { PersonalQr } from './personal-qr'
 import { PunchCards } from './punch-cards'
 import { ReviewCta } from './review-cta'
 import { RewardsGrid } from './rewards-grid'
+import { TierBenefits } from './tier-benefits'
 import { TierHero } from './tier-hero'
 import { UpcomingEvents } from './upcoming-events'
 import { VisitsTimeline } from './visits-timeline'
@@ -31,6 +32,8 @@ export function WalletShell({
     customer,
     tenant,
     tier,
+    expiry,
+    benefits,
     rewards,
     punchCards,
     visits,
@@ -52,11 +55,19 @@ export function WalletShell({
 
         <TierHero
           tier={tier}
+          categoryPoints={customer.categoryPoints}
           pointsBalance={customer.pointsBalance}
           lifetimePoints={customer.lifetimePoints}
+          expiry={expiry}
         />
 
         <PendingBenefits benefits={pendingBenefits} />
+
+        <TierBenefits
+          benefits={benefits}
+          tierName={tier.current?.name ?? null}
+          tierColor={tier.current?.color ?? null}
+        />
 
         <RewardsGrid rewards={rewards} pointsBalance={customer.pointsBalance} />
 

@@ -185,8 +185,14 @@ begin
   delete from public.conversations where tenant_id = v_tenant_id;
   delete from public.message_templates where tenant_id = v_tenant_id;
   delete from public.channels where tenant_id = v_tenant_id;
+  -- Loyalty / club: hijos primero (FK-safe): grants → benefits → partners,
+  -- luego redemptions → rewards → tiers.
+  delete from public.tier_benefit_grants where tenant_id = v_tenant_id;
+  delete from public.tier_benefits where tenant_id = v_tenant_id;
+  delete from public.partners where tenant_id = v_tenant_id;
   delete from public.reward_redemptions where tenant_id = v_tenant_id;
   delete from public.rewards where tenant_id = v_tenant_id;
+  delete from public.loyalty_tiers where tenant_id = v_tenant_id;
   delete from public.points_transactions where tenant_id = v_tenant_id;
   delete from public.points_rules where tenant_id = v_tenant_id;
   delete from public.visit_items where visit_id in (
@@ -287,10 +293,24 @@ begin
   select id into v_item_cafe      from public.menu_items where tenant_id = v_tenant_id and name = 'Café espresso';
 
   -- ───────────────────────────────────────────────────────────
-  -- 4. POINTS RULE: 1 punto cada $50 (= 5000 cents)
+  -- 4. POINTS RULE: 1 punto cada $1000 (= 100000 cents)
   -- ───────────────────────────────────────────────────────────
   insert into public.points_rules (tenant_id, type, config, priority, active) values
-    (v_tenant_id, 'per_amount', jsonb_build_object('every_cents', 5000, 'points', 1), 100, true);
+    (v_tenant_id, 'per_amount', jsonb_build_object('every_cents', 100000, 'points', 1), 100, true);
+
+  -- ───────────────────────────────────────────────────────────
+  -- 4b. LOYALTY TIERS (nivel por PUNTOS DE CATEGORÍA — suma móvil 4 meses).
+  --     Se insertan ANTES de las visitas para que el trigger points_tx_apply
+  --     resuelva current_tier_id correctamente al generar points_transactions.
+  --     perks: null (los beneficios ricos viven en tier_benefits, sección 8).
+  -- ───────────────────────────────────────────────────────────
+  insert into public.loyalty_tiers
+    (tenant_id, name, color, badge_icon, min_category_points, sort, perks, active) values
+    (v_tenant_id, 'Classic',   '#6B7280', 'Coffee',       0, 1, null, true),
+    (v_tenant_id, 'Select',    '#0EA5E9', 'Star',       200, 2, null, true),
+    (v_tenant_id, 'Gold',      '#D4AF37', 'Crown',      500, 3, null, true),
+    (v_tenant_id, 'Black',     '#1F2937', 'Gem',       1000, 4, null, true),
+    (v_tenant_id, 'Signature', '#7C3AED', 'Sparkles',  2000, 5, null, true);
 
   -- ───────────────────────────────────────────────────────────
   -- 5. CUSTOMERS (40 — nombres rioplatenses, phones unicos)
@@ -625,32 +645,161 @@ begin
   end loop;
 
   -- ───────────────────────────────────────────────────────────
-  -- 8. REWARDS (4) + REDEMPTIONS (3 ya canjeadas por VIPs)
+  -- 8. REWARDS (catálogo de canje) + PARTNERS + TIER_BENEFITS + REDEMPTIONS
   -- ───────────────────────────────────────────────────────────
-  insert into public.rewards (tenant_id, name, description, cost_points, stock, active) values
-    (v_tenant_id, 'Trago de bienvenida',  'Aperol o cerveza tirada, gratis',     50,   null, true),
-    (v_tenant_id, 'Picada para 2',        'Tabla picada cortesía',              150,    20, true),
-    (v_tenant_id, 'Botella de espumante', 'Para festejos especiales',           500,    10, true),
-    (v_tenant_id, 'Cumple HUB',           'Beneficio del mes de cumpleaños',    100,   null, true);
+  -- 8.a Catálogo de canje (visible_in_catalog = true) + recompensas "de
+  --     beneficio" (visible_in_catalog = false, cost_points = 1) que sirven de
+  --     target a los tier_benefits.recurring_reward. stock null = ilimitado.
+  insert into public.rewards
+    (tenant_id, name, description, cost_points, stock, active, category, visible_in_catalog) values
+    -- Desayuno
+    (v_tenant_id, 'Clásico en Córdoba',             'Medialunas, café y jugo natural',           50, null, true, 'desayuno', true),
+    (v_tenant_id, 'Proteico con café',              'Huevos, tostadas integrales y café',       200, null, true, 'desayuno', true),
+    (v_tenant_id, 'Tostado de jamón y queso',       'Tostado con café a elección',              150, null, true, 'desayuno', true),
+    (v_tenant_id, 'Starhub',                        'Nuestro desayuno insignia',                 80, null, true, 'desayuno', true),
+    (v_tenant_id, 'Croissant a elección con café',  'Croissant dulce o salado + café',          150, null, true, 'desayuno', true),
+    -- Almuerzo
+    (v_tenant_id, 'Menú ejecutivo (L-V)',           'Plato del día de lunes a viernes',         200, null, true, 'almuerzo', true),
+    (v_tenant_id, 'Menú ejecutivo de fin de semana','Plato del día de sábados y domingos',      270, null, true, 'almuerzo', true),
+    -- Cena
+    (v_tenant_id, 'Burger doble a elección',        'Doble medallón con guarnición',            220, null, true, 'cena',     true),
+    (v_tenant_id, 'Burger triple a elección',       'Triple medallón con guarnición',           250, null, true, 'cena',     true),
+    (v_tenant_id, 'Lomito a elección',              'Lomito completo con papas',                250, null, true, 'cena',     true),
+    (v_tenant_id, 'Línea Coca 1L',                  'Gaseosa línea Coca-Cola de 1 litro',       100, null, true, 'cena',     true),
+    (v_tenant_id, 'Stella 1L',                      'Cerveza Stella Artois de 1 litro',         150, null, true, 'cena',     true),
+    (v_tenant_id, 'Botella de Fernet con 2 cocas',  'Fernet Branca + 2 Coca-Cola',              600, null, true, 'cena',     true),
+    (v_tenant_id, 'Botella Sernova y 4 speed',      'Vodka Sernova + 4 Speed',                  500, null, true, 'cena',     true),
+    (v_tenant_id, 'Trago a elección',               'Cualquier trago de la carta',              150, null, true, 'cena',     true),
+    (v_tenant_id, 'Tabla a elección',               'Picada para compartir',                    700, null, true, 'cena',     true),
+    (v_tenant_id, 'Pizza a elección',               'Pizza entera de la carta',                 350, null, true, 'cena',     true),
+    -- Evento
+    (v_tenant_id, 'Noche Astral - 1 entrada',       'Entrada a la fiesta Noche Astral',         450, null, true, 'evento',   true),
+    (v_tenant_id, 'Noche de Ramen - 1 entrada',     'Entrada a la Noche de Ramen',              350, null, true, 'evento',   true),
+    (v_tenant_id, 'Sushi libre - 1 entrada',        'Entrada al Sushi libre',                   400, null, true, 'evento',   true),
+    -- Recompensas "de beneficio" (target de tier_benefits, ocultas del catálogo)
+    (v_tenant_id, 'Café del club',                  'Café del beneficio de nivel',                1, null, true, null,       false),
+    (v_tenant_id, 'Burger del club',                'Burger del beneficio de nivel',              1, null, true, null,       false),
+    (v_tenant_id, 'Desayuno para dos',              'Desayuno para dos del beneficio de nivel',   1, null, true, null,       false),
+    (v_tenant_id, 'Entrada a evento del mes',       'Entrada de evento del beneficio de nivel',   1, null, true, null,       false);
 
-  -- 3 redenciones por VIPs distintos (descuenta del balance via trigger)
+  -- 8.b PARTNERS (marcas aliadas, borrador: active=false, discount_label a definir).
+  insert into public.partners (tenant_id, name, category, active, sort) values
+    (v_tenant_id, 'Guapa estética',     'Estética',    false,  1),
+    (v_tenant_id, 'Flor luna estética', 'Estética',    false,  2),
+    (v_tenant_id, 'Detorres estilista', 'Peluquería',  false,  3),
+    (v_tenant_id, 'Lavadero amigo Maxi','Automotor',   false,  4),
+    (v_tenant_id, 'Copentto',           'Gastronomía', false,  5),
+    (v_tenant_id, 'Vinería',            'Vinos',       false,  6),
+    (v_tenant_id, 'Dreambox',           'Comercio',    false,  7),
+    (v_tenant_id, 'Clean',              'Servicios',   false,  8),
+    (v_tenant_id, 'Manantiales',        'Servicios',   false,  9),
+    (v_tenant_id, 'Silver joyas',       'Joyería',     false, 10),
+    (v_tenant_id, 'Peluquería canina',  'Mascotas',    false, 11),
+    (v_tenant_id, 'Sumaj Viajes',       'Turismo',     false, 12),
+    (v_tenant_id, 'Vinería Tijuana',    'Vinos',       false, 13),
+    (v_tenant_id, 'Cremolatti',         'Heladería',   false, 14),
+    (v_tenant_id, 'Leroma',             'Gastronomía', false, 15),
+    (v_tenant_id, 'Boliche y eventos',  'Eventos',     false, 16),
+    (v_tenant_id, 'Gustazo sin gluten', 'Gastronomía', false, 17),
+    (v_tenant_id, 'La Selecta',         'Gastronomía', false, 18);
+
+  -- 8.c TIER_BENEFITS por nivel. tier_id / reward_id se resuelven por nombre
+  --     dentro del tenant HUB (subqueries). Recurrentes → cadence 'monthly';
+  --     discounts/perk → cadence 'none'. Classic sólo lleva un descuento.
+  insert into public.tier_benefits
+    (tenant_id, tier_id, kind, label, reward_id, cadence, quantity, discount_pct, discount_scope, sort, active)
+  values
+    -- Classic
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Classic'),
+      'discount', '10% off en desayunos', null, 'none', 1, 10, 'Lunes a viernes', 0, true),
+
+    -- Select
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Select'),
+      'recurring_reward', '1 café gratis por mes',
+      (select id from public.rewards where tenant_id = v_tenant_id and name = 'Café del club'),
+      'monthly', 1, null, null, 0, true),
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Select'),
+      'discount', '10% off desayunos y almuerzos', null, 'none', 1, 10, 'Todos los días', 1, true),
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Select'),
+      'discount', '10% off delivery propio', null, 'none', 1, 10, 'Lunes a jueves', 2, true),
+
+    -- Gold
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Gold'),
+      'recurring_reward', '1 café gratis por mes',
+      (select id from public.rewards where tenant_id = v_tenant_id and name = 'Café del club'),
+      'monthly', 1, null, null, 0, true),
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Gold'),
+      'recurring_reward', '1 burger gratis por mes',
+      (select id from public.rewards where tenant_id = v_tenant_id and name = 'Burger del club'),
+      'monthly', 1, null, null, 1, true),
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Gold'),
+      'discount', '10% off desayunos y almuerzos', null, 'none', 1, 10, null, 2, true),
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Gold'),
+      'discount', '10% off delivery propio', null, 'none', 1, 10, 'Todos los días', 3, true),
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Gold'),
+      'discount', '10% off en eventos', null, 'none', 1, 10, null, 4, true),
+
+    -- Black
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Black'),
+      'recurring_reward', '1 desayuno para dos por mes',
+      (select id from public.rewards where tenant_id = v_tenant_id and name = 'Desayuno para dos'),
+      'monthly', 1, null, null, 0, true),
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Black'),
+      'recurring_reward', '1 burger gratis por mes',
+      (select id from public.rewards where tenant_id = v_tenant_id and name = 'Burger del club'),
+      'monthly', 1, null, null, 1, true),
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Black'),
+      'recurring_reward', '1 entrada a evento por mes',
+      (select id from public.rewards where tenant_id = v_tenant_id and name = 'Entrada a evento del mes'),
+      'monthly', 1, null, null, 2, true),
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Black'),
+      'discount', '10% off desayunos y almuerzos', null, 'none', 1, 10, null, 3, true),
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Black'),
+      'discount', '15% off delivery propio', null, 'none', 1, 15, null, 4, true),
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Black'),
+      'discount', '15% off en eventos', null, 'none', 1, 15, null, 5, true),
+
+    -- Signature
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Signature'),
+      'recurring_reward', '1 desayuno para dos por mes',
+      (select id from public.rewards where tenant_id = v_tenant_id and name = 'Desayuno para dos'),
+      'monthly', 1, null, null, 0, true),
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Signature'),
+      'recurring_reward', '2 entradas a eventos por mes',
+      (select id from public.rewards where tenant_id = v_tenant_id and name = 'Entrada a evento del mes'),
+      'monthly', 2, null, null, 1, true),
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Signature'),
+      'recurring_reward', '1 burger gratis por mes',
+      (select id from public.rewards where tenant_id = v_tenant_id and name = 'Burger del club'),
+      'monthly', 1, null, null, 2, true),
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Signature'),
+      'perk', 'Remera de HUB personalizada', null, 'none', 1, null, null, 3, true),
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Signature'),
+      'discount', '10% off desayunos y almuerzos', null, 'none', 1, 10, null, 4, true),
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Signature'),
+      'discount', '15% off delivery propio', null, 'none', 1, 15, null, 5, true),
+    (v_tenant_id, (select id from public.loyalty_tiers where tenant_id = v_tenant_id and name = 'Signature'),
+      'discount', '20% off en eventos', null, 'none', 1, 20, null, 6, true);
+
+  -- 8.d 3 redenciones por VIPs distintos (descuenta del balance via trigger).
+  --     Apuntan a recompensas del catálogo nuevo (visible_in_catalog = true).
   declare
-    v_reward_trago uuid;
-    v_reward_picada uuid;
+    v_reward_a uuid;
+    v_reward_b uuid;
     v_reward_id uuid;
   begin
-    select id into v_reward_trago  from public.rewards where tenant_id = v_tenant_id and name = 'Trago de bienvenida';
-    select id into v_reward_picada from public.rewards where tenant_id = v_tenant_id and name = 'Picada para 2';
+    select id into v_reward_a from public.rewards where tenant_id = v_tenant_id and name = 'Clásico en Córdoba';
+    select id into v_reward_b from public.rewards where tenant_id = v_tenant_id and name = 'Trago a elección';
 
     for i in 1..3 loop
       v_cust := v_customer_ids[i];
-      v_reward_id := case when (i % 2) = 0 then v_reward_picada else v_reward_trago end;
+      v_reward_id := case when (i % 2) = 0 then v_reward_b else v_reward_a end;
       insert into public.reward_redemptions (
         tenant_id, customer_id, reward_id, points_spent, redeemed_by, redeemed_at, status
       )
       select
         v_tenant_id, v_cust, v_reward_id,
-        (case when v_reward_id = v_reward_picada then 150 else 50 end),
+        (case when v_reward_id = v_reward_b then 150 else 50 end),
         v_owner_id,
         v_now - ((10 - i) || ' days')::interval,
         'delivered';
@@ -660,7 +809,7 @@ begin
       )
       select
         v_tenant_id, v_cust, rr.id,
-        - (case when v_reward_id = v_reward_picada then 150 else 50 end),
+        - (case when v_reward_id = v_reward_b then 150 else 50 end),
         'reward_redeem',
         jsonb_build_object('reward_id', v_reward_id)
       from public.reward_redemptions rr

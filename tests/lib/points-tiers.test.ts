@@ -2,24 +2,22 @@ import { describe, expect, it } from 'vitest'
 import { canRedeemReward, type LoyaltyTier, progressToNext, resolveTier } from '@/lib/points/tiers'
 
 function tier(
-  partial: Partial<LoyaltyTier> & { id: string; min_lifetime_points: number },
+  partial: Partial<LoyaltyTier> & { id: string; min_category_points: number },
 ): LoyaltyTier {
   return {
     name: partial.id,
     color: null,
     badge_icon: null,
     sort: 0,
-    benefit_cadence: 'none',
-    benefit_reward_id: null,
     perks: null,
     active: true,
     ...partial,
   }
 }
 
-const bronce = tier({ id: 'bronce', min_lifetime_points: 0 })
-const plata = tier({ id: 'plata', min_lifetime_points: 100 })
-const oro = tier({ id: 'oro', min_lifetime_points: 500 })
+const bronce = tier({ id: 'bronce', min_category_points: 0 })
+const plata = tier({ id: 'plata', min_category_points: 100 })
+const oro = tier({ id: 'oro', min_category_points: 500 })
 const TIERS = [bronce, plata, oro]
 
 describe('resolveTier', () => {
@@ -43,13 +41,13 @@ describe('resolveTier', () => {
       resolveTier(600, [
         bronce,
         plata,
-        tier({ id: 'oro', min_lifetime_points: 500, active: false }),
+        tier({ id: 'oro', min_category_points: 500, active: false }),
       ])?.id,
     ).toBe('plata')
   })
   it('desempata por sort (mismo umbral)', () => {
-    const a = tier({ id: 'a', min_lifetime_points: 100, sort: 1 })
-    const b = tier({ id: 'b', min_lifetime_points: 100, sort: 5 })
+    const a = tier({ id: 'a', min_category_points: 100, sort: 1 })
+    const b = tier({ id: 'b', min_category_points: 100, sort: 5 })
     expect(resolveTier(150, [a, b])?.id).toBe('b')
   })
 })

@@ -1,20 +1,22 @@
-import { Crown, Sparkles } from 'lucide-react'
-import type { CSSProperties } from 'react'
+import { Clock3, Crown, Sparkles, TrendingDown } from 'lucide-react'
+import type { CSSProperties, ReactNode } from 'react'
 import type { WalletData } from '@/lib/wallet/queries'
-import { formatPoints } from './wallet-format'
+import { LucideByName } from './benefit-icon'
+import { formatDayMonth, formatPoints } from './wallet-format'
 
-// Centerpiece de la wallet: anillo de progreso de nivel + puntos.
-// Server component (sin interactividad). El acento usa el color del nivel
-// actual si existe, sino cae a --brand-accent / --primary.
+// Centerpiece de la wallet: "carnet de socio". El número hero son los PUNTOS DE
+// CATEGORÍA (que definen el nivel, ventana móvil), con el anillo de progreso al
+// siguiente nivel + aviso de vencimiento. Los canjeables van como chip aparte.
+// Server component. El acento usa el color del nivel actual, sino --brand-accent.
 
 type Tier = WalletData['tier']
+type Expiry = WalletData['expiry']
 
-const RING_SIZE = 168
+const RING_SIZE = 176
 const STROKE = 12
 const RADIUS = (RING_SIZE - STROKE) / 2
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS
 
-/** Estilo de acento del hero: color del nivel si es un hex válido, sino el de marca. */
 function accentStyle(color: string | null): CSSProperties {
   const isHex = color !== null && /^#[0-9a-fA-F]{6}$/.test(color)
   return {
@@ -25,10 +27,17 @@ function accentStyle(color: string | null): CSSProperties {
   } as CSSProperties
 }
 
-function ProgressRing({ pct, label }: { pct: number; label: string }) {
+function ProgressRing({
+  pct,
+  label,
+  children,
+}: {
+  pct: number
+  label: string
+  children: ReactNode
+}) {
   const clamped = Math.max(0, Math.min(100, pct))
   const offset = CIRCUMFERENCE - (clamped / 100) * CIRCUMFERENCE
-
   return (
     <div
       className="relative grid place-items-center"
@@ -64,12 +73,28 @@ function ProgressRing({ pct, label }: { pct: number; label: string }) {
           style={{ transition: 'stroke-dashoffset var(--duration-slower) var(--ease-out)' }}
         />
       </svg>
-      <div className="absolute inset-0 grid place-items-center text-center">
-        <span className="font-display text-4xl font-semibold tabular-nums leading-none">
-          {Math.round(clamped)}
-          <span className="ml-0.5 align-top text-base font-medium text-muted-foreground">%</span>
-        </span>
-      </div>
+      <div className="absolute inset-0 grid place-items-center px-6 text-center">{children}</div>
+    </div>
+  )
+}
+
+function ExpiryPill({ expiry }: { expiry: Expiry }) {
+  if (!expiry) return null
+  return (
+    <div
+      className="mt-4 inline-flex max-w-[30ch] items-start gap-2 rounded-full border border-warning/30 bg-warning/10 px-3 py-1.5 text-left text-[11px] leading-tight text-warning-foreground"
+      role="status"
+    >
+      {expiry.wouldDrop ? (
+        <TrendingDown className="mt-px size-3.5 shrink-0 text-warning" aria-hidden="true" />
+      ) : (
+        <Clock3 className="mt-px size-3.5 shrink-0 text-warning" aria-hidden="true" />
+      )}
+      <span>
+        <span className="font-semibold tabular-nums">{formatPoints(expiry.points)} pts</span> vencen
+        el <span className="font-semibold tabular-nums">{formatDayMonth(expiry.expiresAt)}</span>
+        {expiry.wouldDrop ? ' · volvé para no bajar de nivel' : ''}
+      </span>
     </div>
   )
 }
@@ -77,13 +102,14 @@ function ProgressRing({ pct, label }: { pct: number; label: string }) {
 function PointsRow({ balance, lifetime }: { balance: number; lifetime: number }) {
   return (
     <dl className="mt-6 grid grid-cols-2 gap-3 text-center">
-      <div className="rounded-xl bg-[--cream-tint] px-3 py-3">
+      <div className="rounded-xl border border-[--hero-accent]/25 bg-[color-mix(in_oklch,var(--hero-accent)_8%,transparent)] px-3 py-3">
         <dt className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
           Canjeables
         </dt>
-        <dd className="mt-1 font-display text-2xl font-semibold tabular-nums">
+        <dd className="mt-1 font-display text-2xl font-semibold tabular-nums text-[--hero-accent]">
           {formatPoints(balance)}
         </dd>
+        <p className="text-[10px] text-muted-foreground">para canjear</p>
       </div>
       <div className="rounded-xl bg-[--cream-tint] px-3 py-3">
         <dt className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -92,6 +118,7 @@ function PointsRow({ balance, lifetime }: { balance: number; lifetime: number })
         <dd className="mt-1 font-display text-2xl font-semibold tabular-nums">
           {formatPoints(lifetime)}
         </dd>
+        <p className="text-[10px] text-muted-foreground">acumulados</p>
       </div>
     </dl>
   )
@@ -99,12 +126,16 @@ function PointsRow({ balance, lifetime }: { balance: number; lifetime: number })
 
 export function TierHero({
   tier,
+  categoryPoints,
   pointsBalance,
   lifetimePoints,
+  expiry,
 }: {
   tier: Tier
+  categoryPoints: number
   pointsBalance: number
   lifetimePoints: number
+  expiry: Expiry
 }): React.JSX.Element {
   const { current, next, pointsToNext, progressPct } = tier
   const hasTiers = current !== null || next !== null
@@ -137,26 +168,18 @@ export function TierHero({
 
   const tierName = current?.name ?? 'Sin nivel'
   const ringLabel = next
-    ? `Progreso al nivel ${next.name}: ${Math.round(progressPct)} por ciento`
-    : 'Nivel máximo alcanzado'
+    ? `${categoryPoints} puntos de categoría. Progreso al nivel ${next.name}: ${Math.round(progressPct)} por ciento`
+    : `${categoryPoints} puntos de categoría. Nivel máximo alcanzado`
 
-  // Subtítulo según el estado del progreso.
-  let subtitle: React.ReactNode
+  let subtitle: ReactNode
   if (next && pointsToNext !== null) {
-    subtitle = current ? (
+    subtitle = (
       <>
         Te faltan{' '}
         <span className="font-semibold text-[--hero-accent] tabular-nums">
           {formatPoints(pointsToNext)} pts
         </span>{' '}
         para <span className="font-medium text-foreground">{next.name}</span>
-      </>
-    ) : (
-      <>
-        En camino a <span className="font-medium text-foreground">{next.name}</span> ·{' '}
-        <span className="font-semibold text-[--hero-accent] tabular-nums">
-          {formatPoints(pointsToNext)} pts
-        </span>
       </>
     )
   } else {
@@ -172,27 +195,36 @@ export function TierHero({
       {/* Halo de marca detrás del anillo */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 h-40 opacity-70"
+        className="pointer-events-none absolute inset-x-0 top-0 h-44 opacity-70"
         style={{
           background:
-            'radial-gradient(60% 100% at 50% 0%, color-mix(in oklch, var(--hero-accent) 14%, transparent), transparent 70%)',
+            'radial-gradient(60% 100% at 50% 0%, color-mix(in oklch, var(--hero-accent) 16%, transparent), transparent 70%)',
         }}
       />
 
       <div className="relative flex flex-col items-center text-center">
-        <div className="inline-flex items-center gap-1.5 rounded-full bg-[--hero-accent] px-3 py-1 text-[--hero-accent-fg]">
-          <Crown className="size-3.5" aria-hidden="true" />
+        <div className="inline-flex items-center gap-1.5 rounded-full bg-[--hero-accent] px-3 py-1 text-[--hero-accent-fg] shadow-sm">
+          <LucideByName name={current?.badgeIcon} fallback={Crown} className="size-3.5" />
           <span className="text-xs font-semibold uppercase tracking-wider">{tierName}</span>
         </div>
 
         <div className="mt-5">
-          <ProgressRing pct={progressPct} label={ringLabel} />
+          <ProgressRing pct={progressPct} label={ringLabel}>
+            <span className="font-display text-5xl font-semibold tabular-nums leading-none text-foreground">
+              {formatPoints(categoryPoints)}
+            </span>
+            <span className="mt-1 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+              pts de categoría
+            </span>
+          </ProgressRing>
         </div>
 
         <p className="mt-4 text-balance text-sm text-muted-foreground">{subtitle}</p>
 
+        <ExpiryPill expiry={expiry} />
+
         {current?.perks ? (
-          <p className="mt-3 inline-flex max-w-[28ch] items-start gap-1.5 text-balance text-xs text-muted-foreground">
+          <p className="mt-3 inline-flex max-w-[30ch] items-start gap-1.5 text-balance text-xs text-muted-foreground">
             <Sparkles
               className="mt-0.5 size-3.5 shrink-0 text-[--hero-accent]"
               aria-hidden="true"

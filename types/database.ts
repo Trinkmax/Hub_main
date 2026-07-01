@@ -951,6 +951,7 @@ export type Database = {
         Row: {
           acquisition_channel: Database["public"]["Enums"]["customer_acquisition_channel"]
           birthdate: string | null
+          category_points: number
           created_at: string
           current_tier_id: string | null
           deleted_at: string | null
@@ -978,6 +979,7 @@ export type Database = {
         Insert: {
           acquisition_channel?: Database["public"]["Enums"]["customer_acquisition_channel"]
           birthdate?: string | null
+          category_points?: number
           created_at?: string
           current_tier_id?: string | null
           deleted_at?: string | null
@@ -1005,6 +1007,7 @@ export type Database = {
         Update: {
           acquisition_channel?: Database["public"]["Enums"]["customer_acquisition_channel"]
           birthdate?: string | null
+          category_points?: number
           created_at?: string
           current_tier_id?: string | null
           deleted_at?: string | null
@@ -1557,12 +1560,10 @@ export type Database = {
         Row: {
           active: boolean
           badge_icon: string | null
-          benefit_cadence: Database["public"]["Enums"]["tier_benefit_cadence"]
-          benefit_reward_id: string | null
           color: string | null
           created_at: string
           id: string
-          min_lifetime_points: number
+          min_category_points: number
           name: string
           perks: string | null
           sort: number
@@ -1572,12 +1573,10 @@ export type Database = {
         Insert: {
           active?: boolean
           badge_icon?: string | null
-          benefit_cadence?: Database["public"]["Enums"]["tier_benefit_cadence"]
-          benefit_reward_id?: string | null
           color?: string | null
           created_at?: string
           id?: string
-          min_lifetime_points: number
+          min_category_points: number
           name: string
           perks?: string | null
           sort?: number
@@ -1587,12 +1586,10 @@ export type Database = {
         Update: {
           active?: boolean
           badge_icon?: string | null
-          benefit_cadence?: Database["public"]["Enums"]["tier_benefit_cadence"]
-          benefit_reward_id?: string | null
           color?: string | null
           created_at?: string
           id?: string
-          min_lifetime_points?: number
+          min_category_points?: number
           name?: string
           perks?: string | null
           sort?: number
@@ -1600,13 +1597,6 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "loyalty_tiers_benefit_reward_id_fkey"
-            columns: ["benefit_reward_id"]
-            isOneToOne: false
-            referencedRelation: "rewards"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "loyalty_tiers_tenant_id_fkey"
             columns: ["tenant_id"]
@@ -2031,6 +2021,56 @@ export type Database = {
           webhook_verify_token?: string | null
         }
         Relationships: []
+      }
+      partners: {
+        Row: {
+          active: boolean
+          category: string | null
+          created_at: string
+          discount_label: string | null
+          id: string
+          logo_url: string | null
+          name: string
+          sort: number
+          tenant_id: string
+          updated_at: string
+          url: string | null
+        }
+        Insert: {
+          active?: boolean
+          category?: string | null
+          created_at?: string
+          discount_label?: string | null
+          id?: string
+          logo_url?: string | null
+          name: string
+          sort?: number
+          tenant_id: string
+          updated_at?: string
+          url?: string | null
+        }
+        Update: {
+          active?: boolean
+          category?: string | null
+          created_at?: string
+          discount_label?: string | null
+          id?: string
+          logo_url?: string | null
+          name?: string
+          sort?: number
+          tenant_id?: string
+          updated_at?: string
+          url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partners_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       points_rules: {
         Row: {
@@ -2480,6 +2520,7 @@ export type Database = {
       rewards: {
         Row: {
           active: boolean
+          category: string | null
           cost_points: number
           created_at: string
           description: string | null
@@ -2489,9 +2530,11 @@ export type Database = {
           name: string
           stock: number | null
           tenant_id: string
+          visible_in_catalog: boolean
         }
         Insert: {
           active?: boolean
+          category?: string | null
           cost_points: number
           created_at?: string
           description?: string | null
@@ -2501,9 +2544,11 @@ export type Database = {
           name: string
           stock?: number | null
           tenant_id: string
+          visible_in_catalog?: boolean
         }
         Update: {
           active?: boolean
+          category?: string | null
           cost_points?: number
           created_at?: string
           description?: string | null
@@ -2513,6 +2558,7 @@ export type Database = {
           name?: string
           stock?: number | null
           tenant_id?: string
+          visible_in_catalog?: boolean
         }
         Relationships: [
           {
@@ -3046,6 +3092,7 @@ export type Database = {
       tenants: {
         Row: {
           brand_accent: string | null
+          category_window_months: number
           created_at: string
           currency: string
           default_event_attendance_points: number
@@ -3073,6 +3120,7 @@ export type Database = {
         }
         Insert: {
           brand_accent?: string | null
+          category_window_months?: number
           created_at?: string
           currency?: string
           default_event_attendance_points?: number
@@ -3100,6 +3148,7 @@ export type Database = {
         }
         Update: {
           brand_accent?: string | null
+          category_window_months?: number
           created_at?: string
           currency?: string
           default_event_attendance_points?: number
@@ -3296,6 +3345,7 @@ export type Database = {
           redemption_id: string | null
           reward_id: string | null
           tenant_id: string
+          tier_benefit_id: string | null
           tier_id: string
         }
         Insert: {
@@ -3306,6 +3356,7 @@ export type Database = {
           redemption_id?: string | null
           reward_id?: string | null
           tenant_id: string
+          tier_benefit_id?: string | null
           tier_id: string
         }
         Update: {
@@ -3316,6 +3367,7 @@ export type Database = {
           redemption_id?: string | null
           reward_id?: string | null
           tenant_id?: string
+          tier_benefit_id?: string | null
           tier_id?: string
         }
         Relationships: [
@@ -3362,6 +3414,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "tier_benefit_grants_tier_benefit_id_fkey"
+            columns: ["tier_benefit_id"]
+            isOneToOne: false
+            referencedRelation: "tier_benefits"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "tier_benefit_grants_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
@@ -3370,6 +3429,95 @@ export type Database = {
           },
           {
             foreignKeyName: "tier_benefit_grants_tier_id_fkey"
+            columns: ["tier_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_tiers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tier_benefits: {
+        Row: {
+          active: boolean
+          cadence: Database["public"]["Enums"]["tier_benefit_cadence"]
+          created_at: string
+          description: string | null
+          discount_pct: number | null
+          discount_scope: string | null
+          icon: string | null
+          id: string
+          kind: string
+          label: string
+          partner_id: string | null
+          quantity: number
+          reward_id: string | null
+          sort: number
+          tenant_id: string
+          tier_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          cadence?: Database["public"]["Enums"]["tier_benefit_cadence"]
+          created_at?: string
+          description?: string | null
+          discount_pct?: number | null
+          discount_scope?: string | null
+          icon?: string | null
+          id?: string
+          kind: string
+          label: string
+          partner_id?: string | null
+          quantity?: number
+          reward_id?: string | null
+          sort?: number
+          tenant_id: string
+          tier_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          cadence?: Database["public"]["Enums"]["tier_benefit_cadence"]
+          created_at?: string
+          description?: string | null
+          discount_pct?: number | null
+          discount_scope?: string | null
+          icon?: string | null
+          id?: string
+          kind?: string
+          label?: string
+          partner_id?: string | null
+          quantity?: number
+          reward_id?: string | null
+          sort?: number
+          tenant_id?: string
+          tier_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tier_benefits_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tier_benefits_reward_id_fkey"
+            columns: ["reward_id"]
+            isOneToOne: false
+            referencedRelation: "rewards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tier_benefits_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tier_benefits_tier_id_fkey"
             columns: ["tier_id"]
             isOneToOne: false
             referencedRelation: "loyalty_tiers"

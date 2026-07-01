@@ -5,11 +5,20 @@ import { cn } from '@/lib/utils'
 import type { WalletData } from '@/lib/wallet/queries'
 import { formatPoints } from './wallet-format'
 
-// Grilla de recompensas canjeables. El canje lo hace el staff → NO hay botón de
-// auto-canje; sólo se invita a mostrar el QR en la caja.
-// Estados: tierLocked > affordable=false > affordable+unlocked (destacada).
+// Catálogo de canje agrupado por categoría (Desayuno / Almuerzo / Cena / Eventos).
+// El canje lo hace el staff → NO hay botón de auto-canje; sólo se invita a mostrar
+// el QR en la caja. Estados: tierLocked > affordable=false > canjeable (destacada).
 
 type Reward = WalletData['rewards'][number]
+
+const CATEGORY_ORDER = ['desayuno', 'almuerzo', 'cena', 'evento'] as const
+const CATEGORY_LABEL: Record<string, string> = {
+  desayuno: 'Desayuno y merienda',
+  almuerzo: 'Almuerzo',
+  cena: 'Cena',
+  evento: 'Eventos',
+}
+const OTHER_LABEL = 'Otras recompensas'
 
 function RewardCard({ reward, pointsBalance }: { reward: Reward; pointsBalance: number }) {
   const { affordable, tierLocked } = reward
@@ -92,16 +101,41 @@ export function RewardsGrid({
 }): React.JSX.Element | null {
   if (rewards.length === 0) return null
 
+  // Agrupar por categoría, respetando el orden canónico + "Otras" al final.
+  const byCategory = new Map<string, Reward[]>()
+  for (const r of rewards) {
+    const key = r.category && CATEGORY_LABEL[r.category] ? r.category : '__other'
+    const arr = byCategory.get(key)
+    if (arr) arr.push(r)
+    else byCategory.set(key, [r])
+  }
+
+  const sections: { key: string; label: string; items: Reward[] }[] = []
+  for (const key of CATEGORY_ORDER) {
+    const items = byCategory.get(key)
+    if (items && items.length > 0)
+      sections.push({ key, label: CATEGORY_LABEL[key] as string, items })
+  }
+  const other = byCategory.get('__other')
+  if (other && other.length > 0) sections.push({ key: '__other', label: OTHER_LABEL, items: other })
+
   return (
-    <section aria-labelledby="rewards-heading" className="space-y-3">
+    <section aria-labelledby="rewards-heading" className="space-y-4">
       <h2 id="rewards-heading" className="font-display text-lg font-semibold tracking-tight">
-        Canjeables
+        Catálogo de canje
       </h2>
-      <div className="grid grid-cols-2 gap-3">
-        {rewards.map((reward) => (
-          <RewardCard key={reward.id} reward={reward} pointsBalance={pointsBalance} />
-        ))}
-      </div>
+      {sections.map((section) => (
+        <div key={section.key} className="space-y-2">
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {section.label}
+          </h3>
+          <div className="grid grid-cols-2 gap-3">
+            {section.items.map((reward) => (
+              <RewardCard key={reward.id} reward={reward} pointsBalance={pointsBalance} />
+            ))}
+          </div>
+        </div>
+      ))}
     </section>
   )
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { Gift, type LucideIcon, Sparkles, Stamp, Star, Trophy } from 'lucide-react'
+import { Gift, Handshake, type LucideIcon, Sparkles, Stamp, Star, Trophy } from 'lucide-react'
 // Iconos alineados con los hijos de "Club de beneficios" en el sidebar (nav-config).
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -17,6 +17,7 @@ type Tab = {
 const TABS: Tab[] = [
   { label: 'Resumen', icon: Trophy, href: (s) => `/${s}/club`, exact: true },
   { label: 'Niveles', icon: Sparkles, href: (s) => `/${s}/club/niveles` },
+  { label: 'Aliados', icon: Handshake, href: (s) => `/${s}/club/aliados` },
   { label: 'Puntos y recompensas', icon: Gift, href: (s) => `/${s}/club/puntos` },
   { label: 'Punch cards', icon: Stamp, href: (s) => `/${s}/club/punch-cards` },
   { label: 'Bienvenida', icon: Star, href: (s) => `/${s}/club/bienvenida` },

@@ -1,7 +1,8 @@
 import { Info } from 'lucide-react'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
-import { listActiveRewards, listTiers } from '@/lib/points/queries'
+import type { TierBenefit } from '@/lib/points/benefits'
+import { listActiveRewards, listPartners, listTierBenefits, listTiers } from '@/lib/points/queries'
 import {
   RoleRequiredError,
   requireRole,
@@ -26,19 +27,29 @@ export default async function NivelesPage({ params }: { params: Promise<{ tenant
     throw error
   }
 
-  // Niveles + recompensas activas (estas últimas alimentan el selector de
-  // beneficio recurrente en el formulario).
-  const [tiers, rewards] = await Promise.all([
+  // Niveles + sus beneficios + recompensas activas (para `recurring_reward`)
+  // + marcas aliadas (para `partner`).
+  const [tiers, benefits, rewards, partners] = await Promise.all([
     listTiers({ tenantId: access.tenant.id }),
+    listTierBenefits({ tenantId: access.tenant.id }),
     listActiveRewards({ tenantId: access.tenant.id }),
+    listPartners({ tenantId: access.tenant.id }),
   ])
+
+  // Agrupar beneficios por nivel para pasarlos ya listos a la lista.
+  const benefitsByTier: Record<string, TierBenefit[]> = {}
+  for (const b of benefits) {
+    const bucket = benefitsByTier[b.tier_id] ?? []
+    bucket.push(b)
+    benefitsByTier[b.tier_id] = bucket
+  }
 
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Club de beneficios"
         title="Niveles del club"
-        description="Los niveles se alcanzan por puntos acumulados de por vida —nunca bajan, aunque el cliente canjee. Cada nivel puede desbloquear recompensas exclusivas y un beneficio recurrente automático."
+        description="Los niveles se calculan por PUNTOS DE CATEGORÍA: la suma de puntos ganados en los últimos 4 meses. Suben y bajan con la actividad reciente."
       />
 
       <div className="card-hairline flex items-start gap-3 rounded-xl border border-border/70 bg-primary/5 p-4 text-sm">
@@ -46,18 +57,25 @@ export default async function NivelesPage({ params }: { params: Promise<{ tenant
         <div className="space-y-0.5">
           <p className="font-medium text-foreground">Cómo funcionan los niveles</p>
           <p className="text-xs text-muted-foreground text-pretty">
-            Un cliente sube de nivel a medida que suma puntos por sus consumos. Mientras un canje le
-            descuenta puntos gastables, su <strong>nivel</strong> mira los puntos acumulados de por
-            vida: subir es para siempre. Asigná recompensas exclusivas por nivel desde{' '}
+            El nivel de cada cliente mira sus <strong>puntos de categoría</strong>: la suma móvil de
+            lo que ganó en los últimos 4 meses. Si sigue activo, sube; si deja de venir, baja. Cada
+            nivel puede desbloquear beneficios (ítems gratis recurrentes, descuentos, perks o marcas
+            aliadas) desde el botón{' '}
             <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[11px]">
-              Puntos y recompensas
-            </span>
-            .
+              Beneficios
+            </span>{' '}
+            de cada fila.
           </p>
         </div>
       </div>
 
-      <TiersList tenantSlug={tenantSlug} tiers={tiers} rewards={rewards} />
+      <TiersList
+        tenantSlug={tenantSlug}
+        tiers={tiers}
+        benefitsByTier={benefitsByTier}
+        rewards={rewards}
+        partners={partners}
+      />
     </div>
   )
 }

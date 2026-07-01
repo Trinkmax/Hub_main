@@ -1,8 +1,10 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
+import type { Partner, TierBenefit } from './benefits'
 import type { LoyaltyTier } from './tiers'
 import type { PointsRule } from './types'
 
+export type { Partner, TierBenefit } from './benefits'
 export type { LoyaltyTier } from './tiers'
 
 export type Reward = {
@@ -14,9 +16,19 @@ export type Reward = {
   active: boolean
   image_url: string | null
   min_tier_id: string | null
+  category: string | null
+  visible_in_catalog: boolean
 }
 
-const REWARD_COLUMNS = 'id, name, description, cost_points, stock, active, image_url, min_tier_id'
+const REWARD_COLUMNS =
+  'id, name, description, cost_points, stock, active, image_url, min_tier_id, category, visible_in_catalog'
+
+const TIER_COLUMNS = 'id, name, color, badge_icon, min_category_points, sort, perks, active'
+
+const TIER_BENEFIT_COLUMNS =
+  'id, tier_id, kind, label, description, icon, reward_id, cadence, quantity, discount_pct, discount_scope, partner_id, sort, active'
+
+const PARTNER_COLUMNS = 'id, name, logo_url, discount_label, category, url, active, sort'
 
 export async function listRules(opts: { tenantId: string }): Promise<PointsRule[]> {
   const supabase = await createClient()
@@ -55,13 +67,34 @@ export async function listTiers(opts: { tenantId: string }): Promise<LoyaltyTier
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('loyalty_tiers')
-    .select(
-      'id, name, color, badge_icon, min_lifetime_points, sort, benefit_cadence, benefit_reward_id, perks, active',
-    )
+    .select(TIER_COLUMNS)
     .eq('tenant_id', opts.tenantId)
-    .order('min_lifetime_points', { ascending: true })
+    .order('min_category_points', { ascending: true })
   if (error) throw error
   return (data ?? []) as LoyaltyTier[]
+}
+
+export async function listTierBenefits(opts: { tenantId: string }): Promise<TierBenefit[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('tier_benefits')
+    .select(TIER_BENEFIT_COLUMNS)
+    .eq('tenant_id', opts.tenantId)
+    .order('sort', { ascending: true })
+  if (error) throw error
+  return (data ?? []) as unknown as TierBenefit[]
+}
+
+export async function listPartners(opts: { tenantId: string }): Promise<Partner[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('partners')
+    .select(PARTNER_COLUMNS)
+    .eq('tenant_id', opts.tenantId)
+    .order('sort', { ascending: true })
+    .order('name', { ascending: true })
+  if (error) throw error
+  return (data ?? []) as Partner[]
 }
 
 export type LedgerEntry = {
@@ -168,7 +201,6 @@ export async function getPointsRedemptionConfig(
   tenantId: string,
 ): Promise<PointsRedemptionConfigRow> {
   const supabase = await createClient()
-  // Las columnas se agregan en la migración 20260529 — cast hasta regenerar types.
   const { data } = await supabase
     .from('tenants')
     .select('points_redemption_enabled, points_to_cents_rate, points_redemption_max_pct')

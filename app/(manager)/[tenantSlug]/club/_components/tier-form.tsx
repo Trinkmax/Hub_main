@@ -14,31 +14,13 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { createTier, type LoyaltyActionState, updateTier } from '@/lib/points/actions'
-import type { Reward } from '@/lib/points/queries'
-import type { LoyaltyTier, TierBenefitCadence } from '@/lib/points/tiers'
+import type { LoyaltyTier } from '@/lib/points/tiers'
 import { cn } from '@/lib/utils'
 
 const DEFAULT_COLOR = '#8a6d3b'
-
-const CADENCE_OPTIONS: Array<{ value: TierBenefitCadence; label: string; hint: string }> = [
-  { value: 'none', label: 'Ninguno', hint: 'Sin beneficio recurrente.' },
-  {
-    value: 'birthday',
-    label: 'Cumpleaños',
-    hint: 'Se entrega cada año en el cumple del cliente.',
-  },
-  { value: 'monthly', label: 'Mensual', hint: 'Se entrega una vez por mes.' },
-]
 
 // Forma del objeto que mandamos a createTier/updateTier.
 // Espejo de createTierSchema (sin id) + `id` opcional para update.
@@ -47,10 +29,8 @@ type TierInput = {
   name: string
   color: string | null
   badge_icon: string | null
-  min_lifetime_points: number
+  min_category_points: number
   sort: number
-  benefit_cadence: TierBenefitCadence
-  benefit_reward_id: string | null
   perks: string | null
   active: boolean
 }
@@ -58,12 +38,11 @@ type TierInput = {
 /** Valores para pre-rellenar un nivel NUEVO (sin id) — ej. el arranque rápido. */
 export type TierSeed = Pick<
   LoyaltyTier,
-  'name' | 'color' | 'min_lifetime_points' | 'sort' | 'badge_icon' | 'perks'
+  'name' | 'color' | 'min_category_points' | 'sort' | 'badge_icon' | 'perks'
 >
 
 export function TierForm({
   tenantSlug,
-  rewards,
   tier,
   seed,
   trigger,
@@ -71,7 +50,6 @@ export function TierForm({
   onOpenChange,
 }: {
   tenantSlug: string
-  rewards: Reward[]
   /** Si viene, el form EDITA ese nivel existente (llama a updateTier). */
   tier?: LoyaltyTier
   /** Pre-rellena un nivel NUEVO en modo creación (llama a createTier). Ignorado si viene `tier`. */
@@ -91,40 +69,25 @@ export function TierForm({
 
   const [pending, startTransition] = useTransition()
 
-  // Estado controlado de los campos que necesitan reactividad (color preview,
-  // mostrar/ocultar el selector de recompensa según la cadencia).
+  // Estado controlado de los campos que necesitan reactividad (color preview, switch).
   const [color, setColor] = useState<string>(defaults?.color ?? DEFAULT_COLOR)
-  const [cadence, setCadence] = useState<TierBenefitCadence>(tier?.benefit_cadence ?? 'none')
-  const [benefitRewardId, setBenefitRewardId] = useState<string>(tier?.benefit_reward_id ?? '')
   const [active, setActive] = useState<boolean>(tier?.active ?? true)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   // Reset a los valores de partida cada vez que se abre (importante al reusar
-  // el mismo form para distintas filas en una lista). Dependemos de `defaults`
-  // (derivado de tier/seed) y de `tier` para los campos exclusivos de edición.
+  // el mismo form para distintas filas en una lista).
   useEffect(() => {
     if (isOpen) {
       setColor(defaults?.color ?? DEFAULT_COLOR)
-      setCadence(tier?.benefit_cadence ?? 'none')
-      setBenefitRewardId(tier?.benefit_reward_id ?? '')
       setActive(tier?.active ?? true)
       setFieldErrors({})
     }
   }, [isOpen, tier, defaults])
 
   const handleSubmit = (formData: FormData) => {
-    const nextErrors: Record<string, string> = {}
-
     const name = String(formData.get('name') ?? '').trim()
-    if (!name) nextErrors.name = 'Poné un nombre.'
-
-    // El beneficio recurrente exige recompensa (espejo del refine del schema).
-    if (cadence !== 'none' && !benefitRewardId) {
-      nextErrors.benefit_reward_id = 'Elegí una recompensa para el beneficio recurrente.'
-    }
-
-    if (Object.keys(nextErrors).length > 0) {
-      setFieldErrors(nextErrors)
+    if (!name) {
+      setFieldErrors({ name: 'Poné un nombre.' })
       return
     }
     setFieldErrors({})
@@ -138,10 +101,8 @@ export function TierForm({
       name,
       color: hexInput.length > 0 ? hexInput : null,
       badge_icon: badgeInput.length > 0 ? badgeInput : null,
-      min_lifetime_points: Number(formData.get('min_lifetime_points') ?? 0),
+      min_category_points: Number(formData.get('min_category_points') ?? 0),
       sort: Number(formData.get('sort') ?? 0),
-      benefit_cadence: cadence,
-      benefit_reward_id: cadence === 'none' ? null : benefitRewardId || null,
       perks: perksInput.length > 0 ? perksInput : null,
       active,
     }
@@ -169,8 +130,8 @@ export function TierForm({
             {isEdit ? 'Editar nivel' : 'Nuevo nivel'}
           </DialogTitle>
           <DialogDescription>
-            Los clientes alcanzan este nivel al acumular puntos de por vida. Definí su umbral,
-            estética y qué beneficios desbloquea.
+            El nivel se alcanza acumulando puntos de categoría (los ganados en los últimos 4 meses).
+            Definí su umbral y estética; los beneficios se cargan aparte.
           </DialogDescription>
         </DialogHeader>
 
@@ -238,18 +199,18 @@ export function TierForm({
           {/* Umbral + orden */}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
-              <Label htmlFor="tier-min">Puntos para alcanzarlo</Label>
+              <Label htmlFor="tier-min">Puntos de categoría para alcanzarlo</Label>
               <Input
                 id="tier-min"
-                name="min_lifetime_points"
+                name="min_category_points"
                 type="number"
                 min={0}
                 required
-                defaultValue={defaults?.min_lifetime_points ?? 0}
+                defaultValue={defaults?.min_category_points ?? 0}
                 className="tabular-nums"
               />
               <p className="text-[11px] text-muted-foreground">
-                Puntos acumulados de por vida (no bajan al canjear).
+                Puntos ganados en los últimos 4 meses. El nivel sube y baja con la actividad.
               </p>
             </div>
 
@@ -268,62 +229,9 @@ export function TierForm({
             </div>
           </div>
 
-          {/* Beneficio recurrente */}
-          <div className="space-y-3 rounded-lg border border-border/70 bg-secondary/30 p-3">
-            <div className="grid gap-1.5">
-              <Label htmlFor="tier-cadence">Beneficio recurrente</Label>
-              <Select value={cadence} onValueChange={(v) => setCadence(v as TierBenefitCadence)}>
-                <SelectTrigger id="tier-cadence">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CADENCE_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-[11px] text-muted-foreground">
-                {CADENCE_OPTIONS.find((o) => o.value === cadence)?.hint}
-              </p>
-            </div>
-
-            {cadence !== 'none' ? (
-              <div className="grid gap-1.5">
-                <Label htmlFor="tier-benefit-reward">Recompensa del beneficio</Label>
-                {rewards.length === 0 ? (
-                  <p className="rounded-md border border-warning/40 bg-warning/15 px-3 py-2 text-xs text-warning">
-                    No tenés recompensas activas. Creá una en Puntos y recompensas para asignarla
-                    como beneficio recurrente.
-                  </p>
-                ) : (
-                  <Select value={benefitRewardId} onValueChange={setBenefitRewardId}>
-                    <SelectTrigger
-                      id="tier-benefit-reward"
-                      aria-invalid={fieldErrors.benefit_reward_id ? true : undefined}
-                    >
-                      <SelectValue placeholder="Elegí una recompensa…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {rewards.map((r) => (
-                        <SelectItem key={r.id} value={r.id}>
-                          {r.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-                {fieldErrors.benefit_reward_id ? (
-                  <p className="text-xs text-destructive">{fieldErrors.benefit_reward_id}</p>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-
           {/* Perks */}
           <div className="grid gap-1.5">
-            <Label htmlFor="tier-perks">Beneficios del nivel (opcional)</Label>
+            <Label htmlFor="tier-perks">Nota visible al cliente (opcional)</Label>
             <Textarea
               id="tier-perks"
               name="perks"
