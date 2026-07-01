@@ -82,7 +82,7 @@ function ExpiryPill({ expiry }: { expiry: Expiry }) {
   if (!expiry) return null
   return (
     <div
-      className="mt-4 inline-flex max-w-[30ch] items-start gap-2 rounded-full border border-warning/30 bg-warning/10 px-3 py-1.5 text-left text-[11px] leading-tight text-warning-foreground"
+      className="mt-4 inline-flex max-w-[30ch] items-start gap-2 rounded-full border border-warning/30 bg-warning/10 px-3 py-1.5 text-left text-[11px] leading-tight text-foreground"
       role="status"
     >
       {expiry.wouldDrop ? (

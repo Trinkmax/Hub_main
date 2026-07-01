@@ -229,6 +229,9 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
       .order('created_at', { ascending: false })
       .limit(50),
     // Ledger positivo dentro de la cota máxima → cálculo de vencimiento.
+    // Orden DESC (más nuevas primero): la ventana de vencimiento cae cerca de
+    // now-windowMonths (reciente para ventanas chicas); si el límite corta, deja
+    // fuera las más viejas, no la ventana relevante.
     service
       .from('points_transactions')
       .select('delta, created_at')
@@ -236,7 +239,7 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
       .eq('customer_id', customerId)
       .gt('delta', 0)
       .gte('created_at', earnCutoff)
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: false })
       .limit(1000),
     service
       .from('scheduled_events')

@@ -519,7 +519,7 @@ export function BenefitsEditor({
           ) : null}
 
           {form.kind === 'partner' ? (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3">
               <div className="grid gap-1.5">
                 <Label className="text-xs text-muted-foreground">Marca aliada</Label>
                 {partners.length === 0 ? (
@@ -540,23 +540,11 @@ export function BenefitsEditor({
                     </SelectContent>
                   </Select>
                 )}
+                <p className="text-[11px] text-muted-foreground">
+                  El descuento se toma del que cargaste en la marca (Marcas aliadas).
+                </p>
               </div>
               <div className="grid gap-1.5">
-                <Label htmlFor="benefit-pct-partner" className="text-xs text-muted-foreground">
-                  % de descuento (opcional)
-                </Label>
-                <Input
-                  id="benefit-pct-partner"
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={form.discountPct}
-                  onChange={(e) => set('discountPct', e.target.value)}
-                  className="tabular-nums"
-                  placeholder="15"
-                />
-              </div>
-              <div className="grid gap-1.5 sm:col-span-2">
                 <Label htmlFor="benefit-label-partner" className="text-xs text-muted-foreground">
                   Nombre
                 </Label>
