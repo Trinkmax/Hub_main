@@ -257,4 +257,43 @@ revocar de los tres para cerrarlos de verdad).
 - Lib (`lib/points/`): `tiers.ts`, `benefits.ts`, `category.ts`, `queries.ts`,
   `schemas.ts`, `actions.ts`.
 - UI del manager: `app/(manager)/[tenantSlug]/club/niveles/`,
-  `.../club/puntos/`, `.../club/_components/`.
+  `.../club/puntos/`, `.../club/aliados/`, `.../club/_components/`.
+- Wallet del cliente: `app/c/[token]/_components/{tier-hero,tier-benefits,rewards-grid,
+  benefit-icon,wallet-shell}.tsx`; datos en `lib/wallet/queries.ts` (`getWalletByToken`).
+- Cron HTTP (trigger manual): `app/api/cron/{refresh-category-points,grant-tier-benefits}/route.ts`.
+
+---
+
+## 10. Verificación
+
+**Automatizada (hecha):**
+- 5 migraciones aplicadas al proyecto dev remoto vía MCP + `get_advisors` (sólo warnings
+  genéricos de SECURITY DEFINER, pre-existentes).
+- Smoke SQL end-to-end contra la DB live (en transacción auto-revertida): acreditar 250 pts →
+  sube a nivel; backdatear la tx > ventana + `refresh_all_category_points()` → **el nivel baja**;
+  `grant_tier_benefits()` emite N canjes e **idempotente** al re-correr.
+- Check del `seed.sql`: las 3 formas de `tier_benefits` (recurring_reward/discount/perk) pasan el
+  `tier_benefits_kind_shape` check.
+- `npm run typecheck` + `npm run lint` sin errores; **728 tests unit** verdes
+  (incluye `tests/lib/points-category.test.ts`).
+- Revisión adversarial (4 dimensiones × verificación) → 3 hallazgos corregidos.
+
+**Smoke manual del happy path (para correr localmente con Docker):**
+1. `npx supabase start` → `npm run db:reset` (siembra HUB con 5 niveles, catálogo, beneficios,
+   18 partners y la regla 1pt/$1000) → `npm run dev`.
+2. **Manager** (login owner de HUB): `/hub/club/niveles` muestra los 5 niveles por *puntos de
+   categoría* con chips de beneficios; "Beneficios" de Gold lista ítems del mes + descuentos.
+   `/hub/club/aliados` muestra las 18 marcas en borrador (activá una). `/hub/club/puntos` muestra
+   el catálogo agrupado por categoría.
+3. **Acreditar** (`/hub/acreditar`): pegá el QR de un cliente demo y acreditá $500.000 → **+500 pts**
+   → el cliente sube a **Gold**.
+4. **Wallet** (`/c/<qr_token>` del cliente): el carnet muestra *500 pts de categoría*, nivel Gold,
+   anillo de progreso a Black y chip *Canjeables*; sección "Beneficios de tu nivel"; catálogo de
+   canje agrupado.
+5. **Vencimiento**: backdateá una tx del cliente a > 4 meses y corré `select
+   public.refresh_all_category_points();` → el nivel baja y el wallet muestra el pill
+   "X pts vencen el DD/MM".
+6. **Beneficios del mes**: `select public.grant_tier_benefits();` → aparecen canjes pendientes
+   "para retirar" en el wallet.
+7. **Canje**: el staff canjea una recompensa → descuenta *Canjeables*, **no** toca *Puntos de
+   Categoría*.
