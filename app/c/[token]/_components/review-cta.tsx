@@ -12,7 +12,7 @@ export function ReviewCta({ qrToken }: { qrToken: string }): React.JSX.Element {
       </h2>
       <Link
         href={`/r/${qrToken}`}
-        className="card-hairline group flex items-center gap-4 rounded-2xl border bg-card px-4 py-4 shadow-md transition-colors hover:border-[--brand-accent,var(--primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[--brand-accent,var(--primary)] focus-visible:ring-offset-2"
+        className="card-hairline group flex items-center gap-4 rounded-2xl border bg-card px-4 py-4 shadow-md transition-colors hover:border-(--brand-accent) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand-accent) focus-visible:ring-offset-2"
       >
         <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-[var(--brand-accent,var(--primary))]/12 text-[var(--brand-accent,var(--primary))]">
           <Star className="size-5 fill-current" aria-hidden="true" />

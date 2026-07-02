@@ -24,8 +24,8 @@ declare
   v_now timestamptz := now();
 begin
   -- 1) Tenant 'hub'
-  insert into public.tenants (id, slug, name)
-  values (v_tenant_id, 'hub', 'HUB! Coffee & Bar')
+  insert into public.tenants (id, slug, name, logo_url)
+  values (v_tenant_id, 'hub', 'HUB! Coffee & Bar', '/hub-logo.png')
   on conflict (id) do nothing;
 
   -- 2) Owner user en auth.users (solo en local — en remoto no se toca auth)

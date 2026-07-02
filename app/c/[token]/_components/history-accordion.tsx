@@ -83,7 +83,7 @@ export function HistoryAccordion({
           aria-expanded={open}
           aria-controls={panelId}
           onClick={() => setOpen((v) => !v)}
-          className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left transition-colors hover:bg-[--cream-tint] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left transition-colors hover:bg-(--cream-tint) focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
           <span className="inline-flex items-center gap-2 font-display text-base font-semibold tracking-tight">
             <History className="size-4 text-muted-foreground" aria-hidden="true" />

@@ -18,7 +18,7 @@ export function UpcomingEvents({ events }: { events: Event[] }): React.JSX.Eleme
         <ul className="divide-y divide-border/60">
           {events.map((event) => (
             <li key={event.id} className="flex items-center gap-3 px-4 py-3">
-              <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-[--cream-tint] text-[--brand-accent,var(--primary)]">
+              <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-(--cream-tint) text-(--brand-accent)">
                 <CalendarDays className="size-4.5" aria-hidden="true" />
               </div>
               <div className="min-w-0 flex-1">

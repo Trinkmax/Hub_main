@@ -24,7 +24,7 @@ function StampDots({ current, threshold }: { current: number; threshold: number 
           className={cn(
             'grid size-6 place-items-center rounded-full transition-colors',
             filled
-              ? 'bg-[--brand-accent,var(--primary)] text-[--brand-accent-foreground,var(--primary-foreground)] shadow-sm'
+              ? 'bg-(--brand-accent) text-(--brand-accent-foreground) shadow-sm'
               : 'border border-dashed border-border bg-secondary/40',
           )}
         >
@@ -40,7 +40,7 @@ function PunchCardRow({ card }: { card: PunchCard }) {
   return (
     <article className="card-hairline rounded-2xl border bg-card p-4">
       <div className="flex items-center gap-3">
-        <div className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-lg bg-[--cream-tint]">
+        <div className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-lg bg-(--cream-tint)">
           {card.imageUrl ? (
             <Image
               src={card.imageUrl}
@@ -70,7 +70,7 @@ function PunchCardRow({ card }: { card: PunchCard }) {
         <p
           className={cn(
             'mt-3 text-xs',
-            complete ? 'font-medium text-[--brand-accent,var(--primary)]' : 'text-muted-foreground',
+            complete ? 'font-medium text-(--brand-accent)' : 'text-muted-foreground',
           )}
         >
           {complete

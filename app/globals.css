@@ -147,6 +147,13 @@
   --brand-rose:  var(--destructive);
   --brand-amber: var(--warning);
   --brand-teal:  var(--info);
+
+  /* Acento de marca: default = primary (forest). El <BrandAccent> lo pisa inline
+     cuando el tenant define uno. Definirlo acá permite usar el shorthand válido
+     bg-[--brand-accent] (el comma-fallback [--brand-accent,var(--primary)] NO
+     compila en Tailwind v4 → transparente). */
+  --brand-accent: var(--primary);
+  --brand-accent-foreground: var(--primary-foreground);
 }
 
 /* Dark — cream se vuelve "midnight cream", forest sigue siendo accent vivo */
@@ -213,6 +220,13 @@
   --brand-rose:  var(--destructive);
   --brand-amber: var(--warning);
   --brand-teal:  var(--info);
+
+  /* Acento de marca: default = primary (forest). El <BrandAccent> lo pisa inline
+     cuando el tenant define uno. Definirlo acá permite usar el shorthand válido
+     bg-[--brand-accent] (el comma-fallback [--brand-accent,var(--primary)] NO
+     compila en Tailwind v4 → transparente). */
+  --brand-accent: var(--primary);
+  --brand-accent-foreground: var(--primary-foreground);
 }
 
 /* Fuerza modo claro en un subárbol aunque <html> esté en .dark (la carta pública
@@ -274,6 +288,13 @@
   --brand-rose:  var(--destructive);
   --brand-amber: var(--warning);
   --brand-teal:  var(--info);
+
+  /* Acento de marca: default = primary (forest). El <BrandAccent> lo pisa inline
+     cuando el tenant define uno. Definirlo acá permite usar el shorthand válido
+     bg-[--brand-accent] (el comma-fallback [--brand-accent,var(--primary)] NO
+     compila en Tailwind v4 → transparente). */
+  --brand-accent: var(--primary);
+  --brand-accent-foreground: var(--primary-foreground);
 }
 
 @layer base {
@@ -386,6 +407,117 @@
       var(--fp-grid-major, 100px) var(--fp-grid-major, 100px),
       100% 100%;
   }
+
+  /* ── Wallet / carnet ─────────────────────────────────────────────────────
+     Microinteracciones de la billetera del cliente. Todas se apagan bajo
+     prefers-reduced-motion (bloque al final del archivo). Usan los tokens de
+     motion (ease + duration) para sentirse parte del mismo sistema. */
+
+  /* Barrido de luz que cruza el carnet una vez al montar (feel "tarjeta física"). */
+  .carnet-sheen { position: relative; overflow: hidden; }
+  .carnet-sheen::after {
+    content: '';
+    position: absolute;
+    inset: -50% -60%;
+    z-index: 2;
+    background: linear-gradient(
+      115deg,
+      transparent 38%,
+      color-mix(in oklch, white 28%, transparent) 48%,
+      color-mix(in oklch, white 42%, transparent) 50%,
+      color-mix(in oklch, white 28%, transparent) 52%,
+      transparent 62%
+    );
+    transform: translateX(-130%);
+    animation: carnet-sheen 1150ms var(--ease-out) 280ms 1 both;
+    pointer-events: none;
+  }
+
+  /* Halo que respira alrededor del nodo actual de la escalera de niveles.
+     El elemento debe exponer --acc (color del tier) inline. */
+  .tier-node-pulse { animation: tier-node-pulse 2600ms var(--ease-in-out) infinite; }
+
+  /* Rail de progreso que se rellena al aparecer (ancho controlado inline). */
+  .rail-fill { transition: width var(--duration-slower) var(--ease-out); }
+
+  /* Elevación táctil en tarjetas presionables (mobile-first: cae en :active). */
+  .press-lift {
+    transition: transform var(--duration-base) var(--ease-out),
+                box-shadow var(--duration-base) var(--ease-out);
+  }
+  @media (hover: hover) {
+    .press-lift:hover { transform: translateY(-3px); }
+  }
+  .press-lift:active { transform: translateY(0) scale(0.99); }
+
+  /* Zoom sutil de la foto de una recompensa al pasar/mantener. */
+  .media-zoom { transition: transform var(--duration-slow) var(--ease-out); }
+  @media (hover: hover) {
+    .group:hover .media-zoom { transform: scale(1.05); }
+  }
+
+  /* Entrada escalonada declarativa: --i multiplica el retardo por-ítem. */
+  .stagger-item {
+    animation: stagger-rise var(--duration-slow) var(--ease-out) both;
+    animation-delay: calc(var(--i, 0) * 55ms);
+  }
+
+  /* Rail de la escalera que crece de izquierda a derecha al montar (GPU: scaleX,
+     no width → sin reflow). El ancho lo fija el inline style; scaleX lo revela. */
+  .rail-grow {
+    transform-origin: left center;
+    animation: rail-grow var(--duration-slower) var(--ease-out) 140ms both;
+  }
+
+  /* Pista de "arrastrame": el chevron del labio de la billetera hace 2 rebotes
+     suaves al montar la carta. Contenido dentro del labio → sin hueco de layout. */
+  .wallet-hint-bob {
+    animation: wallet-hint-bob 1.5s var(--ease-out) 0.9s 2;
+  }
+}
+
+/* Openness del cajón de la billetera (0 = peek, 1 = open). Registrada para poder
+   TRANSICIONARLA junto al transform del panel → cross-fade verde↔crema, chevron y
+   scrim animan en sincronía con el snap. */
+@property --wallet-p {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+@keyframes carnet-sheen {
+  0%   { transform: translateX(-130%); opacity: 0; }
+  14%  { opacity: 1; }
+  100% { transform: translateX(130%); opacity: 0; }
+}
+@keyframes tier-node-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--acc, var(--primary)) 42%, transparent); }
+  55%      { box-shadow: 0 0 0 7px color-mix(in oklch, var(--acc, var(--primary)) 0%, transparent); }
+}
+/* Solo transform (sin opacidad): si la animación no corre —tab oculta/headless—
+   el contenido queda VISIBLE (a lo sumo 6px desplazado), nunca en blanco. */
+@keyframes stagger-rise {
+  from { transform: translateY(6px); }
+  to   { transform: translateY(0); }
+}
+@keyframes rail-grow {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+@keyframes wallet-hint-bob {
+  0%, 100% { transform: translateY(0); }
+  45%      { transform: translateY(-3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .carnet-sheen::after { animation: none; display: none; }
+  .tier-node-pulse { animation: none; }
+  .rail-fill { transition: none; }
+  .rail-grow { animation: none; transform: none; }
+  .press-lift, .media-zoom { transition: none; }
+  .press-lift:hover, .press-lift:active, .group:hover .media-zoom { transform: none; }
+  .stagger-item { animation: none; opacity: 1; transform: none; }
+  .wallet-hint-bob { animation: none; }
 }
 
 /* react-phone-number-input: match shadcn Input styling */

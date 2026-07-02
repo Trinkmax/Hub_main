@@ -77,5 +77,6 @@ export async function updateCapturePromptConfig(
   })
 
   revalidatePath(`/${slug}/club/bienvenida`)
+  revalidatePath(`/${slug}/menu`)
   return { ok: true, message: 'Guardado.' }
 }

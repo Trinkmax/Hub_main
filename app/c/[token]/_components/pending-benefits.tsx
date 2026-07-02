@@ -16,8 +16,8 @@ const KIND_META: Record<PendingBenefit['kind'], { Icon: typeof Gift; label: stri
 function BenefitRow({ benefit }: { benefit: PendingBenefit }) {
   const { Icon, label } = KIND_META[benefit.kind]
   return (
-    <li className="flex items-center gap-3 rounded-xl bg-[--brand-accent-foreground]/10 p-2.5">
-      <div className="grid size-11 shrink-0 place-items-center overflow-hidden rounded-lg bg-[--brand-accent-foreground]/15">
+    <li className="flex items-center gap-3 rounded-xl bg-(--brand-accent-foreground)/10 p-2.5">
+      <div className="grid size-11 shrink-0 place-items-center overflow-hidden rounded-lg bg-(--brand-accent-foreground)/15">
         {benefit.imageUrl ? (
           <Image
             src={benefit.imageUrl}
@@ -49,7 +49,7 @@ export function PendingBenefits({
   return (
     <section
       aria-label="Beneficios para retirar"
-      className="animate-in fade-in slide-in-from-bottom-2 duration-[var(--duration-slow)] overflow-hidden rounded-2xl bg-[--brand-accent,var(--primary)] p-5 text-[--brand-accent-foreground,var(--primary-foreground)] shadow-glow"
+      className="overflow-hidden rounded-2xl bg-(--brand-accent) p-5 text-(--brand-accent-foreground) shadow-glow"
     >
       <div className="flex items-center gap-2">
         <Sparkles className="size-5" aria-hidden="true" />

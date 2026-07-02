@@ -16,23 +16,18 @@ export function CartaBrand({
   className?: string
 }): React.JSX.Element {
   if (logoUrl) {
+    // Logo tal cual (recorte ajustado, sin marco): es la identidad. Altura
+    // contenida para el header; el ancho fluye con la proporción real (~2.35:1).
     return (
-      <span
-        className={cn(
-          'relative block size-11 shrink-0 overflow-hidden rounded-xl ring-1 ring-border/60',
-          className,
-        )}
-      >
-        <Image
-          src={logoUrl}
-          alt={tenantName}
-          fill
-          sizes="44px"
-          className="object-cover"
-          unoptimized
-          priority
-        />
-      </span>
+      <Image
+        src={logoUrl}
+        alt={tenantName}
+        width={220}
+        height={94}
+        className={cn('h-9 w-auto max-w-[160px] shrink-0 object-contain', className)}
+        unoptimized
+        priority
+      />
     )
   }
   return (

@@ -27,7 +27,10 @@ export default async function CustomerWalletPage({
   })
 
   return (
-    <BrandAccent accent={data.tenant.brandAccent} className="min-h-[100dvh] bg-background">
+    <BrandAccent
+      accent={data.tenant.brandAccent}
+      className="force-light min-h-[100dvh] bg-background"
+    >
       <WalletShell data={data} qrDataUrl={qrDataUrl} />
     </BrandAccent>
   )

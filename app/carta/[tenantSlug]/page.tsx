@@ -111,7 +111,6 @@ export default async function CartaPage({
         tree={tree}
         tenantSlug={tenantSlug}
         captureLinkSlug={captureLinkSlug}
-        hasWallet={Boolean(wallet)}
         walletContent={walletContent}
         walletSummary={walletSummary}
         initialSheet={initialSheet}

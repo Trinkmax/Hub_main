@@ -1,10 +1,16 @@
 'use client'
 
-import { ChevronLeft, ChevronRight, SearchX, UtensilsCrossed, Wallet } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  SearchX,
+  UtensilsCrossed,
+  Wallet,
+} from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { MenuItem } from '@/lib/menu/queries'
 import type { MenuTreeNode } from '@/lib/menu/tree'
-import { cn } from '@/lib/utils'
 import { CartaBrand } from './carta-brand'
 import { CartaSearch } from './carta-search'
 import { CategoryHubCard } from './category-hub-card'
@@ -12,9 +18,13 @@ import { ClubSheet } from './club-sheet'
 import { FeaturedCarousel } from './featured-carousel'
 import { ItemCard } from './item-card'
 import { ItemDetailSheet } from './item-detail-sheet'
-import { WalletSheet, type WalletSummary } from './wallet-sheet'
+import { WalletDrawer, type WalletSummary } from './wallet-drawer'
 
-type SheetView = 'none' | 'club' | 'wallet'
+/** Estado de apertura pasado por deep-link (?club / ?wallet). */
+type InitialSheet = 'none' | 'club' | 'wallet'
+/** El único overlay que este componente controla directamente es el club: la
+ *  billetera es un cajón autónomo (WalletDrawer) que maneja su propio open. */
+type SheetState = 'none' | 'club'
 
 /** Todos los ítems del bosque en orden de árbol. */
 function collectItems(nodes: MenuTreeNode[]): MenuItem[] {
@@ -58,18 +68,18 @@ export function CartaExperience(props: {
   tree: MenuTreeNode[]
   tenantSlug: string
   captureLinkSlug: string | null
-  hasWallet: boolean
   walletContent: React.ReactNode | null
   walletSummary: WalletSummary | null
-  initialSheet: SheetView
+  initialSheet: InitialSheet
 }): React.JSX.Element {
-  const { tenantName, logoUrl, tree, tenantSlug, captureLinkSlug, hasWallet, walletContent } = props
+  const { tenantName, logoUrl, tree, tenantSlug, captureLinkSlug, walletContent } = props
   const { walletSummary } = props
 
   const [path, setPath] = useState<string[]>([])
   const [query, setQuery] = useState('')
   const [activeItem, setActiveItem] = useState<MenuItem | null>(null)
-  const [sheet, setSheet] = useState<SheetView>(props.initialSheet)
+  const [sheet, setSheet] = useState<SheetState>(props.initialSheet === 'club' ? 'club' : 'none')
+  const walletInitiallyOpen = props.initialSheet === 'wallet'
 
   // El sheet inicial ya se sembró desde ?club/?wallet; limpiamos el query de la
   // URL para que al cerrar y recargar/compartir no se vuelva a abrir solo.
@@ -127,21 +137,11 @@ export function CartaExperience(props: {
       <header className="sticky top-0 z-30 border-b border-border/60 bg-background/85 backdrop-blur-md">
         <div className="mx-auto w-full max-w-2xl px-4 pb-3 pt-[max(env(safe-area-inset-top),12px)]">
           <div className="flex items-center gap-3 py-2">
+            {/* Sólo el logo (sin duplicar el nombre) + el rótulo de la página. */}
             <CartaBrand tenantName={tenantName} logoUrl={logoUrl} />
-            {!logoUrl ? (
-              <span className="ml-auto text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                Carta
-              </span>
-            ) : (
-              <div className="min-w-0 flex-1">
-                <h1 className="truncate font-serif text-xl font-semibold leading-tight tracking-tight">
-                  {tenantName}
-                </h1>
-                <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                  Carta
-                </p>
-              </div>
-            )}
+            <span className="ml-auto text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+              Carta
+            </span>
           </div>
 
           <CartaSearch value={query} onChange={setQuery} className="mt-1" />
@@ -239,38 +239,33 @@ export function CartaExperience(props: {
         </footer>
       </main>
 
-      {/* BOTONERA INFERIOR */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-border/60 bg-background/90 backdrop-blur-md">
-        <div className="mx-auto flex w-full max-w-2xl items-center gap-2 px-4 pb-[max(env(safe-area-inset-bottom),10px)] pt-2.5">
+      {/* CAJÓN DE LA BILLETERA — el borde verde asoma desde abajo y se arrastra
+          hacia arriba para abrir. Si el cliente aún no tiene wallet, el mismo
+          labio invita a sumarse al club (tap → ClubSheet). */}
+      {walletContent && walletSummary ? (
+        <WalletDrawer summary={walletSummary} initialOpen={walletInitiallyOpen}>
+          {walletContent}
+        </WalletDrawer>
+      ) : (
+        <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-40">
           <button
             type="button"
-            onClick={goHome}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border/70 bg-card/70 px-3 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.99]"
+            onClick={() => setSheet('club')}
+            aria-label="Sumate al club"
+            className="group pointer-events-auto flex w-full flex-col items-center gap-1.5 rounded-t-[1.75rem] bg-[color:var(--brand-accent,var(--primary))] px-4 pb-[max(env(safe-area-inset-bottom),0.875rem)] pt-2.5 text-[color:var(--brand-accent-foreground,var(--primary-foreground))] shadow-[0_-24px_60px_-24px_rgba(0,0,0,0.5)] transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70 active:scale-[0.995]"
           >
-            <UtensilsCrossed className="size-4" aria-hidden />
-            Carta
-          </button>
-          {hasWallet ? (
-            <button
-              type="button"
-              onClick={() => setSheet('wallet')}
-              className="flex flex-[1.2] items-center justify-center gap-2 rounded-xl bg-[color:var(--brand-accent,var(--primary))] px-3 py-2.5 text-sm font-semibold text-[color:var(--brand-accent-foreground,var(--primary-foreground))] shadow-sm transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.99]"
-            >
-              <Wallet className="size-4" aria-hidden />
-              Mi billetera
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setSheet('club')}
-              className="flex flex-[1.2] items-center justify-center gap-2 rounded-xl bg-[color:var(--brand-accent,var(--primary))] px-3 py-2.5 text-sm font-semibold text-[color:var(--brand-accent-foreground,var(--primary-foreground))] shadow-sm transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.99]"
-            >
+            <span className="h-1.5 w-10 rounded-full bg-current/40" aria-hidden />
+            <span className="flex items-center gap-2 text-sm font-semibold">
               <Wallet className="size-4" aria-hidden />
               Sumate al club
-            </button>
-          )}
-        </div>
-      </nav>
+              <ChevronUp
+                className="size-4 transition-transform duration-200 group-hover:-translate-y-0.5"
+                aria-hidden
+              />
+            </span>
+          </button>
+        </nav>
+      )}
 
       <ItemDetailSheet item={activeItem} onClose={() => setActiveItem(null)} />
 
@@ -281,16 +276,6 @@ export function CartaExperience(props: {
         tenantSlug={tenantSlug}
         linkSlug={captureLinkSlug}
       />
-
-      {walletContent && walletSummary ? (
-        <WalletSheet
-          open={sheet === 'wallet'}
-          onClose={() => setSheet('none')}
-          summary={walletSummary}
-        >
-          {walletContent}
-        </WalletSheet>
-      ) : null}
     </div>
   )
 }

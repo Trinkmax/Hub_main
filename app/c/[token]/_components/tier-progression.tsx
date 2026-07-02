@@ -1,113 +1,57 @@
-import { Gift, Handshake, Lock, Percent, Sparkles } from 'lucide-react'
-import type { CSSProperties } from 'react'
-import { BENEFIT_KIND_META } from '@/lib/points/benefits'
+import { Lock, Sparkles } from 'lucide-react'
 import type { WalletData } from '@/lib/wallet/queries'
+import { BenefitCard } from './benefit-card'
 import { LucideByName } from './benefit-icon'
+import { tierAccent } from './tier-accent'
+import { WalletCarousel } from './wallet-carousel'
 import { formatPoints } from './wallet-format'
+import { WalletMoreButton } from './wallet-more-button'
 
-// Beneficios por categoría, con aspiración: tu nivel actual (desbloqueado, a todo
-// color) + los niveles siguientes (bloqueados, "te faltan X pts") para que veas
-// qué ganás si seguís sumando. Concepto central del dueño. Server component.
+// Beneficios por categoría, aspiracionales: tu nivel actual + los siguientes
+// (con "te faltan X pts"). Cada nivel = header + carrusel horizontal de cards de
+// beneficio (foto-forward). Concepto central del dueño (los « » del mockup).
 
 type Step = WalletData['progression'][number]
-type Benefit = WalletData['benefits'][number]
 
-const KIND_FALLBACK = { Gift, Percent, Sparkles, Handshake }
-
-const CADENCE_TEXT: Record<Benefit['cadence'], string> = {
-  none: '',
-  monthly: 'Cada mes',
-  birthday: 'En tu cumpleaños',
-}
-
-function accent(color: string | null): CSSProperties {
-  const isHex = color !== null && /^#[0-9a-fA-F]{6}$/.test(color)
-  return { '--acc': isHex ? color : 'var(--brand-accent, var(--primary))' } as CSSProperties
-}
-
-function benefitSub(b: Benefit): string | null {
-  switch (b.kind) {
-    case 'recurring_reward': {
-      const cad = CADENCE_TEXT[b.cadence]
-      return b.quantity > 1 ? `${cad} · ${b.quantity} por período`.trim() : cad || null
-    }
-    case 'discount':
-      return b.discountScope
-    case 'partner':
-      return b.partner?.discountLabel ?? b.partner?.category ?? 'Beneficio de socio'
-    default:
-      return b.description
-  }
-}
-
-function BenefitItem({
-  benefit,
-  locked,
-  delay,
-}: {
-  benefit: Benefit
-  locked: boolean
-  delay: number
-}) {
-  const FallbackIcon =
-    KIND_FALLBACK[BENEFIT_KIND_META[benefit.kind].icon as keyof typeof KIND_FALLBACK] ?? Gift
-  const sub = benefitSub(benefit)
+function TierSection({ step }: { step: Step }) {
+  const isCurrent = step.current
   return (
-    <li
-      className="animate-in fade-in slide-in-from-bottom-1 flex items-center gap-3 rounded-xl border border-border/70 bg-card px-3 py-2.5"
-      style={{ animationDelay: `${delay}ms`, animationFillMode: 'both' }}
-    >
-      <span
-        className={[
-          'grid size-9 shrink-0 place-items-center rounded-full',
-          locked ? 'bg-[--cream-tint] text-muted-foreground' : 'bg-[--acc]/14 text-[--acc]',
-        ].join(' ')}
-      >
-        {benefit.kind === 'discount' && benefit.discountPct !== null ? (
-          <span className="text-[11px] font-bold tabular-nums">
-            {Math.round(benefit.discountPct)}%
+    <div style={tierAccent(step.color)} className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="grid size-7 shrink-0 place-items-center rounded-full bg-(--acc)/15 text-(--acc)">
+            <LucideByName name={step.badgeIcon} fallback={Sparkles} className="size-4" />
           </span>
-        ) : (
-          <LucideByName name={benefit.icon} fallback={FallbackIcon} className="size-4" />
-        )}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium leading-tight">{benefit.label}</p>
-        {sub ? <p className="text-[11px] text-muted-foreground">{sub}</p> : null}
-      </div>
-    </li>
-  )
-}
-
-function TierBlock({ step }: { step: Step }) {
-  const locked = !step.current
-  return (
-    <div style={accent(step.color)} className={locked ? 'opacity-95' : undefined}>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="font-serif text-lg font-semibold tracking-tight text-[--acc]">
-          {step.name}
-        </h3>
-        {step.current ? (
-          <span className="rounded-full bg-[--acc]/14 px-2.5 py-0.5 text-[11px] font-semibold text-[--acc]">
+          <h3 className="truncate font-display text-lg font-semibold tracking-tight text-foreground">
+            {step.name}
+          </h3>
+        </div>
+        {isCurrent ? (
+          <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-(--acc)/35 bg-(--acc)/14 px-2.5 py-1 text-[11px] font-semibold text-foreground">
+            <span className="size-1.5 rounded-full bg-(--acc)" aria-hidden="true" />
             Tu nivel
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1 rounded-full bg-[--cream-tint] px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+          <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-(--cream-tint) px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
             <Lock className="size-3" aria-hidden="true" />
-            Faltan {formatPoints(step.pointsToReach)} pts
+            Te faltan{' '}
+            <span className="font-semibold tabular-nums text-foreground">
+              {formatPoints(step.pointsToReach)}
+            </span>{' '}
+            pts
           </span>
         )}
       </div>
       {step.benefits.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-border/70 px-3 py-3 text-center text-xs text-muted-foreground">
+        <p className="rounded-xl border border-dashed border-border/70 px-3 py-4 text-center text-xs text-muted-foreground">
           Este nivel todavía no tiene beneficios cargados.
         </p>
       ) : (
-        <ul className="grid gap-2">
-          {step.benefits.map((b, i) => (
-            <BenefitItem key={b.id} benefit={b} locked={locked} delay={i * 50} />
+        <WalletCarousel>
+          {step.benefits.map((b) => (
+            <BenefitCard key={b.id} benefit={b} muted={!isCurrent} />
           ))}
-        </ul>
+        </WalletCarousel>
       )}
     </div>
   )
@@ -115,32 +59,43 @@ function TierBlock({ step }: { step: Step }) {
 
 export function TierProgression({
   progression,
+  variant = 'full',
+  onMore,
 }: {
   progression: Step[]
+  /** `current` = solo tu nivel (wallet compacta); `full` = actual + siguientes. */
+  variant?: 'full' | 'current'
+  /** Si está, muestra un CTA "ver todas las categorías" al pie (cambia de vista). */
+  onMore?: () => void
 }): React.JSX.Element | null {
   if (progression.length === 0) return null
   const currentIndex = Math.max(
     0,
     progression.findIndex((s) => s.current),
   )
-  // Nivel actual + los siguientes (aspiración). Los anteriores quedan subsumidos.
-  const visible = progression.slice(currentIndex)
+  const visible =
+    variant === 'current'
+      ? progression.slice(currentIndex, currentIndex + 1)
+      : progression.slice(currentIndex)
 
   return (
-    <section id="niveles" aria-labelledby="niveles-heading" className="scroll-mt-4 space-y-4">
+    <section aria-labelledby="beneficios-heading" className="space-y-6">
       <div className="space-y-1">
-        <h2 id="niveles-heading" className="font-display text-lg font-semibold tracking-tight">
-          Beneficios por categoría
+        <h2 id="beneficios-heading" className="font-display text-lg font-semibold tracking-tight">
+          {variant === 'current' ? 'Beneficios de tu nivel' : 'Beneficios por categoría'}
         </h2>
         <p className="text-xs text-muted-foreground">
-          Estos son tus beneficios ahora y lo que sumás al subir de categoría.
+          {variant === 'current'
+            ? 'Los que tenés disponibles ahora.'
+            : 'Lo que tenés ahora y lo que sumás al subir de nivel.'}
         </p>
       </div>
-      <div className="space-y-6">
-        {visible.map((step) => (
-          <TierBlock key={step.id} step={step} />
-        ))}
-      </div>
+      {visible.map((step) => (
+        <TierSection key={step.id} step={step} />
+      ))}
+      {onMore ? (
+        <WalletMoreButton onClick={onMore}>Mirá los beneficios de cada categoría</WalletMoreButton>
+      ) : null}
     </section>
   )
 }

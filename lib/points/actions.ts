@@ -202,6 +202,7 @@ export async function createPerAmountRule(
   })
 
   revalidatePath(`/${slug}/club/puntos`)
+  revalidatePath(`/${slug}/menu`)
   return { ok: true, message: 'Regla creada.' }
 }
 
@@ -246,6 +247,7 @@ export async function createPerItemRule(
   })
 
   revalidatePath(`/${slug}/club/puntos`)
+  revalidatePath(`/${slug}/menu`)
   return { ok: true, message: 'Regla creada.' }
 }
 
@@ -269,6 +271,7 @@ export async function toggleRule(
   if (error) return { ok: false, message: 'No pudimos actualizar.' }
 
   revalidatePath(`/${slug}/club/puntos`)
+  revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
 
@@ -296,6 +299,7 @@ export async function deleteRule(slug: string, ruleId: string): Promise<LoyaltyA
   })
 
   revalidatePath(`/${slug}/club/puntos`)
+  revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
 
@@ -346,6 +350,7 @@ export async function createReward(
   })
 
   revalidatePath(`/${slug}/club/puntos`)
+  revalidatePath(`/${slug}/menu`)
   return { ok: true, message: 'Recompensa creada.' }
 }
 
@@ -387,6 +392,7 @@ export async function updateReward(
   if (error) return { ok: false, message: 'No pudimos actualizar.' }
 
   revalidatePath(`/${slug}/club`)
+  revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
 
@@ -430,6 +436,7 @@ export async function createTier(slug: string, input: unknown): Promise<LoyaltyA
   })
 
   revalidatePath(`/${slug}/club/niveles`)
+  revalidatePath(`/${slug}/menu`)
   return { ok: true, message: 'Nivel creado.' }
 }
 
@@ -464,6 +471,7 @@ export async function updateTier(slug: string, input: unknown): Promise<LoyaltyA
   }
 
   revalidatePath(`/${slug}/club/niveles`)
+  revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
 
@@ -491,6 +499,7 @@ export async function deleteTier(slug: string, id: string): Promise<LoyaltyActio
   })
 
   revalidatePath(`/${slug}/club/niveles`)
+  revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
 
@@ -518,6 +527,7 @@ export async function deleteReward(slug: string, id: string): Promise<LoyaltyAct
   }
 
   revalidatePath(`/${slug}/club/puntos`)
+  revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
 
@@ -553,6 +563,7 @@ export async function updatePointsRedemptionConfigAction(
   }
 
   revalidatePath(`/${slug}/club/puntos`)
+  revalidatePath(`/${slug}/menu`)
   return { ok: true, message: 'Configuración guardada' }
 }
 
@@ -612,6 +623,7 @@ export async function createTierBenefit(slug: string, input: unknown): Promise<L
   if (error) return { ok: false, message: 'No pudimos crear el beneficio.' }
 
   revalidatePath(`/${slug}/club/niveles`)
+  revalidatePath(`/${slug}/menu`)
   return { ok: true, message: 'Beneficio agregado.' }
 }
 
@@ -634,6 +646,7 @@ export async function updateTierBenefit(slug: string, input: unknown): Promise<L
   if (error) return { ok: false, message: 'No pudimos actualizar el beneficio.' }
 
   revalidatePath(`/${slug}/club/niveles`)
+  revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
 
@@ -656,6 +669,7 @@ export async function toggleTierBenefit(
   if (error) return { ok: false, message: 'No pudimos actualizar.' }
 
   revalidatePath(`/${slug}/club/niveles`)
+  revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
 
@@ -674,6 +688,7 @@ export async function deleteTierBenefit(slug: string, id: string): Promise<Loyal
   if (error) return { ok: false, message: 'No pudimos borrar.' }
 
   revalidatePath(`/${slug}/club/niveles`)
+  revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
 
@@ -704,6 +719,7 @@ export async function createPartner(slug: string, input: unknown): Promise<Loyal
   if (error) return { ok: false, message: 'No pudimos crear la marca.' }
 
   revalidatePath(`/${slug}/club/aliados`)
+  revalidatePath(`/${slug}/menu`)
   return { ok: true, message: 'Marca agregada.' }
 }
 
@@ -733,6 +749,7 @@ export async function updatePartner(slug: string, input: unknown): Promise<Loyal
   if (error) return { ok: false, message: 'No pudimos actualizar la marca.' }
 
   revalidatePath(`/${slug}/club/aliados`)
+  revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
 
@@ -755,6 +772,7 @@ export async function togglePartner(
   if (error) return { ok: false, message: 'No pudimos actualizar.' }
 
   revalidatePath(`/${slug}/club/aliados`)
+  revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
 
@@ -778,5 +796,6 @@ export async function deletePartner(slug: string, id: string): Promise<LoyaltyAc
   }
 
   revalidatePath(`/${slug}/club/aliados`)
+  revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }

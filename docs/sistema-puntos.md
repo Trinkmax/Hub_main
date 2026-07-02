@@ -258,8 +258,10 @@ revocar de los tres para cerrarlos de verdad).
   `schemas.ts`, `actions.ts`.
 - UI del manager: `app/(manager)/[tenantSlug]/club/niveles/`,
   `.../club/puntos/`, `.../club/aliados/`, `.../club/_components/`.
-- Wallet del cliente: `app/c/[token]/_components/{tier-hero,tier-benefits,rewards-grid,
-  benefit-icon,wallet-shell}.tsx`; datos en `lib/wallet/queries.ts` (`getWalletByToken`).
+- Wallet del cliente (`/c/[token]`, **rediseño jul 2026 — ver §11**):
+  `app/c/[token]/_components/{wallet-views,wallet-shell,carnet,tier-ladder,tier-progression,
+  rewards-grid,benefit-card,wallet-carousel,wallet-more-button,benefit-icon,tier-accent,
+  wallet-header,pending-benefits}.tsx`; datos en `lib/wallet/queries.ts` (`getWalletByToken`).
 - Cron HTTP (trigger manual): `app/api/cron/{refresh-category-points,grant-tier-benefits}/route.ts`.
 
 ---
@@ -287,9 +289,12 @@ revocar de los tres para cerrarlos de verdad).
    el catálogo agrupado por categoría.
 3. **Acreditar** (`/hub/acreditar`): pegá el QR de un cliente demo y acreditá $500.000 → **+500 pts**
    → el cliente sube a **Gold**.
-4. **Wallet** (`/c/<qr_token>` del cliente): el carnet muestra *500 pts de categoría*, nivel Gold,
-   anillo de progreso a Black y chip *Canjeables*; sección "Beneficios de tu nivel"; catálogo de
-   canje agrupado.
+4. **Wallet** (`/c/<qr_token>` del cliente): el **carnet** (tarjeta de socio) muestra nombre +
+   nivel Gold y las **dos monedas** —Puntos de categoría en el color del nivel + Puntos canjeables
+   en forest, con el aviso de vencimiento full-width—; debajo, el **recorrido** de 5 niveles con
+   umbrales y "te faltan X pts para Black · 640 / 1.000 pts", los **beneficios por categoría**
+   (tu nivel a color + los siguientes muted, aspiracionales) y el **catálogo de canje** agrupado
+   por daypart. Ver §11.
 5. **Vencimiento**: backdateá una tx del cliente a > 4 meses y corré `select
    public.refresh_all_category_points();` → el nivel baja y el wallet muestra el pill
    "X pts vencen el DD/MM".
@@ -297,3 +302,112 @@ revocar de los tres para cerrarlos de verdad).
    "para retirar" en el wallet.
 7. **Canje**: el staff canjea una recompensa → descuenta *Canjeables*, **no** toca *Puntos de
    Categoría*.
+
+---
+
+## 11. Rediseño de la wallet del cliente (jul 2026)
+
+Rediseño de UI puro de `/c/[token]` para bajar el concepto del dueño (mockup Illustrator):
+la pantalla es **una pila de superficies de progreso** que apuntan en la misma dirección
+(carnet → recorrido → beneficios aspiracionales → catálogo alcanzable). No tocó backend ni
+`WalletData`.
+
+### Componentes (`app/c/[token]/_components/`)
+
+| Componente | Rol |
+| --- | --- |
+| `wallet-views.tsx` | **Orquestador** (`"use client"`): estado `view: main \| niveles \| canjeables`. Tocar una moneda del carnet cambia de vista **in-place** (no rutas, no scroll infinito); back vuelve a `main`. Resetea el scroll del contenedor (window o cuerpo del sheet). Funciona igual standalone y embebido. `wallet-shell.tsx` es un wrapper delgado que lo renderiza. |
+| `carnet.tsx` | **Hero**: TARJETA DE SOCIO **a todo color del nivel** con reflejo (gloss diagonal + `carnet-sheen` + guilloché) y el **logo del bar en foil** (filtro monocromo). Tinta por mejor-contraste (`cardInk`). Debajo, las **dos monedas** "aerolínea" (categoría = color del nivel, define/puede bajar; canjeable = forest, no vence) en tiles claros; tocar cada una abre su vista. |
+| `tier-ladder.tsx` | **Recorrido** horizontal de N niveles con umbral en pts, nodo actual resaltado + `tier-node-pulse`, rail (`rail-grow`) y "te faltan X · {actual}/{umbral}". Se oculta con ≤1 nivel. |
+| `tier-progression.tsx` | **Beneficios por categoría** aspiracionales (actual + siguientes muted). Cada nivel = header + **carrusel** de `benefit-card`. `variant` `current` (preview en main) / `full` (vista niveles). |
+| `rewards-grid.tsx` | **Catálogo de canje**: **carrusel** por daypart de reward cards foto-forward (fallback premium sin foto). Estados canjeable / te faltan / agotado / bloqueado. `previewCount` para el preview compacto. |
+| `benefit-card.tsx` | Card de beneficio para carrusel: foto del reward si existe, si no `%` grande (discount) o glifo tintado. `muted` = nivel no alcanzado (candado). |
+| `wallet-carousel.tsx` | Carrusel horizontal scroll-snap (swipe nativo), sangra a los bordes. |
+| `wallet-more-button.tsx` | CTA "ver más" full-width (onClick → cambia de vista). |
+| `tier-accent.ts` | `tierAccent(color)` → `--acc` inline; `isHexColor`; `cardInk`/`needsLightInk` (tinta AA de la tarjeta a color). |
+| `wallet-header.tsx` | Saludo liviano (el carnet lleva logo + nombre; no duplica). |
+
+Motion en `app/globals.css` (bloque "Wallet / carnet", todo apagado bajo `prefers-reduced-motion`):
+`.carnet-sheen` (barrido de luz), `.tier-node-pulse`, `.rail-grow`, `.stagger-item` (`--i`,
+**transform-only** para no dejar contenido invisible en tabs inactivas), `.press-lift`, `.media-zoom`.
+
+### Navegación por vistas (no rutas)
+
+La wallet no es un scroll largo ni usa rutas: es un SPA de 3 vistas (`main` compacta → `niveles`
+→ `canjeables`) con estado de cliente en `wallet-views.tsx`. Esto es clave para que funcione **igual
+embebida en el sheet de la carta** (`/carta/[slug]`), que no puede navegar a otra ruta. Las pantallas
+dedicadas por ruta (`/c/[token]/niveles`, `/canjeables`) se **eliminaron** en favor de las vistas.
+
+### Decisiones de diseño
+
+- **Contraste AA sobre cualquier tier**: la superficie del carnet es SIEMPRE clara y el color de
+  nivel se hilvana como acento (`--acc`); el texto va en `--foreground`. Nunca blanco sobre color
+  (Gold `#D4AF37` / Select `#0EA5E9` rompían AA).
+- **Premium sin foto**: como `image_url` suele ser null, el catálogo y los beneficios se ven bien
+  sin fotos (gradientes + glifos + medallones), nunca cajas grises.
+- **Data-driven**: funciona con 3 o 5 niveles; cada sección se oculta si no tiene datos.
+- **Entradas que NO gatean visibilidad**: se quitaron los `animate-in fade-in` de contenido
+  siempre-visible (carnet, banner de pendientes) porque en tabs inactivas/headless dejaban el
+  contenido en `opacity:0`. El deleite viene de motion aditivo (sheen, count-up, pulse).
+
+### ⚠️ Tailwind v4: sintaxis de variables CSS
+
+En **Tailwind v4** el shorthand de variable es con **paréntesis** `bg-(--acc)` / `text-(--acc)` /
+`ring-(--acc)`. El bracket v3 `bg-[--acc]` es **no-op** (no genera CSS → color transparente). La
+wallet se migró a la forma con paréntesis y se agregó un default `--brand-accent: var(--primary)`
+(+ `-foreground`) en `:root` para que `bg-(--brand-accent)` resuelva a forest cuando el tenant no
+definió acento (y `<BrandAccent>` lo pisa inline cuando sí). **Pendiente (fuera de este scope):**
+quedan ~99 usos de `x-[--var]` en el resto de la app que probablemente están rotos igual — conviene
+un barrido global aparte.
+
+### Verificación
+
+- Visual: se renderizó `/c/preview` (ruta temporal con fixture rico: Gold a mitad de recorrido,
+  vencimiento que baja de nivel, recompensas sin foto, ítems canjeables/bloqueados) a ancho de
+  teléfono y se revisaron carnet, monedas, recorrido, beneficios y catálogo.
+- `npm run typecheck` + lint de los componentes de la wallet limpios; 728 tests unit verdes.
+- Revisión adversarial multi-agente (correctness / a11y / fidelidad / responsive, con verificación
+  por hallazgo).
+
+## 12. Editor unificado `/menu` + simulador de wallet (jul 2026)
+
+### Editor unificado carta + club (`/[tenantSlug]/menu`, owner-only)
+
+Una sola pantalla para cargar la **carta** y configurar **todo el club de fidelización**, con
+un `SlidingTabs` (indicador que se desliza, `components/ui/sliding-tabs.tsx`) que alterna entre los
+dos mundos con una transición direccional.
+
+- `app/(manager)/[tenantSlug]/menu/page.tsx` — server, owner-gated. Trae carta + club en un solo
+  `Promise.all` (menú, tags, tiers, tier_benefits, rewards activos/todos, reglas, partners, config
+  de canje/bienvenida/captura, punch cards) y agrupa `benefitsByTier`.
+- `app/(manager)/[tenantSlug]/menu/_components/menu-hub.tsx` — client. Toggle **Carta ↔ Club**
+  arriba; dentro de **Club** un 2º `SlidingTabs` de 5 sub-tabs: **Niveles**, **Puntos y
+  recompensas**, **Aliados**, **Bienvenida**, **Punch cards**. Cada sub-tab **reusa los
+  `_components` ya existentes de `/club/*`** (no se duplicó lógica). Cabecera con accesos
+  persistentes: **Ver carta** (`/carta/{slug}`) y **Simular wallet**.
+- Las rutas viejas `/club/*` **siguen existiendo** como editor alterno (mismo dato). No se borraron.
+- ⚠️ **Revalidación:** los editores de club son client components cuyas server actions sólo
+  revalidaban `/[slug]/club/...`. Para que editar desde `/menu` refresque en el acto, las 24
+  acciones de config del club ahora **también** hacen `revalidatePath(`/${slug}/menu`)`
+  (`lib/points/actions.ts`, `welcome-reward`, `capture-prompt`, `punch-cards`). Sobre-revalidar es
+  seguro; las de carta (`lib/menu/actions.ts`) ya lo hacían.
+
+### Simulador de wallet (`/[tenantSlug]/club/simular`, owner-only)
+
+Permite al dueño **ver la wallet del cliente en todos sus estados sin tocar la DB**: arma un
+`WalletData` **sintético** client-side con los helpers puros (`resolveTier`, `computeRewardState`,
+`wouldDropTier`) y re-renderiza el **mismo** `WalletShell` embebido en un marco de teléfono.
+
+- `lib/wallet/simulator.ts::getSimulatorConfig(slug)` — trae la config real del tenant (tiers,
+  beneficios, rewards, partners) **sin** un cliente concreto.
+- `app/(manager)/[tenantSlug]/club/simular/_components/wallet-simulator.tsx` — panel de control:
+  steppers de puntos de **categoría** y **canjeables**, salto de nivel, toggle de vencimiento,
+  simular canje / descanjear. Todo en memoria (no hay RPC de add/deduct/reverse todavía).
+
+### Verificación
+
+- `npm run typecheck` + `biome check` limpios; `next build` OK (ambas rutas nuevas compiladas).
+- Los 11 editores de club reusados son `"use client"` sin imports `server-only` → seguros dentro
+  del `MenuHub` client. Ambas rutas 307→`/login` sin sesión (owner-gate). El browser del dueño cargó
+  `/hub/menu` con **HTTP 200** (render real). No se pudo screenshotear (páginas owner-gated, sin
+  sesión admin disponible para el agente).

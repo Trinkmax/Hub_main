@@ -147,6 +147,7 @@ export async function updateWelcomeRewardConfig(
   // Revalidamos la página del club y la home del tenant (que puede
   // mostrar previews del welcome reward).
   revalidatePath(`/${slug}/club/bienvenida`)
+  revalidatePath(`/${slug}/menu`)
   revalidatePath(`/${slug}`)
 
   return { ok: true, message: 'Configuración guardada.' }

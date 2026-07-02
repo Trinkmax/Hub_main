@@ -52,6 +52,8 @@ export type WalletBenefit = {
   label: string
   description: string | null
   icon: string | null
+  /** Foto del reward asociado (recurring_reward) para las tarjetas foto-forward. */
+  imageUrl: string | null
   quantity: number
   cadence: TierBenefitCadence
   discountPct: number | null
@@ -128,6 +130,16 @@ export type WalletData = {
   benefits: WalletBenefit[]
   /** La escalera completa de niveles con beneficios por nivel (para la vista aspiracional). */
   progression: WalletTierStep[]
+  /** Marcas aliadas del tenant ("Nuestros Aliados"); `active=false` = borrador/próximamente. */
+  partners: Array<{
+    id: string
+    name: string
+    logoUrl: string | null
+    discountLabel: string | null
+    category: string | null
+    url: string | null
+    active: boolean
+  }>
   rewards: WalletReward[]
   punchCards: WalletPunchCard[]
   visits: Array<{ id: string; visitedAt: string; totalAmountCents: number }>
@@ -196,6 +208,7 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
     { data: earnData },
     { data: eventsData },
     { data: pendingData },
+    { data: partnersData },
   ] = await Promise.all([
     service
       .from('tenants')
@@ -216,7 +229,7 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
     service
       .from('tier_benefits')
       .select(
-        'id, tier_id, kind, label, description, icon, quantity, cadence, discount_pct, discount_scope, sort, partner:partners(name, logo_url, discount_label, category, url)',
+        'id, tier_id, kind, label, description, icon, quantity, cadence, discount_pct, discount_scope, sort, reward:rewards(image_url), partner:partners(name, logo_url, discount_label, category, url)',
       )
       .eq('tenant_id', tenantId)
       .eq('active', true)
@@ -280,6 +293,13 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
       .eq('customer_id', customerId)
       .eq('status', 'pending')
       .order('redeemed_at', { ascending: false }),
+    // Marcas aliadas (activas primero, luego el resto como "próximamente").
+    service
+      .from('partners')
+      .select('id, name, logo_url, discount_label, category, url, active, sort')
+      .eq('tenant_id', tenantId)
+      .order('active', { ascending: false })
+      .order('sort', { ascending: true }),
   ])
 
   if (!tenant) return null
@@ -344,6 +364,7 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
   }
   // Beneficios de TODOS los niveles (agrupados por tier para la vista aspiracional).
   const benefitsByTier = new Map<string, WalletBenefit[]>()
+  type RewardJoin = { image_url: string | null }
   for (const b of (benefitsData ?? []) as Array<{
     id: string
     tier_id: string
@@ -355,15 +376,18 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
     cadence: string
     discount_pct: number | null
     discount_scope: string | null
+    reward: RewardJoin | RewardJoin[] | null
     partner: PartnerJoin | PartnerJoin[] | null
   }>) {
     const p = Array.isArray(b.partner) ? b.partner[0] : b.partner
+    const rw = Array.isArray(b.reward) ? b.reward[0] : b.reward
     const mapped: WalletBenefit = {
       id: b.id,
       kind: b.kind as TierBenefitKind,
       label: b.label,
       description: b.description,
       icon: b.icon,
+      imageUrl: rw?.image_url ?? null,
       quantity: b.quantity,
       cadence: b.cadence as TierBenefitCadence,
       discountPct: b.discount_pct,
@@ -468,6 +492,25 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
     expiry,
     benefits,
     progression,
+    partners: (
+      (partnersData ?? []) as Array<{
+        id: string
+        name: string
+        logo_url: string | null
+        discount_label: string | null
+        category: string | null
+        url: string | null
+        active: boolean
+      }>
+    ).map((p) => ({
+      id: p.id,
+      name: p.name,
+      logoUrl: p.logo_url,
+      discountLabel: p.discount_label,
+      category: p.category,
+      url: p.url,
+      active: p.active,
+    })),
     rewards,
     punchCards,
     visits: (
