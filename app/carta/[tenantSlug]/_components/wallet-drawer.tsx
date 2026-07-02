@@ -16,13 +16,23 @@ export type WalletSummary = {
 }
 
 // ── Física del cajón ────────────────────────────────────────────────────────
-const EASE = 'cubic-bezier(0.32, 0.72, 0, 1)' // curva de sheet de iOS (la misma que usa Vaul)
+const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)' // easeOutQuint: desaceleración larga y suave (no brusca)
 const FLICK = 0.4 // px/ms — un "envión" rápido decide el snap aunque el arrastre sea corto
 const OPEN_AT = 0.16 // fracción arrastrada hacia arriba para confirmar apertura
 const CLOSE_AT = 0.3 // fracción arrastrada hacia abajo para confirmar cierre (más difícil: evita cierres accidentales)
-const LIP_FALLBACK = 76 // alto del labio antes de medirlo (evita flash en el primer paint)
-const MIN_MS = 200
-const MAX_MS = 460
+const LIP_FALLBACK = 88 // alto del labio (incl. safe-area) antes de medirlo
+const MIN_MS = 340 // piso de duración: incluso un flick rápido se siente suave
+const MAX_MS = 560 // recorrido completo: apertura/cierre calmos, premium
+
+// Alto del "labio" que asoma en peek (incl. safe-area del home indicator). El labio
+// lleva este `min-height` y el reposo usa este MISMO valor como fallback → aunque el
+// JS no llegue a medir `--lip-h`, el verde llena exactamente la banda visible (sin
+// sliver del header ni banda negra), en cualquier dispositivo.
+const PEEK_H = 'calc(3.5rem + env(safe-area-inset-bottom))'
+
+// Reposo en `peek` por CSS (no px): auto-adapta cuando iOS muestra/oculta la barra
+// de URL (cambia dvh). El px sólo se usa DURANTE el gesto/animación.
+const PEEK_TRANSFORM = `translateY(calc(100% - var(--lip-h, ${PEEK_H})))`
 
 // useLayoutEffect avisa en SSR; en cliente lo necesitamos para posicionar antes del paint.
 const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
@@ -110,16 +120,18 @@ export function WalletDrawer({
     [setVar],
   )
 
-  /** Mide alto de labio/panel y recalcula el desplazamiento de peek. */
+  /** Mide alto de labio/panel, publica `--lip-h` (para el calc de reposo) y el peek en px. */
   const measure = useCallback(() => {
     const panel = panelRef.current
     if (!panel) return
     const h = panel.getBoundingClientRect().height
     const lip = lipRef.current?.offsetHeight || LIP_FALLBACK
+    panel.style.setProperty('--lip-h', `${lip}px`)
     geom.current.peekY = Math.max(0, h - lip)
   }, [])
 
-  /** Asienta el cajón en reposo (sin transición). En abierto QUITA el transform. */
+  /** Asienta el cajón en reposo (sin transición). Abierto: sin transform (serif nítida).
+   *  Peek: transform por CSS calc (adaptativo a dvh) en vez de px stale. */
   const settleRest = useCallback(
     (toOpen: boolean) => {
       const panel = panelRef.current
@@ -132,11 +144,13 @@ export function WalletDrawer({
         curY.current = 0
         setVar(1)
       } else {
-        place(geom.current.peekY, 0)
+        panel.style.transform = PEEK_TRANSFORM
+        curY.current = geom.current.peekY
+        setVar(0)
       }
       panel.style.willChange = ''
     },
-    [place, setVar],
+    [setVar],
   )
 
   /** Anima hacia `open` o `peek` con la curva de iOS; duración según distancia/velocidad. */
@@ -149,9 +163,13 @@ export function WalletDrawer({
       const toOpen = target === 'open'
       const targetY = toOpen ? 0 : peekY
       const dist = Math.abs(targetY - curY.current)
-      // envión rápido → animación corta; arrastre lento → cercana al tiempo natural.
-      const byVel = velocity ? dist / (Math.abs(velocity) * 1.6) : MAX_MS
-      const ms = Math.max(MIN_MS, Math.min(MAX_MS, Math.round(byVel)))
+      // Duración proporcional a la distancia (recorrido corto = rápido, completo = calmo).
+      // La velocidad sólo puede acortar levemente, con piso MIN_MS → nunca brusco.
+      const frac = peekY ? Math.min(1, dist / peekY) : 1
+      const base = MIN_MS + (MAX_MS - MIN_MS) * frac
+      const ms = Math.round(
+        velocity ? Math.max(MIN_MS, Math.min(base, dist / (Math.abs(velocity) * 0.6))) : base,
+      )
 
       panel.style.willChange = 'transform'
       panel.style.transition = `transform ${ms}ms ${EASE}`
@@ -161,11 +179,12 @@ export function WalletDrawer({
 
       window.clearTimeout(settleTimer.current)
       settleTimer.current = window.setTimeout(() => {
-        if (toOpen) panel.style.transform = '' // asentado abierto: soltar la capa
+        // Abierto: soltar la capa (serif nítida). Peek: pasar a calc adaptativo a dvh.
+        panel.style.transform = toOpen ? '' : PEEK_TRANSFORM
         panel.style.willChange = ''
         panel.style.transition = ''
         root.style.transition = ''
-      }, ms + 30)
+      }, ms + 40)
     },
     [place],
   )
@@ -181,21 +200,32 @@ export function WalletDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Remedir en resize / rotación; si está en peek, reubicar.
+  // Remedir en resize / rotación / toggle de la barra de URL de iOS; si está en peek,
+  // reasentar por CSS calc (adaptativo). Esto mata la banda negra al aparecer la barra.
   useEffect(() => {
     const onResize = () => {
       measure()
-      if (!openRef.current) place(geom.current.peekY, 0)
+      if (!openRef.current) settleRest(false)
     }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
-  }, [measure, place])
+  }, [measure, settleRest])
 
   // Bloquear scroll de fondo + mover foco al abrir; restaurar al cerrar.
   useEffect(() => {
     if (!open) return
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+
+    // Re-dispara el barrido de brillo del carnet cada vez que se abre la billetera
+    // (su animación de montaje ya corrió invisible mientras estaba en peek).
+    const card = panelRef.current?.querySelector<HTMLElement>('.carnet-sheen')
+    if (card) {
+      card.classList.remove('carnet-sheen')
+      void card.offsetWidth // fuerza reflow → reinicia la animación del ::after
+      card.classList.add('carnet-sheen')
+    }
+
     const t = window.setTimeout(() => closeRef.current?.focus({ preventScroll: true }), 80)
     return () => {
       document.body.style.overflow = prevOverflow
@@ -241,7 +271,11 @@ export function WalletDrawer({
         panel.style.willChange = 'transform'
       }
       if (root) root.style.transition = 'none'
-      e.currentTarget.setPointerCapture(e.pointerId)
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId)
+      } catch {
+        // sin puntero activo (ej. evento sintético) → seguimos sin captura
+      }
       drag.current = {
         from,
         startY: e.clientY,
@@ -425,7 +459,7 @@ export function WalletDrawer({
         tabIndex={open ? 0 : -1}
         onClick={() => closeDrawer()}
         className={cn(
-          'absolute inset-0 cursor-default bg-black',
+          'fixed inset-0 cursor-default bg-black',
           open ? 'pointer-events-auto' : 'pointer-events-none',
         )}
         style={{ opacity: 'calc(var(--wallet-p) * 0.5)' }}
@@ -438,8 +472,8 @@ export function WalletDrawer({
         aria-modal={open || undefined}
         role="dialog"
         onKeyDown={onPanelKeyDown}
-        style={{ transform: initialOpen ? undefined : 'translateY(calc(100% - 4.75rem))' }}
-        className="bg-app-gradient pointer-events-auto absolute inset-x-0 bottom-0 flex h-[100dvh] flex-col overflow-hidden rounded-t-[1.75rem] shadow-[0_-24px_60px_-24px_rgba(0,0,0,0.5)] outline-none"
+        style={{ transform: initialOpen ? undefined : PEEK_TRANSFORM }}
+        className="bg-app-gradient pointer-events-auto fixed inset-x-0 bottom-0 flex h-[100dvh] flex-col overflow-hidden rounded-t-[1.75rem] shadow-[0_-24px_60px_-24px_rgba(0,0,0,0.5)] outline-none"
       >
         {/* CHROME (cara abierta): asa + barra compacta al scrollear. */}
         <div
@@ -554,7 +588,7 @@ export function WalletDrawer({
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
           className={cn(
-            'absolute inset-x-0 top-0 z-30 flex touch-none select-none flex-col items-center gap-1.5 rounded-t-[1.75rem] bg-[color:var(--brand-accent,var(--primary))] px-4 pb-4 pt-2.5 text-[color:var(--brand-accent-foreground,var(--primary-foreground))] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70',
+            'absolute inset-x-0 top-0 z-30 flex min-h-[calc(3.5rem_+_env(safe-area-inset-bottom))] touch-none select-none flex-col items-center gap-1.5 rounded-t-[1.75rem] bg-[color:var(--brand-accent,var(--primary))] px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-2.5 text-[color:var(--brand-accent-foreground,var(--primary-foreground))] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70',
             open ? 'pointer-events-none' : 'pointer-events-auto cursor-grab active:cursor-grabbing',
           )}
           style={{ opacity: 'calc(1 - var(--wallet-p))' }}
