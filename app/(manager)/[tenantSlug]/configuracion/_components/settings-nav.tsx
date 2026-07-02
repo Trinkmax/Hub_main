@@ -1,6 +1,6 @@
 'use client'
 
-import { type LucideIcon, MessageCircle, Palette, UsersRound } from 'lucide-react'
+import { type LucideIcon, Palette, UsersRound } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -21,16 +21,6 @@ const GROUPS: Group[] = [
     label: 'Equipo',
     icon: UsersRound,
     items: [{ label: 'Miembros', href: (s) => `/${s}/configuracion/equipo` }],
-  },
-  {
-    label: 'Mensajería',
-    icon: MessageCircle,
-    items: [
-      { label: 'Canales (WA · IG)', href: (s) => `/${s}/configuracion/canales` },
-      { label: 'Plantillas WhatsApp', href: (s) => `/${s}/configuracion/templates` },
-      { label: 'Mensajes rápidos', href: (s) => `/${s}/configuracion/mensajes-rapidos` },
-      { label: 'Tags de carta', href: (s) => `/${s}/configuracion/tags` },
-    ],
   },
   {
     label: 'Apariencia',

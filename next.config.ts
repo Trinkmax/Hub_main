@@ -72,6 +72,27 @@ const nextConfig: NextConfig = {
         destination: '/:slug/mensajeria/audiencias/:rest*',
         permanent: true,
       },
+      {
+        source: '/:slug/configuracion/canales',
+        destination: '/:slug/mensajeria/canales',
+        permanent: true,
+      },
+      {
+        source: '/:slug/configuracion/templates',
+        destination: '/:slug/mensajeria/plantillas',
+        permanent: true,
+      },
+      {
+        source: '/:slug/configuracion/mensajes-rapidos',
+        destination: '/:slug/mensajeria/mensajes-rapidos',
+        permanent: true,
+      },
+      {
+        source: '/:slug/configuracion/tags',
+        destination: '/:slug/menu/tags',
+        permanent: true,
+      },
+      { source: '/:slug/marketing', destination: '/:slug/mensajeria', permanent: true },
       // Catálogo: puntos y punch-cards subieron a top-level (eran sub-rutas de configuración)
       {
         source: '/:slug/configuracion/puntos',

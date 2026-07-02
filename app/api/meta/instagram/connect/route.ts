@@ -13,7 +13,7 @@ export async function GET(request: Request) {
   if (!slug) return NextResponse.json({ error: 'missing tenant' }, { status: 400 })
 
   const back = (err: string) =>
-    NextResponse.redirect(new URL(`/${slug}/configuracion/canales?meta_error=${err}`, url.origin))
+    NextResponse.redirect(new URL(`/${slug}/mensajeria/canales?meta_error=${err}`, url.origin))
 
   let tenantId: string
   try {

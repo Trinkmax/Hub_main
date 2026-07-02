@@ -14,7 +14,7 @@ export async function GET(request: Request) {
 
   // Nunca devolvemos JSON crudo: volvemos a Canales con un motivo legible.
   const back = (err: string) =>
-    NextResponse.redirect(new URL(`/${slug}/configuracion/canales?meta_error=${err}`, url.origin))
+    NextResponse.redirect(new URL(`/${slug}/mensajeria/canales?meta_error=${err}`, url.origin))
 
   let tenantId: string
   try {

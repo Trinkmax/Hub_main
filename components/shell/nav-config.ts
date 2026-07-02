@@ -56,7 +56,6 @@ export type ResolvedNavGroup = {
  * Items con 🔁: rutas que se repuntan en fases siguientes (hoy apuntan a lo que
  * ya existe para no dejar links muertos):
  *   - Operativo → /salon/reservas-operativo (F5: /operativo manager)
- *   - Marketing (padre) → /difusiones      (F5: hub /marketing)
  *   - Club (padre) → /puntos               (F2: hub /club + Niveles/Recompensas/Bienvenida)
  */
 export const NAV_GROUPS: NavGroup[] = [
@@ -66,39 +65,11 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Resumen', href: (s) => `/${s}`, icon: 'LayoutDashboard', exact: true },
       { label: 'Operativo', href: (s) => `/${s}/operativo`, icon: 'MonitorSmartphone' },
       {
-        // Hub único de comunicación con el cliente. El padre navega al inbox y
-        // expande las sub-secciones (consolidación: ex-bandeja + ex-Marketing).
+        // Hub de comunicación con el cliente. Navega a la sección; su navegación
+        // interna (Inbox/Difusiones/Flows/Audiencias/Config) vive en el sub-nav.
         label: 'Mensajería',
-        href: (s) => `/${s}/bandeja`,
+        href: (s) => `/${s}/mensajeria`,
         icon: 'MessageCircle',
-        children: [
-          { label: 'Inbox', href: (s) => `/${s}/bandeja`, icon: 'Inbox' },
-          {
-            label: 'Difusiones',
-            href: (s) => `/${s}/difusiones`,
-            icon: 'Megaphone',
-            roles: ['owner'],
-          },
-          {
-            label: 'Audiencias',
-            href: (s) => `/${s}/audiencias`,
-            icon: 'UsersRound',
-            roles: ['owner'],
-          },
-          { label: 'Flows', href: (s) => `/${s}/flows`, icon: 'Workflow', roles: ['owner'] },
-          {
-            label: 'Mensajes rápidos',
-            href: (s) => `/${s}/configuracion/mensajes-rapidos`,
-            icon: 'MessageSquareText',
-            roles: ['owner', 'cashier'],
-          },
-          {
-            label: 'Canales y plantillas',
-            href: (s) => `/${s}/configuracion/canales`,
-            icon: 'Settings2',
-            roles: ['owner'],
-          },
-        ],
       },
     ],
   },

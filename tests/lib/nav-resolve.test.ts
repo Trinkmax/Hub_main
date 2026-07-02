@@ -73,32 +73,30 @@ describe('resolveNavGroups — rol + feature + superadmin', () => {
     expect(allItemLabels).not.toContain('Marketing')
   })
 
-  it('consolida todo bajo un único hub "Mensajería" en Hoy (owner ve todos los sub-items)', () => {
+  it('consolida todo bajo un único hub "Mensajería" en Hoy (sin children; nav interna en el sub-nav)', () => {
     const groups = resolveNavGroups('owner', SLUG, allOff, false)
     const mensajeria = group(groups, 'Hoy')?.items.find((i) => i.label === 'Mensajería')
     expect(mensajeria).toBeDefined()
-    expect(mensajeria?.href).toBe('/hub/bandeja')
-    expect(mensajeria?.children?.map((c) => c.label)).toEqual([
-      'Inbox',
-      'Difusiones',
-      'Audiencias',
-      'Flows',
-      'Mensajes rápidos',
-      'Canales y plantillas',
-    ])
+    expect(mensajeria?.href).toBe('/hub/mensajeria')
+    expect(mensajeria?.children ?? []).toEqual([])
     // Ya NO hay items sueltos de Difusiones/Audiencias/Flows fuera de Mensajería.
     const topLevel = groups.flatMap((g) => g.items.map((i) => i.label))
     expect(topLevel).not.toContain('Difusiones')
     expect(topLevel).not.toContain('Marketing')
   })
 
-  it('Mensajería sobrevive para staff con sólo los sub-items no-owner', () => {
+  it('Mensajería es visible para staff como item único (el sub-nav filtra permisos adentro)', () => {
+    // La navegación interna (Inbox/Difusiones/…) ya no vive en el sidebar: es un
+    // sub-nav propio de /mensajeria filtrado por rol (ver messaging-nav.test.ts).
+    // Acá sólo garantizamos que el acceso al hub no quede owner-gated para staff.
     const waiter = resolveNavGroups('waiter', SLUG, allOff, false)
     const wMsg = group(waiter, 'Hoy')?.items.find((i) => i.label === 'Mensajería')
-    expect(wMsg?.children?.map((c) => c.label)).toEqual(['Inbox']) // resto es owner/cashier
+    expect(wMsg?.href).toBe('/hub/mensajeria')
+    expect(wMsg?.children ?? []).toEqual([])
 
     const cashier = resolveNavGroups('cashier', SLUG, allOff, false)
     const cMsg = group(cashier, 'Hoy')?.items.find((i) => i.label === 'Mensajería')
-    expect(cMsg?.children?.map((c) => c.label)).toEqual(['Inbox', 'Mensajes rápidos'])
+    expect(cMsg?.href).toBe('/hub/mensajeria')
+    expect(cMsg?.children ?? []).toEqual([])
   })
 })

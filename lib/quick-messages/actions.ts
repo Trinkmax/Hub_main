@@ -80,7 +80,7 @@ export async function createQuickMessage(
     payload: { title: parsed.data.title, shortcut: parsed.data.shortcut },
   })
 
-  revalidatePath(`/${slug}/configuracion/mensajes-rapidos`)
+  revalidatePath(`/${slug}/mensajeria/mensajes-rapidos`)
   return { ok: true }
 }
 
@@ -132,7 +132,7 @@ export async function updateQuickMessage(
     payload: { title: parsed.data.title, shortcut: parsed.data.shortcut },
   })
 
-  revalidatePath(`/${slug}/configuracion/mensajes-rapidos`)
+  revalidatePath(`/${slug}/mensajeria/mensajes-rapidos`)
   return { ok: true }
 }
 
@@ -166,6 +166,6 @@ export async function deleteQuickMessage(
     payload: {},
   })
 
-  revalidatePath(`/${slug}/configuracion/mensajes-rapidos`)
+  revalidatePath(`/${slug}/mensajeria/mensajes-rapidos`)
   return { ok: true }
 }

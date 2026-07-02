@@ -107,7 +107,7 @@ export default async function TemplatesPage({
           description="Necesitás completar el flujo de Embedded Signup en Canales antes de poder gestionar templates."
           action={
             <Button asChild className="gap-2">
-              <Link href={`/${tenantSlug}/configuracion/canales`}>
+              <Link href={`/${tenantSlug}/mensajeria/canales`}>
                 <Plug className="size-4" />
                 Ir a Canales
               </Link>

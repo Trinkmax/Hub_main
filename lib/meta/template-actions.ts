@@ -89,7 +89,7 @@ export async function createTemplateAction(
       },
     })
 
-    revalidatePath(`/${slug}/configuracion/templates`)
+    revalidatePath(`/${slug}/mensajeria/plantillas`)
     return {
       ok: true,
       message: `Plantilla "${parsed.data.name}" creada. Estado: ${result.status}.`,
@@ -142,7 +142,7 @@ export async function deleteTemplateAction(
       payload: { name: parsed.data.name, channel_id: parsed.data.channel_id },
     })
 
-    revalidatePath(`/${slug}/configuracion/templates`)
+    revalidatePath(`/${slug}/mensajeria/plantillas`)
     return { ok: true, message: `Plantilla "${parsed.data.name}" eliminada.` }
   } catch (e) {
     return { ok: false, message: (e as Error).message }

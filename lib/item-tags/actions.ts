@@ -96,7 +96,7 @@ export async function createItemTag(
     payload: { name: parsed.data.name, color: parsed.data.color },
   })
 
-  revalidatePath(`/${slug}/configuracion/tags`)
+  revalidatePath(`/${slug}/menu/tags`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true, tagId: data.id }
 }
@@ -143,7 +143,7 @@ export async function updateItemTag(
     payload: { name: parsed.data.name, color: parsed.data.color },
   })
 
-  revalidatePath(`/${slug}/configuracion/tags`)
+  revalidatePath(`/${slug}/menu/tags`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true, tagId: parsed.data.id }
 }
@@ -185,7 +185,7 @@ export async function deleteItemTag(slug: string, id: string): Promise<TagAction
     payload: { assignments_removed: assignedCount ?? 0 },
   })
 
-  revalidatePath(`/${slug}/configuracion/tags`)
+  revalidatePath(`/${slug}/menu/tags`)
   revalidatePath(`/${slug}/menu`)
   return {
     ok: true,
@@ -228,7 +228,7 @@ export async function toggleTagOnMenuItem(
       return { ok: false, message: 'No se pudo desasignar.' }
     }
   }
-  revalidatePath(`/${slug}/configuracion/tags`)
+  revalidatePath(`/${slug}/menu/tags`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }
@@ -339,7 +339,7 @@ export async function setItemTags(
     })
   }
 
-  revalidatePath(`/${slug}/configuracion/tags`)
+  revalidatePath(`/${slug}/menu/tags`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }

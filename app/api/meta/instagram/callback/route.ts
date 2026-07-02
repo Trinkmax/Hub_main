@@ -10,7 +10,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 function redirectToConfigError(appUrl: string, slug: string | null, msg: string) {
-  const target = new URL(`${appUrl}/${slug ?? ''}/configuracion/canales`)
+  const target = new URL(`${appUrl}/${slug ?? ''}/mensajeria/canales`)
   target.searchParams.set('meta_error', msg)
   return NextResponse.redirect(target)
 }
@@ -84,7 +84,7 @@ export async function GET(request: Request) {
       payload: { type: 'instagram', ig_user_id: shortLived.user_id },
     })
 
-    return NextResponse.redirect(`${appUrl}/${tenant.slug}/configuracion/canales?meta_ok=instagram`)
+    return NextResponse.redirect(`${appUrl}/${tenant.slug}/mensajeria/canales?meta_ok=instagram`)
   } catch (e) {
     const msg = (e as Error).message
     console.error('[meta.instagram.callback]', msg)

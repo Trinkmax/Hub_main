@@ -85,7 +85,7 @@ export async function disconnectChannel(
     payload: { type: channel.type },
   })
 
-  revalidatePath(`/${slug}/configuracion/canales`)
+  revalidatePath(`/${slug}/mensajeria/canales`)
   return { ok: true, message: 'Canal desconectado.' }
 }
 
@@ -111,7 +111,7 @@ export async function syncTemplatesAction(
 
   try {
     const { synced } = await syncTemplates(channel)
-    revalidatePath(`/${slug}/configuracion/templates`)
+    revalidatePath(`/${slug}/mensajeria/plantillas`)
     return { ok: true, message: `Sincronizados ${synced} templates.` }
   } catch (e) {
     return { ok: false, message: (e as Error).message }

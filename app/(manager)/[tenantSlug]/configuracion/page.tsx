@@ -1,4 +1,4 @@
-import { ArrowRight, type LucideIcon, MessageCircle, Palette, UsersRound } from 'lucide-react'
+import { ArrowRight, type LucideIcon, Palette, UsersRound } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Card } from '@/components/ui/card'
@@ -27,14 +27,6 @@ const CARDS: SettingsCard[] = [
     description: 'Sumá owners, cajeros, mozos y cocineros con el rol que corresponde.',
     topics: ['Miembros', 'Roles e invitaciones'],
     href: (s) => `/${s}/configuracion/equipo`,
-  },
-  {
-    icon: MessageCircle,
-    title: 'Mensajería',
-    description:
-      'Conexión con WhatsApp e Instagram, plantillas aprobadas, mensajes rápidos y tags de carta.',
-    topics: ['Canales', 'Plantillas', 'Mensajes rápidos', 'Tags de carta'],
-    href: (s) => `/${s}/configuracion/canales`,
   },
   {
     icon: Palette,

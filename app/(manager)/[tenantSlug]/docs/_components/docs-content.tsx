@@ -354,7 +354,7 @@ function SectionMenu({ slug }: { slug: string }) {
       <H3>Tags de carta</H3>
       <P>
         En{' '}
-        <a href={`/${slug}/configuracion/tags`} className="text-primary underline">
+        <a href={`/${slug}/menu/tags`} className="text-primary underline">
           Configuración → Tags de carta
         </a>{' '}
         creás etiquetas (#cafe, #vegano, #sin-tacc) y las asignás a ítems del menú. Los tags se usan

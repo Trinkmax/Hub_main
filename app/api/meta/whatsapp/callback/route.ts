@@ -12,7 +12,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 function redirectToConfigError(appUrl: string, slug: string | null, msg: string) {
-  const target = new URL(`${appUrl}/${slug ?? ''}/configuracion/canales`)
+  const target = new URL(`${appUrl}/${slug ?? ''}/mensajeria/canales`)
   target.searchParams.set('meta_error', msg)
   return NextResponse.redirect(target)
 }
@@ -92,7 +92,7 @@ export async function GET(request: Request) {
       payload: { type: 'whatsapp', waba_id: wabaId, phone_id: phone.id },
     })
 
-    return NextResponse.redirect(`${appUrl}/${tenant.slug}/configuracion/canales?meta_ok=whatsapp`)
+    return NextResponse.redirect(`${appUrl}/${tenant.slug}/mensajeria/canales?meta_ok=whatsapp`)
   } catch (e) {
     const msg = (e as Error).message
     console.error('[meta.whatsapp.callback]', msg)

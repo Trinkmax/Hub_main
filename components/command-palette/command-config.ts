@@ -58,7 +58,7 @@ export const commandEntries: CommandEntry[] = [
     icon: Megaphone,
     group: 'Acciones rápidas',
     type: 'navigate-new',
-    href: (s) => `/${s}/difusiones/nueva`,
+    href: (s) => `/${s}/mensajeria/difusiones/nueva`,
     keywords: ['enviar', 'whatsapp', 'broadcast', 'campaña'],
   },
   {
@@ -76,7 +76,7 @@ export const commandEntries: CommandEntry[] = [
     icon: Workflow,
     group: 'Acciones rápidas',
     type: 'navigate-new',
-    href: (s) => `/${s}/flows/nuevo`,
+    href: (s) => `/${s}/mensajeria/flows/nuevo`,
     keywords: ['automatización', 'recurrente'],
   },
   {
@@ -113,12 +113,12 @@ export const commandEntries: CommandEntry[] = [
   },
   {
     id: 'inbox',
-    label: 'Bandeja',
+    label: 'Inbox',
     icon: Inbox,
     group: 'Operación',
     type: 'navigate',
-    href: (s) => `/${s}/bandeja`,
-    keywords: ['mensajes', 'whatsapp', 'instagram', 'inbox'],
+    href: (s) => `/${s}/mensajeria/inbox`,
+    keywords: ['mensajes', 'whatsapp', 'instagram', 'inbox', 'bandeja', 'mensajeria'],
   },
 
   // Ir a (navegación)
@@ -146,7 +146,7 @@ export const commandEntries: CommandEntry[] = [
     icon: UsersRound,
     group: 'Ir a',
     type: 'navigate',
-    href: (s) => `/${s}/audiencias`,
+    href: (s) => `/${s}/mensajeria/audiencias`,
     keywords: ['segmentos', 'filtros'],
   },
   {
@@ -155,7 +155,7 @@ export const commandEntries: CommandEntry[] = [
     icon: Megaphone,
     group: 'Ir a',
     type: 'navigate',
-    href: (s) => `/${s}/difusiones`,
+    href: (s) => `/${s}/mensajeria/difusiones`,
     keywords: ['campañas', 'whatsapp'],
   },
   {
@@ -164,7 +164,7 @@ export const commandEntries: CommandEntry[] = [
     icon: Workflow,
     group: 'Ir a',
     type: 'navigate',
-    href: (s) => `/${s}/flows`,
+    href: (s) => `/${s}/mensajeria/flows`,
     keywords: ['automatización'],
   },
   {
@@ -255,7 +255,7 @@ export const commandEntries: CommandEntry[] = [
     icon: Tags,
     group: 'Ir a',
     type: 'navigate',
-    href: (s) => `/${s}/configuracion/tags`,
+    href: (s) => `/${s}/menu/tags`,
     keywords: ['etiquetas'],
   },
   {
@@ -284,7 +284,7 @@ export const commandEntries: CommandEntry[] = [
     icon: MessageSquareText,
     group: 'Ir a',
     type: 'navigate',
-    href: (s) => `/${s}/configuracion/templates`,
+    href: (s) => `/${s}/mensajeria/plantillas`,
     keywords: ['mensajes', 'plantillas'],
   },
   {
