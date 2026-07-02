@@ -2,13 +2,17 @@ import 'server-only'
 import { subMonths } from 'date-fns'
 import type { TierBenefitCadence, TierBenefitKind } from '@/lib/points/benefits'
 import { computeExpiry, wouldDropTier } from '@/lib/points/category'
-import { type LoyaltyTier, progressToNext, resolveTier } from '@/lib/points/tiers'
+import {
+  type LoyaltyTier,
+  progressToNext,
+  resolveTier,
+  sortedActiveTiers,
+} from '@/lib/points/tiers'
 import { createServiceClient } from '@/lib/supabase/service'
 import { computeRewardState } from './reward-state'
 
 export { computeRewardState } from './reward-state'
 
-const ZERO_UUID = '00000000-0000-0000-0000-000000000000'
 /** Cota generosa para traer el ledger positivo (la ventana real ≤ 24 meses). */
 const MAX_WINDOW_MONTHS = 24
 
@@ -70,12 +74,29 @@ export type WalletExpiry = {
   toTierName: string | null
 }
 
+/** Un escalón de la escalera de niveles con sus beneficios (para la vista aspiracional). */
+export type WalletTierStep = {
+  id: string
+  name: string
+  color: string | null
+  badgeIcon: string | null
+  minCategoryPoints: number
+  /** El cliente ya alcanzó este nivel (categoryPoints >= umbral). */
+  unlocked: boolean
+  /** Es el nivel actual del cliente. */
+  current: boolean
+  /** Puntos de categoría que faltan para alcanzarlo (0 si ya está). */
+  pointsToReach: number
+  benefits: WalletBenefit[]
+}
+
 export type WalletData = {
   customer: {
     id: string
     firstName: string
     lastName: string
     qrToken: string
+    birthdate: string | null
     pointsBalance: number
     categoryPoints: number
     lifetimePoints: number
@@ -99,10 +120,14 @@ export type WalletData = {
     pointsToNext: number | null
     progressPct: number
   }
+  /** Ventana móvil (meses) con la que se calculan los puntos de categoría. */
+  categoryWindowMonths: number
   /** Próximo vencimiento de puntos de categoría (o null si no hay nada por vencer). */
   expiry: WalletExpiry | null
   /** Beneficios estructurados del nivel actual (ítems del mes / descuentos / perks / aliados). */
   benefits: WalletBenefit[]
+  /** La escalera completa de niveles con beneficios por nivel (para la vista aspiracional). */
+  progression: WalletTierStep[]
   rewards: WalletReward[]
   punchCards: WalletPunchCard[]
   visits: Array<{ id: string; visitedAt: string; totalAmountCents: number }>
@@ -137,7 +162,7 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
   const { data: customer } = await service
     .from('customers')
     .select(
-      'id, first_name, last_name, qr_token, points_balance, category_points, lifetime_points_earned, current_tier_id, tenant_id',
+      'id, first_name, last_name, qr_token, birthdate, points_balance, category_points, lifetime_points_earned, current_tier_id, tenant_id',
     )
     .eq('qr_token', token)
     .is('deleted_at', null)
@@ -149,7 +174,6 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
   const lifetime = customer.lifetime_points_earned
   const categoryPoints = customer.category_points
   const balance = customer.points_balance
-  const currentTierId = customer.current_tier_id ?? ZERO_UUID
 
   const today = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Argentina/Cordoba',
@@ -192,10 +216,9 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
     service
       .from('tier_benefits')
       .select(
-        'id, kind, label, description, icon, quantity, cadence, discount_pct, discount_scope, sort, partner:partners(name, logo_url, discount_label, category, url)',
+        'id, tier_id, kind, label, description, icon, quantity, cadence, discount_pct, discount_scope, sort, partner:partners(name, logo_url, discount_label, category, url)',
       )
       .eq('tenant_id', tenantId)
-      .eq('tier_id', currentTierId)
       .eq('active', true)
       .order('sort', { ascending: true }),
     service
@@ -312,37 +335,30 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
     }
   })
 
-  const benefits: WalletBenefit[] = (
-    (benefitsData ?? []) as Array<{
-      id: string
-      kind: string
-      label: string
-      description: string | null
-      icon: string | null
-      quantity: number
-      cadence: string
-      discount_pct: number | null
-      discount_scope: string | null
-      partner:
-        | {
-            name: string
-            logo_url: string | null
-            discount_label: string | null
-            category: string | null
-            url: string | null
-          }
-        | Array<{
-            name: string
-            logo_url: string | null
-            discount_label: string | null
-            category: string | null
-            url: string | null
-          }>
-        | null
-    }>
-  ).map((b) => {
+  type PartnerJoin = {
+    name: string
+    logo_url: string | null
+    discount_label: string | null
+    category: string | null
+    url: string | null
+  }
+  // Beneficios de TODOS los niveles (agrupados por tier para la vista aspiracional).
+  const benefitsByTier = new Map<string, WalletBenefit[]>()
+  for (const b of (benefitsData ?? []) as Array<{
+    id: string
+    tier_id: string
+    kind: string
+    label: string
+    description: string | null
+    icon: string | null
+    quantity: number
+    cadence: string
+    discount_pct: number | null
+    discount_scope: string | null
+    partner: PartnerJoin | PartnerJoin[] | null
+  }>) {
     const p = Array.isArray(b.partner) ? b.partner[0] : b.partner
-    return {
+    const mapped: WalletBenefit = {
       id: b.id,
       kind: b.kind as TierBenefitKind,
       label: b.label,
@@ -362,7 +378,24 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
           }
         : null,
     }
-  })
+    const arr = benefitsByTier.get(b.tier_id)
+    if (arr) arr.push(mapped)
+    else benefitsByTier.set(b.tier_id, [mapped])
+  }
+
+  const progression: WalletTierStep[] = sortedActiveTiers(tiers).map((t) => ({
+    id: t.id,
+    name: t.name,
+    color: t.color,
+    badgeIcon: t.badge_icon,
+    minCategoryPoints: t.min_category_points,
+    unlocked: categoryPoints >= t.min_category_points,
+    current: current?.id === t.id,
+    pointsToReach: Math.max(0, t.min_category_points - categoryPoints),
+    benefits: benefitsByTier.get(t.id) ?? [],
+  }))
+
+  const benefits: WalletBenefit[] = current ? (benefitsByTier.get(current.id) ?? []) : []
 
   type CardRow = {
     id: string
@@ -399,6 +432,7 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
       firstName: customer.first_name,
       lastName: customer.last_name,
       qrToken: customer.qr_token,
+      birthdate: customer.birthdate,
       pointsBalance: balance,
       categoryPoints,
       lifetimePoints: lifetime,
@@ -430,8 +464,10 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
       pointsToNext: progress.pointsToNext,
       progressPct: progress.pct,
     },
+    categoryWindowMonths: windowMonths,
     expiry,
     benefits,
+    progression,
     rewards,
     punchCards,
     visits: (

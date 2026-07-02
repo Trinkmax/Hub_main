@@ -1,21 +1,22 @@
 import { cn } from '@/lib/utils'
 import type { WalletData } from '@/lib/wallet/queries'
+import { CurrencyCards } from './currency-cards'
 import { HistoryAccordion } from './history-accordion'
 import { PendingBenefits } from './pending-benefits'
 import { PersonalQr } from './personal-qr'
 import { PunchCards } from './punch-cards'
 import { ReviewCta } from './review-cta'
 import { RewardsGrid } from './rewards-grid'
-import { TierBenefits } from './tier-benefits'
-import { TierHero } from './tier-hero'
+import { TierLadder } from './tier-ladder'
+import { TierProgression } from './tier-progression'
 import { UpcomingEvents } from './upcoming-events'
 import { VisitsTimeline } from './visits-timeline'
 import { WalletHeader } from './wallet-header'
 
-// Shell de la wallet del cliente (Server Component). Compone las secciones en
-// orden de valor: identidad → progreso → beneficios pendientes → canjeables →
-// tarjetas → visitas → eventos → QR → historial. Los datos llegan por props
-// (página pública por token de capacidad); no se hace fetch acá.
+// Shell de la wallet del cliente (Server Component). Orden pensado para que se
+// entienda la dinámica: identidad → las 2 monedas explicadas → recorrido de
+// categorías → beneficios por nivel (aspiracional) → catálogo de canje → resto.
+// Los datos llegan por props (página pública por token); no se hace fetch acá.
 
 export function WalletShell({
   data,
@@ -32,8 +33,9 @@ export function WalletShell({
     customer,
     tenant,
     tier,
+    categoryWindowMonths,
     expiry,
-    benefits,
+    progression,
     rewards,
     punchCards,
     visits,
@@ -44,7 +46,12 @@ export function WalletShell({
   } = data
 
   return (
-    <main className={embedded ? 'bg-transparent' : 'bg-app-gradient min-h-[100dvh]'}>
+    <main
+      className={cn(
+        'scroll-smooth',
+        embedded ? 'bg-transparent' : 'bg-app-gradient min-h-[100dvh]',
+      )}
+    >
       <div
         className={cn(
           'mx-auto flex max-w-md flex-col gap-6 px-4 pb-16',
@@ -53,21 +60,20 @@ export function WalletShell({
       >
         {!embedded ? <WalletHeader tenant={tenant} firstName={customer.firstName} /> : null}
 
-        <TierHero
+        <CurrencyCards
+          customer={customer}
           tier={tier}
           categoryPoints={customer.categoryPoints}
           pointsBalance={customer.pointsBalance}
-          lifetimePoints={customer.lifetimePoints}
+          windowMonths={categoryWindowMonths}
           expiry={expiry}
         />
 
         <PendingBenefits benefits={pendingBenefits} />
 
-        <TierBenefits
-          benefits={benefits}
-          tierName={tier.current?.name ?? null}
-          tierColor={tier.current?.color ?? null}
-        />
+        <TierLadder progression={progression} tier={tier} />
+
+        <TierProgression progression={progression} />
 
         <RewardsGrid rewards={rewards} pointsBalance={customer.pointsBalance} />
 

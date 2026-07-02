@@ -35,6 +35,15 @@ export function formatDayMonth(iso: string): string {
   return format(new Date(iso), 'dd/MM', { locale: es })
 }
 
+/** Cumpleaños dd/MM desde una fecha YYYY-MM-DD (sin tz shift). */
+export function formatBirthday(isoDate: string): string | null {
+  const parts = isoDate.split('-')
+  if (parts.length < 3) return null
+  const [, m, d] = parts
+  if (!m || !d) return null
+  return `${d}/${m}`
+}
+
 /** dd/MM con hora corta para movimientos del historial. */
 export function formatDateTime(iso: string): string {
   return format(new Date(iso), 'dd/MM/yy · HH:mm', { locale: es })

@@ -120,7 +120,7 @@ export function RewardsGrid({
   if (other && other.length > 0) sections.push({ key: '__other', label: OTHER_LABEL, items: other })
 
   return (
-    <section aria-labelledby="rewards-heading" className="space-y-4">
+    <section id="canjeables" aria-labelledby="rewards-heading" className="scroll-mt-4 space-y-4">
       <h2 id="rewards-heading" className="font-display text-lg font-semibold tracking-tight">
         Catálogo de canje
       </h2>
