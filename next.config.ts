@@ -47,6 +47,31 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
+      // Mensajería: la sección se consolidó en /mensajeria/*
+      { source: '/:slug/bandeja', destination: '/:slug/mensajeria/inbox', permanent: true },
+      {
+        source: '/:slug/bandeja/:rest*',
+        destination: '/:slug/mensajeria/inbox/:rest*',
+        permanent: true,
+      },
+      { source: '/:slug/difusiones', destination: '/:slug/mensajeria/difusiones', permanent: true },
+      {
+        source: '/:slug/difusiones/:rest*',
+        destination: '/:slug/mensajeria/difusiones/:rest*',
+        permanent: true,
+      },
+      { source: '/:slug/flows', destination: '/:slug/mensajeria/flows', permanent: true },
+      {
+        source: '/:slug/flows/:rest*',
+        destination: '/:slug/mensajeria/flows/:rest*',
+        permanent: true,
+      },
+      { source: '/:slug/audiencias', destination: '/:slug/mensajeria/audiencias', permanent: true },
+      {
+        source: '/:slug/audiencias/:rest*',
+        destination: '/:slug/mensajeria/audiencias/:rest*',
+        permanent: true,
+      },
       // Catálogo: puntos y punch-cards subieron a top-level (eran sub-rutas de configuración)
       {
         source: '/:slug/configuracion/puntos',

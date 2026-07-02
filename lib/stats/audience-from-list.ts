@@ -45,7 +45,7 @@ export async function createAudienceFromList(
       .single()
     if (error || !data) return { ok: false, message: error?.message ?? 'insert failed' }
 
-    revalidatePath(`/${slug}/audiencias`)
+    revalidatePath(`/${slug}/mensajeria/audiencias`)
     return { ok: true, id: data.id }
   } catch (e) {
     if (

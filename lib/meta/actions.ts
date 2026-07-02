@@ -192,7 +192,7 @@ export async function sendTextMessage(
       metaMessageId,
       status: 'sent',
     })
-    revalidatePath(`/${slug}/bandeja`)
+    revalidatePath(`/${slug}/mensajeria/inbox`)
     return { ok: true }
   } catch (e) {
     const reason = e instanceof MetaApiError ? mapMetaErrorToStatus(e).reason : (e as Error).message
@@ -204,7 +204,7 @@ export async function sendTextMessage(
       status: 'failed',
       error: reason,
     })
-    revalidatePath(`/${slug}/bandeja`)
+    revalidatePath(`/${slug}/mensajeria/inbox`)
     return { ok: false, message: reason }
   }
 }
@@ -245,7 +245,7 @@ export async function sendTemplateMessage(
       metaMessageId: meta_message_id,
       status: 'sent',
     })
-    revalidatePath(`/${slug}/bandeja`)
+    revalidatePath(`/${slug}/mensajeria/inbox`)
     return { ok: true }
   } catch (e) {
     const reason = e instanceof MetaApiError ? mapMetaErrorToStatus(e).reason : (e as Error).message

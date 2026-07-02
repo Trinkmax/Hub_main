@@ -82,7 +82,7 @@ export async function createFlow(
   const { error: stepsErr } = await service.from('flow_steps').insert(stepRows)
   if (stepsErr) return { ok: false, message: stepsErr.message }
 
-  revalidatePath(`/${slug}/flows`)
+  revalidatePath(`/${slug}/mensajeria/flows`)
   return { ok: true, id: flow.id }
 }
 
@@ -131,7 +131,7 @@ export async function updateFlow(
   const { error: stepsErr } = await service.from('flow_steps').insert(stepRows)
   if (stepsErr) return { ok: false, message: stepsErr.message }
 
-  revalidatePath(`/${slug}/flows`)
+  revalidatePath(`/${slug}/mensajeria/flows`)
   return { ok: true, id: parsed.id }
 }
 
@@ -152,7 +152,7 @@ export async function toggleFlowActive(
     .eq('id', id)
     .eq('tenant_id', access.tenant.id)
   if (error) return { ok: false, message: error.message }
-  revalidatePath(`/${slug}/flows`)
+  revalidatePath(`/${slug}/mensajeria/flows`)
   return { ok: true }
 }
 
@@ -172,7 +172,7 @@ export async function deleteFlow(
     .eq('id', id)
     .eq('tenant_id', access.tenant.id)
   if (error) return { ok: false, message: error.message }
-  revalidatePath(`/${slug}/flows`)
+  revalidatePath(`/${slug}/mensajeria/flows`)
   return { ok: true }
 }
 

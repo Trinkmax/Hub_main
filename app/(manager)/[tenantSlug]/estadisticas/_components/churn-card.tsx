@@ -47,7 +47,7 @@ export function ChurnCard({ rows, tenantSlug }: { rows: ChurnRiskRow[]; tenantSl
   useEffect(() => {
     if (state.ok && state.id) {
       toast.success('Audiencia creada.')
-      router.push(`/${tenantSlug}/audiencias/${state.id}`)
+      router.push(`/${tenantSlug}/mensajeria/audiencias/${state.id}`)
     } else if (!state.ok && state.message) {
       toast.error(state.message)
     }

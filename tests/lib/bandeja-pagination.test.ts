@@ -4,7 +4,7 @@ import { buildListHref } from '@/lib/bandeja/utils'
 describe('buildListHref', () => {
   it('includes n param', () => {
     const href = buildListHref('hub', { n: 60 })
-    expect(href).toBe('/hub/bandeja?n=60')
+    expect(href).toBe('/hub/mensajeria/inbox?n=60')
   })
 
   it('preserves ?c when active', () => {
@@ -29,6 +29,6 @@ describe('buildListHref', () => {
 
   it('does not include c or tag when null', () => {
     const href = buildListHref('hub', { n: 30, c: null, tag: null })
-    expect(href).toBe('/hub/bandeja?n=30')
+    expect(href).toBe('/hub/mensajeria/inbox?n=30')
   })
 })

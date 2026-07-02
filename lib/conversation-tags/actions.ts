@@ -90,7 +90,7 @@ export async function createConversationTag(
     payload: { name: parsed.data.name, color: parsed.data.color },
   })
 
-  revalidatePath(`/${slug}/bandeja`)
+  revalidatePath(`/${slug}/mensajeria/inbox`)
   return { ok: true }
 }
 
@@ -128,7 +128,7 @@ export async function deleteConversationTag(
     payload: {},
   })
 
-  revalidatePath(`/${slug}/bandeja`)
+  revalidatePath(`/${slug}/mensajeria/inbox`)
   return { ok: true }
 }
 
@@ -246,6 +246,6 @@ export async function setConversationTags(
     })
   }
 
-  revalidatePath(`/${slug}/bandeja`)
+  revalidatePath(`/${slug}/mensajeria/inbox`)
   return { ok: true }
 }

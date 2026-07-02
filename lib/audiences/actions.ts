@@ -82,7 +82,7 @@ export async function createAudience(
     payload: { name: input.name },
   })
 
-  revalidatePath(`/${slug}/audiencias`)
+  revalidatePath(`/${slug}/mensajeria/audiencias`)
   return { ok: true, id: data.id }
 }
 
@@ -117,7 +117,7 @@ export async function updateAudience(
     .eq('id', input.id)
     .eq('tenant_id', access.tenant.id)
   if (error) return { ok: false, message: error.message }
-  revalidatePath(`/${slug}/audiencias`)
+  revalidatePath(`/${slug}/mensajeria/audiencias`)
   return { ok: true, id: input.id }
 }
 
@@ -186,7 +186,7 @@ export async function deleteAudience(
     .eq('id', parsed.data.id)
     .eq('tenant_id', access.tenant.id)
   if (error) return { ok: false, message: error.message }
-  revalidatePath(`/${slug}/audiencias`)
+  revalidatePath(`/${slug}/mensajeria/audiencias`)
   return { ok: true }
 }
 
@@ -201,7 +201,7 @@ export async function recalcAudience(
   if (!parsed.success) return { ok: false, message: 'id requerido.' }
   try {
     const total = await refreshAudienceCount(parsed.data.id)
-    revalidatePath(`/${slug}/audiencias`)
+    revalidatePath(`/${slug}/mensajeria/audiencias`)
     return { ok: true, message: `Audiencia recalculada: ${total} clientes.` }
   } catch (e) {
     return { ok: false, message: (e as Error).message }

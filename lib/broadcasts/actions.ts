@@ -118,7 +118,7 @@ export async function scheduleBroadcast(
     payload: { name: parsed.data.name, recipients: audience.customer_count_cached },
   })
 
-  revalidatePath(`/${slug}/difusiones`)
+  revalidatePath(`/${slug}/mensajeria/difusiones`)
   return { ok: true, id: data.id }
 }
 
@@ -139,7 +139,7 @@ export async function cancelBroadcast(
     .eq('tenant_id', access.tenant.id)
     .in('status', ['draft', 'scheduled'])
   if (error) return { ok: false, message: error.message }
-  revalidatePath(`/${slug}/difusiones`)
+  revalidatePath(`/${slug}/mensajeria/difusiones`)
   return { ok: true }
 }
 
@@ -160,7 +160,7 @@ export async function sendBroadcastNow(
     .eq('tenant_id', access.tenant.id)
     .in('status', ['draft', 'scheduled'])
   if (error) return { ok: false, message: error.message }
-  revalidatePath(`/${slug}/difusiones/${id}`)
+  revalidatePath(`/${slug}/mensajeria/difusiones/${id}`)
   return { ok: true, id }
 }
 
@@ -199,7 +199,7 @@ export async function resendFailedRecipients(
     })
     i += 1
   }
-  revalidatePath(`/${slug}/difusiones/${id}`)
+  revalidatePath(`/${slug}/mensajeria/difusiones/${id}`)
   return { ok: true, id, message: `${failed?.length ?? 0} reencolados` }
 }
 

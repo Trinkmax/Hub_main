@@ -115,6 +115,6 @@ export async function saveFlowGraph(slug: string, payload: unknown): Promise<Flo
     if (edgesErr) return { ok: false, message: edgesErr.message }
   }
 
-  revalidatePath(`/${slug}/flows`)
+  revalidatePath(`/${slug}/mensajeria/flows`)
   return { ok: true, id: flowId }
 }

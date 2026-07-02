@@ -10,5 +10,5 @@ export function buildListHref(
   if (opts.c) params.set('c', opts.c)
   if (opts.tag) params.set('tag', opts.tag)
   params.set('n', String(opts.n))
-  return `/${tenantSlug}/bandeja?${params.toString()}`
+  return `/${tenantSlug}/mensajeria/inbox?${params.toString()}`
 }

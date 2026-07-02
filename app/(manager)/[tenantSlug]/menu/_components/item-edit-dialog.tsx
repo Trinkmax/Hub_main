@@ -490,7 +490,7 @@ export function ItemEditDialog({
         <SheetFooter className="flex flex-col gap-2 border-t border-border/60 px-6 py-4 sm:flex-row sm:justify-between">
           <Button asChild variant="ghost" size="sm" className="gap-1.5">
             <Link
-              href={`/${tenantSlug}/difusiones/nueva?prefillName=${encodeURIComponent(
+              href={`/${tenantSlug}/mensajeria/difusiones/nueva?prefillName=${encodeURIComponent(
                 `Novedad: ${name}`,
               )}`}
               target="_blank"

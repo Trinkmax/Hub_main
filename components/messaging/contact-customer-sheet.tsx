@@ -115,7 +115,7 @@ export function ContactCustomerSheet({
         toast.success('Mensaje enviado', {
           description: (
             <Link
-              href={`/${tenantSlug}/bandeja?c=${result.conversationId}`}
+              href={`/${tenantSlug}/mensajeria/inbox?c=${result.conversationId}`}
               className="underline underline-offset-2"
             >
               Ver conversación →
@@ -160,7 +160,7 @@ export function ContactCustomerSheet({
         toast.success('Plantilla enviada', {
           description: (
             <Link
-              href={`/${tenantSlug}/bandeja?c=${result.conversationId}`}
+              href={`/${tenantSlug}/mensajeria/inbox?c=${result.conversationId}`}
               className="underline underline-offset-2"
             >
               Ver conversación →
