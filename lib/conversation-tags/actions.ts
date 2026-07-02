@@ -11,7 +11,12 @@ import {
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
-import { createConversationTagSchema, setConversationTagsSchema, tagIdSchema } from './schemas'
+import {
+  createConversationTagSchema,
+  setConversationTagsSchema,
+  tagIdSchema,
+  updateConversationTagSchema,
+} from './schemas'
 
 export type ConversationTagActionState = { ok: true } | { ok: false; message: string }
 
@@ -90,6 +95,7 @@ export async function createConversationTag(
     payload: { name: parsed.data.name, color: parsed.data.color },
   })
 
+  revalidatePath(`/${slug}/mensajeria/etiquetas`)
   revalidatePath(`/${slug}/mensajeria/inbox`)
   return { ok: true }
 }
@@ -128,6 +134,55 @@ export async function deleteConversationTag(
     payload: {},
   })
 
+  revalidatePath(`/${slug}/mensajeria/etiquetas`)
+  revalidatePath(`/${slug}/mensajeria/inbox`)
+  return { ok: true }
+}
+
+export async function updateConversationTag(
+  slug: string,
+  _prev: ConversationTagActionState,
+  formData: FormData,
+): Promise<ConversationTagActionState> {
+  const tenant = await authorizeOwnerCashier(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = updateConversationTagSchema.safeParse({
+    id: formData.get('id'),
+    name: formData.get('name'),
+    color: formData.get('color'),
+  })
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { data: userResult } = await supabase.auth.getUser()
+
+  const { error } = await supabase
+    .from('conversation_tags')
+    .update({ name: parsed.data.name, color: parsed.data.color })
+    .eq('id', parsed.data.id)
+    .eq('tenant_id', tenant.id)
+
+  if (error) {
+    if (error.code === '23505') {
+      return { ok: false, message: 'Ya existe una etiqueta con ese nombre.' }
+    }
+    console.error('[conversation-tags.update]', error.message)
+    return { ok: false, message: 'No pudimos actualizar la etiqueta.' }
+  }
+
+  await logAudit({
+    tenantId: tenant.id,
+    userId: userResult.user?.id ?? null,
+    action: 'conversation_tag.updated',
+    entity: 'conversation_tag',
+    entityId: parsed.data.id,
+    payload: { name: parsed.data.name, color: parsed.data.color },
+  })
+
+  revalidatePath(`/${slug}/mensajeria/etiquetas`)
   revalidatePath(`/${slug}/mensajeria/inbox`)
   return { ok: true }
 }
