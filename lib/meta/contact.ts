@@ -61,13 +61,21 @@ export async function contactCustomer(
   if (data.customer_id) {
     const { data: customer, error } = await service
       .from('customers')
-      .select('id, phone')
+      .select('id, phone, is_blocked')
       .eq('id', data.customer_id)
       .eq('tenant_id', tenantId)
       .maybeSingle()
 
     if (error || !customer) {
       return { ok: false, code: 'not_found', message: 'Cliente no encontrado.' }
+    }
+    // No contactar (hard opt-out): ni siquiera manualmente.
+    if (customer.is_blocked) {
+      return {
+        ok: false,
+        code: 'error',
+        message: 'Este cliente está marcado como «No contactar».',
+      }
     }
     phone = customer.phone
   } else {

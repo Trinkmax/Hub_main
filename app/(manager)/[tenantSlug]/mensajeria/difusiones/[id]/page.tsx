@@ -37,6 +37,7 @@ export const dynamic = 'force-dynamic'
 
 const RECIPIENT_LABEL: Record<RecipientStatus, string> = {
   pending: 'Pendiente',
+  sending: 'Enviando',
   sent: 'Enviado',
   delivered: 'Entregado',
   read: 'Leído',

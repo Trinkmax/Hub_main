@@ -99,6 +99,7 @@ export type Database = {
       broadcast_recipients: {
         Row: {
           broadcast_id: string
+          claimed_at: string | null
           customer_id: string
           delivered_at: string | null
           error: string | null
@@ -112,6 +113,7 @@ export type Database = {
         }
         Insert: {
           broadcast_id: string
+          claimed_at?: string | null
           customer_id: string
           delivered_at?: string | null
           error?: string | null
@@ -125,6 +127,7 @@ export type Database = {
         }
         Update: {
           broadcast_id?: string
+          claimed_at?: string | null
           customer_id?: string
           delivered_at?: string | null
           error?: string | null
@@ -959,6 +962,7 @@ export type Database = {
           email_opt_in_at: string | null
           first_name: string
           id: string
+          is_blocked: boolean
           last_name: string
           last_visit_at: string | null
           lifetime_points_earned: number
@@ -987,6 +991,7 @@ export type Database = {
           email_opt_in_at?: string | null
           first_name: string
           id?: string
+          is_blocked?: boolean
           last_name: string
           last_visit_at?: string | null
           lifetime_points_earned?: number
@@ -1015,6 +1020,7 @@ export type Database = {
           email_opt_in_at?: string | null
           first_name?: string
           id?: string
+          is_blocked?: boolean
           last_name?: string
           last_visit_at?: string | null
           lifetime_points_earned?: number
@@ -4040,6 +4046,10 @@ export type Database = {
         Returns: Json
       }
       check_slug_available: { Args: { p_slug: string }; Returns: boolean }
+      claim_broadcast_recipient: {
+        Args: { p_id: string }
+        Returns: boolean
+      }
       claim_jobs: {
         Args: { p_kind?: string; p_limit?: number }
         Returns: {
@@ -4580,6 +4590,7 @@ export type Database = {
       punch_trigger_type: "item" | "category" | "tag" | "visit_window"
       recipient_status:
         | "pending"
+        | "sending"
         | "sent"
         | "delivered"
         | "read"
@@ -4799,6 +4810,7 @@ export const Constants = {
       punch_trigger_type: ["item", "category", "tag", "visit_window"],
       recipient_status: [
         "pending",
+        "sending",
         "sent",
         "delivered",
         "read",

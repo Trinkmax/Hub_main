@@ -71,13 +71,21 @@ export function canSendFlowTemplate(params: {
  */
 export async function tickFlowExecution(executionId: string): Promise<void> {
   const service = createServiceClient()
+  // Claim atómico: empujamos next_run_at ~2min al futuro, condicionado a que la
+  // ejecución siga 'running' y esté vencida. Dos ticks solapados: sólo el primero
+  // matchea (el segundo ve next_run_at ya futuro) → el nodo no se reprocesa (no se
+  // reenvía). El procesamiento de abajo re-setea next_run_at; si crashea, reintenta
+  // en ~2min. Cierra el duplicado por ticks solapados del dispatcher.
+  const nowIso = new Date().toISOString()
   const { data: execution } = await service
     .from('flow_executions')
-    .select('*')
+    .update({ next_run_at: new Date(Date.now() + 2 * 60 * 1000).toISOString() })
     .eq('id', executionId)
+    .eq('status', 'running')
+    .lte('next_run_at', nowIso)
+    .select('*')
     .maybeSingle()
-  if (!execution) throw new FatalFlowError(`execution ${executionId} not found`)
-  if (execution.status !== 'running') return
+  if (!execution) return // no vencida, ya completada, o reclamada por otro tick
 
   const { data: nodes } = await service
     .from('flow_nodes')
@@ -309,7 +317,7 @@ async function runSendTemplate(
   const [{ data: customer }, { data: channel }, { data: template }] = await Promise.all([
     service
       .from('customers')
-      .select('id, phone, first_name, last_name, opt_in_marketing')
+      .select('id, phone, first_name, last_name, opt_in_marketing, is_blocked')
       .eq('id', execution.customer_id)
       .maybeSingle(),
     service.from('channels').select('*').eq('id', config.channel_id).maybeSingle(),
@@ -321,6 +329,12 @@ async function runSendTemplate(
   ])
   if (!customer || !channel || !template) {
     throw new FatalFlowError('missing customer/channel/template')
+  }
+
+  if (customer.is_blocked) {
+    // No contactar (hard opt-out): ni siquiera un template transaccional.
+    console.warn(`[flows.runSendTemplate] skip: cliente bloqueado (execution=${execution.id})`)
+    return
   }
 
   if (

@@ -51,6 +51,7 @@ export const updateCustomerSchema = z.object({
     .transform((v) => (v && v.length > 0 ? v : null)),
   birthdate: birthdateField,
   opt_in_marketing: z.coerce.boolean().default(false),
+  is_blocked: z.coerce.boolean().default(false),
 })
 
 export const customerIdSchema = z.object({ id: z.string().uuid() })

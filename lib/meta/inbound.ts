@@ -1,5 +1,5 @@
 import 'server-only'
-import { tryNormalizePhone } from '@/lib/phone'
+import { conversationKey, tryNormalizePhone } from '@/lib/phone'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { Database, Json } from '@/types/database'
 
@@ -42,7 +42,7 @@ export async function ingestInboundMessage(args: IngestArgs): Promise<IngestResu
   const { data, error } = await service.rpc('ingest_inbound_message', {
     p_tenant_id: args.channel.tenant_id,
     p_channel_id: args.channel.id,
-    p_external_user_id: args.externalUserId,
+    p_external_user_id: conversationKey(args.externalUserId),
     p_meta_message_id: args.metaMessageId,
     p_content: args.content,
     p_media: args.media,
