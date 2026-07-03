@@ -45,6 +45,21 @@ export function pickConditionBranch(result: boolean): 'true' | 'false' {
   return result ? 'true' : 'false'
 }
 
+/**
+ * Compliance §8 — Meta sólo exige opt-in de marketing para templates de
+ * categoría MARKETING. UTILITY/AUTHENTICATION son transaccionales y pueden ir
+ * sin opt-in (ej. recordatorio de reserva). Cualquier categoría desconocida se
+ * trata como marketing (default seguro: ante la duda, exigir opt-in).
+ */
+export function canSendFlowTemplate(params: {
+  category: string | null | undefined
+  optInMarketing: boolean
+}): boolean {
+  const cat = (params.category ?? '').trim().toUpperCase()
+  const transactional = cat === 'UTILITY' || cat === 'AUTHENTICATION'
+  return transactional || params.optInMarketing
+}
+
 // ---------------------------------------------------------------------------
 // Dispatch — GRAPH vs LINEAR
 // ---------------------------------------------------------------------------
@@ -294,18 +309,32 @@ async function runSendTemplate(
   const [{ data: customer }, { data: channel }, { data: template }] = await Promise.all([
     service
       .from('customers')
-      .select('id, phone, first_name, last_name')
+      .select('id, phone, first_name, last_name, opt_in_marketing')
       .eq('id', execution.customer_id)
       .maybeSingle(),
     service.from('channels').select('*').eq('id', config.channel_id).maybeSingle(),
     service
       .from('message_templates')
-      .select('name, language')
+      .select('name, language, category')
       .eq('id', config.template_id)
       .maybeSingle(),
   ])
   if (!customer || !channel || !template) {
     throw new FatalFlowError('missing customer/channel/template')
+  }
+
+  if (
+    !canSendFlowTemplate({
+      category: template.category,
+      optInMarketing: customer.opt_in_marketing,
+    })
+  ) {
+    // Compliance §8: no mandamos un template MARKETING a quien no dio opt-in.
+    // El flow sigue (el caller avanza al próximo nodo); sólo se suprime el envío.
+    console.warn(
+      `[flows.runSendTemplate] skip marketing sin opt-in (execution=${execution.id}, template=${template.name})`,
+    )
+    return
   }
 
   const variables =
