@@ -19,6 +19,7 @@ import { Clock, GitBranch, MessageSquareText, Tag as TagIcon, Trash2, X, Zap } f
 import { useRouter } from 'next/navigation'
 import { useCallback, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { useTheme } from '@/components/theme/theme-provider'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -750,6 +751,7 @@ export function FlowGraphEditor({
 }: FlowGraphEditorProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
+  const { resolved } = useTheme()
 
   // Thread through shared refs for custom node access
   _channels = channels
@@ -932,6 +934,7 @@ export function FlowGraphEditor({
         {/* React Flow canvas */}
         <div className="relative min-h-0 flex-1">
           <ReactFlow
+            colorMode={resolved}
             nodes={nodes}
             edges={edges}
             onNodesChange={onNodesChange}
