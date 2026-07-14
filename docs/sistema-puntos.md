@@ -411,3 +411,60 @@ Permite al dueño **ver la wallet del cliente en todos sus estados sin tocar la 
   del `MenuHub` client. Ambas rutas 307→`/login` sin sesión (owner-gate). El browser del dueño cargó
   `/hub/menu` con **HTTP 200** (render real). No se pudo screenshotear (páginas owner-gated, sin
   sesión admin disponible para el agente).
+
+---
+
+## 13. La regla, dicha en voz alta (jul 2026)
+
+**El problema.** La ventana móvil de N meses es la regla que hace girar al club (te trae de
+vuelta) y la que más rompe la confianza si se descubre tarde (bajar de Gold a Select sin haberla
+escuchado nunca se lee como "me robaron los puntos"). Estaba explicada en **5 pantallas del panel
+del dueño** (`/club/niveles`, `tier-form`, `tiers-list`, `menu-hub`, `/club`) y en **ninguna** del
+lado del socio:
+
+- `carnet.tsx` tenía la copy `Últimos ${windowMonths} meses`… en la rama muerta de un ternario
+  (`tierName ? 'Definen tu nivel' : 'Últimos N meses'`). Como **Classic arranca en 0 pts**,
+  `resolveTier` nunca devuelve `null` → **todo socio tiene nivel siempre** → esa rama no se
+  ejecutaba jamás. Código muerto.
+- El aviso de vencimiento sólo se renderizaba con `expiry != null`, y `computeExpiry(soonDays=30)`
+  devuelve algo recién a **30 días** de perder los puntos. Un socio nuevo (o uno con puntos
+  recientes) no lo veía nunca.
+- `tier-ladder` decía sólo "vas subiendo de nivel". Nunca que se baja.
+
+**La solución (3 capas).**
+
+1. **`<CategoryRule>`** (en `carnet.tsx`): franja **permanente** al pie del carnet, contrapunto
+   explícito del "No vencen" de la moneda de al lado. Tres estados, todos enuncian la regla o su
+   consecuencia:
+   - sin vencimiento → `Tus puntos de categoría duran N meses`
+   - con vencimiento → `X pts vencen el DD/MM` + la regla debajo
+   - si además baja → tono `warning` + `volvé para no bajar a {Tier}`
+   Es además la **puerta** a "Cómo funciona" (prop `onHelp`).
+2. **Vista `comofunciona`** (`how-it-works.tsx`, cuarta vista in-place de `wallet-views.tsx`):
+   las dos monedas con el modelo mental de aerolínea (status que caduca vs. millas que gastás),
+   la ventana con una línea de tiempo (`hoy +400` → `en N meses esos 400 dejan de contar`) y la
+   línea que salva la confianza — **"tus puntos canjeables no se tocan"** —, más "Cómo sumás".
+3. **`tier-ladder`** cuenta las dos mitades: "Contamos sólo los últimos N meses, así que volvé
+   seguido para mantenerlo".
+
+**Tasa de acumulación: de la config, no hardcodeada.** `lib/points/earn-rate.ts::resolveEarnRate`
+deriva "1 punto cada $1.000" de `points_rules`. Ojo: **`engine.ts` aplica TODAS las reglas activas**
+(no la de mayor prioridad), así que con dos `per_amount` la frase única sería falsa → devuelve
+`null` y la UI cae a un genérico. `hasItemBonus` agrega "algunos productos suman extra".
+`WalletData` gana `earn` (+1 query paralela); `SimConfig` lo propaga al simulador.
+
+**⚠️ Dato que estaba mal en producción.** La regla activa de HUB era
+`{points: 1, every_cents: 100}` = **1 punto por cada $1** (valor de prueba del 11/05, nunca usado:
+cero transacciones `rule_engine` en el ledger). Con eso, un consumo de $50.000 daba 50.000 pts →
+Signature (2.000) al instante. Corregida a `every_cents: 100000` (1 pt cada $1.000, como la spec).
+La wallet ahora la muestra, así que un error así se vuelve visible en vez de silencioso.
+
+### Verificación
+
+- Unit: `tests/lib/points-earn-rate.test.ts` (6 casos: una regla, inactivas, dos activas → null,
+  configs inválidas, per_item). Suite completa 742 ✓.
+- Browser (dev, datos reales del remoto): **Luciano** (Gold, 640 pts que vencen el 25/07) muestra
+  el estado de aviso con "volvé para no bajar a Classic"; **socio en 0 pts** muestra "Tus puntos de
+  categoría duran 4 meses". La vista "Cómo funciona" abre **in-place tanto en `/c/[token]` como
+  embebida en el sheet de la carta** (no navega, no vuelve a la carta). Sin errores de consola ni
+  hydration mismatch.
