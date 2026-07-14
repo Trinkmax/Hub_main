@@ -1,5 +1,5 @@
-import Image from 'next/image'
 import { notFound } from 'next/navigation'
+import { CartaBrand } from '@/app/carta/[tenantSlug]/_components/carta-brand'
 import { BrandAccent } from '@/components/theme/brand-accent-provider'
 import { getReviewContextByToken } from '@/lib/reviews/queries'
 import { ReviewForm } from './_components/review-form'
@@ -20,23 +20,14 @@ export default async function ReviewPage({ params }: { params: Promise<{ token: 
           className="card-hairline w-full max-w-md rounded-3xl border bg-card p-7 shadow-lg sm:p-9"
         >
           <header className="flex flex-col items-center gap-4 text-center">
-            {ctx.logoUrl ? (
-              <div className="relative size-16 overflow-hidden rounded-2xl ring-1 ring-border/60">
-                <Image
-                  src={ctx.logoUrl}
-                  alt={ctx.tenantName}
-                  fill
-                  sizes="64px"
-                  className="object-cover"
-                  unoptimized
-                  priority
-                />
-              </div>
-            ) : (
-              <p className="font-serif text-2xl font-semibold tracking-tight text-[var(--brand-accent,var(--primary))]">
-                {ctx.tenantName}
-              </p>
-            )}
+            {/* El logo es un wordmark ancho: iba dentro de un marco cuadrado con
+                object-cover y quedaba RECORTADO ("HUB!" → "UB"). Va sin marco y
+                contenido, igual que en la carta. */}
+            <CartaBrand
+              tenantName={ctx.tenantName}
+              logoUrl={ctx.logoUrl}
+              className="h-12 max-w-[200px]"
+            />
 
             <h1
               id="review-heading"

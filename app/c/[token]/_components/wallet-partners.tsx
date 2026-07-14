@@ -20,7 +20,9 @@ function PartnerCard({ partner }: { partner: Partner }) {
             alt=""
             width={48}
             height={48}
-            className="size-full object-cover"
+            // Contain + aire: los logos de marca suelen ser wordmarks anchos y
+            // object-cover los recortaba dentro del círculo.
+            className="size-full object-contain p-1"
             unoptimized
           />
         ) : (
