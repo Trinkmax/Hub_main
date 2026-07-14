@@ -1,19 +1,13 @@
 'use client'
 
-import {
-  ChevronLeft,
-  ChevronRight,
-  ChevronUp,
-  SearchX,
-  UtensilsCrossed,
-  Wallet,
-} from 'lucide-react'
+import { ChevronLeft, ChevronRight, SearchX, UtensilsCrossed } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { MenuItem } from '@/lib/menu/queries'
 import type { MenuTreeNode } from '@/lib/menu/tree'
 import { CartaBrand } from './carta-brand'
 import { CartaSearch } from './carta-search'
 import { CategoryHubCard } from './category-hub-card'
+import { ClubLip } from './club-lip'
 import { ClubSheet } from './club-sheet'
 import { FeaturedCarousel } from './featured-carousel'
 import { ItemCard } from './item-card'
@@ -240,31 +234,14 @@ export function CartaExperience(props: {
       </main>
 
       {/* CAJÓN DE LA BILLETERA — el borde verde asoma desde abajo y se arrastra
-          hacia arriba para abrir. Si el cliente aún no tiene wallet, el mismo
-          labio invita a sumarse al club (tap → ClubSheet). */}
+          hacia arriba para abrir. Si el cliente aún no es socio, el MISMO labio
+          (mismo gesto: arrastrá o tocá) invita a sumarse al club → ClubSheet. */}
       {walletContent && walletSummary ? (
         <WalletDrawer summary={walletSummary} initialOpen={walletInitiallyOpen}>
           {walletContent}
         </WalletDrawer>
       ) : (
-        <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-40">
-          <button
-            type="button"
-            onClick={() => setSheet('club')}
-            aria-label="Sumate al club"
-            className="group pointer-events-auto flex w-full flex-col items-center gap-1.5 rounded-t-[1.75rem] bg-[color:var(--brand-accent,var(--primary))] px-4 pb-[max(env(safe-area-inset-bottom),0.875rem)] pt-2.5 text-[color:var(--brand-accent-foreground,var(--primary-foreground))] shadow-[0_-24px_60px_-24px_rgba(0,0,0,0.5)] transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70 active:scale-[0.995]"
-          >
-            <span className="h-1.5 w-10 rounded-full bg-current/40" aria-hidden />
-            <span className="flex items-center gap-2 text-sm font-semibold">
-              <Wallet className="size-4" aria-hidden />
-              Sumate al club
-              <ChevronUp
-                className="size-4 transition-transform duration-200 group-hover:-translate-y-0.5"
-                aria-hidden
-              />
-            </span>
-          </button>
-        </nav>
+        <ClubLip onOpen={() => setSheet('club')} />
       )}
 
       <ItemDetailSheet item={activeItem} onClose={() => setActiveItem(null)} />
