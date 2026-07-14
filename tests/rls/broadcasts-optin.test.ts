@@ -23,15 +23,17 @@ describeIfRls('RLS — broadcasts opt-in pre-filter', () => {
   let audienceId: string
   let broadcast: BroadcastRow
 
-  // 4 customers:
-  //  - optedIn1: opt_in_marketing=true, not deleted  → debe recibir
-  //  - optedIn2: opt_in_marketing=true, not deleted  → debe recibir
-  //  - optedOut: opt_in_marketing=false              → excluido por pre-filtro
-  //  - deletedOptin: opt_in_marketing=true, deleted  → excluido por pre-filtro
+  // 5 customers:
+  //  - optedIn1: opt_in_marketing=true, not deleted       → debe recibir
+  //  - optedIn2: opt_in_marketing=true, not deleted       → debe recibir
+  //  - optedOut: opt_in_marketing=false                   → excluido por pre-filtro
+  //  - deletedOptin: opt_in_marketing=true, deleted       → excluido por pre-filtro
+  //  - blocked: opt_in_marketing=true, is_blocked=true    → excluido ("no contactar")
   let optedIn1Id: string
   let optedIn2Id: string
   let optedOutId: string
   let deletedOptinId: string
+  let blockedId: string
 
   beforeAll(async () => {
     const service = getServiceClient()
@@ -132,15 +134,30 @@ describeIfRls('RLS — broadcasts opt-in pre-filter', () => {
     if (e4 || !c4) throw new Error(`c4: ${e4?.message}`)
     deletedOptinId = c4.id
 
-    // Audiencia static_list con los 4 IDs (el pre-filtro es lo que excluye, no la audiencia)
+    const { data: c5, error: e5 } = await service
+      .from('customers')
+      .insert({
+        tenant_id: tenant.id,
+        first_name: 'Blocked',
+        last_name: 'Test',
+        phone: '5491100000005',
+        opt_in_marketing: true,
+        is_blocked: true,
+      })
+      .select()
+      .single()
+    if (e5 || !c5) throw new Error(`c5: ${e5?.message}`)
+    blockedId = c5.id
+
+    // Audiencia static_list con los 5 IDs (el pre-filtro es lo que excluye, no la audiencia)
     const { data: aud, error: audErr } = await service
       .from('audiences')
       .insert({
         tenant_id: tenant.id,
-        name: 'Todos los 4',
+        name: 'Todos los 5',
         filters: {
           kind: 'static_list',
-          customer_ids: [optedIn1Id, optedIn2Id, optedOutId, deletedOptinId],
+          customer_ids: [optedIn1Id, optedIn2Id, optedOutId, deletedOptinId, blockedId],
         },
       })
       .select()
@@ -174,7 +191,7 @@ describeIfRls('RLS — broadcasts opt-in pre-filter', () => {
     await deleteUser(owner.userId)
   })
 
-  it('materializa exactamente 2 recipients (solo los opt-in no borrados)', async () => {
+  it('materializa exactamente 2 recipients (solo opt-in, no borrados, no bloqueados)', async () => {
     const count = await materializeBroadcastForTest(broadcast)
     expect(count).toBe(2)
 
@@ -191,6 +208,7 @@ describeIfRls('RLS — broadcasts opt-in pre-filter', () => {
     expect(ids).toContain(optedIn2Id)
     expect(ids).not.toContain(optedOutId)
     expect(ids).not.toContain(deletedOptinId)
+    expect(ids).not.toContain(blockedId)
   })
 
   it('stats iniciales reflejan excluded=2', async () => {
@@ -201,7 +219,7 @@ describeIfRls('RLS — broadcasts opt-in pre-filter', () => {
       .eq('id', broadcast.id)
       .single()
     const stats = data?.stats as Record<string, number> | null
-    expect(stats?.excluded).toBe(2)
+    expect(stats?.excluded).toBe(3)
     expect(stats?.total).toBe(2)
   })
 })

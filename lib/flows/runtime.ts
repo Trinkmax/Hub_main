@@ -45,6 +45,21 @@ export function pickConditionBranch(result: boolean): 'true' | 'false' {
   return result ? 'true' : 'false'
 }
 
+/**
+ * Compliance §8 — Meta sólo exige opt-in de marketing para templates de
+ * categoría MARKETING. UTILITY/AUTHENTICATION son transaccionales y pueden ir
+ * sin opt-in (ej. recordatorio de reserva). Cualquier categoría desconocida se
+ * trata como marketing (default seguro: ante la duda, exigir opt-in).
+ */
+export function canSendFlowTemplate(params: {
+  category: string | null | undefined
+  optInMarketing: boolean
+}): boolean {
+  const cat = (params.category ?? '').trim().toUpperCase()
+  const transactional = cat === 'UTILITY' || cat === 'AUTHENTICATION'
+  return transactional || params.optInMarketing
+}
+
 // ---------------------------------------------------------------------------
 // Dispatch — GRAPH vs LINEAR
 // ---------------------------------------------------------------------------
@@ -56,13 +71,21 @@ export function pickConditionBranch(result: boolean): 'true' | 'false' {
  */
 export async function tickFlowExecution(executionId: string): Promise<void> {
   const service = createServiceClient()
+  // Claim atómico: empujamos next_run_at ~2min al futuro, condicionado a que la
+  // ejecución siga 'running' y esté vencida. Dos ticks solapados: sólo el primero
+  // matchea (el segundo ve next_run_at ya futuro) → el nodo no se reprocesa (no se
+  // reenvía). El procesamiento de abajo re-setea next_run_at; si crashea, reintenta
+  // en ~2min. Cierra el duplicado por ticks solapados del dispatcher.
+  const nowIso = new Date().toISOString()
   const { data: execution } = await service
     .from('flow_executions')
-    .select('*')
+    .update({ next_run_at: new Date(Date.now() + 2 * 60 * 1000).toISOString() })
     .eq('id', executionId)
+    .eq('status', 'running')
+    .lte('next_run_at', nowIso)
+    .select('*')
     .maybeSingle()
-  if (!execution) throw new FatalFlowError(`execution ${executionId} not found`)
-  if (execution.status !== 'running') return
+  if (!execution) return // no vencida, ya completada, o reclamada por otro tick
 
   const { data: nodes } = await service
     .from('flow_nodes')
@@ -294,18 +317,38 @@ async function runSendTemplate(
   const [{ data: customer }, { data: channel }, { data: template }] = await Promise.all([
     service
       .from('customers')
-      .select('id, phone, first_name, last_name')
+      .select('id, phone, first_name, last_name, opt_in_marketing, is_blocked')
       .eq('id', execution.customer_id)
       .maybeSingle(),
     service.from('channels').select('*').eq('id', config.channel_id).maybeSingle(),
     service
       .from('message_templates')
-      .select('name, language')
+      .select('name, language, category')
       .eq('id', config.template_id)
       .maybeSingle(),
   ])
   if (!customer || !channel || !template) {
     throw new FatalFlowError('missing customer/channel/template')
+  }
+
+  if (customer.is_blocked) {
+    // No contactar (hard opt-out): ni siquiera un template transaccional.
+    console.warn(`[flows.runSendTemplate] skip: cliente bloqueado (execution=${execution.id})`)
+    return
+  }
+
+  if (
+    !canSendFlowTemplate({
+      category: template.category,
+      optInMarketing: customer.opt_in_marketing,
+    })
+  ) {
+    // Compliance §8: no mandamos un template MARKETING a quien no dio opt-in.
+    // El flow sigue (el caller avanza al próximo nodo); sólo se suprime el envío.
+    console.warn(
+      `[flows.runSendTemplate] skip marketing sin opt-in (execution=${execution.id}, template=${template.name})`,
+    )
+    return
   }
 
   const variables =

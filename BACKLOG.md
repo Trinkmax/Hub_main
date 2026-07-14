@@ -179,3 +179,61 @@ bloquean su merge. Tocan la operativa de mesa (hoy oculta por feature-flag).
   RPC), pero explota si alguien registra un almuerzo por esa vía. Arreglar: no insertar
   la fila de puntos cuando `delta = 0` (registrar el sello sin ledger), o usar otra tabla
   de auditoría para el evento `lunch_visit`.
+
+## Mensajería — deuda backend (auditoría jul 2026, rama `fix/mensajeria-deuda-backend`)
+
+Detectada en la auditoría del sistema de mensajería (2026-07) y verificada contra
+prod el 2026-07-08. El fix de `refresh-mv-stats` se resolvió en esta rama
+(`20260708012237_schedule_refresh_mv_stats.sql`); el resto queda acá priorizado.
+**No tocar `lib/cron/dispatch.ts` a las apuradas: corre en prod cada minuto y maneja
+TODO el trabajo de fondo — un bug ahí frena difusiones, flows y jobs.**
+
+- **[ALTA] Auditar drift de migraciones prod ↔ repo.** La migración
+  `20260520203834_enable_pg_cron_and_schedule_refresh_stats` está **aplicada en prod
+  pero su archivo no existe en el repo** (se perdió) — por eso `refresh-mv-stats` no se
+  reproducía en `db:reset`. Si se perdió esa, pueden faltar otras → el repo no reproduce
+  el schema de prod y los tests RLS (que corren contra local) no reflejan producción.
+  Comparar `select version, name from supabase_migrations.schema_migrations` (prod, vía
+  MCP) contra `ls supabase/migrations/` y reconciliar las que falten.
+- **[MEDIA] Endpoints de cron legacy huérfanos + drift acotado.** El dispatcher
+  (`lib/cron/dispatch.ts`) es la fuente de verdad; los endpoints `process-broadcasts`,
+  `process-flows`, `process-jobs`, `evaluate-time-flows`, `sync-templates`,
+  `refresh-meta-tokens` (y `refresh-stats`/`refresh-category-points`/`grant-tier-benefits`,
+  cuyos pg_cron llaman la función SQL directa) **no los agenda nadie** (`vercel.json` solo
+  tiene `auto-abandon-stale` + `expire-punch-cards`). No son "lógica duplicada peligrosa":
+  la mayoría son thin wrappers de funciones de `lib/` compartidas (`processScheduledBroadcasts`,
+  `messagingJobHandler`). El único **drift real** es que `tickDueFlows` y
+  `syncAllConnectedTemplates` están **copiadas inline en `dispatch.ts`** (`dispatch.ts:62,98`)
+  en vez de vivir en `lib/` y ser compartidas con los endpoints. Fix limpio: extraer esas 2 a
+  `lib/flows/` y `lib/meta/` y que dispatcher + endpoints las reusen (preserva el disparo
+  manual para debug, sin borrar). Opción alternativa: borrar los huérfanos. Requiere tests +
+  cuidado por tocar el dispatcher.
+- **[MEDIA] `recomputeBroadcastStats` + `maybeFinalizeBroadcast` corren por-recipient**
+  (`lib/broadcasts/engine.ts:292-374`): ~7 count queries exactas × N destinatarios +
+  contención de escritura sobre la fila `broadcasts`. A volumen (difusiones grandes) es
+  O(N×7). Batchear el recompute (cada K recipients o al final) en vez de tras cada envío.
+  Relevante ahora que WhatsApp real se va a usar.
+- **[MEDIA] Throttle de difusiones fijo, no consciente del tier del WABA.**
+  `DEFAULT_BROADCAST_RATE_PER_SEC=10` (`lib/broadcasts/throttle.ts`) es una tasa fija; no
+  lee el tier de mensajería del WABA ni hace backoff ante `429`/`#131056`. A volumen real
+  puede chocar con el rate limit de Meta. Hacerlo adaptativo (leer tier + backoff exponencial).
+- **[MEDIA] Webhooks sin DLQ.** Ante caída sostenida de DB, `app/api/webhooks/whatsapp` (e
+  `instagram`) devuelven 200 y **pierden el evento en silencio** (catch + log, correcto para
+  no gatillar redelivery de Meta, pero sin cola de reintento). Agregar una dead-letter
+  (tabla `webhook_dead_letters` + reprocesamiento) para no perder estados/mensajes.
+- **[BAJA] Runtime de flows dual (lineal legacy + grafo).** `lib/flows/runtime.ts:97-108`
+  mantiene `tickLinear` (legacy) además del runtime de grafo; el dispatch elige por
+  `nodeList.length`. Sin ruta de migración legacy→grafo. Consolidar a solo-grafo y retirar
+  el lineal cuando no queden flows lineales vivos.
+- **[BAJA] `service_role` en Server Actions de mensajería.** `lib/broadcasts/actions.ts`,
+  `lib/meta/actions.ts`, `lib/meta/contact.ts` usan `createServiceClient` (más amplio que la
+  letra de CLAUDE.md §4.4 "solo webhooks/cron/admin"). **Mitigado**: todos con
+  `requireTenantAccess` + `requireRole` + `.eq('tenant_id', …)`; sin fuga cross-tenant hallada.
+  Es el patrón establecido del repo, no un bug — documentarlo como desviación consciente
+  (comentario en cada uso + nota en CLAUDE.md §4.4) o migrar a RLS-scoped client donde se pueda.
+- **[BAJA] Refresh de token Meta no corre si `token_expires_at` es null.**
+  `lib/meta/token-refresh.ts:88-93` solo procesa canales con `token_expires_at` no-null dentro
+  de 7 días. Un canal conectado sin setear expiración (como el de HUB hoy, token permanente)
+  nunca entra al refresh — correcto si es permanente, pero si en realidad expira, expira en
+  silencio. Confirmar semántica del token de Usuario del sistema; si puede expirar, setear
+  `token_expires_at` al conectar.

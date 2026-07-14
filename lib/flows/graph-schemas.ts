@@ -53,7 +53,52 @@ export function validateFlowGraph(payload: SaveFlowGraphPayload): string | null 
     }
   }
 
+  if (graphHasCycle(payload.nodes, payload.edges)) {
+    return 'El flow no puede tener ciclos: un nodo no puede volver a un paso anterior (se reenviaría en loop). Revisá las conexiones.'
+  }
+
   return null
+}
+
+/**
+ * DFS con coloreo (blanco/gris/negro) para detectar cualquier ciclo dirigido.
+ * El runtime (tickGraph) sigue los edges sin cota de saltos, así que un ciclo =
+ * loop infinito de envíos. Las reconvergencias (diamantes) NO son ciclos: sólo
+ * un back-edge a un nodo todavía en la pila (gris) lo es. Cota: ≤50 nodos
+ * (schema), así que la recursión es segura.
+ */
+export function graphHasCycle(
+  nodes: ReadonlyArray<{ id: string }>,
+  edges: ReadonlyArray<{ source: string; target: string }>,
+): boolean {
+  const adjacency = new Map<string, string[]>()
+  for (const node of nodes) adjacency.set(node.id, [])
+  for (const edge of edges) {
+    // Los edges a nodos inexistentes se rechazan aparte; acá se ignoran.
+    adjacency.get(edge.source)?.push(edge.target)
+  }
+
+  const WHITE = 0
+  const GRAY = 1
+  const BLACK = 2
+  const color = new Map<string, number>()
+  for (const node of nodes) color.set(node.id, WHITE)
+
+  const visit = (nodeId: string): boolean => {
+    color.set(nodeId, GRAY)
+    for (const next of adjacency.get(nodeId) ?? []) {
+      const c = color.get(next)
+      if (c === GRAY) return true // back-edge a un nodo en la pila → ciclo
+      if (c === WHITE && visit(next)) return true
+    }
+    color.set(nodeId, BLACK)
+    return false
+  }
+
+  for (const node of nodes) {
+    if (color.get(node.id) === WHITE && visit(node.id)) return true
+  }
+  return false
 }
 
 // Re-export step config schema for the node config panel

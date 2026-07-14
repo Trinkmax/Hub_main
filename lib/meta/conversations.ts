@@ -1,4 +1,5 @@
 import 'server-only'
+import { conversationKey } from '@/lib/phone'
 import { createServiceClient } from '@/lib/supabase/service'
 
 /**
@@ -13,12 +14,14 @@ export async function findOrCreateConversation(opts: {
   customerId?: string | null
 }): Promise<string> {
   const service = createServiceClient()
+  // Clave canónica: unifica outbound (+549…) e inbound (wa_id 54…) en un solo hilo.
+  const externalUserId = conversationKey(opts.externalUserId)
 
   const { data: existing } = await service
     .from('conversations')
     .select('id, customer_id')
     .eq('channel_id', opts.channelId)
-    .eq('external_user_id', opts.externalUserId)
+    .eq('external_user_id', externalUserId)
     .maybeSingle()
 
   if (existing) {
@@ -37,7 +40,7 @@ export async function findOrCreateConversation(opts: {
     .insert({
       tenant_id: opts.tenantId,
       channel_id: opts.channelId,
-      external_user_id: opts.externalUserId,
+      external_user_id: externalUserId,
       customer_id: opts.customerId ?? null,
       last_message_at: new Date().toISOString(),
     })

@@ -181,6 +181,7 @@ export async function updateCustomer(
     notes: formData.get('notes'),
     birthdate: formData.get('birthdate'),
     opt_in_marketing: formData.get('opt_in_marketing') === 'on',
+    is_blocked: formData.get('is_blocked') === 'on',
   })
   if (!parsed.success) {
     return {
@@ -225,6 +226,7 @@ export async function updateCustomer(
       notes: parsed.data.notes ?? null,
       birthdate: parsed.data.birthdate,
       opt_in_marketing: parsed.data.opt_in_marketing,
+      is_blocked: parsed.data.is_blocked,
       email_opt_in_at: parsed.data.email ? emailOptInTimestamp : null,
       ...(becomingOptIn ? { opt_in_at: nowIso, opt_in_ip: ip } : {}),
     })

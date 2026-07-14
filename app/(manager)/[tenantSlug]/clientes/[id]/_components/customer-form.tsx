@@ -40,6 +40,7 @@ type CustomerFormData = {
   notes: string | null
   birthdate: string | null
   opt_in_marketing: boolean
+  is_blocked: boolean
 }
 
 export function CustomerForm({
@@ -166,6 +167,22 @@ export function CustomerForm({
           </span>
           <span className="block text-xs text-muted-foreground">
             Solo marcá esto si te lo confirmó. Quedará registrado con fecha, hora e IP.
+          </span>
+        </div>
+      </Label>
+
+      <Label className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3.5">
+        <Checkbox
+          name="is_blocked"
+          id="is_blocked"
+          defaultChecked={customer.is_blocked}
+          className="mt-0.5"
+        />
+        <div className="space-y-0.5">
+          <span className="text-sm font-medium leading-none">No contactar</span>
+          <span className="block text-xs text-muted-foreground">
+            Bloquea todo mensaje saliente (difusiones, flows y contacto manual), aunque tenga
+            opt-in.
           </span>
         </div>
       </Label>

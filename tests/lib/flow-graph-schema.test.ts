@@ -173,4 +173,70 @@ describe('validateFlowGraph', () => {
     })
     expect(validateFlowGraph(payload)).toBeNull()
   })
+
+  it('rechaza un self-loop (send_template que apunta a sí mismo → loop infinito)', () => {
+    const selfEdge = '11111111-1111-4111-8111-111111111111'
+    const payload = makePayload({
+      nodes: [baseTriggerNode, baseSendNode],
+      edges: [
+        baseEdge,
+        { id: selfEdge, source: sendNodeId, target: sendNodeId, sourceHandle: null },
+      ],
+    })
+    const error = validateFlowGraph(payload)
+    expect(error).not.toBeNull()
+    expect(error).toContain('ciclo')
+  })
+
+  it('rechaza un ciclo de vuelta A→B→A (reenvío infinito)', () => {
+    const aId = '22222222-2222-4222-8222-222222222222'
+    const bId = '33333333-3333-4333-8333-333333333333'
+    const eTA = '44444444-4444-4444-8444-444444444444'
+    const eAB = '55555555-5555-4555-8555-555555555555'
+    const eBA = '66666666-6666-4666-8666-666666666666'
+    const payload = makePayload({
+      nodes: [
+        baseTriggerNode,
+        { id: aId, kind: 'send_template' as const, position: { x: 0, y: 300 }, config: {} },
+        { id: bId, kind: 'send_template' as const, position: { x: 0, y: 500 }, config: {} },
+      ],
+      edges: [
+        { id: eTA, source: triggerNodeId, target: aId, sourceHandle: null },
+        { id: eAB, source: aId, target: bId, sourceHandle: null },
+        { id: eBA, source: bId, target: aId, sourceHandle: null },
+      ],
+    })
+    const error = validateFlowGraph(payload)
+    expect(error).not.toBeNull()
+    expect(error).toContain('ciclo')
+  })
+
+  it('acepta ramas que reconvergen sin ciclo (diamante cond→X, cond→Y, X→Z, Y→Z)', () => {
+    const condId = '77777777-7777-4777-8777-777777777777'
+    const xId = '88888888-8888-4888-8888-888888888888'
+    const yId = '99999999-9999-4999-8999-999999999999'
+    const zId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    const eTc = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    const ecX = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+    const ecY = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+    const eXZ = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+    const eYZ = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
+    const payload = makePayload({
+      nodes: [
+        baseTriggerNode,
+        { id: condId, kind: 'condition' as const, position: { x: 100, y: 300 }, config: {} },
+        { id: xId, kind: 'send_template' as const, position: { x: 0, y: 500 }, config: {} },
+        { id: yId, kind: 'send_template' as const, position: { x: 200, y: 500 }, config: {} },
+        { id: zId, kind: 'add_tag' as const, position: { x: 100, y: 700 }, config: {} },
+      ],
+      edges: [
+        { id: eTc, source: triggerNodeId, target: condId, sourceHandle: null },
+        { id: ecX, source: condId, target: xId, sourceHandle: 'true' as const },
+        { id: ecY, source: condId, target: yId, sourceHandle: 'false' as const },
+        { id: eXZ, source: xId, target: zId, sourceHandle: null },
+        { id: eYZ, source: yId, target: zId, sourceHandle: null },
+      ],
+    })
+    expect(validateFlowGraph(payload)).toBeNull()
+  })
 })

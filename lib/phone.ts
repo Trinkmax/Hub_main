@@ -164,3 +164,21 @@ export function formatForWhatsApp(e164: string): string {
   }
   return e164
 }
+
+/**
+ * Clave canónica de conversación a partir de un teléfono/wa_id. Unifica el
+ * hilado inbound/outbound: el outbound guardaba el E.164 con el `9` de celular AR
+ * (`+5493512345678`), pero el `wa_id` que Meta manda en el inbound viene SIN el 9
+ * (`543512345678`). Sin unificar, cada cliente terminaba con DOS conversaciones y
+ * el chequeo de ventana 24h leía el hilo vacío. Normaliza a dígitos, sin `+` y sin
+ * el `9` móvil AR.
+ *   +5493512345678 → 543512345678 ; 543512345678 → 543512345678
+ */
+export function conversationKey(raw: string): string {
+  const digits = raw.replace(/\D/g, '')
+  // AR móvil: 54 + 9 + 10 dígitos = 13 → sacamos el 9 para igualar el wa_id de Meta.
+  if (digits.startsWith(`${AR_CC}9`) && digits.length === 13) {
+    return `${AR_CC}${digits.slice(3)}`
+  }
+  return digits
+}

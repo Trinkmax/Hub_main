@@ -71,6 +71,7 @@ async function materializeBroadcast(broadcast: BroadcastRow): Promise<number> {
       .select('id')
       .in('id', slice)
       .eq('opt_in_marketing', true)
+      .eq('is_blocked', false)
       .is('deleted_at', null)
     if (error) throw new Error(`opt-in pre-filter: ${error.message}`)
     for (const row of data ?? []) eligible.push(row.id)
@@ -147,16 +148,24 @@ export async function handleSendBroadcastMessage(payload: unknown): Promise<void
   }
   const service = createServiceClient()
 
+  // Claim atómico pending → sending: si otro worker ya lo tomó (ticks solapados,
+  // reaper de jobs) o ya se procesó, salimos sin reenviar. Reemplaza el read-check
+  // no atómico anterior — cierra la ventana de duplicados.
+  const { data: claimed, error: claimErr } = await service.rpc('claim_broadcast_recipient', {
+    p_id: data.recipient_id,
+  })
+  if (claimErr) throw new Error(`claim recipient: ${claimErr.message}`)
+  if (!claimed) return
+
   // 1. Cargar recipient + broadcast + template + channel + customer.
   const { data: recipient, error: recErr } = await service
     .from('broadcast_recipients')
     .select(
-      'id, broadcast_id, customer_id, status, broadcast:broadcasts(id, tenant_id, channel_id, template_id, variable_mapping), customer:customers(phone, first_name, last_name, opt_in_marketing)',
+      'id, broadcast_id, customer_id, status, broadcast:broadcasts(id, tenant_id, channel_id, template_id, variable_mapping), customer:customers(phone, first_name, last_name, opt_in_marketing, is_blocked)',
     )
     .eq('id', data.recipient_id)
     .maybeSingle()
   if (recErr || !recipient) throw new Error(`recipient: ${recErr?.message ?? 'not found'}`)
-  if (recipient.status !== 'pending') return // idempotencia: ya procesado
 
   type Joined = typeof recipient & {
     broadcast:
@@ -176,14 +185,37 @@ export async function handleSendBroadcastMessage(payload: unknown): Promise<void
         }[]
       | null
     customer:
-      | { phone: string; first_name: string; last_name: string; opt_in_marketing: boolean }
-      | { phone: string; first_name: string; last_name: string; opt_in_marketing: boolean }[]
+      | {
+          phone: string
+          first_name: string
+          last_name: string
+          opt_in_marketing: boolean
+          is_blocked: boolean
+        }
+      | {
+          phone: string
+          first_name: string
+          last_name: string
+          opt_in_marketing: boolean
+          is_blocked: boolean
+        }[]
       | null
   }
   const r = recipient as Joined
   const broadcast = Array.isArray(r.broadcast) ? r.broadcast[0] : r.broadcast
   const customer = Array.isArray(r.customer) ? r.customer[0] : r.customer
   if (!broadcast || !customer) throw new Error('broadcast/customer missing')
+
+  // No contactar (hard opt-out): ni siquiera con opt-in. Se marca failed 'blocked'.
+  if (customer.is_blocked) {
+    await service
+      .from('broadcast_recipients')
+      .update({ status: 'failed', error: 'blocked' })
+      .eq('id', recipient.id)
+    await recomputeBroadcastStats(broadcast.id)
+    await maybeFinalizeBroadcast(broadcast.id)
+    return
+  }
 
   // Compliance §8: re-chequeo de opt-in al ENVIAR (no solo al armar la audiencia).
   // Si el cliente revocó el opt-in entre la materialización y el envío, no se manda.
@@ -319,11 +351,12 @@ async function recomputeBroadcastStats(broadcastId: string): Promise<void> {
 
 async function maybeFinalizeBroadcast(broadcastId: string): Promise<void> {
   const service = createServiceClient()
+  // Esperamos a que no queden ni 'pending' ni 'sending' (claims en vuelo).
   const { count: pending } = await service
     .from('broadcast_recipients')
     .select('id', { head: true, count: 'exact' })
     .eq('broadcast_id', broadcastId)
-    .eq('status', 'pending')
+    .in('status', ['pending', 'sending'])
   if ((pending ?? 0) > 0) return
 
   const { count: failed } = await service

@@ -85,6 +85,27 @@ export async function saveFlowGraph(slug: string, payload: unknown): Promise<Flo
     flowId = newFlow.id
   }
 
+  // Preservar ejecuciones en curso: el FK flow_executions.current_node_id es
+  // ON DELETE SET NULL, así que borrar los nodos anularía el puntero y el próximo
+  // tick reenviaría desde el trigger (bug de la auditoría). Capturamos el puntero
+  // ANTES de borrar y (en edición) pausamos los ticks mientras reescribimos el grafo.
+  const runningExecs = parsed.id
+    ? ((
+        await service
+          .from('flow_executions')
+          .select('id, current_node_id')
+          .eq('flow_id', flowId)
+          .eq('status', 'running')
+      ).data ?? [])
+    : []
+  if (runningExecs.length > 0) {
+    await service
+      .from('flow_executions')
+      .update({ next_run_at: new Date(Date.now() + 60_000).toISOString() })
+      .eq('flow_id', flowId)
+      .eq('status', 'running')
+  }
+
   // Replace graph: delete existing nodes (cascades edges) then re-insert
   const { error: deleteErr } = await service.from('flow_nodes').delete().eq('flow_id', flowId)
   if (deleteErr) return { ok: false, message: deleteErr.message }
@@ -115,6 +136,43 @@ export async function saveFlowGraph(slug: string, payload: unknown): Promise<Flo
     if (edgesErr) return { ok: false, message: edgesErr.message }
   }
 
+  // Restaurar/cancelar ejecuciones según si su paso sobrevivió a la reescritura.
+  let cancelled = 0
+  if (runningExecs.length > 0) {
+    const survivingNodeIds = new Set(parsed.nodes.map((n) => n.id))
+    const nowIso = new Date().toISOString()
+    for (const ex of runningExecs) {
+      if (ex.current_node_id && survivingNodeIds.has(ex.current_node_id)) {
+        // El paso sigue existiendo → restauramos el puntero (el delete lo anuló) y reanudamos.
+        await service
+          .from('flow_executions')
+          .update({ current_node_id: ex.current_node_id, next_run_at: nowIso })
+          .eq('id', ex.id)
+      } else if (ex.current_node_id) {
+        // El paso donde estaba fue eliminado → no se puede continuar coherentemente.
+        await service
+          .from('flow_executions')
+          .update({
+            status: 'cancelled',
+            completed_at: nowIso,
+            error: 'paso eliminado al editar el flow',
+          })
+          .eq('id', ex.id)
+        cancelled += 1
+      } else {
+        // Aún no había arrancado (current_node_id null) → reanudamos desde el trigger.
+        await service.from('flow_executions').update({ next_run_at: nowIso }).eq('id', ex.id)
+      }
+    }
+  }
+
   revalidatePath(`/${slug}/mensajeria/flows`)
-  return { ok: true, id: flowId }
+  return {
+    ok: true,
+    id: flowId,
+    message:
+      cancelled > 0
+        ? `Flow guardado. Se cancelaron ${cancelled} ejecución(es) en curso porque su paso fue eliminado.`
+        : undefined,
+  }
 }

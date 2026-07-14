@@ -73,6 +73,7 @@ export default async function CustomerDetailPage({
     notes: string | null
     birthdate: string | null
     opt_in_marketing: boolean
+    is_blocked: boolean
     points_balance: number
     total_visits: number
     total_spent_cents: number
