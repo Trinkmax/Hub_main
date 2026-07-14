@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import type { WalletData } from '@/lib/wallet/queries'
 import { Carnet } from './carnet'
 import { HistoryAccordion } from './history-accordion'
+import { HowItWorks } from './how-it-works'
 import { PendingBenefits } from './pending-benefits'
 import { PersonalQr } from './personal-qr'
 import { PunchCards } from './punch-cards'
@@ -18,12 +19,13 @@ import { VisitsTimeline } from './visits-timeline'
 import { WalletHeader } from './wallet-header'
 import { WalletPartners } from './wallet-partners'
 
-// Orquestador de la wallet como VISTAS in-place (main → niveles → canjeables),
-// no scroll infinito ni navegación por rutas. Funciona igual standalone (/c/[token])
-// y embebida en el sheet de la carta (que no puede navegar). Al cambiar de vista
-// resetea el scroll del contenedor (window o cuerpo del sheet).
+// Orquestador de la wallet como VISTAS in-place (main → niveles / canjeables /
+// cómo funciona), no scroll infinito ni navegación por rutas. Funciona igual
+// standalone (/c/[token]) y embebida en el sheet de la carta (que no puede
+// navegar). Al cambiar de vista resetea el scroll del contenedor (window o
+// cuerpo del sheet).
 
-type View = 'main' | 'niveles' | 'canjeables'
+type View = 'main' | 'niveles' | 'canjeables' | 'comofunciona'
 
 function resetScroll(el: HTMLElement | null): void {
   let p = el?.parentElement ?? null
@@ -93,6 +95,7 @@ export function WalletViews({
     tier,
     categoryWindowMonths,
     expiry,
+    earn,
     progression,
     partners,
     rewards,
@@ -147,6 +150,24 @@ export function WalletViews({
             />
             <RewardsGrid rewards={rewards} pointsBalance={customer.pointsBalance} />
           </div>
+        ) : view === 'comofunciona' ? (
+          <div
+            key="comofunciona"
+            className="animate-in fade-in slide-in-from-right-3 flex flex-col gap-6 duration-[var(--duration-slow)]"
+          >
+            <BackHeader
+              title="Cómo funciona"
+              subtitle="Tus puntos, tu nivel y cómo sumás"
+              onBack={() => setView('main')}
+            />
+            <HowItWorks
+              windowMonths={categoryWindowMonths}
+              earn={earn}
+              tierColor={tier.current?.color ?? null}
+              onNiveles={hasTiers ? () => setView('niveles') : undefined}
+              onCanjeables={hasRewards ? () => setView('canjeables') : undefined}
+            />
+          </div>
         ) : (
           <>
             {!embedded ? <WalletHeader firstName={customer.firstName} /> : null}
@@ -160,6 +181,7 @@ export function WalletViews({
               expiry={expiry}
               onNiveles={hasTiers ? () => setView('niveles') : undefined}
               onCanjeables={hasRewards ? () => setView('canjeables') : undefined}
+              onHelp={() => setView('comofunciona')}
             />
             <PendingBenefits benefits={pendingBenefits} />
             <TierLadder

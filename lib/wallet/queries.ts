@@ -2,12 +2,14 @@ import 'server-only'
 import { subMonths } from 'date-fns'
 import type { TierBenefitCadence, TierBenefitKind } from '@/lib/points/benefits'
 import { computeExpiry, wouldDropTier } from '@/lib/points/category'
+import { type EarnRate, hasItemBonus, resolveEarnRate } from '@/lib/points/earn-rate'
 import {
   type LoyaltyTier,
   progressToNext,
   resolveTier,
   sortedActiveTiers,
 } from '@/lib/points/tiers'
+import type { PointsRule } from '@/lib/points/types'
 import { createServiceClient } from '@/lib/supabase/service'
 import { computeRewardState } from './reward-state'
 
@@ -76,6 +78,14 @@ export type WalletExpiry = {
   toTierName: string | null
 }
 
+/** Cómo suma puntos el socio (para "Cómo funciona"). Sale de la config real del tenant. */
+export type WalletEarn = {
+  /** Tasa por monto, si se puede enunciar sin mentir (ver resolveEarnRate). */
+  rate: EarnRate | null
+  /** Hay reglas por producto activas → "algunos productos suman extra". */
+  itemBonus: boolean
+}
+
 /** Un escalón de la escalera de niveles con sus beneficios (para la vista aspiracional). */
 export type WalletTierStep = {
   id: string
@@ -126,6 +136,8 @@ export type WalletData = {
   categoryWindowMonths: number
   /** Próximo vencimiento de puntos de categoría (o null si no hay nada por vencer). */
   expiry: WalletExpiry | null
+  /** Cómo suma puntos (tasa por monto + bonus por producto) — para "Cómo funciona". */
+  earn: WalletEarn
   /** Beneficios estructurados del nivel actual (ítems del mes / descuentos / perks / aliados). */
   benefits: WalletBenefit[]
   /** La escalera completa de niveles con beneficios por nivel (para la vista aspiracional). */
@@ -209,6 +221,7 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
     { data: eventsData },
     { data: pendingData },
     { data: partnersData },
+    { data: rulesData },
   ] = await Promise.all([
     service
       .from('tenants')
@@ -300,6 +313,12 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
       .eq('tenant_id', tenantId)
       .order('active', { ascending: false })
       .order('sort', { ascending: true }),
+    // Reglas de acumulación → "cómo sumás" (la tasa real, no una hardcodeada).
+    service
+      .from('points_rules')
+      .select('id, type, config, priority, active')
+      .eq('tenant_id', tenantId)
+      .eq('active', true),
   ])
 
   if (!tenant) return null
@@ -326,6 +345,9 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
         toTierName: drop.toTierName,
       }
     : null
+
+  const rules = (rulesData ?? []) as unknown as PointsRule[]
+  const earn: WalletEarn = { rate: resolveEarnRate(rules), itemBonus: hasItemBonus(rules) }
 
   const pickName = (reward: { name: string } | { name: string }[] | null): string =>
     (Array.isArray(reward) ? reward[0]?.name : reward?.name) ?? 'Recompensa'
@@ -490,6 +512,7 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
     },
     categoryWindowMonths: windowMonths,
     expiry,
+    earn,
     benefits,
     progression,
     partners: (

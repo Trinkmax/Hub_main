@@ -106,6 +106,7 @@ function buildWallet(config: SimConfig, s: SimState, expiresAt: string): WalletD
       s.expiryPoints > 0
         ? { points: s.expiryPoints, expiresAt, wouldDrop: drop.drops, toTierName: drop.toTierName }
         : null,
+    earn: config.earn,
     benefits: current ? (config.benefitsByTier[current.id] ?? []) : [],
     progression,
     partners: config.partners,

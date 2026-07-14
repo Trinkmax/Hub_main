@@ -20,6 +20,12 @@ export function formatPoints(value: number): string {
   return value.toLocaleString('es-AR')
 }
 
+/** Tasa de acumulación en criollo: "1 punto cada $ 1.000". */
+export function formatEarnRate(rate: { points: number; everyCents: number }): string {
+  const pts = rate.points === 1 ? '1 punto' : `${formatPoints(rate.points)} puntos`
+  return `${pts} cada ${formatArs(rate.everyCents)}`
+}
+
 /** dd/MM/yyyy en zona local del navegador (visitas, canjes). */
 export function formatDate(iso: string): string {
   return format(new Date(iso), 'dd/MM/yyyy', { locale: es })

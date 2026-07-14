@@ -1,8 +1,10 @@
 import 'server-only'
 import type { TierBenefitCadence, TierBenefitKind } from '@/lib/points/benefits'
+import { hasItemBonus, resolveEarnRate } from '@/lib/points/earn-rate'
 import type { LoyaltyTier } from '@/lib/points/tiers'
+import type { PointsRule } from '@/lib/points/types'
 import { createServiceClient } from '@/lib/supabase/service'
-import type { WalletBenefit, WalletData } from './queries'
+import type { WalletBenefit, WalletData, WalletEarn } from './queries'
 
 // Config de fidelización del tenant SIN cliente: alimenta el simulador de wallet
 // del admin. El simulador arma un WalletData sintético con puntos ajustables y
@@ -22,6 +24,7 @@ export type SimReward = {
 export type SimConfig = {
   tenant: { id: string; name: string; logoUrl: string | null; brandAccent: string | null }
   windowMonths: number
+  earn: WalletEarn
   tiers: LoyaltyTier[]
   benefitsByTier: Record<string, WalletBenefit[]>
   rewards: SimReward[]
@@ -53,6 +56,7 @@ export async function getSimulatorConfig(tenantSlug: string): Promise<SimConfig 
     { data: benefitsData },
     { data: rewardsData },
     { data: partnersData },
+    { data: rulesData },
   ] = await Promise.all([
     service
       .from('loyalty_tiers')
@@ -79,6 +83,11 @@ export async function getSimulatorConfig(tenantSlug: string): Promise<SimConfig 
       .eq('tenant_id', tenantId)
       .order('active', { ascending: false })
       .order('sort', { ascending: true }),
+    service
+      .from('points_rules')
+      .select('id, type, config, priority, active')
+      .eq('tenant_id', tenantId)
+      .eq('active', true),
   ])
 
   const benefitsByTier: Record<string, WalletBenefit[]> = {}
@@ -133,6 +142,10 @@ export async function getSimulatorConfig(tenantSlug: string): Promise<SimConfig 
     },
     windowMonths:
       (tenant as { category_window_months?: number | null }).category_window_months ?? 4,
+    earn: ((): WalletEarn => {
+      const rules = (rulesData ?? []) as unknown as PointsRule[]
+      return { rate: resolveEarnRate(rules), itemBonus: hasItemBonus(rules) }
+    })(),
     tiers: (tiersData ?? []) as LoyaltyTier[],
     benefitsByTier,
     rewards: (
