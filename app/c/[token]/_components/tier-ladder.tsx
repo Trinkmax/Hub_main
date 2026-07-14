@@ -16,10 +16,13 @@ export function TierLadder({
   progression,
   tier,
   categoryPoints,
+  windowMonths,
 }: {
   progression: Step[]
   tier: WalletData['tier']
   categoryPoints: number
+  /** Ventana móvil con la que se calcula la categoría (la regla, dicha en voz alta). */
+  windowMonths: number
 }): React.JSX.Element | null {
   // Un recorrido de 1 solo nivel no aporta nada (nodo suelto + rail a la nada).
   if (progression.length <= 1) return null
@@ -44,8 +47,9 @@ export function TierLadder({
         <h2 id="ladder-heading" className="font-display text-lg font-semibold tracking-tight">
           Tu recorrido de niveles
         </h2>
-        <p className="text-xs text-muted-foreground">
-          Sumás puntos de categoría con tu consumo y vas subiendo de nivel.
+        <p className="text-xs text-muted-foreground text-balance">
+          Sumás puntos de categoría con cada consumo y subís de nivel. Contamos sólo los últimos{' '}
+          {windowMonths} meses, así que volvé seguido para mantenerlo.
         </p>
       </div>
 

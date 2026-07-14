@@ -10,7 +10,8 @@ import { formatBirthday, formatDayMonth, formatPoints } from './wallet-format'
 // El "carnet": una TARJETA DE SOCIO de verdad, a todo color del nivel, con
 // reflejo (gloss diagonal + barrido al montar + brillo de borde) y el logo del
 // bar en foil monocromo. Debajo, las dos monedas en tarjetas claras (los saldos
-// funcionales). Server Component; los números animan con <NumberTicker>.
+// funcionales) y la FRANJA DE LA REGLA (ver <CategoryRule>).
+// Server Component; los números animan con <NumberTicker>.
 //
 // Contraste: la tinta (texto + logo) se elige por nivel con el mejor contraste
 // (crema sobre tiers oscuros, forest sobre tiers claros) → AA sobre cualquier hex.
@@ -77,6 +78,91 @@ function CurrencyHalf({
   )
 }
 
+/**
+ * La regla, SIEMPRE visible al pie del carnet. Es la única pieza que le cuenta al
+ * socio que los puntos de categoría caducan — antes vivía sólo en el aviso de
+ * vencimiento, que aparece recién a 30 días de perderlos (o sea: nunca, para el
+ * 90% de los socios). Tres estados, siempre con la regla o su consecuencia:
+ *   sin vencimiento próximo → "Tus puntos de categoría duran N meses"
+ *   con vencimiento          → "X pts vencen el DD/MM" + la regla abajo
+ *   con vencimiento que baja → idem, en tono de aviso, + "volvé para no bajar a Y"
+ * Además es la puerta a "Cómo funciona" (si el contenedor pasa `onHelp`).
+ */
+function CategoryRule({
+  windowMonths,
+  expiry,
+  onHelp,
+}: {
+  windowMonths: number
+  expiry: Expiry
+  onHelp?: () => void
+}) {
+  const drops = expiry?.wouldDrop === true
+  const Icon = drops ? TrendingDown : Clock3
+  const hint = expiry
+    ? `Los puntos de categoría duran ${windowMonths} meses`
+    : onHelp
+      ? 'Mirá cómo funciona el club'
+      : null
+
+  const base = `flex w-full items-center gap-2.5 border-t border-border/60 px-4 py-2.5 text-left ${
+    drops ? 'bg-warning/[0.08]' : 'bg-(--cream-tint)'
+  }`
+  const body = (
+    <>
+      <Icon
+        className={`size-4 shrink-0 ${drops ? 'text-warning' : 'text-muted-foreground'}`}
+        aria-hidden="true"
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block text-[11px] leading-tight text-foreground">
+          {expiry ? (
+            <>
+              <span className="font-semibold tabular-nums">{formatPoints(expiry.points)} pts</span>{' '}
+              vencen el{' '}
+              <span className="font-semibold tabular-nums">{formatDayMonth(expiry.expiresAt)}</span>
+              {drops ? (
+                <span className="text-muted-foreground">
+                  {expiry.toTierName
+                    ? ` · volvé para no bajar a ${expiry.toTierName}`
+                    : ' · volvé para no bajar de nivel'}
+                </span>
+              ) : null}
+            </>
+          ) : (
+            <>
+              Tus puntos de categoría{' '}
+              <span className="font-semibold">duran {windowMonths} meses</span>
+            </>
+          )}
+        </span>
+        {hint ? (
+          <span className="mt-0.5 block text-[10px] leading-tight text-muted-foreground">
+            {hint}
+          </span>
+        ) : null}
+      </span>
+      {onHelp ? (
+        <ChevronRight
+          className="size-4 shrink-0 text-muted-foreground transition-transform duration-[var(--duration-base)] ease-[var(--ease-out)] group-hover:translate-x-0.5"
+          aria-hidden="true"
+        />
+      ) : null}
+    </>
+  )
+
+  if (!onHelp) return <div className={base}>{body}</div>
+  return (
+    <button
+      type="button"
+      onClick={onHelp}
+      className={`group ${base} outline-none transition-colors hover:bg-foreground/[0.04] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-foreground`}
+    >
+      {body}
+    </button>
+  )
+}
+
 export function Carnet({
   customer,
   tenant,
@@ -87,6 +173,7 @@ export function Carnet({
   expiry,
   onNiveles,
   onCanjeables,
+  onHelp,
 }: {
   customer: Customer
   tenant: Tenant
@@ -99,6 +186,8 @@ export function Carnet({
   onNiveles?: () => void
   /** Abre la vista de canje; undefined = moneda no interactiva. */
   onCanjeables?: () => void
+  /** Abre "Cómo funciona"; undefined = la franja de la regla es sólo informativa. */
+  onHelp?: () => void
 }): React.JSX.Element {
   const fullName = `${customer.firstName} ${customer.lastName}`.trim()
   const birthday = customer.birthdate ? formatBirthday(customer.birthdate) : null
@@ -210,7 +299,7 @@ export function Carnet({
       {/* ── Las dos monedas (saldos, sobre superficie clara) ───────── */}
       <div className="card-hairline overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
         <div className="grid grid-cols-2 divide-x divide-border/60">
-          {/* STATUS: color de tier, define el nivel, puede bajar (aviso de vencimiento). */}
+          {/* STATUS: color de tier, define el nivel, puede bajar (la regla va abajo). */}
           <CurrencyHalf
             onSelect={onNiveles}
             label="Puntos de categoría"
@@ -218,7 +307,7 @@ export function Carnet({
             unitColorClass="text-(--acc)"
             delayMs={220}
             washed
-            sub={<span>{tierName ? 'Definen tu nivel' : `Últimos ${windowMonths} meses`}</span>}
+            sub={<span>Definen tu nivel</span>}
           />
           {/* GASTO: forest de marca, no vence, se descuenta al canjear. */}
           <CurrencyHalf
@@ -231,28 +320,9 @@ export function Carnet({
           />
         </div>
 
-        {/* Aviso de vencimiento (full-width → mantiene simétricas las mitades) */}
-        {expiry ? (
-          <div className="flex items-center gap-2 border-t border-border/60 bg-warning/[0.08] px-4 py-2.5">
-            {expiry.wouldDrop ? (
-              <TrendingDown className="size-4 shrink-0 text-warning" aria-hidden="true" />
-            ) : (
-              <Clock3 className="size-4 shrink-0 text-warning" aria-hidden="true" />
-            )}
-            <p className="text-[11px] leading-tight text-foreground">
-              <span className="font-semibold tabular-nums">{formatPoints(expiry.points)} pts</span>{' '}
-              vencen el{' '}
-              <span className="font-semibold tabular-nums">{formatDayMonth(expiry.expiresAt)}</span>
-              {expiry.wouldDrop ? (
-                <span className="text-muted-foreground">
-                  {expiry.toTierName
-                    ? ` · volvé para no bajar a ${expiry.toTierName}`
-                    : ' · volvé para no bajar de nivel'}
-                </span>
-              ) : null}
-            </p>
-          </div>
-        ) : null}
+        {/* La regla (full-width → mantiene simétricas las mitades). SIEMPRE visible:
+            es el contrapunto del "No vencen" de la moneda de al lado. */}
+        <CategoryRule windowMonths={windowMonths} expiry={expiry} onHelp={onHelp} />
       </div>
     </section>
   )

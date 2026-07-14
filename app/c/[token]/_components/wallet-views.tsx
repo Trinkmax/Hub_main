@@ -130,6 +130,7 @@ export function WalletViews({
               progression={progression}
               tier={tier}
               categoryPoints={customer.categoryPoints}
+              windowMonths={categoryWindowMonths}
             />
             <TierProgression progression={progression} variant="full" />
             <WalletPartners partners={partners} />
@@ -165,6 +166,7 @@ export function WalletViews({
               progression={progression}
               tier={tier}
               categoryPoints={customer.categoryPoints}
+              windowMonths={categoryWindowMonths}
             />
             <TierProgression
               progression={progression}
