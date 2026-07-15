@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 
-// Las punch cards se unificaron bajo el Club de beneficios (/club/punch-cards).
+// Las punch cards se unificaron en el editor de /menu (Club → "Punch cards").
 // Redirect para no romper links viejos ni bookmarks.
 export default async function PunchCardsRedirect({
   params,
@@ -8,5 +8,5 @@ export default async function PunchCardsRedirect({
   params: Promise<{ tenantSlug: string }>
 }) {
   const { tenantSlug } = await params
-  redirect(`/${tenantSlug}/club/punch-cards`)
+  redirect(`/${tenantSlug}/menu?world=club&tab=punch`)
 }

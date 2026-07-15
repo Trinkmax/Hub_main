@@ -112,35 +112,45 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Crecimiento',
     items: [
       // Difusiones / Audiencias / Flows se movieron al hub "Mensajería" (grupo Hoy).
-      { label: 'Menú', href: (s) => `/${s}/menu`, icon: 'UtensilsCrossed', roles: ['owner'] },
       {
+        // Carta + Club son UN solo editor (/menu) con toggle. "Menú" abre la Carta;
+        // "Club de beneficios" (abajo) abre el mundo Club. El ?world=carta hace que
+        // el resaltado del sidebar sea excluyente (uno u otro, no los dos).
+        label: 'Menú',
+        href: (s) => `/${s}/menu?world=carta`,
+        icon: 'UtensilsCrossed',
+        roles: ['owner'],
+      },
+      {
+        // El Club vive en el MISMO editor que la Carta (/menu), en el mundo
+        // "Club". Los hijos hacen deep-link a cada tab. No hay editor duplicado.
         label: 'Club de beneficios',
-        href: (s) => `/${s}/club`,
+        href: (s) => `/${s}/menu?world=club&tab=programa`,
         icon: 'Star',
         roles: ['owner'],
         children: [
           {
-            label: 'Niveles',
-            href: (s) => `/${s}/club/niveles`,
+            label: 'Puntos y niveles',
+            href: (s) => `/${s}/menu?world=club&tab=programa`,
             icon: 'Sparkles',
             roles: ['owner'],
           },
           {
-            label: 'Puntos y recompensas',
-            href: (s) => `/${s}/club/puntos`,
-            icon: 'Gift',
-            roles: ['owner'],
-          },
-          {
-            label: 'Punch cards',
-            href: (s) => `/${s}/club/punch-cards`,
-            icon: 'Stamp',
+            label: 'Aliados',
+            href: (s) => `/${s}/menu?world=club&tab=aliados`,
+            icon: 'Handshake',
             roles: ['owner'],
           },
           {
             label: 'Bienvenida',
-            href: (s) => `/${s}/club/bienvenida`,
+            href: (s) => `/${s}/menu?world=club&tab=bienvenida`,
             icon: 'Star',
+            roles: ['owner'],
+          },
+          {
+            label: 'Punch cards',
+            href: (s) => `/${s}/menu?world=club&tab=punch`,
+            icon: 'Stamp',
             roles: ['owner'],
           },
         ],

@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 
-// "Puntos y recompensas" se unificó bajo el Club de beneficios (/club/puntos).
+// "Puntos y recompensas" se unificó en el editor de /menu (Club → "Puntos y niveles").
 // Mantenemos este redirect para no romper links viejos ni bookmarks.
 export default async function PuntosRedirect({
   params,
@@ -8,5 +8,5 @@ export default async function PuntosRedirect({
   params: Promise<{ tenantSlug: string }>
 }) {
   const { tenantSlug } = await params
-  redirect(`/${tenantSlug}/club/puntos`)
+  redirect(`/${tenantSlug}/menu?world=club&tab=programa`)
 }

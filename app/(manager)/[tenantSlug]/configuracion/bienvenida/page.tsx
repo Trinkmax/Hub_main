@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 
-// El "Regalo de bienvenida" se movió al Club de beneficios (/club/bienvenida).
+// El "Regalo de bienvenida" se unificó en el editor de /menu (Club → "Bienvenida").
 // Redirect para no romper links viejos ni bookmarks.
 export default async function BienvenidaRedirect({
   params,
@@ -8,5 +8,5 @@ export default async function BienvenidaRedirect({
   params: Promise<{ tenantSlug: string }>
 }) {
   const { tenantSlug } = await params
-  redirect(`/${tenantSlug}/club/bienvenida`)
+  redirect(`/${tenantSlug}/menu?world=club&tab=bienvenida`)
 }

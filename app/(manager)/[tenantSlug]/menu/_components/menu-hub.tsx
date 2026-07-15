@@ -79,6 +79,9 @@ export type MenuHubProps = {
   welcomeConfig: Awaited<ReturnType<typeof getWelcomeRewardConfig>>
   capturePrompt: Awaited<ReturnType<typeof getCapturePromptConfig>>
   punchTemplates: Awaited<ReturnType<typeof listPunchCardTemplates>>
+  /** Estado inicial por deep-link (?world=&tab=). Las viejas rutas /club/* redirigen acá. */
+  initialWorld?: World
+  initialClubTab?: ClubTab
 }
 
 function InfoBanner({ children }: { children: React.ReactNode }) {
@@ -92,8 +95,8 @@ function InfoBanner({ children }: { children: React.ReactNode }) {
 
 export function MenuHub(props: MenuHubProps): React.JSX.Element {
   const { tenantSlug, menu } = props
-  const [world, setWorld] = useState<World>('carta')
-  const [clubTab, setClubTab] = useState<ClubTab>('programa')
+  const [world, setWorld] = useState<World>(props.initialWorld ?? 'carta')
+  const [clubTab, setClubTab] = useState<ClubTab>(props.initialClubTab ?? 'programa')
   const [dir, setDir] = useState<'left' | 'right'>('right')
 
   const changeWorld = (next: World) => {

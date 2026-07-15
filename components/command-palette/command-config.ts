@@ -210,7 +210,7 @@ export const commandEntries: CommandEntry[] = [
     icon: Star,
     group: 'Ir a',
     type: 'navigate',
-    href: (s) => `/${s}/club`,
+    href: (s) => `/${s}/menu?world=club&tab=programa`,
     keywords: ['fidelizacion', 'lealtad', 'loyalty', 'beneficios'],
   },
   {
@@ -219,7 +219,7 @@ export const commandEntries: CommandEntry[] = [
     icon: Sparkles,
     group: 'Ir a',
     type: 'navigate',
-    href: (s) => `/${s}/club/niveles`,
+    href: (s) => `/${s}/menu?world=club&tab=programa`,
     keywords: ['vip', 'tiers', 'escalones', 'club'],
   },
   {
@@ -228,7 +228,7 @@ export const commandEntries: CommandEntry[] = [
     icon: Gift,
     group: 'Ir a',
     type: 'navigate',
-    href: (s) => `/${s}/club/puntos`,
+    href: (s) => `/${s}/menu?world=club&tab=programa`,
     keywords: ['fidelidad', 'rewards', 'recompensas', 'club'],
   },
   {
@@ -237,7 +237,7 @@ export const commandEntries: CommandEntry[] = [
     icon: Stamp,
     group: 'Ir a',
     type: 'navigate',
-    href: (s) => `/${s}/club/punch-cards`,
+    href: (s) => `/${s}/menu?world=club&tab=punch`,
     keywords: ['tarjetas', 'sellos', 'club'],
   },
   {
@@ -246,7 +246,7 @@ export const commandEntries: CommandEntry[] = [
     icon: Star,
     group: 'Ir a',
     type: 'navigate',
-    href: (s) => `/${s}/club/bienvenida`,
+    href: (s) => `/${s}/menu?world=club&tab=bienvenida`,
     keywords: ['bienvenida', 'welcome', 'regalo', 'club'],
   },
   {

@@ -625,15 +625,15 @@ function SectionPunch({ slug }: { slug: string }) {
       <Steps>
         <li>
           Primero necesitás un <strong>reward</strong> (premio canjeable). Andá a{' '}
-          <a href={`/${slug}/club/puntos`} className="text-primary underline">
-            Club → Puntos y recompensas
+          <a href={`/${slug}/menu?world=club&tab=programa`} className="text-primary underline">
+            Menú → Club → Puntos y niveles
           </a>{' '}
           y creá uno (ej: "Café gratis", costo 0 puntos).
         </li>
         <li>
           Andá a{' '}
-          <a href={`/${slug}/club/punch-cards`} className="text-primary underline">
-            Club → Punch cards
+          <a href={`/${slug}/menu?world=club&tab=punch`} className="text-primary underline">
+            Menú → Club → Punch cards
           </a>{' '}
           → "Nueva punch card".
         </li>
