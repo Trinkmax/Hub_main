@@ -147,8 +147,13 @@ export default async function PuntosPage({ params }: { params: Promise<{ tenantS
             <Gift className="size-4 text-primary" />
             <h2 className="font-display text-base font-semibold tracking-tight">Recompensas</h2>
           </header>
-          <NewRewardForm tenantSlug={tenantSlug} tiers={tiers} />
-          <RewardsList tenantSlug={tenantSlug} rewards={rewards} tiers={tiers} />
+          <NewRewardForm tenantSlug={tenantSlug} tenantId={access.tenant.id} tiers={tiers} />
+          <RewardsList
+            tenantSlug={tenantSlug}
+            tenantId={access.tenant.id}
+            rewards={rewards}
+            tiers={tiers}
+          />
         </section>
       </div>
     </div>

@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { createReward, type LoyaltyActionState } from '@/lib/points/actions'
 import { REWARD_CATEGORIES } from '@/lib/points/schemas'
 import type { LoyaltyTier } from '@/lib/points/tiers'
+import { MenuImageUploader } from '../../../menu/_components/image-uploader'
 
 const initial: LoyaltyActionState = { ok: true }
 
@@ -36,7 +37,15 @@ function SubmitBtn() {
   )
 }
 
-export function NewRewardForm({ tenantSlug, tiers }: { tenantSlug: string; tiers: LoyaltyTier[] }) {
+export function NewRewardForm({
+  tenantSlug,
+  tenantId,
+  tiers,
+}: {
+  tenantSlug: string
+  tenantId: string
+  tiers: LoyaltyTier[]
+}) {
   const action = createReward.bind(null, tenantSlug)
   // Ordenamos los niveles por umbral de puntos de categoría para que el selector sea intuitivo.
   const sortedTiers = tiers
@@ -46,12 +55,15 @@ export function NewRewardForm({ tenantSlug, tiers }: { tenantSlug: string; tiers
   const formRef = useRef<HTMLFormElement>(null)
   // La visibilidad viaja por un input hidden controlado ('true' | 'false').
   const [visible, setVisible] = useState(true)
+  // La foto viaja por un input hidden; la URL la resuelve el uploader (Storage).
+  const [imageUrl, setImageUrl] = useState<string | null>(null)
 
   useEffect(() => {
     if (state.ok && state.message) {
       toast.success(state.message)
       formRef.current?.reset()
       setVisible(true)
+      setImageUrl(null)
     } else if (!state.ok) {
       toast.error(state.message)
     }
@@ -85,6 +97,14 @@ export function NewRewardForm({ tenantSlug, tiers }: { tenantSlug: string; tiers
           placeholder="Detalles que ve el cajero al canjear…"
         />
       </div>
+      {/* Foto que ve el cliente en el catálogo de canje de la carta. */}
+      <input type="hidden" name="image_url" value={imageUrl ?? ''} />
+      <MenuImageUploader
+        tenantId={tenantId}
+        value={imageUrl}
+        onChange={setImageUrl}
+        label="Foto de la recompensa"
+      />
       <div className="grid gap-1.5">
         <Label htmlFor="rw-category" className="text-[11px] text-muted-foreground">
           Categoría

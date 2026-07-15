@@ -5,6 +5,7 @@ import {
   Gift,
   Handshake,
   Info,
+  type LucideIcon,
   Plus,
   QrCode,
   Sparkles,
@@ -51,7 +52,9 @@ import { NewCategoryForm } from './new-category-form'
 import { TagsManagerDialog } from './tags-manager-dialog'
 
 type World = 'carta' | 'club'
-type ClubTab = 'niveles' | 'puntos' | 'aliados' | 'bienvenida' | 'punch'
+// 'programa' fusiona lo que antes eran dos tabs (Niveles + Puntos y recompensas)
+// en un solo flujo vertical: ganar → niveles → canjear.
+type ClubTab = 'programa' | 'aliados' | 'bienvenida' | 'punch'
 
 type Rule = {
   id: string
@@ -90,7 +93,7 @@ function InfoBanner({ children }: { children: React.ReactNode }) {
 export function MenuHub(props: MenuHubProps): React.JSX.Element {
   const { tenantSlug, menu } = props
   const [world, setWorld] = useState<World>('carta')
-  const [clubTab, setClubTab] = useState<ClubTab>('niveles')
+  const [clubTab, setClubTab] = useState<ClubTab>('programa')
   const [dir, setDir] = useState<'left' | 'right'>('right')
 
   const changeWorld = (next: World) => {
@@ -267,20 +270,11 @@ function CartaWorld(props: MenuHubProps) {
 // ── CLUB ─────────────────────────────────────────────────────────────────────
 const CLUB_TABS: { value: ClubTab; label: React.ReactNode }[] = [
   {
-    value: 'niveles',
+    value: 'programa',
     label: (
       <span className="inline-flex items-center gap-1.5">
         <Sparkles className="size-3.5" />
-        Niveles
-      </span>
-    ),
-  },
-  {
-    value: 'puntos',
-    label: (
-      <span className="inline-flex items-center gap-1.5">
-        <Gift className="size-3.5" />
-        Puntos y recompensas
+        Puntos y niveles
       </span>
     ),
   },
@@ -313,6 +307,38 @@ const CLUB_TABS: { value: ClubTab; label: React.ReactNode }[] = [
   },
 ]
 
+/** Encabezado de una de las tres etapas del programa (ganar → niveles → canjear). */
+function ProgramaSection({
+  step,
+  icon: Icon,
+  title,
+  hint,
+  children,
+}: {
+  step: number
+  icon: LucideIcon
+  title: string
+  hint: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="space-y-4">
+      <header className="flex items-start gap-3">
+        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+          <Icon className="size-4" aria-hidden />
+        </span>
+        <div className="space-y-0.5">
+          <h2 className="font-display text-lg font-semibold tracking-tight">
+            <span className="tabular-nums text-muted-foreground/50">{step}.</span> {title}
+          </h2>
+          <p className="max-w-prose text-xs text-muted-foreground">{hint}</p>
+        </div>
+      </header>
+      <div className="space-y-4">{children}</div>
+    </section>
+  )
+}
+
 function ClubWorld(
   props: MenuHubProps & {
     clubTab: ClubTab
@@ -322,6 +348,7 @@ function ClubWorld(
 ) {
   const {
     tenantSlug,
+    tenantId,
     menu,
     tags,
     tiers,
@@ -352,75 +379,78 @@ function ClubWorld(
         key={clubTab}
         className="animate-in fade-in slide-in-from-bottom-1 duration-[var(--duration-base)]"
       >
-        {clubTab === 'niveles' ? (
-          <div className="space-y-5">
-            <InfoBanner>
-              El nivel mira los <strong>puntos de categoría</strong> (suma de lo ganado en los
-              últimos 4 meses): sube con la actividad y baja si el cliente deja de venir. Cada nivel
-              desbloquea beneficios desde <strong>Beneficios</strong> en su fila.
-            </InfoBanner>
-            <TiersList
-              tenantSlug={tenantSlug}
-              tiers={tiers}
-              benefitsByTier={benefitsByTier}
-              rewards={activeRewards}
-              partners={partners}
-            />
-          </div>
-        ) : clubTab === 'puntos' ? (
-          <div className="space-y-6">
-            <RedemptionConfigForm tenantSlug={tenantSlug} initial={redemptionConfig} />
-            <div className="grid gap-6 lg:grid-cols-2">
-              <section className="space-y-4">
-                <header className="flex items-center gap-2">
-                  <Star className="size-4 text-primary" />
-                  <h2 className="font-display text-base font-semibold tracking-tight">
-                    Reglas de puntos
-                  </h2>
-                </header>
-                <NewPerAmountForm tenantSlug={tenantSlug} />
-                <details className="card-hairline group rounded-xl border bg-card/60 p-4">
-                  <summary className="cursor-pointer list-none text-sm">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="font-medium">Reglas avanzadas</p>
-                        <p className="text-xs text-muted-foreground">
-                          Bonificar puntos extra por ítem o categoría
-                          {props.perItemRules.length > 0
-                            ? ` · ${props.perItemRules.length} activa(s)`
-                            : ''}
-                          .
-                        </p>
-                      </div>
-                      <span className="text-xs text-muted-foreground group-open:hidden">
-                        Mostrar
-                      </span>
-                      <span className="hidden text-xs text-muted-foreground group-open:inline">
-                        Ocultar
-                      </span>
+        {clubTab === 'programa' ? (
+          <div className="space-y-10">
+            {/* ① CÓMO GANAN — reglas de puntos (compacto, full-width). */}
+            <ProgramaSection
+              step={1}
+              icon={Star}
+              title="Cómo ganan puntos"
+              hint="Cuánto suma cada consumo. Es la base de todo el club."
+            >
+              <NewPerAmountForm tenantSlug={tenantSlug} />
+              <details className="card-hairline group rounded-xl border bg-card/60 p-4">
+                <summary className="cursor-pointer list-none text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium">Reglas avanzadas</p>
+                      <p className="text-xs text-muted-foreground">
+                        Bonificar puntos extra por ítem o categoría
+                        {props.perItemRules.length > 0
+                          ? ` · ${props.perItemRules.length} activa(s)`
+                          : ''}
+                        .
+                      </p>
                     </div>
-                  </summary>
-                  <div className="mt-4">
-                    <NewPerItemForm
-                      tenantSlug={tenantSlug}
-                      items={menu.items}
-                      categories={menu.categories}
-                    />
+                    <span className="text-xs text-muted-foreground group-open:hidden">Mostrar</span>
+                    <span className="hidden text-xs text-muted-foreground group-open:inline">
+                      Ocultar
+                    </span>
                   </div>
-                </details>
-                <RulesList tenantSlug={tenantSlug} rules={rules} menu={menu} />
-              </section>
-              <section className="space-y-4">
-                <header className="flex items-center gap-2">
-                  <Gift className="size-4 text-primary" />
-                  <h2 className="font-display text-base font-semibold tracking-tight">
-                    Recompensas
-                  </h2>
-                </header>
-                <NewRewardForm tenantSlug={tenantSlug} tiers={tiers} />
-                <RewardsList tenantSlug={tenantSlug} rewards={rewards} tiers={tiers} />
-              </section>
-            </div>
+                </summary>
+                <div className="mt-4">
+                  <NewPerItemForm
+                    tenantSlug={tenantSlug}
+                    items={menu.items}
+                    categories={menu.categories}
+                  />
+                </div>
+              </details>
+              <RulesList tenantSlug={tenantSlug} rules={rules} menu={menu} />
+            </ProgramaSection>
+
+            {/* ② NIVELES — la escalera + sus beneficios. */}
+            <ProgramaSection
+              step={2}
+              icon={Sparkles}
+              title="Niveles"
+              hint="Se alcanzan por puntos de categoría (lo ganado en los últimos 4 meses): suben con la actividad y bajan si el cliente deja de venir. Cada nivel desbloquea beneficios desde Beneficios en su fila."
+            >
+              <TiersList
+                tenantSlug={tenantSlug}
+                tiers={tiers}
+                benefitsByTier={benefitsByTier}
+                rewards={activeRewards}
+                partners={partners}
+              />
+            </ProgramaSection>
+
+            {/* ③ CÓMO CANJEAN — pagar con puntos + catálogo visual con fotos. */}
+            <ProgramaSection
+              step={3}
+              icon={Gift}
+              title="Cómo canjean sus puntos"
+              hint="Lo que ve el cliente en la carta. Cargá una foto en cada recompensa para que se vea rica."
+            >
+              <RedemptionConfigForm tenantSlug={tenantSlug} initial={redemptionConfig} />
+              <NewRewardForm tenantSlug={tenantSlug} tenantId={tenantId} tiers={tiers} />
+              <RewardsList
+                tenantSlug={tenantSlug}
+                tenantId={tenantId}
+                rewards={rewards}
+                tiers={tiers}
+              />
+            </ProgramaSection>
           </div>
         ) : clubTab === 'aliados' ? (
           <div className="space-y-5">
@@ -436,7 +466,7 @@ function ClubWorld(
               <EmptyState
                 icon={Gift}
                 title="Todavía no tenés recompensas"
-                description="Creá una recompensa en Puntos y recompensas para usarla como regalo de bienvenida."
+                description="Creá una recompensa en Puntos y niveles para usarla como regalo de bienvenida."
               />
             ) : (
               <WelcomeRewardForm

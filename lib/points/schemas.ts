@@ -75,6 +75,8 @@ export const createRewardSchema = z.object({
   visible_in_catalog: z.coerce.boolean().default(true),
   // Recompensa exclusiva por nivel (null = disponible para todos).
   min_tier_id: optionalUuid,
+  // Foto que se muestra en el catálogo de canje de la carta (subida a Storage).
+  image_url: optionalText(500),
 })
 
 export const updateRewardSchema = createRewardSchema.extend({

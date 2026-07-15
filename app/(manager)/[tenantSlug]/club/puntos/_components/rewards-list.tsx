@@ -1,6 +1,19 @@
 'use client'
 
-import { EyeOff, Gift, Lock, Pause, Pencil, Play, Trash2 } from 'lucide-react'
+import {
+  Beer,
+  Coffee,
+  EyeOff,
+  Gift,
+  Lock,
+  Pause,
+  Pencil,
+  Play,
+  Ticket,
+  Trash2,
+  UtensilsCrossed,
+} from 'lucide-react'
+import Image from 'next/image'
 import { useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import {
@@ -32,6 +45,8 @@ import { deleteReward, type LoyaltyActionState, updateReward } from '@/lib/point
 import type { Reward } from '@/lib/points/queries'
 import { REWARD_CATEGORIES } from '@/lib/points/schemas'
 import type { LoyaltyTier } from '@/lib/points/tiers'
+import { cn } from '@/lib/utils'
+import { MenuImageUploader } from '../../../menu/_components/image-uploader'
 
 const SELECT_CLASS =
   'border-input h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
@@ -43,6 +58,18 @@ const CATEGORY_LABELS: Record<string, string> = {
   cena: 'Cena',
   evento: 'Eventos',
 }
+
+/** Ícono + degradado del fallback "emplatado" para recompensas sin foto (por daypart). */
+const CATEGORY_FALLBACK: Record<
+  string,
+  { icon: typeof Coffee; from: string; to: string; ink: string }
+> = {
+  desayuno: { icon: Coffee, from: '#f4ead6', to: '#e7d3ab', ink: '#7a6338' },
+  almuerzo: { icon: UtensilsCrossed, from: '#eadfce', to: '#d8c39c', ink: '#6f5a34' },
+  cena: { icon: Beer, from: '#e4dcc9', to: '#cdbf9a', ink: '#5f5330' },
+  evento: { icon: Ticket, from: '#e9dcc6', to: '#d6bd93', ink: '#6b5423' },
+}
+const DEFAULT_FALLBACK = { icon: Gift, from: '#e9e2d2', to: '#d5cbb2', ink: '#6b6145' }
 
 /** Orden de las secciones de la lista agrupada. */
 const CATEGORY_ORDER = ['desayuno', 'almuerzo', 'cena', 'evento'] as const
@@ -62,12 +89,65 @@ function groupRewards(rewards: Reward[]): RewardGroup[] {
   return groups
 }
 
+/** Marco visual de la recompensa: foto real, o "emplatado" (degradado + glifo). */
+function RewardMedia({ reward }: { reward: Reward }) {
+  const fb = (reward.category && CATEGORY_FALLBACK[reward.category]) || DEFAULT_FALLBACK
+  const Icon = fb.icon
+  return (
+    <div className="relative aspect-[4/3] w-full overflow-hidden bg-secondary">
+      {reward.image_url ? (
+        <Image
+          src={reward.image_url}
+          alt=""
+          fill
+          sizes="(max-width: 640px) 50vw, 240px"
+          className={cn('object-cover', !reward.active && 'opacity-60 saturate-[0.6]')}
+          unoptimized
+        />
+      ) : (
+        <div
+          className="grid size-full place-items-center"
+          style={{ background: `linear-gradient(140deg, ${fb.from}, ${fb.to})` }}
+        >
+          <Icon className="size-8 opacity-45" style={{ color: fb.ink }} aria-hidden />
+          <span
+            className="pointer-events-none absolute bottom-1.5 left-2 text-[10px] font-medium"
+            style={{ color: fb.ink }}
+          >
+            Sin foto
+          </span>
+        </div>
+      )}
+      {/* Costo — chip legible sobre cualquier imagen. */}
+      <span className="absolute left-2 top-2 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-foreground shadow-sm backdrop-blur-sm">
+        {reward.cost_points} pts
+      </span>
+      {/* Estado (pausada / oculta) — arriba a la derecha. */}
+      <div className="absolute right-2 top-2 flex flex-col items-end gap-1">
+        {!reward.active ? (
+          <Badge variant="outline" className="bg-background/85 backdrop-blur-sm">
+            Pausada
+          </Badge>
+        ) : null}
+        {!reward.visible_in_catalog ? (
+          <Badge variant="muted" className="gap-1 bg-background/85 backdrop-blur-sm">
+            <EyeOff className="size-3" aria-hidden />
+            Oculta
+          </Badge>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 export function RewardsList({
   tenantSlug,
+  tenantId,
   rewards,
   tiers,
 }: {
   tenantSlug: string
+  tenantId: string
   rewards: Reward[]
   tiers: LoyaltyTier[]
 }) {
@@ -81,8 +161,8 @@ export function RewardsList({
   const tierName = (id: string | null): string | null =>
     id ? (tiers.find((t) => t.id === id)?.name ?? 'Nivel eliminado') : null
 
-  // Toggle activo/pausado. Importante: reenviamos min_tier_id, category y
-  // visible_in_catalog existentes para NO perderlos al pausar/activar.
+  // Toggle activo/pausado. Importante: reenviamos los campos existentes (incl. la
+  // foto) para NO perderlos al pausar/activar.
   const onToggle = (r: Reward) => {
     start(async () => {
       const result = await updateReward(tenantSlug, {
@@ -95,6 +175,7 @@ export function RewardsList({
         category: r.category,
         visible_in_catalog: r.visible_in_catalog,
         min_tier_id: r.min_tier_id,
+        image_url: r.image_url,
       })
       if (!result.ok) toast.error(result.message)
     })
@@ -123,70 +204,66 @@ export function RewardsList({
   const groups = groupRewards(rewards)
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {groups.map((group) => (
-        <div key={group.key} className="space-y-2">
+        <div key={group.key} className="space-y-2.5">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             {group.label}
           </h3>
-          <div className="card-hairline divide-y divide-border/60 overflow-hidden rounded-xl border bg-card">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
             {group.items.map((r) => {
               const lockedTier = tierName(r.min_tier_id)
               return (
-                <div key={r.id} className="flex flex-wrap items-center gap-2 px-4 py-3 text-sm">
-                  {r.active ? (
-                    <Badge className="gap-1 bg-success text-success-foreground hover:bg-success/90">
-                      Activa
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline">Pausada</Badge>
-                  )}
-                  <span className="flex-1 truncate font-medium">{r.name}</span>
-                  {!r.visible_in_catalog ? (
-                    <Badge variant="muted" className="gap-1">
-                      <EyeOff className="size-3" aria-hidden />
-                      Oculta
-                    </Badge>
-                  ) : null}
-                  {lockedTier ? (
-                    <Badge variant="muted" className="gap-1">
-                      <Lock className="size-3" aria-hidden />
-                      {lockedTier}
-                    </Badge>
-                  ) : null}
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-primary">
-                    {r.cost_points} pts
-                  </span>
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                    stock: {r.stock === null ? '∞' : r.stock}
-                  </span>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="size-7 text-muted-foreground hover:text-foreground"
-                    onClick={() => setEditing(r)}
-                    aria-label={`Editar ${r.name}`}
-                  >
-                    <Pencil className="size-3.5" />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="size-7 text-muted-foreground hover:text-foreground"
-                    onClick={() => onToggle(r)}
-                    aria-label={r.active ? 'Pausar' : 'Activar'}
-                  >
-                    {r.active ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="size-7 text-muted-foreground hover:text-destructive"
-                    onClick={() => setPendingDelete(r.id)}
-                    aria-label="Borrar"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
+                <div
+                  key={r.id}
+                  className="card-hairline group flex flex-col overflow-hidden rounded-xl border bg-card"
+                >
+                  <RewardMedia reward={r} />
+                  <div className="flex flex-1 flex-col gap-1.5 p-2.5">
+                    <p className="truncate text-sm font-medium leading-tight" title={r.name}>
+                      {r.name}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                      <span>stock: {r.stock === null ? '∞' : r.stock}</span>
+                      {lockedTier ? (
+                        <span className="inline-flex items-center gap-0.5 normal-case tracking-normal">
+                          <Lock className="size-3" aria-hidden />
+                          {lockedTier}
+                        </span>
+                      ) : null}
+                    </div>
+                    {/* Acciones — siempre visibles (el dueño usa tablet). */}
+                    <div className="mt-auto flex items-center justify-end gap-0.5 pt-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="size-7 text-muted-foreground hover:text-foreground"
+                        onClick={() => setEditing(r)}
+                        aria-label={`Editar ${r.name}`}
+                      >
+                        <Pencil className="size-3.5" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="size-7 text-muted-foreground hover:text-foreground"
+                        onClick={() => onToggle(r)}
+                        disabled={pending}
+                        aria-label={r.active ? 'Pausar' : 'Activar'}
+                      >
+                        {r.active ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="size-7 text-muted-foreground hover:text-destructive"
+                        onClick={() => setPendingDelete(r.id)}
+                        aria-label={`Borrar ${r.name}`}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               )
             })}
@@ -197,6 +274,7 @@ export function RewardsList({
       {/* Diálogo de edición de recompensa */}
       <EditRewardDialog
         tenantSlug={tenantSlug}
+        tenantId={tenantId}
         reward={editing}
         tiers={sortedTiers}
         selectClass={SELECT_CLASS}
@@ -237,12 +315,14 @@ export function RewardsList({
 
 function EditRewardDialog({
   tenantSlug,
+  tenantId,
   reward,
   tiers,
   selectClass,
   onClose,
 }: {
   tenantSlug: string
+  tenantId: string
   reward: Reward | null
   tiers: LoyaltyTier[]
   selectClass: string
@@ -252,12 +332,14 @@ function EditRewardDialog({
   const [minTierId, setMinTierId] = useState<string>('')
   const [category, setCategory] = useState<string>('')
   const [visible, setVisible] = useState(true)
+  const [imageUrl, setImageUrl] = useState<string | null>(null)
 
-  // Sincronizamos los selectores controlados cada vez que cambia la recompensa.
+  // Sincronizamos los controlados cada vez que cambia la recompensa.
   useEffect(() => {
     setMinTierId(reward?.min_tier_id ?? '')
     setCategory(reward?.category ?? '')
     setVisible(reward?.visible_in_catalog ?? true)
+    setImageUrl(reward?.image_url ?? null)
   }, [reward])
 
   const handleSubmit = (formData: FormData) => {
@@ -278,6 +360,7 @@ function EditRewardDialog({
         category: category.length > 0 ? category : null,
         visible_in_catalog: visible,
         min_tier_id: minTierId.length > 0 ? minTierId : null,
+        image_url: imageUrl,
       })
       if (result.ok) {
         toast.success('Recompensa actualizada.')
@@ -295,16 +378,22 @@ function EditRewardDialog({
         if (!open) onClose()
       }}
     >
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="font-serif">Editar recompensa</DialogTitle>
           <DialogDescription>
-            Cambiá el detalle, el costo en puntos o a qué nivel del club queda reservada.
+            Cambiá la foto, el detalle, el costo en puntos o a qué nivel del club queda reservada.
           </DialogDescription>
         </DialogHeader>
 
         {reward ? (
           <form action={handleSubmit} className="space-y-3">
+            <MenuImageUploader
+              tenantId={tenantId}
+              value={imageUrl}
+              onChange={setImageUrl}
+              label="Foto de la recompensa"
+            />
             <div className="grid gap-1.5">
               <Label htmlFor="edit-rw-name" className="text-[11px] text-muted-foreground">
                 Nombre

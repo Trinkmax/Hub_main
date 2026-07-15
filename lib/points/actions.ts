@@ -323,6 +323,7 @@ export async function createReward(
     category: formData.get('category'),
     visible_in_catalog: formData.get('visible_in_catalog') !== 'false',
     min_tier_id: formData.get('min_tier_id'),
+    image_url: formData.get('image_url'),
   })
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
@@ -338,6 +339,7 @@ export async function createReward(
     category: parsed.data.category,
     visible_in_catalog: parsed.data.visible_in_catalog,
     min_tier_id: parsed.data.min_tier_id,
+    image_url: parsed.data.image_url,
   })
   if (error) return { ok: false, message: 'No pudimos crear la recompensa.' }
 
@@ -366,6 +368,7 @@ export async function updateReward(
     category?: string | null
     visible_in_catalog?: boolean
     min_tier_id?: string | null
+    image_url?: string | null
   },
 ): Promise<LoyaltyActionState> {
   const tenant = await authorizeOwner(slug)
@@ -386,6 +389,7 @@ export async function updateReward(
       category: parsed.data.category,
       visible_in_catalog: parsed.data.visible_in_catalog,
       min_tier_id: parsed.data.min_tier_id,
+      image_url: parsed.data.image_url,
     })
     .eq('id', parsed.data.id)
     .eq('tenant_id', tenant.id)
