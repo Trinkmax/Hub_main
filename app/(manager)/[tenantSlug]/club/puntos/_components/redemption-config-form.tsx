@@ -17,21 +17,25 @@ export function RedemptionConfigForm({
   initial: { enabled: boolean; ratePointsToCents: number; maxPct: number }
 }) {
   const [enabled, setEnabled] = useState(initial.enabled)
-  const [rate, setRate] = useState(String(initial.ratePointsToCents))
+  // El owner razona en PESOS por punto; a centavos (unidad de guardado) lo
+  // convertimos recién al guardar. Aceptamos decimales (ej: $0,50 por punto).
+  const [ratePesos, setRatePesos] = useState(
+    String(initial.ratePointsToCents / 100).replace('.', ','),
+  )
   const [maxPct, setMaxPct] = useState(String(initial.maxPct))
   const [pending, startTransition] = useTransition()
 
-  const previewPesos = (() => {
-    const r = Number.parseInt(rate, 10)
-    if (!Number.isFinite(r) || r <= 0) return null
-    return (r / 100).toLocaleString('es-AR', { maximumFractionDigits: 2 })
+  const ratePointsToCents = Math.round(Number(ratePesos.replace(',', '.')) * 100)
+  const ratePreview = (() => {
+    if (!Number.isFinite(ratePointsToCents) || ratePointsToCents <= 0) return null
+    return (ratePointsToCents / 100).toLocaleString('es-AR', { maximumFractionDigits: 2 })
   })()
 
   const save = () => {
     startTransition(async () => {
       const r = await updatePointsRedemptionConfigAction(tenantSlug, {
         enabled,
-        ratePointsToCents: Number.parseInt(rate, 10),
+        ratePointsToCents,
         maxPct: Number.parseFloat(maxPct),
       })
       if (r.ok) {
@@ -63,21 +67,27 @@ export function RedemptionConfigForm({
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <Label htmlFor="rate" className="text-xs uppercase tracking-wider">
-            Centavos por punto
+            Pesos por punto
           </Label>
-          <Input
-            id="rate"
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={100000}
-            value={rate}
-            onChange={(e) => setRate(e.target.value)}
-            disabled={!enabled || pending}
-            className="mt-1 tabular-nums"
-          />
-          {previewPesos ? (
-            <p className="mt-1 text-[11px] text-muted-foreground">1 pt = ${previewPesos}</p>
+          <div className="relative mt-1">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+              $
+            </span>
+            <Input
+              id="rate"
+              type="number"
+              inputMode="decimal"
+              min={0.01}
+              max={1000}
+              step={0.5}
+              value={ratePesos}
+              onChange={(e) => setRatePesos(e.target.value)}
+              disabled={!enabled || pending}
+              className="pl-7 tabular-nums"
+            />
+          </div>
+          {ratePreview ? (
+            <p className="mt-1 text-[11px] text-muted-foreground">1 punto = ${ratePreview}</p>
           ) : null}
         </div>
         <div>

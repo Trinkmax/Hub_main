@@ -31,7 +31,7 @@ const FIELD_LABELS: Record<ConditionField, string> = {
   birth_month: 'Mes de cumpleaños',
   days_since_last_visit: 'Días desde última visita',
   visits_count: 'Cantidad de visitas',
-  total_spent_cents: 'Gasto total (centavos)',
+  total_spent_cents: 'Gasto total ($)',
   points_balance: 'Saldo de puntos',
   lifetime_points: 'Puntos acumulados (vida)',
   current_tier_id: 'Nivel del club',
@@ -593,12 +593,37 @@ function ValueControl({
     return renderOptionSelect(SOURCE_OPTIONS, 'Elegí', '')
   }
 
+  // Gasto total: se compara contra total_spent_cents (centavos), pero el owner
+  // razona en PESOS. Input en pesos con "$"; guardamos centavos en node.value.
+  if (node.field === 'total_spent_cents') {
+    const cents = Number(node.value)
+    const pesos = Number.isFinite(cents) && cents > 0 ? String(Math.round(cents / 100)) : ''
+    return (
+      <div className="relative w-full sm:flex-1 sm:max-w-[200px]">
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+          $
+        </span>
+        <Input
+          type="number"
+          inputMode="numeric"
+          min={0}
+          className="h-9 w-full pl-7"
+          value={pesos}
+          onChange={(e) => {
+            const p = e.target.value
+            setValue(p === '' ? 0 : Math.max(0, Math.round(Number(p) * 100)))
+          }}
+          placeholder="0"
+        />
+      </div>
+    )
+  }
+
   // Numérico / texto libre.
   const numericFields: ConditionField[] = [
     'birth_month',
     'days_since_last_visit',
     'visits_count',
-    'total_spent_cents',
     'points_balance',
     'lifetime_points',
     'created_days_ago',

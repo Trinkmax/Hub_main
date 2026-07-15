@@ -101,6 +101,18 @@ export function AutoAcceptForm({
     initial,
   )
   const [enabled, setEnabled] = useState(initialConfig.ticket_auto_accept_enabled)
+  // El tope se guarda en centavos, pero el owner lo piensa en PESOS: campo
+  // visible en pesos + hidden mirror en centavos (vacío = sin límite).
+  const [maxPesos, setMaxPesos] = useState(
+    initialConfig.ticket_auto_accept_max_cents != null
+      ? String(Math.round(initialConfig.ticket_auto_accept_max_cents / 100))
+      : '',
+  )
+  // Vacío o ≤0 → sin límite (evita chocar con el `min 1` del schema en centavos).
+  const maxCents =
+    maxPesos.trim() === '' || Number(maxPesos) <= 0
+      ? ''
+      : String(Math.round(Number(maxPesos) * 100))
 
   // Toast como efecto, no durante el render (evita disparos en cada re-render).
   useEffect(() => {
@@ -126,16 +138,24 @@ export function AutoAcceptForm({
         {enabled ? (
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="ticket_auto_accept_max_cents">Tope de monto (centavos)</Label>
-              <Input
-                id="ticket_auto_accept_max_cents"
-                name="ticket_auto_accept_max_cents"
-                type="number"
-                inputMode="numeric"
-                min={1}
-                placeholder="Sin límite"
-                defaultValue={initialConfig.ticket_auto_accept_max_cents ?? ''}
-              />
+              <Label htmlFor="ticket_auto_accept_max_pesos">Tope de monto</Label>
+              {/* Hidden en centavos (unidad de guardado); el visible es en pesos. */}
+              <input type="hidden" name="ticket_auto_accept_max_cents" value={maxCents} />
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                  $
+                </span>
+                <Input
+                  id="ticket_auto_accept_max_pesos"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  placeholder="Sin límite"
+                  value={maxPesos}
+                  onChange={(e) => setMaxPesos(e.target.value)}
+                  className="pl-7 tabular-nums"
+                />
+              </div>
               <p className="text-xs text-muted-foreground">
                 Comandas más caras requieren confirmación. Vacío = sin límite.
               </p>
