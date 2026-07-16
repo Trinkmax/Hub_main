@@ -1,15 +1,28 @@
 'use client'
 
 import { UtensilsCrossed } from 'lucide-react'
-import Image from 'next/image'
+import { StorageImage } from '@/components/media/storage-image'
 import type { ItemTag } from '@/lib/item-tags/queries'
 import { cn } from '@/lib/utils'
 import { monogram, pickContrastText } from './format'
 
+/** Fallback elegante: monograma sobre degradé sutil con glyph de cubiertos. */
+function ItemMonogram({ name }: { name: string }): React.JSX.Element {
+  return (
+    <div
+      aria-hidden
+      className="flex h-full w-full flex-col items-center justify-center gap-1 bg-gradient-to-br from-secondary/60 via-secondary/30 to-accent/30 text-muted-foreground/60"
+    >
+      <span className="font-serif text-lg font-semibold tracking-tight">{monogram(name)}</span>
+      <UtensilsCrossed className="size-4 opacity-50" />
+    </div>
+  )
+}
+
 /**
- * Imagen del ítem con fallback elegante: si no hay `src`, mostramos un
- * monograma sobre un degradé sutil con un glyph de cubiertos. `unoptimized`
- * porque las imágenes vienen de Storage del tenant (dominios variables).
+ * Imagen del ítem servida directo de Storage (variantes pregeneradas vía
+ * StorageImage — el optimizer de Vercel está agotado). Si no hay `src` o la
+ * carga falla dos veces, cae al monograma.
  */
 export function ItemImage({
   src,
@@ -26,26 +39,12 @@ export function ItemImage({
 }): React.JSX.Element {
   if (src) {
     return (
-      <Image
-        src={src}
-        alt=""
-        fill
-        sizes={sizes}
-        className={cn('object-cover', className)}
-        unoptimized
-        priority={priority}
-      />
+      <StorageImage src={src} sizes={sizes} className={className} priority={priority}>
+        <ItemMonogram name={name} />
+      </StorageImage>
     )
   }
-  return (
-    <div
-      aria-hidden
-      className="flex h-full w-full flex-col items-center justify-center gap-1 bg-gradient-to-br from-secondary/60 via-secondary/30 to-accent/30 text-muted-foreground/60"
-    >
-      <span className="font-serif text-lg font-semibold tracking-tight">{monogram(name)}</span>
-      <UtensilsCrossed className="size-4 opacity-50" />
-    </div>
-  )
+  return <ItemMonogram name={name} />
 }
 
 /** Chip de tag tintado con el color del tag y texto de contraste legible. */

@@ -3,6 +3,7 @@ import { ThemeToggle } from '@/components/theme/theme-toggle'
 import type { TenantFeatures } from '@/lib/platform/features'
 import { createClient } from '@/lib/supabase/server'
 import { getMembershipsForUser } from '@/lib/tenant'
+import { ROLE_LABELS } from '@/lib/tenant/roles'
 import type { Tenant, TenantRole } from '@/lib/tenant/types'
 import { MobileShell } from './mobile-shell'
 import { TenantSwitcherChip } from './tenant-switcher-chip'
@@ -40,6 +41,7 @@ export async function Topbar({
       <div className="hidden flex-1 items-center md:flex">
         <CommandPalette
           tenantSlug={tenant.slug}
+          role={role}
           features={features}
           isPlatformAdmin={isPlatformAdmin}
         />
@@ -48,7 +50,7 @@ export async function Topbar({
       <div className="ml-auto flex items-center gap-2">
         <TenantSwitcherChip current={tenant} memberships={memberships} />
         <ThemeToggle />
-        <UserMenu email={email} role={role} />
+        <UserMenu email={email} role={ROLE_LABELS[role]} />
       </div>
     </header>
   )

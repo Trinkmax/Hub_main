@@ -14,18 +14,25 @@ import {
 } from '@/components/ui/command'
 import { Kbd } from '@/components/ui/kbd'
 import type { TenantFeatures } from '@/lib/platform/features'
+import type { TenantRole } from '@/lib/tenant/types'
 import { commandEntries } from './command-config'
 import { useCommandShortcuts } from './use-command-shortcuts'
 
 type CommandPaletteProps = {
   tenantSlug: string
+  role: TenantRole
   features: TenantFeatures
   isPlatformAdmin: boolean
 }
 
 const GROUPS_ORDER = ['Acciones rápidas', 'Operación', 'Ir a'] as const
 
-export function CommandPalette({ tenantSlug, features, isPlatformAdmin }: CommandPaletteProps) {
+export function CommandPalette({
+  tenantSlug,
+  role,
+  features,
+  isPlatformAdmin,
+}: CommandPaletteProps) {
   const [open, setOpen] = useState(false)
   const router = useRouter()
 
@@ -33,14 +40,16 @@ export function CommandPalette({ tenantSlug, features, isPlatformAdmin }: Comman
   useCommandShortcuts(toggle)
 
   const groupedEntries = useMemo(() => {
-    const visible = commandEntries.filter(
-      (entry) => !entry.feature || isPlatformAdmin || features[entry.feature],
-    )
+    const visible = commandEntries.filter((entry) => {
+      const roleOk = (entry.roles ?? ['owner']).includes(role)
+      const featureOk = !entry.feature || isPlatformAdmin || features[entry.feature]
+      return roleOk && featureOk
+    })
     return GROUPS_ORDER.map((group) => ({
       group,
       items: visible.filter((entry) => entry.group === group),
     })).filter((g) => g.items.length > 0)
-  }, [features, isPlatformAdmin])
+  }, [features, isPlatformAdmin, role])
 
   const handleSelect = useCallback(
     (href: string) => {

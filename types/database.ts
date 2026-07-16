@@ -1751,6 +1751,7 @@ export type Database = {
           price_cents: number
           tenant_id: string
           updated_at: string
+          video_url: string | null
         }
         Insert: {
           active?: boolean
@@ -1766,6 +1767,7 @@ export type Database = {
           price_cents: number
           tenant_id: string
           updated_at?: string
+          video_url?: string | null
         }
         Update: {
           active?: boolean
@@ -1781,6 +1783,7 @@ export type Database = {
           price_cents?: number
           tenant_id?: string
           updated_at?: string
+          video_url?: string | null
         }
         Relationships: [
           {
@@ -1939,6 +1942,56 @@ export type Database = {
           },
         ]
       }
+      partners: {
+        Row: {
+          active: boolean
+          category: string | null
+          created_at: string
+          discount_label: string | null
+          id: string
+          logo_url: string | null
+          name: string
+          sort: number
+          tenant_id: string
+          updated_at: string
+          url: string | null
+        }
+        Insert: {
+          active?: boolean
+          category?: string | null
+          created_at?: string
+          discount_label?: string | null
+          id?: string
+          logo_url?: string | null
+          name: string
+          sort?: number
+          tenant_id: string
+          updated_at?: string
+          url?: string | null
+        }
+        Update: {
+          active?: boolean
+          category?: string | null
+          created_at?: string
+          discount_label?: string | null
+          id?: string
+          logo_url?: string | null
+          name?: string
+          sort?: number
+          tenant_id?: string
+          updated_at?: string
+          url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partners_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       physical_tables: {
         Row: {
           active: boolean
@@ -2027,56 +2080,6 @@ export type Database = {
           webhook_verify_token?: string | null
         }
         Relationships: []
-      }
-      partners: {
-        Row: {
-          active: boolean
-          category: string | null
-          created_at: string
-          discount_label: string | null
-          id: string
-          logo_url: string | null
-          name: string
-          sort: number
-          tenant_id: string
-          updated_at: string
-          url: string | null
-        }
-        Insert: {
-          active?: boolean
-          category?: string | null
-          created_at?: string
-          discount_label?: string | null
-          id?: string
-          logo_url?: string | null
-          name: string
-          sort?: number
-          tenant_id: string
-          updated_at?: string
-          url?: string | null
-        }
-        Update: {
-          active?: boolean
-          category?: string | null
-          created_at?: string
-          discount_label?: string | null
-          id?: string
-          logo_url?: string | null
-          name?: string
-          sort?: number
-          tenant_id?: string
-          updated_at?: string
-          url?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "partners_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: false
-            referencedRelation: "tenants"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       points_rules: {
         Row: {
@@ -3420,17 +3423,17 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "tier_benefit_grants_tier_benefit_id_fkey"
-            columns: ["tier_benefit_id"]
-            isOneToOne: false
-            referencedRelation: "tier_benefits"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "tier_benefit_grants_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tier_benefit_grants_tier_benefit_id_fkey"
+            columns: ["tier_benefit_id"]
+            isOneToOne: false
+            referencedRelation: "tier_benefits"
             referencedColumns: ["id"]
           },
           {
@@ -4046,10 +4049,7 @@ export type Database = {
         Returns: Json
       }
       check_slug_available: { Args: { p_slug: string }; Returns: boolean }
-      claim_broadcast_recipient: {
-        Args: { p_id: string }
-        Returns: boolean
-      }
+      claim_broadcast_recipient: { Args: { p_id: string }; Returns: boolean }
       claim_jobs: {
         Args: { p_kind?: string; p_limit?: number }
         Returns: {
@@ -4085,6 +4085,7 @@ export type Database = {
         Args: { p_name: string; p_slug: string }
         Returns: {
           brand_accent: string | null
+          category_window_months: number
           created_at: string
           currency: string
           default_event_attendance_points: number
@@ -4328,11 +4329,25 @@ export type Database = {
         Args: { p_reservation_id: string }
         Returns: undefined
       }
+      recompute_broadcast_stats: {
+        Args: { p_broadcast_id: string }
+        Returns: undefined
+      }
+      recompute_customer_loyalty: {
+        Args: { p_customer_id: string }
+        Returns: undefined
+      }
       redeem_reward: {
         Args: { p_customer_id: string; p_reward_id: string }
         Returns: {
           balance_after: number
           redemption_id: string
+        }[]
+      }
+      refresh_all_category_points: {
+        Args: never
+        Returns: {
+          updated_count: number
         }[]
       }
       refresh_stats: { Args: never; Returns: undefined }
@@ -4384,7 +4399,6 @@ export type Database = {
         Returns: string
       }
       set_active_tenant: { Args: { p_tenant: string }; Returns: undefined }
-      set_customer_tier: { Args: { p_customer_id: string }; Returns: string }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       split_session: {
@@ -4631,7 +4645,13 @@ export type Database = {
         | "approved"
         | "rejected"
         | "disabled"
-      tenant_role: "owner" | "cashier" | "waiter" | "kitchen"
+      tenant_role:
+        | "owner"
+        | "cashier"
+        | "waiter"
+        | "kitchen"
+        | "editor"
+        | "host"
       ticket_status:
         | "pending"
         | "accepted"
@@ -4850,7 +4870,7 @@ export const Constants = {
       ],
       session_status: ["open", "paid", "merged", "abandoned"],
       template_status: ["draft", "pending", "approved", "rejected", "disabled"],
-      tenant_role: ["owner", "cashier", "waiter", "kitchen"],
+      tenant_role: ["owner", "cashier", "waiter", "kitchen", "editor", "host"],
       ticket_status: [
         "pending",
         "accepted",
@@ -4864,7 +4884,6 @@ export const Constants = {
     },
   },
 } as const
-
 export type BroadcastStatus = Database["public"]["Enums"]["broadcast_status"]
 export type ChannelStatus = Database["public"]["Enums"]["channel_status"]
 export type ChannelType = Database["public"]["Enums"]["channel_type"]

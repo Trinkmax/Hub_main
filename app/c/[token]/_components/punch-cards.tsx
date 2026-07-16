@@ -1,5 +1,5 @@
 import { Check, Stamp } from 'lucide-react'
-import Image from 'next/image'
+import { StorageImage } from '@/components/media/storage-image'
 import { cn } from '@/lib/utils'
 import type { WalletData } from '@/lib/wallet/queries'
 
@@ -40,16 +40,11 @@ function PunchCardRow({ card }: { card: PunchCard }) {
   return (
     <article className="card-hairline rounded-2xl border bg-card p-4">
       <div className="flex items-center gap-3">
-        <div className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-lg bg-(--cream-tint)">
+        <div className="relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-lg bg-(--cream-tint)">
           {card.imageUrl ? (
-            <Image
-              src={card.imageUrl}
-              alt=""
-              width={40}
-              height={40}
-              className="size-full object-cover"
-              unoptimized
-            />
+            <StorageImage src={card.imageUrl} sizes="40px">
+              <Stamp className="size-5 text-muted-foreground" aria-hidden="true" />
+            </StorageImage>
           ) : (
             <Stamp className="size-5 text-muted-foreground" aria-hidden="true" />
           )}

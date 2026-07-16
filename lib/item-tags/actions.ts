@@ -5,6 +5,7 @@ import type { z } from 'zod'
 import { logAudit } from '@/lib/audit'
 import { createClient } from '@/lib/supabase/server'
 import {
+  MENU_EDIT_ROLES,
   RoleRequiredError,
   requireRole,
   requireTenantAccess,
@@ -26,7 +27,7 @@ export type TagActionState =
 async function authorize(slug: string) {
   try {
     const { tenant, role } = await requireTenantAccess(slug)
-    requireRole(role, ['owner'])
+    requireRole(role, MENU_EDIT_ROLES)
     return { tenant, role }
   } catch (error) {
     if (

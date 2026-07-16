@@ -3,10 +3,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 export default function Loading() {
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <PageHeader
         eyebrow="Catálogo"
-        title="Menú"
+        title="Carta"
         description={<Skeleton className="h-4 w-72" />}
         actions={
           <div className="flex flex-wrap items-center gap-2">

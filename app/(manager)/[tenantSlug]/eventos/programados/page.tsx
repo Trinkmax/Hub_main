@@ -10,12 +10,14 @@ import {
   listScheduledTemplates,
 } from '@/lib/salon/queries'
 import {
+  RESERVATION_STAFF_ROLES,
   RoleRequiredError,
   requireRole,
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
 import { CalendarTabs } from './_components/calendar-tabs'
+import { EventosTourButton } from './_components/eventos-tour'
 
 export const metadata = { title: 'Calendario' }
 export const dynamic = 'force-dynamic'
@@ -61,7 +63,7 @@ export default async function CalendarioPage({
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
     access = await requireTenantAccess(tenantSlug)
-    requireRole(access.role, ['owner', 'cashier'])
+    requireRole(access.role, RESERVATION_STAFF_ROLES)
   } catch (e) {
     if (e instanceof TenantNotFoundError) notFound()
     if (e instanceof RoleRequiredError) notFound()
@@ -83,12 +85,15 @@ export default async function CalendarioPage({
         title="Calendario"
         description="Todo lo que pasa en el bar, mes a mes. Programá cada evento a partir de un formato (Sushi Libre, Pizza Libre…) arrastrándolo a su fecha; el catálogo de formatos vive en la pestaña Formatos."
         actions={
-          <Button asChild className="gap-2">
-            <Link href={`/${tenantSlug}/eventos/programados/nuevo`}>
-              <CalendarPlus className="size-4" />
-              Programar evento
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <EventosTourButton role={access.role} />
+            <Button asChild className="gap-2">
+              <Link href={`/${tenantSlug}/eventos/programados/nuevo`} data-tour="eventos-programar">
+                <CalendarPlus className="size-4" />
+                Programar evento
+              </Link>
+            </Button>
+          </div>
         }
       />
 

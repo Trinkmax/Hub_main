@@ -1,5 +1,5 @@
 import { Crown, Gift, Sparkles } from 'lucide-react'
-import Image from 'next/image'
+import { StorageImage } from '@/components/media/storage-image'
 import type { WalletData } from '@/lib/wallet/queries'
 
 // Banner de beneficios pendientes de retiro. Alta jerarquía → cerca del tope.
@@ -17,16 +17,11 @@ function BenefitRow({ benefit }: { benefit: PendingBenefit }) {
   const { Icon, label } = KIND_META[benefit.kind]
   return (
     <li className="flex items-center gap-3 rounded-xl bg-(--brand-accent-foreground)/10 p-2.5">
-      <div className="grid size-11 shrink-0 place-items-center overflow-hidden rounded-lg bg-(--brand-accent-foreground)/15">
+      <div className="relative grid size-11 shrink-0 place-items-center overflow-hidden rounded-lg bg-(--brand-accent-foreground)/15">
         {benefit.imageUrl ? (
-          <Image
-            src={benefit.imageUrl}
-            alt=""
-            width={44}
-            height={44}
-            className="size-full object-cover"
-            unoptimized
-          />
+          <StorageImage src={benefit.imageUrl} sizes="44px">
+            <Icon className="size-5" aria-hidden="true" />
+          </StorageImage>
         ) : (
           <Icon className="size-5" aria-hidden="true" />
         )}

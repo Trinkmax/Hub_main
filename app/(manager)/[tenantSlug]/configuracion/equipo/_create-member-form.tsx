@@ -14,16 +14,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ROLE_LABELS } from '@/lib/tenant/roles'
 import type { TenantRole } from '@/lib/tenant/types'
 import { cn } from '@/lib/utils'
 import { type CreateMemberState, createMemberWithPassword } from './actions'
-
-const ROLE_LABELS: Record<TenantRole, string> = {
-  owner: 'Owner',
-  cashier: 'Cajero',
-  waiter: 'Mozo',
-  kitchen: 'Cocina',
-}
 
 function pickFrom(alphabet: string, randomValue: number): string {
   const idx = randomValue % alphabet.length
@@ -269,7 +263,7 @@ export function CreateMemberForm({ tenantSlug }: { tenantSlug: string }) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="owner">
-                <span className="font-medium">Owner</span> — control total
+                <span className="font-medium">Dueño</span> — control total
               </SelectItem>
               <SelectItem value="cashier">
                 <span className="font-medium">Cajero</span> — cierra mesas
@@ -279,6 +273,12 @@ export function CreateMemberForm({ tenantSlug }: { tenantSlug: string }) {
               </SelectItem>
               <SelectItem value="kitchen">
                 <span className="font-medium">Cocina</span> — pantalla KDS
+              </SelectItem>
+              <SelectItem value="editor">
+                <span className="font-medium">Contenido</span> — edita la carta
+              </SelectItem>
+              <SelectItem value="host">
+                <span className="font-medium">Anfitrión</span> — reservas y eventos
               </SelectItem>
             </SelectContent>
           </Select>

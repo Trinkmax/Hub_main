@@ -574,6 +574,54 @@ export async function listCommissionBreakdown(opts: {
   })
 }
 
+/**
+ * Gestor de reservas vinculado a la cuenta del usuario actual (si existe).
+ * Usa el client anon con RLS: `rm_select_member` deja leer a cualquier
+ * miembro del tenant, así que el host puede resolver su propia identidad.
+ */
+export async function getManagerForUser(opts: {
+  tenantId: string
+  userId: string
+}): Promise<ReservationManagerRow | null> {
+  const supabase = (await createClient()) as SBAny
+  const { data, error } = await supabase
+    .from('reservation_managers')
+    .select('*')
+    .eq('tenant_id', opts.tenantId)
+    .eq('user_id', opts.userId)
+    .order('created_at', { ascending: true })
+    .limit(1)
+  if (error) throw error
+  const row = (data ?? [])[0] as ReservationManagerRow | undefined
+  return row ?? null
+}
+
+/**
+ * Entradas del ledger de UN gestor para "Mis números" (mes calendario).
+ * Client anon + RLS: el owner ve todo (`cl_owner_select`) y el gestor
+ * vinculado ve solo lo suyo (`cl_manager_self_select`). Nunca service role.
+ */
+export async function listMyCommissionEntries(opts: {
+  tenantId: string
+  managerId: string
+  monthStart: string // yyyy-MM-dd (inclusive)
+  monthEnd: string // yyyy-MM-dd (inclusive)
+}): Promise<CommissionBreakdownEntry[]> {
+  const entries = await listCommissionBreakdown({
+    tenantId: opts.tenantId,
+    managerId: opts.managerId,
+    from: opts.monthStart,
+    to: opts.monthEnd,
+  })
+  // El breakdown ordena por calculated_at; acá queremos fecha de reserva desc.
+  return entries.sort((a, b) => {
+    if (a.reservation.reservation_date !== b.reservation.reservation_date) {
+      return a.reservation.reservation_date < b.reservation.reservation_date ? 1 : -1
+    }
+    return a.calculated_at < b.calculated_at ? 1 : -1
+  })
+}
+
 // Inputs requeridos por el motor TS (paridad con SQL).
 export type CommissionInputForEngine = {
   reservation: Pick<

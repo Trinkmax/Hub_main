@@ -341,7 +341,7 @@ describeIfRls('Activación de mesa — multi-rol y ocupación', () => {
   let cashierA: Awaited<ReturnType<typeof createUserClient>>
   let ownerB: Awaited<ReturnType<typeof createUserClient>>
   let tenantA: { id: string; slug: string }
-  let tenantB: { id: string; slug: string }
+  let _tenantB: { id: string; slug: string }
   let qrTokenA: string
   let qrTokenA2: string
 
@@ -355,7 +355,7 @@ describeIfRls('Activación de mesa — multi-rol y ocupación', () => {
       slug: uniqueSlug('act-a'),
       ownerId: ownerA.userId,
     })
-    tenantB = await createTenant({
+    _tenantB = await createTenant({
       name: 'Activación B',
       slug: uniqueSlug('act-b'),
       ownerId: ownerB.userId,

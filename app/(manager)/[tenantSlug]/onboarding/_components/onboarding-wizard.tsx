@@ -281,7 +281,7 @@ function PuntosStep({
       description="Cuando un comensal registrado paga su mesa, suma puntos según las reglas que definas. Lo más común: cada $1.000 gastados → 10 puntos. Después podés crear premios canjeables o punch cards (5 cafés = 1 gratis)."
       tip="Si todavía no estás seguro, salteá este paso. Lo configurás después y los comensales pueden seguir registrándose mientras tanto."
       ctaLabel="Configurar puntos"
-      ctaHref={`/${tenantSlug}/menu?world=club&tab=programa`}
+      ctaHref={`/${tenantSlug}/club?tab=programa`}
       onNext={onNext}
       onPrev={onPrev}
       optional

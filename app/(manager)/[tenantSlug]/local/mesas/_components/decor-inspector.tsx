@@ -52,8 +52,9 @@ export function DecorInspector({ slug, element, onChanged, onClose }: DecorInspe
   const [pending, start] = useTransition()
 
   // Re-sincroniza si cambia el elemento seleccionado (clave: element.id).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: element.id es el disparador
-  // intencional del re-sync al cambiar de elemento; el cuerpo solo lee label/color.
+  // El cuerpo solo lee label/color, pero element.id es el disparador intencional
+  // del re-sync al cambiar de elemento (mismos valores en otro elemento ≠ mismo draft).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: element.id dispara el re-sync a propósito
   useEffect(() => {
     setLabel(element.label ?? '')
     setColor(element.color ?? '')

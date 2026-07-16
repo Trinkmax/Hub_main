@@ -103,8 +103,23 @@ export default async function CartaPage({
   const initialSheet: 'none' | 'club' | 'wallet' =
     wantsWallet && wallet ? 'wallet' : wantsClub ? (wallet ? 'wallet' : 'club') : 'none'
 
+  // Las fotos/videos vienen de Supabase Storage: preconnect para ahorrar el
+  // handshake TLS en la primera imagen. React 19 hoistea los <link> al <head>.
+  let storageOrigin: string | null = null
+  try {
+    storageOrigin = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').origin
+  } catch {
+    storageOrigin = null
+  }
+
   return (
     <BrandAccent accent={tenant.brand_accent} className="force-light min-h-[100dvh] bg-background">
+      {storageOrigin ? (
+        <>
+          <link rel="preconnect" href={storageOrigin} />
+          <link rel="dns-prefetch" href={storageOrigin} />
+        </>
+      ) : null}
       <CartaExperience
         tenantName={tenant.name}
         logoUrl={tenant.logo_url}

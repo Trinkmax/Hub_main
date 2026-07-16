@@ -236,7 +236,7 @@ export async function listSalonTables(tenantId: string): Promise<SalonTableRow[]
     for (const raw of (namedGuests ?? []) as unknown as NamedRow[]) {
       if (!raw.customers) continue
       const full = [raw.customers.first_name, raw.customers.last_name]
-        .filter((s): s is string => Boolean(s && s.trim()))
+        .filter((s): s is string => Boolean(s?.trim()))
         .join(' ')
         .trim()
       if (!full) continue

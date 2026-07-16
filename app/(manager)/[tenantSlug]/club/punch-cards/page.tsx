@@ -7,5 +7,5 @@ export default async function PunchCardsRedirect({
   params: Promise<{ tenantSlug: string }>
 }) {
   const { tenantSlug } = await params
-  redirect(`/${tenantSlug}/menu?world=club&tab=punch`)
+  redirect(`/${tenantSlug}/club?tab=punch`)
 }

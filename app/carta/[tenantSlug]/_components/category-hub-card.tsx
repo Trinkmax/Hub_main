@@ -1,9 +1,26 @@
 'use client'
 
 import { ChevronRight, UtensilsCrossed } from 'lucide-react'
-import Image from 'next/image'
-import { cn } from '@/lib/utils'
+import { StorageImage } from '@/components/media/storage-image'
 import { monogram } from './format'
+
+/** Fallback sin foto: monograma grande sobre degradé. */
+function CategoryMonogram({ name }: { name: string }): React.JSX.Element {
+  return (
+    <div
+      aria-hidden
+      className="flex h-full w-full items-center justify-center bg-gradient-to-br from-secondary/70 via-secondary/40 to-accent/40"
+    >
+      <span className="font-serif text-5xl font-semibold tracking-tight text-muted-foreground/35">
+        {monogram(name)}
+      </span>
+      <UtensilsCrossed
+        className="absolute right-3 top-3 size-4 text-muted-foreground/30"
+        aria-hidden
+      />
+    </div>
+  )
+}
 
 /**
  * Tarjeta de una sección de la carta en el hub drill-down. Tap → entra a esa
@@ -29,27 +46,15 @@ export function CategoryHubCard({
     >
       <div className="absolute inset-0">
         {imageUrl ? (
-          <Image
+          <StorageImage
             src={imageUrl}
-            alt=""
-            fill
             sizes="(max-width: 672px) 50vw, 320px"
-            className="object-cover transition-transform duration-[var(--duration-slow)] group-hover:scale-105"
-            unoptimized
-          />
-        ) : (
-          <div
-            aria-hidden
-            className="flex h-full w-full items-center justify-center bg-gradient-to-br from-secondary/70 via-secondary/40 to-accent/40"
+            className="transition-transform duration-[var(--duration-slow)] group-hover:scale-105"
           >
-            <span className="font-serif text-5xl font-semibold tracking-tight text-muted-foreground/35">
-              {monogram(name)}
-            </span>
-            <UtensilsCrossed
-              className="absolute right-3 top-3 size-4 text-muted-foreground/30"
-              aria-hidden
-            />
-          </div>
+            <CategoryMonogram name={name} />
+          </StorageImage>
+        ) : (
+          <CategoryMonogram name={name} />
         )}
         <div
           aria-hidden

@@ -237,3 +237,21 @@ TODO el trabajo de fondo — un bug ahí frena difusiones, flows y jobs.**
   nunca entra al refresh — correcto si es permanente, pero si en realidad expira, expira en
   silencio. Confirmar semántica del token de Usuario del sistema; si puede expirar, setear
   `token_expires_at` al conectar.
+
+## 2026-07-16 — hallazgos del rediseño UX (nav/roles/carta/reservas)
+
+- **Flujo de invitaciones huérfano.** `invitations` (tabla + RPCs `accept_invitation`/
+  `get_invitation_preview`) y la UI `/accept-invite/[token]` existen completos, pero nada
+  crea invitaciones: el alta real de equipo es `createMemberWithPassword` (service role)
+  en Configuración → Equipo. Decidir: revivir invitaciones por email o retirar el flujo.
+- **RPC `reservation_day_lock_key` sin call sites.** Existe en la DB (y endurecida en
+  security_hardening) pero ni el código TS ni otras funciones SQL la llaman. Candidata
+  a retirar en una migración futura.
+- **CHECK de `tenants.slug` desalineado con `RESERVED_SLUGS`.** El constraint de DB no
+  incluye `m`, `print`, `salon`, `c`, `carta`, `r` que el proxy sí reserva — un tenant
+  podría registrarse con slug `carta` y quedar inaccesible. Alinear en una migración.
+- **`npm run db:types` apunta a `--local`** pero el proyecto trabaja contra el remoto
+  (sin stack local). Regenerar via MCP o cambiar el script a `--project-id`.
+- **Dos sistemas de progreso de setup conviven**: el wizard `/onboarding` (6 pasos,
+  flag en `tenants.settings.onboarding`) y el checklist del dashboard (5 pasos mundo
+  reservas). Unificar criterios o al menos compartir estado.

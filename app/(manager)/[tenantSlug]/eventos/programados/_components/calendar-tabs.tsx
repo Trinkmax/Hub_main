@@ -41,7 +41,7 @@ export function CalendarTabs({
 
   return (
     <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="gap-5">
-      <TabsList className="h-10">
+      <TabsList className="h-10" data-tour="eventos-tabs">
         <TabsTrigger value="calendario" className="gap-1.5 px-3">
           <CalendarPlus className="size-4" />
           Calendario
@@ -52,7 +52,7 @@ export function CalendarTabs({
         </TabsTrigger>
       </TabsList>
 
-      <TabsContent value="calendario" className="space-y-4">
+      <TabsContent value="calendario" className="space-y-4" data-tour="eventos-mes">
         {activeTemplates.length === 0 && events.length === 0 ? (
           <EmptyState
             icon={Settings2}

@@ -21,6 +21,7 @@ function item(id: string, category_id: string, position: number): MenuItem {
     position,
     active: true,
     image_url: null,
+    video_url: null,
     featured: false,
     tags: [],
   }

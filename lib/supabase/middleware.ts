@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSupabaseClientEnv } from '@/lib/env'
+import { canAccessManagerPath, homePathForRole, SALON_ROLES } from '@/lib/tenant/roles'
 // Fuente ÚNICA de slugs reservados (evitamos el set duplicado/divergente de antes).
 import { RESERVED_SLUGS } from '@/lib/tenant/types'
 
@@ -29,7 +30,7 @@ const PUBLIC_PREFIXES = [
   '/forgot-password',
 ]
 
-const STAFF_ROLES = new Set(['cashier', 'waiter', 'kitchen'])
+const STAFF_ROLES = new Set<string>(SALON_ROLES)
 
 export function isPublicPath(pathname: string) {
   if (PUBLIC_PATHS.has(pathname)) return true
@@ -129,24 +130,36 @@ export async function updateSession(request: NextRequest) {
     if (activeTenantId) {
       const lookup = await getActiveRoleAndSlug(supabase, user.id, activeTenantId)
       if (lookup) {
-        const dest = STAFF_ROLES.has(lookup.role) ? `/${lookup.slug}/salon` : `/${lookup.slug}`
-        return NextResponse.redirect(new URL(dest, request.url))
+        return NextResponse.redirect(
+          new URL(homePathForRole(lookup.role, lookup.slug), request.url),
+        )
       }
     }
     return NextResponse.redirect(new URL('/', request.url))
   }
 
-  // Staff user landing on the manager workspace → bounce to /salon.
-  // Owner can navigate freely (peek mode in /salon allowed).
+  // Ruteo por rol dentro del tenant:
+  //  - staff de salón (cashier/waiter/kitchen) → siempre /salon
+  //  - roles acotados del manager (editor/host) → solo sus prefijos permitidos
+  //  - owner navega libre (peek mode en /salon permitido)
   if (user) {
     const segments = pathname.split('/').filter(Boolean)
     const slug = segments[0]
     const rest = segments.slice(1)
 
-    if (slug && !RESERVED_SLUGS.has(slug) && rest[0] !== 'salon') {
+    if (slug && !RESERVED_SLUGS.has(slug)) {
       const role = await getRoleForSlug(supabase, user.id, slug)
-      if (role && STAFF_ROLES.has(role)) {
-        return NextResponse.redirect(new URL(`/${slug}/salon`, request.url))
+      if (role) {
+        const inSalon = rest[0] === 'salon'
+        if (inSalon) {
+          if (!STAFF_ROLES.has(role) && role !== 'owner') {
+            return NextResponse.redirect(new URL(homePathForRole(role, slug), request.url))
+          }
+        } else if (STAFF_ROLES.has(role)) {
+          return NextResponse.redirect(new URL(`/${slug}/salon`, request.url))
+        } else if (!canAccessManagerPath(role, rest)) {
+          return NextResponse.redirect(new URL(homePathForRole(role, slug), request.url))
+        }
       }
     }
   }

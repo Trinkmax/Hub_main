@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { logAudit } from '@/lib/audit'
 import { createClient } from '@/lib/supabase/server'
 import {
+  RESERVATION_OPERATOR_ROLES,
+  RESERVATION_STAFF_ROLES,
   RoleRequiredError,
   requireRole,
   requireTenantAccess,
@@ -67,8 +69,8 @@ async function authorize(
   }
 }
 
-const STAFF = ['owner', 'cashier'] as const satisfies ReadonlyArray<TenantRole>
-const OPERATORS = ['owner', 'cashier', 'waiter'] as const satisfies ReadonlyArray<TenantRole>
+const STAFF = RESERVATION_STAFF_ROLES
+const OPERATORS = RESERVATION_OPERATOR_ROLES
 const OWNER_ONLY = ['owner'] as const satisfies ReadonlyArray<TenantRole>
 
 function noAccess(): ActionState {
@@ -282,6 +284,7 @@ export async function updateSalonReservation(
   revalidatePath(`/${slug}/reservas`)
   revalidatePath(`/${slug}/reservas/${id}`)
   revalidatePath(`/${slug}/salon/reservas-operativo`)
+  revalidatePath(`/${slug}/operativo`)
   return { ok: true, message: 'Reserva actualizada.' }
 }
 
@@ -320,6 +323,7 @@ export async function cancelSalonReservation(
 
   revalidatePath(`/${slug}/reservas`)
   revalidatePath(`/${slug}/salon/reservas-operativo`)
+  revalidatePath(`/${slug}/operativo`)
   revalidatePath(`/${slug}/eventos`)
   return { ok: true, message: 'Reserva cancelada.' }
 }
@@ -361,6 +365,7 @@ export async function transitionStatus(
   revalidatePath(`/${slug}/reservas`)
   revalidatePath(`/${slug}/reservas/${parsed.data.id}`)
   revalidatePath(`/${slug}/salon/reservas-operativo`)
+  revalidatePath(`/${slug}/operativo`)
   return { ok: true, data: { row: data as unknown as Record<string, unknown> } }
 }
 
@@ -424,6 +429,7 @@ export async function updateActualGuests(
 
   revalidatePath(`/${slug}/reservas`)
   revalidatePath(`/${slug}/salon/reservas-operativo`)
+  revalidatePath(`/${slug}/operativo`)
   return { ok: true }
 }
 

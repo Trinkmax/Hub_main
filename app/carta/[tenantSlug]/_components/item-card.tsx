@@ -1,6 +1,7 @@
 'use client'
 
-import { ChevronRight, Sparkles, Star } from 'lucide-react'
+import { ChevronRight, Play, Sparkles, Star } from 'lucide-react'
+import { posterUrlFor } from '@/lib/menu/media-urls'
 import type { MenuItem } from '@/lib/menu/queries'
 import { cn } from '@/lib/utils'
 import { formatARS } from './format'
@@ -26,7 +27,11 @@ export function ItemCard({
       className="card-hairline group flex w-full items-stretch gap-3 rounded-2xl border border-border/60 bg-card p-2.5 text-left shadow-sm transition-all duration-[var(--duration-base)] ease-[var(--ease-out)] hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99]"
     >
       <div className="relative size-[76px] shrink-0 overflow-hidden rounded-xl bg-secondary/40">
-        <ItemImage src={item.image_url} name={item.name} sizes="76px" />
+        <ItemImage
+          src={item.image_url ?? (item.video_url ? posterUrlFor(item.video_url) : null)}
+          name={item.name}
+          sizes="76px"
+        />
         {item.featured && (
           <span
             role="img"
@@ -34,6 +39,15 @@ export function ItemCard({
             aria-label="Recomendado"
           >
             <Star className="size-3 fill-current" aria-hidden />
+          </span>
+        )}
+        {item.video_url && (
+          <span
+            role="img"
+            className="absolute bottom-1 left-1 flex size-5 items-center justify-center rounded-full bg-black/55 text-white shadow-sm backdrop-blur-sm"
+            aria-label="Tiene video"
+          >
+            <Play className="size-3 fill-current" aria-hidden />
           </span>
         )}
       </div>

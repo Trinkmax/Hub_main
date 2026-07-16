@@ -84,8 +84,7 @@ export function calculateCommission(
 
   let bonusPerGuest = 0
   if (
-    input.scheduledEvent &&
-    input.scheduledEvent.full_bonus_active &&
+    input.scheduledEvent?.full_bonus_active &&
     input.scheduledEvent.total_used >= input.scheduledEvent.capacity
   ) {
     bonusPerGuest = Math.max(0, bonusFullPerGuestCents | 0)

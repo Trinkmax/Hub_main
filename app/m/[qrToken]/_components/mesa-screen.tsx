@@ -135,7 +135,7 @@ export function MesaScreen({
       ],
     })
     return cleanup
-  }, [state, browserToken, qrToken])
+  }, [state, browserToken, qrToken, router.refresh])
 
   // Auto-abrir el sheet de captura una sola vez por sesión, si aplica.
   useEffect(() => {

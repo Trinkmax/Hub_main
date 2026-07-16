@@ -38,14 +38,47 @@ describe('resolveNavGroups — rol + feature + superadmin', () => {
     )
   })
 
-  it('el filtro de rol sigue aplicando: un cashier no ve grupos owner-only', () => {
+  it('el filtro de rol sigue aplicando: un cashier no ve el workspace manager', () => {
+    // El proxy rebota a cashier/waiter/kitchen hacia /salon; el sidebar del
+    // manager es explícito por rol, así que a un cashier no le queda nada.
     const groups = resolveNavGroups('cashier', SLUG, allOff, false)
-    expect(group(groups, 'Crecimiento')).toBeUndefined() // Marketing/Menú/Club son owner
-    expect(group(groups, 'Negocio')).toBeUndefined() // Estadísticas/Config son owner
-    expect(labels(groups)).toEqual(expect.arrayContaining(['Hoy', 'Agenda', 'Clientes']))
-    // QR del club (owner) se filtra; Acreditar (todos) queda.
-    expect(itemLabels(groups, 'Clientes')).not.toContain('QR del club')
-    expect(itemLabels(groups, 'Clientes')).toContain('Acreditar')
+    expect(groups).toEqual([])
+  })
+
+  it('editor (contenido) ve SOLO la carta: editar + ver como cliente', () => {
+    const groups = resolveNavGroups('editor', SLUG, allOff, false)
+    expect(labels(groups)).toEqual(['Crecimiento'])
+    expect(itemLabels(groups, 'Crecimiento')).toEqual(['Carta', 'Ver carta'])
+    const verCarta = group(groups, 'Crecimiento')?.items.find((i) => i.label === 'Ver carta')
+    expect(verCarta?.href).toBe('/carta/hub')
+    expect(verCarta?.newTab).toBe(true)
+    // Con tan pocos items, los grupos no colapsan.
+    expect(groups.every((g) => !g.collapsible)).toBe(true)
+  })
+
+  it('host (anfitrión) ve operativo + agenda + sus números, nada del negocio del owner', () => {
+    const groups = resolveNavGroups('host', SLUG, allOff, false)
+    expect(labels(groups)).toEqual(['Hoy', 'Agenda', 'Negocio'])
+    expect(itemLabels(groups, 'Hoy')).toEqual(['Operativo'])
+    expect(itemLabels(groups, 'Agenda')).toEqual(['Reservas', 'Calendario'])
+    expect(itemLabels(groups, 'Negocio')).toEqual(['Mis números'])
+    const all = groups.flatMap((g) => g.items.map((i) => i.label))
+    expect(all).not.toContain('Estadísticas')
+    expect(all).not.toContain('Mensajería')
+    expect(all).not.toContain('Configuración')
+  })
+
+  it('el owner ve Configuración anclada (pinned, grupo Sistema) y grupos colapsables', () => {
+    const groups = resolveNavGroups('owner', SLUG, allOff, false)
+    const sistema = group(groups, 'Sistema')
+    expect(sistema?.pinned).toBe(true)
+    expect(sistema?.items.map((i) => i.label)).toEqual(['Configuración'])
+    expect(sistema?.items[0]?.children?.map((c) => c.label)).toEqual(['Documentación'])
+    // Hoy no colapsa (cockpit diario); el resto sí.
+    expect(group(groups, 'Hoy')?.collapsible).toBeFalsy()
+    for (const label of ['Agenda', 'Clientes', 'Crecimiento', 'Negocio']) {
+      expect(group(groups, label)?.collapsible).toBe(true)
+    }
   })
 
   it('resuelve hrefs con el slug y mantiene la anidación de Personas', () => {
@@ -85,18 +118,14 @@ describe('resolveNavGroups — rol + feature + superadmin', () => {
     expect(topLevel).not.toContain('Marketing')
   })
 
-  it('Mensajería es visible para staff como item único (el sub-nav filtra permisos adentro)', () => {
-    // La navegación interna (Inbox/Difusiones/…) ya no vive en el sidebar: es un
-    // sub-nav propio de /mensajeria filtrado por rol (ver messaging-nav.test.ts).
-    // Acá sólo garantizamos que el acceso al hub no quede owner-gated para staff.
-    const waiter = resolveNavGroups('waiter', SLUG, allOff, false)
-    const wMsg = group(waiter, 'Hoy')?.items.find((i) => i.label === 'Mensajería')
-    expect(wMsg?.href).toBe('/hub/mensajeria')
-    expect(wMsg?.children ?? []).toEqual([])
-
-    const cashier = resolveNavGroups('cashier', SLUG, allOff, false)
-    const cMsg = group(cashier, 'Hoy')?.items.find((i) => i.label === 'Mensajería')
-    expect(cMsg?.href).toBe('/hub/mensajeria')
-    expect(cMsg?.children ?? []).toEqual([])
+  it('Mensajería queda owner-only en el sidebar (los roles de salón no ven el manager)', () => {
+    for (const role of ['waiter', 'cashier', 'kitchen', 'editor', 'host'] as const) {
+      const all = resolveNavGroups(role, SLUG, allOff, false).flatMap((g) =>
+        g.items.map((i) => i.label),
+      )
+      expect(all).not.toContain('Mensajería')
+    }
+    const owner = resolveNavGroups('owner', SLUG, allOff, false)
+    expect(itemLabels(owner, 'Hoy')).toContain('Mensajería')
   })
 })

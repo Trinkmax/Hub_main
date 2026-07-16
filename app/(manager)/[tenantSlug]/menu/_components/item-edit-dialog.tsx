@@ -34,8 +34,11 @@ import { createItemTag } from '@/lib/item-tags/actions'
 import type { ItemTagRow } from '@/lib/item-tags/queries'
 import { deleteMenuItem, updateMenuItem } from '@/lib/menu/actions'
 import type { MenuCategory, MenuItem } from '@/lib/menu/queries'
+import { deleteMenuImageByUrl } from '@/lib/menu/upload-image'
+import { deleteMenuVideoByUrl } from '@/lib/menu/upload-video'
 import { CategoryTreePicker } from './category-tree-picker'
 import { MenuImageUploader } from './image-uploader'
+import { MenuVideoUploader } from './video-uploader'
 
 const NEW_TAG_DEFAULT_COLOR = '#94a3b8'
 
@@ -69,6 +72,7 @@ export function ItemEditDialog({
     item.points_override === null ? '' : String(item.points_override),
   )
   const [imageUrl, setImageUrl] = useState<string | null>(item.image_url ?? null)
+  const [videoUrl, setVideoUrl] = useState<string | null>(item.video_url ?? null)
   const [active, setActive] = useState(item.active)
   const router = useRouter()
   const [featured, setFeatured] = useState(item.featured)
@@ -123,11 +127,29 @@ export function ItemEditDialog({
         price_cents: priceCents,
         points_override: pts,
         image_url: imageUrl,
+        video_url: videoUrl,
         active,
         featured,
         tag_ids: selectedTagIds,
       })
       if (r.ok) {
+        // Si se reemplazó o quitó la foto/el video, borrar los archivos
+        // previos del bucket para no dejar huérfanos (mismo patrón que
+        // category-edit-dialog; best-effort, no bloquea el guardado).
+        if (item.image_url && item.image_url !== imageUrl) {
+          try {
+            await deleteMenuImageByUrl(item.image_url)
+          } catch {
+            // best-effort
+          }
+        }
+        if (item.video_url && item.video_url !== videoUrl) {
+          try {
+            await deleteMenuVideoByUrl(item.video_url)
+          } catch {
+            // best-effort
+          }
+        }
         toast.success('Guardado.')
         router.refresh()
         onClose()
@@ -286,6 +308,8 @@ export function ItemEditDialog({
                 onChange={setImageUrl}
                 label="Foto del ítem"
               />
+
+              <MenuVideoUploader tenantId={tenantId} value={videoUrl} onChange={setVideoUrl} />
             </TabsContent>
 
             <TabsContent value="tags" className="m-0 grid gap-4 outline-none">

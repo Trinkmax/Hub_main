@@ -1,6 +1,7 @@
 import {
   BarChart3,
   BookOpen,
+  CalendarCheck,
   CalendarDays,
   ChefHat,
   ClipboardList,
@@ -24,6 +25,7 @@ import {
   Zap,
 } from 'lucide-react'
 import type { FeatureKey } from '@/lib/platform/features'
+import type { TenantRole } from '@/lib/tenant/types'
 
 export type CommandActionType = 'navigate' | 'navigate-new'
 
@@ -39,6 +41,11 @@ export type CommandEntry = {
   keywords?: string[]
   /** Si está, sólo se muestra cuando la feature está ON (o quien mira es superadmin). */
   feature?: FeatureKey
+  /**
+   * Roles que ven la entrada. Default: solo owner (fail-closed: el palette es
+   * mayormente territorio del dueño; los roles acotados suman lo suyo explícito).
+   */
+  roles?: TenantRole[]
 }
 
 export const commandEntries: CommandEntry[] = [
@@ -51,6 +58,16 @@ export const commandEntries: CommandEntry[] = [
     type: 'navigate-new',
     href: (s) => `/${s}/clientes/nuevo`,
     keywords: ['cliente', 'persona', 'agregar', 'crear'],
+  },
+  {
+    id: 'new-reservation',
+    label: 'Nueva reserva',
+    icon: CalendarCheck,
+    group: 'Acciones rápidas',
+    type: 'navigate-new',
+    href: (s) => `/${s}/reservas/nuevo`,
+    keywords: ['reserva', 'mesa', 'agendar', 'crear'],
+    roles: ['owner', 'host'],
   },
   {
     id: 'new-broadcast',
@@ -69,6 +86,7 @@ export const commandEntries: CommandEntry[] = [
     type: 'navigate-new',
     href: (s) => `/${s}/eventos/programados/nuevo`,
     keywords: ['fecha', 'agenda', 'show', 'fiesta', 'calendario'],
+    roles: ['owner', 'host'],
   },
   {
     id: 'new-flow',
@@ -122,6 +140,26 @@ export const commandEntries: CommandEntry[] = [
   },
 
   // Ir a (navegación)
+  {
+    id: 'operativo',
+    label: 'Operativo',
+    icon: ClipboardList,
+    group: 'Ir a',
+    type: 'navigate',
+    href: (s) => `/${s}/operativo`,
+    keywords: ['hoy', 'timeline', 'llegadas', 'dia'],
+    roles: ['owner', 'host'],
+  },
+  {
+    id: 'my-numbers',
+    label: 'Mis números',
+    icon: BarChart3,
+    group: 'Ir a',
+    type: 'navigate',
+    href: (s) => `/${s}/mis-numeros`,
+    keywords: ['comisiones', 'ganancias', 'plata', 'liquidacion'],
+    roles: ['host'],
+  },
   {
     id: 'home',
     label: 'Resumen',
@@ -185,6 +223,7 @@ export const commandEntries: CommandEntry[] = [
       'show',
       'peña',
     ],
+    roles: ['owner', 'host'],
   },
   {
     id: 'reservations',
@@ -194,15 +233,17 @@ export const commandEntries: CommandEntry[] = [
     type: 'navigate',
     href: (s) => `/${s}/reservas`,
     keywords: ['reserva', 'mesa', 'reservar'],
+    roles: ['owner', 'host'],
   },
   {
     id: 'menu',
-    label: 'Menú',
+    label: 'Carta',
     icon: UtensilsCrossed,
     group: 'Ir a',
     type: 'navigate',
     href: (s) => `/${s}/menu`,
-    keywords: ['carta', 'productos', 'items'],
+    keywords: ['menu', 'carta', 'productos', 'items', 'fotos'],
+    roles: ['owner', 'editor'],
   },
   {
     id: 'club',
@@ -210,7 +251,7 @@ export const commandEntries: CommandEntry[] = [
     icon: Star,
     group: 'Ir a',
     type: 'navigate',
-    href: (s) => `/${s}/menu?world=club&tab=programa`,
+    href: (s) => `/${s}/club?tab=programa`,
     keywords: ['fidelizacion', 'lealtad', 'loyalty', 'beneficios'],
   },
   {
@@ -219,7 +260,7 @@ export const commandEntries: CommandEntry[] = [
     icon: Sparkles,
     group: 'Ir a',
     type: 'navigate',
-    href: (s) => `/${s}/menu?world=club&tab=programa`,
+    href: (s) => `/${s}/club?tab=programa`,
     keywords: ['vip', 'tiers', 'escalones', 'club'],
   },
   {
@@ -228,7 +269,7 @@ export const commandEntries: CommandEntry[] = [
     icon: Gift,
     group: 'Ir a',
     type: 'navigate',
-    href: (s) => `/${s}/menu?world=club&tab=programa`,
+    href: (s) => `/${s}/club?tab=programa`,
     keywords: ['fidelidad', 'rewards', 'recompensas', 'club'],
   },
   {
@@ -237,7 +278,7 @@ export const commandEntries: CommandEntry[] = [
     icon: Stamp,
     group: 'Ir a',
     type: 'navigate',
-    href: (s) => `/${s}/menu?world=club&tab=punch`,
+    href: (s) => `/${s}/club?tab=punch`,
     keywords: ['tarjetas', 'sellos', 'club'],
   },
   {
@@ -246,7 +287,7 @@ export const commandEntries: CommandEntry[] = [
     icon: Star,
     group: 'Ir a',
     type: 'navigate',
-    href: (s) => `/${s}/menu?world=club&tab=bienvenida`,
+    href: (s) => `/${s}/club?tab=bienvenida`,
     keywords: ['bienvenida', 'welcome', 'regalo', 'club'],
   },
   {
@@ -257,6 +298,7 @@ export const commandEntries: CommandEntry[] = [
     type: 'navigate',
     href: (s) => `/${s}/menu/tags`,
     keywords: ['etiquetas'],
+    roles: ['owner', 'editor'],
   },
   {
     id: 'floor-plan',

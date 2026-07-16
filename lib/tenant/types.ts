@@ -1,4 +1,4 @@
-export type TenantRole = 'owner' | 'cashier' | 'waiter' | 'kitchen'
+export type TenantRole = 'owner' | 'cashier' | 'waiter' | 'kitchen' | 'editor' | 'host'
 
 export type Tenant = {
   id: string
@@ -29,7 +29,14 @@ export type MembershipWithTenant = {
   tenant: Pick<Tenant, 'id' | 'name' | 'slug' | 'logo_url'>
 }
 
-export const TENANT_ROLES: ReadonlyArray<TenantRole> = ['owner', 'cashier', 'waiter', 'kitchen']
+export const TENANT_ROLES: ReadonlyArray<TenantRole> = [
+  'owner',
+  'cashier',
+  'waiter',
+  'kitchen',
+  'editor',
+  'host',
+]
 
 /**
  * Fuente ÚNICA de slugs reservados (paths globales que nunca son un tenant).

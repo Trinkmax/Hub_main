@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { listScheduledTemplates } from '@/lib/salon/queries'
 import {
+  RESERVATION_STAFF_ROLES,
   RoleRequiredError,
   requireRole,
   requireTenantAccess,
@@ -28,7 +29,7 @@ export default async function NuevoEventoProgramadoPage({
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
     access = await requireTenantAccess(tenantSlug)
-    requireRole(access.role, ['owner', 'cashier'])
+    requireRole(access.role, RESERVATION_STAFF_ROLES)
   } catch (e) {
     if (e instanceof TenantNotFoundError) notFound()
     if (e instanceof RoleRequiredError) notFound()

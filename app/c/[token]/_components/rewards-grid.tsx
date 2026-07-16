@@ -8,8 +8,8 @@ import {
   Ticket,
   UtensilsCrossed,
 } from 'lucide-react'
-import Image from 'next/image'
 import type { CSSProperties } from 'react'
+import { StorageImage } from '@/components/media/storage-image'
 import { cn } from '@/lib/utils'
 import type { WalletData } from '@/lib/wallet/queries'
 import { WalletCarousel } from './wallet-carousel'
@@ -72,13 +72,10 @@ function RewardCard({
     >
       <div className="relative aspect-[4/3] w-full overflow-hidden">
         {reward.imageUrl ? (
-          <Image
+          <StorageImage
             src={reward.imageUrl}
-            alt=""
-            fill
             sizes="152px"
-            className={cn('object-cover', !canRedeem && 'saturate-[0.6]')}
-            unoptimized
+            className={cn(!canRedeem && 'saturate-[0.6]')}
           />
         ) : (
           <div

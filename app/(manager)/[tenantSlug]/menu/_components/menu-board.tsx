@@ -34,6 +34,7 @@ import {
 import { useRouter } from 'next/navigation'
 import { useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { StorageImage } from '@/components/media/storage-image'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -72,6 +73,11 @@ import { CategoryTreePicker } from './category-tree-picker'
 import { MenuSearch } from './menu-search'
 import { NewCategoryForm } from './new-category-form'
 import { NewItemForm } from './new-item-form'
+
+/** Ítems propios + de todo el subárbol (para el contador de categorías-madre). */
+function totalItemsOf(node: MenuTreeNode): number {
+  return node.items.length + node.children.reduce((sum, child) => sum + totalItemsOf(child), 0)
+}
 
 // Normaliza texto para búsqueda insensible a acentos y mayúsculas.
 function norm(s: string): string {
@@ -199,7 +205,7 @@ export function MenuBoard({
         {current ? (
           <Popover>
             <PopoverTrigger asChild>
-              <Button size="sm" variant="outline" className="gap-1.5">
+              <Button size="sm" variant="outline" className="gap-1.5" data-tour="menu-agregar-item">
                 <Plus className="size-3.5" /> Agregar ítem
               </Button>
             </PopoverTrigger>
@@ -239,13 +245,30 @@ export function MenuBoard({
         </Popover>
       </div>
 
-      {/* Ítems directos del nivel actual */}
-      {current ? (
+      {/* Subcategorías primero: en una categoría contenedora SON el contenido.
+          El bloque de ítems directos solo aparece cuando hay ítems (o cuando la
+          categoría es hoja, para invitar a cargar el primero). */}
+      <div data-tour="menu-categorias">
+        <SubcategoryList
+          tenantSlug={tenantSlug}
+          tenantId={tenantId}
+          parentId={current?.id ?? null}
+          heading={current ? `Dentro de ${current.name}` : 'Categorías'}
+          nodes={levelNodes}
+          allCategories={categories}
+          onEnter={setCurrentId}
+        />
+      </div>
+
+      {current && (levelItems.length > 0 || current.children.length === 0) ? (
         <div className="card-hairline rounded-xl border border-border/70 bg-card p-4 sm:p-5">
           <p className="mb-3 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
             Ítems de {current.name}
           </p>
+          {/* key por categoría: CategoryRow tiene estado optimista propio (useState
+              de items) y sin remount arrastraría los ítems del nivel anterior. */}
           <CategoryRow
+            key={current.id}
             category={current}
             items={levelItems}
             tenantSlug={tenantSlug}
@@ -257,25 +280,12 @@ export function MenuBoard({
         </div>
       ) : null}
 
-      {/* Subcategorías del nivel actual */}
-      <SubcategoryList
-        tenantSlug={tenantSlug}
-        tenantId={tenantId}
-        parentId={current?.id ?? null}
-        nodes={levelNodes}
-        allCategories={categories}
-        onEnter={setCurrentId}
-      />
-
-      {levelNodes.length === 0 && (!current || current.items.length === 0) ? (
+      {/* Dentro de una categoría, el vacío ya lo comunica la tarjeta de ítems. */}
+      {!current && levelNodes.length === 0 ? (
         <EmptyState
           icon={FolderTree}
-          title={current ? 'Categoría vacía' : 'Empezá creando una categoría'}
-          description={
-            current
-              ? 'Agregá ítems o subcategorías con los botones de arriba.'
-              : 'Las categorías agrupan tu carta. Podés anidar subcategorías dentro.'
-          }
+          title="Empezá creando una categoría"
+          description="Las categorías agrupan tu carta. Podés anidar subcategorías dentro."
         />
       ) : null}
     </div>
@@ -286,6 +296,7 @@ function SubcategoryList({
   tenantSlug,
   tenantId,
   parentId,
+  heading,
   nodes,
   allCategories,
   onEnter,
@@ -293,6 +304,7 @@ function SubcategoryList({
   tenantSlug: string
   tenantId: string
   parentId: string | null
+  heading: string
   nodes: MenuTreeNode[]
   allCategories: MenuCategory[]
   onEnter: (id: string) => void
@@ -351,7 +363,7 @@ function SubcategoryList({
       <SortableContext items={order.map((c) => c.id)} strategy={verticalListSortingStrategy}>
         <div className="space-y-2">
           <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-            Subcategorías
+            {heading}
           </p>
           {order.map((node) => (
             <SubcategoryRow
@@ -393,6 +405,7 @@ function SubcategoryRow({
 
   const directItems = node.items.length
   const subcats = node.children.length
+  const totalItems = totalItemsOf(node)
 
   const onToggle = () => {
     startTransition(async () => {
@@ -435,7 +448,7 @@ function SubcategoryRow({
     <div
       ref={setNodeRef}
       style={style}
-      className="card-hairline flex items-center gap-2 rounded-xl border border-border/70 bg-card px-3 py-2.5"
+      className="card-hairline group flex items-center gap-2 rounded-xl border border-border/70 bg-card p-2 pr-3 transition-[box-shadow,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:shadow-md"
     >
       <button
         {...attributes}
@@ -449,21 +462,41 @@ function SubcategoryRow({
       <button
         type="button"
         onClick={() => onEnter(node.id)}
-        className="flex flex-1 items-center gap-2 text-left"
+        className="flex min-w-0 flex-1 items-center gap-3 text-left"
       >
-        <FolderTree className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <span className="font-serif text-base font-semibold tracking-tight">{node.name}</span>
-        {!node.active ? (
-          <Badge variant="muted" className="text-[10px]">
-            Pausada
-          </Badge>
-        ) : null}
-        <span className="text-xs tabular-nums text-muted-foreground">
-          {subcats > 0 ? `${subcats} subcat · ` : ''}
-          {directItems} ítem{directItems === 1 ? '' : 's'}
+        <span className="relative flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-secondary/50">
+          {node.image_url ? (
+            <StorageImage src={node.image_url} alt="" sizes="48px" />
+          ) : (
+            <FolderTree className="size-5 text-muted-foreground/70" aria-hidden />
+          )}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-2">
+            <span className="truncate font-serif text-base font-semibold tracking-tight">
+              {node.name}
+            </span>
+            {!node.active ? (
+              <Badge variant="muted" className="shrink-0 text-[10px]">
+                Pausada
+              </Badge>
+            ) : null}
+          </span>
+          <span className="block text-xs tabular-nums text-muted-foreground">
+            {subcats > 0
+              ? `${subcats} subcategoría${subcats === 1 ? '' : 's'} · ${totalItems} ítem${totalItems === 1 ? '' : 's'} en total`
+              : `${directItems} ítem${directItems === 1 ? '' : 's'}`}
+          </span>
         </span>
       </button>
-      <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
+      <span className="hidden shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground/80 transition-colors group-hover:text-foreground sm:flex">
+        Entrar
+        <ChevronRight
+          className="size-4 transition-transform duration-[var(--duration-fast)] group-hover:translate-x-0.5"
+          aria-hidden
+        />
+      </span>
+      <ChevronRight className="size-4 shrink-0 text-muted-foreground sm:hidden" aria-hidden />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button

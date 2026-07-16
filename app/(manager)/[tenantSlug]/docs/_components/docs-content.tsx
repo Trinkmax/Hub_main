@@ -41,7 +41,7 @@ export function DocsContent({ tenantSlug, role }: { tenantSlug: string; role: st
     },
     {
       id: 'menu',
-      label: 'Menú y carta',
+      label: 'La carta',
       icon: UtensilsCrossed,
       Component: () => <SectionMenu slug={tenantSlug} />,
     },
@@ -329,7 +329,7 @@ function SectionMesas({ slug }: { slug: string }) {
 function SectionMenu({ slug }: { slug: string }) {
   return (
     <div>
-      <H2>Menú y carta</H2>
+      <H2>La carta</H2>
       <P>
         Tu carta se organiza en categorías (Cervezas, Tragos, Picadas, Postres) con ítems adentro.
         Eso es lo que ve el comensal cuando escanea el QR.
@@ -340,13 +340,14 @@ function SectionMenu({ slug }: { slug: string }) {
         <li>
           Andá a{' '}
           <a href={`/${slug}/menu`} className="text-primary underline">
-            Menú
-          </a>
-          .
+            Carta
+          </a>{' '}
+          (grupo Crecimiento del menú lateral).
         </li>
         <li>Creá categorías primero (ej: "Tragos clásicos").</li>
         <li>
-          Adentro de cada categoría, agregá ítems con: nombre, descripción, precio, imagen opcional.
+          Adentro de cada categoría, agregá ítems con: nombre, descripción, precio, y foto o video
+          opcionales (se optimizan solos al subirlos).
         </li>
         <li>Marcá ítems como inactivos cuando se acaben (no se borran, vuelven con un toggle).</li>
       </Steps>
@@ -355,7 +356,7 @@ function SectionMenu({ slug }: { slug: string }) {
       <P>
         En{' '}
         <a href={`/${slug}/menu/tags`} className="text-primary underline">
-          Configuración → Tags de carta
+          Carta → Gestionar etiquetas
         </a>{' '}
         creás etiquetas (#cafe, #vegano, #sin-tacc) y las asignás a ítems del menú. Los tags se usan
         en las <strong>punch cards</strong> para definir qué cuenta como un "stamp".
@@ -625,15 +626,15 @@ function SectionPunch({ slug }: { slug: string }) {
       <Steps>
         <li>
           Primero necesitás un <strong>reward</strong> (premio canjeable). Andá a{' '}
-          <a href={`/${slug}/menu?world=club&tab=programa`} className="text-primary underline">
-            Menú → Club → Puntos y niveles
+          <a href={`/${slug}/club?tab=programa`} className="text-primary underline">
+            Club → Puntos y niveles
           </a>{' '}
           y creá uno (ej: "Café gratis", costo 0 puntos).
         </li>
         <li>
           Andá a{' '}
-          <a href={`/${slug}/menu?world=club&tab=punch`} className="text-primary underline">
-            Menú → Club → Punch cards
+          <a href={`/${slug}/club?tab=punch`} className="text-primary underline">
+            Club → Punch cards
           </a>{' '}
           → "Nueva punch card".
         </li>

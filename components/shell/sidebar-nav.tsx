@@ -3,18 +3,50 @@
 import { ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { computeActiveHrefs } from './nav-active'
 import type { ResolvedNavGroup, ResolvedNavItem } from './nav-config'
 import { NAV_ICONS } from './nav-icons'
 
+/**
+ * Preferencia de grupos expandidos/colapsados. El grupo con la ruta activa se
+ * abre siempre (la preferencia no puede "esconder" dónde estás parado).
+ */
+const STORAGE_KEY = 'hub:nav:groups'
+
+function readGroupPrefs(): Record<string, boolean> {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) return {}
+    const parsed: unknown = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, boolean>
+    }
+  } catch {
+    // storage bloqueado o JSON corrupto → arrancamos de cero
+  }
+  return {}
+}
+
+function writeGroupPref(label: string, open: boolean): void {
+  try {
+    const prefs = readGroupPrefs()
+    prefs[label] = open
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs))
+  } catch {
+    // sin storage no persistimos, el toggle igual funciona en memoria
+  }
+}
+
 export function SidebarNav({
   groups,
   onNavigate,
+  className,
 }: {
   groups: ResolvedNavGroup[]
   onNavigate?: () => void
+  className?: string
 }) {
   const pathname = usePathname()
   // `useSearchParams` para que los hijos por `?segment=` desempaten bien y no
@@ -26,35 +58,139 @@ export function SidebarNav({
   )
 
   return (
-    <nav className="flex flex-1 flex-col gap-5 px-3 py-4">
-      {groups.map((group) => (
-        <div key={group.label} className="space-y-1">
-          <div className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80">
-            {group.label}
-          </div>
-          <ul className="space-y-0.5">
-            {group.items.map((item) =>
-              item.children?.length ? (
-                <SidebarParent
-                  key={item.label}
-                  item={item}
-                  activeHrefs={activeHrefs}
-                  onNavigate={onNavigate}
-                />
-              ) : (
-                <li key={item.label}>
-                  <SidebarLink
-                    item={item}
-                    active={!item.newTab && activeHrefs.has(item.href)}
-                    onNavigate={onNavigate}
-                  />
-                </li>
-              ),
+    <nav className={cn('flex flex-1 flex-col gap-4 px-3 py-4', className)}>
+      {groups.map((group) =>
+        group.collapsible ? (
+          <CollapsibleGroup
+            key={group.label}
+            group={group}
+            activeHrefs={activeHrefs}
+            onNavigate={onNavigate}
+          />
+        ) : (
+          <div key={group.label} className="space-y-1">
+            {group.pinned ? null : (
+              <div className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80">
+                {group.label}
+              </div>
             )}
-          </ul>
-        </div>
-      ))}
+            <GroupItems group={group} activeHrefs={activeHrefs} onNavigate={onNavigate} />
+          </div>
+        ),
+      )}
     </nav>
+  )
+}
+
+function groupContainsActive(group: ResolvedNavGroup, activeHrefs: Set<string>): boolean {
+  return group.items.some(
+    (item) =>
+      (!item.newTab && activeHrefs.has(item.href)) ||
+      (item.children?.some((c) => !c.newTab && activeHrefs.has(c.href)) ?? false),
+  )
+}
+
+function CollapsibleGroup({
+  group,
+  activeHrefs,
+  onNavigate,
+}: {
+  group: ResolvedNavGroup
+  activeHrefs: Set<string>
+  onNavigate?: () => void
+}) {
+  const containsActive = groupContainsActive(group, activeHrefs)
+  // SSR y primer render cliente coinciden (sólo dependen de la ruta activa);
+  // la preferencia guardada se aplica recién después del mount.
+  const [open, setOpen] = useState(containsActive)
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: sólo al montar — aplica la preferencia guardada una vez
+  useEffect(() => {
+    const pref = readGroupPrefs()[group.label]
+    if (typeof pref === 'boolean') setOpen(pref || containsActive)
+  }, [])
+
+  // Navegar hacia adentro de un grupo colapsado lo abre (nunca escondemos la
+  // ubicación actual). No pisa la preferencia guardada: es apertura contextual.
+  useEffect(() => {
+    if (containsActive) setOpen(true)
+  }, [containsActive])
+
+  const toggle = () => {
+    setOpen((v) => {
+      writeGroupPref(group.label, !v)
+      return !v
+    })
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        className="group/header flex h-8 w-full items-center justify-between rounded-md px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80 transition-colors duration-[var(--duration-fast)] hover:bg-(--cream-tint) hover:text-foreground"
+      >
+        <span className="flex items-center gap-2">
+          {group.label}
+          {!open && containsActive ? (
+            <span aria-hidden className="size-1.5 rounded-full bg-primary" />
+          ) : null}
+        </span>
+        <ChevronRight
+          className={cn(
+            'size-3.5 shrink-0 text-muted-foreground/60 transition-transform duration-[var(--duration-fast)] group-hover/header:text-foreground',
+            open && 'rotate-90',
+          )}
+          aria-hidden
+        />
+      </button>
+      <div
+        className={cn(
+          'grid transition-[grid-template-rows] duration-[var(--duration-base)] ease-[var(--ease-out)]',
+          open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className="pt-0.5">
+            <GroupItems group={group} activeHrefs={activeHrefs} onNavigate={onNavigate} />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function GroupItems({
+  group,
+  activeHrefs,
+  onNavigate,
+}: {
+  group: ResolvedNavGroup
+  activeHrefs: Set<string>
+  onNavigate?: () => void
+}) {
+  return (
+    <ul className="space-y-0.5">
+      {group.items.map((item) =>
+        item.children?.length ? (
+          <SidebarParent
+            key={item.label}
+            item={item}
+            activeHrefs={activeHrefs}
+            onNavigate={onNavigate}
+          />
+        ) : (
+          <li key={item.label}>
+            <SidebarLink
+              item={item}
+              active={!item.newTab && activeHrefs.has(item.href)}
+              onNavigate={onNavigate}
+            />
+          </li>
+        ),
+      )}
+    </ul>
   )
 }
 

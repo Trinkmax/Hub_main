@@ -17,7 +17,7 @@ describeIfRls('RLS — loyalty tiers + ganancia + gating', () => {
   let ownerA: Awaited<ReturnType<typeof createUserClient>>
   let ownerB: Awaited<ReturnType<typeof createUserClient>>
   let tenantA: { id: string; slug: string }
-  let tenantB: { id: string; slug: string }
+  let _tenantB: { id: string; slug: string }
   let customerId: string
   let plataId: string
   let oroId: string
@@ -33,7 +33,7 @@ describeIfRls('RLS — loyalty tiers + ganancia + gating', () => {
       slug: uniqueSlug('bara'),
       ownerId: ownerA.userId,
     })
-    tenantB = await createTenant({
+    _tenantB = await createTenant({
       name: 'Bar B',
       slug: uniqueSlug('barb'),
       ownerId: ownerB.userId,

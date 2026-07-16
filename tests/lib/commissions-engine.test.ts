@@ -239,7 +239,7 @@ describe('calculateCommission — split de gestores', () => {
     expect(r[0]?.manager_id).toBe('a')
     expect(r[0]?.payable_cents).toBe(2)
     expect(r[1]?.payable_cents).toBe(1)
-    expect(r[0]!.payable_cents + r[1]!.payable_cents).toBe(3)
+    expect((r[0]?.payable_cents ?? 0) + (r[1]?.payable_cents ?? 0)).toBe(3)
   })
 
   it('solo asistente eligible → 100% al asistente', () => {

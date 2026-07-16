@@ -10,6 +10,7 @@ import {
   RoleRequiredError,
   requireRole,
   requireTenantAccess,
+  SALON_READ_ROLES,
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
@@ -24,7 +25,7 @@ import type { DayCapacityBucket, ReservationWithJoins } from './types'
 async function authorizeRead(slug: string) {
   try {
     const access = await requireTenantAccess(slug)
-    requireRole(access.role, ['owner', 'cashier', 'waiter'])
+    requireRole(access.role, SALON_READ_ROLES)
     return access
   } catch (error) {
     if (

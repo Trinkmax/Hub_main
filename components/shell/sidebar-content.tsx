@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { Suspense } from 'react'
 import type { TenantFeatures } from '@/lib/platform/features'
+import { ROLE_LABELS } from '@/lib/tenant/roles'
 import type { Tenant, TenantRole } from '@/lib/tenant/types'
 import { resolveNavGroups } from './nav-config'
 import { SidebarNav } from './sidebar-nav'
@@ -19,6 +20,8 @@ export function SidebarContent({
   onNavigate?: () => void
 }) {
   const groups = resolveNavGroups(role, tenant.slug, features, isPlatformAdmin)
+  const mainGroups = groups.filter((g) => !g.pinned)
+  const pinnedGroups = groups.filter((g) => g.pinned)
 
   return (
     <>
@@ -49,9 +52,17 @@ export function SidebarContent({
 
       <div className="flex-1 overflow-y-auto">
         <Suspense fallback={null}>
-          <SidebarNav groups={groups} onNavigate={onNavigate} />
+          <SidebarNav groups={mainGroups} onNavigate={onNavigate} />
         </Suspense>
       </div>
+
+      {pinnedGroups.length > 0 ? (
+        <div className="border-t border-border/60">
+          <Suspense fallback={null}>
+            <SidebarNav groups={pinnedGroups} onNavigate={onNavigate} className="py-2" />
+          </Suspense>
+        </div>
+      ) : null}
 
       <div className="border-t border-border/60 px-4 py-3">
         <p className="text-[11px] font-medium text-muted-foreground/90">{tenant.name}</p>
@@ -59,7 +70,7 @@ export function SidebarContent({
           /{tenant.slug}
         </p>
         <p className="mt-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground/60">
-          {role}
+          {ROLE_LABELS[role]}
         </p>
       </div>
     </>

@@ -13,14 +13,8 @@ import {
   Text,
 } from '@react-email/components'
 import { render } from '@react-email/render'
+import { ROLE_LABELS } from '@/lib/tenant/roles'
 import type { TenantRole } from '@/lib/tenant/types'
-
-const ROLE_LABELS: Record<TenantRole, string> = {
-  owner: 'Owner',
-  cashier: 'Cajero',
-  waiter: 'Mozo',
-  kitchen: 'Cocina',
-}
 
 export type InvitationEmailProps = {
   tenantName: string

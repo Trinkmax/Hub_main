@@ -41,16 +41,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ROLE_LABELS } from '@/lib/tenant/roles'
 import type { TenantRole } from '@/lib/tenant/types'
 import { cn } from '@/lib/utils'
 import { removeMember, setMemberPassword, updateMemberRole } from './actions'
-
-const ROLE_LABELS: Record<TenantRole, string> = {
-  owner: 'Owner',
-  cashier: 'Cajero',
-  waiter: 'Mozo',
-  kitchen: 'Cocina',
-}
 
 export type Member = {
   id: string
@@ -147,10 +141,12 @@ export function MemberRow({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="owner">Owner</SelectItem>
+          <SelectItem value="owner">Dueño</SelectItem>
           <SelectItem value="cashier">Cajero</SelectItem>
           <SelectItem value="waiter">Mozo</SelectItem>
           <SelectItem value="kitchen">Cocina</SelectItem>
+          <SelectItem value="editor">Contenido</SelectItem>
+          <SelectItem value="host">Anfitrión</SelectItem>
         </SelectContent>
       </Select>
 

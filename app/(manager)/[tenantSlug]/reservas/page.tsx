@@ -9,6 +9,7 @@ import { getDayCapacitySnapshot, listManagers, listSalonReservations } from '@/l
 import { salonStatusEnum, salonZoneEnum } from '@/lib/salon/schemas'
 import { requireTenantAccess, TenantNotFoundError } from '@/lib/tenant'
 import { DayNavigator } from './_components/day-navigator'
+import { ReservasTourButton } from './_components/reservas-tour'
 import { ReservationsFilters } from './_components/reservations-filters'
 import { ReservationsTable } from './_components/reservations-table'
 
@@ -104,14 +105,20 @@ export default async function ReservasPage({
         description={`${total.toLocaleString('es-AR')} ${total === 1 ? 'reserva' : 'reservas'} · página ${page} de ${totalPages}`}
         actions={
           <div className="flex flex-wrap gap-2">
+            <ReservasTourButton role={access.role} />
             <Button asChild variant="outline" className="gap-2">
-              <Link href={`/${tenantSlug}/salon/reservas-operativo`} target="_blank" rel="noopener">
+              <Link
+                href={`/${tenantSlug}/salon/reservas-operativo`}
+                target="_blank"
+                rel="noopener"
+                data-tour="reservas-operativo-link"
+              >
                 <MonitorSmartphone className="size-4" />
                 Panel operativo
               </Link>
             </Button>
             <Button asChild className="gap-2">
-              <Link href={`/${tenantSlug}/reservas/nuevo`}>
+              <Link href={`/${tenantSlug}/reservas/nuevo`} data-tour="reservas-nueva">
                 <CalendarPlus className="size-4" />
                 Nueva reserva
               </Link>
@@ -130,14 +137,18 @@ export default async function ReservasPage({
           </Button>
         </div>
       ) : day ? (
-        <DayNavigator tenantSlug={tenantSlug} day={day} today={today} capacity={dayCapacity} />
+        <div data-tour="reservas-dia">
+          <DayNavigator tenantSlug={tenantSlug} day={day} today={today} capacity={dayCapacity} />
+        </div>
       ) : null}
 
-      <ReservationsFilters
-        tenantSlug={tenantSlug}
-        managers={managers.map((m) => ({ id: m.id, display_name: m.display_name }))}
-        defaults={{ q, status, zone, managerId, dateFrom: fromParam, dateTo: toParam }}
-      />
+      <div data-tour="reservas-filtros">
+        <ReservationsFilters
+          tenantSlug={tenantSlug}
+          managers={managers.map((m) => ({ id: m.id, display_name: m.display_name }))}
+          defaults={{ q, status, zone, managerId, dateFrom: fromParam, dateTo: toParam }}
+        />
+      </div>
 
       {rows.length === 0 ? (
         <EmptyState
@@ -158,14 +169,16 @@ export default async function ReservasPage({
           }
         />
       ) : (
-        <ReservationsTable
-          tenantSlug={tenantSlug}
-          rows={rows}
-          page={page}
-          totalPages={totalPages}
-          totalCount={total}
-          searchParams={sp}
-        />
+        <div data-tour="reservas-lista">
+          <ReservationsTable
+            tenantSlug={tenantSlug}
+            rows={rows}
+            page={page}
+            totalPages={totalPages}
+            totalCount={total}
+            searchParams={sp}
+          />
+        </div>
       )}
     </PageShell>
   )

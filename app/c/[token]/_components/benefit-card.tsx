@@ -1,6 +1,6 @@
 import { Gift, Handshake, Lock, Percent, Sparkles } from 'lucide-react'
-import Image from 'next/image'
 import type { CSSProperties } from 'react'
+import { StorageImage } from '@/components/media/storage-image'
 import { BENEFIT_KIND_META } from '@/lib/points/benefits'
 import { cn } from '@/lib/utils'
 import type { WalletData } from '@/lib/wallet/queries'
@@ -50,14 +50,7 @@ export function BenefitCard({
     <article className="w-[9.5rem] shrink-0 snap-start overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
       <div className="relative aspect-[4/3] w-full overflow-hidden">
         {photo ? (
-          <Image
-            src={photo}
-            alt=""
-            fill
-            sizes="152px"
-            className={cn('object-cover', muted && 'saturate-[0.55]')}
-            unoptimized
-          />
+          <StorageImage src={photo} sizes="152px" className={cn(muted && 'saturate-[0.55]')} />
         ) : (
           <div
             className="grid size-full place-items-center"

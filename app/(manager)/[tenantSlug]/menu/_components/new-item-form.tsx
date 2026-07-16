@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { createMenuItem, type MenuActionState } from '@/lib/menu/actions'
 import { MenuImageUploader } from './image-uploader'
+import { MenuVideoUploader } from './video-uploader'
 
 const initial: MenuActionState = { ok: true }
 
@@ -39,6 +40,7 @@ export function NewItemForm({
   const [state, formAction] = useActionState(action, initial)
   const formRef = useRef<HTMLFormElement>(null)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
+  const [videoUrl, setVideoUrl] = useState<string | null>(null)
   // Input en pesos (entero); el hidden mirror manda centavos al action.
   const [pricePesos, setPricePesos] = useState('')
 
@@ -47,6 +49,7 @@ export function NewItemForm({
       toast.success(state.message)
       formRef.current?.reset()
       setImageUrl(null)
+      setVideoUrl(null)
       setPricePesos('')
       onCreated?.()
     } else if (!state.ok) {
@@ -65,6 +68,7 @@ export function NewItemForm({
     >
       <input type="hidden" name="category_id" value={categoryId} />
       <input type="hidden" name="image_url" value={imageUrl ?? ''} />
+      <input type="hidden" name="video_url" value={videoUrl ?? ''} />
       <input type="hidden" name="price_cents" value={priceCents} />
 
       <div className="grid gap-2 sm:grid-cols-[1fr_120px_120px_auto] sm:items-end">
@@ -128,6 +132,8 @@ export function NewItemForm({
       </div>
 
       <MenuImageUploader tenantId={tenantId} value={imageUrl} onChange={setImageUrl} />
+
+      <MenuVideoUploader tenantId={tenantId} value={videoUrl} onChange={setVideoUrl} />
     </form>
   )
 }

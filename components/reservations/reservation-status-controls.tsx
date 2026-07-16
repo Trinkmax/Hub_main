@@ -49,10 +49,16 @@ export function ReservationStatusControls({
   tenantSlug,
   reservation,
   onChanged,
+  showActualGuestsEditor = true,
 }: {
   tenantSlug: string
   reservation: ReservationWithJoins
   onChanged?: () => void
+  /**
+   * El quick view trae su propio stepper de personas (estimadas o reales según
+   * estado), así que oculta este editor para no duplicarlo en el mismo popup.
+   */
+  showActualGuestsEditor?: boolean
 }) {
   const [pending, startTransition] = useTransition()
   const [actualGuests, setActualGuests] = useState<number>(
@@ -192,7 +198,9 @@ export function ReservationStatusControls({
       </section>
 
       {/* Cantidad real inline editor */}
-      {reservation.status !== 'cancelled' && reservation.status !== 'no_show' ? (
+      {showActualGuestsEditor &&
+      reservation.status !== 'cancelled' &&
+      reservation.status !== 'no_show' ? (
         <section className="rounded-xl border border-border/70 bg-card p-4">
           <header className="mb-3 flex items-center gap-2">
             <ClipboardEdit className="size-4 text-muted-foreground" />

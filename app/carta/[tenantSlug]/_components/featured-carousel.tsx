@@ -1,6 +1,7 @@
 'use client'
 
 import { Sparkles, Star } from 'lucide-react'
+import { posterUrlFor } from '@/lib/menu/media-urls'
 import type { MenuItem } from '@/lib/menu/queries'
 import { formatARS } from './format'
 import { ItemImage } from './item-visual'
@@ -38,7 +39,7 @@ export function FeaturedCarousel({
             >
               <div className="relative aspect-[4/3] w-full overflow-hidden bg-secondary/40">
                 <ItemImage
-                  src={it.image_url}
+                  src={it.image_url ?? (it.video_url ? posterUrlFor(it.video_url) : null)}
                   name={it.name}
                   sizes="248px"
                   className="transition-transform duration-[var(--duration-slow)] group-hover:scale-105"

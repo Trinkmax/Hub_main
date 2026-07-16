@@ -13,6 +13,7 @@ import {
 } from '@/lib/salon/queries'
 import { STATUS_LABELS } from '@/lib/salon/types'
 import {
+  RESERVATION_STAFF_ROLES,
   RoleRequiredError,
   requireRole,
   requireTenantAccess,
@@ -55,7 +56,7 @@ export default async function OperativoPage({
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
     access = await requireTenantAccess(tenantSlug)
-    requireRole(access.role, ['owner'])
+    requireRole(access.role, RESERVATION_STAFF_ROLES)
   } catch (e) {
     if (e instanceof TenantNotFoundError) notFound()
     if (e instanceof RoleRequiredError) notFound()

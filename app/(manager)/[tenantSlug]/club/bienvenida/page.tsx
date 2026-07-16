@@ -7,5 +7,5 @@ export default async function BienvenidaRedirect({
   params: Promise<{ tenantSlug: string }>
 }) {
   const { tenantSlug } = await params
-  redirect(`/${tenantSlug}/menu?world=club&tab=bienvenida`)
+  redirect(`/${tenantSlug}/club?tab=bienvenida`)
 }

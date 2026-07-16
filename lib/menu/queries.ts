@@ -22,6 +22,7 @@ export type MenuItem = {
   position: number
   active: boolean
   image_url: string | null
+  video_url: string | null
   // Campos del rediseño 2026 — siempre presentes; default false / []
   featured: boolean
   tags: ItemTag[]
@@ -32,7 +33,7 @@ export type MenuItem = {
 // indexada por id — así evitamos cast a `any` en el .select() y la query
 // pega un solo round-trip a Postgres (Promise.all).
 const MENU_ITEM_COLUMNS =
-  'id, category_id, name, description, price_cents, points_override, position, active, image_url'
+  'id, category_id, name, description, price_cents, points_override, position, active, image_url, video_url'
 
 type FeaturedRow = { id: string; featured: boolean | null }
 
@@ -83,6 +84,7 @@ export async function listMenu(opts: { tenantId: string }): Promise<{
     position: i.position,
     active: i.active,
     image_url: i.image_url,
+    video_url: i.video_url,
     featured: featuredById.get(i.id) ?? false,
     tags: tagsByItem.get(i.id) ?? [],
   }))
@@ -114,7 +116,7 @@ export async function listActiveMenuPublic(opts: { tenantId: string }): Promise<
     service
       .from('menu_items')
       .select(
-        'id, category_id, name, description, price_cents, points_override, position, active, image_url, featured',
+        'id, category_id, name, description, price_cents, points_override, position, active, image_url, video_url, featured',
       )
       .eq('tenant_id', opts.tenantId)
       .eq('active', true)
@@ -155,6 +157,7 @@ export async function listActiveMenuPublic(opts: { tenantId: string }): Promise<
     position: i.position,
     active: i.active,
     image_url: i.image_url,
+    video_url: i.video_url,
     featured: i.featured ?? false,
     tags: tagsByItem.get(i.id) ?? [],
   }))
@@ -210,6 +213,7 @@ export async function listActiveMenu(opts: { tenantId: string }): Promise<{
     position: i.position,
     active: i.active,
     image_url: i.image_url,
+    video_url: i.video_url,
     featured: featuredById.get(i.id) ?? false,
     tags: tagsByItem.get(i.id) ?? [],
   }))

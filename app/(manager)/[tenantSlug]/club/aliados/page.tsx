@@ -7,5 +7,5 @@ export default async function AliadosRedirect({
   params: Promise<{ tenantSlug: string }>
 }) {
   const { tenantSlug } = await params
-  redirect(`/${tenantSlug}/menu?world=club&tab=aliados`)
+  redirect(`/${tenantSlug}/club?tab=aliados`)
 }

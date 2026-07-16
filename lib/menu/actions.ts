@@ -6,6 +6,7 @@ import { logAudit } from '@/lib/audit'
 import { setItemTags } from '@/lib/item-tags/actions'
 import { createClient } from '@/lib/supabase/server'
 import {
+  MENU_EDIT_ROLES,
   RoleRequiredError,
   requireRole,
   requireTenantAccess,
@@ -69,7 +70,7 @@ export type MenuActionState = { ok: true; message?: string } | { ok: false; mess
 async function authorizeOwner(slug: string) {
   try {
     const { tenant, role } = await requireTenantAccess(slug)
-    requireRole(role, ['owner'])
+    requireRole(role, MENU_EDIT_ROLES)
     return tenant
   } catch (error) {
     if (
@@ -272,6 +273,7 @@ export async function createMenuItem(
     price_cents: formData.get('price_cents'),
     points_override: formData.get('points_override'),
     image_url: formData.get('image_url'),
+    video_url: formData.get('video_url'),
     featured: formData.get('featured') ?? false,
     tag_ids: readTagIds(formData),
   })
@@ -308,6 +310,7 @@ export async function createMenuItem(
       price_cents: parsed.data.price_cents,
       points_override: parsed.data.points_override,
       image_url: parsed.data.image_url,
+      video_url: parsed.data.video_url,
       position: (maxPos?.position ?? 0) + 1,
       // featured no está aún en database.ts (tabla mig posterior). Cast aditivo.
       ...({ featured: parsed.data.featured } as { featured?: boolean }),
@@ -366,6 +369,8 @@ export async function updateMenuItem(
     // Campos opcionales del rediseño 2026. Si no se pasan, no se tocan.
     featured?: boolean
     tag_ids?: string[]
+    // Video del ítem. Si no se pasa (undefined), no se toca — igual que featured.
+    video_url?: string | null
   },
 ): Promise<MenuActionState> {
   const tenant = await authorizeOwner(slug)
@@ -390,6 +395,11 @@ export async function updateMenuItem(
   }
   if (payload.featured !== undefined) {
     updatePayload.featured = parsed.data.featured
+  }
+  // Igual que featured: sólo tocamos video_url si el caller lo pasó explícito,
+  // para que forms legacy (p. ej. toggle de activo) no pisen el video.
+  if (payload.video_url !== undefined) {
+    updatePayload.video_url = parsed.data.video_url
   }
 
   const { error } = await supabase

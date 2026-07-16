@@ -1,5 +1,6 @@
 export * from './access'
 export * from './current'
 export * from './errors'
+export * from './roles'
 export * from './slugify'
 export * from './types'
