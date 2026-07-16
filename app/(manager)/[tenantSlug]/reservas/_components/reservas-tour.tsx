@@ -188,5 +188,5 @@ const RESERVAS_TOUR: TourDefinition = (() => {
 })()
 
 export function ReservasTourButton({ role }: { role: TenantRole }) {
-  return <TourLauncher tour={RESERVAS_TOUR} role={role} autoStartForRoles={['host']} />
+  return <TourLauncher tour={RESERVAS_TOUR} currentRole={role} autoStartForRoles={['host']} />
 }

@@ -33,24 +33,24 @@ function markTourDone(id: string): void {
  */
 export function TourLauncher({
   tour,
-  role,
+  currentRole,
   autoStartForRoles = [],
   className,
 }: {
   tour: TourDefinition
-  role: TenantRole
+  currentRole: TenantRole
   autoStartForRoles?: TenantRole[]
   className?: string
 }) {
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
-    if (!autoStartForRoles.includes(role)) return
+    if (!autoStartForRoles.includes(currentRole)) return
     if (isTourDone(tour.id)) return
     // Pequeño delay: deja pintar la página antes de oscurecerla.
     const t = window.setTimeout(() => setOpen(true), 700)
     return () => window.clearTimeout(t)
-  }, [autoStartForRoles, role, tour.id])
+  }, [autoStartForRoles, currentRole, tour.id])
 
   return (
     <>

@@ -2,6 +2,7 @@
 
 import {
   Beer,
+  Camera,
   Coffee,
   EyeOff,
   Gift,
@@ -13,9 +14,9 @@ import {
   Trash2,
   UtensilsCrossed,
 } from 'lucide-react'
-import Image from 'next/image'
 import { useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { StorageImage } from '@/components/media/storage-image'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -89,34 +90,49 @@ function groupRewards(rewards: Reward[]): RewardGroup[] {
   return groups
 }
 
-/** Marco visual de la recompensa: foto real, o "emplatado" (degradado + glifo). */
-function RewardMedia({ reward }: { reward: Reward }) {
+/**
+ * Marco visual de la recompensa: foto real, o "emplatado" (degradado + glifo).
+ * Toda el área es un botón que abre el editor — la foto se sube tocándola,
+ * igual que las categorías de la carta.
+ */
+function RewardMedia({ reward, onEdit }: { reward: Reward; onEdit: () => void }) {
   const fb = (reward.category && CATEGORY_FALLBACK[reward.category]) || DEFAULT_FALLBACK
   const Icon = fb.icon
   return (
-    <div className="relative aspect-[4/3] w-full overflow-hidden bg-secondary">
+    <button
+      type="button"
+      onClick={onEdit}
+      aria-label={
+        reward.image_url ? `Cambiar foto de ${reward.name}` : `Subir foto de ${reward.name}`
+      }
+      className="group/foto relative block aspect-[4/3] w-full overflow-hidden bg-secondary text-left"
+    >
       {reward.image_url ? (
-        <Image
-          src={reward.image_url}
-          alt=""
-          fill
-          sizes="(max-width: 640px) 50vw, 240px"
-          className={cn('object-cover', !reward.active && 'opacity-60 saturate-[0.6]')}
-          unoptimized
-        />
+        <>
+          <StorageImage
+            src={reward.image_url}
+            alt=""
+            sizes="(max-width: 640px) 50vw, 240px"
+            className={cn(!reward.active && 'opacity-60 saturate-[0.6]')}
+          />
+          <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover/foto:opacity-100">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-background/90 px-2.5 py-1 text-[11px] font-medium text-foreground">
+              <Camera className="size-3.5" aria-hidden />
+              Cambiar foto
+            </span>
+          </span>
+        </>
       ) : (
-        <div
+        <span
           className="grid size-full place-items-center"
           style={{ background: `linear-gradient(140deg, ${fb.from}, ${fb.to})` }}
         >
           <Icon className="size-8 opacity-45" style={{ color: fb.ink }} aria-hidden />
-          <span
-            className="pointer-events-none absolute bottom-1.5 left-2 text-[10px] font-medium"
-            style={{ color: fb.ink }}
-          >
-            Sin foto
+          <span className="absolute bottom-1.5 left-2 inline-flex items-center gap-1 rounded-full bg-background/85 px-2 py-0.5 text-[10px] font-medium text-foreground shadow-sm backdrop-blur-sm transition-colors group-hover/foto:bg-background">
+            <Camera className="size-3" aria-hidden />
+            Subir foto
           </span>
-        </div>
+        </span>
       )}
       {/* Costo — chip legible sobre cualquier imagen. */}
       <span className="absolute left-2 top-2 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-foreground shadow-sm backdrop-blur-sm">
@@ -136,7 +152,7 @@ function RewardMedia({ reward }: { reward: Reward }) {
           </Badge>
         ) : null}
       </div>
-    </div>
+    </button>
   )
 }
 
@@ -218,7 +234,7 @@ export function RewardsList({
                   key={r.id}
                   className="card-hairline group flex flex-col overflow-hidden rounded-xl border bg-card"
                 >
-                  <RewardMedia reward={r} />
+                  <RewardMedia reward={r} onEdit={() => setEditing(r)} />
                   <div className="flex flex-1 flex-col gap-1.5 p-2.5">
                     <p className="truncate text-sm font-medium leading-tight" title={r.name}>
                       {r.name}

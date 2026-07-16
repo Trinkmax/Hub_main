@@ -71,5 +71,5 @@ const EVENTOS_TOUR: TourDefinition = {
 }
 
 export function EventosTourButton({ role }: { role: TenantRole }) {
-  return <TourLauncher tour={EVENTOS_TOUR} role={role} autoStartForRoles={['host']} />
+  return <TourLauncher tour={EVENTOS_TOUR} currentRole={role} autoStartForRoles={['host']} />
 }

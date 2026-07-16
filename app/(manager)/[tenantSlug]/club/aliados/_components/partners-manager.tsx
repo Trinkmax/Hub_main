@@ -1,10 +1,20 @@
 'use client'
 
-import { ExternalLink, Handshake, Loader2, Pause, Pencil, Play, Plus, Trash2 } from 'lucide-react'
-import Image from 'next/image'
+import {
+  Camera,
+  ExternalLink,
+  Handshake,
+  Loader2,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
+  Trash2,
+} from 'lucide-react'
 import { useActionState, useEffect, useRef, useState, useTransition } from 'react'
 import { useFormStatus } from 'react-dom'
 import { toast } from 'sonner'
+import { StorageImage } from '@/components/media/storage-image'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,6 +38,8 @@ import {
 import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { isStorageUrl } from '@/lib/menu/media-urls'
+import { deleteMenuImageByUrl } from '@/lib/menu/upload-image'
 import {
   createPartner,
   deletePartner,
@@ -37,6 +49,7 @@ import {
 } from '@/lib/points/actions'
 import type { Partner } from '@/lib/points/queries'
 import { cn } from '@/lib/utils'
+import { MenuImageUploader } from '../../../menu/_components/image-uploader'
 
 const initial: LoyaltyActionState = { ok: true }
 
@@ -44,20 +57,13 @@ const initial: LoyaltyActionState = { ok: true }
 function PartnerLogo({ partner }: { partner: Partner }) {
   if (partner.logo_url) {
     return (
-      <div className="relative size-10 shrink-0 overflow-hidden rounded-full border border-border/60 bg-background">
-        <Image
-          src={partner.logo_url}
-          alt=""
-          fill
-          sizes="40px"
-          className="object-cover"
-          unoptimized
-        />
-      </div>
+      <span className="relative flex size-10 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-background">
+        <StorageImage src={partner.logo_url} alt="" sizes="40px" />
+      </span>
     )
   }
   return (
-    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[--cream-tint] text-sm font-semibold text-muted-foreground">
+    <span className="flex size-10 items-center justify-center rounded-full bg-(--cream-tint) text-sm font-semibold text-muted-foreground">
       {partner.name.charAt(0).toUpperCase()}
     </span>
   )
@@ -74,8 +80,9 @@ function SubmitBtn() {
   )
 }
 
-function NewPartnerForm({ tenantSlug }: { tenantSlug: string }) {
+function NewPartnerForm({ tenantSlug, tenantId }: { tenantSlug: string; tenantId: string }) {
   const formRef = useRef<HTMLFormElement>(null)
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [state, formAction] = useActionState(
     async (_prev: LoyaltyActionState, formData: FormData): Promise<LoyaltyActionState> =>
       createPartner(tenantSlug, {
@@ -93,6 +100,7 @@ function NewPartnerForm({ tenantSlug }: { tenantSlug: string }) {
     if (state.ok && state.message) {
       toast.success(state.message)
       formRef.current?.reset()
+      setLogoUrl(null)
     } else if (!state.ok) {
       toast.error(state.message)
     }
@@ -133,18 +141,20 @@ function NewPartnerForm({ tenantSlug }: { tenantSlug: string }) {
           <Input id="pn-sort" name="sort" type="number" defaultValue={0} className="tabular-nums" />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="pn-logo" className="text-[11px] text-muted-foreground">
-            Logo (URL)
-          </Label>
-          <Input id="pn-logo" name="logo_url" type="url" maxLength={500} placeholder="https://…" />
-        </div>
-        <div className="grid gap-1.5">
           <Label htmlFor="pn-url" className="text-[11px] text-muted-foreground">
             Sitio o Instagram (opcional)
           </Label>
           <Input id="pn-url" name="url" type="url" maxLength={500} placeholder="https://…" />
         </div>
       </div>
+      {/* El logo se sube como cualquier foto de la carta — nada de pegar URLs. */}
+      <input type="hidden" name="logo_url" value={logoUrl ?? ''} />
+      <MenuImageUploader
+        tenantId={tenantId}
+        value={logoUrl}
+        onChange={setLogoUrl}
+        label="Logo (opcional)"
+      />
       <div className="flex items-center justify-between gap-3">
         <p className="text-[11px] text-muted-foreground">
           Se agrega como borrador. Activala cuando esté lista.
@@ -158,17 +168,28 @@ function NewPartnerForm({ tenantSlug }: { tenantSlug: string }) {
 // ── Dialog de edición ───────────────────────────────────────
 function PartnerEditDialog({
   tenantSlug,
+  tenantId,
   partner,
   open,
   onOpenChange,
 }: {
   tenantSlug: string
+  tenantId: string
   partner: Partner | null
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  const [logoUrl, setLogoUrl] = useState<string | null>(partner?.logo_url ?? null)
+
+  // Una sola instancia del dialog para todas las filas: re-sincronizar el logo
+  // al cambiar de marca (patrón prev-props en render).
+  const [prevPartnerId, setPrevPartnerId] = useState(partner?.id ?? null)
+  if ((partner?.id ?? null) !== prevPartnerId) {
+    setPrevPartnerId(partner?.id ?? null)
+    setLogoUrl(partner?.logo_url ?? null)
+  }
 
   const handleSubmit = (formData: FormData) => {
     if (!partner) return
@@ -184,7 +205,7 @@ function PartnerEditDialog({
       name,
       category: String(formData.get('category') ?? '').trim(),
       discount_label: String(formData.get('discount_label') ?? '').trim(),
-      logo_url: String(formData.get('logo_url') ?? '').trim(),
+      logo_url: logoUrl ?? '',
       url: String(formData.get('url') ?? '').trim(),
       sort: Number(formData.get('sort') ?? 0),
       // Preservamos el estado activo/borrador: se cambia con el toggle, no acá.
@@ -194,6 +215,14 @@ function PartnerEditDialog({
     startTransition(async () => {
       const result = await updatePartner(tenantSlug, input)
       if (result.ok) {
+        // Limpieza best-effort del logo anterior si era nuestro y cambió.
+        if (partner.logo_url && partner.logo_url !== logoUrl && isStorageUrl(partner.logo_url)) {
+          try {
+            await deleteMenuImageByUrl(partner.logo_url)
+          } catch {
+            // huérfano tolerable; lo barre el script de prune
+          }
+        }
         toast.success('Marca actualizada.')
         onOpenChange(false)
       } else {
@@ -266,19 +295,12 @@ function PartnerEditDialog({
               </div>
             </div>
 
-            <div className="grid gap-1.5">
-              <Label htmlFor="pn-edit-logo" className="text-xs text-muted-foreground">
-                Logo (URL)
-              </Label>
-              <Input
-                id="pn-edit-logo"
-                name="logo_url"
-                type="url"
-                maxLength={500}
-                defaultValue={partner.logo_url ?? ''}
-                placeholder="https://…"
-              />
-            </div>
+            <MenuImageUploader
+              tenantId={tenantId}
+              value={logoUrl}
+              onChange={setLogoUrl}
+              label="Logo"
+            />
 
             <div className="grid gap-1.5">
               <Label htmlFor="pn-edit-url" className="text-xs text-muted-foreground">
@@ -321,9 +343,11 @@ function PartnerEditDialog({
 // ── Manager principal ───────────────────────────────────────
 export function PartnersManager({
   tenantSlug,
+  tenantId,
   partners,
 }: {
   tenantSlug: string
+  tenantId: string
   partners: Partner[]
 }) {
   const [pending, startTransition] = useTransition()
@@ -357,7 +381,7 @@ export function PartnersManager({
 
   return (
     <div className="space-y-5">
-      <NewPartnerForm tenantSlug={tenantSlug} />
+      <NewPartnerForm tenantSlug={tenantSlug} tenantId={tenantId} />
 
       {partners.length === 0 ? (
         <EmptyState
@@ -377,7 +401,18 @@ export function PartnersManager({
                 key={partner.id}
                 className={cn('flex items-center gap-3 px-4 py-3', !partner.active && 'opacity-70')}
               >
-                <PartnerLogo partner={partner} />
+                <button
+                  type="button"
+                  onClick={() => setEditing(partner)}
+                  aria-label={`Editar logo de ${partner.name}`}
+                  title="Logo del aliado"
+                  className="group/foto relative shrink-0 overflow-hidden rounded-full transition-shadow hover:ring-2 hover:ring-primary/50"
+                >
+                  <PartnerLogo partner={partner} />
+                  <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 opacity-0 transition-opacity group-hover/foto:opacity-100">
+                    <Camera className="size-4 text-white" aria-hidden />
+                  </span>
+                </button>
 
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -448,6 +483,7 @@ export function PartnersManager({
       {/* Dialog de edición controlado: una sola instancia para todas las filas */}
       <PartnerEditDialog
         tenantSlug={tenantSlug}
+        tenantId={tenantId}
         partner={editing}
         open={editing !== null}
         onOpenChange={(open) => {

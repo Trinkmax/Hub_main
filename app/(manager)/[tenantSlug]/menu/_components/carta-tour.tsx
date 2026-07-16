@@ -148,5 +148,5 @@ const CARTA_TOUR: TourDefinition = {
 }
 
 export function CartaTourButton({ role }: { role: TenantRole }) {
-  return <TourLauncher tour={CARTA_TOUR} role={role} autoStartForRoles={['editor']} />
+  return <TourLauncher tour={CARTA_TOUR} currentRole={role} autoStartForRoles={['editor']} />
 }

@@ -40,6 +40,7 @@ import { NewRewardForm } from '../puntos/_components/new-reward-form'
 import { RedemptionConfigForm } from '../puntos/_components/redemption-config-form'
 import { RewardsList } from '../puntos/_components/rewards-list'
 import { RulesList } from '../puntos/_components/rules-list'
+import { ClubTourButton } from './club-tour'
 import { TiersList } from './tiers-list'
 
 // 'programa' fusiona lo que antes eran dos tabs (Niveles + Puntos y recompensas)
@@ -211,6 +212,7 @@ export function ClubEditor(props: ClubEditorProps): React.JSX.Element {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <ClubTourButton />
           <Button asChild variant="outline" size="sm" className="gap-1.5">
             <Link href={`/carta/${tenantSlug}`} target="_blank" rel="noopener">
               <Eye className="size-4" />
@@ -218,7 +220,7 @@ export function ClubEditor(props: ClubEditorProps): React.JSX.Element {
             </Link>
           </Button>
           <Button asChild variant="outline" size="sm" className="gap-1.5">
-            <Link href={`/${tenantSlug}/club/simular`}>
+            <Link href={`/${tenantSlug}/club/simular`} data-tour="club-simular">
               <Wallet className="size-4" />
               Simular wallet
             </Link>
@@ -226,13 +228,15 @@ export function ClubEditor(props: ClubEditorProps): React.JSX.Element {
         </div>
       </div>
 
-      <SlidingTabs
-        size="sm"
-        className="max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        value={clubTab}
-        onChange={handleTabChange}
-        tabs={CLUB_TABS}
-      />
+      <div data-tour="club-tabs" className="w-fit max-w-full">
+        <SlidingTabs
+          size="sm"
+          className="max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          value={clubTab}
+          onChange={handleTabChange}
+          tabs={CLUB_TABS}
+        />
+      </div>
 
       <div
         key={clubTab}
@@ -314,7 +318,7 @@ export function ClubEditor(props: ClubEditorProps): React.JSX.Element {
               Las marcas inactivas no se muestran a los clientes. Activá cada una cuando cierres el
               acuerdo y cargues su logo.
             </InfoBanner>
-            <PartnersManagerReal tenantSlug={tenantSlug} partners={partners} />
+            <PartnersManagerReal tenantSlug={tenantSlug} tenantId={tenantId} partners={partners} />
           </div>
         ) : clubTab === 'bienvenida' ? (
           <div className="space-y-6">
@@ -339,6 +343,7 @@ export function ClubEditor(props: ClubEditorProps): React.JSX.Element {
         ) : (
           <PunchCardsManager
             tenantSlug={tenantSlug}
+            tenantId={tenantId}
             initialTemplates={punchTemplates}
             items={menu.items.map((i) => ({ id: i.id, name: i.name }))}
             categories={menu.categories.map((c) => ({ id: c.id, name: c.name }))}
