@@ -159,7 +159,12 @@ export function CategoryRow({
   return (
     <>
       <div className="space-y-4">
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+        <DndContext
+          id={`menu-items-${category.id}`}
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={onDragEnd}
+        >
           <SortableContext items={items.map((i) => i.id)} strategy={rectSortingStrategy}>
             {items.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border/70 bg-background/30 px-6 py-10 text-center">

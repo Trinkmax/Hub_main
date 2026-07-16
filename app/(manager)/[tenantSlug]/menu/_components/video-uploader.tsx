@@ -150,8 +150,11 @@ export function MenuVideoUploader({
             <PosterThumb videoUrl={value} />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-xs text-muted-foreground">
-              {dragging ? 'Soltá para reemplazar' : value}
+            <p className="text-xs font-medium">
+              {dragging ? 'Soltá para reemplazar' : 'Video cargado'}
+            </p>
+            <p className="text-[10px] text-muted-foreground">
+              {dragging ? ' ' : 'Arrastrá otro video para reemplazarlo'}
             </p>
           </div>
           <Button
@@ -206,7 +209,8 @@ export function MenuVideoUploader({
                 Subir video (opcional)
               </span>
               <span className="text-[10px] text-muted-foreground/80">
-                o arrastrá un MP4/WebM/MOV · máx. 55 MB y 90 s
+                o arrastrá un video · máx. 55 MB y 90 s · MP4 recomendado (los .mov de iPhone pueden
+                no verse en Android)
               </span>
             </>
           )}

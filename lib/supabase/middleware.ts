@@ -2,7 +2,12 @@ import { createServerClient } from '@supabase/ssr'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSupabaseClientEnv } from '@/lib/env'
-import { canAccessManagerPath, homePathForRole, SALON_ROLES } from '@/lib/tenant/roles'
+import {
+  canAccessManagerPath,
+  canAccessSalonPath,
+  homePathForRole,
+  SALON_ROLES,
+} from '@/lib/tenant/roles'
 // Fuente ÚNICA de slugs reservados (evitamos el set duplicado/divergente de antes).
 import { RESERVED_SLUGS } from '@/lib/tenant/types'
 
@@ -152,7 +157,7 @@ export async function updateSession(request: NextRequest) {
       if (role) {
         const inSalon = rest[0] === 'salon'
         if (inSalon) {
-          if (!STAFF_ROLES.has(role) && role !== 'owner') {
+          if (!STAFF_ROLES.has(role) && role !== 'owner' && !canAccessSalonPath(role, rest)) {
             return NextResponse.redirect(new URL(homePathForRole(role, slug), request.url))
           }
         } else if (STAFF_ROLES.has(role)) {

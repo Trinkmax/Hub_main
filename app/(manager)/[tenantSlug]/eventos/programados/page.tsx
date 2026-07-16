@@ -106,6 +106,7 @@ export default async function CalendarioPage({
         monthCapacity={monthCapacity}
         today={todayCordoba()}
         defaultTab={defaultTab}
+        role={access.role}
       />
     </PageShell>
   )

@@ -191,7 +191,12 @@ export function FlowBuilder({
             {steps.length} {steps.length === 1 ? 'paso' : 'pasos'}
           </span>
         </div>
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+        <DndContext
+          id="flow-builder"
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={onDragEnd}
+        >
           <SortableContext items={steps.map((s) => s.__id)} strategy={verticalListSortingStrategy}>
             <div className="space-y-2">
               {steps.map((step, idx) => (

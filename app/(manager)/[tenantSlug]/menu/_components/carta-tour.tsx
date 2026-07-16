@@ -44,7 +44,8 @@ const CARTA_TOUR: TourDefinition = {
       body: (
         <>
           Desde acá nacen las secciones de la carta. Dentro de una categoría también podés crear
-          subcategorías (por ejemplo, Comida → Pizzas).
+          subcategorías (por ejemplo, Comida → Pizzas). Cada una puede tener su foto de portada:
+          tocá su miniatura en la lista (o el menú ⋯ → Editar) para subirla.
         </>
       ),
     },
@@ -56,7 +57,8 @@ const CARTA_TOUR: TourDefinition = {
       body: (
         <>
           Entrá a una categoría y tocá <strong>Agregar ítem</strong>: nombre, precio (en pesos, sin
-          centavos) y una descripción corta que dé ganas. Después lo editás tocándolo.
+          centavos) y una descripción corta que dé ganas. Para editarlo después, tocalo y se abre
+          una ventana con todo: datos, foto y video.
         </>
       ),
     },
@@ -67,7 +69,8 @@ const CARTA_TOUR: TourDefinition = {
       body: (
         <ul className="list-disc space-y-1.5 pl-4">
           <li>
-            Dentro del ítem, arrastrá la imagen o tocá <strong>Subir foto</strong>.
+            Tocá el ítem y, en la ventana que se abre, arrastrá la imagen o tocá{' '}
+            <strong>Subir foto</strong>.
           </li>
           <li>
             Se optimiza sola al subirla — no hace falta achicarla antes (hasta 20 MB está bien).

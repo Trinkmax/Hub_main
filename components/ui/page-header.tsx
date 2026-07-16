@@ -31,9 +31,10 @@ export function PageHeader({
             {title}
           </h1>
           {description ? (
-            <p className="max-w-2xl text-sm text-muted-foreground text-pretty">
-              {description}
-            </p>
+            // div (no <p>): description acepta ReactNode y varios loading.tsx le
+            // pasan <Skeleton> (un div) — div dentro de p es HTML inválido y
+            // dispara errores de hidratación.
+            <div className="max-w-2xl text-sm text-muted-foreground text-pretty">{description}</div>
           ) : null}
         </div>
         {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}

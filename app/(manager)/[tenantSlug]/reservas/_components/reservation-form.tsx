@@ -66,6 +66,12 @@ type Props = {
   initialEventsForDate: ScheduledEventWithTemplate[]
   rateTiers: RateTier[]
   bonusPerGuestCents: number
+  /**
+   * Gestor de reservas vinculado a la cuenta del usuario actual (si existe).
+   * En modo create es el default de "Gestor principal" — el tour del host
+   * promete "el gestor sos vos". Se ignora si no está en `managers` (inactivo).
+   */
+  linkedManagerId?: string | null
   // Edit mode props
   reservationId?: string
   initialValues?: Partial<ReservationFormInput> & {
@@ -138,6 +144,7 @@ export function ReservationForm({
   initialEventsForDate,
   rateTiers,
   bonusPerGuestCents,
+  linkedManagerId,
   reservationId,
   initialValues,
 }: Props) {
@@ -150,8 +157,14 @@ export function ReservationForm({
   // localStorage default: último gestor usado
   const lastManagerKey = `salon:last-manager:${tenantSlug}`
 
+  // Default de "Gestor principal" en create: gestor vinculado a la cuenta >
+  // último usado (localStorage) > primero de la lista. En edit siempre manda
+  // el gestor ya guardado en la reserva (initialValues).
   const defaultPrimary = (() => {
     if (initialValues?.primary_manager_id) return initialValues.primary_manager_id
+    if (mode === 'create' && linkedManagerId && managers.some((m) => m.id === linkedManagerId)) {
+      return linkedManagerId
+    }
     if (typeof window !== 'undefined') {
       const saved = window.localStorage.getItem(lastManagerKey)
       if (saved && managers.some((m) => m.id === saved)) return saved

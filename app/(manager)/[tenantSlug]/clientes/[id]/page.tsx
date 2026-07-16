@@ -20,7 +20,12 @@ import {
 } from '@/lib/points/queries'
 import { getCustomerLunchSnapshot } from '@/lib/punch-cards/queries'
 import { getCustomerInsights } from '@/lib/stats/queries'
-import { requireTenantAccess, TenantNotFoundError } from '@/lib/tenant'
+import {
+  RoleRequiredError,
+  requireRole,
+  requireTenantAccess,
+  TenantNotFoundError,
+} from '@/lib/tenant'
 import { CustomerForm } from './_components/customer-form'
 import { CustomerQrPanel } from './_components/customer-qr-panel'
 import { CustomerTags } from './_components/customer-tags'
@@ -46,8 +51,10 @@ export default async function CustomerDetailPage({
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
     access = await requireTenantAccess(tenantSlug)
+    requireRole(access.role, ['owner'])
   } catch (error) {
     if (error instanceof TenantNotFoundError) notFound()
+    if (error instanceof RoleRequiredError) notFound()
     throw error
   }
 

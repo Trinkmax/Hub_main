@@ -185,10 +185,11 @@ export function ClubEditor(props: ClubEditorProps): React.JSX.Element {
 
   // Cambiar de tab escribe la URL con la History API nativa (Next la sincroniza con
   // useSearchParams): es instantáneo, sin round-trip al server ni re-fetch de los
-  // datos del club. 'programa' es el default, así que va sin query para una URL limpia.
+  // datos del club. SIEMPRE con ?tab= explícito: si 'programa' fuera sin query,
+  // rawTab quedaría null y el fallback a initialTab (prop congelada del server,
+  // p. ej. 'aliados' tras un deep-link) dejaría ese tab inalcanzable.
   const handleTabChange = (next: ClubTab) => {
-    const url = next === 'programa' ? pathname : `${pathname}?tab=${next}`
-    window.history.replaceState(null, '', url)
+    window.history.replaceState(null, '', `${pathname}?tab=${next}`)
   }
 
   const perItemRules = (rules as Rule[]).filter((r) => r.type === 'per_item')

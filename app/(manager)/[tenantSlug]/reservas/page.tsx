@@ -7,7 +7,13 @@ import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
 import { getDayCapacitySnapshot, listManagers, listSalonReservations } from '@/lib/salon/queries'
 import { salonStatusEnum, salonZoneEnum } from '@/lib/salon/schemas'
-import { requireTenantAccess, TenantNotFoundError } from '@/lib/tenant'
+import {
+  RESERVATION_STAFF_ROLES,
+  RoleRequiredError,
+  requireRole,
+  requireTenantAccess,
+  TenantNotFoundError,
+} from '@/lib/tenant'
 import { DayNavigator } from './_components/day-navigator'
 import { ReservasTourButton } from './_components/reservas-tour'
 import { ReservationsFilters } from './_components/reservations-filters'
@@ -40,8 +46,10 @@ export default async function ReservasPage({
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
     access = await requireTenantAccess(tenantSlug)
+    requireRole(access.role, RESERVATION_STAFF_ROLES)
   } catch (error) {
     if (error instanceof TenantNotFoundError) notFound()
+    if (error instanceof RoleRequiredError) notFound()
     throw error
   }
 

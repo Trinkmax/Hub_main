@@ -117,8 +117,9 @@ const isBaseImage = (p: string): boolean => !isDerived(p) && IMAGE_EXTS.has(extO
 // Listado completo del bucket (top-level = carpetas por tenant, con paginación)
 // ---------------------------------------------------------------------------
 
-async function listAllPaths(): Promise<string[]> {
+async function listAllPaths(): Promise<{ paths: string[]; createdAt: Map<string, string> }> {
   const paths: string[] = []
+  const createdAt = new Map<string, string>()
   const queue: string[] = ['']
   while (queue.length > 0) {
     const prefix = queue.shift() as string
@@ -134,14 +135,18 @@ async function listAllPaths(): Promise<string[]> {
       for (const entry of data) {
         const full = prefix ? `${prefix}/${entry.name}` : entry.name
         // Las carpetas vienen sin id (objetos virtuales) → recursar.
-        if (entry.id === null || entry.id === undefined) queue.push(full)
-        else paths.push(full)
+        if (entry.id === null || entry.id === undefined) {
+          queue.push(full)
+        } else {
+          paths.push(full)
+          if (entry.created_at) createdAt.set(full, entry.created_at)
+        }
       }
       if (data.length < 1000) break
       offset += data.length
     }
   }
-  return paths
+  return { paths, createdAt }
 }
 
 // ---------------------------------------------------------------------------
@@ -300,7 +305,7 @@ async function main(): Promise<void> {
     `Bucket: ${BUCKET} · modo: ${APPLY ? 'APPLY' : 'dry-run'}${PRUNE ? ' + prune-orphans' : ''}\n`,
   )
 
-  const allPaths = await listAllPaths()
+  const { paths: allPaths, createdAt } = await listAllPaths()
   const pathSet = new Set(allPaths)
   console.log(`${allPaths.length} objetos en el bucket.\n`)
 
@@ -353,7 +358,17 @@ async function main(): Promise<void> {
   if (PRUNE) {
     const referenced = await collectReferencedPaths()
     const expected = expectedPaths(referenced)
-    const orphans = allPaths.filter((p) => !expected.has(p) && !p.split('/').pop()?.startsWith('.'))
+    // Guard de carrera: un upload reciente puede no estar guardado todavía en la
+    // DB (la URL viaja al form y se persiste al Guardar) — sólo se consideran
+    // huérfanos los objetos con más de 24 h de vida.
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000
+    const oldEnough = (p: string) => {
+      const ts = createdAt.get(p)
+      return ts ? new Date(ts).getTime() < cutoff : false
+    }
+    const orphans = allPaths.filter(
+      (p) => !expected.has(p) && !p.split('/').pop()?.startsWith('.') && oldEnough(p),
+    )
 
     if (orphans.length === 0) {
       console.log('Huérfanos: ninguno. ✨')

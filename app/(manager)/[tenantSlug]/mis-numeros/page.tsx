@@ -160,11 +160,15 @@ export default async function MisNumerosPage({
   }
 
   // ── Mes seleccionado (?month=YYYY-MM, reloj del bar) ──
+  // Además del formato validamos el rango 01-12: "2026-00"/"2026-13" pasan la
+  // regex pero romperían monthRange/el filtro de fechas — caen al mes actual.
   const monthParam = typeof sp.month === 'string' ? sp.month : undefined
-  const ym =
-    monthParam && /^\d{4}-\d{2}$/.test(monthParam)
-      ? monthParam
-      : formatInTimeZone(new Date(), TZ, 'yyyy-MM')
+  const monthOk =
+    monthParam !== undefined &&
+    /^\d{4}-\d{2}$/.test(monthParam) &&
+    Number(monthParam.slice(5)) >= 1 &&
+    Number(monthParam.slice(5)) <= 12
+  const ym = monthOk && monthParam ? monthParam : formatInTimeZone(new Date(), TZ, 'yyyy-MM')
   const { from, to, label } = monthRange(ym)
 
   const entries = await listMyCommissionEntries({

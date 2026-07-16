@@ -1,7 +1,13 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { requireTenantAccess, TenantNotFoundError } from '@/lib/tenant'
+import {
+  RESERVATION_OPERATOR_ROLES,
+  RoleRequiredError,
+  requireRole,
+  requireTenantAccess,
+  TenantNotFoundError,
+} from '@/lib/tenant'
 
 export type CustomerSearchResult = {
   id: string
@@ -20,8 +26,12 @@ export async function searchCustomers(
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
     access = await requireTenantAccess(slug)
+    // Devuelve PII de clientes: solo staff que vincula clientes (reserva/visita).
+    // `editor` queda afuera a propósito — su mundo es la carta, no el CRM.
+    requireRole(access.role, RESERVATION_OPERATOR_ROLES)
   } catch (error) {
     if (error instanceof TenantNotFoundError) return []
+    if (error instanceof RoleRequiredError) return []
     throw error
   }
 

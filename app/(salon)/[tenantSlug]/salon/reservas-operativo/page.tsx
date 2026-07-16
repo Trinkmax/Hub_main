@@ -5,7 +5,7 @@ import {
   listTimelineForDate,
 } from '@/lib/salon/queries'
 import type { MealType } from '@/lib/salon/types'
-import { requireTenantAccess, TenantNotFoundError } from '@/lib/tenant'
+import { requireTenantAccess, SALON_READ_ROLES, TenantNotFoundError } from '@/lib/tenant'
 import { TimelineView } from './_components/timeline-view'
 
 const VALID_MEALS = new Set<MealType>(['breakfast', 'lunch', 'tea_time', 'dinner', 'hub_event'])
@@ -51,7 +51,7 @@ export default async function ReservasOperativoPage({
     throw e
   }
 
-  if (!['owner', 'cashier', 'waiter'].includes(access.role)) notFound()
+  if (!SALON_READ_ROLES.includes(access.role)) notFound()
 
   const date =
     typeof sp.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : todayCordoba()

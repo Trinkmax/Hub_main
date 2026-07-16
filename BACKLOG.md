@@ -255,3 +255,6 @@ TODO el trabajo de fondo — un bug ahí frena difusiones, flows y jobs.**
 - **Dos sistemas de progreso de setup conviven**: el wizard `/onboarding` (6 pasos,
   flag en `tenants.settings.onboarding`) y el checklist del dashboard (5 pasos mundo
   reservas). Unificar criterios o al menos compartir estado.
+- **Resumen (home del manager) muestra KPIs de facturación a cualquier membership.**
+  El proxy hoy rebota a editor/host antes de llegar, pero como defensa en
+  profundidad la página debería gatear los KPIs (getKpis/revenue) a owner.

@@ -4,12 +4,14 @@ import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import {
   getBonusRule,
+  getManagerForUser,
   listManagers,
   listRateTiers,
   listScheduledEventsForDate,
   listScheduledTemplates,
 } from '@/lib/salon/queries'
 import {
+  getCurrentUser,
   RESERVATION_STAFF_ROLES,
   RoleRequiredError,
   requireRole,
@@ -58,12 +60,19 @@ export default async function NuevaReservaPage({
     typeof sp.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : undefined
   const initialDate = dateParam ?? today
 
-  const [managers, templates, eventsToday, tiers, bonus] = await Promise.all([
+  const user = await getCurrentUser()
+
+  const [managers, templates, eventsToday, tiers, bonus, linkedManager] = await Promise.all([
     listManagers({ tenantId: access.tenant.id, onlyActive: true }),
     listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: true }),
     listScheduledEventsForDate({ tenantId: access.tenant.id, date: initialDate }),
     listRateTiers({ tenantId: access.tenant.id }),
     getBonusRule({ tenantId: access.tenant.id }),
+    // "El gestor sos vos": default del select de gestor = el gestor de reservas
+    // vinculado a la cuenta que está cargando la reserva (si existe).
+    user
+      ? getManagerForUser({ tenantId: access.tenant.id, userId: user.id })
+      : Promise.resolve(null),
   ])
 
   return (
@@ -90,6 +99,7 @@ export default async function NuevaReservaPage({
         initialEventsForDate={eventsToday}
         rateTiers={tiers}
         bonusPerGuestCents={bonus?.bonus_per_guest_cents ?? 0}
+        linkedManagerId={linkedManager?.id ?? null}
       />
     </div>
   )

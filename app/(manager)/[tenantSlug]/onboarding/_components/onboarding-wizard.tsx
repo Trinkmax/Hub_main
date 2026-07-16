@@ -191,7 +191,7 @@ function WelcomeStep({
       </div>
       <div className="grid grid-cols-2 gap-3 pt-2 text-left text-xs">
         <Card icon={LayoutGrid} title="Mesas" desc="Creás tus mesas y generás los QRs." />
-        <Card icon={UtensilsCrossed} title="Menú" desc="Cargás categorías e ítems." />
+        <Card icon={UtensilsCrossed} title="Carta" desc="Cargás categorías e ítems." />
         <Card icon={Star} title="Puntos" desc="Configurás cómo suman tus clientes." />
         <Card icon={UserPlus} title="Equipo" desc="Invitás a tus mozos y cocineros." />
       </div>

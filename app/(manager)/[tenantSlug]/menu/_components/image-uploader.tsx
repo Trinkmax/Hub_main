@@ -146,8 +146,11 @@ export function MenuImageUploader({
             />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-xs text-muted-foreground">
-              {dragging ? 'Soltá para reemplazar' : value}
+            <p className="text-xs font-medium">
+              {dragging ? 'Soltá para reemplazar' : 'Foto cargada'}
+            </p>
+            <p className="text-[10px] text-muted-foreground">
+              {dragging ? ' ' : 'Arrastrá otra imagen para reemplazarla'}
             </p>
           </div>
           <Button

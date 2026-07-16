@@ -2,7 +2,12 @@ import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
-import { requireTenantAccess, TenantNotFoundError } from '@/lib/tenant'
+import {
+  RoleRequiredError,
+  requireRole,
+  requireTenantAccess,
+  TenantNotFoundError,
+} from '@/lib/tenant'
 import { NewCustomerForm } from './new-customer-form'
 
 export const metadata = { title: 'Nuevo cliente' }
@@ -15,9 +20,11 @@ export default async function NuevoClientePage({
   const { tenantSlug } = await params
 
   try {
-    await requireTenantAccess(tenantSlug)
+    const access = await requireTenantAccess(tenantSlug)
+    requireRole(access.role, ['owner'])
   } catch (error) {
     if (error instanceof TenantNotFoundError) notFound()
+    if (error instanceof RoleRequiredError) notFound()
     throw error
   }
 

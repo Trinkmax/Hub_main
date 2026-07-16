@@ -53,6 +53,9 @@ const TABS: Tab[] = [
     icon: Inbox,
     href: (s) => `/${s}/salon/bandeja`,
     match: (p, s) => p.startsWith(`/${s}/salon/bandeja`),
+    // El host entra al salón SOLO por el panel de reservas (proxy lo limita);
+    // sin este gate vería un tab que lo rebota al home.
+    roles: ['owner', 'cashier', 'waiter', 'kitchen'],
   },
 ]
 

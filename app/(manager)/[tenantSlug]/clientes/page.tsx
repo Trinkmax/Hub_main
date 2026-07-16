@@ -11,7 +11,12 @@ import {
   PAGE_SIZE,
 } from '@/lib/customers/queries'
 import { listFiltersSchema } from '@/lib/customers/schemas'
-import { requireTenantAccess, TenantNotFoundError } from '@/lib/tenant'
+import {
+  RoleRequiredError,
+  requireRole,
+  requireTenantAccess,
+  TenantNotFoundError,
+} from '@/lib/tenant'
 import { CustomersFilters } from './_components/customers-filters'
 import { CustomersTable } from './_components/customers-table'
 
@@ -30,8 +35,10 @@ export default async function ClientesPage({
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
     access = await requireTenantAccess(tenantSlug)
+    requireRole(access.role, ['owner'])
   } catch (error) {
     if (error instanceof TenantNotFoundError) notFound()
+    if (error instanceof RoleRequiredError) notFound()
     throw error
   }
 

@@ -58,7 +58,8 @@ describeIfRls('RLS — loyalty (visits, points, rewards)', () => {
       })
       .select('id')
       .single()
-    customerA = c1!
+    if (!c1) throw new Error('seed: customer A no se creó')
+    customerA = c1
 
     const { data: c2 } = await service
       .from('customers')
@@ -70,14 +71,16 @@ describeIfRls('RLS — loyalty (visits, points, rewards)', () => {
       })
       .select('id')
       .single()
-    customerB = c2!
+    if (!c2) throw new Error('seed: customer B no se creó')
+    customerB = c2
 
     const { data: cat } = await service
       .from('menu_categories')
       .insert({ tenant_id: tenantA.id, name: 'Tragos' })
       .select('id')
       .single()
-    categoryA = cat!
+    if (!cat) throw new Error('seed: categoría no se creó')
+    categoryA = cat
 
     const { data: item } = await service
       .from('menu_items')
@@ -89,7 +92,8 @@ describeIfRls('RLS — loyalty (visits, points, rewards)', () => {
       })
       .select('id, price_cents')
       .single()
-    itemA = item!
+    if (!item) throw new Error('seed: ítem no se creó')
+    itemA = item
 
     // Regla per_amount: cada $1000 = 10 pts (=> $5000 = 50pts)
     await service.from('points_rules').insert({
@@ -110,7 +114,8 @@ describeIfRls('RLS — loyalty (visits, points, rewards)', () => {
       })
       .select('id, cost_points')
       .single()
-    rewardA = rew!
+    if (!rew) throw new Error('seed: reward no se creó')
+    rewardA = rew
   })
 
   afterAll(async () => {

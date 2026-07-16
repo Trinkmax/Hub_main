@@ -90,3 +90,13 @@ export function canAccessManagerPath(role: string, rest: ReadonlyArray<string>):
   if (!head) return false // el home "/" del manager es del owner; los acotados van al suyo
   return scoped.includes(head)
 }
+
+/**
+ * Sub-rutas de /salon accesibles para roles que NO viven en el salón. El host
+ * usa el panel operativo (vista en vivo de reservas) durante el servicio —
+ * misma capacidad de lectura que SALON_READ_ROLES.
+ */
+export function canAccessSalonPath(role: string, rest: ReadonlyArray<string>): boolean {
+  if (role === 'host') return rest[1] === 'reservas-operativo'
+  return false
+}

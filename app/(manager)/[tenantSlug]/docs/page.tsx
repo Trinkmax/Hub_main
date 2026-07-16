@@ -1,7 +1,12 @@
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
-import { requireTenantAccess, TenantNotFoundError } from '@/lib/tenant'
+import {
+  RoleRequiredError,
+  requireRole,
+  requireTenantAccess,
+  TenantNotFoundError,
+} from '@/lib/tenant'
 import { DocsContent } from './_components/docs-content'
 
 export const metadata = { title: 'Documentación' }
@@ -12,9 +17,12 @@ export default async function DocsPage({ params }: { params: Promise<{ tenantSlu
   let role: string
   try {
     const access = await requireTenantAccess(tenantSlug)
+    // La guía documenta TODO el sistema (CRM, mensajería, config): solo owner.
+    requireRole(access.role, ['owner'])
     role = access.role
   } catch (error) {
     if (error instanceof TenantNotFoundError) notFound()
+    if (error instanceof RoleRequiredError) notFound()
     throw error
   }
 

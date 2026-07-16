@@ -17,16 +17,16 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
@@ -211,16 +211,16 @@ export function ItemEditDialog({
   }
 
   return (
-    <Sheet open onOpenChange={(o) => !o && onClose()}>
-      <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-lg">
-        <SheetHeader className="border-b border-border/60 px-6 py-4">
-          <SheetTitle className="font-serif text-2xl font-semibold tracking-tight">
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="flex max-h-[92dvh] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogHeader className="border-b border-border/60 px-6 py-4">
+          <DialogTitle className="font-serif text-2xl font-semibold tracking-tight">
             Editar ítem
-          </SheetTitle>
-          <SheetDescription>
+          </DialogTitle>
+          <DialogDescription>
             Cambios en nombre, precio, etiquetas y configuración avanzada.
-          </SheetDescription>
-        </SheetHeader>
+          </DialogDescription>
+        </DialogHeader>
 
         <Tabs defaultValue="info" className="flex flex-1 min-h-0 flex-col">
           <TabsList className="mx-6 mt-4 grid w-auto grid-cols-3">
@@ -511,7 +511,7 @@ export function ItemEditDialog({
           </div>
         </Tabs>
 
-        <SheetFooter className="flex flex-col gap-2 border-t border-border/60 px-6 py-4 sm:flex-row sm:justify-between">
+        <DialogFooter className="flex flex-col gap-2 border-t border-border/60 px-6 py-4 sm:flex-row sm:justify-between">
           <Button asChild variant="ghost" size="sm" className="gap-1.5">
             <Link
               href={`/${tenantSlug}/mensajeria/difusiones/nueva?prefillName=${encodeURIComponent(
@@ -532,8 +532,8 @@ export function ItemEditDialog({
               {pending ? 'Guardando…' : 'Guardar'}
             </Button>
           </div>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

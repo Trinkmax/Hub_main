@@ -217,12 +217,11 @@ function TourCard({
   }, [isMobile, rect])
 
   return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: el click sólo frena la propagación (el fondo avanza al tocarlo); el teclado se maneja global en el listener de window
     <div
       ref={ref}
       role="document"
       tabIndex={-1}
-      // Sólo frenamos el click (el fondo avanza al tocarlo); el teclado debe
-      // llegar al listener de window — Esc/flechas se manejan globales.
       onClick={(e) => e.stopPropagation()}
       className={cn(
         'absolute flex flex-col gap-3 rounded-2xl border border-border/60 bg-card p-4 shadow-xl outline-none',

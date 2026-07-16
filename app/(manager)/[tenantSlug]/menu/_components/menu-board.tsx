@@ -18,6 +18,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
+  Camera,
   ChevronRight,
   FolderTree,
   GripVertical,
@@ -359,7 +360,12 @@ function SubcategoryList({
   if (order.length === 0) return null
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+    <DndContext
+      id="menu-subcategorias"
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={onDragEnd}
+    >
       <SortableContext items={order.map((c) => c.id)} strategy={verticalListSortingStrategy}>
         <div className="space-y-2">
           <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
@@ -461,16 +467,25 @@ function SubcategoryRow({
       </button>
       <button
         type="button"
+        onClick={() => setEditing(true)}
+        aria-label={`Editar foto y nombre de ${node.name}`}
+        title="Foto de la categoría"
+        className="group/foto relative flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-secondary/50 transition-shadow hover:ring-2 hover:ring-primary/50"
+      >
+        {node.image_url ? (
+          <StorageImage src={node.image_url} alt="" sizes="48px" />
+        ) : (
+          <FolderTree className="size-5 text-muted-foreground/70" aria-hidden />
+        )}
+        <span className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 transition-opacity group-hover/foto:opacity-100">
+          <Camera className="size-4 text-white" aria-hidden />
+        </span>
+      </button>
+      <button
+        type="button"
         onClick={() => onEnter(node.id)}
         className="flex min-w-0 flex-1 items-center gap-3 text-left"
       >
-        <span className="relative flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-secondary/50">
-          {node.image_url ? (
-            <StorageImage src={node.image_url} alt="" sizes="48px" />
-          ) : (
-            <FolderTree className="size-5 text-muted-foreground/70" aria-hidden />
-          )}
-        </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
             <span className="truncate font-serif text-base font-semibold tracking-tight">
@@ -511,7 +526,7 @@ function SubcategoryRow({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-44">
           <DropdownMenuItem onSelect={() => setEditing(true)}>
-            <Pencil className="size-3.5" /> Renombrar
+            <Pencil className="size-3.5" /> Editar (nombre y foto)
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setMoving(true)}>
             <Move className="size-3.5" /> Mover a…

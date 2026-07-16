@@ -211,6 +211,19 @@ function QuickEditPanel({
   const timeDirtyRef = useRef(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Último actual_guests confirmado por el server. Los saves de hora/zona lo
+  // mandan TAL CUAL (null si null): corregir la hora de una reserva sentada no
+  // debe "confirmar" una cantidad real que nadie cargó (la comisión se
+  // recalcularía sobre estimated como si fuera dato real). Se actualiza cuando
+  // el stepper isPost commitea vía updateActualGuests, para no pisar ese cambio
+  // si un save de hora/zona sale antes de que llegue el refresh del server.
+  const actualGuestsRef = useRef<number | null>(r.actual_guests)
+  const prevActualGuestsRef = useRef(r.actual_guests)
+  if (prevActualGuestsRef.current !== r.actual_guests) {
+    prevActualGuestsRef.current = r.actual_guests
+    actualGuestsRef.current = r.actual_guests
+  }
+
   function setGuestsBoth(n: number) {
     guestsRef.current = n
     setGuests(n)
@@ -275,7 +288,7 @@ function QuickEditPanel({
       zone: zoneRef.current,
       scheduled_event_id: r.scheduled_event_id,
       estimated_guests: isPost ? r.estimated_guests : guestsRef.current,
-      actual_guests: isPost ? guestsRef.current : r.actual_guests,
+      actual_guests: actualGuestsRef.current,
       cake_count: r.cake_count,
       champagne_count: r.champagne_count,
       deposit_cents: r.deposit_cents,
@@ -287,8 +300,12 @@ function QuickEditPanel({
     }
   }
 
-  function persistGuests(n: number) {
-    if (isPost) return updateActualGuests(tenantSlug, { id: r.id, actual_guests: n })
+  async function persistGuests(n: number) {
+    if (isPost) {
+      const res = await updateActualGuests(tenantSlug, { id: r.id, actual_guests: n })
+      if (res.ok) actualGuestsRef.current = n
+      return res
+    }
     return updateSalonReservation(tenantSlug, panelPayload({ estimated_guests: n }))
   }
 

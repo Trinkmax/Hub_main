@@ -174,7 +174,12 @@ export function ScheduledEventsMonth({
   }
 
   return (
-    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <DndContext
+      id="eventos-mes"
+      sensors={sensors}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
       {/* Tira de templates draggables */}
       <TemplateRail templates={templates} />
 
