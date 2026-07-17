@@ -1,7 +1,7 @@
 'use client'
 
-import { Loader2, Plus, Sparkles, Users, X } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { Loader2, Plus, Users, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -21,163 +21,299 @@ import {
   type ConditionOp,
   EMPTY_FILTER,
 } from '@/lib/audiences/schemas'
-import { cn } from '@/lib/utils'
 
 type Group = Extract<AudienceFilter, { kind: 'group' }>
 type Condition = Extract<AudienceFilter, { kind: 'condition' }>
 
-const FIELD_LABELS: Record<ConditionField, string> = {
-  opt_in_marketing: 'Opt-in WhatsApp',
-  birth_month: 'Mes de cumpleaños',
-  days_since_last_visit: 'Días desde última visita',
-  visits_count: 'Cantidad de visitas',
-  total_spent_cents: 'Gasto total ($)',
-  points_balance: 'Saldo de puntos',
-  lifetime_points: 'Puntos acumulados (vida)',
-  current_tier_id: 'Nivel del club',
-  created_days_ago: 'Días desde que se sumó',
-  acquisition_channel: 'Cómo llegó',
-  has_tag: 'Tiene tag',
-  attended_event_id: 'Asistió a un evento',
-  source: 'Origen del registro',
+type ValueKind =
+  | 'number'
+  | 'pesos'
+  | 'month'
+  | 'tier'
+  | 'tag'
+  | 'event'
+  | 'channel'
+  | 'source'
+  | 'boolean'
+
+// Cada campo se describe como una FRASE, no como campo/operador/valor.
+// `verb` es lo que ve el dueño en el selector y arranca la oración
+// ("Vino…", "Gastó…"); `ops` son conectores en español; `suffix` la cierra.
+type FieldConfig = {
+  verb: string
+  group: string
+  suffix?: string
+  ops: { op: ConditionOp; label: string }[]
+  value: ValueKind
+  placeholder?: string
 }
 
-// Cómo se agrupan los campos en el dropdown — el dueño piensa por temas, no por
-// columnas sueltas. El orden acá manda en el Select.
-const FIELD_GROUPS: { label: string; fields: ConditionField[] }[] = [
-  {
-    label: 'Quién es',
-    fields: ['acquisition_channel', 'source', 'has_tag', 'birth_month', 'created_days_ago'],
+const FIELD_SENTENCE: Record<ConditionField, FieldConfig> = {
+  visits_count: {
+    verb: 'Vino',
+    group: 'Sus visitas',
+    suffix: 'veces',
+    ops: [
+      { op: 'gte', label: 'al menos' },
+      { op: 'gt', label: 'más de' },
+      { op: 'eq', label: 'exactamente' },
+      { op: 'lte', label: 'como mucho' },
+      { op: 'lt', label: 'menos de' },
+    ],
+    value: 'number',
+    placeholder: '2',
   },
+  days_since_last_visit: {
+    verb: 'No viene desde hace',
+    group: 'Sus visitas',
+    suffix: 'días',
+    ops: [
+      { op: 'gte', label: 'más de' },
+      { op: 'lte', label: 'menos de' },
+      { op: 'eq', label: 'exactamente' },
+    ],
+    value: 'number',
+    placeholder: '30',
+  },
+  total_spent_cents: {
+    verb: 'Gastó en total',
+    group: 'Sus visitas',
+    ops: [
+      { op: 'gte', label: 'al menos' },
+      { op: 'gt', label: 'más de' },
+      { op: 'lte', label: 'como mucho' },
+      { op: 'lt', label: 'menos de' },
+    ],
+    value: 'pesos',
+  },
+  attended_event_id: {
+    verb: 'Fue al evento',
+    group: 'Sus visitas',
+    ops: [{ op: 'eq', label: '' }],
+    value: 'event',
+  },
+  opt_in_marketing: {
+    verb: 'Acepta promociones por WhatsApp',
+    group: 'WhatsApp',
+    ops: [
+      { op: 'is_true', label: 'sí' },
+      { op: 'is_false', label: 'no' },
+    ],
+    value: 'boolean',
+  },
+  points_balance: {
+    verb: 'Tiene disponibles',
+    group: 'Club de puntos',
+    suffix: 'puntos',
+    ops: [
+      { op: 'gte', label: 'al menos' },
+      { op: 'gt', label: 'más de' },
+      { op: 'lte', label: 'como mucho' },
+      { op: 'lt', label: 'menos de' },
+    ],
+    value: 'number',
+    placeholder: '100',
+  },
+  lifetime_points: {
+    verb: 'Acumuló en total',
+    group: 'Club de puntos',
+    suffix: 'puntos',
+    ops: [
+      { op: 'gte', label: 'al menos' },
+      { op: 'gt', label: 'más de' },
+      { op: 'lte', label: 'como mucho' },
+      { op: 'lt', label: 'menos de' },
+    ],
+    value: 'number',
+    placeholder: '500',
+  },
+  current_tier_id: {
+    verb: 'Es del nivel',
+    group: 'Club de puntos',
+    ops: [{ op: 'eq', label: '' }],
+    value: 'tier',
+  },
+  birth_month: {
+    verb: 'Cumple años en',
+    group: 'Quién es',
+    ops: [{ op: 'eq', label: '' }],
+    value: 'month',
+  },
+  created_days_ago: {
+    verb: 'Se sumó hace',
+    group: 'Quién es',
+    suffix: 'días',
+    ops: [
+      { op: 'lte', label: 'menos de' },
+      { op: 'gte', label: 'más de' },
+      { op: 'eq', label: 'exactamente' },
+    ],
+    value: 'number',
+    placeholder: '7',
+  },
+  has_tag: {
+    verb: 'Tiene la etiqueta',
+    group: 'Quién es',
+    ops: [{ op: 'eq', label: '' }],
+    value: 'tag',
+  },
+  acquisition_channel: {
+    verb: 'Llegó por',
+    group: 'Quién es',
+    ops: [{ op: 'eq', label: '' }],
+    value: 'channel',
+  },
+  source: {
+    verb: 'Se registró por',
+    group: 'Quién es',
+    ops: [{ op: 'eq', label: '' }],
+    value: 'source',
+  },
+}
+
+const FIELD_ORDER: { group: string; fields: ConditionField[] }[] = [
   {
-    label: 'Cuánto viene / gasta',
+    group: 'Sus visitas',
     fields: ['visits_count', 'days_since_last_visit', 'total_spent_cents', 'attended_event_id'],
   },
+  { group: 'WhatsApp', fields: ['opt_in_marketing'] },
+  { group: 'Club de puntos', fields: ['points_balance', 'lifetime_points', 'current_tier_id'] },
   {
-    label: 'Club de beneficios',
-    fields: ['current_tier_id', 'points_balance', 'lifetime_points'],
+    group: 'Quién es',
+    fields: ['birth_month', 'created_days_ago', 'has_tag', 'acquisition_channel', 'source'],
   },
-  { label: 'Marketing', fields: ['opt_in_marketing'] },
 ]
 
-const OP_LABELS: Record<ConditionOp, string> = {
-  eq: 'es',
-  neq: 'no es',
-  gt: 'mayor a',
-  gte: 'mayor o igual a',
-  lt: 'menor a',
-  lte: 'menor o igual a',
-  in: 'en',
-  not_in: 'no en',
-  is_true: 'sí',
-  is_false: 'no',
-  is_null: 'sin asignar',
-  is_not_null: 'asignado',
-}
-
-// Ops ofrecidos por campo en la UI — espejo (reducido a single-value) del
-// allowlist del compilador. `in`/`not_in` (multi-valor) se omiten acá; el
-// compilador igual los soporta para audiencias armadas por JSON.
-const FIELD_OPS: Record<ConditionField, ConditionOp[]> = {
-  opt_in_marketing: ['is_true', 'is_false'],
-  birth_month: ['eq', 'neq'],
-  days_since_last_visit: ['gte', 'gt', 'lte', 'lt', 'eq'],
-  visits_count: ['gte', 'gt', 'lte', 'lt', 'eq'],
-  total_spent_cents: ['gte', 'gt', 'lte', 'lt', 'eq'],
-  points_balance: ['gte', 'gt', 'lte', 'lt', 'eq'],
-  lifetime_points: ['gte', 'gt', 'lte', 'lt', 'eq'],
-  current_tier_id: ['eq', 'neq', 'is_not_null', 'is_null'],
-  created_days_ago: ['lte', 'lt', 'gte', 'gt', 'eq'],
-  acquisition_channel: ['eq', 'neq'],
-  has_tag: ['eq', 'neq'],
-  attended_event_id: ['eq', 'neq'],
-  source: ['eq', 'neq'],
-}
-
-const CHANNEL_OPTIONS: { value: string; label: string }[] = [
-  { value: 'walkin', label: 'Walk-in (consumió en el local)' },
-  { value: 'reservation', label: 'Reserva' },
-  { value: 'import', label: 'Importado' },
+const MONTHS = [
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
 ]
 
-const SOURCE_OPTIONS: { value: string; label: string }[] = [
-  { value: 'qr', label: 'Escaneó el QR' },
-  { value: 'manual', label: 'Carga manual del staff' },
-  { value: 'import', label: 'Importado' },
+const CHANNEL_OPTIONS = [
+  { value: 'walkin', label: 'consumió en el local (walk-in)' },
+  { value: 'reservation', label: 'una reserva' },
+  { value: 'import', label: 'importación' },
 ]
 
-// Op + value por defecto al elegir un campo, para no arrastrar un value inválido
-// (p. ej. un número quedando como "nivel") entre campos de distinta naturaleza.
-function defaultForField(
-  field: ConditionField,
-  options: AudienceBuilderOptions,
-): { op: ConditionOp; value: unknown } {
-  switch (field) {
-    case 'opt_in_marketing':
-      return { op: 'is_true', value: null }
-    case 'birth_month':
-      return { op: 'eq', value: 1 }
-    case 'days_since_last_visit':
-      return { op: 'gte', value: 30 }
-    case 'visits_count':
-      return { op: 'gte', value: 2 }
-    case 'total_spent_cents':
-      return { op: 'gte', value: 0 }
-    case 'points_balance':
-      return { op: 'gte', value: 0 }
-    case 'lifetime_points':
-      return { op: 'gte', value: 0 }
-    case 'current_tier_id':
-      return { op: 'eq', value: options.tiers[0]?.id ?? null }
-    case 'created_days_ago':
-      return { op: 'lte', value: 30 }
-    case 'acquisition_channel':
-      return { op: 'eq', value: 'walkin' }
-    case 'has_tag':
-      return { op: 'eq', value: options.tags[0]?.id ?? null }
-    case 'attended_event_id':
-      return { op: 'eq', value: options.events[0]?.id ?? null }
-    case 'source':
-      return { op: 'eq', value: 'qr' }
-  }
-}
-
-function defaultCondition(): Condition {
-  return { kind: 'condition', field: 'visits_count', op: 'gte', value: 2 }
-}
+const SOURCE_OPTIONS = [
+  { value: 'qr', label: 'el QR de la mesa' },
+  { value: 'manual', label: 'carga del staff' },
+  { value: 'import', label: 'importación' },
+]
 
 function cond(field: ConditionField, op: ConditionOp, value: unknown): Condition {
   return { kind: 'condition', field, op, value }
 }
 
-// Presets de un click. Todos dinámicos: se recalculan en cada envío.
-const PRESETS: { label: string; suggestedName: string; filter: Group }[] = [
+function defaultForField(field: ConditionField, options: AudienceBuilderOptions): Condition {
+  const cfg = FIELD_SENTENCE[field]
+  const op = cfg.ops[0]?.op ?? 'eq'
+  switch (cfg.value) {
+    case 'number':
+      return cond(field, op, Number(cfg.placeholder ?? 1))
+    case 'pesos':
+      return cond(field, op, 0)
+    case 'month':
+      return cond(field, 'eq', 1)
+    case 'tier':
+      return cond(field, 'eq', options.tiers[0]?.id ?? null)
+    case 'tag':
+      return cond(field, 'eq', options.tags[0]?.id ?? null)
+    case 'event':
+      return cond(field, 'eq', options.events[0]?.id ?? null)
+    case 'channel':
+      return cond(field, 'eq', 'walkin')
+    case 'source':
+      return cond(field, 'eq', 'qr')
+    case 'boolean':
+      return cond(field, 'is_true', null)
+  }
+}
+
+// Grupos listos: la mayoría de los dueños quiere esto, no armar queries.
+const PRESETS: {
+  emoji: string
+  label: string
+  hint: string
+  suggestedName: string
+  filter: Group
+}[] = [
   {
-    label: 'Con opt-in de WhatsApp',
+    emoji: '💬',
+    label: 'Con WhatsApp',
+    hint: 'Aceptan promociones',
     suggestedName: 'Con opt-in de WhatsApp',
     filter: { kind: 'group', op: 'AND', nodes: [cond('opt_in_marketing', 'is_true', null)] },
   },
   {
-    label: 'Frecuentes (2+ visitas)',
+    emoji: '🔥',
+    label: 'Frecuentes',
+    hint: 'Vinieron 2 veces o más',
     suggestedName: 'Clientes frecuentes',
     filter: { kind: 'group', op: 'AND', nodes: [cond('visits_count', 'gte', 2)] },
   },
   {
-    label: 'Inactivos (30+ días)',
+    emoji: '💤',
+    label: 'No vienen',
+    hint: 'Sin visitas hace +30 días',
     suggestedName: 'Clientes a reactivar',
     filter: { kind: 'group', op: 'AND', nodes: [cond('days_since_last_visit', 'gte', 30)] },
   },
   {
-    label: 'Nuevos (última semana)',
+    emoji: '✨',
+    label: 'Nuevos',
+    hint: 'Se sumaron esta semana',
     suggestedName: 'Clientes nuevos',
     filter: { kind: 'group', op: 'AND', nodes: [cond('created_days_ago', 'lte', 7)] },
   },
   {
-    label: 'Con puntos disponibles',
+    emoji: '🎁',
+    label: 'Con puntos',
+    hint: 'Tienen puntos para canjear',
     suggestedName: 'Con puntos para canjear',
     filter: { kind: 'group', op: 'AND', nodes: [cond('points_balance', 'gt', 0)] },
   },
 ]
+
+async function fetchCount(slug: string, filters: AudienceFilter): Promise<number | null> {
+  try {
+    const res = await fetch('/api/audiences/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug, filters }),
+    })
+    const data = await res.json()
+    return data?.ok ? (data.total as number) : null
+  } catch {
+    return null
+  }
+}
+
+// Aplana a un grupo de condiciones (la UI no expone subgrupos anidados).
+function toFlatGroup(f: AudienceFilter): Group {
+  if (f.kind === 'condition') return { kind: 'group', op: 'AND', nodes: [f] }
+  if (f.kind === 'group') {
+    const nodes = f.nodes.flatMap((n) =>
+      n.kind === 'condition'
+        ? [n]
+        : n.kind === 'group'
+          ? n.nodes.filter((x) => x.kind === 'condition')
+          : [],
+    )
+    return { kind: 'group', op: f.op, nodes }
+  }
+  return { kind: 'group', op: 'AND', nodes: [] }
+}
 
 type BuilderProps = {
   tenantSlug: string
@@ -199,13 +335,20 @@ export function AudienceBuilder({
   submitName,
 }: BuilderProps) {
   const [name, setName] = useState(initialName)
-  const [root, setRoot] = useState<Group>(toGroup(initialFilters))
+  const [root, setRoot] = useState<Group>(toFlatGroup(initialFilters))
   const [preview, setPreview] = useState<{ total: number; sample: string[] } | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [isPreviewing, setIsPreviewing] = useState(false)
+  const [presetCounts, setPresetCounts] = useState<Record<string, number | null>>({})
 
+  const conditions = root.nodes.filter((n): n is Condition => n.kind === 'condition')
   const filtersJson = useMemo(() => JSON.stringify(root), [root])
 
+  const setConditions = useCallback((next: Condition[]) => {
+    setRoot((r) => ({ ...r, nodes: next }))
+  }, [])
+
+  // Preview de la audiencia armada (debounce).
   useEffect(() => {
     let cancelled = false
     const handle = setTimeout(async () => {
@@ -237,369 +380,297 @@ export function AudienceBuilder({
     }
   }, [filtersJson, tenantSlug])
 
+  // Conteo en vivo de cada grupo listo (una vez, al montar).
+  useEffect(() => {
+    let cancelled = false
+    Promise.all(PRESETS.map((p) => fetchCount(tenantSlug, p.filter))).then((counts) => {
+      if (cancelled) return
+      const map: Record<string, number | null> = {}
+      PRESETS.forEach((p, i) => {
+        map[p.label] = counts[i] ?? null
+      })
+      setPresetCounts(map)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [tenantSlug])
+
   function applyPreset(preset: (typeof PRESETS)[number]) {
     setRoot(preset.filter)
     if (!name.trim()) setName(preset.suggestedName)
   }
 
+  function addCondition() {
+    setConditions([...conditions, defaultForField('visits_count', options)])
+  }
+
+  function updateCondition(index: number, next: Condition) {
+    setConditions(conditions.map((c, i) => (i === index ? next : c)))
+  }
+
+  function removeCondition(index: number) {
+    setConditions(conditions.filter((_, i) => i !== index))
+  }
+
+  const total = preview?.total ?? null
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-      <div className="space-y-5">
-        <div className="card-hairline rounded-xl border bg-card p-5">
-          <div className="space-y-1.5">
-            <Label
-              htmlFor="audience-name"
-              className="text-xs uppercase tracking-wider text-muted-foreground"
-            >
-              Nombre
-            </Label>
-            <Input
-              id="audience-name"
-              name="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Ej: Frecuentes alejados"
-              maxLength={80}
-              required
-            />
-          </div>
+    <div className="space-y-6">
+      <input type="hidden" name="filters" value={filtersJson} />
+      {hiddenIdField ? <input type="hidden" name="id" value={hiddenIdField} /> : null}
+
+      {/* Nombre + resumen del alcance */}
+      <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
+        <div className="grid gap-1.5">
+          <Label htmlFor="audience-name" className="text-sm font-medium">
+            ¿Cómo querés llamar a este grupo?
+          </Label>
+          <Input
+            id="audience-name"
+            name="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Ej: Clientes frecuentes"
+            maxLength={80}
+            required
+          />
         </div>
-
-        <input type="hidden" name="filters" value={filtersJson} />
-        {hiddenIdField ? <input type="hidden" name="id" value={hiddenIdField} /> : null}
-
-        <div className="space-y-2">
-          <h2 className="font-display text-sm font-semibold tracking-tight">Condiciones</h2>
-          {root.nodes.length === 0 ? (
-            <PresetPicker
-              onPick={applyPreset}
-              onCustom={() => setRoot({ ...root, nodes: [defaultCondition()] })}
-            />
+        <div className="flex items-center gap-2 rounded-lg border bg-card px-4 py-2.5">
+          <Users className="size-4 text-primary" />
+          {isPreviewing ? (
+            <Loader2 className="size-4 animate-spin text-muted-foreground" />
           ) : (
-            <GroupEditor group={root} onChange={setRoot} options={options} />
+            <span className="font-display text-xl font-semibold tabular-nums">
+              {total !== null ? total.toLocaleString('es-AR') : '—'}
+            </span>
           )}
+          <span className="text-sm text-muted-foreground">
+            {total === 1 ? 'persona' : 'personas'}
+          </span>
         </div>
+      </div>
+
+      {/* Grupos listos */}
+      <div className="space-y-2.5">
+        <h2 className="text-sm font-semibold tracking-tight">¿A quiénes querés llegar?</h2>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {PRESETS.map((p) => (
+            <PresetCard
+              key={p.label}
+              preset={p}
+              count={presetCounts[p.label]}
+              onClick={() => applyPreset(p)}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Armado a medida */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <div className="h-px flex-1 bg-border" />
+          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            o armá el tuyo
+          </span>
+          <div className="h-px flex-1 bg-border" />
+        </div>
+
+        {conditions.length >= 2 ? (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span>Incluir a quienes cumplan</span>
+            <Select
+              value={root.op}
+              onValueChange={(v) => setRoot({ ...root, op: v as 'AND' | 'OR' })}
+            >
+              <SelectTrigger className="h-8 w-auto gap-1 font-medium">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="AND">todas</SelectItem>
+                <SelectItem value="OR">al menos una</SelectItem>
+              </SelectContent>
+            </Select>
+            <span>estas condiciones:</span>
+          </div>
+        ) : null}
+
+        {conditions.length === 0 ? (
+          <div className="rounded-xl border border-dashed bg-secondary/20 px-4 py-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              Elegí un grupo de arriba, o agregá una condición a medida.
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground/70">
+              Sin condiciones, el grupo son todos tus clientes.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {conditions.map((c, i) => (
+              <ConditionRow
+                // biome-ignore lint/suspicious/noArrayIndexKey: la condición no tiene id estable
+                key={i}
+                condition={c}
+                options={options}
+                onChange={(next) => updateCondition(i, next)}
+                onRemove={() => removeCondition(i)}
+              />
+            ))}
+          </div>
+        )}
 
         <Button
-          type="submit"
-          name={submitName ?? undefined}
-          size="lg"
-          className="w-full sm:w-auto"
-          disabled={!name.trim()}
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={addCondition}
         >
-          {submitLabel}
+          <Plus className="size-3.5" />
+          Agregar condición
         </Button>
       </div>
 
-      <aside className="space-y-3 lg:sticky lg:top-20 lg:self-start">
-        <div className="card-hairline relative overflow-hidden rounded-xl border bg-card p-5">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute -right-12 -top-12 size-32 rounded-full bg-primary/15 blur-2xl"
-          />
-          <div className="relative">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-primary">
-              <Users className="size-3.5" />
-              Preview
-            </div>
-            {isPreviewing ? (
-              <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" />
-                Calculando…
-              </div>
-            ) : previewError ? (
-              <p className="mt-3 text-sm text-destructive">Error: {previewError}</p>
-            ) : preview ? (
-              <>
-                <p className="mt-2 font-display text-4xl font-semibold tabular-nums">
-                  {preview.total.toLocaleString('es-AR')}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {preview.total === 1 ? 'cliente coincide' : 'clientes coinciden'}
-                </p>
-                {preview.sample.length > 0 ? (
-                  <div className="mt-3 space-y-1">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                      Algunos
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      {preview.sample.slice(0, 8).map((nameStr, i) => (
-                        <span
-                          // biome-ignore lint/suspicious/noArrayIndexKey: muestra de solo lectura; puede haber homónimos
-                          key={`${nameStr}-${i}`}
-                          className="rounded-full bg-secondary px-2 py-0.5 text-[11px] text-foreground"
-                        >
-                          {nameStr}
-                        </span>
-                      ))}
-                      {preview.total > preview.sample.length ? (
-                        <span className="rounded-full px-2 py-0.5 text-[11px] text-muted-foreground">
-                          +{(preview.total - preview.sample.length).toLocaleString('es-AR')} más
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
-              </>
-            ) : null}
-          </div>
+      {/* Muestra de a quién le llega */}
+      {previewError ? (
+        <p className="text-sm text-destructive">
+          No pudimos calcular el alcance. Revisá las condiciones.
+        </p>
+      ) : preview && preview.sample.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">Por ejemplo:</span>
+          {preview.sample.slice(0, 8).map((person, i) => (
+            <span
+              // biome-ignore lint/suspicious/noArrayIndexKey: muestra de solo lectura; puede haber homónimos
+              key={`${person}-${i}`}
+              className="rounded-full bg-secondary px-2 py-0.5 text-[11px] text-foreground"
+            >
+              {person}
+            </span>
+          ))}
+          {total !== null && total > preview.sample.length ? (
+            <span className="text-[11px] text-muted-foreground">
+              +{(total - preview.sample.length).toLocaleString('es-AR')} más
+            </span>
+          ) : null}
         </div>
+      ) : preview && total === 0 && conditions.length > 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Ningún cliente coincide todavía. Probá con condiciones menos estrictas.
+        </p>
+      ) : null}
 
-        <div className="rounded-xl border border-border/40 bg-card/40 p-4">
-          <div className="flex items-center gap-2">
-            <Sparkles className="size-3.5 text-primary" />
-            <p className="text-xs font-semibold">Tips</p>
-          </div>
-          <ul className="mt-2 space-y-1.5 text-[11px] text-muted-foreground">
-            <li>Combiná con Y para audiencias precisas, con O para alcance amplio.</li>
-            <li>
-              Separá tu base con <strong>Cómo llegó</strong>: walk-in (consumió en el local) vs
-              reserva.
-            </li>
-            <li>
-              Para difusiones por WhatsApp, sumá la condición <strong>Opt-in WhatsApp: sí</strong>.
-            </li>
-            <li>Las audiencias se recalculan automáticamente antes de cada envío.</li>
-          </ul>
-        </div>
-      </aside>
-    </div>
-  )
-}
-
-function toGroup(f: AudienceFilter): Group {
-  if (f.kind === 'group') return f
-  return { kind: 'group', op: 'AND', nodes: [f] }
-}
-
-function PresetPicker({
-  onPick,
-  onCustom,
-}: {
-  onPick: (preset: (typeof PRESETS)[number]) => void
-  onCustom: () => void
-}) {
-  return (
-    <div className="card-hairline space-y-3 rounded-xl border bg-card/60 p-4">
-      <p className="text-xs text-muted-foreground">
-        Elegí un grupo listo para empezar, o armá una condición a medida. Sin condiciones, la
-        audiencia incluye a <strong className="text-foreground">todos los clientes</strong>.
-      </p>
-      <div className="flex flex-wrap gap-2">
-        {PRESETS.map((p) => (
-          <Button
-            key={p.label}
-            type="button"
-            size="sm"
-            variant="outline"
-            className="gap-1.5"
-            onClick={() => onPick(p)}
-          >
-            <Sparkles className="size-3 text-primary" />
-            {p.label}
-          </Button>
-        ))}
-      </div>
-      <Button type="button" size="sm" variant="ghost" className="gap-1.5" onClick={onCustom}>
-        <Plus className="size-3" />
-        Condición personalizada
+      <Button
+        type="submit"
+        name={submitName ?? undefined}
+        size="lg"
+        className="w-full sm:w-auto"
+        disabled={!name.trim()}
+      >
+        {submitLabel}
       </Button>
     </div>
   )
 }
 
-function GroupEditor({
-  group,
-  onChange,
-  options,
-  level = 0,
+function PresetCard({
+  preset,
+  count,
+  onClick,
 }: {
-  group: Group
-  onChange: (next: Group) => void
-  options: AudienceBuilderOptions
-  level?: number
+  preset: (typeof PRESETS)[number]
+  count: number | null | undefined
+  onClick: () => void
 }) {
   return (
-    <div
-      className={cn(
-        'rounded-xl border bg-card/60 p-4 space-y-3',
-        level === 0 ? 'border-border/60 card-hairline' : 'border-dashed border-border',
-      )}
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex items-start gap-3 rounded-xl border bg-card p-3.5 text-left transition-colors hover:border-primary/50 hover:bg-secondary/30"
     >
-      <div className="flex items-center gap-2">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Combinar con
-        </span>
-        <Select
-          value={group.op}
-          onValueChange={(v) => onChange({ ...group, op: v as 'AND' | 'OR' })}
-        >
-          <SelectTrigger className="h-7 w-20 text-xs font-semibold">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="AND">Y</SelectItem>
-            <SelectItem value="OR">O</SelectItem>
-          </SelectContent>
-        </Select>
-        <span className="text-[11px] text-muted-foreground">
-          {group.op === 'AND' ? 'cumple todas las condiciones' : 'cumple al menos una'}
-        </span>
+      <span className="text-xl leading-none" aria-hidden>
+        {preset.emoji}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold">{preset.label}</p>
+        <p className="truncate text-xs text-muted-foreground">{preset.hint}</p>
       </div>
-
-      <div className="space-y-2">
-        {group.nodes.length === 0 ? (
-          <p className="rounded-lg border border-dashed bg-secondary/20 px-3 py-3 text-xs text-muted-foreground">
-            Agregá una condición a este grupo.
-          </p>
-        ) : null}
-        {group.nodes.map((node, i) => (
-          <NodeEditor
-            // biome-ignore lint/suspicious/noArrayIndexKey: el nodo no tiene id estable
-            key={`${level}-${i}`}
-            node={node}
-            options={options}
-            onChange={(next) => {
-              const copy = [...group.nodes]
-              copy[i] = next
-              onChange({ ...group, nodes: copy })
-            }}
-            onRemove={() => {
-              const copy = group.nodes.filter((_, j) => j !== i)
-              onChange({ ...group, nodes: copy })
-            }}
-            level={level + 1}
-          />
-        ))}
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="gap-1.5"
-          onClick={() => onChange({ ...group, nodes: [...group.nodes, defaultCondition()] })}
-        >
-          <Plus className="size-3" />
-          Condición
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="gap-1.5 text-muted-foreground"
-          onClick={() =>
-            onChange({
-              ...group,
-              nodes: [...group.nodes, { kind: 'group', op: 'AND', nodes: [defaultCondition()] }],
-            })
-          }
-        >
-          <Plus className="size-3" />
-          Subgrupo
-        </Button>
-      </div>
-    </div>
+      <span className="shrink-0 text-xs font-medium tabular-nums text-muted-foreground">
+        {count === undefined ? '···' : count === null ? '—' : count.toLocaleString('es-AR')}
+      </span>
+    </button>
   )
 }
 
-function NodeEditor({
-  node,
+function needsValue(op: ConditionOp): boolean {
+  return !['is_true', 'is_false', 'is_null', 'is_not_null'].includes(op)
+}
+
+function ConditionRow({
+  condition,
   options,
   onChange,
   onRemove,
-  level,
 }: {
-  node: AudienceFilter
+  condition: Condition
   options: AudienceBuilderOptions
-  onChange: (next: AudienceFilter) => void
+  onChange: (next: Condition) => void
   onRemove: () => void
-  level: number
 }) {
-  if (node.kind === 'group') {
-    return (
-      <div className="flex items-start gap-2">
-        <div className="flex-1">
-          <GroupEditor group={node} onChange={onChange} options={options} level={level} />
-        </div>
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
-          onClick={onRemove}
-          aria-label="Quitar grupo"
-        >
-          <X className="size-3.5" />
-        </Button>
-      </div>
-    )
-  }
-
-  if (node.kind === 'static_list') {
-    return (
-      <div className="flex items-center gap-2 rounded-lg border border-dashed border-warning/40 bg-warning/5 px-3 py-2.5 text-sm">
-        <Users className="size-4 text-warning" />
-        <span className="text-muted-foreground">
-          Lista estática de <strong className="text-foreground">{node.customer_ids.length}</strong>{' '}
-          clientes
-        </span>
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          className="ml-auto size-7 shrink-0 text-muted-foreground hover:text-destructive"
-          onClick={onRemove}
-          aria-label="Quitar lista"
-        >
-          <X className="size-3.5" />
-        </Button>
-      </div>
-    )
-  }
-
-  const fieldOps = FIELD_OPS[node.field]
+  const cfg = FIELD_SENTENCE[condition.field]
+  const showOp = cfg.ops.length > 1 || (cfg.ops[0]?.label ?? '') !== ''
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-background/40 p-2">
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-2.5 text-sm">
+      {/* El "qué" — arranca la frase */}
       <Select
-        value={node.field}
-        onValueChange={(v) => {
-          const field = v as ConditionField
-          const def = defaultForField(field, options)
-          onChange({ ...node, field, op: def.op, value: def.value })
-        }}
+        value={condition.field}
+        onValueChange={(v) => onChange(defaultForField(v as ConditionField, options))}
       >
-        <SelectTrigger className="h-9 w-full sm:w-56">
+        <SelectTrigger className="h-9 w-auto min-w-[10rem] font-medium">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {FIELD_GROUPS.map((grp) => (
-            <SelectGroup key={grp.label}>
-              <SelectLabel>{grp.label}</SelectLabel>
+          {FIELD_ORDER.map((grp) => (
+            <SelectGroup key={grp.group}>
+              <SelectLabel>{grp.group}</SelectLabel>
               {grp.fields.map((f) => (
                 <SelectItem key={f} value={f}>
-                  {FIELD_LABELS[f]}
+                  {FIELD_SENTENCE[f].verb}
                 </SelectItem>
               ))}
             </SelectGroup>
           ))}
         </SelectContent>
       </Select>
-      <Select value={node.op} onValueChange={(v) => onChange({ ...node, op: v as ConditionOp })}>
-        <SelectTrigger className="h-9 w-auto min-w-28">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {fieldOps.map((o) => (
-            <SelectItem key={o} value={o}>
-              {OP_LABELS[o]}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <ValueControl node={node} options={options} onChange={onChange} />
+
+      {/* El conector ("al menos", "más de", "sí"/"no") */}
+      {showOp ? (
+        <Select
+          value={condition.op}
+          onValueChange={(v) => onChange({ ...condition, op: v as ConditionOp })}
+        >
+          <SelectTrigger className="h-9 w-auto min-w-[6rem]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {cfg.ops.map((o) => (
+              <SelectItem key={o.op} value={o.op}>
+                {o.label || '—'}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : null}
+
+      {/* El valor */}
+      {needsValue(condition.op) ? (
+        <ConditionValue condition={condition} config={cfg} options={options} onChange={onChange} />
+      ) : null}
+
+      {/* El cierre de la frase */}
+      {cfg.suffix ? <span className="text-muted-foreground">{cfg.suffix}</span> : null}
+
       <Button
         type="button"
         size="icon"
@@ -614,50 +685,36 @@ function NodeEditor({
   )
 }
 
-function needsValue(op: ConditionOp): boolean {
-  return !['is_true', 'is_false', 'is_null', 'is_not_null'].includes(op)
-}
-
-/**
- * El control de valor cambia según el campo: dropdown para nivel/tag/evento y
- * enums (cómo llegó / origen); input numérico para el resto. Nunca un UUID crudo.
- */
-function ValueControl({
-  node,
+function ConditionValue({
+  condition,
+  config,
   options,
   onChange,
 }: {
-  node: Condition
+  condition: Condition
+  config: FieldConfig
   options: AudienceBuilderOptions
-  onChange: (next: AudienceFilter) => void
+  onChange: (next: Condition) => void
 }) {
-  if (!needsValue(node.op)) return null
-  const setValue = (value: unknown) => onChange({ ...node, value })
-  const current = node.value === null || node.value === undefined ? '' : String(node.value)
+  const setValue = (value: unknown) => onChange({ ...condition, value })
+  const current =
+    condition.value === null || condition.value === undefined ? '' : String(condition.value)
 
-  const renderOptionSelect = (
-    items: { id?: string; value?: string; name?: string; label?: string }[],
+  const optionSelect = (
+    items: { value: string; label: string }[],
     placeholder: string,
     emptyHint: string,
   ) => {
-    const opts = items.map((it) => ({
-      value: it.id ?? it.value ?? '',
-      label: it.name ?? it.label ?? '',
-    }))
-    if (opts.length === 0) {
-      return (
-        <span className="flex h-9 items-center px-2 text-xs text-muted-foreground">
-          {emptyHint}
-        </span>
-      )
+    if (items.length === 0) {
+      return <span className="text-xs text-muted-foreground">{emptyHint}</span>
     }
     return (
       <Select value={current} onValueChange={setValue}>
-        <SelectTrigger className="h-9 w-full sm:flex-1 sm:max-w-[220px]">
+        <SelectTrigger className="h-9 w-auto min-w-[9rem]">
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
-          {opts.map((o) => (
+          {items.map((o) => (
             <SelectItem key={o.value} value={o.value}>
               {o.label}
             </SelectItem>
@@ -667,66 +724,68 @@ function ValueControl({
     )
   }
 
-  if (node.field === 'current_tier_id') {
-    return renderOptionSelect(options.tiers, 'Elegí un nivel', 'No hay niveles configurados.')
-  }
-  if (node.field === 'has_tag') {
-    return renderOptionSelect(options.tags, 'Elegí un tag', 'No hay tags creados.')
-  }
-  if (node.field === 'attended_event_id') {
-    return renderOptionSelect(options.events, 'Elegí un evento', 'No hay eventos.')
-  }
-  if (node.field === 'acquisition_channel') {
-    return renderOptionSelect(CHANNEL_OPTIONS, 'Elegí', '')
-  }
-  if (node.field === 'source') {
-    return renderOptionSelect(SOURCE_OPTIONS, 'Elegí', '')
-  }
-
-  // Gasto total: se compara contra total_spent_cents (centavos), pero el owner
-  // razona en PESOS. Input en pesos con "$"; guardamos centavos en node.value.
-  if (node.field === 'total_spent_cents') {
-    const cents = Number(node.value)
-    const pesos = Number.isFinite(cents) && cents > 0 ? String(Math.round(cents / 100)) : ''
-    return (
-      <div className="relative w-full sm:flex-1 sm:max-w-[200px]">
-        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-          $
-        </span>
+  switch (config.value) {
+    case 'tier':
+      return optionSelect(
+        options.tiers.map((t) => ({ value: t.id, label: t.name })),
+        'Elegí un nivel',
+        'No hay niveles configurados.',
+      )
+    case 'tag':
+      return optionSelect(
+        options.tags.map((t) => ({ value: t.id, label: t.name })),
+        'Elegí una etiqueta',
+        'No hay etiquetas creadas.',
+      )
+    case 'event':
+      return optionSelect(
+        options.events.map((e) => ({ value: e.id, label: e.name })),
+        'Elegí un evento',
+        'No hay eventos.',
+      )
+    case 'channel':
+      return optionSelect(CHANNEL_OPTIONS, 'Elegí', '')
+    case 'source':
+      return optionSelect(SOURCE_OPTIONS, 'Elegí', '')
+    case 'month':
+      return optionSelect(
+        MONTHS.map((m, i) => ({ value: String(i + 1), label: m })),
+        'Elegí un mes',
+        '',
+      )
+    case 'pesos': {
+      const cents = Number(condition.value)
+      const pesos = Number.isFinite(cents) && cents > 0 ? String(Math.round(cents / 100)) : ''
+      return (
+        <div className="relative w-32">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+            $
+          </span>
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            className="h-9 w-full pl-7"
+            value={pesos}
+            onChange={(e) => {
+              const p = e.target.value
+              setValue(p === '' ? 0 : Math.max(0, Math.round(Number(p) * 100)))
+            }}
+            placeholder="0"
+          />
+        </div>
+      )
+    }
+    default:
+      return (
         <Input
           type="number"
           inputMode="numeric"
-          min={0}
-          className="h-9 w-full pl-7"
-          value={pesos}
-          onChange={(e) => {
-            const p = e.target.value
-            setValue(p === '' ? 0 : Math.max(0, Math.round(Number(p) * 100)))
-          }}
-          placeholder="0"
+          className="h-9 w-20"
+          value={current}
+          onChange={(e) => setValue(e.target.value === '' ? '' : Number(e.target.value))}
+          placeholder={config.placeholder ?? 'valor'}
         />
-      </div>
-    )
+      )
   }
-
-  // Numérico / texto libre.
-  const numericFields: ConditionField[] = [
-    'birth_month',
-    'days_since_last_visit',
-    'visits_count',
-    'points_balance',
-    'lifetime_points',
-    'created_days_ago',
-  ]
-  const isNumeric = numericFields.includes(node.field)
-  return (
-    <Input
-      type={isNumeric ? 'number' : 'text'}
-      inputMode={isNumeric ? 'numeric' : undefined}
-      className="h-9 w-full sm:flex-1 sm:max-w-[200px]"
-      value={current}
-      onChange={(e) => setValue(e.target.value)}
-      placeholder={node.field === 'birth_month' ? 'Mes (1-12)' : 'valor'}
-    />
-  )
 }
