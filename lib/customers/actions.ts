@@ -14,6 +14,7 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 import {
+  createAndAssignTagSchema,
   createCustomerSchema,
   customerIdSchema,
   tagAssignmentSchema,
@@ -359,4 +360,80 @@ export async function removeTag(
   revalidatePath(`/${slug}/clientes`)
   revalidatePath(`/${slug}/clientes/${parsed.data.customer_id}`)
   return { ok: true }
+}
+
+type CustomerTag = { id: string; name: string; color: string }
+
+/**
+ * Crea una etiqueta de cliente y la asigna al cliente en un solo paso.
+ * Si el nombre ya existe en el bar, recupera la etiqueta existente y la asigna
+ * (idempotente), en vez de fallar. Devuelve la etiqueta para que la UI la agregue
+ * sin recargar.
+ */
+export async function createAndAssignTag(
+  slug: string,
+  payload: { customer_id: string; name: string; color?: string },
+): Promise<{ ok: true; tag: CustomerTag } | { ok: false; message: string }> {
+  const access = await authorize(slug, ['owner', 'cashier'])
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = createAndAssignTagSchema.safeParse(payload)
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos.' }
+  }
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  // 1. Crear la etiqueta (o recuperar la existente si el nombre ya está en uso).
+  let tag: CustomerTag | null = null
+  const { data: created, error: createErr } = await supabase
+    .from('customer_tags')
+    .insert({ tenant_id: access.tenant.id, name: parsed.data.name, color: parsed.data.color })
+    .select('id, name, color')
+    .single()
+
+  if (createErr) {
+    if (createErr.code === '23505') {
+      const { data: existing } = await supabase
+        .from('customer_tags')
+        .select('id, name, color')
+        .eq('tenant_id', access.tenant.id)
+        .eq('name', parsed.data.name)
+        .maybeSingle()
+      if (existing) {
+        tag = { id: existing.id, name: existing.name, color: existing.color ?? parsed.data.color }
+      }
+    } else {
+      return { ok: false, message: 'No pudimos crear la etiqueta.' }
+    }
+  } else if (created) {
+    tag = { id: created.id, name: created.name, color: created.color ?? parsed.data.color }
+  }
+
+  if (!tag) return { ok: false, message: 'No pudimos crear la etiqueta.' }
+
+  // 2. Asignarla al cliente (idempotente).
+  const { error: assignErr } = await supabase
+    .from('customer_tag_assignments')
+    .upsert(
+      { customer_id: parsed.data.customer_id, tag_id: tag.id },
+      { onConflict: 'customer_id,tag_id', ignoreDuplicates: true },
+    )
+  if (assignErr) return { ok: false, message: 'Etiqueta creada, pero no pudimos asignarla.' }
+
+  await logAudit({
+    tenantId: access.tenant.id,
+    userId: user?.id ?? null,
+    action: 'customer_tag.created_assigned',
+    entity: 'customer_tag',
+    entityId: tag.id,
+    payload: { name: tag.name, customer_id: parsed.data.customer_id },
+  })
+
+  revalidatePath(`/${slug}/clientes`)
+  revalidatePath(`/${slug}/clientes/${parsed.data.customer_id}`)
+  return { ok: true, tag }
 }

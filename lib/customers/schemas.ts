@@ -61,6 +61,17 @@ export const tagAssignmentSchema = z.object({
   tag_id: z.string().uuid(),
 })
 
+export const createAndAssignTagSchema = z.object({
+  customer_id: z.string().uuid(),
+  name: z.string().trim().min(1, 'Ingresá un nombre').max(40, 'Máximo 40 caracteres'),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, 'Color inválido')
+    .default('#94a3b8'),
+})
+
+export type CreateAndAssignTagInput = z.infer<typeof createAndAssignTagSchema>
+
 export const listFiltersSchema = z.object({
   q: z.string().trim().max(80).optional(),
   tag: z.string().uuid().optional(),
