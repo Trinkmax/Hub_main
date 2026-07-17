@@ -106,3 +106,35 @@ export function buildTemplateComponents(input: TemplateComponentsInput): {
 
   return usesVars ? { components, parameterFormat: 'positional' } : { components }
 }
+
+/**
+ * Parsea los `components` de una plantilla ya sincronizada de Meta (formato
+ * HEADER/BODY/FOOTER/BUTTONS) a partes simples, para preview.
+ */
+export function parseMetaComponents(components: unknown): {
+  header: string | null
+  body: string
+  footer: string | null
+  buttons: string[]
+} {
+  const arr = Array.isArray(components) ? components : []
+  const find = (type: string) =>
+    arr.find(
+      (c) =>
+        typeof c === 'object' &&
+        c !== null &&
+        String((c as { type?: string }).type).toUpperCase() === type,
+    ) as { text?: string; buttons?: Array<{ text?: string }> } | undefined
+
+  const header = find('HEADER')
+  const body = find('BODY')
+  const footer = find('FOOTER')
+  const buttons = find('BUTTONS')
+
+  return {
+    header: header?.text?.trim() ? header.text : null,
+    body: body?.text ?? '',
+    footer: footer?.text?.trim() ? footer.text : null,
+    buttons: (buttons?.buttons ?? []).map((b) => b?.text ?? '').filter((t) => t.length > 0),
+  }
+}

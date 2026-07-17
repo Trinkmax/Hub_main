@@ -3,6 +3,7 @@
 import { PlusIcon } from 'lucide-react'
 import { useActionState, useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { WhatsAppBubble } from '@/components/messaging/whatsapp-bubble'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -36,43 +37,6 @@ const CATEGORY_LABELS: Record<string, string> = {
 }
 
 const initial: MetaActionState = { ok: true }
-
-function WhatsAppPreview({
-  header,
-  body,
-  footer,
-  buttons,
-}: {
-  header: string
-  body: string
-  footer: string
-  buttons: { id: string; text: string }[]
-}) {
-  return (
-    <div className="space-y-1 rounded-xl bg-[#0b141a] p-3">
-      <div className="ml-auto max-w-[92%] rounded-lg rounded-tr-sm bg-[#005c4b] px-3 py-2 text-sm text-white shadow">
-        {header ? <p className="mb-1 font-semibold leading-snug">{header}</p> : null}
-        <p className="whitespace-pre-wrap break-words leading-snug">
-          {body || 'Tu mensaje aparecerá acá…'}
-        </p>
-        {footer ? <p className="mt-1 text-[11px] text-white/60">{footer}</p> : null}
-        <span className="mt-1 block text-right text-[10px] text-white/50">14:32</span>
-      </div>
-      {buttons.length > 0 ? (
-        <div className="space-y-0.5">
-          {buttons.map((b) => (
-            <div
-              key={b.id}
-              className="rounded-lg bg-[#1f2c34] px-3 py-1.5 text-center text-[13px] font-medium text-[#53bdeb]"
-            >
-              {b.text}
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  )
-}
 
 export function CreateTemplateDialog({
   tenantSlug,
@@ -353,7 +317,7 @@ export function CreateTemplateDialog({
           {/* Columna derecha: preview */}
           <div className="md:sticky md:top-0 md:self-start">
             <p className="mb-1.5 text-xs font-medium text-muted-foreground">Vista previa</p>
-            <WhatsAppPreview
+            <WhatsAppBubble
               header={headerText ? fillExamples(headerText, [headerExample]) : ''}
               body={fillExamples(bodyText, bodyExamples)}
               footer={footerText}

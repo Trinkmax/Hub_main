@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowRight, Calendar, Megaphone, Sparkles, Users } from 'luc
 import { useRouter } from 'next/navigation'
 import { useActionState, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { WhatsAppBubble } from '@/components/messaging/whatsapp-bubble'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -24,6 +25,7 @@ import {
 } from '@/lib/broadcasts/actions'
 import { renderTemplateBodyPreview } from '@/lib/broadcasts/preview'
 import { templateBodyParamCount, type VariableMapping } from '@/lib/broadcasts/variables'
+import { fillExamples, parseMetaComponents } from '@/lib/meta/template-components'
 
 type Channel = { id: string; type: 'whatsapp' | 'instagram'; display_name: string | null }
 type Template = {
@@ -87,6 +89,17 @@ export function BroadcastForm({
   const template = filteredTemplates.find((t) => t.id === templateId)
   const audience = audiences.find((a) => a.id === audienceId)
   const paramCount = useMemo(() => templateBodyParamCount(template?.components), [template])
+  const parsedTemplate = useMemo(() => parseMetaComponents(template?.components), [template])
+  const previewValues = useMemo(
+    () =>
+      Array.from({ length: paramCount }).map((_, i) => {
+        const d = mapping[String(i + 1)]
+        if (!d) return ''
+        if (d.source === 'custom') return d.value ?? `{{${i + 1}}}`
+        return d.source === 'first_name' ? 'Ana' : d.source === 'last_name' ? 'Pérez' : '+54…'
+      }),
+    [paramCount, mapping],
+  )
 
   useEffect(() => {
     if (state.ok && state.id) {
@@ -264,19 +277,7 @@ export function BroadcastForm({
                     Preview
                   </p>
                   <p className="whitespace-pre-wrap">
-                    {renderTemplateBodyPreview(
-                      template?.components,
-                      Array.from({ length: paramCount }).map((_, i) => {
-                        const d = mapping[String(i + 1)]
-                        if (!d) return ''
-                        if (d.source === 'custom') return d.value ?? `{{${i + 1}}}`
-                        return d.source === 'first_name'
-                          ? 'Ana'
-                          : d.source === 'last_name'
-                            ? 'Pérez'
-                            : '+54…'
-                      }),
-                    )}
+                    {renderTemplateBodyPreview(template?.components, previewValues)}
                   </p>
                 </div>
               ) : null}
@@ -422,6 +423,30 @@ export function BroadcastForm({
                   }
                 />
               </dl>
+
+              {template ? (
+                <div className="space-y-2">
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                    Vista previa del mensaje
+                  </p>
+                  <WhatsAppBubble
+                    header={
+                      parsedTemplate.header
+                        ? fillExamples(parsedTemplate.header, previewValues)
+                        : null
+                    }
+                    body={renderTemplateBodyPreview(template.components, previewValues)}
+                    footer={parsedTemplate.footer}
+                    buttons={parsedTemplate.buttons.map((text, i) => ({ id: `b-${i}`, text }))}
+                  />
+                </div>
+              ) : null}
+
+              <p className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                Se envía sólo a los clientes con{' '}
+                <strong className="text-foreground">opt-in de WhatsApp</strong>; se excluyen
+                automáticamente los que no lo tienen y los bloqueados.
+              </p>
             </div>
           ) : null}
         </div>
