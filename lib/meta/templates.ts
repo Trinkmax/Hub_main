@@ -4,6 +4,7 @@ import type { Database, Json, TemplateStatus } from '@/types/database'
 import { decryptToken } from './crypto'
 import { graphUrl } from './env'
 import { metaFetch } from './http'
+import { buildTemplateComponents, type TemplateButtonInput } from './template-components'
 import type { CreateTemplateInput } from './template-schemas'
 
 type ChannelRow = Database['public']['Tables']['channels']['Row']
@@ -110,31 +111,35 @@ export async function createTemplate(
 
   const accessToken = await decryptToken(channel.encrypted_access_token)
 
-  // Build components array — HEADER (optional), BODY (required), FOOTER (optional)
-  const components: Array<{ type: string; format?: string; text: string }> = []
-
-  if (input.headerText?.trim()) {
-    components.push({ type: 'HEADER', format: 'TEXT', text: input.headerText.trim() })
+  // Armar botones: enlace (opcional) + baja/opt-out (recomendado en marketing).
+  const buttons: TemplateButtonInput[] = []
+  if (input.urlButtonText && input.urlButtonUrl) {
+    buttons.push({ type: 'url', text: input.urlButtonText, url: input.urlButtonUrl })
+  }
+  if (input.optOut) {
+    buttons.push({ type: 'quick_reply', text: input.optOutLabel })
   }
 
-  components.push({ type: 'BODY', text: input.bodyText })
+  const { components, parameterFormat } = buildTemplateComponents({
+    bodyText: input.bodyText,
+    bodyExamples: input.bodyExamples,
+    headerText: input.headerText,
+    headerExample: input.headerExample,
+    footerText: input.footerText,
+    buttons,
+  })
 
-  if (input.footerText?.trim()) {
-    components.push({ type: 'FOOTER', text: input.footerText.trim() })
+  const payload: Record<string, unknown> = {
+    name: input.name,
+    language: input.language,
+    category: input.category,
+    components,
   }
+  if (parameterFormat) payload.parameter_format = parameterFormat
 
   const res = await metaFetch<CreateTemplateResponse>(
     graphUrl(`${channel.external_account_id}/message_templates`),
-    {
-      method: 'POST',
-      accessToken,
-      body: {
-        name: input.name,
-        language: input.language,
-        category: input.category,
-        components,
-      },
-    },
+    { method: 'POST', accessToken, body: payload },
   )
 
   const metaTemplateId = res.id ?? ''
@@ -169,10 +174,19 @@ export async function deleteTemplate(channel: ChannelRow, name: string): Promise
 
   const accessToken = await decryptToken(channel.encrypted_access_token)
 
-  await metaFetch<unknown>(
-    graphUrl(`${channel.external_account_id}/message_templates?name=${encodeURIComponent(name)}`),
-    { method: 'DELETE', accessToken },
-  )
+  // La plantilla puede no existir en Meta (creada sólo localmente, seed, o ya
+  // borrada). No bloqueamos el borrado local por un fallo de Meta.
+  try {
+    await metaFetch<unknown>(
+      graphUrl(`${channel.external_account_id}/message_templates?name=${encodeURIComponent(name)}`),
+      { method: 'DELETE', accessToken },
+    )
+  } catch (e) {
+    console.warn(
+      '[templates.delete] Meta delete falló; se borra local igual:',
+      (e as Error).message,
+    )
+  }
 
   // Remove local rows for this channel+name (all languages)
   const service = createServiceClient()

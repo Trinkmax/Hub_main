@@ -6,7 +6,8 @@ describe('createTemplateSchema', () => {
     name: 'bienvenida_nuevo_cliente',
     language: 'es',
     category: 'MARKETING' as const,
-    bodyText: 'Hola {{1}}, bienvenido a HUB!',
+    // Sin variables: las variables + ejemplos se cubren en template-schema.test.ts.
+    bodyText: 'Hola, bienvenido a HUB!',
   }
 
   it('accepts a valid minimal input', () => {

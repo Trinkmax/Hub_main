@@ -52,13 +52,26 @@ export async function createTemplateAction(
   const access = await authorizeOwner(slug)
   if (!access) return { ok: false, message: 'Sin permisos.' }
 
+  let bodyExamples: unknown = []
+  try {
+    bodyExamples = JSON.parse((formData.get('bodyExamples') as string) || '[]')
+  } catch {
+    bodyExamples = []
+  }
+
   const parsed = createTemplateSchema.safeParse({
     name: formData.get('name'),
     language: formData.get('language'),
     category: formData.get('category'),
     bodyText: formData.get('bodyText'),
+    bodyExamples,
     headerText: formData.get('headerText') || undefined,
+    headerExample: formData.get('headerExample') || undefined,
     footerText: formData.get('footerText') || undefined,
+    optOut: formData.get('optOut') === 'true',
+    optOutLabel: formData.get('optOutLabel') || undefined,
+    urlButtonText: formData.get('urlButtonText') || undefined,
+    urlButtonUrl: formData.get('urlButtonUrl') || undefined,
   })
   if (!parsed.success) {
     const first = parsed.error.issues[0]
