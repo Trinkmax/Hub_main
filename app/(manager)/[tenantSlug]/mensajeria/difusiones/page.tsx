@@ -32,7 +32,7 @@ const STATUS_LABEL: Record<BroadcastStatus, string> = {
   scheduled: 'Programada',
   sending: 'Enviando',
   sent: 'Enviada',
-  partial: 'Parcial',
+  partial: 'Enviada con fallas',
   failed: 'Fallida',
   cancelled: 'Cancelada',
 }
@@ -67,7 +67,7 @@ export default async function DifusionesPage({
       <PageHeader
         eyebrow="Mensajería"
         title="Difusiones"
-        description="Mandá un template aprobado a una audiencia. Programá envíos o despachá ahora mismo."
+        description="Mandá un mensaje a una lista de clientes. Programalo para más tarde o envialo ahora mismo."
         actions={
           <Button asChild className="gap-2">
             <Link href={`/${tenantSlug}/mensajeria/difusiones/nueva`}>
@@ -82,7 +82,7 @@ export default async function DifusionesPage({
         <EmptyState
           icon={Megaphone}
           title="Aún no hay difusiones"
-          description="Para mandar un broadcast, primero conectá un canal y aprobá al menos un template en Meta."
+          description="Para enviar tu primer mensaje masivo, primero conectá WhatsApp y prepará al menos una plantilla aprobada."
           action={
             <Button asChild className="gap-2">
               <Link href={`/${tenantSlug}/mensajeria/difusiones/nueva`}>
@@ -100,7 +100,7 @@ export default async function DifusionesPage({
                 <tr>
                   <DataTableHeader>Nombre</DataTableHeader>
                   <DataTableHeader>Estado</DataTableHeader>
-                  <DataTableHeader>Programada</DataTableHeader>
+                  <DataTableHeader>Envío</DataTableHeader>
                   <DataTableHeader>Progreso</DataTableHeader>
                   <DataTableHeader className="w-8" />
                 </tr>

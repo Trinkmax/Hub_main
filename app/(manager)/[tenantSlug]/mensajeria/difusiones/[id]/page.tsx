@@ -52,6 +52,39 @@ function recipientVariant(s: RecipientStatus): 'default' | 'secondary' | 'destru
   return 'secondary'
 }
 
+const STATUS_LABEL: Record<string, string> = {
+  draft: 'Borrador',
+  scheduled: 'Programada',
+  sending: 'Enviando',
+  sent: 'Enviada',
+  partial: 'Enviada con fallas',
+  failed: 'Fallida',
+  cancelled: 'Cancelada',
+}
+
+// Traduce los errores más comunes de WhatsApp a algo accionable. El código
+// crudo queda en el tooltip por si soporte lo necesita.
+function friendlyError(raw: string | null): string {
+  if (!raw) return ''
+  const r = raw.toLowerCase()
+  if (r.includes('131047') || r.includes('re-engagement') || r.includes('24 h')) {
+    return 'Pasaron más de 24 h; hacía falta una plantilla.'
+  }
+  if (r.includes('131030') || r.includes('allowed list')) {
+    return 'El número todavía no está habilitado para recibir.'
+  }
+  if (r.includes('131026') || r.includes('undeliverable') || r.includes('not a whatsapp')) {
+    return 'No se pudo entregar (puede no tener WhatsApp).'
+  }
+  if (r.includes('131042') || r.includes('payment')) {
+    return 'Falta configurar el método de pago en Meta.'
+  }
+  if (r.includes('block')) {
+    return 'El cliente bloqueó los mensajes.'
+  }
+  return 'No se pudo enviar.'
+}
+
 export default async function BroadcastDetailPage({
   params,
 }: {
@@ -118,7 +151,7 @@ export default async function BroadcastDetailPage({
         description={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span>
-              {channel?.display_name ?? channel?.type} · template{' '}
+              {channel?.display_name ?? channel?.type} · mensaje{' '}
               <strong className="text-foreground">{template?.name}</strong>
             </span>
             <span>·</span>
@@ -129,9 +162,7 @@ export default async function BroadcastDetailPage({
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary" className="capitalize">
-              {b.status}
-            </Badge>
+            <Badge variant="secondary">{STATUS_LABEL[b.status] ?? b.status}</Badge>
             <BroadcastActions
               tenantSlug={tenantSlug}
               broadcastId={id}
@@ -147,7 +178,7 @@ export default async function BroadcastDetailPage({
           icon={Users}
           label="Total"
           value={total.toLocaleString('es-AR')}
-          hint="Recipients"
+          hint="En la lista"
         />
         <StatCard
           icon={Send}
@@ -173,7 +204,7 @@ export default async function BroadcastDetailPage({
       <DataTableShell>
         <header className="border-b border-border/60 px-5 py-4">
           <h2 className="font-serif text-lg font-semibold tracking-tight">
-            Recipients <span className="text-muted-foreground">(últimos 200)</span>
+            A quiénes se envió <span className="text-muted-foreground">(últimos 200)</span>
           </h2>
         </header>
         <DataTableScroll>
@@ -184,7 +215,7 @@ export default async function BroadcastDetailPage({
                 <DataTableHeader>Teléfono</DataTableHeader>
                 <DataTableHeader>Estado</DataTableHeader>
                 <DataTableHeader>Enviado</DataTableHeader>
-                <DataTableHeader>Error</DataTableHeader>
+                <DataTableHeader>Motivo</DataTableHeader>
               </tr>
             </DataTableHead>
             <DataTableBody>
@@ -207,7 +238,7 @@ export default async function BroadcastDetailPage({
                       {r.sent_at ? new Date(r.sent_at).toLocaleString('es-AR') : '—'}
                     </DataTableCell>
                     <DataTableCell className="text-xs text-destructive">
-                      {r.error ?? ''}
+                      <span title={r.error ?? undefined}>{friendlyError(r.error)}</span>
                     </DataTableCell>
                   </tr>
                 )

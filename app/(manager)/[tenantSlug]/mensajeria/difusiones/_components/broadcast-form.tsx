@@ -47,12 +47,12 @@ function eventShortDate(ymd: string): string {
 const initial: BroadcastActionState = { ok: true }
 
 const STEPS = [
-  { label: 'Canal', description: 'WhatsApp o Instagram' },
-  { label: 'Template', description: 'Mensaje aprobado' },
-  { label: 'Variables', description: 'Datos del cliente' },
-  { label: 'Audiencia', description: 'A quién mandar' },
+  { label: 'Canal', description: 'Por dónde lo mandás' },
+  { label: 'Mensaje', description: 'Qué plantilla usás' },
+  { label: 'Personalizar', description: 'Completá los huecos' },
+  { label: 'Audiencia', description: 'A quién le llega' },
   { label: 'Detalles', description: 'Nombre y horario' },
-  { label: 'Confirmar', description: 'Revisión final' },
+  { label: 'Revisar', description: 'Antes de enviar' },
 ]
 
 export function BroadcastForm({
@@ -103,13 +103,13 @@ export function BroadcastForm({
 
   useEffect(() => {
     if (state.ok && state.id) {
-      toast.success('Difusión programada.')
+      toast.success(scheduledAt ? 'Difusión programada.' : 'Difusión enviada.')
       router.push(`/${tenantSlug}/mensajeria/difusiones/${state.id}`)
       router.refresh()
     } else if (!state.ok && state.message) {
       toast.error(state.message)
     }
-  }, [state, router, tenantSlug])
+  }, [state, router, tenantSlug, scheduledAt])
 
   const maxStep = STEPS.length - 1
 
@@ -139,7 +139,7 @@ export function BroadcastForm({
             <div className="space-y-3">
               <div>
                 <h2 className="font-display text-lg font-semibold tracking-tight">
-                  ¿Por qué canal?
+                  ¿Por dónde lo mandás?
                 </h2>
                 <p className="text-sm text-muted-foreground">
                   Solo aparecen los canales conectados.
@@ -149,13 +149,13 @@ export function BroadcastForm({
                 <div className="rounded-lg border border-warning/40 bg-warning/5 p-4 text-sm">
                   <p className="font-medium text-warning">No hay canales conectados</p>
                   <p className="mt-1 text-muted-foreground">
-                    Conectá WhatsApp en Configuración → Canales antes de programar una difusión.
+                    Conectá WhatsApp en Mensajería → Canales antes de crear una difusión.
                   </p>
                 </div>
               ) : (
                 <Select value={channelId} onValueChange={setChannelId}>
                   <SelectTrigger className="h-11">
-                    <SelectValue placeholder="Elegí canal" />
+                    <SelectValue placeholder="Elegí por dónde" />
                   </SelectTrigger>
                   <SelectContent>
                     {channels.map((c) => (
@@ -178,23 +178,22 @@ export function BroadcastForm({
             <div className="space-y-3">
               <div>
                 <h2 className="font-display text-lg font-semibold tracking-tight">
-                  ¿Qué template?
+                  ¿Qué mensaje mandás?
                 </h2>
-                <p className="text-sm text-muted-foreground">
-                  Solo aparecen los aprobados por Meta.
-                </p>
+                <p className="text-sm text-muted-foreground">De tus plantillas ya aprobadas.</p>
               </div>
               {filteredTemplates.length === 0 ? (
                 <div className="rounded-lg border border-warning/40 bg-warning/5 p-4 text-sm">
-                  <p className="font-medium text-warning">Sin templates aprobados</p>
+                  <p className="font-medium text-warning">Todavía no tenés mensajes listos</p>
                   <p className="mt-1 text-muted-foreground">
-                    Sincronizá en Configuración → Plantillas y esperá la aprobación de Meta.
+                    Creá una plantilla en Mensajería → Plantillas. WhatsApp la revisa (unos minutos)
+                    y aparece acá.
                   </p>
                 </div>
               ) : (
                 <Select value={templateId} onValueChange={setTemplateId}>
                   <SelectTrigger className="h-11">
-                    <SelectValue placeholder="Elegí template" />
+                    <SelectValue placeholder="Elegí una plantilla" />
                   </SelectTrigger>
                   <SelectContent>
                     {filteredTemplates.map((t) => (
@@ -212,12 +211,12 @@ export function BroadcastForm({
             <div className="space-y-4">
               <div>
                 <h2 className="font-display text-lg font-semibold tracking-tight">
-                  Variables del template
+                  Completá los huecos del mensaje
                 </h2>
                 <p className="text-sm text-muted-foreground">
                   {paramCount === 0
-                    ? 'Este template no tiene variables.'
-                    : 'Mapeá cada variable a un dato del cliente.'}
+                    ? 'Este mensaje no tiene huecos para completar.'
+                    : 'Cada hueco se rellena con un dato de cada cliente, así le llega personalizado.'}
                 </p>
               </div>
               {Array.from({ length: paramCount }).map((_, idx) => {
@@ -225,7 +224,7 @@ export function BroadcastForm({
                 const def = mapping[key] ?? { source: 'first_name' as const }
                 return (
                   <div key={key} className="grid gap-2 rounded-lg border border-border/60 p-3">
-                    <Label>{`{{${key}}}`}</Label>
+                    <Label>{`Dato ${key}`}</Label>
                     <Select
                       value={def.source}
                       onValueChange={(v) =>
@@ -242,12 +241,12 @@ export function BroadcastForm({
                         <SelectItem value="first_name">Nombre</SelectItem>
                         <SelectItem value="last_name">Apellido</SelectItem>
                         <SelectItem value="phone">Teléfono</SelectItem>
-                        <SelectItem value="custom">Texto fijo</SelectItem>
+                        <SelectItem value="custom">Un texto fijo</SelectItem>
                       </SelectContent>
                     </Select>
                     {def.source === 'custom' ? (
                       <Input
-                        placeholder="Texto fijo"
+                        placeholder="El texto que va acá"
                         value={def.value ?? ''}
                         onChange={(e) =>
                           setMapping((m) => ({
@@ -258,7 +257,7 @@ export function BroadcastForm({
                       />
                     ) : (
                       <Input
-                        placeholder="Fallback si está vacío (opcional)"
+                        placeholder="Qué poner si el cliente no tiene este dato"
                         value={def.fallback ?? ''}
                         onChange={(e) =>
                           setMapping((m) => {
@@ -274,7 +273,7 @@ export function BroadcastForm({
               {paramCount > 0 ? (
                 <div className="rounded-lg border bg-muted/30 p-3 text-sm">
                   <p className="mb-1 text-[11px] uppercase tracking-wider text-muted-foreground">
-                    Preview
+                    Vista previa
                   </p>
                   <p className="whitespace-pre-wrap">
                     {renderTemplateBodyPreview(template?.components, previewValues)}
@@ -289,14 +288,14 @@ export function BroadcastForm({
               <div>
                 <h2 className="font-display text-lg font-semibold tracking-tight">¿A quién?</h2>
                 <p className="text-sm text-muted-foreground">
-                  La audiencia se recalcula antes del envío.
+                  La lista se actualiza sola justo antes de enviar.
                 </p>
               </div>
               {audiences.length === 0 ? (
                 <div className="rounded-lg border border-warning/40 bg-warning/5 p-4 text-sm">
                   <p className="font-medium text-warning">Sin audiencias</p>
                   <p className="mt-1 text-muted-foreground">
-                    Creá una audiencia primero en Marketing → Audiencias.
+                    Creá una lista primero en Mensajería → Audiencias.
                   </p>
                 </div>
               ) : (
@@ -325,7 +324,9 @@ export function BroadcastForm({
             <div className="space-y-4">
               <div>
                 <h2 className="font-display text-lg font-semibold tracking-tight">Detalles</h2>
-                <p className="text-sm text-muted-foreground">Un nombre interno y cuándo enviar.</p>
+                <p className="text-sm text-muted-foreground">
+                  Un nombre para vos (los clientes no lo ven) y cuándo enviar.
+                </p>
               </div>
               {events.length > 0 ? (
                 <div className="grid gap-1.5">
@@ -358,7 +359,7 @@ export function BroadcastForm({
                 </div>
               ) : null}
               <div className="grid gap-1.5">
-                <Label htmlFor="name-input">Nombre interno</Label>
+                <Label htmlFor="name-input">Nombre (solo para vos)</Label>
                 <Input
                   id="name-input"
                   placeholder="Ej: Septiembre · peña folklórica"
@@ -378,7 +379,9 @@ export function BroadcastForm({
                     setScheduledAt(e.target.value ? new Date(e.target.value).toISOString() : '')
                   }
                 />
-                <p className="text-[11px] text-muted-foreground">Vacío = enviar ahora.</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Si lo dejás en blanco, se envía ni bien confirmes.
+                </p>
               </div>
             </div>
           ) : null}
@@ -389,7 +392,9 @@ export function BroadcastForm({
                 <h2 className="font-display text-lg font-semibold tracking-tight">
                   Revisión final
                 </h2>
-                <p className="text-sm text-muted-foreground">Verificá antes de programar.</p>
+                <p className="text-sm text-muted-foreground">
+                  Revisá que esté todo bien antes de enviar.
+                </p>
               </div>
               <dl className="grid gap-3">
                 <SummaryRow
@@ -399,7 +404,7 @@ export function BroadcastForm({
                 />
                 <SummaryRow
                   icon={Sparkles}
-                  label="Template"
+                  label="Mensaje"
                   value={template ? `${template.name} (${template.language})` : '—'}
                 />
                 <SummaryRow
@@ -443,9 +448,11 @@ export function BroadcastForm({
               ) : null}
 
               <p className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                Se envía sólo a los clientes con{' '}
-                <strong className="text-foreground">opt-in de WhatsApp</strong>; se excluyen
-                automáticamente los que no lo tienen y los bloqueados.
+                Se envía sólo a los clientes que{' '}
+                <strong className="text-foreground">
+                  aceptaron recibir promociones por WhatsApp
+                </strong>
+                . Los que no aceptaron —o pidieron no recibir más— quedan afuera automáticamente.
               </p>
             </div>
           ) : null}
@@ -474,7 +481,13 @@ export function BroadcastForm({
             </Button>
           ) : (
             <Button type="submit" disabled={pending} size="lg">
-              {pending ? 'Programando…' : 'Programar difusión'}
+              {pending
+                ? scheduledAt
+                  ? 'Programando…'
+                  : 'Enviando…'
+                : scheduledAt
+                  ? 'Programar envío'
+                  : 'Enviar ahora'}
             </Button>
           )}
         </div>

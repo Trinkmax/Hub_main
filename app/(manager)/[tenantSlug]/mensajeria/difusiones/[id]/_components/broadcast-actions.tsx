@@ -81,8 +81,8 @@ export function BroadcastActions({
               <AlertDialogTitle>¿Enviar la difusión ahora?</AlertDialogTitle>
               <AlertDialogDescription>
                 Se enviará el mensaje por WhatsApp a <strong>todos los destinatarios</strong> de la
-                audiencia (los que tengan opt-in y no estén bloqueados). Esta acción no se puede
-                deshacer.
+                audiencia (los que aceptaron recibir promociones y no están bloqueados). Esta acción
+                no se puede deshacer.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -102,15 +102,15 @@ export function BroadcastActions({
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button type="button" size="sm" variant="outline" disabled={resendPending}>
-              {resendPending ? 'Reencolando…' : `Reenviar fallidos (${failedCount})`}
+              {resendPending ? 'Reintentando…' : `Reenviar fallidos (${failedCount})`}
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>¿Reenviar los mensajes fallidos?</AlertDialogTitle>
               <AlertDialogDescription>
-                Se van a reencolar {failedCount} {failedCount === 1 ? 'mensaje' : 'mensajes'} que
-                habían fallado y se reintentará el envío por WhatsApp.
+                Vamos a volver a intentar el envío de {failedCount}{' '}
+                {failedCount === 1 ? 'mensaje' : 'mensajes'} que habían fallado.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
