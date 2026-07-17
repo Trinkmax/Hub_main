@@ -263,7 +263,9 @@ export function Composer({
       <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
         <Sparkles className="mt-0.5 size-3.5 shrink-0" />
         <span className="text-pretty">
-          Estás fuera de la ventana de 24h. Solo podés mandar templates aprobados por Meta.
+          Pasaron más de 24 h desde el último mensaje de esta persona. Para escribirle ahora tenés
+          que usar una plantilla (un mensaje ya aprobado por WhatsApp). Cuando te vuelva a escribir,
+          podés responder libre otra vez.
         </span>
       </div>
       <input type="hidden" name="conversation_id" value={conversationId} />
@@ -276,12 +278,12 @@ export function Composer({
         }}
       >
         <SelectTrigger>
-          <SelectValue placeholder="Elegí template aprobado" />
+          <SelectValue placeholder="Elegí una plantilla" />
         </SelectTrigger>
         <SelectContent>
           {templates.length === 0 ? (
             <SelectItem value="__none" disabled>
-              No hay templates aprobados
+              Todavía no tenés plantillas aprobadas
             </SelectItem>
           ) : (
             templates.map((t) => (
@@ -298,14 +300,14 @@ export function Composer({
       {variableCount > 0 ? (
         <div className="space-y-2 rounded-lg border border-border/60 bg-background/40 p-3">
           <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-            Variables del template
+            Completá los datos
           </p>
           {Array.from({ length: variableCount }).map((_, i) => (
             <Input
               // biome-ignore lint/suspicious/noArrayIndexKey: el orden es estable por contrato del template Meta ({{1}}, {{2}}…)
               key={`${selectedTemplateId || 'noop'}-${i}`}
               name="variable"
-              placeholder={`{{${i + 1}}}`}
+              placeholder={`Dato ${i + 1}`}
               required
             />
           ))}
@@ -313,7 +315,7 @@ export function Composer({
       ) : null}
       <Button type="submit" disabled={tplPending || !selectedTemplate} className="w-full gap-1.5">
         <Send className="size-4" />
-        {tplPending ? 'Enviando…' : 'Enviar template'}
+        {tplPending ? 'Enviando…' : 'Enviar plantilla'}
       </Button>
     </form>
   )

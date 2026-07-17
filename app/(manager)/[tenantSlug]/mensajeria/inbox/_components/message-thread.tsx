@@ -80,14 +80,48 @@ function MediaBubble({ message, outbound }: { message: MessageRow; outbound: boo
   return <p className="mb-1 text-xs italic opacity-70">{placeholder}</p>
 }
 
+const STATUS_LABEL: Record<string, string> = {
+  queued: 'En cola',
+  sent: 'Enviado',
+  delivered: 'Entregado',
+  read: 'Leído',
+  failed: 'No se pudo enviar',
+}
+
 function StatusIcon({ status }: { status: MessageRow['status'] }) {
   if (!status) return null
-  if (status === 'queued') return <Clock3 className="size-3" />
-  if (status === 'sent') return <Check className="size-3" />
-  if (status === 'delivered') return <CheckCheck className="size-3" />
-  if (status === 'read') return <CheckCheck className="size-3 text-info" />
-  if (status === 'failed') return <TriangleAlert className="size-3 text-destructive" />
-  return null
+  const label = STATUS_LABEL[status] ?? ''
+  const icon =
+    status === 'queued' ? (
+      <Clock3 className="size-3" />
+    ) : status === 'sent' ? (
+      <Check className="size-3" />
+    ) : status === 'delivered' ? (
+      <CheckCheck className="size-3" />
+    ) : status === 'read' ? (
+      <CheckCheck className="size-3 text-info" />
+    ) : status === 'failed' ? (
+      <TriangleAlert className="size-3 text-destructive" />
+    ) : null
+  if (!icon) return null
+  return (
+    <span title={label} aria-label={label} role="img" className="inline-flex">
+      {icon}
+    </span>
+  )
+}
+
+// Traduce los errores más comunes de WhatsApp a algo entendible; el crudo va en el title.
+function friendlyError(raw: string): string {
+  const r = raw.toLowerCase()
+  if (r.includes('131047') || r.includes('re-engagement') || r.includes('24 h')) {
+    return 'Pasaron 24 h; hace falta una plantilla'
+  }
+  if (r.includes('131026') || r.includes('undeliverable') || r.includes('not a whatsapp')) {
+    return 'No se pudo entregar'
+  }
+  if (r.includes('block')) return 'El cliente bloqueó los mensajes'
+  return 'No se pudo enviar'
 }
 
 export function MessageThread({
@@ -232,7 +266,11 @@ export function MessageThread({
                   {format(new Date(m.sent_at ?? m.created_at), 'HH:mm')}
                 </span>
                 {outbound && m.status ? <StatusIcon status={m.status} /> : null}
-                {m.error ? <span className="ml-1 truncate">· {m.error}</span> : null}
+                {m.error ? (
+                  <span className="ml-1 truncate" title={m.error}>
+                    · {friendlyError(m.error)}
+                  </span>
+                ) : null}
               </p>
             </div>
           </div>

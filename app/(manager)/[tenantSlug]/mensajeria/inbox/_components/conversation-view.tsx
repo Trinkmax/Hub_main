@@ -3,6 +3,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { getConversation, listMessages } from '@/lib/bandeja/queries'
 import { getTagsForConversationIds, listConversationTags } from '@/lib/conversation-tags/queries'
+import { formatPhoneForDisplay } from '@/lib/phone'
 import { listQuickMessages } from '@/lib/quick-messages/queries'
 import { Composer } from './composer'
 import { ConversationTagPicker } from './conversation-tag-picker'
@@ -44,7 +45,18 @@ export async function ConversationView({
 
   const lastInboundMs = convo.last_inbound_at ? new Date(convo.last_inbound_at).getTime() : 0
   const insideWindow = lastInboundMs > 0 && Date.now() - lastInboundMs < 24 * 3600 * 1000
-  const display = convo.customer_name ?? convo.external_user_id
+  const display =
+    convo.customer_name ??
+    (convo.channel_type === 'whatsapp'
+      ? formatPhoneForDisplay(convo.external_user_id)
+      : 'Cliente de Instagram')
+  const replyUntil =
+    insideWindow && lastInboundMs > 0
+      ? new Date(lastInboundMs + 24 * 3600 * 1000).toLocaleTimeString('es-AR', {
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : null
   const initials = (display || '?').charAt(0).toUpperCase()
   const assignedTags = tagsMap.get(conversationId) ?? []
   const assignedTagIds = assignedTags.map((t) => t.id)
@@ -62,18 +74,26 @@ export async function ConversationView({
               <MessageSquare className="size-3" />
               {convo.channel_type === 'whatsapp' ? 'WhatsApp' : 'Instagram'}
             </span>
-            <span aria-hidden>·</span>
-            <Badge
-              variant="outline"
-              className={
-                insideWindow
-                  ? 'gap-1 border-success/30 bg-success/10 text-success'
-                  : 'gap-1 border-warning/30 bg-warning/10 text-warning'
-              }
-            >
-              <Clock className="size-2.5" />
-              {insideWindow ? 'Dentro de ventana 24h' : 'Fuera de ventana'}
-            </Badge>
+            {convo.channel_type === 'whatsapp' ? (
+              <>
+                <span aria-hidden>·</span>
+                <Badge
+                  variant="outline"
+                  className={
+                    insideWindow
+                      ? 'gap-1 border-success/30 bg-success/10 text-success'
+                      : 'gap-1 border-warning/30 bg-warning/10 text-warning'
+                  }
+                >
+                  <Clock className="size-2.5" />
+                  {insideWindow
+                    ? replyUntil
+                      ? `Respondés hasta las ${replyUntil}`
+                      : 'Podés responder'
+                    : 'Pasaron 24 h · solo por plantilla'}
+                </Badge>
+              </>
+            ) : null}
           </p>
         </div>
         <ConversationTagPicker

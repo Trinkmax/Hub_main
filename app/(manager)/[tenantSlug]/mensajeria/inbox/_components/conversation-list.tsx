@@ -7,6 +7,7 @@ import { useEffect } from 'react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import type { ConversationListRow } from '@/lib/bandeja/queries'
 import { buildListHref } from '@/lib/bandeja/utils'
+import { formatPhoneForDisplay } from '@/lib/phone'
 import { createClient } from '@/lib/supabase/browser'
 import { cn } from '@/lib/utils'
 
@@ -66,7 +67,7 @@ export function ConversationList({
   if (conversations.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center px-4 py-10 text-center text-xs text-muted-foreground">
-        Sin conversaciones todavía.
+        Cuando un cliente te escriba, la charla aparece acá.
       </div>
     )
   }
@@ -81,7 +82,11 @@ export function ConversationList({
     <ul className="divide-y divide-border/40 overflow-y-auto">
       {conversations.map((c) => {
         const active = c.id === selectedId
-        const display = c.customer_name ?? c.external_user_id
+        const display =
+          c.customer_name ??
+          (c.channel_type === 'whatsapp'
+            ? formatPhoneForDisplay(c.external_user_id)
+            : 'Cliente de Instagram')
         const initials = (display || '?').charAt(0).toUpperCase()
         const channelKey = c.channel_type === 'whatsapp' ? 'WA' : 'IG'
         return (
@@ -100,6 +105,7 @@ export function ConversationList({
                   </AvatarFallback>
                 </Avatar>
                 <span
+                  title={c.channel_type === 'whatsapp' ? 'WhatsApp' : 'Instagram'}
                   className={cn(
                     'absolute -bottom-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full border border-card px-0.5 text-[8px] font-bold leading-none',
                     c.channel_type === 'whatsapp'
