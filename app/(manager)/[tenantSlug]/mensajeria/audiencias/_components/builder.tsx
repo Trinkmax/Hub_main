@@ -146,6 +146,39 @@ function defaultCondition(): Condition {
   return { kind: 'condition', field: 'visits_count', op: 'gte', value: 2 }
 }
 
+function cond(field: ConditionField, op: ConditionOp, value: unknown): Condition {
+  return { kind: 'condition', field, op, value }
+}
+
+// Presets de un click. Todos dinámicos: se recalculan en cada envío.
+const PRESETS: { label: string; suggestedName: string; filter: Group }[] = [
+  {
+    label: 'Con opt-in de WhatsApp',
+    suggestedName: 'Con opt-in de WhatsApp',
+    filter: { kind: 'group', op: 'AND', nodes: [cond('opt_in_marketing', 'is_true', null)] },
+  },
+  {
+    label: 'Frecuentes (2+ visitas)',
+    suggestedName: 'Clientes frecuentes',
+    filter: { kind: 'group', op: 'AND', nodes: [cond('visits_count', 'gte', 2)] },
+  },
+  {
+    label: 'Inactivos (30+ días)',
+    suggestedName: 'Clientes a reactivar',
+    filter: { kind: 'group', op: 'AND', nodes: [cond('days_since_last_visit', 'gte', 30)] },
+  },
+  {
+    label: 'Nuevos (última semana)',
+    suggestedName: 'Clientes nuevos',
+    filter: { kind: 'group', op: 'AND', nodes: [cond('created_days_ago', 'lte', 7)] },
+  },
+  {
+    label: 'Con puntos disponibles',
+    suggestedName: 'Con puntos para canjear',
+    filter: { kind: 'group', op: 'AND', nodes: [cond('points_balance', 'gt', 0)] },
+  },
+]
+
 type BuilderProps = {
   tenantSlug: string
   options: AudienceBuilderOptions
@@ -204,6 +237,11 @@ export function AudienceBuilder({
     }
   }, [filtersJson, tenantSlug])
 
+  function applyPreset(preset: (typeof PRESETS)[number]) {
+    setRoot(preset.filter)
+    if (!name.trim()) setName(preset.suggestedName)
+  }
+
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
       <div className="space-y-5">
@@ -232,10 +270,23 @@ export function AudienceBuilder({
 
         <div className="space-y-2">
           <h2 className="font-display text-sm font-semibold tracking-tight">Condiciones</h2>
-          <GroupEditor group={root} onChange={setRoot} options={options} />
+          {root.nodes.length === 0 ? (
+            <PresetPicker
+              onPick={applyPreset}
+              onCustom={() => setRoot({ ...root, nodes: [defaultCondition()] })}
+            />
+          ) : (
+            <GroupEditor group={root} onChange={setRoot} options={options} />
+          )}
         </div>
 
-        <Button type="submit" name={submitName ?? undefined} size="lg" className="w-full sm:w-auto">
+        <Button
+          type="submit"
+          name={submitName ?? undefined}
+          size="lg"
+          className="w-full sm:w-auto"
+          disabled={!name.trim()}
+        >
           {submitLabel}
         </Button>
       </div>
@@ -321,6 +372,42 @@ function toGroup(f: AudienceFilter): Group {
   return { kind: 'group', op: 'AND', nodes: [f] }
 }
 
+function PresetPicker({
+  onPick,
+  onCustom,
+}: {
+  onPick: (preset: (typeof PRESETS)[number]) => void
+  onCustom: () => void
+}) {
+  return (
+    <div className="card-hairline space-y-3 rounded-xl border bg-card/60 p-4">
+      <p className="text-xs text-muted-foreground">
+        Elegí un grupo listo para empezar, o armá una condición a medida. Sin condiciones, la
+        audiencia incluye a <strong className="text-foreground">todos los clientes</strong>.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {PRESETS.map((p) => (
+          <Button
+            key={p.label}
+            type="button"
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => onPick(p)}
+          >
+            <Sparkles className="size-3 text-primary" />
+            {p.label}
+          </Button>
+        ))}
+      </div>
+      <Button type="button" size="sm" variant="ghost" className="gap-1.5" onClick={onCustom}>
+        <Plus className="size-3" />
+        Condición personalizada
+      </Button>
+    </div>
+  )
+}
+
 function GroupEditor({
   group,
   onChange,
@@ -355,12 +442,15 @@ function GroupEditor({
             <SelectItem value="OR">O</SelectItem>
           </SelectContent>
         </Select>
+        <span className="text-[11px] text-muted-foreground">
+          {group.op === 'AND' ? 'cumple todas las condiciones' : 'cumple al menos una'}
+        </span>
       </div>
 
       <div className="space-y-2">
         {group.nodes.length === 0 ? (
           <p className="rounded-lg border border-dashed bg-secondary/20 px-3 py-3 text-xs text-muted-foreground">
-            Agregá al menos una condición.
+            Agregá una condición a este grupo.
           </p>
         ) : null}
         {group.nodes.map((node, i) => (
