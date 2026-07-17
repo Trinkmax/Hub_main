@@ -31,10 +31,23 @@ export const dynamic = 'force-dynamic'
 
 const STATUS_LABEL: Record<TemplateStatus, string> = {
   draft: 'Borrador',
-  pending: 'Pendiente',
-  approved: 'Aprobado',
-  rejected: 'Rechazado',
-  disabled: 'Deshabilitado',
+  pending: 'Esperando aprobación',
+  approved: 'Aprobada',
+  rejected: 'Rechazada',
+  disabled: 'Deshabilitada',
+}
+
+const CATEGORY_LABEL: Record<string, string> = {
+  MARKETING: 'Marketing',
+  UTILITY: 'Utilidad',
+  AUTHENTICATION: 'Autenticación',
+}
+
+const LANGUAGE_LABEL: Record<string, string> = {
+  es_AR: 'Español',
+  es: 'Español',
+  en_US: 'Inglés',
+  en: 'Inglés',
 }
 
 function statusVariant(s: TemplateStatus): 'default' | 'outline' | 'destructive' | 'secondary' {
@@ -89,7 +102,7 @@ export default async function TemplatesPage({
       <PageHeader
         eyebrow="Configuración"
         title="Plantillas de WhatsApp"
-        description="Creá y enviá templates a revisión de Meta, o sincronizá los ya aprobados para usarlos en difusiones y mensajes fuera de la ventana de 24h."
+        description="Mensajes que WhatsApp aprueba una vez y después reusás en tus difusiones o para escribirle primero a un cliente. Creá una nueva o traé las que ya tengas aprobadas."
         actions={
           channel ? (
             <div className="flex flex-wrap items-center gap-2">
@@ -104,7 +117,7 @@ export default async function TemplatesPage({
         <EmptyState
           icon={Plug}
           title="Conectá WhatsApp primero"
-          description="Necesitás completar el flujo de Embedded Signup en Canales antes de poder gestionar templates."
+          description="Primero conectá tu número de WhatsApp en Canales. Después vas a poder crear y usar plantillas."
           action={
             <Button asChild className="gap-2">
               <Link href={`/${tenantSlug}/mensajeria/canales`}>
@@ -117,8 +130,8 @@ export default async function TemplatesPage({
       ) : templates.length === 0 ? (
         <EmptyState
           icon={MessageSquareText}
-          title="Sin templates sincronizados"
-          description="Tocá Nueva plantilla para crear una, o Sincronizar para traer los templates aprobados por Meta."
+          title="Todavía no tenés plantillas"
+          description="Tocá «Nueva plantilla» para crear una, o «Sincronizar» para traer las que ya tengas aprobadas en WhatsApp."
         />
       ) : (
         <DataTableShell>
@@ -130,7 +143,7 @@ export default async function TemplatesPage({
                   <DataTableHeader>Idioma</DataTableHeader>
                   <DataTableHeader>Categoría</DataTableHeader>
                   <DataTableHeader>Estado</DataTableHeader>
-                  <DataTableHeader>Última sync</DataTableHeader>
+                  <DataTableHeader>Actualizada</DataTableHeader>
                   <DataTableHeader>
                     <span className="sr-only">Acciones</span>
                   </DataTableHeader>
@@ -142,11 +155,11 @@ export default async function TemplatesPage({
                     <DataTableCell className="font-medium font-mono text-xs">
                       {t.name}
                     </DataTableCell>
-                    <DataTableCell className="text-xs uppercase tracking-wider text-muted-foreground">
-                      {t.language}
+                    <DataTableCell className="text-xs text-muted-foreground">
+                      {LANGUAGE_LABEL[t.language] ?? t.language}
                     </DataTableCell>
-                    <DataTableCell className="capitalize text-muted-foreground">
-                      {t.category.toLowerCase()}
+                    <DataTableCell className="text-muted-foreground">
+                      {CATEGORY_LABEL[t.category.toUpperCase()] ?? t.category}
                     </DataTableCell>
                     <DataTableCell>
                       <Badge variant={statusVariant(t.status)}>{STATUS_LABEL[t.status]}</Badge>

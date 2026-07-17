@@ -109,7 +109,7 @@ export default async function CanalesPage({
         icon={<MessageCircle className="size-5" />}
         iconClass="bg-success/15 text-success"
         title="WhatsApp Business"
-        subtitle="Embedded Signup. Templates aprobados por Meta para enviar fuera de la ventana de 24h."
+        subtitle="Conectá tu número para recibir, responder y mandar difusiones por WhatsApp."
         status={wa?.status ?? null}
         displayName={wa?.display_name ? wa.display_name : null}
         displayPrefix=""
@@ -128,7 +128,7 @@ export default async function CanalesPage({
         icon={<Camera className="size-5" />}
         iconClass="bg-warning/15 text-warning"
         title="Instagram"
-        subtitle="Login con Instagram Business para responder DMs desde la bandeja."
+        subtitle="Conectá tu cuenta para responder mensajes directos de Instagram desde la bandeja."
         status={ig?.status ?? null}
         displayName={ig?.display_name ? ig.display_name : null}
         displayPrefix="@"
@@ -149,10 +149,10 @@ export default async function CanalesPage({
         </h3>
         <ol className="mt-3 space-y-2.5 text-sm text-muted-foreground">
           {[
-            'Creá una app en Meta for Developers y agregá el producto WhatsApp.',
-            'Cargá META_APP_ID y META_APP_SECRET (y META_WEBHOOK_VERIFY_TOKEN) en el entorno.',
-            'Volvé acá y tocá “Conectar WhatsApp” para el Embedded Signup de Meta.',
-            'Elegí el número, sincronizá las plantillas y mandá un mensaje de prueba.',
+            'Tocá “Conectar WhatsApp” y seguí los pasos de Meta (te vas a loguear con tu Facebook).',
+            'Elegí tu cuenta de WhatsApp Business y el número que vas a usar.',
+            'Sincronizá tus plantillas desde la pantalla de Plantillas.',
+            'Mandá un mensaje de prueba desde Difusiones para confirmar que funciona.',
           ].map((step, i) => (
             <li key={step} className="flex gap-3">
               <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-secondary text-[11px] font-semibold tabular-nums text-foreground">
@@ -218,8 +218,8 @@ function ChannelCard({
           <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
             <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
             <span>
-              El token de acceso expira pronto o ya expiró. Reconectá el canal para restaurar el
-              envío de mensajes.
+              La conexión está por vencer (o ya venció). Reconectá para poder seguir enviando
+              mensajes.
             </span>
           </div>
         ) : null}

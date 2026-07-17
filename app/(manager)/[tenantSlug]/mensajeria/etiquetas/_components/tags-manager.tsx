@@ -140,7 +140,7 @@ export function TagsManager({ tenantSlug, tags }: { tenantSlug: string; tags: Co
         </h2>
         {tags.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border/70 px-4 py-10 text-center text-sm text-muted-foreground">
-            Todavía no hay etiquetas. Creá la primera arriba para empezar a organizar el inbox.
+            Todavía no hay etiquetas. Creá la primera arriba para organizar tus conversaciones.
           </p>
         ) : (
           <ul className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-card/60">

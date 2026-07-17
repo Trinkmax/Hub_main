@@ -37,7 +37,7 @@ export default async function QuickMessagesPage({
       <PageHeader
         eyebrow="Configuración · Mensajería"
         title="Mensajes rápidos"
-        description="Creá atajos para respuestas frecuentes. En el composer escribí / para buscarlos."
+        description="Creá atajos para tus respuestas más frecuentes. Al responder un mensaje, escribí / para buscarlos."
       />
       <Section>
         <QuickMessagesManager tenantSlug={tenantSlug} initialMessages={messages} />
