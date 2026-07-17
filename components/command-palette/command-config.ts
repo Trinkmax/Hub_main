@@ -90,7 +90,7 @@ export const commandEntries: CommandEntry[] = [
   },
   {
     id: 'new-flow',
-    label: 'Nuevo flow',
+    label: 'Nueva automatización',
     icon: Workflow,
     group: 'Acciones rápidas',
     type: 'navigate-new',
@@ -198,7 +198,7 @@ export const commandEntries: CommandEntry[] = [
   },
   {
     id: 'flows',
-    label: 'Flows',
+    label: 'Automatizaciones',
     icon: Workflow,
     group: 'Ir a',
     type: 'navigate',

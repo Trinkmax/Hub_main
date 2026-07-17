@@ -24,15 +24,15 @@ import {
 } from '@/lib/tenant'
 import type { FlowTriggerType } from '@/types/database'
 
-export const metadata = { title: 'Flows' }
+export const metadata = { title: 'Automatizaciones' }
 export const dynamic = 'force-dynamic'
 
 const TRIGGER_LABEL: Record<FlowTriggerType, string> = {
-  customer_inactive: 'Cliente inactivo',
-  birthday: 'Cumpleaños',
-  after_visit: 'Después de visita',
-  event_starting: 'Evento próximo',
-  tag_added: 'Tag agregado',
+  customer_inactive: 'Hace tiempo que no viene',
+  birthday: 'Cumple años',
+  after_visit: 'Después de una visita',
+  event_starting: 'Se acerca un evento',
+  tag_added: 'Le ponés una etiqueta',
 }
 
 export default async function FlowsPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
@@ -53,13 +53,13 @@ export default async function FlowsPage({ params }: { params: Promise<{ tenantSl
     <PageShell width="comfortable">
       <PageHeader
         eyebrow="Mensajería"
-        title="Flows"
-        description="Automatizaciones que se disparan solas: cumpleaños, post-visita, recordatorios de evento."
+        title="Automatizaciones"
+        description="Mensajes que se mandan solos cuando pasa algo: un cumpleaños, una visita, un evento."
         actions={
           <Button asChild className="gap-2">
             <Link href={`/${tenantSlug}/mensajeria/flows/nuevo`}>
               <Plus className="size-4" />
-              Nuevo flow
+              Nueva automatización
             </Link>
           </Button>
         }
@@ -68,13 +68,13 @@ export default async function FlowsPage({ params }: { params: Promise<{ tenantSl
       {flows.length === 0 ? (
         <EmptyState
           icon={Workflow}
-          title="Sin flows automáticos"
-          description="Los flows ejecutan acciones cuando algo pasa: el cliente cumple años, no viene hace 30 días, viene un evento. Definilos una vez y trabajan solos."
+          title="Todavía no tenés automatizaciones"
+          description="Trabajan solas: cuando un cliente cumple años, hace rato que no viene, o se acerca un evento, se manda el mensaje que definas. Lo armás una vez."
           action={
             <Button asChild className="gap-2">
               <Link href={`/${tenantSlug}/mensajeria/flows/nuevo`}>
                 <Plus className="size-4" />
-                Crear primer flow
+                Crear tu primera automatización
               </Link>
             </Button>
           }
@@ -86,7 +86,7 @@ export default async function FlowsPage({ params }: { params: Promise<{ tenantSl
               <DataTableHead>
                 <tr>
                   <DataTableHeader>Nombre</DataTableHeader>
-                  <DataTableHeader>Trigger</DataTableHeader>
+                  <DataTableHeader>Se activa cuando</DataTableHeader>
                   <DataTableHeader>Pasos</DataTableHeader>
                   <DataTableHeader>Estado</DataTableHeader>
                   <DataTableHeader className="w-8" />
@@ -111,10 +111,10 @@ export default async function FlowsPage({ params }: { params: Promise<{ tenantSl
                       {f.active ? (
                         <Badge variant="success" className="gap-1">
                           <span className="size-1.5 rounded-full bg-current" />
-                          Activo
+                          Activa
                         </Badge>
                       ) : (
-                        <Badge variant="outline">Pausado</Badge>
+                        <Badge variant="outline">En pausa</Badge>
                       )}
                     </DataTableCell>
                     <DataTableCell className="text-muted-foreground/40 group-hover:text-muted-foreground">

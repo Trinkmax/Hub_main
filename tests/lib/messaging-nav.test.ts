@@ -7,7 +7,7 @@ describe('visibleMessagingNav', () => {
     expect(labels).toEqual([
       'Inbox',
       'Difusiones',
-      'Flows',
+      'Automatizaciones',
       'Audiencias',
       'Canales',
       'Plantillas',

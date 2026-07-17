@@ -15,7 +15,7 @@ import {
 import { FlowBuilder } from '../_components/flow-builder'
 import { FlowGraphEditor } from '../_components/flow-graph-editor'
 
-export const metadata = { title: 'Editar flow' }
+export const metadata = { title: 'Editar automatización' }
 export const dynamic = 'force-dynamic'
 
 export default async function EditFlowPage({
@@ -70,15 +70,15 @@ export default async function EditFlowPage({
             className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="size-3" />
-            Volver a flows
+            Volver a automatizaciones
           </Link>
           <PageHeader
             eyebrow="Mensajería"
-            title="Editar flow"
+            title="Editar automatización"
             description={
               graphData.flow.active
-                ? 'Este flow está activo y se está ejecutando.'
-                : 'Pausado · podés activarlo cuando esté listo.'
+                ? 'Está prendida: se les manda a tus clientes cuando corresponde.'
+                : 'En pausa · prendela cuando esté lista.'
             }
           />
         </div>
@@ -115,11 +115,11 @@ export default async function EditFlowPage({
       </Link>
       <PageHeader
         eyebrow="Mensajería"
-        title="Editar flow"
+        title="Editar automatización"
         description={
           flow.active
-            ? 'Este flow está activo y se está ejecutando.'
-            : 'Pausado · podés activarlo cuando esté listo.'
+            ? 'Está prendida: se les manda a tus clientes cuando corresponde.'
+            : 'En pausa · prendela cuando esté lista.'
         }
       />
       <FlowBuilder

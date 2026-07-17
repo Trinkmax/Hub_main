@@ -40,7 +40,8 @@ export async function saveFlowGraph(slug: string, payload: unknown): Promise<Flo
   try {
     parsed = saveFlowGraphPayloadSchema.parse(payload)
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    console.error('[flows.save] payload inválido', (e as Error).message)
+    return { ok: false, message: 'No pudimos guardar. Revisá que la automatización esté completa.' }
   }
 
   // Structural graph validation

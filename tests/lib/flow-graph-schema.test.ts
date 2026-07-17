@@ -103,7 +103,7 @@ describe('validateFlowGraph', () => {
     })
     const error = validateFlowGraph(payload)
     expect(error).not.toBeNull()
-    expect(error).toContain('Trigger')
+    expect(error).toContain('activa')
   })
 
   it('rejects a graph with more than one trigger node', () => {
@@ -114,7 +114,7 @@ describe('validateFlowGraph', () => {
     })
     const error = validateFlowGraph(payload)
     expect(error).not.toBeNull()
-    expect(error).toContain('Trigger')
+    expect(error).toContain('disparador')
   })
 
   it('rejects an edge referencing a missing source node id', () => {
@@ -123,7 +123,7 @@ describe('validateFlowGraph', () => {
     })
     const error = validateFlowGraph(payload)
     expect(error).not.toBeNull()
-    expect(error).toContain(unknownId)
+    expect(error).toContain('sin conectar')
   })
 
   it('rejects an edge referencing a missing target node id', () => {
@@ -132,7 +132,7 @@ describe('validateFlowGraph', () => {
     })
     const error = validateFlowGraph(payload)
     expect(error).not.toBeNull()
-    expect(error).toContain(unknownId)
+    expect(error).toContain('sin conectar')
   })
 
   it('accepts a graph with no edges (trigger-only)', () => {
@@ -185,7 +185,7 @@ describe('validateFlowGraph', () => {
     })
     const error = validateFlowGraph(payload)
     expect(error).not.toBeNull()
-    expect(error).toContain('ciclo')
+    expect(error).toContain('círculo')
   })
 
   it('rechaza un ciclo de vuelta A→B→A (reenvío infinito)', () => {
@@ -208,7 +208,7 @@ describe('validateFlowGraph', () => {
     })
     const error = validateFlowGraph(payload)
     expect(error).not.toBeNull()
-    expect(error).toContain('ciclo')
+    expect(error).toContain('círculo')
   })
 
   it('acepta ramas que reconvergen sin ciclo (diamante cond→X, cond→Y, X→Z, Y→Z)', () => {

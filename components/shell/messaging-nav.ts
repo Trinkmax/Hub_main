@@ -22,7 +22,7 @@ export const MESSAGING_NAV: MessagingNavGroup[] = [
     label: 'Campañas',
     items: [
       { label: 'Difusiones', segment: 'difusiones', icon: 'Megaphone', roles: ['owner'] },
-      { label: 'Flows', segment: 'flows', icon: 'Workflow', roles: ['owner'] },
+      { label: 'Automatizaciones', segment: 'flows', icon: 'Workflow', roles: ['owner'] },
       { label: 'Audiencias', segment: 'audiencias', icon: 'UsersRound', roles: ['owner'] },
     ],
   },

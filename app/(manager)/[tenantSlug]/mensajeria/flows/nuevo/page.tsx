@@ -11,7 +11,7 @@ import {
 } from '@/lib/tenant'
 import { FlowGraphEditor } from '../_components/flow-graph-editor'
 
-export const metadata = { title: 'Nuevo flow' }
+export const metadata = { title: 'Nueva automatización' }
 export const dynamic = 'force-dynamic'
 
 export default async function NewFlowPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
@@ -49,12 +49,12 @@ export default async function NewFlowPage({ params }: { params: Promise<{ tenant
           className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-3" />
-          Volver a flows
+          Volver a automatizaciones
         </Link>
         <PageHeader
           eyebrow="Mensajería"
-          title="Nuevo flow"
-          description="Diseñá el grafo de automatización. El trigger dispara; el grafo define el camino."
+          title="Nueva automatización"
+          description="Armá un mensaje que se manda solo. Elegí cuándo tiene que salir y qué decir."
         />
       </div>
       <FlowGraphEditor

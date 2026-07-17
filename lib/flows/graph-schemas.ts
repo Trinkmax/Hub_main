@@ -40,21 +40,18 @@ export type SaveFlowGraphPayload = z.infer<typeof saveFlowGraphPayloadSchema>
  */
 export function validateFlowGraph(payload: SaveFlowGraphPayload): string | null {
   const triggerNodes = payload.nodes.filter((n) => n.kind === 'trigger')
-  if (triggerNodes.length === 0) return 'El flow debe tener exactamente un nodo Trigger.'
-  if (triggerNodes.length > 1) return 'El flow no puede tener más de un nodo Trigger.'
+  if (triggerNodes.length === 0) return 'Falta elegir cuándo se activa la automatización.'
+  if (triggerNodes.length > 1) return 'La automatización solo puede tener un disparador.'
 
   const nodeIds = new Set(payload.nodes.map((n) => n.id))
   for (const edge of payload.edges) {
-    if (!nodeIds.has(edge.source)) {
-      return `El edge ${edge.id} referencia un nodo fuente inexistente (${edge.source}).`
-    }
-    if (!nodeIds.has(edge.target)) {
-      return `El edge ${edge.id} referencia un nodo destino inexistente (${edge.target}).`
+    if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
+      return 'Hay un paso suelto sin conectar. Revisá que todos estén enlazados.'
     }
   }
 
   if (graphHasCycle(payload.nodes, payload.edges)) {
-    return 'El flow no puede tener ciclos: un nodo no puede volver a un paso anterior (se reenviaría en loop). Revisá las conexiones.'
+    return 'La automatización se repite en círculo y nunca termina. Revisá el orden de los pasos.'
   }
 
   return null
