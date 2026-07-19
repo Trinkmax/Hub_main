@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button'
 import type { MetaActionState } from '@/lib/meta/actions'
 import { deleteTemplateAction } from '@/lib/meta/template-actions'
+import { humanizeTemplateName } from './_template-display'
 
 const initial: MetaActionState = { ok: true }
 
@@ -32,11 +33,13 @@ export function DeleteTemplateButton({
   const boundAction = deleteTemplateAction.bind(null, tenantSlug)
   const [state, action, pending] = useActionState(boundAction, initial)
 
+  const displayName = humanizeTemplateName(templateName)
+
   useEffect(() => {
     if (state.ok && state.message) {
       toast.success(state.message)
     } else if (!state.ok && state.message) {
-      toast.error(state.message)
+      toast.error(`No se pudo eliminar la plantilla. ${state.message}`)
     }
   }, [state])
 
@@ -45,23 +48,23 @@ export function DeleteTemplateButton({
       <AlertDialogTrigger asChild>
         <Button
           variant="ghost"
-          size="sm"
-          className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 gap-1.5 px-2"
+          size="icon"
+          className="size-8 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
           disabled={pending}
-          aria-label={`Eliminar plantilla ${templateName}`}
+          aria-label={`Eliminar la plantilla ${displayName}`}
         >
-          <Trash2Icon className="size-3.5" />
-          {pending ? 'Eliminando…' : 'Eliminar'}
+          <Trash2Icon className="size-4" aria-hidden />
         </Button>
       </AlertDialogTrigger>
 
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>¿Eliminar plantilla?</AlertDialogTitle>
+          <AlertDialogTitle>¿Eliminar esta plantilla?</AlertDialogTitle>
           <AlertDialogDescription>
-            Vas a eliminar la plantilla <strong className="font-mono">{templateName}</strong> de
-            Meta y de HUB. Esta acción no se puede deshacer. Si la plantilla está aprobada, Meta
-            también la borrará de tu WABA.
+            Vas a borrar <strong>«{displayName}»</strong>{' '}
+            <span className="font-mono text-xs">({templateName})</span> de acá y también de tu
+            cuenta de WhatsApp. No se puede deshacer: si una difusión o automatización la usa, ese
+            mensaje va a dejar de salir.
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -74,7 +77,7 @@ export function DeleteTemplateButton({
               type="submit"
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90 w-full"
             >
-              Sí, eliminar
+              {pending ? 'Eliminando…' : 'Sí, eliminar'}
             </AlertDialogAction>
           </form>
         </AlertDialogFooter>

@@ -3,6 +3,7 @@
 import {
   addEdge,
   Background,
+  ControlButton,
   Controls,
   type Edge,
   Handle,
@@ -13,9 +14,10 @@ import {
   ReactFlow,
   useEdgesState,
   useNodesState,
+  useReactFlow,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Clock, GitBranch, MessageSquareText, Tag as TagIcon, Trash2, X, Zap } from 'lucide-react'
+import { Maximize, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useCallback, useState, useTransition } from 'react'
 import { toast } from 'sonner'
@@ -36,6 +38,19 @@ import { saveFlowGraph } from '@/lib/flows/graph-actions'
 import type { FlowEdge as DBFlowEdge, FlowNode as DBFlowNode } from '@/lib/flows/graph-queries'
 import type { FlowGraphNode } from '@/lib/flows/graph-schemas'
 import type { FlowTriggerConfig } from '@/lib/flows/schemas'
+import { ConditionEditor, WaitEditor } from './step-editors'
+import {
+  CHANNEL_TYPE_LABEL,
+  conditionSummary,
+  KIND_CHIP_CLASS,
+  KIND_HINT,
+  KIND_ICON,
+  KIND_LABEL,
+  type StepKind,
+  TRIGGER_TYPE_LABEL,
+  triggerSummary,
+  waitSummary,
+} from './step-meta'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -43,7 +58,7 @@ type Channel = { id: string; display_name: string | null; type: 'whatsapp' | 'in
 type Template = { id: string; name: string; language: string; channel_id: string }
 type Tag = { id: string; name: string }
 
-type NodeKind = 'trigger' | 'send_template' | 'wait' | 'condition' | 'add_tag'
+type NodeKind = StepKind
 
 // Each custom node's data payload
 type TriggerData = { kind: 'trigger'; config: FlowTriggerConfig }
@@ -74,48 +89,30 @@ let _tags: Tag[] = []
 let _onNodeDataChange: (id: string, data: FlowNodeData) => void = () => {}
 let _onNodeDelete: (id: string) => void = () => {}
 
-// ─── Node kind labels/icons ───────────────────────────────────────────────────
-
-const KIND_LABEL: Record<NodeKind, string> = {
-  trigger: 'Trigger',
-  send_template: 'Enviar template',
-  wait: 'Esperar',
-  condition: 'Condición',
-  add_tag: 'Agregar tag',
-}
-
-const KIND_ICON: Record<NodeKind, React.ElementType> = {
-  trigger: Zap,
-  send_template: MessageSquareText,
-  wait: Clock,
-  condition: GitBranch,
-  add_tag: TagIcon,
-}
-
 // ─── Custom node components ───────────────────────────────────────────────────
 
 function NodeShell({
   id,
   kind,
+  selected,
   children,
 }: {
   id: string
   kind: NodeKind
+  selected?: boolean
   children?: React.ReactNode
 }) {
   const Icon = KIND_ICON[kind]
   const isTrigger = kind === 'trigger'
 
-  const colorMap: Record<NodeKind, string> = {
-    trigger: 'bg-primary/10 border-primary/40 text-primary',
-    send_template: 'bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400',
-    wait: 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400',
-    condition: 'bg-violet-500/10 border-violet-500/30 text-violet-600 dark:text-violet-400',
-    add_tag: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400',
-  }
-
   return (
-    <div className="relative w-56 rounded-xl border bg-card shadow-sm ring-1 ring-inset ring-border/60">
+    <div
+      className={`relative w-56 rounded-xl border bg-card transition-shadow ${
+        selected
+          ? 'border-primary/50 shadow-md ring-2 ring-primary/40'
+          : 'shadow-sm ring-1 ring-inset ring-border/60'
+      }`}
+    >
       {/* Target handle — all nodes except trigger accept incoming */}
       {!isTrigger && (
         <Handle
@@ -127,17 +124,17 @@ function NodeShell({
 
       <div className="flex items-center gap-2 rounded-t-xl border-b border-border/60 px-3 py-2">
         <div
-          className={`flex size-6 items-center justify-center rounded-md border ${colorMap[kind]}`}
+          className={`flex size-6 shrink-0 items-center justify-center rounded-md border ${KIND_CHIP_CLASS[kind]}`}
         >
           <Icon className="size-3.5" />
         </div>
-        <span className="flex-1 text-xs font-semibold">{KIND_LABEL[kind]}</span>
+        <span className="flex-1 truncate text-xs font-semibold">{KIND_LABEL[kind]}</span>
         {!isTrigger && (
           <button
             type="button"
             onClick={() => _onNodeDelete(id)}
             className="rounded p-0.5 text-muted-foreground/50 hover:text-destructive"
-            aria-label="Eliminar nodo"
+            aria-label="Eliminar paso"
           >
             <X className="size-3" />
           </button>
@@ -163,7 +160,7 @@ function NodeShell({
             style={{ left: '70%' }}
             className="!size-3 !rounded-full !border-2 !border-rose-500 !bg-background"
           />
-          <div className="flex justify-between px-3 pb-2 text-[10px]">
+          <div className="flex justify-between px-3 pb-2 text-[10px] font-medium">
             <span className="text-emerald-600 dark:text-emerald-400">Sí</span>
             <span className="text-rose-600 dark:text-rose-400">No</span>
           </div>
@@ -182,47 +179,43 @@ function NodeShell({
 
 // ─── Trigger node ─────────────────────────────────────────────────────────────
 
-const TRIGGER_LABEL: Record<FlowTriggerConfig['type'], string> = {
-  customer_inactive: 'Cliente inactivo',
-  birthday: 'Cumpleaños',
-  after_visit: 'Después de visita',
-  event_starting: 'Evento próximo',
-  tag_added: 'Tag agregado',
-}
-
-function TriggerNodeComponent({ id, data }: NodeProps<FlowNode>) {
+function TriggerNodeComponent({ id, data, selected }: NodeProps<FlowNode>) {
   if (data.kind !== 'trigger') return null
-  const cfg = data.config
-
-  let summary = TRIGGER_LABEL[cfg.type]
-  if (cfg.type === 'customer_inactive') summary += ` (${cfg.days}d)`
-  if (cfg.type === 'birthday')
-    summary +=
-      cfg.offset_days === 0 ? '' : ` (${cfg.offset_days > 0 ? '+' : ''}${cfg.offset_days}d)`
-  if (cfg.type === 'event_starting') summary += ` (${cfg.hours_before}h antes)`
 
   return (
-    <NodeShell id={id} kind="trigger">
-      <span className="text-muted-foreground">{summary}</span>
+    <NodeShell id={id} kind="trigger" selected={selected}>
+      <span className="text-muted-foreground">{triggerSummary(data.config, _tags)}</span>
     </NodeShell>
   )
 }
 
 // ─── Send template node ───────────────────────────────────────────────────────
 
-function SendTemplateNodeComponent({ id, data }: NodeProps<FlowNode>) {
+function SendTemplateNodeComponent({ id, data, selected }: NodeProps<FlowNode>) {
   if (data.kind !== 'send_template') return null
   const { channel_id, template_id } = data.config
   const channel = _channels.find((c) => c.id === channel_id)
   const template = _templates.find((t) => t.id === template_id)
 
   return (
-    <NodeShell id={id} kind="send_template">
-      <div className="space-y-0.5 text-muted-foreground">
-        <div className="truncate">{channel?.display_name ?? channel?.type ?? '—'}</div>
-        <div className="truncate font-medium text-foreground">
-          {template?.name ?? 'Sin template'}
-        </div>
+    <NodeShell id={id} kind="send_template" selected={selected}>
+      <div className="space-y-0.5">
+        {channel ? (
+          <div className="truncate text-muted-foreground">
+            {channel.display_name ?? CHANNEL_TYPE_LABEL[channel.type]}
+          </div>
+        ) : (
+          <div className="truncate font-medium text-amber-600 dark:text-amber-400">
+            Falta elegir el canal
+          </div>
+        )}
+        {template ? (
+          <div className="truncate font-medium text-foreground">{template.name}</div>
+        ) : channel ? (
+          <div className="truncate font-medium text-amber-600 dark:text-amber-400">
+            Falta elegir el mensaje
+          </div>
+        ) : null}
       </div>
     </NodeShell>
   )
@@ -230,59 +223,42 @@ function SendTemplateNodeComponent({ id, data }: NodeProps<FlowNode>) {
 
 // ─── Wait node ────────────────────────────────────────────────────────────────
 
-function WaitNodeComponent({ id, data }: NodeProps<FlowNode>) {
+function WaitNodeComponent({ id, data, selected }: NodeProps<FlowNode>) {
   if (data.kind !== 'wait') return null
-  const { minutes } = data.config
-  const display =
-    minutes >= 1440
-      ? `${Math.round(minutes / 1440)}d`
-      : minutes >= 60
-        ? `${Math.round(minutes / 60)}h`
-        : `${minutes}min`
 
   return (
-    <NodeShell id={id} kind="wait">
-      <span className="text-muted-foreground">{display}</span>
+    <NodeShell id={id} kind="wait" selected={selected}>
+      <span className="text-muted-foreground">{waitSummary(data.config.minutes)}</span>
     </NodeShell>
   )
 }
 
 // ─── Condition node ───────────────────────────────────────────────────────────
 
-const OP_LABEL: Record<string, string> = {
-  eq: '=',
-  neq: '≠',
-  gt: '>',
-  gte: '≥',
-  lt: '<',
-  lte: '≤',
-  is_true: 'es true',
-  is_false: 'es false',
-}
-
-function ConditionNodeComponent({ id, data }: NodeProps<FlowNode>) {
+function ConditionNodeComponent({ id, data, selected }: NodeProps<FlowNode>) {
   if (data.kind !== 'condition') return null
   const { field, op, value } = data.config
 
   return (
-    <NodeShell id={id} kind="condition">
-      <span className="font-mono text-[10px] text-muted-foreground">
-        {field} {OP_LABEL[op] ?? op}
-        {value !== undefined ? ` ${String(value)}` : ''}
-      </span>
+    <NodeShell id={id} kind="condition" selected={selected}>
+      <span className="text-muted-foreground">{conditionSummary(field, op, value)}</span>
     </NodeShell>
   )
 }
 
 // ─── Add tag node ─────────────────────────────────────────────────────────────
 
-function AddTagNodeComponent({ id, data }: NodeProps<FlowNode>) {
+function AddTagNodeComponent({ id, data, selected }: NodeProps<FlowNode>) {
   if (data.kind !== 'add_tag') return null
   const tag = _tags.find((t) => t.id === data.config.tag_id)
 
   return (
-    <NodeShell id={id} kind="add_tag">
-      <span className="text-muted-foreground">{tag?.name ?? 'Sin tag'}</span>
+    <NodeShell id={id} kind="add_tag" selected={selected}>
+      {tag ? (
+        <span className="text-muted-foreground">“{tag.name}”</span>
+      ) : (
+        <span className="text-amber-600 dark:text-amber-400">Falta elegir la etiqueta</span>
+      )}
     </NodeShell>
   )
 }
@@ -295,6 +271,34 @@ const nodeTypes = {
   wait: WaitNodeComponent,
   condition: ConditionNodeComponent,
   add_tag: AddTagNodeComponent,
+}
+
+// ─── Canvas controls with es-AR labels ───────────────────────────────────────
+
+function CanvasControls() {
+  const { zoomIn, zoomOut, fitView } = useReactFlow()
+  return (
+    <Controls
+      showZoom={false}
+      showFitView={false}
+      showInteractive={false}
+      aria-label="Controles del lienzo"
+    >
+      <ControlButton onClick={() => zoomIn()} aria-label="Acercar" title="Acercar">
+        <ZoomIn />
+      </ControlButton>
+      <ControlButton onClick={() => zoomOut()} aria-label="Alejar" title="Alejar">
+        <ZoomOut />
+      </ControlButton>
+      <ControlButton
+        onClick={() => fitView({ padding: 0.2 })}
+        aria-label="Ver todo"
+        title="Ver todo"
+      >
+        <Maximize />
+      </ControlButton>
+    </Controls>
+  )
 }
 
 // ─── Config panel for selected node ──────────────────────────────────────────
@@ -337,19 +341,26 @@ function NodeConfigPanel({
 
   if (kind === 'wait' && data.kind === 'wait') {
     return (
-      <WaitConfig
-        config={data.config}
-        onChange={(cfg) => onChange({ kind: 'wait', config: cfg })}
+      <WaitEditor
+        minutes={data.config.minutes}
+        onChange={(minutes) => onChange({ kind: 'wait', config: { minutes } })}
       />
     )
   }
 
   if (kind === 'condition' && data.kind === 'condition') {
     return (
-      <ConditionConfig
-        config={data.config}
-        onChange={(cfg) => onChange({ kind: 'condition', config: cfg })}
-      />
+      <div className="space-y-3">
+        <ConditionEditor
+          field={data.config.field}
+          op={data.config.op}
+          value={data.config.value}
+          onPatch={(patch) => onChange({ kind: 'condition', config: { ...data.config, ...patch } })}
+        />
+        <p className="text-[11px] text-muted-foreground">
+          Desde este paso salen dos caminos: el punto verde sigue si se cumple, el rojo si no.
+        </p>
+      </div>
     )
   }
 
@@ -377,8 +388,8 @@ function TriggerConfig({
 }) {
   return (
     <div className="space-y-3">
-      <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">Tipo de trigger</Label>
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">¿Cuándo arranca?</Label>
         <Select
           value={config.type}
           onValueChange={(v) => {
@@ -390,29 +401,29 @@ function TriggerConfig({
             else onChange({ type: t })
           }}
         >
-          <SelectTrigger>
+          <SelectTrigger aria-label="Cuándo arranca la automatización">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="customer_inactive">Cliente inactivo</SelectItem>
-            <SelectItem value="birthday">Cumpleaños</SelectItem>
-            <SelectItem value="after_visit">Después de una visita</SelectItem>
-            <SelectItem value="event_starting">Evento próximo</SelectItem>
-            <SelectItem value="tag_added">Tag agregado</SelectItem>
+            {(Object.keys(TRIGGER_TYPE_LABEL) as Array<FlowTriggerConfig['type']>).map((t) => (
+              <SelectItem key={t} value={t}>
+                {TRIGGER_TYPE_LABEL[t]}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
 
       {config.type === 'birthday' && (
-        <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">Cuándo enviar</Label>
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">¿Qué día se manda?</Label>
           <Select
             value={String(config.offset_days)}
             onValueChange={(v) =>
               onChange({ type: 'birthday', offset_days: Number.parseInt(v, 10) })
             }
           >
-            <SelectTrigger>
+            <SelectTrigger aria-label="Qué día se manda el saludo">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -424,12 +435,15 @@ function TriggerConfig({
               <SelectItem value="1">1 día después</SelectItem>
             </SelectContent>
           </Select>
+          <p className="text-[11px] text-muted-foreground">
+            Se revisa una vez por día y se le manda a quien le toque.
+          </p>
         </div>
       )}
 
       {config.type === 'customer_inactive' && (
-        <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">Días sin venir</Label>
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">¿Cuántos días sin venir?</Label>
           <Input
             type="number"
             min={1}
@@ -438,13 +452,14 @@ function TriggerConfig({
             onChange={(e) =>
               onChange({ type: 'customer_inactive', days: Math.max(1, Number(e.target.value)) })
             }
+            aria-label="Días sin venir"
           />
         </div>
       )}
 
       {config.type === 'event_starting' && (
-        <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">Horas antes del evento</Label>
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">¿Cuántas horas antes?</Label>
           <Input
             type="number"
             min={1}
@@ -456,24 +471,25 @@ function TriggerConfig({
                 hours_before: Math.max(1, Number(e.target.value)),
               })
             }
+            aria-label="Horas antes del evento"
           />
         </div>
       )}
 
       {config.type === 'tag_added' && (
-        <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">Tag (vacío = cualquiera)</Label>
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">¿Qué etiqueta?</Label>
           <Select
             value={config.tag_id ?? '__any'}
             onValueChange={(v) =>
               onChange({ type: 'tag_added', tag_id: v === '__any' ? undefined : v })
             }
           >
-            <SelectTrigger>
-              <SelectValue placeholder="Cualquier tag" />
+            <SelectTrigger aria-label="Etiqueta que dispara la automatización">
+              <SelectValue placeholder="Cualquier etiqueta" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__any">Cualquier tag</SelectItem>
+              <SelectItem value="__any">Cualquier etiqueta</SelectItem>
               {tags.map((t) => (
                 <SelectItem key={t.id} value={t.id}>
                   {t.name}
@@ -501,32 +517,37 @@ function SendTemplateConfig({
   const filtered = templates.filter((t) => t.channel_id === config.channel_id)
   return (
     <div className="space-y-3">
-      <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">Canal</Label>
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">¿Por dónde sale?</Label>
         <Select
           value={config.channel_id}
           onValueChange={(v) => onChange({ ...config, channel_id: v, template_id: '' })}
         >
-          <SelectTrigger>
-            <SelectValue placeholder="Canal" />
+          <SelectTrigger aria-label="Canal por el que sale el mensaje">
+            <SelectValue placeholder="Elegí el canal" />
           </SelectTrigger>
           <SelectContent>
             {channels.map((c) => (
               <SelectItem key={c.id} value={c.id}>
-                {c.display_name ?? c.type}
+                {c.display_name ?? CHANNEL_TYPE_LABEL[c.type]}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
+        {channels.length === 0 && (
+          <p className="text-[11px] text-muted-foreground">
+            No tenés ningún canal conectado. Conectá WhatsApp desde Canales.
+          </p>
+        )}
       </div>
-      <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">Template aprobado</Label>
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">¿Qué mensaje se manda?</Label>
         <Select
           value={config.template_id}
           onValueChange={(v) => onChange({ ...config, template_id: v })}
         >
-          <SelectTrigger>
-            <SelectValue placeholder="Template" />
+          <SelectTrigger aria-label="Mensaje aprobado a mandar">
+            <SelectValue placeholder="Elegí el mensaje" />
           </SelectTrigger>
           <SelectContent>
             {filtered.map((t) => (
@@ -536,85 +557,16 @@ function SendTemplateConfig({
             ))}
           </SelectContent>
         </Select>
+        {config.channel_id !== '' && filtered.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground">
+            No hay mensajes aprobados para este canal. Crealos desde Plantillas.
+          </p>
+        ) : (
+          <p className="text-[11px] text-muted-foreground">
+            Solo se pueden mandar mensajes que Meta ya aprobó.
+          </p>
+        )}
       </div>
-    </div>
-  )
-}
-
-function WaitConfig({
-  config,
-  onChange,
-}: {
-  config: WaitData['config']
-  onChange: (c: WaitData['config']) => void
-}) {
-  return (
-    <div className="space-y-1">
-      <Label className="text-xs text-muted-foreground">Esperar (minutos)</Label>
-      <div className="flex items-center gap-2">
-        <Input
-          type="number"
-          min={1}
-          max={43200}
-          value={config.minutes}
-          onChange={(e) => onChange({ minutes: Math.max(1, Number(e.target.value)) })}
-          className="w-28"
-        />
-        <span className="text-xs text-muted-foreground">min</span>
-      </div>
-    </div>
-  )
-}
-
-function ConditionConfig({
-  config,
-  onChange,
-}: {
-  config: ConditionData['config']
-  onChange: (c: ConditionData['config']) => void
-}) {
-  return (
-    <div className="space-y-3">
-      <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">Campo</Label>
-        <Input
-          value={config.field}
-          onChange={(e) => onChange({ ...config, field: e.target.value })}
-          placeholder="customer.opt_in_marketing"
-          className="font-mono text-xs"
-        />
-      </div>
-      <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">Operador</Label>
-        <Select value={config.op} onValueChange={(v) => onChange({ ...config, op: v })}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="eq">=</SelectItem>
-            <SelectItem value="neq">≠</SelectItem>
-            <SelectItem value="gt">&gt;</SelectItem>
-            <SelectItem value="gte">≥</SelectItem>
-            <SelectItem value="lt">&lt;</SelectItem>
-            <SelectItem value="lte">≤</SelectItem>
-            <SelectItem value="is_true">es true</SelectItem>
-            <SelectItem value="is_false">es false</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">Valor (opcional)</Label>
-        <Input
-          value={
-            typeof config.value === 'string' || typeof config.value === 'number'
-              ? String(config.value)
-              : ''
-          }
-          onChange={(e) => onChange({ ...config, value: e.target.value })}
-          placeholder="valor"
-        />
-      </div>
-      <p className="text-[11px] text-muted-foreground">Handle verde = Sí · Handle rojo = No</p>
     </div>
   )
 }
@@ -629,11 +581,11 @@ function AddTagConfig({
   onChange: (c: AddTagData['config']) => void
 }) {
   return (
-    <div className="space-y-1">
-      <Label className="text-xs text-muted-foreground">Tag a agregar</Label>
+    <div className="space-y-1.5">
+      <Label className="text-xs text-muted-foreground">¿Qué etiqueta le ponemos?</Label>
       <Select value={config.tag_id} onValueChange={(v) => onChange({ tag_id: v })}>
-        <SelectTrigger>
-          <SelectValue placeholder="Tag" />
+        <SelectTrigger aria-label="Etiqueta a poner al cliente">
+          <SelectValue placeholder="Elegí una etiqueta" />
         </SelectTrigger>
         <SelectContent>
           {tags.map((t) => (
@@ -643,6 +595,11 @@ function AddTagConfig({
           ))}
         </SelectContent>
       </Select>
+      {tags.length === 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          Todavía no tenés etiquetas. Crealas desde Etiquetas y volvé acá.
+        </p>
+      )}
     </div>
   )
 }
@@ -737,6 +694,7 @@ function dbEdgesToRF(dbEdges: DBFlowEdge[]): Edge[] {
     source: e.source_node_id,
     target: e.target_node_id,
     sourceHandle: e.source_handle ?? null,
+    type: 'smoothstep',
   }))
 }
 
@@ -797,17 +755,19 @@ export function FlowGraphEditor({
   )
 
   const onConnect: OnConnect = useCallback(
-    (params) => setEdges((eds) => addEdge({ ...params, id: crypto.randomUUID() }, eds)),
+    (params) =>
+      setEdges((eds) => addEdge({ ...params, id: crypto.randomUUID(), type: 'smoothstep' }, eds)),
     [setEdges],
   )
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null
+  const hasTrigger = nodes.some((n) => n.type === 'trigger')
 
   // ── Add node from palette ──────────────────────────────────────────────────
   const addNode = (kind: NodeKind) => {
     // Only one trigger allowed
-    if (kind === 'trigger' && nodes.some((n) => n.type === 'trigger')) {
-      toast.error('El flow ya tiene un nodo Trigger.')
+    if (kind === 'trigger' && hasTrigger) {
+      toast.error('Ya hay un disparador. Solo puede haber uno: es lo que arranca todo.')
       return
     }
     const newNode: FlowNode = {
@@ -815,18 +775,28 @@ export function FlowGraphEditor({
       type: kind,
       position: { x: 100 + Math.random() * 200, y: 200 + nodes.length * 100 },
       data: defaultDataForKind(kind, channels, templates, tags),
+      selected: true,
     }
-    setNodes((nds) => [...nds, newNode])
+    setNodes((nds) => [...nds.map((n) => ({ ...n, selected: false })), newNode])
+    setSelectedNodeId(newNode.id)
   }
 
   // ── Save ───────────────────────────────────────────────────────────────────
   const handleSave = () => {
     setValidationError(null)
 
+    if (!flowName.trim()) {
+      const msg = 'Ponele un nombre a la automatización antes de guardar.'
+      setValidationError(msg)
+      toast.error(msg)
+      return
+    }
+
     // Find trigger node for the trigger config
     const triggerNode = nodes.find((n) => n.type === 'trigger')
     if (!triggerNode || triggerNode.data.kind !== 'trigger') {
-      const msg = 'El flow debe tener exactamente un nodo Trigger.'
+      const msg =
+        'Falta el disparador: el paso que dice cuándo arranca. Agregalo desde el panel de la izquierda.'
       setValidationError(msg)
       toast.error(msg)
       return
@@ -854,7 +824,7 @@ export function FlowGraphEditor({
     startTransition(async () => {
       const result = await saveFlowGraph(tenantSlug, payload)
       if (result.ok) {
-        toast.success(initial?.id ? 'Flow actualizado.' : 'Flow creado.')
+        toast.success(initial?.id ? 'Automatización guardada.' : 'Automatización creada.')
         router.push(`/${tenantSlug}/mensajeria/flows`)
         router.refresh()
       } else {
@@ -866,29 +836,33 @@ export function FlowGraphEditor({
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex h-[calc(100vh-8rem)] min-h-[600px] flex-col">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-card shadow-sm">
       {/* Top bar */}
-      <div className="flex shrink-0 items-center gap-3 border-b border-border/60 bg-card px-4 py-3">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border/60 bg-card px-4 py-3">
         <Input
           value={flowName}
           onChange={(e) => setFlowName(e.target.value)}
-          placeholder="Nombre del flow"
+          placeholder="Nombre, ej.: Gracias por venir"
+          aria-label="Nombre de la automatización"
           className="h-8 max-w-64 text-sm"
           maxLength={80}
         />
 
-        <Label className="flex cursor-pointer items-center gap-2 text-sm">
+        <Label
+          className="flex cursor-pointer items-center gap-2 text-sm"
+          title="Si está en pausa, no manda nada aunque se cumpla el disparador."
+        >
           <Checkbox
             checked={active}
             onCheckedChange={(v) => setActive(v === true)}
             id="graph-flow-active"
           />
-          Activo
+          Activa
         </Label>
 
         {validationError && (
-          <Badge variant="destructive" className="text-xs">
-            {validationError}
+          <Badge variant="destructive" className="max-w-72 text-xs">
+            <span className="truncate">{validationError}</span>
           </Badge>
         )}
 
@@ -909,26 +883,43 @@ export function FlowGraphEditor({
       {/* Canvas + side panel */}
       <div className="flex min-h-0 flex-1">
         {/* Palette */}
-        <div className="flex w-40 shrink-0 flex-col gap-1 overflow-y-auto border-r border-border/60 bg-card/60 p-3">
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Agregar nodo
+        <div className="flex w-44 shrink-0 flex-col gap-1.5 overflow-y-auto border-r border-border/60 bg-card/60 p-3">
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Agregar paso
           </p>
           {(['trigger', 'send_template', 'wait', 'condition', 'add_tag'] as NodeKind[]).map(
             (kind) => {
               const Icon = KIND_ICON[kind]
+              const disabled = kind === 'trigger' && hasTrigger
               return (
                 <button
                   key={kind}
                   type="button"
                   onClick={() => addNode(kind)}
-                  className="flex items-center gap-2 rounded-lg border border-border/60 bg-background/60 px-2 py-1.5 text-left text-xs font-medium hover:bg-secondary/60 hover:text-foreground transition-colors"
+                  disabled={disabled}
+                  title={disabled ? 'Ya tenés un disparador' : KIND_HINT[kind]}
+                  className="flex items-start gap-2 rounded-lg border border-border/60 bg-background/60 px-2 py-2 text-left transition-colors hover:border-border hover:bg-secondary/60 disabled:cursor-not-allowed disabled:opacity-45"
                 >
-                  <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-                  {KIND_LABEL[kind]}
+                  <span
+                    className={`flex size-6 shrink-0 items-center justify-center rounded-md border ${KIND_CHIP_CLASS[kind]}`}
+                  >
+                    <Icon className="size-3.5" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-xs font-medium leading-tight">
+                      {KIND_LABEL[kind]}
+                    </span>
+                    <span className="block text-[10px] leading-tight text-muted-foreground">
+                      {KIND_HINT[kind]}
+                    </span>
+                  </span>
                 </button>
               )
             },
           )}
+          <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
+            Uní los pasos arrastrando desde el puntito de abajo de cada tarjeta.
+          </p>
         </div>
 
         {/* React Flow canvas */}
@@ -948,24 +939,50 @@ export function FlowGraphEditor({
             deleteKeyCode={null}
           >
             <Background gap={16} className="opacity-40" />
-            <Controls />
+            <CanvasControls />
           </ReactFlow>
+          {nodes.length === 1 && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center px-4">
+              <p className="rounded-full border border-border/60 bg-card/95 px-3.5 py-1.5 text-center text-[11px] text-muted-foreground shadow-sm">
+                Agregá un paso desde el panel de la izquierda y unilo al disparador arrastrando
+                desde el puntito de abajo.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Config panel */}
         {selectedNode && (
-          <div className="flex w-64 shrink-0 flex-col border-l border-border/60 bg-card">
-            <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
-              <span className="text-xs font-semibold">
-                {KIND_LABEL[selectedNode.type as NodeKind]}
-              </span>
-              <div className="flex items-center gap-1">
+          <div className="flex w-72 shrink-0 flex-col border-l border-border/60 bg-card">
+            <div className="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-3">
+              <div className="flex min-w-0 items-center gap-2">
+                {(() => {
+                  const kind = selectedNode.type as NodeKind
+                  const Icon = KIND_ICON[kind]
+                  return (
+                    <span
+                      className={`flex size-6 shrink-0 items-center justify-center rounded-md border ${KIND_CHIP_CLASS[kind]}`}
+                    >
+                      <Icon className="size-3.5" />
+                    </span>
+                  )
+                })()}
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Ajustes del paso
+                  </p>
+                  <p className="truncate text-xs font-semibold">
+                    {KIND_LABEL[selectedNode.type as NodeKind]}
+                  </p>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
                 {selectedNode.type !== 'trigger' && (
                   <button
                     type="button"
                     onClick={() => _onNodeDelete(selectedNode.id)}
                     className="rounded p-1 text-muted-foreground hover:text-destructive"
-                    aria-label="Eliminar nodo"
+                    aria-label="Eliminar paso"
                   >
                     <Trash2 className="size-3.5" />
                   </button>
@@ -974,7 +991,7 @@ export function FlowGraphEditor({
                   type="button"
                   onClick={() => setSelectedNodeId(null)}
                   className="rounded p-1 text-muted-foreground hover:text-foreground"
-                  aria-label="Cerrar panel"
+                  aria-label="Cerrar panel de ajustes"
                 >
                   <X className="size-3.5" />
                 </button>

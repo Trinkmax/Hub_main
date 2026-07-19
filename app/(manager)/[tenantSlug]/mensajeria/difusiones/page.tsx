@@ -1,7 +1,6 @@
 import { ChevronRight, Megaphone, Plus } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   DataTableBody,
@@ -15,33 +14,85 @@ import {
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
-import { listBroadcasts } from '@/lib/broadcasts/queries'
+import { type BroadcastListRow, listBroadcasts } from '@/lib/broadcasts/queries'
 import {
   RoleRequiredError,
   requireRole,
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
-import type { BroadcastStatus } from '@/types/database'
+import { BroadcastStatusBadge, clientesLabel, formatDateTime } from './_components/broadcast-status'
 
 export const metadata = { title: 'Difusiones' }
 export const dynamic = 'force-dynamic'
 
-const STATUS_LABEL: Record<BroadcastStatus, string> = {
-  draft: 'Borrador',
-  scheduled: 'Programada',
-  sending: 'Enviando',
-  sent: 'Enviada',
-  partial: 'Enviada con fallas',
-  failed: 'Fallida',
-  cancelled: 'Cancelada',
+/** Resultado del envío en criollo: "3 de 5 entregados", sin barras crípticas. */
+function ResultCell({ b }: { b: BroadcastListRow }) {
+  const total = b.stats.total ?? 0
+  const sent = b.stats.sent ?? 0
+  const failed = b.stats.failed ?? 0
+  const delivered = b.stats.delivered ?? 0
+
+  if (b.status === 'draft') {
+    return <span className="text-xs text-muted-foreground">Todavía sin enviar</span>
+  }
+  if (b.status === 'cancelled') {
+    return <span className="text-xs text-muted-foreground">No se envió</span>
+  }
+  if (b.status === 'scheduled') {
+    return (
+      <span className="text-xs text-muted-foreground">
+        {total > 0 ? `Va a salir a ${clientesLabel(total)}` : 'Lista para salir'}
+      </span>
+    )
+  }
+  if (b.status === 'sending') {
+    const pct = total > 0 ? Math.round((sent / total) * 100) : 0
+    return (
+      <div className="flex items-center gap-2">
+        <div
+          role="progressbar"
+          aria-valuenow={pct}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label="Progreso del envío"
+          className="h-1.5 w-16 overflow-hidden rounded-full bg-secondary/60"
+        >
+          <div
+            className="h-full rounded-full bg-success transition-all"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {sent.toLocaleString('es-AR')} de {total.toLocaleString('es-AR')} enviados
+        </span>
+      </div>
+    )
+  }
+  // sent · partial · failed
+  const okText =
+    delivered > 0
+      ? `${delivered.toLocaleString('es-AR')} de ${total.toLocaleString('es-AR')} entregados`
+      : `${sent.toLocaleString('es-AR')} de ${total.toLocaleString('es-AR')} enviados`
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+      <span className="tabular-nums">{okText}</span>
+      {failed > 0 ? (
+        <span className="font-medium text-destructive">
+          · {failed.toLocaleString('es-AR')} {failed === 1 ? 'falló' : 'fallaron'}
+        </span>
+      ) : null}
+    </div>
+  )
 }
 
-function statusVariant(s: BroadcastStatus): 'default' | 'secondary' | 'destructive' | 'outline' {
-  if (s === 'sent') return 'default'
-  if (s === 'sending' || s === 'scheduled' || s === 'partial') return 'secondary'
-  if (s === 'failed' || s === 'cancelled') return 'destructive'
-  return 'outline'
+/** Fecha relevante según estado: programada → cuándo sale; enviada → cuándo salió. */
+function whenText(b: BroadcastListRow): string {
+  if (b.status === 'scheduled' && b.scheduled_at) {
+    return `Sale el ${formatDateTime(b.scheduled_at)}`
+  }
+  const d = b.completed_at ?? b.started_at ?? b.scheduled_at
+  return d ? formatDateTime(d) : '—'
 }
 
 export default async function DifusionesPage({
@@ -82,7 +133,7 @@ export default async function DifusionesPage({
         <EmptyState
           icon={Megaphone}
           title="Aún no hay difusiones"
-          description="Para enviar tu primer mensaje masivo, primero conectá WhatsApp y prepará al menos una plantilla aprobada."
+          description="Para enviar tu primer mensaje masivo, primero conectá WhatsApp y prepará al menos un mensaje aprobado en Plantillas."
           action={
             <Button asChild className="gap-2">
               <Link href={`/${tenantSlug}/mensajeria/difusiones/nueva`}>
@@ -98,64 +149,47 @@ export default async function DifusionesPage({
             <DataTableRoot>
               <DataTableHead>
                 <tr>
-                  <DataTableHeader>Nombre</DataTableHeader>
+                  <DataTableHeader>Difusión</DataTableHeader>
                   <DataTableHeader>Estado</DataTableHeader>
-                  <DataTableHeader>Envío</DataTableHeader>
-                  <DataTableHeader>Progreso</DataTableHeader>
-                  <DataTableHeader className="w-8" />
+                  <DataTableHeader className="hidden md:table-cell">Cuándo</DataTableHeader>
+                  <DataTableHeader>Resultado</DataTableHeader>
+                  <DataTableHeader className="w-8">
+                    <span className="sr-only">Abrir</span>
+                  </DataTableHeader>
                 </tr>
               </DataTableHead>
               <DataTableBody>
-                {broadcasts.map((b) => {
-                  const total = b.stats.total ?? 0
-                  const sent = b.stats.sent ?? 0
-                  const failed = b.stats.failed ?? 0
-                  const pct = total > 0 ? Math.round((sent / total) * 100) : 0
-                  return (
-                    <tr key={b.id} className="group transition-colors hover:bg-secondary/40">
-                      <DataTableCell>
-                        <Link
-                          href={`/${tenantSlug}/mensajeria/difusiones/${b.id}`}
-                          className="font-medium group-hover:text-primary"
-                        >
-                          {b.name}
-                        </Link>
-                      </DataTableCell>
-                      <DataTableCell>
-                        <Badge variant={statusVariant(b.status)}>{STATUS_LABEL[b.status]}</Badge>
-                      </DataTableCell>
-                      <DataTableCell className="text-xs text-muted-foreground">
-                        {b.scheduled_at
-                          ? new Date(b.scheduled_at).toLocaleString('es-AR', {
-                              dateStyle: 'short',
-                              timeStyle: 'short',
-                            })
-                          : '—'}
-                      </DataTableCell>
-                      <DataTableCell>
-                        <div className="flex items-center gap-2">
-                          <div className="h-1.5 w-20 overflow-hidden rounded-full bg-secondary/60">
-                            <div
-                              className="h-full rounded-full bg-primary transition-all"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                          <span className="text-xs tabular-nums text-muted-foreground">
-                            {sent}/{total}
-                          </span>
-                          {failed > 0 ? (
-                            <Badge variant="destructive" className="text-[10px]">
-                              {failed} fallidos
-                            </Badge>
-                          ) : null}
-                        </div>
-                      </DataTableCell>
-                      <DataTableCell className="text-muted-foreground/40 group-hover:text-muted-foreground">
-                        <ChevronRight className="size-4" />
-                      </DataTableCell>
-                    </tr>
-                  )
-                })}
+                {broadcasts.map((b) => (
+                  <tr
+                    key={b.id}
+                    className="group relative cursor-pointer transition-colors hover:bg-secondary/40"
+                  >
+                    <DataTableCell>
+                      {/* Link estirado: toda la fila navega al detalle. */}
+                      <Link
+                        href={`/${tenantSlug}/mensajeria/difusiones/${b.id}`}
+                        className="text-sm font-medium group-hover:text-primary after:absolute after:inset-0 after:content-['']"
+                      >
+                        {b.name}
+                      </Link>
+                      <p className="mt-0.5 text-xs text-muted-foreground md:hidden">
+                        {whenText(b)}
+                      </p>
+                    </DataTableCell>
+                    <DataTableCell>
+                      <BroadcastStatusBadge status={b.status} />
+                    </DataTableCell>
+                    <DataTableCell className="hidden text-xs text-muted-foreground tabular-nums md:table-cell">
+                      {whenText(b)}
+                    </DataTableCell>
+                    <DataTableCell>
+                      <ResultCell b={b} />
+                    </DataTableCell>
+                    <DataTableCell className="text-muted-foreground/40 transition-colors group-hover:text-muted-foreground">
+                      <ChevronRight className="size-4" aria-hidden />
+                    </DataTableCell>
+                  </tr>
+                ))}
               </DataTableBody>
             </DataTableRoot>
           </DataTableScroll>

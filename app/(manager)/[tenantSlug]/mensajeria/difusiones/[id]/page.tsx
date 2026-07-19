@@ -1,12 +1,4 @@
-import {
-  ArrowLeft,
-  CheckCircle2,
-  Eye,
-  MessageCircle,
-  Send,
-  TriangleAlert,
-  Users,
-} from 'lucide-react'
+import { ArrowLeft, CheckCheck, Eye, MessageCircle, Send, TriangleAlert, Users } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
@@ -22,6 +14,7 @@ import {
 import { PageHeader } from '@/components/ui/page-header'
 import { StatCard } from '@/components/ui/stat-card'
 import { getBroadcastDetail } from '@/lib/broadcasts/queries'
+import { formatPhoneForDisplay } from '@/lib/phone'
 import {
   RoleRequiredError,
   requireRole,
@@ -29,37 +22,30 @@ import {
   TenantNotFoundError,
 } from '@/lib/tenant'
 import type { RecipientStatus } from '@/types/database'
+import { BroadcastStatusBadge, formatDateTime } from '../_components/broadcast-status'
 import { BroadcastActions } from './_components/broadcast-actions'
 import { LiveStats } from './_components/live-stats'
 
 export const metadata = { title: 'Detalle difusión' }
 export const dynamic = 'force-dynamic'
 
-const RECIPIENT_LABEL: Record<RecipientStatus, string> = {
-  pending: 'Pendiente',
-  sending: 'Enviando',
-  sent: 'Enviado',
-  delivered: 'Entregado',
-  read: 'Leído',
-  replied: 'Respondió',
-  failed: 'Falló',
-}
+type RecipientBadgeVariant =
+  | 'default'
+  | 'secondary'
+  | 'destructive'
+  | 'outline'
+  | 'success'
+  | 'warning'
+  | 'info'
 
-function recipientVariant(s: RecipientStatus): 'default' | 'secondary' | 'destructive' | 'outline' {
-  if (s === 'failed') return 'destructive'
-  if (s === 'pending') return 'outline'
-  if (s === 'read' || s === 'replied') return 'default'
-  return 'secondary'
-}
-
-const STATUS_LABEL: Record<string, string> = {
-  draft: 'Borrador',
-  scheduled: 'Programada',
-  sending: 'Enviando',
-  sent: 'Enviada',
-  partial: 'Enviada con fallas',
-  failed: 'Fallida',
-  cancelled: 'Cancelada',
+const RECIPIENT_META: Record<RecipientStatus, { label: string; variant: RecipientBadgeVariant }> = {
+  pending: { label: 'En cola', variant: 'outline' },
+  sending: { label: 'Enviando', variant: 'warning' },
+  sent: { label: 'Enviado', variant: 'secondary' },
+  delivered: { label: 'Entregado', variant: 'info' },
+  read: { label: 'Leído', variant: 'success' },
+  replied: { label: 'Respondió', variant: 'default' },
+  failed: { label: 'Falló', variant: 'destructive' },
 }
 
 // Traduce los errores más comunes de WhatsApp a algo accionable. El código
@@ -68,7 +54,7 @@ function friendlyError(raw: string | null): string {
   if (!raw) return ''
   const r = raw.toLowerCase()
   if (r.includes('131047') || r.includes('re-engagement') || r.includes('24 h')) {
-    return 'Pasaron más de 24 h; hacía falta una plantilla.'
+    return 'Pasaron más de 24 h; hacía falta un mensaje aprobado.'
   }
   if (r.includes('131030') || r.includes('allowed list')) {
     return 'El número todavía no está habilitado para recibir.'
@@ -78,6 +64,9 @@ function friendlyError(raw: string | null): string {
   }
   if (r.includes('131042') || r.includes('payment')) {
     return 'Falta configurar el método de pago en Meta.'
+  }
+  if (r.includes('opt_out')) {
+    return 'El cliente dejó de aceptar promos antes del envío.'
   }
   if (r.includes('block')) {
     return 'El cliente bloqueó los mensajes.'
@@ -132,7 +121,16 @@ export default async function BroadcastDetailPage({
   const delivered = stats.delivered ?? 0
   const read = stats.read ?? 0
   const replied = stats.replied ?? 0
+  const excluded = stats.excluded ?? 0
   const pct = total > 0 ? Math.round((sent / total) * 100) : 0
+
+  const timing: string[] = []
+  if (b.status === 'scheduled' && b.scheduled_at) {
+    timing.push(`Sale el ${formatDateTime(b.scheduled_at, { withYear: true })}`)
+  }
+  if (b.started_at) timing.push(`Empezó el ${formatDateTime(b.started_at, { withYear: true })}`)
+  if (b.completed_at)
+    timing.push(`Terminó el ${formatDateTime(b.completed_at, { withYear: true })}`)
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
@@ -149,20 +147,18 @@ export default async function BroadcastDetailPage({
         eyebrow="Mensajería · Difusión"
         title={b.name}
         description={
-          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="flex flex-col gap-1">
             <span>
-              {channel?.display_name ?? channel?.type} · mensaje{' '}
-              <strong className="text-foreground">{template?.name}</strong>
+              Por {channel?.display_name ?? channel?.type ?? '—'} · mensaje{' '}
+              <strong className="text-foreground">{template?.name ?? '—'}</strong> · lista{' '}
+              <strong className="text-foreground">{audience?.name ?? '—'}</strong>
             </span>
-            <span>·</span>
-            <span>
-              audiencia <strong className="text-foreground">{audience?.name}</strong>
-            </span>
+            {timing.length > 0 ? <span>{timing.join(' · ')}</span> : null}
           </span>
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary">{STATUS_LABEL[b.status] ?? b.status}</Badge>
+            <BroadcastStatusBadge status={b.status} />
             <BroadcastActions
               tenantSlug={tenantSlug}
               broadcastId={id}
@@ -173,76 +169,112 @@ export default async function BroadcastDetailPage({
         }
       />
 
-      <section className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
+      <section
+        aria-label="Resultados del envío"
+        className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6"
+      >
         <StatCard
           icon={Users}
-          label="Total"
+          label="En la lista"
           value={total.toLocaleString('es-AR')}
-          hint="En la lista"
+          hint="Destinatarios"
         />
         <StatCard
           icon={Send}
           label="Enviados"
           value={sent.toLocaleString('es-AR')}
-          hint={`${pct}% del total`}
+          hint={total > 0 ? `${pct}% del total` : undefined}
         />
         <StatCard
-          icon={failed > 0 ? TriangleAlert : CheckCircle2}
+          icon={CheckCheck}
+          label="Entregados"
+          value={delivered.toLocaleString('es-AR')}
+          hint="Llegaron al teléfono"
+        />
+        <StatCard icon={Eye} label="Leídos" value={read.toLocaleString('es-AR')} />
+        <StatCard
+          icon={MessageCircle}
+          label="Respondieron"
+          value={replied.toLocaleString('es-AR')}
+        />
+        <StatCard
+          icon={TriangleAlert}
           label="Fallidos"
           value={failed.toLocaleString('es-AR')}
           deltaTone={failed > 0 ? 'negative' : 'positive'}
+          iconClassName={failed > 0 ? 'text-destructive' : undefined}
+          hint={failed > 0 ? 'Mirá el motivo abajo' : 'Todo bien'}
         />
-        <StatCard
-          icon={CheckCircle2}
-          label="Entregados"
-          value={delivered.toLocaleString('es-AR')}
-        />
-        <StatCard icon={Eye} label="Leídos" value={read.toLocaleString('es-AR')} />
-        <StatCard icon={MessageCircle} label="Respondió" value={replied.toLocaleString('es-AR')} />
       </section>
+
+      {excluded > 0 ? (
+        <p className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          {excluded.toLocaleString('es-AR')}{' '}
+          {excluded === 1
+            ? 'cliente de la lista quedó afuera porque no acepta'
+            : 'clientes de la lista quedaron afuera porque no aceptan'}{' '}
+          recibir promos. No se les envió nada.
+        </p>
+      ) : null}
 
       <DataTableShell>
         <header className="border-b border-border/60 px-5 py-4">
-          <h2 className="font-serif text-lg font-semibold tracking-tight">
-            A quiénes se envió <span className="text-muted-foreground">(últimos 200)</span>
-          </h2>
+          <h2 className="font-serif text-lg font-semibold tracking-tight">Destinatarios</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Los últimos 200, del más reciente al más viejo.
+          </p>
         </header>
         <DataTableScroll>
           <DataTableRoot>
             <DataTableHead>
               <tr>
                 <DataTableHeader>Cliente</DataTableHeader>
-                <DataTableHeader>Teléfono</DataTableHeader>
+                <DataTableHeader className="hidden sm:table-cell">Teléfono</DataTableHeader>
                 <DataTableHeader>Estado</DataTableHeader>
-                <DataTableHeader>Enviado</DataTableHeader>
+                <DataTableHeader className="hidden md:table-cell">Enviado</DataTableHeader>
                 <DataTableHeader>Motivo</DataTableHeader>
               </tr>
             </DataTableHead>
             <DataTableBody>
-              {detail.recipients.map((r) => {
-                const customer = Array.isArray(r.customer) ? r.customer[0] : r.customer
-                return (
-                  <tr key={r.id} className="transition-colors hover:bg-secondary/40">
-                    <DataTableCell className="font-medium">
-                      {customer ? `${customer.first_name} ${customer.last_name}` : '—'}
-                    </DataTableCell>
-                    <DataTableCell className="font-mono text-xs text-muted-foreground">
-                      {customer?.phone ?? '—'}
-                    </DataTableCell>
-                    <DataTableCell>
-                      <Badge variant={recipientVariant(r.status)}>
-                        {RECIPIENT_LABEL[r.status]}
-                      </Badge>
-                    </DataTableCell>
-                    <DataTableCell className="text-xs text-muted-foreground">
-                      {r.sent_at ? new Date(r.sent_at).toLocaleString('es-AR') : '—'}
-                    </DataTableCell>
-                    <DataTableCell className="text-xs text-destructive">
-                      <span title={r.error ?? undefined}>{friendlyError(r.error)}</span>
-                    </DataTableCell>
-                  </tr>
-                )
-              })}
+              {detail.recipients.length === 0 ? (
+                <tr>
+                  <DataTableCell
+                    colSpan={5}
+                    className="py-8 text-center text-sm text-muted-foreground"
+                  >
+                    Todavía no hay destinatarios para mostrar.
+                  </DataTableCell>
+                </tr>
+              ) : (
+                detail.recipients.map((r) => {
+                  const customer = Array.isArray(r.customer) ? r.customer[0] : r.customer
+                  const meta = RECIPIENT_META[r.status]
+                  return (
+                    <tr key={r.id} className="transition-colors hover:bg-secondary/40">
+                      <DataTableCell className="font-medium">
+                        {customer ? `${customer.first_name} ${customer.last_name}` : '—'}
+                        {customer?.phone ? (
+                          <p className="mt-0.5 text-xs font-normal text-muted-foreground sm:hidden">
+                            {formatPhoneForDisplay(customer.phone)}
+                          </p>
+                        ) : null}
+                      </DataTableCell>
+                      <DataTableCell className="hidden text-xs text-muted-foreground tabular-nums sm:table-cell">
+                        {customer?.phone ? formatPhoneForDisplay(customer.phone) : '—'}
+                      </DataTableCell>
+                      <DataTableCell>
+                        <Badge variant={meta.variant}>{meta.label}</Badge>
+                      </DataTableCell>
+                      <DataTableCell className="hidden text-xs text-muted-foreground tabular-nums md:table-cell">
+                        {r.sent_at ? formatDateTime(r.sent_at, { withYear: true }) : '—'}
+                      </DataTableCell>
+                      <DataTableCell className="text-xs text-destructive">
+                        <span title={r.error ?? undefined}>{friendlyError(r.error)}</span>
+                      </DataTableCell>
+                    </tr>
+                  )
+                })
+              )}
             </DataTableBody>
           </DataTableRoot>
         </DataTableScroll>

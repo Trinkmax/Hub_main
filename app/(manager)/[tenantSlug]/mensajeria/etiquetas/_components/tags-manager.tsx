@@ -1,6 +1,6 @@
 'use client'
 
-import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Check, Loader2, Pencil, Plus, Tags, Trash2 } from 'lucide-react'
 import { useActionState, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
@@ -50,6 +50,23 @@ const COLOR_NAMES: Record<string, string> = {
   '#f472b6': 'Rosa',
 }
 
+/** Chip grande con el color real de la etiqueta (fondo tintado + punto sólido). */
+function TagChip({ tag }: { tag: ConversationTag }) {
+  return (
+    <span
+      className="inline-flex min-w-0 items-center gap-2 rounded-full border border-border/70 px-3 py-1.5 text-sm font-medium"
+      style={{ backgroundColor: `${tag.color}1f` }}
+    >
+      <span
+        aria-hidden
+        className="size-2.5 shrink-0 rounded-full ring-1 ring-inset ring-foreground/10"
+        style={{ backgroundColor: tag.color }}
+      />
+      <span className="truncate">{tag.name}</span>
+    </span>
+  )
+}
+
 /** Radios de color desde la paleta curada. `name="color"` para el submit. */
 function ColorSwatches({ defaultValue }: { defaultValue?: string }) {
   const palette = TAG_COLORS as readonly string[]
@@ -57,7 +74,7 @@ function ColorSwatches({ defaultValue }: { defaultValue?: string }) {
   return (
     <fieldset className="space-y-1.5">
       <legend className="text-sm font-medium text-foreground">Color</legend>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2.5">
         {TAG_COLORS.map((c, i) => {
           const checked = inPalette ? c === defaultValue : i === 0
           return (
@@ -71,9 +88,14 @@ function ColorSwatches({ defaultValue }: { defaultValue?: string }) {
               />
               <span
                 aria-hidden
-                className="block size-7 rounded-full ring-2 ring-transparent ring-offset-2 ring-offset-background transition-transform hover:scale-110 peer-checked:ring-foreground peer-focus-visible:ring-ring"
+                className="flex size-8 items-center justify-center rounded-full ring-2 ring-transparent ring-offset-2 ring-offset-background transition-transform hover:scale-110 peer-checked:ring-foreground/70 peer-focus-visible:ring-ring peer-checked:[&>svg]:opacity-100"
                 style={{ backgroundColor: c }}
-              />
+              >
+                <Check
+                  className="size-4 text-white opacity-0 drop-shadow-sm transition-opacity"
+                  aria-hidden
+                />
+              </span>
               <span className="sr-only">{COLOR_NAMES[c] ?? c}</span>
             </label>
           )
@@ -97,7 +119,7 @@ export function TagsManager({ tenantSlug, tags }: { tenantSlug: string; tags: Co
       return
     }
     if (createState.ok) {
-      toast.success('Etiqueta creada')
+      toast.success('Etiqueta creada.')
       formRef.current?.reset()
     } else {
       toast.error(createState.message)
@@ -106,44 +128,56 @@ export function TagsManager({ tenantSlug, tags }: { tenantSlug: string; tags: Co
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-border/70 bg-card/85 p-5">
-        <h2 className="mb-4 font-serif text-lg font-semibold tracking-tight">Nueva etiqueta</h2>
-        <form ref={formRef} action={createAction} className="flex flex-wrap items-end gap-4">
-          <div className="min-w-[200px] flex-1 space-y-1.5">
+      <section className="rounded-xl border border-border/70 bg-card p-4 sm:p-5">
+        <h2 className="text-base font-medium tracking-tight">Nueva etiqueta</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Poné un nombre corto y elegí un color para reconocerla de un vistazo.
+        </p>
+        <form ref={formRef} action={createAction} className="mt-4 space-y-4">
+          <div className="space-y-1.5">
             <Label htmlFor="new-tag-name">Nombre</Label>
             <Input
               id="new-tag-name"
               name="name"
-              placeholder="VIP, Reclamo, Reserva…"
+              placeholder="Reservas, Quejas, VIP…"
               maxLength={40}
               required
             />
           </div>
           <ColorSwatches />
-          <Button type="submit" disabled={creating} className="gap-1.5">
-            {creating ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden />
-            ) : (
-              <Plus className="size-4" aria-hidden />
-            )}
-            Agregar
-          </Button>
+          <div className="flex justify-end">
+            <Button type="submit" disabled={creating} className="gap-1.5">
+              {creating ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              ) : (
+                <Plus className="size-4" aria-hidden />
+              )}
+              Agregar etiqueta
+            </Button>
+          </div>
         </form>
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-serif text-lg font-semibold tracking-tight">
-          Etiquetas
+        <h2 className="text-base font-medium tracking-tight">
+          Tus etiquetas
           {tags.length > 0 ? (
             <span className="ml-2 text-sm font-normal text-muted-foreground">{tags.length}</span>
           ) : null}
         </h2>
         {tags.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border/70 px-4 py-10 text-center text-sm text-muted-foreground">
-            Todavía no hay etiquetas. Creá la primera arriba para organizar tus conversaciones.
-          </p>
+          <div className="flex flex-col items-center rounded-xl border border-dashed border-border/80 bg-card/50 px-6 py-10 text-center">
+            <div className="mb-4 flex size-12 items-center justify-center rounded-full border border-border/70 bg-secondary/60 text-muted-foreground">
+              <Tags className="size-5" aria-hidden />
+            </div>
+            <p className="text-base font-medium">Todavía no hay etiquetas</p>
+            <p className="mt-1 max-w-sm text-sm text-muted-foreground text-pretty">
+              Creá la primera con el formulario de arriba. Ideas para arrancar: Reservas, Quejas,
+              VIP.
+            </p>
+          </div>
         ) : (
-          <ul className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-card/60">
+          <ul className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-card">
             {tags.map((tag) => (
               <TagRow key={tag.id} tenantSlug={tenantSlug} tag={tag} />
             ))}
@@ -174,7 +208,7 @@ function TagRow({ tenantSlug, tag }: { tenantSlug: string; tag: ConversationTag 
       return
     }
     if (updateState.ok) {
-      toast.success('Etiqueta actualizada')
+      toast.success('Etiqueta actualizada.')
       setEditOpen(false)
     } else {
       toast.error(updateState.message)
@@ -191,17 +225,14 @@ function TagRow({ tenantSlug, tag }: { tenantSlug: string; tag: ConversationTag 
   }, [deleteState])
 
   return (
-    <li className="flex items-center gap-3 px-4 py-3">
-      <span
-        aria-hidden
-        className="size-4 shrink-0 rounded-full ring-1 ring-inset ring-black/10"
-        style={{ backgroundColor: tag.color }}
-      />
-      <span className="min-w-0 flex-1 truncate text-sm font-medium">{tag.name}</span>
+    <li className="flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-secondary/30 sm:px-4">
+      <div className="min-w-0 flex-1">
+        <TagChip tag={tag} />
+      </div>
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogTrigger asChild>
-          <Button variant="ghost" size="icon" aria-label={`Editar ${tag.name}`}>
+          <Button variant="ghost" size="icon" className="size-8" aria-label={`Editar ${tag.name}`}>
             <Pencil className="size-4" aria-hidden />
           </Button>
         </DialogTrigger>
@@ -242,7 +273,7 @@ function TagRow({ tenantSlug, tag }: { tenantSlug: string; tag: ConversationTag 
             variant="ghost"
             size="icon"
             aria-label={`Borrar ${tag.name}`}
-            className="text-muted-foreground hover:text-destructive"
+            className="size-8 text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="size-4" aria-hidden />
           </Button>

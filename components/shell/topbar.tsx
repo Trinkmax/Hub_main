@@ -6,6 +6,7 @@ import { getMembershipsForUser } from '@/lib/tenant'
 import { ROLE_LABELS } from '@/lib/tenant/roles'
 import type { Tenant, TenantRole } from '@/lib/tenant/types'
 import { MobileShell } from './mobile-shell'
+import { SidebarToggle } from './sidebar-state'
 import { TenantSwitcherChip } from './tenant-switcher-chip'
 import { UserMenu } from './user-menu'
 
@@ -37,6 +38,8 @@ export async function Topbar({
         features={features}
         isPlatformAdmin={isPlatformAdmin}
       />
+
+      <SidebarToggle />
 
       <div className="hidden flex-1 items-center md:flex">
         <CommandPalette

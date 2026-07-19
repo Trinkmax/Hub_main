@@ -9,7 +9,7 @@ import {
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
-import { FlowGraphEditor } from '../_components/flow-graph-editor'
+import { FlowGraphEditorClient } from '../_components/flow-graph-editor-client'
 
 export const metadata = { title: 'Nueva automatización' }
 export const dynamic = 'force-dynamic'
@@ -57,7 +57,7 @@ export default async function NewFlowPage({ params }: { params: Promise<{ tenant
           description="Armá un mensaje que se manda solo. Elegí cuándo tiene que salir y qué decir."
         />
       </div>
-      <FlowGraphEditor
+      <FlowGraphEditorClient
         tenantSlug={tenantSlug}
         channels={chRes.data ?? []}
         templates={tplRes.data ?? []}

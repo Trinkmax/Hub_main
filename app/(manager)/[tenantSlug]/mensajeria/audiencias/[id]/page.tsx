@@ -49,7 +49,9 @@ export default async function EditAudiencePage({
       <PageHeader
         eyebrow="Mensajería"
         title="Editar audiencia"
-        description={`${audience.customer_count_cached.toLocaleString('es-AR')} clientes en la última corrida`}
+        description={`${audience.customer_count_cached.toLocaleString('es-AR')} ${
+          audience.customer_count_cached === 1 ? 'cliente' : 'clientes'
+        } en el último conteo. Si cambiás las condiciones, el número se actualiza solo.`}
       />
       <AudienceForm
         tenantSlug={tenantSlug}

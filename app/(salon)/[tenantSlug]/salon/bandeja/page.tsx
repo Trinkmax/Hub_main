@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
 import { listConversations } from '@/lib/bandeja/queries'
-import { requireTenantAccess } from '@/lib/tenant'
+import { requireRole, requireTenantAccess } from '@/lib/tenant'
 import { ConversationListMobile } from './_components/conversation-list-mobile'
 
 export const metadata = { title: 'Salón · Bandeja' }
@@ -19,6 +19,8 @@ export default async function SalonBandejaPage({
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
     access = await requireTenantAccess(tenantSlug)
+    // Mismo gate que las actions de mensajería: cocina no lee chats de clientes
+    requireRole(access.role, ['owner', 'cashier', 'waiter'])
   } catch {
     notFound()
   }

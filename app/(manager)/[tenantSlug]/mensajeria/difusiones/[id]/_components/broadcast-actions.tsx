@@ -72,7 +72,12 @@ export function BroadcastActions({
       {canSendNow ? (
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button type="button" size="sm" disabled={nowPending}>
+            <Button
+              type="button"
+              size="sm"
+              disabled={nowPending}
+              className="bg-(--wa-accent) text-white hover:bg-(--wa-accent-deep)"
+            >
               {nowPending ? 'Enviando…' : 'Enviar ahora'}
             </Button>
           </AlertDialogTrigger>

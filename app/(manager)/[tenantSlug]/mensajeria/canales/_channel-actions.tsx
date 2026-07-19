@@ -36,6 +36,7 @@ export function ChannelCardActions({
     syncTemplatesAction.bind(null, tenantSlug),
     initial,
   )
+  const channelName = type === 'whatsapp' ? 'WhatsApp' : 'Instagram'
 
   useEffect(() => {
     if (!disconnectState.ok && disconnectState.message) toast.error(disconnectState.message)
@@ -51,7 +52,7 @@ export function ChannelCardActions({
     <div className="flex flex-wrap gap-2">
       <Button asChild variant="outline" className="gap-1.5">
         <a href={`/api/meta/${type}/connect?tenant=${encodeURIComponent(tenantSlug)}`}>
-          <Plug className="size-4" />
+          <Plug className="size-4" aria-hidden />
           Reconectar
         </a>
       </Button>
@@ -59,8 +60,8 @@ export function ChannelCardActions({
         <form action={syncAction}>
           <input type="hidden" name="channel_id" value={channelId} />
           <Button type="submit" variant="outline" disabled={syncPending} className="gap-1.5">
-            <RefreshCw className={`size-4 ${syncPending ? 'animate-spin' : ''}`} />
-            {syncPending ? 'Sincronizando…' : 'Sincronizar templates'}
+            <RefreshCw className={`size-4 ${syncPending ? 'animate-spin' : ''}`} aria-hidden />
+            {syncPending ? 'Sincronizando…' : 'Sincronizar plantillas'}
           </Button>
         </form>
       ) : null}
@@ -71,15 +72,16 @@ export function ChannelCardActions({
             disabled={disconnectPending}
             className="gap-1.5 text-muted-foreground hover:text-destructive"
           >
-            <Unplug className="size-4" />
+            <Unplug className="size-4" aria-hidden />
             Desconectar
           </Button>
         </AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Desconectar canal?</AlertDialogTitle>
+            <AlertDialogTitle>¿Desconectar {channelName}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Vas a perder la posibilidad de enviar y recibir mensajes hasta reconectar.
+              El bar deja de mandar y recibir mensajes por {channelName} hasta que lo vuelvas a
+              conectar. Las conversaciones ya guardadas no se pierden.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -90,7 +92,7 @@ export function ChannelCardActions({
                 type="submit"
                 className="bg-destructive text-white hover:bg-destructive/90"
               >
-                Desconectar
+                Sí, desconectar
               </AlertDialogAction>
             </form>
           </AlertDialogFooter>

@@ -2,7 +2,7 @@
 
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { ArrowLeft, ArrowRight, Calendar, Megaphone, Sparkles, Users } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Calendar, Megaphone, Send, Sparkles, Users } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useActionState, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -26,6 +26,7 @@ import {
 import { renderTemplateBodyPreview } from '@/lib/broadcasts/preview'
 import { templateBodyParamCount, type VariableMapping } from '@/lib/broadcasts/variables'
 import { fillExamples, parseMetaComponents } from '@/lib/meta/template-components'
+import { formatPhoneForDisplay } from '@/lib/phone'
 
 type Channel = { id: string; type: 'whatsapp' | 'instagram'; display_name: string | null }
 type Template = {
@@ -46,13 +47,20 @@ function eventShortDate(ymd: string): string {
 
 const initial: BroadcastActionState = { ok: true }
 
+// Ejemplo con el que se arma la vista previa (una clienta inventada).
+const EXAMPLE = {
+  first_name: 'Ana',
+  last_name: 'Pérez',
+  phone: formatPhoneForDisplay('+5493515551234'),
+}
+
 const STEPS = [
-  { label: 'Canal', description: 'Por dónde lo mandás' },
-  { label: 'Mensaje', description: 'Qué plantilla usás' },
-  { label: 'Personalizar', description: 'Completá los huecos' },
-  { label: 'Audiencia', description: 'A quién le llega' },
-  { label: 'Detalles', description: 'Nombre y horario' },
-  { label: 'Revisar', description: 'Antes de enviar' },
+  { label: 'Canal', description: 'Por dónde sale' },
+  { label: 'Mensaje', description: 'Cuál mandás' },
+  { label: 'Personalizar', description: 'Datos de cada cliente' },
+  { label: 'Destinatarios', description: 'A quién le llega' },
+  { label: 'Nombre y fecha', description: 'Cuándo sale' },
+  { label: 'Revisar', description: 'Y enviar' },
 ]
 
 export function BroadcastForm({
@@ -90,20 +98,46 @@ export function BroadcastForm({
   const audience = audiences.find((a) => a.id === audienceId)
   const paramCount = useMemo(() => templateBodyParamCount(template?.components), [template])
   const parsedTemplate = useMemo(() => parseMetaComponents(template?.components), [template])
+
+  // Completa el mapping con el default visible ("Nombre") para cada hueco.
+  // Sin esto, la UI mostraba "Nombre" pero se enviaba el hueco vacío.
+  useEffect(() => {
+    if (!templateId || paramCount === 0) return
+    setMapping((m) => {
+      let changed = false
+      const next = { ...m }
+      for (let i = 1; i <= paramCount; i += 1) {
+        const key = String(i)
+        if (!next[key]) {
+          next[key] = { source: 'first_name' }
+          changed = true
+        }
+      }
+      return changed ? next : m
+    })
+  }, [templateId, paramCount])
+
   const previewValues = useMemo(
     () =>
       Array.from({ length: paramCount }).map((_, i) => {
         const d = mapping[String(i + 1)]
-        if (!d) return ''
-        if (d.source === 'custom') return d.value ?? `{{${i + 1}}}`
-        return d.source === 'first_name' ? 'Ana' : d.source === 'last_name' ? 'Pérez' : '+54…'
+        const source = d?.source ?? 'first_name'
+        if (source === 'custom') {
+          const fixed = d?.value?.trim()
+          return fixed && fixed.length > 0 ? fixed : '…'
+        }
+        return EXAMPLE[source]
       }),
     [paramCount, mapping],
   )
 
   useEffect(() => {
     if (state.ok && state.id) {
-      toast.success(scheduledAt ? 'Difusión programada.' : 'Difusión enviada.')
+      toast.success(
+        scheduledAt
+          ? 'Listo. La difusión quedó programada.'
+          : 'Listo. La difusión ya está saliendo.',
+      )
       router.push(`/${tenantSlug}/mensajeria/difusiones/${state.id}`)
       router.refresh()
     } else if (!state.ok && state.message) {
@@ -116,11 +150,25 @@ export function BroadcastForm({
   const canNext = (() => {
     if (step === 0) return channels.length > 0 && channelId.length > 0
     if (step === 1) return templateId.length > 0
-    if (step === 2) return true // Variables step — always can advance
+    if (step === 2) return true // Personalizar — siempre se puede avanzar
     if (step === 3) return audienceId.length > 0
     if (step === 4) return name.length > 0
     return true
   })()
+
+  const bubblePreview = template ? (
+    <div className="space-y-2">
+      <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+        Así lo va a ver el cliente{paramCount > 0 ? ' (ejemplo: Ana Pérez)' : ''}
+      </p>
+      <WhatsAppBubble
+        header={parsedTemplate.header ? fillExamples(parsedTemplate.header, previewValues) : null}
+        body={renderTemplateBodyPreview(template.components, previewValues)}
+        footer={parsedTemplate.footer}
+        buttons={parsedTemplate.buttons.map((text, i) => ({ id: `b-${i}`, text }))}
+      />
+    </div>
+  ) : null
 
   return (
     <>
@@ -154,7 +202,7 @@ export function BroadcastForm({
                 </div>
               ) : (
                 <Select value={channelId} onValueChange={setChannelId}>
-                  <SelectTrigger className="h-11">
+                  <SelectTrigger className="h-11" aria-label="Canal de envío">
                     <SelectValue placeholder="Elegí por dónde" />
                   </SelectTrigger>
                   <SelectContent>
@@ -180,20 +228,22 @@ export function BroadcastForm({
                 <h2 className="font-display text-lg font-semibold tracking-tight">
                   ¿Qué mensaje mandás?
                 </h2>
-                <p className="text-sm text-muted-foreground">De tus plantillas ya aprobadas.</p>
+                <p className="text-sm text-muted-foreground">
+                  Elegí uno de tus mensajes ya aprobados por WhatsApp.
+                </p>
               </div>
               {filteredTemplates.length === 0 ? (
                 <div className="rounded-lg border border-warning/40 bg-warning/5 p-4 text-sm">
                   <p className="font-medium text-warning">Todavía no tenés mensajes listos</p>
                   <p className="mt-1 text-muted-foreground">
-                    Creá una plantilla en Mensajería → Plantillas. WhatsApp la revisa (unos minutos)
-                    y aparece acá.
+                    Creá uno en Mensajería → Plantillas. WhatsApp lo revisa (suelen ser unos
+                    minutos) y aparece acá.
                   </p>
                 </div>
               ) : (
                 <Select value={templateId} onValueChange={setTemplateId}>
-                  <SelectTrigger className="h-11">
-                    <SelectValue placeholder="Elegí una plantilla" />
+                  <SelectTrigger className="h-11" aria-label="Mensaje aprobado">
+                    <SelectValue placeholder="Elegí un mensaje" />
                   </SelectTrigger>
                   <SelectContent>
                     {filteredTemplates.map((t) => (
@@ -204,6 +254,7 @@ export function BroadcastForm({
                   </SelectContent>
                 </Select>
               )}
+              {bubblePreview}
             </div>
           ) : null}
 
@@ -211,20 +262,25 @@ export function BroadcastForm({
             <div className="space-y-4">
               <div>
                 <h2 className="font-display text-lg font-semibold tracking-tight">
-                  Completá los huecos del mensaje
+                  Hacelo personal
                 </h2>
                 <p className="text-sm text-muted-foreground">
                   {paramCount === 0
-                    ? 'Este mensaje no tiene huecos para completar.'
-                    : 'Cada hueco se rellena con un dato de cada cliente, así le llega personalizado.'}
+                    ? 'Este mensaje sale igual para todos. No hay nada que completar acá.'
+                    : 'El mensaje tiene huecos que se completan con un dato de cada cliente. Elegí qué va en cada uno.'}
                 </p>
               </div>
               {Array.from({ length: paramCount }).map((_, idx) => {
                 const key = String(idx + 1)
                 const def = mapping[key] ?? { source: 'first_name' as const }
                 return (
-                  <div key={key} className="grid gap-2 rounded-lg border border-border/60 p-3">
-                    <Label>{`Dato ${key}`}</Label>
+                  <div
+                    key={key}
+                    className="space-y-2 rounded-lg border border-border/60 bg-background/40 p-3"
+                  >
+                    <Label htmlFor={`hueco-${key}`}>
+                      {paramCount === 1 ? '¿Qué va en el hueco?' : `¿Qué va en el hueco ${key}?`}
+                    </Label>
                     <Select
                       value={def.source}
                       onValueChange={(v) =>
@@ -234,19 +290,20 @@ export function BroadcastForm({
                         }))
                       }
                     >
-                      <SelectTrigger className="h-10">
+                      <SelectTrigger id={`hueco-${key}`} className="h-10">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="first_name">Nombre</SelectItem>
-                        <SelectItem value="last_name">Apellido</SelectItem>
-                        <SelectItem value="phone">Teléfono</SelectItem>
-                        <SelectItem value="custom">Un texto fijo</SelectItem>
+                        <SelectItem value="first_name">El nombre del cliente</SelectItem>
+                        <SelectItem value="last_name">El apellido del cliente</SelectItem>
+                        <SelectItem value="phone">El teléfono del cliente</SelectItem>
+                        <SelectItem value="custom">Un texto fijo, igual para todos</SelectItem>
                       </SelectContent>
                     </Select>
                     {def.source === 'custom' ? (
                       <Input
-                        placeholder="El texto que va acá"
+                        aria-label={`Texto fijo para el hueco ${key}`}
+                        placeholder="Escribí el texto que va acá"
                         value={def.value ?? ''}
                         onChange={(e) =>
                           setMapping((m) => ({
@@ -257,7 +314,8 @@ export function BroadcastForm({
                       />
                     ) : (
                       <Input
-                        placeholder="Qué poner si el cliente no tiene este dato"
+                        aria-label={`Texto de respaldo para el hueco ${key}`}
+                        placeholder="Si a un cliente le falta ese dato, poné esto"
                         value={def.fallback ?? ''}
                         onChange={(e) =>
                           setMapping((m) => {
@@ -270,52 +328,57 @@ export function BroadcastForm({
                   </div>
                 )
               })}
-              {paramCount > 0 ? (
-                <div className="rounded-lg border bg-muted/30 p-3 text-sm">
-                  <p className="mb-1 text-[11px] uppercase tracking-wider text-muted-foreground">
-                    Vista previa
-                  </p>
-                  <p className="whitespace-pre-wrap">
-                    {renderTemplateBodyPreview(template?.components, previewValues)}
-                  </p>
-                </div>
-              ) : null}
+              {bubblePreview}
             </div>
           ) : null}
 
           {step === 3 ? (
             <div className="space-y-3">
               <div>
-                <h2 className="font-display text-lg font-semibold tracking-tight">¿A quién?</h2>
+                <h2 className="font-display text-lg font-semibold tracking-tight">
+                  ¿A quién se lo mandás?
+                </h2>
                 <p className="text-sm text-muted-foreground">
-                  La lista se actualiza sola justo antes de enviar.
+                  Elegí una de tus listas. Se actualiza sola justo antes de enviar.
                 </p>
               </div>
               {audiences.length === 0 ? (
                 <div className="rounded-lg border border-warning/40 bg-warning/5 p-4 text-sm">
-                  <p className="font-medium text-warning">Sin audiencias</p>
+                  <p className="font-medium text-warning">Todavía no armaste ninguna lista</p>
                   <p className="mt-1 text-muted-foreground">
-                    Creá una lista primero en Mensajería → Audiencias.
+                    Creá una en Mensajería → Audiencias y volvé acá.
                   </p>
                 </div>
               ) : (
-                <Select value={audienceId} onValueChange={setAudienceId}>
-                  <SelectTrigger className="h-11">
-                    <SelectValue placeholder="Elegí audiencia" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {audiences.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        <span className="flex items-center gap-2">
-                          {a.name}
-                          <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] tabular-nums">
-                            {a.customer_count_cached}
+                <>
+                  <Select value={audienceId} onValueChange={setAudienceId}>
+                    <SelectTrigger className="h-11" aria-label="Lista de destinatarios">
+                      <SelectValue placeholder="Elegí una lista" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {audiences.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          <span className="flex items-center gap-2">
+                            {a.name}
+                            <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] tabular-nums">
+                              {a.customer_count_cached.toLocaleString('es-AR')}
+                            </span>
                           </span>
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {audience ? (
+                    <p className="text-xs text-muted-foreground">
+                      Hoy son{' '}
+                      <strong className="text-foreground">
+                        {audience.customer_count_cached.toLocaleString('es-AR')}{' '}
+                        {audience.customer_count_cached === 1 ? 'cliente' : 'clientes'}
+                      </strong>
+                      . Los que no aceptaron recibir promos quedan afuera solos.
+                    </p>
+                  ) : null}
+                </>
               )}
             </div>
           ) : null}
@@ -323,14 +386,16 @@ export function BroadcastForm({
           {step === 4 ? (
             <div className="space-y-4">
               <div>
-                <h2 className="font-display text-lg font-semibold tracking-tight">Detalles</h2>
+                <h2 className="font-display text-lg font-semibold tracking-tight">
+                  Nombre y fecha
+                </h2>
                 <p className="text-sm text-muted-foreground">
-                  Un nombre para vos (los clientes no lo ven) y cuándo enviar.
+                  Un nombre para reconocerla después (los clientes no lo ven) y cuándo sale.
                 </p>
               </div>
               {events.length > 0 ? (
                 <div className="grid gap-1.5">
-                  <Label htmlFor="event-input">Evento (opcional)</Label>
+                  <Label htmlFor="event-input">¿Es para anunciar un evento? (opcional)</Label>
                   <Select
                     value={eventId}
                     onValueChange={(v) => {
@@ -340,7 +405,7 @@ export function BroadcastForm({
                     }}
                   >
                     <SelectTrigger id="event-input" className="h-11">
-                      <SelectValue placeholder="Anunciar un evento del calendario…" />
+                      <SelectValue placeholder="Elegí un evento del calendario…" />
                     </SelectTrigger>
                     <SelectContent>
                       {events.map((e) => (
@@ -354,7 +419,7 @@ export function BroadcastForm({
                     </SelectContent>
                   </Select>
                   <p className="text-[11px] text-muted-foreground">
-                    Elegir un evento completa el nombre de la difusión.
+                    Al elegirlo, el nombre de la difusión se completa solo.
                   </p>
                 </div>
               ) : null}
@@ -370,7 +435,7 @@ export function BroadcastForm({
                 />
               </div>
               <div className="grid gap-1.5">
-                <Label htmlFor="scheduled-at-input">Cuándo enviar</Label>
+                <Label htmlFor="scheduled-at-input">¿Cuándo sale?</Label>
                 <Input
                   id="scheduled-at-input"
                   type="datetime-local"
@@ -380,7 +445,9 @@ export function BroadcastForm({
                   }
                 />
                 <p className="text-[11px] text-muted-foreground">
-                  Si lo dejás en blanco, se envía ni bien confirmes.
+                  {scheduledAt
+                    ? `Sale el ${format(new Date(scheduledAt), "EEEE d 'de' MMMM 'a las' HH:mm", { locale: es })}.`
+                    : 'Si lo dejás en blanco, se envía ni bien confirmes.'}
                 </p>
               </div>
             </div>
@@ -390,12 +457,35 @@ export function BroadcastForm({
             <div className="space-y-4">
               <div>
                 <h2 className="font-display text-lg font-semibold tracking-tight">
-                  Revisión final
+                  Último vistazo
                 </h2>
                 <p className="text-sm text-muted-foreground">
-                  Revisá que esté todo bien antes de enviar.
+                  Revisá que esté todo bien antes de confirmar.
                 </p>
               </div>
+
+              <div className="rounded-lg border border-success/30 bg-success/10 px-3 py-2.5 text-sm">
+                <p>
+                  Se lo vas a mandar a{' '}
+                  <strong>
+                    {audience
+                      ? `${audience.customer_count_cached.toLocaleString('es-AR')} ${
+                          audience.customer_count_cached === 1 ? 'cliente' : 'clientes'
+                        }`
+                      : 'los clientes'}
+                  </strong>{' '}
+                  de la lista “{audience?.name ?? '—'}”,{' '}
+                  {scheduledAt
+                    ? `el ${format(new Date(scheduledAt), "EEEE d 'de' MMMM 'a las' HH:mm", { locale: es })}`
+                    : 'ahora mismo, ni bien confirmes'}
+                  .
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Solo les llega a los que aceptaron recibir promos. Los que pidieron no recibir más
+                  quedan afuera solos.
+                </p>
+              </div>
+
               <dl className="grid gap-3">
                 <SummaryRow
                   icon={Megaphone}
@@ -409,7 +499,7 @@ export function BroadcastForm({
                 />
                 <SummaryRow
                   icon={Users}
-                  label="Audiencia"
+                  label="Destinatarios"
                   value={
                     audience
                       ? `${audience.name} · ${audience.customer_count_cached.toLocaleString('es-AR')} clientes`
@@ -429,31 +519,7 @@ export function BroadcastForm({
                 />
               </dl>
 
-              {template ? (
-                <div className="space-y-2">
-                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                    Vista previa del mensaje
-                  </p>
-                  <WhatsAppBubble
-                    header={
-                      parsedTemplate.header
-                        ? fillExamples(parsedTemplate.header, previewValues)
-                        : null
-                    }
-                    body={renderTemplateBodyPreview(template.components, previewValues)}
-                    footer={parsedTemplate.footer}
-                    buttons={parsedTemplate.buttons.map((text, i) => ({ id: `b-${i}`, text }))}
-                  />
-                </div>
-              ) : null}
-
-              <p className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                Se envía sólo a los clientes que{' '}
-                <strong className="text-foreground">
-                  aceptaron recibir promociones por WhatsApp
-                </strong>
-                . Los que no aceptaron —o pidieron no recibir más— quedan afuera automáticamente.
-              </p>
+              {bubblePreview}
             </div>
           ) : null}
         </div>
@@ -480,7 +546,17 @@ export function BroadcastForm({
               <ArrowRight className="size-3.5" />
             </Button>
           ) : (
-            <Button type="submit" disabled={pending} size="lg">
+            <Button
+              type="submit"
+              disabled={pending}
+              size="lg"
+              className={
+                scheduledAt
+                  ? 'gap-2'
+                  : 'gap-2 bg-(--wa-accent) text-white hover:bg-(--wa-accent-deep)'
+              }
+            >
+              <Send className="size-4" aria-hidden />
               {pending
                 ? scheduledAt
                   ? 'Programando…'
@@ -523,18 +599,31 @@ function TestSendBlock({
   }, [state])
   if (!channelId || !templateId) return null
   return (
-    <form action={action} className="mt-4 flex items-end gap-2 rounded-lg border border-dashed p-3">
-      <input type="hidden" name="channel_id" value={channelId} />
-      <input type="hidden" name="template_id" value={templateId} />
-      <input type="hidden" name="variable_mapping" value={JSON.stringify(mapping)} />
-      <div className="grid flex-1 gap-1.5">
-        <Label htmlFor="test-phone">Enviar prueba a</Label>
-        <Input id="test-phone" name="to_phone" placeholder="+54 9 351 …" />
+    <div className="mt-6 space-y-3 rounded-xl border border-dashed border-border/80 bg-card/50 p-4">
+      <div>
+        <p className="text-sm font-medium">Probalo primero en tu WhatsApp</p>
+        <p className="text-xs text-muted-foreground">
+          Te mandás el mensaje a vos y lo ves tal cual le llega al cliente. No le llega a nadie más.
+        </p>
       </div>
-      <Button type="submit" variant="outline" disabled={pending}>
-        {pending ? 'Enviando…' : 'Enviar prueba'}
-      </Button>
-    </form>
+      <form action={action} className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <input type="hidden" name="channel_id" value={channelId} />
+        <input type="hidden" name="template_id" value={templateId} />
+        <input type="hidden" name="variable_mapping" value={JSON.stringify(mapping)} />
+        <div className="grid flex-1 gap-1.5">
+          <Label htmlFor="test-phone">Tu número</Label>
+          <Input id="test-phone" name="to_phone" inputMode="tel" placeholder="Ej: 351 555-1234" />
+        </div>
+        <Button
+          type="submit"
+          disabled={pending}
+          className="gap-2 bg-(--wa-accent) text-white hover:bg-(--wa-accent-deep)"
+        >
+          <Send className="size-4" aria-hidden />
+          {pending ? 'Enviando…' : 'Mandar prueba'}
+        </Button>
+      </form>
+    </div>
   )
 }
 
@@ -550,7 +639,7 @@ function SummaryRow({
   return (
     <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-background/40 p-3">
       <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-        <Icon className="size-4" />
+        <Icon className="size-4" aria-hidden />
       </div>
       <div className="min-w-0 flex-1">
         <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</dt>

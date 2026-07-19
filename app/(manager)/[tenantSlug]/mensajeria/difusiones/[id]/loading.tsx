@@ -12,9 +12,9 @@ export default function Loading() {
         </div>
         <Skeleton className="h-6 w-20 rounded-full" />
       </div>
-      <section className="grid gap-4 sm:grid-cols-3">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={`stat-${i.toString()}`} className="h-24 rounded-xl" />
+      <section className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={`stat-${i.toString()}`} className="h-28 rounded-xl" />
         ))}
       </section>
       <Skeleton className="h-80 w-full rounded-xl" />

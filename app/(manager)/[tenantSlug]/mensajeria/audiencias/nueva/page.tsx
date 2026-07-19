@@ -43,7 +43,7 @@ export default async function NewAudiencePage({
       <PageHeader
         eyebrow="Mensajería"
         title="Nueva audiencia"
-        description="Elegí un grupo listo o armá el tuyo con condiciones simples. El alcance se calcula solo."
+        description="Elegí un grupo listo o armalo a tu medida. La cantidad de clientes se calcula sola mientras lo armás."
       />
       <AudienceForm tenantSlug={tenantSlug} options={options} />
     </div>

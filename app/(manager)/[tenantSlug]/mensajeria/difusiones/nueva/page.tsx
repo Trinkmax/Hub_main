@@ -90,7 +90,7 @@ export default async function NuevaDifusionPage({
       <PageHeader
         eyebrow="Mensajería"
         title="Nueva difusión"
-        description="Elegí canal, template y audiencia. Programá el envío o despachá ahora."
+        description="Elegís el mensaje, a quién se lo mandás y cuándo. Antes de que salga, ves un resumen para confirmar."
       />
       <BroadcastForm
         tenantSlug={tenantSlug}

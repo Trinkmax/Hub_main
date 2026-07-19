@@ -15,16 +15,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import {
-  Clock,
-  GitBranch,
-  GripVertical,
-  MessageSquareText,
-  Plus,
-  Tag as TagIcon,
-  X,
-  Zap,
-} from 'lucide-react'
+import { GripVertical, Plus, X, Zap } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useActionState, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -42,6 +33,14 @@ import {
 } from '@/components/ui/select'
 import { createFlow, type FlowActionState, updateFlow } from '@/lib/flows/actions'
 import type { FlowStepConfig, FlowTriggerConfig } from '@/lib/flows/schemas'
+import { ConditionEditor, WaitEditor } from './step-editors'
+import {
+  CHANNEL_TYPE_LABEL,
+  KIND_CHIP_CLASS,
+  KIND_ICON,
+  KIND_LABEL,
+  TRIGGER_TYPE_LABEL,
+} from './step-meta'
 
 type Channel = { id: string; display_name: string | null; type: 'whatsapp' | 'instagram' }
 type Template = { id: string; name: string; language: string; channel_id: string }
@@ -61,20 +60,6 @@ function defaultStep(channels: Channel[], templates: Template[]): FlowStepConfig
     }
   }
   return { type: 'wait', minutes: 60 }
-}
-
-const STEP_LABEL: Record<FlowStepConfig['type'], string> = {
-  send_template: 'Enviar template',
-  wait: 'Esperar',
-  condition: 'Condición',
-  add_tag: 'Agregar tag',
-}
-
-const STEP_ICON: Record<FlowStepConfig['type'], typeof MessageSquareText> = {
-  send_template: MessageSquareText,
-  wait: Clock,
-  condition: GitBranch,
-  add_tag: TagIcon,
 }
 
 type WithRowId = FlowStepConfig & { __id: string }
@@ -118,7 +103,7 @@ export function FlowBuilder({
 
   useEffect(() => {
     if (state.ok && state.id) {
-      toast.success(flowId ? 'Flow actualizado.' : 'Flow creado.')
+      toast.success(flowId ? 'Automatización guardada.' : 'Automatización creada.')
       router.push(`/${tenantSlug}/mensajeria/flows`)
       router.refresh()
     } else if (!state.ok && state.message) {
@@ -155,11 +140,11 @@ export function FlowBuilder({
             htmlFor="flow-name"
             className="text-xs uppercase tracking-wider text-muted-foreground"
           >
-            Nombre del flow
+            Nombre de la automatización
           </Label>
           <Input
             id="flow-name"
-            placeholder="Ej: Recordatorio post-visita"
+            placeholder="Ej.: Gracias por venir"
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
@@ -176,17 +161,22 @@ export function FlowBuilder({
             id="flow-active"
           />
           <div className="space-y-0.5">
-            <span className="text-sm font-medium leading-none">Flow activo</span>
+            <span className="text-sm font-medium leading-none">Automatización activa</span>
             <span className="block text-xs text-muted-foreground">
-              Si está pausado, no se ejecuta aunque coincida el trigger.
+              Si está en pausa, no manda nada aunque se cumpla el disparador.
             </span>
           </div>
         </Label>
       </div>
 
       <div className="space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="font-display text-sm font-semibold tracking-tight">Pasos</h2>
+        <div className="flex items-end justify-between gap-2">
+          <div className="space-y-0.5">
+            <h2 className="font-display text-sm font-semibold tracking-tight">Pasos</h2>
+            <p className="text-xs text-muted-foreground">
+              Se hacen en orden, de arriba para abajo. Arrastrá para reordenar.
+            </p>
+          </div>
           <span className="text-xs text-muted-foreground tabular-nums">
             {steps.length} {steps.length === 1 ? 'paso' : 'pasos'}
           </span>
@@ -241,7 +231,7 @@ export function FlowBuilder({
           Agregar paso
         </Button>
         <Button type="submit" disabled={pending} className="ml-auto" size="lg">
-          {pending ? 'Guardando…' : 'Guardar flow'}
+          {pending ? 'Guardando…' : 'Guardar automatización'}
         </Button>
       </div>
     </form>
@@ -261,7 +251,7 @@ function TriggerEditor({
     <div className="grid gap-1.5">
       <Label className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground">
         <Zap className="size-3" />
-        Trigger
+        ¿Cuándo se manda?
       </Label>
       <div className="rounded-lg border border-border/60 bg-background/40 p-3 space-y-3">
         <Select
@@ -275,27 +265,27 @@ function TriggerEditor({
             else onChange({ type: t })
           }}
         >
-          <SelectTrigger>
+          <SelectTrigger aria-label="Cuándo se manda">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="customer_inactive">Cliente inactivo</SelectItem>
-            <SelectItem value="birthday">Cumpleaños</SelectItem>
-            <SelectItem value="after_visit">Después de una visita</SelectItem>
-            <SelectItem value="event_starting">Evento próximo</SelectItem>
-            <SelectItem value="tag_added">Tag agregado</SelectItem>
+            {(Object.keys(TRIGGER_TYPE_LABEL) as Array<FlowTriggerConfig['type']>).map((t) => (
+              <SelectItem key={t} value={t}>
+                {TRIGGER_TYPE_LABEL[t]}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         {value.type === 'birthday' ? (
           <div className="grid gap-1.5">
-            <Label className="text-xs text-muted-foreground">Cuándo enviar</Label>
+            <Label className="text-xs text-muted-foreground">¿Qué día se manda?</Label>
             <Select
               value={String(value.offset_days)}
               onValueChange={(v) =>
                 onChange({ type: 'birthday', offset_days: Number.parseInt(v, 10) })
               }
             >
-              <SelectTrigger>
+              <SelectTrigger aria-label="Qué día se manda el saludo">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -308,13 +298,13 @@ function TriggerEditor({
               </SelectContent>
             </Select>
             <p className="text-[11px] text-muted-foreground">
-              El cron evalúa cada día; quienes cumplan en N días recibirán el mensaje hoy.
+              Se revisa una vez por día y se le manda a quien le toque.
             </p>
           </div>
         ) : null}
         {value.type === 'customer_inactive' ? (
           <div className="grid gap-1.5">
-            <Label className="text-xs text-muted-foreground">Días sin venir</Label>
+            <Label className="text-xs text-muted-foreground">¿Cuántos días sin venir?</Label>
             <Input
               type="number"
               min={1}
@@ -323,12 +313,13 @@ function TriggerEditor({
               onChange={(e) =>
                 onChange({ type: 'customer_inactive', days: Math.max(1, Number(e.target.value)) })
               }
+              aria-label="Días sin venir"
             />
           </div>
         ) : null}
         {value.type === 'event_starting' ? (
           <div className="grid gap-1.5">
-            <Label className="text-xs text-muted-foreground">Horas antes</Label>
+            <Label className="text-xs text-muted-foreground">¿Cuántas horas antes?</Label>
             <Input
               type="number"
               min={1}
@@ -340,23 +331,24 @@ function TriggerEditor({
                   hours_before: Math.max(1, Number(e.target.value)),
                 })
               }
+              aria-label="Horas antes del evento"
             />
           </div>
         ) : null}
         {value.type === 'tag_added' ? (
           <div className="grid gap-1.5">
-            <Label className="text-xs text-muted-foreground">Tag</Label>
+            <Label className="text-xs text-muted-foreground">¿Qué etiqueta?</Label>
             <Select
               value={value.tag_id ?? '__any'}
               onValueChange={(v) =>
                 onChange({ type: 'tag_added', tag_id: v === '__any' ? undefined : v })
               }
             >
-              <SelectTrigger>
-                <SelectValue placeholder="Cualquier tag" />
+              <SelectTrigger aria-label="Etiqueta que dispara la automatización">
+                <SelectValue placeholder="Cualquier etiqueta" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__any">Cualquier tag</SelectItem>
+                <SelectItem value="__any">Cualquier etiqueta</SelectItem>
                 {tags.map((t) => (
                   <SelectItem key={t.id} value={t.id}>
                     {t.name}
@@ -394,7 +386,7 @@ function SortableStep({
     id,
   })
   const style = { transform: CSS.Transform.toString(transform), transition }
-  const Icon = STEP_ICON[step.type]
+  const Icon = KIND_ICON[step.type]
 
   return (
     <div
@@ -409,14 +401,16 @@ function SortableStep({
             {...attributes}
             {...listeners}
             className="cursor-grab rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground active:cursor-grabbing"
-            aria-label="Reordenar"
+            aria-label="Reordenar paso"
           >
             <GripVertical className="size-4" />
           </button>
           <Badge variant="outline" className="font-mono tabular-nums">
             #{index + 1}
           </Badge>
-          <div className="flex size-7 items-center justify-center rounded-md bg-primary/15 text-primary">
+          <div
+            className={`flex size-7 items-center justify-center rounded-md border ${KIND_CHIP_CLASS[step.type]}`}
+          >
             <Icon className="size-3.5" />
           </div>
           <Select
@@ -425,14 +419,14 @@ function SortableStep({
               onChange(buildDefaultForType(v as FlowStepConfig['type'], channels, templates, tags))
             }
           >
-            <SelectTrigger className="h-8 w-44 text-sm">
+            <SelectTrigger className="h-8 w-44 text-sm" aria-label="Tipo de paso">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="send_template">{STEP_LABEL.send_template}</SelectItem>
-              <SelectItem value="wait">{STEP_LABEL.wait}</SelectItem>
-              <SelectItem value="condition">{STEP_LABEL.condition}</SelectItem>
-              <SelectItem value="add_tag">{STEP_LABEL.add_tag}</SelectItem>
+              <SelectItem value="send_template">{KIND_LABEL.send_template}</SelectItem>
+              <SelectItem value="wait">{KIND_LABEL.wait}</SelectItem>
+              <SelectItem value="condition">{KIND_LABEL.condition}</SelectItem>
+              <SelectItem value="add_tag">{KIND_LABEL.add_tag}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -500,106 +494,108 @@ function StepDetail({
   if (step.type === 'send_template') {
     const filtered = templates.filter((t) => t.channel_id === step.channel_id)
     return (
-      <div className="grid gap-2 sm:grid-cols-2">
-        <Select
-          value={step.channel_id}
-          onValueChange={(v) => onChange({ ...step, channel_id: v, template_id: '' })}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Canal" />
-          </SelectTrigger>
-          <SelectContent>
-            {channels.map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.display_name ?? c.type}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={step.template_id}
-          onValueChange={(v) => onChange({ ...step, template_id: v })}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Template" />
-          </SelectTrigger>
-          <SelectContent>
-            {filtered.map((t) => (
-              <SelectItem key={t.id} value={t.id}>
-                {t.name} <span className="text-muted-foreground">({t.language})</span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-1.5">
+          <Label className="text-xs text-muted-foreground">¿Por dónde sale?</Label>
+          <Select
+            value={step.channel_id}
+            onValueChange={(v) => onChange({ ...step, channel_id: v, template_id: '' })}
+          >
+            <SelectTrigger aria-label="Canal por el que sale el mensaje">
+              <SelectValue placeholder="Elegí el canal" />
+            </SelectTrigger>
+            <SelectContent>
+              {channels.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.display_name ?? CHANNEL_TYPE_LABEL[c.type]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {channels.length === 0 ? (
+            <p className="text-[11px] text-muted-foreground">
+              No tenés ningún canal conectado. Conectá WhatsApp desde Canales.
+            </p>
+          ) : null}
+        </div>
+        <div className="grid gap-1.5">
+          <Label className="text-xs text-muted-foreground">¿Qué mensaje se manda?</Label>
+          <Select
+            value={step.template_id}
+            onValueChange={(v) => onChange({ ...step, template_id: v })}
+          >
+            <SelectTrigger aria-label="Mensaje aprobado a mandar">
+              <SelectValue placeholder="Elegí el mensaje" />
+            </SelectTrigger>
+            <SelectContent>
+              {filtered.map((t) => (
+                <SelectItem key={t.id} value={t.id}>
+                  {t.name} <span className="text-muted-foreground">({t.language})</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {step.channel_id !== '' && filtered.length === 0 ? (
+            <p className="text-[11px] text-muted-foreground">
+              No hay mensajes aprobados para este canal. Crealos desde Plantillas.
+            </p>
+          ) : null}
+        </div>
       </div>
     )
   }
   if (step.type === 'wait') {
     return (
-      <div className="flex items-center gap-2">
-        <Input
-          type="number"
-          min={1}
-          max={43200}
-          value={step.minutes}
-          onChange={(e) => onChange({ type: 'wait', minutes: Math.max(1, Number(e.target.value)) })}
-          className="w-32"
-        />
-        <span className="text-sm text-muted-foreground">minutos</span>
-      </div>
+      <WaitEditor
+        minutes={step.minutes}
+        onChange={(minutes) => onChange({ type: 'wait', minutes })}
+      />
     )
   }
   if (step.type === 'condition') {
     return (
-      <div className="grid gap-2 sm:grid-cols-3">
-        <Input
-          value={step.field}
-          onChange={(e) => onChange({ ...step, field: e.target.value })}
-          placeholder="customer.field"
-          className="font-mono text-xs"
-        />
-        <Select
-          value={step.op}
-          onValueChange={(v) => onChange({ ...step, op: v as typeof step.op })}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="eq">=</SelectItem>
-            <SelectItem value="neq">≠</SelectItem>
-            <SelectItem value="gt">&gt;</SelectItem>
-            <SelectItem value="gte">≥</SelectItem>
-            <SelectItem value="lt">&lt;</SelectItem>
-            <SelectItem value="lte">≤</SelectItem>
-            <SelectItem value="is_true">es true</SelectItem>
-            <SelectItem value="is_false">es false</SelectItem>
-          </SelectContent>
-        </Select>
-        <Input
-          value={
-            typeof step.value === 'string' || typeof step.value === 'number'
-              ? String(step.value)
-              : ''
+      <div className="space-y-3">
+        <ConditionEditor
+          field={step.field}
+          op={step.op}
+          value={step.value}
+          onPatch={(patch) =>
+            onChange({
+              ...step,
+              ...('field' in patch && patch.field !== undefined ? { field: patch.field } : {}),
+              ...('op' in patch && patch.op !== undefined
+                ? { op: patch.op as typeof step.op }
+                : {}),
+              ...('value' in patch ? { value: patch.value } : {}),
+            })
           }
-          onChange={(e) => onChange({ ...step, value: e.target.value })}
-          placeholder="valor"
         />
+        <p className="text-[11px] text-muted-foreground">
+          Antes de seguir, se revisa este dato del cliente.
+        </p>
       </div>
     )
   }
   return (
-    <Select value={step.tag_id} onValueChange={(v) => onChange({ ...step, tag_id: v })}>
-      <SelectTrigger>
-        <SelectValue placeholder="Tag" />
-      </SelectTrigger>
-      <SelectContent>
-        {tags.map((t) => (
-          <SelectItem key={t.id} value={t.id}>
-            {t.name}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div className="grid gap-1.5">
+      <Label className="text-xs text-muted-foreground">¿Qué etiqueta le ponemos?</Label>
+      <Select value={step.tag_id} onValueChange={(v) => onChange({ ...step, tag_id: v })}>
+        <SelectTrigger aria-label="Etiqueta a poner al cliente">
+          <SelectValue placeholder="Elegí una etiqueta" />
+        </SelectTrigger>
+        <SelectContent>
+          {tags.map((t) => (
+            <SelectItem key={t.id} value={t.id}>
+              {t.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {tags.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground">
+          Todavía no tenés etiquetas. Crealas desde Etiquetas y volvé acá.
+        </p>
+      ) : null}
+    </div>
   )
 }

@@ -13,7 +13,7 @@ import {
   TenantNotFoundError,
 } from '@/lib/tenant'
 import { FlowBuilder } from '../_components/flow-builder'
-import { FlowGraphEditor } from '../_components/flow-graph-editor'
+import { FlowGraphEditorClient } from '../_components/flow-graph-editor-client'
 
 export const metadata = { title: 'Editar automatización' }
 export const dynamic = 'force-dynamic'
@@ -82,7 +82,7 @@ export default async function EditFlowPage({
             }
           />
         </div>
-        <FlowGraphEditor
+        <FlowGraphEditorClient
           tenantSlug={tenantSlug}
           initial={{
             id: graphData.flow.id,
@@ -111,7 +111,7 @@ export default async function EditFlowPage({
         className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-3" />
-        Volver a flows
+        Volver a automatizaciones
       </Link>
       <PageHeader
         eyebrow="Mensajería"

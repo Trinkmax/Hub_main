@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
 import { listConversationTags } from '@/lib/conversation-tags/queries'
 import {
   RoleRequiredError,
@@ -32,13 +33,13 @@ export default async function EtiquetasPage({
   const tags = await listConversationTags(tenantId)
 
   return (
-    <div className="space-y-6">
+    <PageShell width="compact">
       <PageHeader
         eyebrow="Mensajería"
-        title="Etiquetas de conversación"
-        description="Organizá las conversaciones del inbox con etiquetas de color. Se usan al etiquetar un chat y para filtrar la bandeja."
+        title="Etiquetas"
+        description="Sirven para ordenar los chats: Reservas, Quejas, VIP… Etiquetá cada conversación y después filtrá la bandeja por etiqueta."
       />
       <TagsManager tenantSlug={tenantSlug} tags={tags} />
-    </div>
+    </PageShell>
   )
 }

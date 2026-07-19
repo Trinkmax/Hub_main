@@ -1,19 +1,13 @@
+import { format } from 'date-fns'
 import { MessageSquareText, Plug } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import type { ReactNode } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  DataTableBody,
-  DataTableCell,
-  DataTableHead,
-  DataTableHeader,
-  DataTableRoot,
-  DataTableScroll,
-  DataTableShell,
-} from '@/components/ui/data-table'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
 import { createClient } from '@/lib/supabase/server'
 import {
   RoleRequiredError,
@@ -25,36 +19,88 @@ import type { TemplateStatus } from '@/types/database'
 import { CreateTemplateDialog } from './_create-template-dialog'
 import { DeleteTemplateButton } from './_delete-template-button'
 import { TemplateSyncButton } from './_sync-button'
+import {
+  categoryLabel,
+  humanizeTemplateName,
+  languageLabel,
+  STATUS_META,
+} from './_template-display'
 
 export const metadata = { title: 'Plantillas' }
 export const dynamic = 'force-dynamic'
 
-const STATUS_LABEL: Record<TemplateStatus, string> = {
-  draft: 'Borrador',
-  pending: 'Esperando aprobación',
-  approved: 'Aprobada',
-  rejected: 'Rechazada',
-  disabled: 'Deshabilitada',
+type TemplateRow = {
+  id: string
+  name: string
+  language: string
+  category: string
+  status: TemplateStatus
+  last_synced_at: string | null
+  components: unknown
 }
 
-const CATEGORY_LABEL: Record<string, string> = {
-  MARKETING: 'Marketing',
-  UTILITY: 'Utilidad',
-  AUTHENTICATION: 'Autenticación',
+type ParsedTemplate = {
+  header: string | null
+  body: string
+  footer: string | null
+  buttons: string[]
 }
 
-const LANGUAGE_LABEL: Record<string, string> = {
-  es_AR: 'Español',
-  es: 'Español',
-  en_US: 'Inglés',
-  en: 'Inglés',
+/**
+ * El JSON `components` viene en el formato de Meta (HEADER/BODY/FOOTER/BUTTONS).
+ * Parseo defensivo: si algo no matchea, simplemente no se muestra esa parte.
+ */
+function parseComponents(components: unknown): ParsedTemplate {
+  const parsed: ParsedTemplate = { header: null, body: '', footer: null, buttons: [] }
+  if (!Array.isArray(components)) return parsed
+  for (const item of components) {
+    if (!item || typeof item !== 'object') continue
+    const comp = item as Record<string, unknown>
+    const type = typeof comp.type === 'string' ? comp.type.toUpperCase() : ''
+    if (type === 'HEADER' && typeof comp.text === 'string') {
+      parsed.header = comp.text
+    } else if (type === 'BODY' && typeof comp.text === 'string') {
+      parsed.body = comp.text
+    } else if (type === 'FOOTER' && typeof comp.text === 'string') {
+      parsed.footer = comp.text
+    } else if (type === 'BUTTONS' && Array.isArray(comp.buttons)) {
+      for (const button of comp.buttons) {
+        if (button && typeof button === 'object') {
+          const text = (button as Record<string, unknown>).text
+          if (typeof text === 'string' && text.trim()) parsed.buttons.push(text)
+        }
+      }
+    }
+  }
+  return parsed
 }
 
-function statusVariant(s: TemplateStatus): 'default' | 'outline' | 'destructive' | 'secondary' {
-  if (s === 'approved') return 'default'
-  if (s === 'rejected' || s === 'disabled') return 'destructive'
-  if (s === 'pending') return 'secondary'
-  return 'outline'
+const VAR_SPLIT_RE = /(\{\{\s*\d+\s*\}\})/g
+const VAR_EXACT_RE = /^\{\{\s*\d+\s*\}\}$/
+
+/** Resalta los huecos `{{1}}` dentro del texto para que se vean como "dato del cliente". */
+function renderWithVariables(text: string): ReactNode[] {
+  const nodes: ReactNode[] = []
+  let offset = 0
+  for (const part of text.split(VAR_SPLIT_RE)) {
+    const key = `p-${offset}`
+    offset += part.length
+    if (!part) continue
+    if (VAR_EXACT_RE.test(part)) {
+      nodes.push(
+        <span
+          key={key}
+          className="rounded bg-black/10 px-1 font-mono text-[0.85em] dark:bg-white/15"
+          title="Se completa solo con el dato de cada cliente"
+        >
+          {part}
+        </span>,
+      )
+    } else {
+      nodes.push(<span key={key}>{part}</span>)
+    }
+  }
+  return nodes
 }
 
 export default async function TemplatesPage({
@@ -84,25 +130,18 @@ export default async function TemplatesPage({
 
   const { data: templatesRaw } = await supabase
     .from('message_templates')
-    .select('id, name, language, category, status, last_synced_at')
+    .select('id, name, language, category, status, last_synced_at, components')
     .eq('tenant_id', access.tenant.id)
     .order('name', { ascending: true })
 
-  const templates = (templatesRaw ?? []) as Array<{
-    id: string
-    name: string
-    language: string
-    category: string
-    status: TemplateStatus
-    last_synced_at: string | null
-  }>
+  const templates = (templatesRaw ?? []) as TemplateRow[]
 
   return (
-    <div className="space-y-6">
+    <PageShell width="comfortable">
       <PageHeader
-        eyebrow="Configuración"
+        eyebrow="Mensajería"
         title="Plantillas de WhatsApp"
-        description="Mensajes que WhatsApp aprueba una vez y después reusás en tus difusiones o para escribirle primero a un cliente. Creá una nueva o traé las que ya tengas aprobadas."
+        description="Tus mensajes aprobados: WhatsApp los revisa una sola vez y después los usás en difusiones, automatizaciones o para escribirle primero a un cliente."
         actions={
           channel ? (
             <div className="flex flex-wrap items-center gap-2">
@@ -117,7 +156,7 @@ export default async function TemplatesPage({
         <EmptyState
           icon={Plug}
           title="Conectá WhatsApp primero"
-          description="Primero conectá tu número de WhatsApp en Canales. Después vas a poder crear y usar plantillas."
+          description="Para crear mensajes aprobados necesitás tener tu número de WhatsApp conectado. Se hace una sola vez desde Canales."
           action={
             <Button asChild className="gap-2">
               <Link href={`/${tenantSlug}/mensajeria/canales`}>
@@ -131,56 +170,107 @@ export default async function TemplatesPage({
         <EmptyState
           icon={MessageSquareText}
           title="Todavía no tenés plantillas"
-          description="Tocá «Nueva plantilla» para crear una, o «Sincronizar» para traer las que ya tengas aprobadas en WhatsApp."
+          description="Tocá «Nueva plantilla» para escribir tu primer mensaje, o «Traer las novedades de WhatsApp» si ya tenés mensajes aprobados en tu cuenta."
         />
       ) : (
-        <DataTableShell>
-          <DataTableScroll>
-            <DataTableRoot>
-              <DataTableHead>
-                <tr>
-                  <DataTableHeader>Nombre</DataTableHeader>
-                  <DataTableHeader>Idioma</DataTableHeader>
-                  <DataTableHeader>Categoría</DataTableHeader>
-                  <DataTableHeader>Estado</DataTableHeader>
-                  <DataTableHeader>Actualizada</DataTableHeader>
-                  <DataTableHeader>
-                    <span className="sr-only">Acciones</span>
-                  </DataTableHeader>
-                </tr>
-              </DataTableHead>
-              <DataTableBody>
-                {templates.map((t) => (
-                  <tr key={t.id} className="transition-colors hover:bg-secondary/40">
-                    <DataTableCell className="font-medium font-mono text-xs">
-                      {t.name}
-                    </DataTableCell>
-                    <DataTableCell className="text-xs text-muted-foreground">
-                      {LANGUAGE_LABEL[t.language] ?? t.language}
-                    </DataTableCell>
-                    <DataTableCell className="text-muted-foreground">
-                      {CATEGORY_LABEL[t.category.toUpperCase()] ?? t.category}
-                    </DataTableCell>
-                    <DataTableCell>
-                      <Badge variant={statusVariant(t.status)}>{STATUS_LABEL[t.status]}</Badge>
-                    </DataTableCell>
-                    <DataTableCell className="text-xs text-muted-foreground">
-                      {t.last_synced_at ? new Date(t.last_synced_at).toLocaleString('es-AR') : '—'}
-                    </DataTableCell>
-                    <DataTableCell>
-                      <DeleteTemplateButton
-                        tenantSlug={tenantSlug}
-                        channelId={channel.id}
-                        templateName={t.name}
-                      />
-                    </DataTableCell>
-                  </tr>
-                ))}
-              </DataTableBody>
-            </DataTableRoot>
-          </DataTableScroll>
-        </DataTableShell>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {templates.map((t) => (
+            <TemplateCard key={t.id} template={t} tenantSlug={tenantSlug} channelId={channel.id} />
+          ))}
+        </div>
       )}
-    </div>
+    </PageShell>
+  )
+}
+
+function TemplateCard({
+  template,
+  tenantSlug,
+  channelId,
+}: {
+  template: TemplateRow
+  tenantSlug: string
+  channelId: string
+}) {
+  const statusMeta = STATUS_META[template.status]
+  const content = parseComponents(template.components)
+
+  return (
+    <article className="card-hairline flex flex-col overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-sm">
+      <header className="flex items-start justify-between gap-3 px-5 pt-4">
+        <div className="min-w-0">
+          <h2 className="truncate text-base font-medium tracking-tight">
+            {humanizeTemplateName(template.name)}
+          </h2>
+          {/* Meta exige el nombre técnico único; se muestra chiquito por si hay que buscarlo. */}
+          <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+            {template.name}
+          </p>
+        </div>
+        <Badge variant={statusMeta.variant}>{statusMeta.label}</Badge>
+      </header>
+
+      <div className="flex-1 px-5 py-4">
+        {/* El mensaje tal como sale: mini burbuja saliente con los tokens del frame .wa */}
+        <div className="max-w-[92%] rounded-lg rounded-tr-sm bg-(--wa-bubble-out) px-3.5 py-2.5 text-(--wa-text) shadow-2xs">
+          {content.header ? (
+            <p className="mb-1 text-sm font-semibold leading-snug">
+              {renderWithVariables(content.header)}
+            </p>
+          ) : null}
+          {content.body ? (
+            <p className="whitespace-pre-wrap break-words text-sm leading-snug">
+              {renderWithVariables(content.body)}
+            </p>
+          ) : (
+            <p className="text-sm italic text-(--wa-bubble-meta)">
+              Esta plantilla no tiene texto (puede ser de imagen o documento).
+            </p>
+          )}
+          {content.footer ? (
+            <p className="mt-1 text-[11px] leading-snug text-(--wa-bubble-meta-out)">
+              {content.footer}
+            </p>
+          ) : null}
+        </div>
+
+        {content.buttons.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {content.buttons.map((buttonText) => (
+              <span
+                key={buttonText}
+                className="rounded-md border border-border/60 bg-background px-2 py-0.5 text-[11px] text-muted-foreground"
+              >
+                {buttonText}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {statusMeta.hint ? (
+          <p
+            className={`mt-3 text-xs ${
+              template.status === 'rejected' ? 'text-destructive' : 'text-muted-foreground'
+            }`}
+          >
+            {statusMeta.hint}
+          </p>
+        ) : null}
+      </div>
+
+      <footer className="flex items-center justify-between gap-3 border-t border-border/50 px-5 py-2.5">
+        <p className="truncate text-xs text-muted-foreground">
+          {categoryLabel(template.category)} · {languageLabel(template.language)}
+          {template.last_synced_at
+            ? ` · Actualizada ${format(new Date(template.last_synced_at), 'dd/MM/yyyy HH:mm')}`
+            : ''}
+        </p>
+        <DeleteTemplateButton
+          tenantSlug={tenantSlug}
+          channelId={channelId}
+          templateName={template.name}
+        />
+      </footer>
+    </article>
   )
 }

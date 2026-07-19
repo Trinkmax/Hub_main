@@ -1,16 +1,19 @@
 import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
 import { Skeleton } from '@/components/ui/skeleton'
 
 export default function Loading() {
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+    <PageShell width="compact">
       <PageHeader
         eyebrow="Configuración"
         title="Canales"
-        description={<Skeleton className="h-4 w-96" />}
+        description={<Skeleton className="h-4 w-72 max-w-full" />}
       />
+      {/* Dos cards de canal + guía de pasos, mismas proporciones que la página real */}
+      <Skeleton className="h-52 w-full rounded-xl" />
+      <Skeleton className="h-52 w-full rounded-xl" />
       <Skeleton className="h-40 w-full rounded-xl" />
-      <Skeleton className="h-40 w-full rounded-xl" />
-    </div>
+    </PageShell>
   )
 }

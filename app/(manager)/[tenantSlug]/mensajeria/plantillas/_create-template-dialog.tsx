@@ -1,6 +1,6 @@
 'use client'
 
-import { PlusIcon } from 'lucide-react'
+import { LightbulbIcon, PlusIcon } from 'lucide-react'
 import { useActionState, useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { WhatsAppBubble } from '@/components/messaging/whatsapp-bubble'
@@ -29,11 +29,23 @@ import type { MetaActionState } from '@/lib/meta/actions'
 import { createTemplateAction } from '@/lib/meta/template-actions'
 import { extractPositionalVars, fillExamples } from '@/lib/meta/template-components'
 import { TEMPLATE_CATEGORIES } from '@/lib/meta/template-schemas'
+import { CATEGORY_LABELS } from './_template-display'
 
-const CATEGORY_LABELS: Record<string, string> = {
-  MARKETING: 'Marketing',
-  UTILITY: 'Utilidad',
-  AUTHENTICATION: 'Autenticación',
+// El value es el código que exige Meta; el label es lo que ve el dueño.
+const LANGUAGE_OPTIONS = [
+  { code: 'es_AR', label: 'Español (Argentina)' },
+  { code: 'es_MX', label: 'Español (México)' },
+  { code: 'es_ES', label: 'Español (España)' },
+  { code: 'es', label: 'Español (neutro)' },
+  { code: 'en_US', label: 'Inglés (EE. UU.)' },
+  { code: 'pt_BR', label: 'Portugués (Brasil)' },
+] as const
+
+const CATEGORY_HELP: Record<string, string> = {
+  MARKETING:
+    'Promoción: descuentos, eventos y novedades. Necesita que el cliente acepte recibir promos.',
+  UTILITY: 'Aviso: confirmaciones y recordatorios puntuales (reservas, pedidos).',
+  AUTHENTICATION: 'Verificación: solo para mandar códigos de acceso.',
 }
 
 const initial: MetaActionState = { ok: true }
@@ -82,7 +94,12 @@ export function CreateTemplateDialog({
 
   useEffect(() => {
     if (state.ok && state.message) {
-      toast.success(state.message)
+      // El server devuelve el estado crudo de Meta; acá lo traducimos a criollo.
+      toast.success(
+        state.message.includes('APPROVED')
+          ? 'La plantilla ya está aprobada. Podés usarla ahora mismo.'
+          : 'Listo, quedó en revisión. WhatsApp suele aprobarla entre unos minutos y 24 horas.',
+      )
       setOpen(false)
       reset()
     } else if (!state.ok && state.message) {
@@ -124,8 +141,8 @@ export function CreateTemplateDialog({
         <DialogHeader>
           <DialogTitle>Nueva plantilla de WhatsApp</DialogTitle>
           <DialogDescription>
-            Completá los campos y enviá a revisión de Meta. Aparecerá como{' '}
-            <strong>Pendiente</strong> hasta que la aprueben (suele tardar de minutos a 24 h).
+            WhatsApp revisa cada plantilla antes de dejarte usarla. Escribí el mensaje, mandalo a
+            revisión y suele estar aprobado entre unos minutos y 24 horas.
           </DialogDescription>
         </DialogHeader>
 
@@ -139,25 +156,26 @@ export function CreateTemplateDialog({
           <div className="grid content-start gap-4">
             <div className="grid gap-1.5">
               <Label htmlFor="tmpl-name">
-                Nombre <span className="text-destructive">*</span>
+                Nombre técnico <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="tmpl-name"
                 name="name"
                 value={name}
-                onChange={(e) => setName(e.target.value.toLowerCase())}
+                onChange={(e) => setName(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
                 placeholder="ej. bienvenida_nuevo_cliente"
                 autoComplete="off"
               />
               <p className="text-muted-foreground text-xs">
-                Solo minúsculas, números y guiones bajos. Sin espacios.
+                Tus clientes nunca lo ven. WhatsApp lo exige único, en minúsculas y con guión bajo
+                (_) en vez de espacios.
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-1.5">
                 <Label htmlFor="tmpl-category">
-                  Categoría <span className="text-destructive">*</span>
+                  ¿Para qué es? <span className="text-destructive">*</span>
                 </Label>
                 <Select name="category" value={category} onValueChange={setCategory}>
                   <SelectTrigger id="tmpl-category" className="w-full">
@@ -177,15 +195,23 @@ export function CreateTemplateDialog({
                 <Label htmlFor="tmpl-language">
                   Idioma <span className="text-destructive">*</span>
                 </Label>
-                <Input
-                  id="tmpl-language"
-                  name="language"
-                  value={language}
-                  onChange={(e) => setLanguage(e.target.value)}
-                  placeholder="ej. es_AR, en_US"
-                />
+                <Select name="language" value={language} onValueChange={setLanguage}>
+                  <SelectTrigger id="tmpl-language" className="w-full">
+                    <SelectValue placeholder="Seleccioná…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LANGUAGE_OPTIONS.map((lang) => (
+                      <SelectItem key={lang.code} value={lang.code}>
+                        {lang.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
+            {CATEGORY_HELP[category] ? (
+              <p className="-mt-2 text-muted-foreground text-xs">{CATEGORY_HELP[category]}</p>
+            ) : null}
 
             <div className="grid gap-1.5">
               <Label htmlFor="tmpl-header">Encabezado (opcional)</Label>
@@ -197,6 +223,9 @@ export function CreateTemplateDialog({
                 placeholder="ej. Novedades de HUB"
                 maxLength={60}
               />
+              <p className="text-muted-foreground text-xs">
+                Una línea en negrita arriba del mensaje.
+              </p>
               {headerVars.length > 0 ? (
                 <Input
                   name="headerExample"
@@ -232,17 +261,26 @@ export function CreateTemplateDialog({
                 maxLength={1024}
                 className="min-h-24 resize-y"
               />
-              <p className="text-muted-foreground text-xs">
-                Usá <code>{'{{1}}'}</code>, <code>{'{{2}}'}</code>… para personalizar. La difusión
-                completa cada variable por cada cliente.
-              </p>
+              <div className="flex gap-2 rounded-lg border border-border/60 bg-secondary/30 px-3 py-2.5">
+                <LightbulbIcon
+                  className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
+                  aria-hidden
+                />
+                <p className="text-muted-foreground text-xs">
+                  <strong className="text-foreground">¿Qué es {'{{1}}'}?</strong> Un hueco que se
+                  completa solo con el dato de cada cliente. Si escribís «¡Hola {'{{1}}'}!», Juan
+                  recibe «¡Hola Juan!» y Sofía recibe «¡Hola Sofía!». Tocá «+ Insertar variable»
+                  para agregar uno.
+                </p>
+              </div>
             </div>
 
             {bodyVars.length > 0 ? (
               <div className="grid gap-2 rounded-lg border border-border/60 bg-secondary/20 p-3">
                 <p className="text-xs font-medium">Ejemplos de las variables</p>
                 <p className="text-[11px] text-muted-foreground">
-                  Meta pide un ejemplo por variable para poder aprobar la plantilla.
+                  WhatsApp pide un ejemplo de cada variable para entender el mensaje y aprobarlo. No
+                  se le manda a nadie.
                 </p>
                 {bodyVars.map((n) => (
                   <div key={n} className="flex items-center gap-2">
@@ -250,7 +288,7 @@ export function CreateTemplateDialog({
                     <Input
                       value={bodyExamples[n - 1] ?? ''}
                       onChange={(e) => setExampleAt(n, e.target.value)}
-                      placeholder={`Ejemplo para {{${n}}}`}
+                      placeholder={n === 1 ? 'ej. Juan' : `Ejemplo para {{${n}}}`}
                       className="h-8 flex-1 text-xs"
                     />
                   </div>
@@ -268,6 +306,9 @@ export function CreateTemplateDialog({
                 placeholder="ej. HUB · Córdoba"
                 maxLength={60}
               />
+              <p className="text-muted-foreground text-xs">
+                Texto chiquito al final. Ideal para la firma del bar.
+              </p>
             </div>
 
             <div className="grid gap-2 rounded-lg border border-border/60 p-3">
@@ -278,7 +319,7 @@ export function CreateTemplateDialog({
                   onCheckedChange={(v) => setOptOut(v === true)}
                 />
                 <Label htmlFor="tmpl-optout" className="font-normal">
-                  Botón para darse de baja{' '}
+                  Botón para dejar de recibir promos{' '}
                   <span className="text-muted-foreground">(recomendado)</span>
                 </Label>
               </div>
@@ -289,16 +330,19 @@ export function CreateTemplateDialog({
                   onChange={(e) => setOptOutLabel(e.target.value)}
                   maxLength={25}
                   className="h-8 text-xs"
+                  aria-label="Texto del botón para dejar de recibir promos"
                 />
               ) : null}
               <div className="mt-1 grid gap-1.5">
-                <Label className="text-xs text-muted-foreground">Botón de enlace (opcional)</Label>
+                <Label className="text-xs text-muted-foreground">
+                  Botón que abre un enlace (opcional)
+                </Label>
                 <div className="grid grid-cols-2 gap-2">
                   <Input
                     name="urlButtonText"
                     value={urlText}
                     onChange={(e) => setUrlText(e.target.value)}
-                    placeholder="Texto (ej. Ver menú)"
+                    placeholder="Texto (ej. Ver la carta)"
                     maxLength={25}
                     className="h-8 text-xs"
                   />
@@ -316,7 +360,9 @@ export function CreateTemplateDialog({
 
           {/* Columna derecha: preview */}
           <div className="md:sticky md:top-0 md:self-start">
-            <p className="mb-1.5 text-xs font-medium text-muted-foreground">Vista previa</p>
+            <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+              Así lo va a ver el cliente
+            </p>
             <WhatsAppBubble
               header={headerText ? fillExamples(headerText, [headerExample]) : ''}
               body={fillExamples(bodyText, bodyExamples)}
@@ -335,7 +381,7 @@ export function CreateTemplateDialog({
               Cancelar
             </Button>
             <Button type="submit" disabled={pending || !name.trim() || !bodyText.trim()}>
-              {pending ? 'Enviando a Meta…' : 'Enviar a revisión'}
+              {pending ? 'Mandando a WhatsApp…' : 'Mandar a revisión'}
             </Button>
           </DialogFooter>
         </form>

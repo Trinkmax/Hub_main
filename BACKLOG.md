@@ -258,3 +258,19 @@ TODO el trabajo de fondo — un bug ahí frena difusiones, flows y jobs.**
 - **Resumen (home del manager) muestra KPIs de facturación a cualquier membership.**
   El proxy hoy rebota a editor/host antes de llegar, pero como defensa en
   profundidad la página debería gatear los KPIs (getKpis/revenue) a owner.
+- **Media entrante por Realtime aparece como placeholder hasta el próximo refresh.**
+  El payload de `postgres_changes` trae la fila cruda de `messages` sin la signed
+  URL derivada (solo la genera `listMessages`). En el manager se mitiga solo
+  (la lista hace `router.refresh()` ante cambios de `conversations`), pero en el
+  salón no hay realtime de lista: evaluar un fetch puntual del mensaje al recibir
+  INSERT con media.
+- **RLS de `conversations`/`messages` es membership-only: `kitchen` podría leer
+  chats vía API directa.** Las pages del salón ahora gatean con `requireRole`
+  (owner/cashier/waiter) igual que las actions, pero como defensa en profundidad
+  las policies deberían excluir roles sin permiso de mensajería.
+- **Lista de chats del salón sin realtime ni paginación** (limit 30 fijo): traer
+  el patrón de la lista del manager (suscripción a `conversations` + "ver más").
+- **`[isMetaConfigured] decryptToken failed` en dev local.** El token del canal
+  en la DB remota está cifrado con una `META_TOKEN_KEY` distinta a la del
+  `.env` local: en dev el estado del canal puede leerse mal. Alinear la clave
+  local con la de producción o tolerar el fallo con un estado "no verificable".

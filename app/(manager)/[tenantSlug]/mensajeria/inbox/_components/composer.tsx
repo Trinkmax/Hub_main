@@ -1,43 +1,20 @@
 'use client'
 
-import { Send, Sparkles, Zap } from 'lucide-react'
-import { useActionState, useEffect, useMemo, useRef, useState } from 'react'
+import { BadgeCheck, Loader2, Lock, Plus, SendHorizontal, Zap } from 'lucide-react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
-import { type MetaActionState, sendTemplateMessage, sendTextMessage } from '@/lib/meta/actions'
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import type { TemplateLite } from '@/lib/bandeja/template-view'
+import { sendTextMessage } from '@/lib/meta/actions'
 import type { QuickMessageRow } from '@/lib/quick-messages/queries'
+import { cn } from '@/lib/utils'
 import type { ChannelType } from '@/types/database'
-
-type Template = {
-  id: string
-  name: string
-  language: string
-  category: string
-  components: unknown
-}
-
-const initial: MetaActionState = { ok: true }
-
-function countBodyVariables(components: unknown): number {
-  if (!Array.isArray(components)) return 0
-  for (const c of components) {
-    if (c && typeof c === 'object' && (c as Record<string, unknown>).type === 'BODY') {
-      const text = (c as { text?: string }).text ?? ''
-      const matches = text.match(/\{\{\d+\}\}/g)
-      return matches ? matches.length : 0
-    }
-  }
-  return 0
-}
+import { TemplateDialog } from './template-dialog'
 
 function QuickMessagePicker({
   query,
@@ -83,41 +60,38 @@ function QuickMessagePicker({
     return () => window.removeEventListener('keydown', onKey)
   }, [filtered, highlighted, onSelect, onClose])
 
-  if (filtered.length === 0) {
-    return (
-      <div className="absolute bottom-full left-0 right-0 mb-1 rounded-lg border border-border bg-popover p-3 shadow-md">
-        <p className="text-xs text-muted-foreground">Sin resultados para «/{query}»</p>
-      </div>
-    )
-  }
-
   return (
     <div
       role="listbox"
       aria-label="Mensajes rápidos"
-      className="absolute bottom-full left-0 right-0 mb-1 max-h-52 overflow-y-auto rounded-lg border border-border bg-popover shadow-md"
+      className="absolute bottom-full left-0 right-0 mb-2 max-h-56 overflow-y-auto rounded-xl border border-(--wa-border) bg-(--wa-panel) py-1 shadow-lg"
     >
-      {filtered.map((msg, i) => (
-        <button
-          key={msg.id}
-          type="button"
-          role="option"
-          aria-selected={i === highlighted}
-          className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
-            i === highlighted ? 'bg-accent text-accent-foreground' : ''
-          }`}
-          onClick={() => onSelect(msg.body)}
-          onMouseEnter={() => setHighlighted(i)}
-        >
-          <span className="flex items-center gap-1.5">
-            <span className="font-medium leading-tight">{msg.title}</span>
-            <span className="font-mono rounded bg-secondary/60 px-1 text-[10px] text-muted-foreground">
-              /{msg.shortcut}
+      {filtered.length === 0 ? (
+        <p className="px-3 py-2.5 text-xs text-(--wa-muted)">Sin resultados para «/{query}»</p>
+      ) : (
+        filtered.map((msg, i) => (
+          <button
+            key={msg.id}
+            type="button"
+            role="option"
+            aria-selected={i === highlighted}
+            className={cn(
+              'flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm transition-colors',
+              i === highlighted ? 'bg-(--wa-active)' : 'hover:bg-(--wa-hover)',
+            )}
+            onClick={() => onSelect(msg.body)}
+            onMouseEnter={() => setHighlighted(i)}
+          >
+            <span className="flex items-center gap-1.5">
+              <span className="font-medium leading-tight text-(--wa-text)">{msg.title}</span>
+              <span className="rounded bg-(--wa-panel-soft) px-1 font-mono text-[10px] text-(--wa-muted)">
+                /{msg.shortcut}
+              </span>
             </span>
-          </span>
-          <span className="truncate text-xs text-muted-foreground">{msg.body}</span>
-        </button>
-      ))}
+            <span className="truncate text-xs text-(--wa-muted)">{msg.body}</span>
+          </button>
+        ))
+      )}
     </div>
   )
 }
@@ -129,194 +103,220 @@ export function Composer({
   insideWindow,
   templates,
   quickMessages,
+  canManageTemplates = true,
 }: {
   tenantSlug: string
   conversationId: string
   channelType: ChannelType
   insideWindow: boolean
-  templates: Template[]
+  templates: TemplateLite[]
   quickMessages: QuickMessageRow[]
+  /** false para staff sin acceso al workspace manager (salón): oculta el link a Plantillas. */
+  canManageTemplates?: boolean
 }) {
   const canSendText = insideWindow || channelType === 'instagram'
 
-  const [textState, textAction, textPending] = useActionState(
-    sendTextMessage.bind(null, tenantSlug),
-    initial,
-  )
-  const [tplState, tplAction, tplPending] = useActionState(
-    sendTemplateMessage.bind(null, tenantSlug),
-    initial,
-  )
-
-  useEffect(() => {
-    if (!textState.ok && textState.message) toast.error(textState.message)
-  }, [textState])
-
-  useEffect(() => {
-    if (!tplState.ok && tplState.message) toast.error(tplState.message)
-  }, [tplState])
-
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
-  const selectedTemplate = useMemo(
-    () => templates.find((t) => t.id === selectedTemplateId) ?? null,
-    [templates, selectedTemplateId],
-  )
-  const variableCount = selectedTemplate ? countBodyVariables(selectedTemplate.components) : 0
-
-  // Quick-message picker state
-  const [bodyValue, setBodyValue] = useState('')
+  const [body, setBody] = useState('')
   const [pickerQuery, setPickerQuery] = useState<string | null>(null)
+  const [templateOpen, setTemplateOpen] = useState(false)
+  const [isPending, startTransition] = useTransition()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const formRef = useRef<HTMLFormElement>(null)
+  // En pantallas táctiles (salón) Enter hace salto de línea, como WhatsApp mobile
+  const coarsePointerRef = useRef(false)
+  useEffect(() => {
+    coarsePointerRef.current = window.matchMedia('(pointer: coarse)').matches
+  }, [])
+
+  function autosize() {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 140)}px`
+  }
 
   function handleBodyChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const val = e.target.value
-    setBodyValue(val)
-    // Show picker only when the textarea starts with "/" (optionally followed by query chars)
-    if (val.startsWith('/')) {
+    setBody(val)
+    autosize()
+    if (val.startsWith('/') && quickMessages.length > 0) {
       setPickerQuery(val.slice(1))
     } else {
       setPickerQuery(null)
     }
   }
 
-  function handleQuickMessageSelect(body: string) {
-    setBodyValue(body)
-    setPickerQuery(null)
-    // Focus back on textarea
-    textareaRef.current?.focus()
-  }
-
-  function handlePickerClose() {
+  function handleQuickMessageSelect(selectedBody: string) {
+    setBody(selectedBody)
     setPickerQuery(null)
     textareaRef.current?.focus()
+    requestAnimationFrame(autosize)
   }
 
-  // Clear body after successful send
-  useEffect(() => {
-    if (textState.ok) {
-      setBodyValue('')
-      setPickerQuery(null)
+  function handleSend() {
+    const text = body.trim()
+    if (!text || isPending) return
+    // Optimista, como WhatsApp: limpiamos ya y restauramos si falla
+    setBody('')
+    setPickerQuery(null)
+    requestAnimationFrame(autosize)
+    const fd = new FormData()
+    fd.set('conversation_id', conversationId)
+    fd.set('body', text)
+    startTransition(async () => {
+      const result = await sendTextMessage(tenantSlug, { ok: true }, fd)
+      if (!result.ok) {
+        toast.error(result.message ?? 'No se pudo enviar el mensaje.')
+        setBody(text)
+        requestAnimationFrame(autosize)
+      }
+    })
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey && pickerQuery === null && !coarsePointerRef.current) {
+      e.preventDefault()
+      handleSend()
     }
-  }, [textState])
+  }
 
-  if (canSendText) {
+  if (!canSendText) {
+    // Fuera de la ventana de 24 h (solo WhatsApp): explicación en criollo +
+    // acceso directo a los mensajes aprobados.
     return (
-      <form ref={formRef} action={textAction} className="border-t border-border/60 bg-card p-3">
-        <input type="hidden" name="conversation_id" value={conversationId} />
-        <div className="relative flex items-end gap-2">
-          {pickerQuery !== null && quickMessages.length > 0 && (
-            <QuickMessagePicker
-              query={pickerQuery}
-              quickMessages={quickMessages}
-              onSelect={handleQuickMessageSelect}
-              onClose={handlePickerClose}
-            />
+      <div className="border-t border-(--wa-border) bg-(--wa-composer) px-4 py-3">
+        <div className="mx-auto flex max-w-2xl flex-col items-center gap-2.5 text-center">
+          <p className="flex items-start gap-2 text-[13px] leading-snug text-(--wa-text-soft)">
+            <Lock className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            <span>
+              Pasaron más de 24 horas desde el último mensaje de esta persona, así que WhatsApp solo
+              deja retomar la charla con un <strong>mensaje aprobado</strong>. Cuando te conteste,
+              volvés a escribir libre.
+            </span>
+          </p>
+          {templates.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setTemplateOpen(true)}
+              className="inline-flex items-center gap-2 rounded-full bg-(--wa-accent) px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-(--wa-accent-deep)"
+            >
+              <BadgeCheck className="size-4" aria-hidden />
+              Enviar mensaje aprobado
+            </button>
+          ) : (
+            <p className="text-xs text-(--wa-muted)">
+              {canManageTemplates ? (
+                <>
+                  Todavía no tenés mensajes aprobados. Crealos en{' '}
+                  <a
+                    href={`/${tenantSlug}/mensajeria/plantillas`}
+                    className="font-medium text-(--wa-accent-deep) underline underline-offset-2"
+                  >
+                    Plantillas
+                  </a>
+                  .
+                </>
+              ) : (
+                'Todavía no hay mensajes aprobados. Pedile al dueño que los cree.'
+              )}
+            </p>
           )}
-          <div className="relative flex-1">
-            <Textarea
-              ref={textareaRef}
-              name="body"
-              value={bodyValue}
-              onChange={handleBodyChange}
-              placeholder={
-                quickMessages.length > 0
-                  ? 'Escribí tu mensaje… o / para mensajes rápidos'
-                  : 'Escribí tu mensaje…'
-              }
-              rows={2}
-              required
-              maxLength={4096}
-              className="resize-none"
-            />
-            {quickMessages.length > 0 && (
-              <button
-                type="button"
-                title="Mensajes rápidos (/)"
-                aria-label="Abrir mensajes rápidos"
-                className="absolute bottom-2 right-2 flex size-5 items-center justify-center rounded text-muted-foreground opacity-50 transition-opacity hover:opacity-100"
-                onClick={() => {
-                  if (pickerQuery !== null) {
-                    handlePickerClose()
-                  } else {
-                    setBodyValue('/')
-                    setPickerQuery('')
-                    textareaRef.current?.focus()
-                  }
-                }}
-              >
-                <Zap className="size-3.5" />
-              </button>
-            )}
-          </div>
-          <Button type="submit" disabled={textPending} className="gap-1.5" size="lg">
-            <Send className="size-4" />
-            {textPending ? 'Enviando…' : 'Enviar'}
-          </Button>
         </div>
-      </form>
+        <TemplateDialog
+          tenantSlug={tenantSlug}
+          conversationId={conversationId}
+          templates={templates}
+          open={templateOpen}
+          onOpenChange={setTemplateOpen}
+        />
+      </div>
     )
   }
 
   return (
-    <form action={tplAction} className="space-y-3 border-t border-border/60 bg-card p-3">
-      <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-        <Sparkles className="mt-0.5 size-3.5 shrink-0" />
-        <span className="text-pretty">
-          Pasaron más de 24 h desde el último mensaje de esta persona. Para escribirle ahora tenés
-          que usar una plantilla (un mensaje ya aprobado por WhatsApp). Cuando te vuelva a escribir,
-          podés responder libre otra vez.
-        </span>
-      </div>
-      <input type="hidden" name="conversation_id" value={conversationId} />
-      <Select
-        name="template_name"
-        value={selectedTemplate?.name ?? ''}
-        onValueChange={(value) => {
-          const t = templates.find((x) => x.name === value)
-          setSelectedTemplateId(t?.id ?? '')
-        }}
-      >
-        <SelectTrigger>
-          <SelectValue placeholder="Elegí una plantilla" />
-        </SelectTrigger>
-        <SelectContent>
-          {templates.length === 0 ? (
-            <SelectItem value="__none" disabled>
-              Todavía no tenés plantillas aprobadas
-            </SelectItem>
-          ) : (
-            templates.map((t) => (
-              <SelectItem key={t.id} value={t.name}>
-                {t.name} <span className="ml-1 text-muted-foreground">({t.language})</span>
-              </SelectItem>
-            ))
-          )}
-        </SelectContent>
-      </Select>
-      {selectedTemplate ? (
-        <input type="hidden" name="template_language" value={selectedTemplate.language} />
-      ) : null}
-      {variableCount > 0 ? (
-        <div className="space-y-2 rounded-lg border border-border/60 bg-background/40 p-3">
-          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-            Completá los datos
-          </p>
-          {Array.from({ length: variableCount }).map((_, i) => (
-            <Input
-              // biome-ignore lint/suspicious/noArrayIndexKey: el orden es estable por contrato del template Meta ({{1}}, {{2}}…)
-              key={`${selectedTemplateId || 'noop'}-${i}`}
-              name="variable"
-              placeholder={`Dato ${i + 1}`}
-              required
-            />
-          ))}
+    <div className="border-t border-(--wa-border) bg-(--wa-composer) px-3 py-2.5 md:px-4">
+      <div className="relative flex items-end gap-2">
+        {pickerQuery !== null && quickMessages.length > 0 && (
+          <QuickMessagePicker
+            query={pickerQuery}
+            quickMessages={quickMessages}
+            onSelect={handleQuickMessageSelect}
+            onClose={() => {
+              setPickerQuery(null)
+              textareaRef.current?.focus()
+            }}
+          />
+        )}
+
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            aria-label="Más opciones"
+            className="flex size-10 shrink-0 items-center justify-center rounded-full text-(--wa-text-soft) transition-colors hover:bg-(--wa-hover) hover:text-(--wa-text) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--wa-accent)"
+          >
+            <Plus className="size-6" aria-hidden />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="top" align="start" className="w-56">
+            {quickMessages.length > 0 ? (
+              <DropdownMenuItem
+                onSelect={() => {
+                  setBody('/')
+                  setPickerQuery('')
+                  textareaRef.current?.focus()
+                }}
+              >
+                <Zap className="size-4" aria-hidden />
+                Mensaje rápido
+                <span className="ml-auto font-mono text-[10px] text-muted-foreground">/</span>
+              </DropdownMenuItem>
+            ) : null}
+            {channelType === 'whatsapp' && templates.length > 0 ? (
+              <DropdownMenuItem onSelect={() => setTemplateOpen(true)}>
+                <BadgeCheck className="size-4" aria-hidden />
+                Mensaje aprobado
+              </DropdownMenuItem>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <div className="flex min-h-10 flex-1 items-center rounded-3xl bg-(--wa-input) px-4 py-2">
+          <textarea
+            ref={textareaRef}
+            value={body}
+            onChange={handleBodyChange}
+            onKeyDown={handleKeyDown}
+            placeholder={
+              quickMessages.length > 0
+                ? 'Escribí un mensaje o / para rápidos'
+                : 'Escribí un mensaje'
+            }
+            rows={1}
+            maxLength={4096}
+            aria-label="Mensaje"
+            className="max-h-[140px] w-full resize-none bg-transparent text-[16px] leading-6 md:text-[15px] text-(--wa-text) outline-none placeholder:text-(--wa-muted)"
+          />
         </div>
-      ) : null}
-      <Button type="submit" disabled={tplPending || !selectedTemplate} className="w-full gap-1.5">
-        <Send className="size-4" />
-        {tplPending ? 'Enviando…' : 'Enviar plantilla'}
-      </Button>
-    </form>
+
+        <button
+          type="button"
+          onClick={handleSend}
+          disabled={isPending || body.trim() === ''}
+          aria-label="Enviar mensaje"
+          className="flex size-10 shrink-0 items-center justify-center rounded-full bg-(--wa-accent) text-white transition-all hover:bg-(--wa-accent-deep) disabled:cursor-default disabled:opacity-40"
+        >
+          {isPending ? (
+            <Loader2 className="size-5 animate-spin" aria-hidden />
+          ) : (
+            <SendHorizontal className="size-5" aria-hidden />
+          )}
+        </button>
+      </div>
+
+      <TemplateDialog
+        tenantSlug={tenantSlug}
+        conversationId={conversationId}
+        templates={templates}
+        open={templateOpen}
+        onOpenChange={setTemplateOpen}
+      />
+    </div>
   )
 }

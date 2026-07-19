@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
-import { Section } from '@/components/ui/section'
+import { PageShell } from '@/components/ui/page-shell'
 import { listQuickMessages } from '@/lib/quick-messages/queries'
 import {
   RoleRequiredError,
@@ -33,15 +33,13 @@ export default async function QuickMessagesPage({
   const messages = await listQuickMessages(tenantId)
 
   return (
-    <div className="space-y-6">
+    <PageShell width="compact">
       <PageHeader
-        eyebrow="Configuración · Mensajería"
+        eyebrow="Mensajería"
         title="Mensajes rápidos"
-        description="Creá atajos para tus respuestas más frecuentes. Al responder un mensaje, escribí / para buscarlos."
+        description="Respuestas guardadas para contestar en un toque. En el chat, escribí / y el atajo, y el mensaje se completa solo."
       />
-      <Section>
-        <QuickMessagesManager tenantSlug={tenantSlug} initialMessages={messages} />
-      </Section>
-    </div>
+      <QuickMessagesManager tenantSlug={tenantSlug} initialMessages={messages} />
+    </PageShell>
   )
 }

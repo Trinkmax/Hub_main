@@ -1,20 +1,22 @@
 import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
 import { Skeleton } from '@/components/ui/skeleton'
 
 export default function Loading() {
   return (
-    <div className="space-y-6">
+    <PageShell width="compact">
       <PageHeader
         eyebrow="Mensajería"
-        title="Etiquetas de conversación"
+        title="Etiquetas"
         description={<Skeleton className="h-4 w-96 max-w-full" />}
       />
-      <Skeleton className="h-32 w-full rounded-xl" />
+      <Skeleton className="h-52 w-full rounded-xl" />
       <div className="space-y-2">
+        <Skeleton className="h-5 w-28" />
         {['a', 'b', 'c', 'd'].map((k) => (
-          <Skeleton key={k} className="h-14 w-full rounded-lg" />
+          <Skeleton key={k} className="h-13 w-full rounded-xl" />
         ))}
       </div>
-    </div>
+    </PageShell>
   )
 }

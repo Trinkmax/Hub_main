@@ -6,8 +6,9 @@ import { MessageThread } from '@/app/(manager)/[tenantSlug]/mensajeria/inbox/_co
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { getConversation, listApprovedTemplates, listMessages } from '@/lib/bandeja/queries'
+import { formatPhoneForDisplay } from '@/lib/phone'
 import { listQuickMessages } from '@/lib/quick-messages/queries'
-import { requireTenantAccess } from '@/lib/tenant'
+import { requireRole, requireTenantAccess } from '@/lib/tenant'
 
 export const metadata = { title: 'Salón · Conversación' }
 export const dynamic = 'force-dynamic'
@@ -22,6 +23,8 @@ export default async function SalonConversationPage({
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
     access = await requireTenantAccess(tenantSlug)
+    // Mismo gate que las actions de mensajería: cocina no lee chats de clientes
+    requireRole(access.role, ['owner', 'cashier', 'waiter'])
   } catch {
     notFound()
   }
@@ -37,18 +40,22 @@ export default async function SalonConversationPage({
 
   const lastInboundMs = convo.last_inbound_at ? new Date(convo.last_inbound_at).getTime() : 0
   const insideWindow = lastInboundMs > 0 && Date.now() - lastInboundMs < 24 * 3600 * 1000
-  const display = convo.customer_name ?? convo.external_user_id
+  const display =
+    convo.customer_name ??
+    (convo.channel_type === 'whatsapp'
+      ? formatPhoneForDisplay(convo.external_user_id)
+      : 'Cliente de Instagram')
   const initials = (display || '?').charAt(0).toUpperCase()
 
   // Tomamos altura ajustada al viewport mobile menos topbar (56px) y bottom-tab
   // (estimado 76px con safe-area). El thread scrollea adentro.
   return (
     <div className="-mx-4 sm:-mx-6">
-      <div className="card-hairline flex h-[calc(100dvh-56px-76px)] flex-col rounded-none border-x-0 border-y border-border/60 bg-card sm:mx-0 sm:rounded-xl sm:border-x">
+      <div className="wa card-hairline flex h-[calc(100dvh-56px-76px)] flex-col rounded-none border-x-0 border-y border-border/60 bg-(--wa-panel) sm:mx-0 sm:rounded-xl sm:border-x">
         <header className="flex items-center gap-3 border-b border-border/60 px-3 py-2.5">
           <Link
             href={`/${tenantSlug}/salon/bandeja`}
-            className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-[--cream-tint] hover:text-foreground"
+            className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-(--wa-hover) hover:text-foreground"
             aria-label="Volver a bandeja"
           >
             <ArrowLeft className="size-5" aria-hidden />
@@ -75,7 +82,7 @@ export default async function SalonConversationPage({
                 }
               >
                 <Clock className="size-2.5" aria-hidden />
-                {insideWindow ? '24h activa' : 'Fuera de ventana'}
+                {insideWindow ? 'Podés responder' : 'Con mensaje aprobado'}
               </Badge>
             </p>
           </div>
@@ -85,6 +92,7 @@ export default async function SalonConversationPage({
           tenantSlug={tenantSlug}
           conversationId={convo.id}
           initialMessages={messages}
+          templates={templates}
         />
 
         <Composer
@@ -94,6 +102,7 @@ export default async function SalonConversationPage({
           insideWindow={insideWindow}
           templates={templates}
           quickMessages={quickMessages}
+          canManageTemplates={false}
         />
       </div>
     </div>

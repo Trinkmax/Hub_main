@@ -1,4 +1,4 @@
-import { ChevronRight, Plus, Workflow } from 'lucide-react'
+import { ChevronRight, Plus, Workflow, Zap } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
@@ -22,18 +22,12 @@ import {
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
-import type { FlowTriggerType } from '@/types/database'
+// Misma fuente de labels que el editor, para que la lista y el canvas
+// digan exactamente lo mismo sobre cada disparador.
+import { TRIGGER_TYPE_LABEL } from './_components/step-meta'
 
 export const metadata = { title: 'Automatizaciones' }
 export const dynamic = 'force-dynamic'
-
-const TRIGGER_LABEL: Record<FlowTriggerType, string> = {
-  customer_inactive: 'Hace tiempo que no viene',
-  birthday: 'Cumple años',
-  after_visit: 'Después de una visita',
-  event_starting: 'Se acerca un evento',
-  tag_added: 'Le ponés una etiqueta',
-}
 
 export default async function FlowsPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
   const { tenantSlug } = await params
@@ -104,7 +98,10 @@ export default async function FlowsPage({ params }: { params: Promise<{ tenantSl
                       </Link>
                     </DataTableCell>
                     <DataTableCell className="text-sm text-muted-foreground">
-                      {TRIGGER_LABEL[f.trigger_type]}
+                      <span className="inline-flex items-center gap-1.5">
+                        <Zap className="size-3.5 shrink-0 text-primary/70" aria-hidden="true" />
+                        {TRIGGER_TYPE_LABEL[f.trigger_type]}
+                      </span>
                     </DataTableCell>
                     <DataTableCell className="tabular-nums">{f.step_count}</DataTableCell>
                     <DataTableCell>

@@ -9,6 +9,7 @@ export default function Loading() {
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-4 w-80" />
       </div>
+      <Skeleton className="h-14 w-full rounded-xl" />
       <div className="card-hairline space-y-4 rounded-xl border bg-card p-6">
         {Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={`field-${i.toString()}`} className="h-10 w-full" />

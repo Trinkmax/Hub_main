@@ -585,3 +585,112 @@
     border-color: var(--destructive);
   }
 }
+
+/* ============================================================
+   Mensajería — skin WhatsApp (scoped a .wa)
+   Clon fiel de WhatsApp Web 2025/2026 armonizado con la marca.
+   Los tokens NO están en @theme: usarlos con sintaxis de
+   paréntesis de Tailwind v4 — ej. bg-(--wa-panel), text-(--wa-text).
+   ============================================================ */
+.wa {
+  /* — light — */
+  --wa-app: #f0ece3;            /* fondo del frame, cream WhatsApp-ish */
+  --wa-rail: #ebe5d9;           /* barra de iconos izquierda */
+  --wa-rail-icon: #54655f;
+  --wa-rail-active: #d6dfd4;
+  --wa-panel: #fdfcf8;          /* panel de lista / headers */
+  --wa-panel-soft: #f2f0e9;     /* buscador, chips, hovers suaves */
+  --wa-hover: #f4f2ec;
+  --wa-active: #ece9e0;         /* fila de chat seleccionada */
+  --wa-border: #e6e2d7;
+  --wa-text: #111b21;
+  --wa-text-soft: #54656f;
+  --wa-muted: #667781;
+  --wa-accent: #1daa61;         /* verde acción (WhatsApp 2025) */
+  --wa-accent-soft: #d9fdd3;
+  --wa-accent-deep: #008069;
+  --wa-unread: #1daa61;
+  --wa-tick: #53bdeb;           /* doble check leído */
+  --wa-bubble-in: #ffffff;
+  --wa-bubble-out: #d9fdd3;
+  --wa-bubble-meta: #667781;
+  --wa-bubble-meta-out: #5e7d64;
+  --wa-wallpaper-bg: #f4efe4;   /* detrás del doodle */
+  --wa-system-pill: #fffdf9;
+  --wa-composer: #f7f5ef;
+  --wa-input: #fdfcf8;
+  color: var(--wa-text);
+}
+.dark .wa {
+  --wa-app: #0c0c0c;
+  --wa-rail: #161717;
+  --wa-rail-icon: #9d9f9e;
+  --wa-rail-active: #2f3b36;
+  --wa-panel: #161717;
+  --wa-panel-soft: #222423;
+  --wa-hover: #1d1f1e;
+  --wa-active: #2a2c2b;
+  --wa-border: #242626;
+  --wa-text: #f7f8fa;
+  --wa-text-soft: #b3b6b5;
+  --wa-muted: #8d9291;
+  --wa-accent: #21c063;
+  --wa-accent-soft: #103529;
+  --wa-accent-deep: #21c063;
+  --wa-unread: #21c063;
+  --wa-tick: #53bdeb;
+  --wa-bubble-in: #242626;
+  --wa-bubble-out: #144d37;
+  --wa-bubble-meta: #8d9291;
+  --wa-bubble-meta-out: #97b3a2;
+  --wa-wallpaper-bg: #0a0a0a;
+  --wa-system-pill: #1d1f1e;
+  --wa-composer: #161717;
+  --wa-input: #2a2c2b;
+}
+
+/* Wallpaper doodle del hilo (assets en /public/wallpaper) */
+.wa-wallpaper {
+  background-color: var(--wa-wallpaper-bg);
+  background-image: url('/wallpaper/whatsapp-light.webp');
+  background-size: 850px auto;
+  background-repeat: repeat;
+}
+.dark .wa-wallpaper {
+  background-image: url('/wallpaper/whatsapp-dark.webp');
+}
+
+/* Scrollbars finas dentro del clon */
+.wa *::-webkit-scrollbar { width: 6px; height: 6px; }
+.wa *::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--wa-muted) 35%, transparent);
+  border-radius: 3px;
+}
+.wa *::-webkit-scrollbar-track { background: transparent; }
+
+/* Entrada suave de mensajes nuevos */
+@keyframes wa-message-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.wa-message-in {
+  animation: wa-message-in var(--duration-base) var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wa-message-in { animation: none; }
+}
+
+/* Dentro del clon WhatsApp los títulos de página van compactos, sin el
+   hero serif gigante del dashboard (pedido del dueño: máximo espacio útil). */
+.wa h1.font-serif {
+  font-family: var(--font-sans);
+  font-size: 19px;
+  line-height: 1.3;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+/* El eyebrow "Mensajería" es redundante: el rail ya te ubica. */
+.wa .uppercase.tracking-\[0\.18em\] {
+  display: none;
+}

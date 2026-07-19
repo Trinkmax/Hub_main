@@ -73,18 +73,25 @@ export function ConversationTagPicker({
     assignedTagIds.some((id) => !selected.has(id)) ||
     Array.from(selected).some((id) => !assignedTagIds.includes(id))
 
+  // Cerrar el popover guarda solo, como espera cualquiera: nada de cambios
+  // perdidos en silencio por no tocar «Aplicar».
+  function handleOpenChange(next: boolean) {
+    if (!next && hasChanges) {
+      startSaving(async () => {
+        await setConversationTags(tenantSlug, conversationId, Array.from(selected))
+      })
+    }
+    setOpen(next)
+  }
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
-          aria-label="Gestionar etiquetas"
-        >
-          <Tag className="size-3.5" />
-          Etiquetas
-        </Button>
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger
+        aria-label="Etiquetas de la charla"
+        title="Etiquetas de la charla"
+        className="flex size-9 items-center justify-center rounded-full text-(--wa-text-soft) transition-colors hover:bg-(--wa-hover) hover:text-(--wa-text) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--wa-accent)"
+      >
+        <Tag className="size-[18px]" aria-hidden />
       </PopoverTrigger>
       <PopoverContent align="end" className="w-60 p-0">
         <div className="border-b border-border/60 px-3 py-2">

@@ -14,6 +14,7 @@ export type ConversationListRow = {
   last_message_at: string | null
   unread_count: number
   preview: string | null
+  preview_direction: MessageDirection | null
   tags: ConversationTag[]
 }
 
@@ -28,6 +29,8 @@ export type MessageRow = {
   delivered_at: string | null
   read_at: string | null
   created_at: string
+  broadcast_id: string | null
+  flow_execution_id: string | null
   // Campos derivados — se rellenan en listMessages cuando hay storage_path
   media_url?: string | null
   media_type?: string | null
@@ -58,9 +61,10 @@ export async function listConversations(
       customer_id,
       last_message_at,
       unread_count,
+      last_message_preview,
+      last_message_direction,
       channel:channels!inner(type),
-      customer:customers(first_name, last_name),
-      preview:messages(content, created_at)
+      customer:customers(first_name, last_name)
     `,
     )
     .eq('tenant_id', tenantId)
@@ -98,12 +102,13 @@ export async function listConversations(
     customer_id: string | null
     last_message_at: string | null
     unread_count: number
+    last_message_preview: string | null
+    last_message_direction: MessageDirection | null
     channel: { type: ChannelType } | { type: ChannelType }[] | null
     customer:
       | { first_name: string; last_name: string }
       | { first_name: string; last_name: string }[]
       | null
-    preview: Array<{ content: string | null; created_at: string }> | null
   }
 
   const raw = data as unknown as Joined[]
@@ -114,9 +119,6 @@ export async function listConversations(
   const rows = slice.map((row) => {
     const channel = Array.isArray(row.channel) ? row.channel[0] : row.channel
     const customer = Array.isArray(row.customer) ? row.customer[0] : row.customer
-    const last = (row.preview ?? [])
-      .slice()
-      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0]
     return {
       id: row.id,
       channel_id: row.channel_id,
@@ -126,7 +128,8 @@ export async function listConversations(
       external_user_id: row.external_user_id,
       last_message_at: row.last_message_at,
       unread_count: row.unread_count,
-      preview: last?.content ?? null,
+      preview: row.last_message_preview,
+      preview_direction: row.last_message_direction,
       tags: [] as ConversationTag[],
     }
   })
@@ -150,6 +153,7 @@ export type ConversationDetail = {
   channel_id: string
   channel_type: ChannelType
   external_user_id: string
+  customer_id: string | null
   customer_name: string | null
   last_inbound_at: string | null
 }
@@ -166,6 +170,7 @@ export async function getConversation(
       id,
       channel_id,
       external_user_id,
+      customer_id,
       last_inbound_at,
       customer:customers(first_name, last_name),
       channel:channels!inner(type)
@@ -180,6 +185,7 @@ export async function getConversation(
     id: string
     channel_id: string
     external_user_id: string
+    customer_id: string | null
     last_inbound_at: string | null
     customer:
       | { first_name: string; last_name: string }
@@ -196,6 +202,7 @@ export async function getConversation(
     channel_id: row.channel_id,
     channel_type: channel?.type ?? 'whatsapp',
     external_user_id: row.external_user_id,
+    customer_id: row.customer_id,
     customer_name: customer ? `${customer.first_name} ${customer.last_name}`.trim() : null,
     last_inbound_at: row.last_inbound_at,
   }
@@ -218,7 +225,7 @@ export async function listMessages(
   let query = supabase
     .from('messages')
     .select(
-      'id, direction, content, media, status, error, sent_at, delivered_at, read_at, created_at',
+      'id, direction, content, media, status, error, sent_at, delivered_at, read_at, created_at, broadcast_id, flow_execution_id',
     )
     .eq('tenant_id', tenantId)
     .eq('conversation_id', conversationId)
@@ -259,6 +266,40 @@ export async function listMessages(
   }
 
   return rows
+}
+
+/**
+ * Total de mensajes sin leer del tenant (para el badge del rail de Mensajería).
+ * Suma unread_count de las conversaciones que tienen algo pendiente.
+ */
+export async function getUnreadTotal(tenantId: string): Promise<number> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('unread_count')
+    .eq('tenant_id', tenantId)
+    .gt('unread_count', 0)
+  if (error) {
+    console.error('[bandeja.getUnreadTotal]', error.message)
+    return 0
+  }
+  return (data ?? []).reduce((acc, row) => acc + (row.unread_count ?? 0), 0)
+}
+
+/** ¿El bar tiene al menos un canal (WhatsApp/Instagram) conectado? */
+export async function hasConnectedChannel(tenantId: string): Promise<boolean> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('channels')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('status', 'connected')
+    .limit(1)
+  if (error) {
+    console.error('[bandeja.hasConnectedChannel]', error.message)
+    return false
+  }
+  return (data ?? []).length > 0
 }
 
 export async function listApprovedTemplates(tenantId: string) {
