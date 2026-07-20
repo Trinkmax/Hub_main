@@ -7,7 +7,6 @@ import { ROLE_LABELS } from '@/lib/tenant/roles'
 import type { Tenant, TenantRole } from '@/lib/tenant/types'
 import { MobileShell } from './mobile-shell'
 import { SidebarToggle } from './sidebar-state'
-import { TenantSwitcherChip } from './tenant-switcher-chip'
 import { UserMenu } from './user-menu'
 
 export async function Topbar({
@@ -51,7 +50,6 @@ export async function Topbar({
       </div>
 
       <div className="ml-auto flex items-center gap-2">
-        <TenantSwitcherChip current={tenant} memberships={memberships} />
         <ThemeToggle />
         <UserMenu email={email} role={ROLE_LABELS[role]} />
       </div>
