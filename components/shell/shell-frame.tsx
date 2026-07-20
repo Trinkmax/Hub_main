@@ -26,7 +26,7 @@ export function ShellFrame({ sidebar, children }: { sidebar: ReactNode; children
 
       <div
         className={cn(
-          'flex min-h-screen flex-col transition-[padding-left] duration-[var(--duration-slow)] ease-[var(--ease-out)]',
+          'flex min-h-dvh flex-col transition-[padding-left] duration-[var(--duration-slow)] ease-[var(--ease-out)]',
           collapsed ? 'lg:pl-0' : 'lg:pl-[260px]',
         )}
       >

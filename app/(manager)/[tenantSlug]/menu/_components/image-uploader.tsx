@@ -136,14 +136,7 @@ export function MenuImageUploader({
           )}
         >
           <div className="relative size-16 shrink-0 overflow-hidden rounded-md bg-secondary">
-            <Image
-              src={value}
-              alt="Vista previa"
-              fill
-              sizes="64px"
-              className="object-cover"
-              unoptimized
-            />
+            <Image src={value} alt="Vista previa" fill sizes="64px" className="object-cover" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-xs font-medium">

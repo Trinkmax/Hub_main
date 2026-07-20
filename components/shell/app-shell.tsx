@@ -23,7 +23,9 @@ export async function AppShell({
 
   return (
     <SidebarProvider initialCollapsed={sidebarCollapsed}>
-      <div className="bg-app-gradient relative min-h-screen">
+      {/* min-h-dvh (no screen/vh): en iOS 100vh es el viewport "grande" y deja
+          la página scrolleable la altura de la barra del navegador */}
+      <div className="bg-app-gradient relative min-h-dvh">
         <ShellFrame
           sidebar={
             <SidebarContent

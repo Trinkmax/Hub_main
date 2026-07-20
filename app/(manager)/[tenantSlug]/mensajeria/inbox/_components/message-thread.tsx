@@ -22,7 +22,7 @@ import {
   type TemplateLite,
 } from '@/lib/bandeja/template-view'
 import { markConversationRead } from '@/lib/meta/actions'
-import { createClient } from '@/lib/supabase/browser'
+import { createClient, realtimeAuthReady } from '@/lib/supabase/browser'
 import { cn } from '@/lib/utils'
 
 /** How many messages we load initially — if the initial batch is this size,
@@ -219,37 +219,47 @@ export function MessageThread({
   // Realtime: append new messages and update status changes
   useEffect(() => {
     const supabase = createClient()
-    const channel = supabase
-      .channel(`conversation:${conversationId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `conversation_id=eq.${conversationId}`,
-        },
-        (payload) => {
-          const m = payload.new as MessageRow
-          setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]))
-        },
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'messages',
-          filter: `conversation_id=eq.${conversationId}`,
-        },
-        (payload) => {
-          const m = payload.new as MessageRow
-          setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, ...m } : x)))
-        },
-      )
-      .subscribe()
+    let channel: ReturnType<typeof supabase.channel> | null = null
+    let disposed = false
+    void realtimeAuthReady().then(() => {
+      if (disposed) return
+      channel = supabase
+        .channel(`conversation:${conversationId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          (payload) => {
+            const m = payload.new as MessageRow
+            setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]))
+          },
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'messages',
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          (payload) => {
+            const m = payload.new as MessageRow
+            setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, ...m } : x)))
+          },
+        )
+        .subscribe((status, err) => {
+          if (status !== 'SUBSCRIBED') {
+            console.warn('[realtime:hilo]', status, err?.message ?? '')
+          }
+        })
+    })
     return () => {
-      supabase.removeChannel(channel)
+      disposed = true
+      if (channel) supabase.removeChannel(channel)
     }
   }, [conversationId])
 
@@ -309,7 +319,10 @@ export function MessageThread({
 
   return (
     <div className="relative flex-1 overflow-hidden">
-      <div ref={scrollRef} className="wa-wallpaper h-full overflow-y-auto px-4 py-3 md:px-[6%]">
+      <div
+        ref={scrollRef}
+        className="wa-wallpaper h-full overflow-y-auto overscroll-contain px-4 py-3 md:px-[6%]"
+      >
         {hasOlder ? (
           <div className="flex justify-center pb-2">
             <button

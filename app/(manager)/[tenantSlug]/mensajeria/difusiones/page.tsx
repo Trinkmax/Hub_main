@@ -152,8 +152,8 @@ export default async function DifusionesPage({
                   <DataTableHeader>Difusión</DataTableHeader>
                   <DataTableHeader>Estado</DataTableHeader>
                   <DataTableHeader className="hidden md:table-cell">Cuándo</DataTableHeader>
-                  <DataTableHeader>Resultado</DataTableHeader>
-                  <DataTableHeader className="w-8">
+                  <DataTableHeader className="hidden md:table-cell">Resultado</DataTableHeader>
+                  <DataTableHeader className="hidden w-8 sm:table-cell">
                     <span className="sr-only">Abrir</span>
                   </DataTableHeader>
                 </tr>
@@ -175,6 +175,10 @@ export default async function DifusionesPage({
                       <p className="mt-0.5 text-xs text-muted-foreground md:hidden">
                         {whenText(b)}
                       </p>
+                      {/* En mobile el resultado va acá abajo: nada cortado */}
+                      <div className="mt-1 md:hidden">
+                        <ResultCell b={b} />
+                      </div>
                     </DataTableCell>
                     <DataTableCell>
                       <BroadcastStatusBadge status={b.status} />
@@ -182,10 +186,10 @@ export default async function DifusionesPage({
                     <DataTableCell className="hidden text-xs text-muted-foreground tabular-nums md:table-cell">
                       {whenText(b)}
                     </DataTableCell>
-                    <DataTableCell>
+                    <DataTableCell className="hidden md:table-cell">
                       <ResultCell b={b} />
                     </DataTableCell>
-                    <DataTableCell className="text-muted-foreground/40 transition-colors group-hover:text-muted-foreground">
+                    <DataTableCell className="hidden text-muted-foreground/40 transition-colors group-hover:text-muted-foreground sm:table-cell">
                       <ChevronRight className="size-4" aria-hidden />
                     </DataTableCell>
                   </tr>

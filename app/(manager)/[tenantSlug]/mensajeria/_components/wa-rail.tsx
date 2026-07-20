@@ -25,7 +25,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import type { TenantRole } from '@/lib/tenant/types'
 import { cn } from '@/lib/utils'
 
-type RailItem = {
+export type RailItem = {
   segment: string
   label: string
   icon: typeof MessageCircle
@@ -33,7 +33,7 @@ type RailItem = {
 }
 
 /** Iconos principales del rail, estilo WhatsApp: Chats arriba de todo. */
-const MAIN_ITEMS: RailItem[] = [
+export const MAIN_ITEMS: RailItem[] = [
   { segment: 'inbox', label: 'Chats', icon: MessageCircle },
   { segment: 'difusiones', label: 'Difusiones', icon: Megaphone, roles: ['owner'] },
   { segment: 'flows', label: 'Automatizaciones', icon: Workflow, roles: ['owner'] },
@@ -41,7 +41,7 @@ const MAIN_ITEMS: RailItem[] = [
 ]
 
 /** Ajustes de mensajería que viven en el engranaje de abajo. */
-const SETTINGS_ITEMS: RailItem[] = [
+export const SETTINGS_ITEMS: RailItem[] = [
   { segment: 'canales', label: 'Canales conectados', icon: Radio, roles: ['owner'] },
   { segment: 'plantillas', label: 'Plantillas', icon: MessageSquareText, roles: ['owner'] },
   {
@@ -53,7 +53,7 @@ const SETTINGS_ITEMS: RailItem[] = [
   { segment: 'etiquetas', label: 'Etiquetas', icon: Tag, roles: ['owner', 'cashier'] },
 ]
 
-function visibleFor(items: RailItem[], role: TenantRole): RailItem[] {
+export function visibleFor(items: RailItem[], role: TenantRole): RailItem[] {
   return items.filter((item) => !item.roles || item.roles.includes(role))
 }
 
@@ -77,7 +77,7 @@ export function WaRail({
     <TooltipProvider delayDuration={300}>
       <nav
         aria-label="Secciones de mensajería"
-        className="flex w-16 shrink-0 flex-col items-center gap-1.5 border-r border-(--wa-border) bg-(--wa-rail) py-3"
+        className="hidden w-16 shrink-0 flex-col items-center gap-1.5 border-r border-(--wa-border) bg-(--wa-rail) py-3 md:flex"
       >
         {main.map((item) => {
           const href = `/${tenantSlug}/mensajeria/${item.segment}`

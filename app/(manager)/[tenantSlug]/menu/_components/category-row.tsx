@@ -305,14 +305,7 @@ function SortableItemCard({
       >
         <div className="relative size-16 shrink-0 overflow-hidden rounded-lg bg-secondary/60">
           {item.image_url ? (
-            <Image
-              src={item.image_url}
-              alt=""
-              fill
-              sizes="64px"
-              className="object-cover"
-              unoptimized
-            />
+            <Image src={item.image_url} alt="" fill sizes="64px" className="object-cover" />
           ) : (
             <div className="flex h-full items-center justify-center text-muted-foreground">
               <UtensilsCrossed className="size-5" aria-hidden />

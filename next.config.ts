@@ -26,18 +26,25 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   turbopack: {},
   images: {
-    // Sin optimizador de Vercel: la cuota de 5K transformaciones/mes del plan
-    // Hobby es POR CUENTA y al agotarse /_next/image devuelve 402, rompiendo
-    // todas las imágenes en producción. Se sirven directas del CDN de Supabase.
-    unoptimized: true,
-    // Fotos del menú y logos de tenants se sirven desde Supabase Storage.
-    // El subdominio coincide con el project ref; lo dejamos abierto a *.supabase.co
-    // para que funcione en preview/prod sin reconfiguración.
+    // NUNCA usamos el optimizador de Vercel: la cuota Hobby (5K transformaciones/
+    // mes, POR CUENTA) se agota y `/_next/image` devuelve 402, rompiendo todas las
+    // imágenes. En su lugar, un custom loader enruta las imágenes de Supabase
+    // Storage al endpoint `render/image` de Supabase (imgproxy propio, incluido en
+    // Pro) — redimensiona al ancho pedido y negocia avif/webp por `Accept`.
+    // Todo lo demás (data URLs de QR, estáticos, externas) se sirve directo.
+    // Ver lib/images/supabase-loader.ts para la lógica exacta.
+    loader: 'custom',
+    loaderFile: './lib/images/supabase-loader.ts',
+    // El bar no sirve fotos > 1920px; recortar la escalera evita generar una
+    // variante de 2048/3840 que Supabase clamparía a 2500 igual.
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920],
+    // Defensivo: con custom loader Next no valida remotePatterns, pero lo dejamos
+    // cubriendo object + render por si alguna imagen se sirve sin loader.
     remotePatterns: [
       {
         protocol: 'https',
         hostname: '*.supabase.co',
-        pathname: '/storage/v1/object/public/**',
+        pathname: '/storage/v1/**',
       },
     ],
   },
