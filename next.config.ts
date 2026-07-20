@@ -26,6 +26,10 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   turbopack: {},
   images: {
+    // Sin optimizador de Vercel: la cuota de 5K transformaciones/mes del plan
+    // Hobby es POR CUENTA y al agotarse /_next/image devuelve 402, rompiendo
+    // todas las imágenes en producción. Se sirven directas del CDN de Supabase.
+    unoptimized: true,
     // Fotos del menú y logos de tenants se sirven desde Supabase Storage.
     // El subdominio coincide con el project ref; lo dejamos abierto a *.supabase.co
     // para que funcione en preview/prod sin reconfiguración.
