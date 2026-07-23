@@ -20,6 +20,7 @@ import { CSS } from '@dnd-kit/utilities'
 import {
   Camera,
   ChevronRight,
+  FolderInput,
   FolderTree,
   GripVertical,
   Home,
@@ -65,7 +66,13 @@ import {
 import { EmptyState } from '@/components/ui/empty-state'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { ItemTagRow } from '@/lib/item-tags/queries'
-import { deleteCategory, moveCategory, reorderCategories, updateCategory } from '@/lib/menu/actions'
+import {
+  deleteCategory,
+  moveCategory,
+  moveItemsToCategory,
+  reorderCategories,
+  updateCategory,
+} from '@/lib/menu/actions'
 import type { MenuCategory, MenuItem } from '@/lib/menu/queries'
 import { buildCategoryTree, categoryPath, type MenuTreeNode } from '@/lib/menu/tree'
 import { CategoryEditDialog } from './category-edit-dialog'
@@ -313,20 +320,17 @@ function SubcategoryList({
   const [order, setOrder] = useState(nodes)
   const [, startTransition] = useTransition()
 
-  // Re-sincroniza si cambian los nodos (navegación de nivel o refresh).
-  // Patrón de "ajustar estado al cambiar props" comparando por ids.
-  // Comparamos ids ORDENADOS para detectar solo cambios de membresía (alta/baja/
-  // navegación de nivel), no de orden — así un reorder optimista no se pisa si el
-  // componente re-renderiza por otra razón antes de que resuelva router.refresh().
-  const idsKey = [...nodes]
-    .map((n) => n.id)
-    .sort()
-    .join(',')
-  const orderIdsKey = [...order]
-    .map((n) => n.id)
-    .sort()
-    .join(',')
-  if (idsKey !== orderIdsKey) {
+  // Re-sincroniza si cambia el CONTENIDO de los nodos (membresía, nombre,
+  // activo o conteo de ítems), pero NO su orden. Comparamos una firma ordenada
+  // que ignora `position`/orden del array — así un reorder optimista no se pisa,
+  // mientras que un move de ítems (que cambia los conteos) sí refresca los
+  // números sin esperar a un remount.
+  const sigOf = (ns: MenuTreeNode[]) =>
+    [...ns]
+      .map((n) => `${n.id}:${n.name}:${n.active ? 1 : 0}:${n.items.length}:${totalItemsOf(n)}`)
+      .sort()
+      .join('|')
+  if (sigOf(nodes) !== sigOf(order)) {
     setOrder(nodes)
   }
 
@@ -407,7 +411,10 @@ function SubcategoryRow({
   const [toDelete, setToDelete] = useState(false)
   const [moving, setMoving] = useState(false)
   const [moveTarget, setMoveTarget] = useState<string | null>(node.parent_id)
+  const [movingItems, setMovingItems] = useState(false)
+  const [itemsTarget, setItemsTarget] = useState<string | null>(null)
   const [, startTransition] = useTransition()
+  const router = useRouter()
 
   const directItems = node.items.length
   const subcats = node.children.length
@@ -441,6 +448,21 @@ function SubcategoryRow({
       const r = await moveCategory(tenantSlug, { id: node.id, parent_id: moveTarget })
       if (r.ok) toast.success('Categoría movida.')
       else toast.error(r.message)
+    })
+  }
+
+  const onConfirmMoveItems = () => {
+    if (!itemsTarget || directItems === 0) return
+    const ids = node.items.map((i) => i.id)
+    setMovingItems(false)
+    startTransition(async () => {
+      const r = await moveItemsToCategory(tenantSlug, ids, itemsTarget)
+      if (r.ok) {
+        toast.success(r.message ?? 'Ítems movidos.')
+        router.refresh()
+      } else {
+        toast.error(r.message)
+      }
     })
   }
 
@@ -531,6 +553,15 @@ function SubcategoryRow({
           <DropdownMenuItem onSelect={() => setMoving(true)}>
             <Move className="size-3.5" /> Mover a…
           </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={directItems === 0}
+            onSelect={() => {
+              setItemsTarget(null)
+              setMovingItems(true)
+            }}
+          >
+            <FolderInput className="size-3.5" /> Mover ítems a…
+          </DropdownMenuItem>
           <DropdownMenuItem onSelect={onToggle}>
             {node.active ? (
               <>
@@ -589,6 +620,47 @@ function SubcategoryRow({
               Cancelar
             </Button>
             <Button onClick={onConfirmMove}>Mover</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Mover TODOS los ítems de esta categoría a otra (atajo bulk) */}
+      <Dialog
+        open={movingItems}
+        onOpenChange={(o) => {
+          if (!o) setItemsTarget(null)
+          setMovingItems(o)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Mover {directItems} ítem{directItems === 1 ? '' : 's'} de "{node.name}"
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Se mueven todos los ítems de esta categoría a la que elijas. Las subcategorías quedan
+            como están.
+          </p>
+          <CategoryTreePicker
+            categories={allCategories}
+            value={itemsTarget}
+            onChange={setItemsTarget}
+            excludeIds={[node.id]}
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setMovingItems(false)
+                setItemsTarget(null)
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={onConfirmMoveItems} disabled={!itemsTarget}>
+              Mover ítems
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

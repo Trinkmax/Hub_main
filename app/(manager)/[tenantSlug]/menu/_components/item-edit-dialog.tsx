@@ -54,6 +54,7 @@ export function ItemEditDialog({
   categories,
   allTags,
   onClose,
+  defaultTab = 'info',
 }: {
   item: MenuItem
   tenantSlug: string
@@ -61,6 +62,8 @@ export function ItemEditDialog({
   categories: MenuCategory[]
   allTags: ItemTagRow[]
   onClose: () => void
+  /** Pestaña inicial. 'tags' cuando se abre desde "Etiquetas…" del card. */
+  defaultTab?: 'info' | 'tags' | 'advanced'
 }) {
   const [name, setName] = useState(item.name)
   const [description, setDescription] = useState(item.description ?? '')
@@ -222,7 +225,7 @@ export function ItemEditDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="info" className="flex flex-1 min-h-0 flex-col">
+        <Tabs defaultValue={defaultTab} className="flex flex-1 min-h-0 flex-col">
           <TabsList className="mx-6 mt-4 grid w-auto grid-cols-3">
             <TabsTrigger value="info">Información</TabsTrigger>
             <TabsTrigger value="tags">Etiquetas</TabsTrigger>

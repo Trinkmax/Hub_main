@@ -30,3 +30,10 @@ export const setItemTagsSchema = z.object({
   menu_item_id: z.string().uuid(),
   tag_ids: z.array(z.string().uuid()).max(50),
 })
+
+// Aplica (agrega o quita) un set de tags a varios ítems a la vez. Ambas listas
+// deben tener al menos un elemento — sin ítems o sin tags no hay nada que hacer.
+export const bulkItemTagsSchema = z.object({
+  item_ids: z.array(z.string().uuid()).min(1).max(1000),
+  tag_ids: z.array(z.string().uuid()).min(1).max(50),
+})

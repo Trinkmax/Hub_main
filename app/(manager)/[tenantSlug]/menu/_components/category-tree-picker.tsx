@@ -10,6 +10,7 @@ export function CategoryTreePicker({
   value,
   onChange,
   excludeSubtreeOf,
+  excludeIds,
   allowRoot = false,
   rootLabel = 'Raíz (sin categoría padre)',
 }: {
@@ -18,10 +19,13 @@ export function CategoryTreePicker({
   onChange: (id: string | null) => void
   /** Excluye esta categoría y su subárbol (para mover sin ciclos). */
   excludeSubtreeOf?: string
+  /** Excluye categorías puntuales (p. ej. el origen de un move de ítems). */
+  excludeIds?: string[]
   allowRoot?: boolean
   rootLabel?: string
 }) {
-  const entries = flattenForPicker(categories, excludeSubtreeOf)
+  const excluded = excludeIds ? new Set(excludeIds) : null
+  const entries = flattenForPicker(categories, excludeSubtreeOf).filter((e) => !excluded?.has(e.id))
 
   return (
     <ul className="card-hairline max-h-64 overflow-y-auto rounded-lg border bg-card p-1.5">

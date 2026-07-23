@@ -14,6 +14,7 @@ import {
 } from '@/lib/tenant'
 import {
   assignTagSchema,
+  bulkItemTagsSchema,
   createItemTagSchema,
   setItemTagsSchema,
   tagIdSchema,
@@ -343,4 +344,174 @@ export async function setItemTags(
   revalidatePath(`/${slug}/menu/tags`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
+}
+
+// Valida que un set de ids de ítems y de tags pertenezcan al tenant. Devuelve
+// las listas saneadas (deduplicadas) o un mensaje de error para el caller.
+async function resolveBulkTargets(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tenantId: string,
+  itemIds: string[],
+  tagIds: string[],
+): Promise<{ ok: true; itemIds: string[]; tagIds: string[] } | { ok: false; message: string }> {
+  const items = Array.from(new Set(itemIds))
+  const tags = Array.from(new Set(tagIds))
+
+  const [{ data: validItems, error: itemsErr }, { data: validTags, error: tagsErr }] =
+    await Promise.all([
+      supabase.from('menu_items').select('id').eq('tenant_id', tenantId).in('id', items),
+      supabase.from('item_tags').select('id').eq('tenant_id', tenantId).in('id', tags),
+    ])
+  if (itemsErr) {
+    console.error('[item-tags.bulk] items lookup', itemsErr.message)
+    return { ok: false, message: 'No pudimos validar los ítems.' }
+  }
+  if (tagsErr) {
+    console.error('[item-tags.bulk] tags lookup', tagsErr.message)
+    return { ok: false, message: 'No pudimos validar las etiquetas.' }
+  }
+  const okItems = (validItems ?? []).map((r) => r.id)
+  const okTags = (validTags ?? []).map((r) => r.id)
+  if (okItems.length === 0) return { ok: false, message: 'Ningún ítem válido.' }
+  if (okTags.length !== tags.length) {
+    return { ok: false, message: 'Alguna etiqueta no pertenece a este bar.' }
+  }
+  return { ok: true, itemIds: okItems, tagIds: okTags }
+}
+
+// Agrega (unión, no reemplaza) un set de tags a varios ítems. Idempotente:
+// re-enviar el mismo payload no crea duplicados porque filtramos las
+// asignaciones ya existentes antes de insertar.
+export async function addTagsToItems(
+  slug: string,
+  payload: { item_ids: string[]; tag_ids: string[] },
+): Promise<TagActionState> {
+  const access = await authorize(slug)
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = bulkItemTagsSchema.safeParse(payload)
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: parsed.error.issues[0]?.message ?? 'Datos inválidos.',
+      fieldErrors: flattenIssues(parsed.error),
+    }
+  }
+
+  const supabase = await createClient()
+  const resolved = await resolveBulkTargets(
+    supabase,
+    access.tenant.id,
+    parsed.data.item_ids,
+    parsed.data.tag_ids,
+  )
+  if (!resolved.ok) return { ok: false, message: resolved.message }
+
+  // Leemos las asignaciones ya existentes para insertar sólo las que faltan.
+  const { data: existing, error: exErr } = await supabase
+    .from('menu_item_tag_assignments')
+    .select('menu_item_id, tag_id')
+    .in('menu_item_id', resolved.itemIds)
+    .in('tag_id', resolved.tagIds)
+  if (exErr) {
+    console.error('[item-tags.addTagsToItems] existing', exErr.message)
+    return { ok: false, message: 'No pudimos leer las asignaciones actuales.' }
+  }
+  const existingSet = new Set((existing ?? []).map((r) => `${r.menu_item_id}:${r.tag_id}`))
+
+  const rows: Array<{ menu_item_id: string; tag_id: string }> = []
+  for (const itemId of resolved.itemIds) {
+    for (const tagId of resolved.tagIds) {
+      if (!existingSet.has(`${itemId}:${tagId}`)) {
+        rows.push({ menu_item_id: itemId, tag_id: tagId })
+      }
+    }
+  }
+
+  if (rows.length > 0) {
+    const { error: insErr } = await supabase.from('menu_item_tag_assignments').insert(rows)
+    if (insErr && !insErr.message.includes('duplicate')) {
+      console.error('[item-tags.addTagsToItems] insert', insErr.message)
+      return { ok: false, message: 'No pudimos asignar las etiquetas.' }
+    }
+  }
+
+  const { data: userResult } = await supabase.auth.getUser()
+  await logAudit({
+    tenantId: access.tenant.id,
+    userId: userResult.user?.id ?? null,
+    action: 'item_tag.bulk_assigned',
+    entity: 'menu_item',
+    entityId: null,
+    payload: {
+      item_ids: resolved.itemIds,
+      tag_ids: resolved.tagIds,
+      added: rows.length,
+    },
+  })
+
+  revalidatePath(`/${slug}/menu/tags`)
+  revalidatePath(`/${slug}/menu`)
+  return {
+    ok: true,
+    message:
+      rows.length > 0
+        ? `Etiquetas agregadas a ${resolved.itemIds.length} ítem${resolved.itemIds.length === 1 ? '' : 's'}.`
+        : 'Los ítems ya tenían esas etiquetas.',
+  }
+}
+
+// Quita un set de tags de varios ítems. Idempotente: si una asignación no
+// existe, el delete simplemente no afecta filas.
+export async function removeTagsFromItems(
+  slug: string,
+  payload: { item_ids: string[]; tag_ids: string[] },
+): Promise<TagActionState> {
+  const access = await authorize(slug)
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = bulkItemTagsSchema.safeParse(payload)
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: parsed.error.issues[0]?.message ?? 'Datos inválidos.',
+      fieldErrors: flattenIssues(parsed.error),
+    }
+  }
+
+  const supabase = await createClient()
+  const resolved = await resolveBulkTargets(
+    supabase,
+    access.tenant.id,
+    parsed.data.item_ids,
+    parsed.data.tag_ids,
+  )
+  if (!resolved.ok) return { ok: false, message: resolved.message }
+
+  const { error } = await supabase
+    .from('menu_item_tag_assignments')
+    .delete()
+    .in('menu_item_id', resolved.itemIds)
+    .in('tag_id', resolved.tagIds)
+  if (error) {
+    console.error('[item-tags.removeTagsFromItems] delete', error.message)
+    return { ok: false, message: 'No pudimos quitar las etiquetas.' }
+  }
+
+  const { data: userResult } = await supabase.auth.getUser()
+  await logAudit({
+    tenantId: access.tenant.id,
+    userId: userResult.user?.id ?? null,
+    action: 'item_tag.bulk_unassigned',
+    entity: 'menu_item',
+    entityId: null,
+    payload: { item_ids: resolved.itemIds, tag_ids: resolved.tagIds },
+  })
+
+  revalidatePath(`/${slug}/menu/tags`)
+  revalidatePath(`/${slug}/menu`)
+  return {
+    ok: true,
+    message: `Etiquetas quitadas de ${resolved.itemIds.length} ítem${resolved.itemIds.length === 1 ? '' : 's'}.`,
+  }
 }

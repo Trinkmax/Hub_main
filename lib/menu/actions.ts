@@ -17,6 +17,7 @@ import {
   createCategorySchema,
   createMenuItemSchema,
   moveCategorySchema,
+  moveItemsSchema,
   reorderCategoriesSchema,
   reorderItemsSchema,
   updateCategorySchema,
@@ -495,6 +496,66 @@ export async function reorderItems(
 
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
+}
+
+// Mueve varios ítems a una categoría destino en una sola operación. Usa el RPC
+// move_menu_items (atómico, preserva el orden de la lista y los anexa al final
+// del destino). El RPC valida tenant + rol (owner|editor); acá revalidamos la
+// categoría destino para dar un mensaje claro antes de pegar a la DB.
+export async function moveItemsToCategory(
+  slug: string,
+  itemIds: string[],
+  targetCategoryId: string,
+): Promise<MenuActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = moveItemsSchema.safeParse({
+    item_ids: itemIds,
+    target_category_id: targetCategoryId,
+  })
+  if (!parsed.success) return { ok: false, message: 'Datos inválidos.' }
+
+  const supabase = await createClient()
+
+  const { data: cat } = await supabase
+    .from('menu_categories')
+    .select('id')
+    .eq('id', parsed.data.target_category_id)
+    .eq('tenant_id', tenant.id)
+    .maybeSingle()
+  if (!cat) return { ok: false, message: 'Categoría destino inválida.' }
+
+  const { data, error } = await callRpc(supabase, 'move_menu_items', {
+    p_item_ids: parsed.data.item_ids,
+    p_target_category_id: parsed.data.target_category_id,
+  })
+  if (error) {
+    if (error.message.includes('forbidden')) return { ok: false, message: 'No tenés permiso.' }
+    if (error.message.includes('invalid_category')) {
+      return { ok: false, message: 'Categoría destino inválida.' }
+    }
+    console.error('[menu.moveItemsToCategory]', error.message)
+    return { ok: false, message: 'No pudimos mover los ítems.' }
+  }
+
+  const moved = typeof data === 'number' ? data : Number(data ?? 0)
+
+  const { data: userResult } = await supabase.auth.getUser()
+  await logAudit({
+    tenantId: tenant.id,
+    userId: userResult.user?.id ?? null,
+    action: 'menu_item.bulk_moved',
+    entity: 'menu_category',
+    entityId: parsed.data.target_category_id,
+    payload: { count: moved, item_ids: parsed.data.item_ids },
+  })
+
+  revalidatePath(`/${slug}/menu`)
+  return {
+    ok: true,
+    message: `${moved} ítem${moved === 1 ? '' : 's'} movido${moved === 1 ? '' : 's'}.`,
+  }
 }
 
 // Toggle del flag featured en menu_items. Leer-luego-flip se hace en dos

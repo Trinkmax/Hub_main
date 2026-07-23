@@ -274,3 +274,15 @@ TODO el trabajo de fondo — un bug ahí frena difusiones, flows y jobs.**
   en la DB remota está cifrado con una `META_TOKEN_KEY` distinta a la del
   `.env` local: en dev el estado del canal puede leerse mal. Alinear la clave
   local con la de producción o tolerar el fallo con un estado "no verificable".
+
+## Carta — RPCs de orden/movimiento siguen owner-only (post rediseño roles)
+
+- **`reorder_menu_items`, `reorder_menu_categories` y `move_category` chequean
+  `v_role <> 'owner'`** y rechazan a `editor`, aunque las policies de tabla de
+  `menu_items`/`menu_categories` y `MENU_EDIT_ROLES` ya habilitan `owner|editor`
+  (mig `20260716120100`). Resultado: un `editor` (la diseñadora que carga la
+  carta) puede crear/editar ítems pero **no puede reordenar por drag ni mover
+  categorías** — la acción falla con `forbidden`. El nuevo RPC `move_menu_items`
+  (mig `20260723120100`) ya usa `owner|editor`; alinear los tres RPCs viejos a
+  ese criterio en una migración. Descubierto al arreglar el bug de tags del
+  editor (mig `20260723120000_item_tag_assignments_editor_rls`).

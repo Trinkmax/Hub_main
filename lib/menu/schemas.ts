@@ -67,6 +67,12 @@ export const reorderSchema = z.object({
   ids: z.array(z.string().uuid()).min(1),
 })
 
+// Mover varios ítems a una categoría destino de una sola vez.
+export const moveItemsSchema = z.object({
+  item_ids: z.array(z.string().uuid()).min(1).max(1000),
+  target_category_id: z.string().uuid(),
+})
+
 export const reorderItemsSchema = reorderSchema.extend({
   category_id: z.string().uuid(),
 })
