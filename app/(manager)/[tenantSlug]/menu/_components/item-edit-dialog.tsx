@@ -31,7 +31,7 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { createItemTag } from '@/lib/item-tags/actions'
-import type { ItemTagRow } from '@/lib/item-tags/queries'
+import type { ItemTag, ItemTagRow } from '@/lib/item-tags/queries'
 import { deleteMenuItem, updateMenuItem } from '@/lib/menu/actions'
 import type { MenuCategory, MenuItem } from '@/lib/menu/queries'
 import { deleteMenuImageByUrl } from '@/lib/menu/upload-image'
@@ -54,6 +54,8 @@ export function ItemEditDialog({
   categories,
   allTags,
   onClose,
+  onSaved,
+  onDeleted,
   defaultTab = 'info',
 }: {
   item: MenuItem
@@ -62,6 +64,10 @@ export function ItemEditDialog({
   categories: MenuCategory[]
   allTags: ItemTagRow[]
   onClose: () => void
+  /** Se llama con el ítem actualizado tras guardar, para update optimista del contenedor. */
+  onSaved?: (item: MenuItem) => void
+  /** Se llama con el id tras eliminar, para sacar la card sin re-navegar. */
+  onDeleted?: (id: string) => void
   /** Pestaña inicial. 'tags' cuando se abre desde "Etiquetas…" del card. */
   defaultTab?: 'info' | 'tags' | 'advanced'
 }) {
@@ -153,6 +159,29 @@ export function ItemEditDialog({
             // best-effort
           }
         }
+        const updatedItem: MenuItem = {
+          id: item.id,
+          category_id: categoryId,
+          name: name.trim(),
+          description: description.trim().length > 0 ? description.trim() : null,
+          price_cents: priceCents,
+          points_override: pts,
+          position: item.position,
+          active,
+          image_url: imageUrl,
+          video_url: videoUrl,
+          featured,
+          tags: tagsLocal
+            .filter((t) => selectedTagIds.includes(t.id))
+            .map<ItemTag>((t) => ({
+              id: t.id,
+              tenant_id: tenantId,
+              name: t.name,
+              color: t.color,
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        }
+        onSaved?.(updatedItem)
         toast.success('Guardado.')
         router.refresh()
         onClose()
@@ -204,6 +233,7 @@ export function ItemEditDialog({
     startDelete(async () => {
       const r = await deleteMenuItem(tenantSlug, item.id)
       if (r.ok) {
+        onDeleted?.(item.id)
         toast.success('Ítem eliminado.')
         router.refresh()
         onClose()

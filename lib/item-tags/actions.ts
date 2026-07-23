@@ -211,6 +211,27 @@ export async function toggleTagOnMenuItem(
   if (!parsed.success) return { ok: false, message: 'Datos inválidos.' }
 
   const supabase = await createClient()
+
+  // Defensa en profundidad (además de RLS): el ítem Y el tag tienen que ser de
+  // este tenant. Sin esto, un id de tag de otro bar pasaría el schema (solo
+  // valida formato uuid) y quedaría a merced de la policy; validamos también acá.
+  const [{ data: itemRow }, { data: tagRow }] = await Promise.all([
+    supabase
+      .from('menu_items')
+      .select('id')
+      .eq('id', parsed.data.menu_item_id)
+      .eq('tenant_id', access.tenant.id)
+      .maybeSingle(),
+    supabase
+      .from('item_tags')
+      .select('id')
+      .eq('id', parsed.data.tag_id)
+      .eq('tenant_id', access.tenant.id)
+      .maybeSingle(),
+  ])
+  if (!itemRow) return { ok: false, message: 'El ítem no pertenece a este bar.' }
+  if (!tagRow) return { ok: false, message: 'La etiqueta no pertenece a este bar.' }
+
   if (enable) {
     const { error } = await supabase
       .from('menu_item_tag_assignments')

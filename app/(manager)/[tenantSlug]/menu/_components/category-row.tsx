@@ -57,8 +57,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { addTagsToItems, removeTagsFromItems } from '@/lib/item-tags/actions'
+import { addTagsToItems, createItemTag, removeTagsFromItems } from '@/lib/item-tags/actions'
 import type { ItemTag, ItemTagRow } from '@/lib/item-tags/queries'
 import {
   deleteMenuItem,
@@ -110,9 +111,22 @@ export function CategoryRow({
   const [tagOpen, setTagOpen] = useState(false)
   const [tagMode, setTagMode] = useState<'add' | 'remove'>('add')
   const [tagPicks, setTagPicks] = useState<Set<string>>(new Set())
+  // Lista local de etiquetas del tenant: arranca de allTags y crece si el dueño
+  // crea una etiqueta inline desde este mismo diálogo (mismo patrón que el editor
+  // de ítem). Así el flujo de un bar recién onboardeado no queda trabado.
+  const [localTags, setLocalTags] = useState<ItemTagRow[]>(allTags)
+  const [showNewTag, setShowNewTag] = useState(false)
+  const [newTagName, setNewTagName] = useState('')
+  const [newTagColor, setNewTagColor] = useState('#94a3b8')
+  const [creatingTag, startCreatingTag] = useTransition()
 
   const selectedCount = selectedIds.size
   const selectedList = items.filter((i) => selectedIds.has(i.id))
+  // Etiquetas realmente presentes en la selección (para el modo "Quitar": no
+  // tiene sentido ofrecer quitar una etiqueta que ningún seleccionado tiene).
+  const assignedInSelection = new Set(selectedList.flatMap((i) => i.tags.map((t) => t.id)))
+  const visibleTags =
+    tagMode === 'add' ? localTags : localTags.filter((t) => assignedInSelection.has(t.id))
 
   const exitSelection = () => {
     setSelectionMode(false)
@@ -121,6 +135,41 @@ export function CategoryRow({
     setTagOpen(false)
     setMoveTarget(null)
     setTagPicks(new Set())
+    setShowNewTag(false)
+    setNewTagName('')
+    setNewTagColor('#94a3b8')
+  }
+
+  const onCreateInlineTag = () => {
+    const trimmed = newTagName.trim()
+    if (trimmed.length === 0) {
+      toast.error('Ponele un nombre a la etiqueta.')
+      return
+    }
+    const fd = new FormData()
+    fd.set('name', trimmed)
+    fd.set('color', newTagColor)
+    startCreatingTag(async () => {
+      const r = await createItemTag(tenantSlug, { ok: false, message: '' }, fd)
+      if (!r.ok || !r.tagId) {
+        toast.error(r.ok ? 'No se pudo crear la etiqueta.' : r.message)
+        return
+      }
+      const created: ItemTagRow = {
+        id: r.tagId,
+        name: trimmed,
+        color: newTagColor,
+        created_at: new Date().toISOString(),
+        assignment_count: 0,
+      }
+      setLocalTags((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)))
+      // La dejamos tildada para que aplicar sea un solo paso.
+      setTagPicks((prev) => new Set(prev).add(created.id))
+      setNewTagName('')
+      setNewTagColor('#94a3b8')
+      setShowNewTag(false)
+      toast.success(`Etiqueta "${trimmed}" creada.`)
+    })
   }
 
   const toggleSelect = (id: string) => {
@@ -387,6 +436,14 @@ export function CategoryRow({
           allTags={allTags}
           defaultTab={editingTab}
           onClose={() => setEditingItem(null)}
+          onSaved={(updated) =>
+            setItems((prev) =>
+              updated.category_id !== category.id
+                ? prev.filter((i) => i.id !== updated.id)
+                : prev.map((i) => (i.id === updated.id ? updated : i)),
+            )
+          }
+          onDeleted={(id) => setItems((prev) => prev.filter((i) => i.id !== id))}
         />
       ) : null}
 
@@ -415,6 +472,8 @@ export function CategoryRow({
               onClick={() => {
                 setTagMode('add')
                 setTagPicks(new Set())
+                setShowNewTag(false)
+                setNewTagName('')
                 setTagOpen(true)
               }}
             >
@@ -471,7 +530,10 @@ export function CategoryRow({
           <div className="inline-flex w-fit rounded-lg border border-border/70 bg-secondary/30 p-0.5">
             <button
               type="button"
-              onClick={() => setTagMode('add')}
+              onClick={() => {
+                setTagMode('add')
+                setTagPicks(new Set())
+              }}
               className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
                 tagMode === 'add' ? 'bg-card shadow-sm' : 'text-muted-foreground'
               }`}
@@ -480,7 +542,11 @@ export function CategoryRow({
             </button>
             <button
               type="button"
-              onClick={() => setTagMode('remove')}
+              onClick={() => {
+                setTagMode('remove')
+                setTagPicks(new Set())
+                setShowNewTag(false)
+              }}
               className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
                 tagMode === 'remove' ? 'bg-card shadow-sm' : 'text-muted-foreground'
               }`}
@@ -489,16 +555,18 @@ export function CategoryRow({
             </button>
           </div>
 
-          {allTags.length === 0 ? (
+          {visibleTags.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border/70 bg-background/30 p-6 text-center">
               <Tag className="mx-auto mb-2 size-5 text-muted-foreground" aria-hidden />
               <p className="text-sm text-muted-foreground">
-                Todavía no creaste etiquetas. Creá una desde “Gestionar etiquetas”.
+                {tagMode === 'remove'
+                  ? 'Los ítems seleccionados no tienen etiquetas para quitar.'
+                  : 'Todavía no tenés etiquetas. Creá la primera acá abajo.'}
               </p>
             </div>
           ) : (
-            <ul className="card-hairline grid max-h-64 gap-1 overflow-y-auto rounded-lg border bg-card p-1.5">
-              {allTags.map((t) => {
+            <ul className="card-hairline grid max-h-56 gap-1 overflow-y-auto rounded-lg border bg-card p-1.5">
+              {visibleTags.map((t) => {
                 const checked = tagPicks.has(t.id)
                 return (
                   <li key={t.id}>
@@ -530,6 +598,75 @@ export function CategoryRow({
               })}
             </ul>
           )}
+
+          {/* Crear etiqueta sin salir del flujo (solo tiene sentido al Agregar) */}
+          {tagMode === 'add' ? (
+            showNewTag || localTags.length === 0 ? (
+              <div className="card-hairline rounded-lg border bg-card p-3">
+                <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Nueva etiqueta
+                </p>
+                <div className="grid gap-2 sm:grid-cols-[auto_1fr_auto] sm:items-center">
+                  <input
+                    type="color"
+                    value={newTagColor}
+                    onChange={(e) => setNewTagColor(e.target.value)}
+                    className="h-9 w-12 cursor-pointer rounded border border-border bg-transparent"
+                    aria-label="Color de la etiqueta"
+                  />
+                  <Input
+                    value={newTagName}
+                    onChange={(e) => setNewTagName(e.target.value)}
+                    maxLength={40}
+                    placeholder="Vegano, Sin TACC, Picante…"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        onCreateInlineTag()
+                      }
+                    }}
+                  />
+                  <div className="flex gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={onCreateInlineTag}
+                      disabled={creatingTag}
+                      className="gap-1"
+                    >
+                      <Plus className="size-3.5" />
+                      Crear
+                    </Button>
+                    {localTags.length > 0 ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setShowNewTag(false)
+                          setNewTagName('')
+                        }}
+                        disabled={creatingTag}
+                      >
+                        Cancelar
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowNewTag(true)}
+                className="w-fit gap-1.5"
+              >
+                <Plus className="size-3.5" />
+                Crear nueva etiqueta
+              </Button>
+            )
+          ) : null}
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setTagOpen(false)} disabled={bulkPending}>
