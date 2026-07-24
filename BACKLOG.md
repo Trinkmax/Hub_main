@@ -277,12 +277,9 @@ TODO el trabajo de fondo — un bug ahí frena difusiones, flows y jobs.**
 
 ## Carta — RPCs de orden/movimiento siguen owner-only (post rediseño roles)
 
-- **`reorder_menu_items`, `reorder_menu_categories` y `move_category` chequean
-  `v_role <> 'owner'`** y rechazan a `editor`, aunque las policies de tabla de
-  `menu_items`/`menu_categories` y `MENU_EDIT_ROLES` ya habilitan `owner|editor`
-  (mig `20260716120100`). Resultado: un `editor` (la diseñadora que carga la
-  carta) puede crear/editar ítems pero **no puede reordenar por drag ni mover
-  categorías** — la acción falla con `forbidden`. El nuevo RPC `move_menu_items`
-  (mig `20260723120100`) ya usa `owner|editor`; alinear los tres RPCs viejos a
-  ese criterio en una migración. Descubierto al arreglar el bug de tags del
-  editor (mig `20260723120000_item_tag_assignments_editor_rls`).
+- ✅ **RESUELTO** (mig `20260723130000_menu_reorder_rpcs_editor`): `reorder_menu_items`,
+  `reorder_menu_categories` y `move_category` pasaron de owner-only a `owner|editor`,
+  alineados con las policies de tabla, `MENU_EDIT_ROLES` y el RPC `move_menu_items`.
+  Síntoma original: la diseñadora (rol `editor`) recibía "No pudimos reordenar." /
+  "No pudimos mover la categoría." al arrastrar. Verificado contra la DB: editor
+  reordena OK.
