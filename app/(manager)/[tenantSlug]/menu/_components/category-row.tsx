@@ -745,20 +745,103 @@ function SortableItemCard({
   const visibleTags = item.tags.slice(0, 3)
   const hiddenCount = item.tags.length - visibleTags.length
 
-  return (
-    <article
-      ref={setNodeRef}
-      style={style}
-      className={`card-hairline group relative flex flex-col gap-3 rounded-xl border bg-card p-3 transition-colors ${
-        selected
-          ? 'border-primary ring-2 ring-primary/60'
-          : 'border-border/70 hover:border-foreground/20'
-      }`}
-    >
-      {selectionMode ? (
+  const cardClass = `card-hairline group relative flex flex-col gap-3 rounded-xl border bg-card p-3 transition-colors ${
+    selected
+      ? 'border-primary ring-2 ring-primary/60'
+      : 'border-border/70 hover:border-foreground/20'
+  }`
+
+  // Bloques compartidos entre modo normal y modo selección.
+  const media = (
+    <div className="relative size-16 shrink-0 overflow-hidden rounded-lg bg-secondary/60">
+      {item.image_url ? (
+        <Image src={item.image_url} alt="" fill sizes="64px" className="object-cover" />
+      ) : (
+        <div className="flex h-full items-center justify-center text-muted-foreground">
+          <UtensilsCrossed className="size-5" aria-hidden />
+        </div>
+      )}
+      {item.featured ? (
+        <span
+          role="img"
+          aria-label="Destacado"
+          className="absolute -top-1 -left-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm"
+        >
+          <Sparkles className="size-3" aria-hidden />
+        </span>
+      ) : null}
+    </div>
+  )
+
+  const details = (
+    <div className="min-w-0 flex-1">
+      <h4
+        className={`truncate text-sm font-medium ${!item.active ? 'text-muted-foreground line-through' : ''}`}
+      >
+        {item.name}
+      </h4>
+      <p className="mt-0.5 font-serif text-base font-semibold tabular-nums tracking-tight">
+        {fmtARS(item.price_cents)}
+      </p>
+      {item.description ? (
+        <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+          {item.description}
+        </p>
+      ) : null}
+    </div>
+  )
+
+  const meta = (
+    <>
+      {!item.active ? (
+        <Badge variant="muted" className="text-[10px]">
+          Pausado
+        </Badge>
+      ) : null}
+      {item.points_override !== null ? (
+        <Badge variant="success" className="text-[10px] tabular-nums">
+          +{item.points_override} pts
+        </Badge>
+      ) : null}
+      {visibleTags.map((t) => (
+        <span
+          key={t.id}
+          className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium"
+          style={{ borderColor: `${t.color}66`, backgroundColor: `${t.color}1f`, color: t.color }}
+        >
+          <span
+            aria-hidden
+            className="size-1.5 rounded-full"
+            style={{ backgroundColor: t.color }}
+          />
+          {t.name}
+        </span>
+      ))}
+      {hiddenCount > 0 ? (
+        <Badge variant="outline" className="text-[10px] tabular-nums">
+          +{hiddenCount}
+        </Badge>
+      ) : null}
+    </>
+  )
+
+  // ── Modo selección: TODA la card es un botón que togglea (funciona igual con
+  // mouse o dedo; antes solo el bloque de imagen/texto respondía y el checkbox
+  // "comía" el tap). Sin drag ni menú "⋯".
+  if (selectionMode) {
+    return (
+      <button
+        ref={setNodeRef}
+        style={style}
+        type="button"
+        aria-pressed={selected}
+        aria-label={`${selected ? 'Deseleccionar' : 'Seleccionar'} ${item.name}`}
+        onClick={onToggleSelect}
+        className={`${cardClass} w-full cursor-pointer text-left`}
+      >
         <span
           aria-hidden
-          className={`absolute left-2 top-2 z-10 flex size-5 items-center justify-center rounded-md border-2 shadow-sm transition-colors ${
+          className={`pointer-events-none absolute left-2 top-2 z-10 flex size-5 items-center justify-center rounded-md border-2 shadow-sm transition-colors ${
             selected
               ? 'border-primary bg-primary text-primary-foreground'
               : 'border-border/80 bg-card'
@@ -766,132 +849,76 @@ function SortableItemCard({
         >
           {selected ? <Check className="size-3.5" /> : null}
         </span>
-      ) : (
-        <button
-          {...attributes}
-          {...listeners}
-          type="button"
-          aria-label={`Mover ${item.name}`}
-          className="absolute right-2 top-2 cursor-grab rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground active:cursor-grabbing group-hover:opacity-100 focus:opacity-100"
-        >
-          <GripVertical className="size-3.5" />
-        </button>
-      )}
+        <div className="flex items-start gap-3">
+          {media}
+          {details}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">{meta}</div>
+      </button>
+    )
+  }
+
+  // ── Modo normal: arrastrar para reordenar + editar + menú "⋯".
+  return (
+    <article ref={setNodeRef} style={style} className={cardClass}>
+      <button
+        {...attributes}
+        {...listeners}
+        type="button"
+        aria-label={`Mover ${item.name}`}
+        className="absolute right-2 top-2 cursor-grab rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground active:cursor-grabbing group-hover:opacity-100 focus:opacity-100"
+      >
+        <GripVertical className="size-3.5" />
+      </button>
 
       <button
         type="button"
-        onClick={selectionMode ? onToggleSelect : onEdit}
-        aria-label={selectionMode ? `Seleccionar ${item.name}` : `Editar ${item.name}`}
-        aria-pressed={selectionMode ? selected : undefined}
+        onClick={onEdit}
+        aria-label={`Editar ${item.name}`}
         className="flex items-start gap-3 text-left"
       >
-        <div className="relative size-16 shrink-0 overflow-hidden rounded-lg bg-secondary/60">
-          {item.image_url ? (
-            <Image src={item.image_url} alt="" fill sizes="64px" className="object-cover" />
-          ) : (
-            <div className="flex h-full items-center justify-center text-muted-foreground">
-              <UtensilsCrossed className="size-5" aria-hidden />
-            </div>
-          )}
-          {item.featured ? (
-            <span
-              role="img"
-              aria-label="Destacado"
-              className="absolute -top-1 -left-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm"
-            >
-              <Sparkles className="size-3" aria-hidden />
-            </span>
-          ) : null}
-        </div>
-        <div className="min-w-0 flex-1">
-          <h4
-            className={`truncate text-sm font-medium ${!item.active ? 'text-muted-foreground line-through' : ''}`}
-          >
-            {item.name}
-          </h4>
-          <p className="mt-0.5 font-serif text-base font-semibold tabular-nums tracking-tight">
-            {fmtARS(item.price_cents)}
-          </p>
-          {item.description ? (
-            <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
-              {item.description}
-            </p>
-          ) : null}
-        </div>
+        {media}
+        {details}
       </button>
 
       <div className="flex flex-wrap items-center gap-1.5">
-        {!item.active ? (
-          <Badge variant="muted" className="text-[10px]">
-            Pausado
-          </Badge>
-        ) : null}
-        {item.points_override !== null ? (
-          <Badge variant="success" className="text-[10px] tabular-nums">
-            +{item.points_override} pts
-          </Badge>
-        ) : null}
-        {visibleTags.map((t) => (
-          <span
-            key={t.id}
-            className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium"
-            style={{
-              borderColor: `${t.color}66`,
-              backgroundColor: `${t.color}1f`,
-              color: t.color,
-            }}
-          >
-            <span
-              aria-hidden
-              className="size-1.5 rounded-full"
-              style={{ backgroundColor: t.color }}
-            />
-            {t.name}
-          </span>
-        ))}
-        {hiddenCount > 0 ? (
-          <Badge variant="outline" className="text-[10px] tabular-nums">
-            +{hiddenCount}
-          </Badge>
-        ) : null}
-        {selectionMode ? null : (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                className="ml-auto size-7 text-muted-foreground hover:text-foreground"
-                aria-label={`Más opciones de ${item.name}`}
-              >
-                <MoreHorizontal className="size-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem onSelect={onEdit}>
-                <Pencil className="size-3.5" />
-                Editar
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onEditTags}>
-                <Tag className="size-3.5" />
-                Etiquetas…
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onToggleFeatured}>
-                <Sparkles className="size-3.5" />
-                {item.featured ? 'Quitar destacado' : 'Destacar'}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onToggleActive}>
-                {item.active ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
-                {item.active ? 'Pausar' : 'Activar'}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" onSelect={onDelete}>
-                <Trash2 className="size-3.5" />
-                Eliminar
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+        {meta}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="ml-auto size-7 text-muted-foreground hover:text-foreground"
+              aria-label={`Más opciones de ${item.name}`}
+            >
+              <MoreHorizontal className="size-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem onSelect={onEdit}>
+              <Pencil className="size-3.5" />
+              Editar
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onEditTags}>
+              <Tag className="size-3.5" />
+              Etiquetas…
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onToggleFeatured}>
+              <Sparkles className="size-3.5" />
+              {item.featured ? 'Quitar destacado' : 'Destacar'}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onToggleActive}>
+              {item.active ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+              {item.active ? 'Pausar' : 'Activar'}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+              <Trash2 className="size-3.5" />
+              Eliminar
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </article>
   )
