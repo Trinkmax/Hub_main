@@ -6,6 +6,7 @@ import type { TierBenefit } from '@/lib/points/benefits'
 import {
   getPointsRedemptionConfig,
   listActiveRewards,
+  listPartnerBenefits,
   listPartners,
   listRewards,
   listRules,
@@ -63,6 +64,7 @@ export default async function ClubPage({
     rewards,
     rules,
     partners,
+    partnerBenefits,
     redemptionConfig,
     welcomeConfig,
     capturePrompt,
@@ -76,6 +78,7 @@ export default async function ClubPage({
     listRewards({ tenantId }),
     listRules({ tenantId }),
     listPartners({ tenantId }),
+    listPartnerBenefits({ tenantId }),
     getPointsRedemptionConfig(tenantId),
     getWelcomeRewardConfig(tenantId),
     getCapturePromptConfig(tenantId),
@@ -101,6 +104,7 @@ export default async function ClubPage({
       rewards={rewards}
       rules={rules}
       partners={partners}
+      partnerBenefits={partnerBenefits}
       redemptionConfig={redemptionConfig}
       welcomeConfig={welcomeConfig}
       capturePrompt={capturePrompt}

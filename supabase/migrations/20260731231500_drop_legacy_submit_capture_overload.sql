@@ -1,0 +1,21 @@
+-- ============================================================
+-- FIX de seguridad: la sobrecarga vieja de submit_capture seguía viva
+-- ============================================================
+-- Corrige 20260731203341_club_auth_tables_and_signup.
+--
+-- Esa migración creó `submit_capture` con un parámetro nuevo al final
+-- (`p_password`). En Postgres eso es una SOBRECARGA, no un reemplazo: quedaron
+-- las dos versiones vivas, y la vieja de 9 argumentos conservó su
+-- `grant execute to anon`.
+--
+-- Consecuencia: el agujero que el login venía a cerrar seguía abierto por
+-- PostgREST. La versión vieja devuelve el `qr_token` de un socio existente sin
+-- pedir contraseña, así que un POST directo a `/rest/v1/rpc/submit_capture` con
+-- los parámetros de antes alcanzaba para llevarse la billetera de cualquiera
+-- sabiendo su teléfono — exactamente el escenario que los items 1 y 2 vinieron
+-- a eliminar. La UI nueva no cambia nada acá: el atacante no pasa por la UI.
+--
+-- Se dropea la sobrecarga vieja. `lib/capture/actions.ts` ya invoca la RPC
+-- nombrando los 10 argumentos, así que no queda ningún llamador de la vieja.
+-- ============================================================
+drop function if exists public.submit_capture(text, text, text, text, boolean, text, text, text, date);

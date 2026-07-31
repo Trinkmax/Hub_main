@@ -55,6 +55,7 @@ export const RESERVED_SLUGS = new Set([
   'c',
   'carta',
   'r',
+  'v', // QR de canje (/v/[redeem_token])
   '_next',
   'static',
   'public',

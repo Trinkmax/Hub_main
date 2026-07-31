@@ -4,6 +4,22 @@
 export function humanizeSalonError(message: string): string {
   if (!message) return 'No pudimos completar la acción.'
   const m = message.toLowerCase()
+
+  // Coherencia fecha ↔ evento (trigger trg_validate_reservation_event_date).
+  // Van ANTES de los `event_not_found` / `tenant_mismatch` genéricos de abajo,
+  // que si no se los comen por substring. La fecha viaja pegada al código como
+  // `reservation_event_date_mismatch:DD/MM/YYYY` — mostramos DD/MM, que es como
+  // habla el bar.
+  if (m.includes('reservation_event_date_mismatch')) {
+    const eventDate = parseMismatchDate(message)
+    return eventDate
+      ? `La fecha no coincide con el evento (el evento es del ${eventDate}).`
+      : 'La fecha no coincide con la del evento programado.'
+  }
+  if (m.includes('reservation_event_not_found'))
+    return 'El evento programado ya no existe. Elegí otro.'
+  if (m.includes('reservation_event_tenant_mismatch')) return 'Ese evento es de otro local.'
+
   if (m.includes('forbidden')) return 'No tenés permiso para esa acción.'
   if (m.includes('unauthenticated')) return 'Iniciá sesión de nuevo.'
   if (m.includes('reservation_not_found')) return 'La reserva no existe.'
@@ -27,4 +43,26 @@ export function humanizeSalonError(message: string): string {
   if (m.includes('relink_requires_unlink')) return 'No se pudo reasignar el evento. Probá de nuevo.'
   if (m.includes('foreign key')) return 'Referencia inválida (gestor o evento inexistente).'
   return 'No pudimos completar la acción.'
+}
+
+/**
+ * Saca el `DD/MM` de un `reservation_event_date_mismatch:DD/MM/YYYY`. El
+ * mensaje real de Postgres llega envuelto en más texto, así que buscamos el
+ * patrón en vez de cortar por el `:`.
+ */
+function parseMismatchDate(message: string): string | null {
+  const match = /reservation_event_date_mismatch:(\d{2})\/(\d{2})\/(\d{4})/.exec(message)
+  if (!match) return null
+  return `${match[1]}/${match[2]}`
+}
+
+/**
+ * Arma el código que entiende `humanizeSalonError` para el mismatch de fecha,
+ * a partir de un `event_date` en formato `yyyy-MM-dd`. Lo usa la Server Action
+ * para adelantar el error ANTES de llegar al trigger — mismo texto, sin gastar
+ * un round-trip de excepción.
+ */
+export function eventDateMismatchCode(eventDateIso: string): string {
+  const [y, m, d] = eventDateIso.split('-')
+  return `reservation_event_date_mismatch:${d}/${m}/${y}`
 }

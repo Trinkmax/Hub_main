@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { clubPasswordField } from '@/lib/club-auth/schemas'
 import { tryNormalizePhone } from '@/lib/phone'
 
 const nameField = z.string().trim().min(1, 'Requerido').max(60, 'Máximo 60')
@@ -35,6 +36,10 @@ export const captureSubmitSchema = z.object({
   last_name: nameField,
   email: z.string().trim().toLowerCase().email('Email inválido').max(120, 'Máximo 120'),
   birthdate: birthdateField,
+  // Obligatoria desde el rediseño de la cuenta del socio: sin contraseña, el alta
+  // era un login sin autenticación (bastaba saber un teléfono para llevarse el
+  // qr_token ajeno, que es la credencial que el staff escanea).
+  password: clubPasswordField,
   // Honeypot: debe venir vacío. Si trae algo, es bot.
   website: z.union([z.string().max(0, 'spam'), z.undefined(), z.null()]).optional(),
 })

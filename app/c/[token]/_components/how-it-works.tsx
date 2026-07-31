@@ -2,7 +2,6 @@ import { Coins, Gift, type LucideIcon, QrCode, Sparkles, TrendingUp } from 'luci
 import type { CSSProperties, ReactNode } from 'react'
 import type { WalletData } from '@/lib/wallet/queries'
 import { tierAccent } from './tier-accent'
-import { formatEarnRate } from './wallet-format'
 import { WalletMoreButton } from './wallet-more-button'
 
 // "Cómo funciona": la pantalla que faltaba. La regla que hace girar al club — el
@@ -13,8 +12,10 @@ import { WalletMoreButton } from './wallet-more-button'
 // modelo mental de las aerolíneas: millas de status que caducan vs. millas que
 // gastás.
 //
-// La tasa de acumulación sale de la config REAL del tenant (nada hardcodeado);
-// si no se puede enunciar sin mentir, cae a un texto genérico (ver earn-rate.ts).
+// Lo que acá NO se cuenta: cuántos puntos suma cada peso. Es información de
+// administración — el socio tiene que sentir que venir suma, no andar sacando la
+// cuenta de si le conviene. Ni el texto ni el payload (ver WalletEarn) llevan la
+// tasa; sí la sigue mostrando el panel del dueño en /club?tab=programa.
 
 type Earn = WalletData['earn']
 
@@ -195,15 +196,9 @@ export function HowItWorks({
             Mostrá tu QR en la caja cuando pagás. Los puntos entran solos.
           </EarnRow>
           <EarnRow icon={Coins}>
-            {earn.rate ? (
-              <>
-                Sumás{' '}
-                <span className="font-semibold text-foreground">{formatEarnRate(earn.rate)}</span>{' '}
-                de consumo.
-              </>
-            ) : (
-              <>Sumás puntos con cada consumo.</>
-            )}
+            Cada consumo suma solo:{' '}
+            <span className="font-semibold text-foreground">vos disfrutá</span>, de la cuenta nos
+            ocupamos nosotros.
           </EarnRow>
           {earn.itemBonus ? (
             <EarnRow icon={Sparkles}>Además, algunos productos suman puntos extra.</EarnRow>

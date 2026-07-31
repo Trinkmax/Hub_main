@@ -769,6 +769,153 @@ export type Database = {
           },
         ]
       }
+      customer_credentials: {
+        Row: {
+          created_at: string
+          customer_id: string
+          failed_attempts: number
+          locked_until: string | null
+          password_hash: string
+          password_set_at: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          customer_id: string
+          failed_attempts?: number
+          locked_until?: string | null
+          password_hash: string
+          password_set_at?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          customer_id?: string
+          failed_attempts?: number
+          locked_until?: string | null
+          password_hash?: string
+          password_set_at?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_credentials_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: true
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_credentials_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: true
+            referencedRelation: "mv_customer_stats"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "customer_credentials_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: true
+            referencedRelation: "v_churn_risk"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "customer_credentials_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: true
+            referencedRelation: "v_customer_stats"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "customer_credentials_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      customer_password_resets: {
+        Row: {
+          attempts: number
+          code_hash: string
+          consumed_at: string | null
+          created_at: string
+          customer_id: string
+          expires_at: string
+          id: string
+          request_ip: string | null
+          reset_ticket: string | null
+          tenant_id: string
+          ticket_expires_at: string | null
+        }
+        Insert: {
+          attempts?: number
+          code_hash: string
+          consumed_at?: string | null
+          created_at?: string
+          customer_id: string
+          expires_at: string
+          id?: string
+          request_ip?: string | null
+          reset_ticket?: string | null
+          tenant_id: string
+          ticket_expires_at?: string | null
+        }
+        Update: {
+          attempts?: number
+          code_hash?: string
+          consumed_at?: string | null
+          created_at?: string
+          customer_id?: string
+          expires_at?: string
+          id?: string
+          request_ip?: string | null
+          reset_ticket?: string | null
+          tenant_id?: string
+          ticket_expires_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_password_resets_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_password_resets_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "mv_customer_stats"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "customer_password_resets_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_churn_risk"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "customer_password_resets_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customer_stats"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "customer_password_resets_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customer_punch_cards: {
         Row: {
           completed_at: string | null
@@ -1942,6 +2089,106 @@ export type Database = {
           },
         ]
       }
+      partner_benefit_tiers: {
+        Row: {
+          benefit_id: string
+          created_at: string
+          tenant_id: string
+          tier_id: string
+        }
+        Insert: {
+          benefit_id: string
+          created_at?: string
+          tenant_id: string
+          tier_id: string
+        }
+        Update: {
+          benefit_id?: string
+          created_at?: string
+          tenant_id?: string
+          tier_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partner_benefit_tiers_benefit_id_fkey"
+            columns: ["benefit_id"]
+            isOneToOne: false
+            referencedRelation: "partner_benefits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_benefit_tiers_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_benefit_tiers_tier_id_fkey"
+            columns: ["tier_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_tiers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      partner_benefits: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          discount_pct: number | null
+          id: string
+          image_url: string | null
+          label: string
+          partner_id: string
+          sort: number
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          discount_pct?: number | null
+          id?: string
+          image_url?: string | null
+          label: string
+          partner_id: string
+          sort?: number
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          discount_pct?: number | null
+          id?: string
+          image_url?: string | null
+          label?: string
+          partner_id?: string
+          sort?: number
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partner_benefits_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_benefits_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       partners: {
         Row: {
           active: boolean
@@ -2205,6 +2452,102 @@ export type Database = {
           },
         ]
       }
+      punch_card_stamps: {
+        Row: {
+          card_id: string
+          created_at: string
+          created_by: string | null
+          customer_id: string
+          id: string
+          qty: number
+          source: string
+          template_id: string
+          tenant_id: string
+          visit_id: string | null
+        }
+        Insert: {
+          card_id: string
+          created_at?: string
+          created_by?: string | null
+          customer_id: string
+          id?: string
+          qty?: number
+          source?: string
+          template_id: string
+          tenant_id: string
+          visit_id?: string | null
+        }
+        Update: {
+          card_id?: string
+          created_at?: string
+          created_by?: string | null
+          customer_id?: string
+          id?: string
+          qty?: number
+          source?: string
+          template_id?: string
+          tenant_id?: string
+          visit_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "punch_card_stamps_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "customer_punch_cards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "punch_card_stamps_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "punch_card_stamps_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "mv_customer_stats"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "punch_card_stamps_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_churn_risk"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "punch_card_stamps_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customer_stats"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "punch_card_stamps_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "punch_card_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "punch_card_stamps_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "punch_card_stamps_visit_id_fkey"
+            columns: ["visit_id"]
+            isOneToOne: false
+            referencedRelation: "visits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       punch_card_templates: {
         Row: {
           active: boolean
@@ -2216,6 +2559,9 @@ export type Database = {
           image_url: string | null
           name: string
           reward_id: string
+          reward_label: string | null
+          sort: number
+          stamp_icon: string | null
           tenant_id: string
           threshold: number
           trigger_ref_id: string | null
@@ -2232,6 +2578,9 @@ export type Database = {
           image_url?: string | null
           name: string
           reward_id: string
+          reward_label?: string | null
+          sort?: number
+          stamp_icon?: string | null
           tenant_id: string
           threshold: number
           trigger_ref_id?: string | null
@@ -2248,6 +2597,9 @@ export type Database = {
           image_url?: string | null
           name?: string
           reward_id?: string
+          reward_label?: string | null
+          sort?: number
+          stamp_icon?: string | null
           tenant_id?: string
           threshold?: number
           trigger_ref_id?: string | null
@@ -2448,38 +2800,53 @@ export type Database = {
         Row: {
           created_at: string
           customer_id: string
+          delivered_at: string | null
+          delivered_by: string | null
           id: string
           notes: string | null
           points_spent: number
+          redeem_token: string | null
           redeemed_at: string
           redeemed_by: string | null
           reward_id: string
+          source: string
           status: Database["public"]["Enums"]["redemption_status"]
           tenant_id: string
+          token_expires_at: string | null
         }
         Insert: {
           created_at?: string
           customer_id: string
+          delivered_at?: string | null
+          delivered_by?: string | null
           id?: string
           notes?: string | null
           points_spent: number
+          redeem_token?: string | null
           redeemed_at?: string
           redeemed_by?: string | null
           reward_id: string
+          source?: string
           status?: Database["public"]["Enums"]["redemption_status"]
           tenant_id: string
+          token_expires_at?: string | null
         }
         Update: {
           created_at?: string
           customer_id?: string
+          delivered_at?: string | null
+          delivered_by?: string | null
           id?: string
           notes?: string | null
           points_spent?: number
+          redeem_token?: string | null
           redeemed_at?: string
           redeemed_by?: string | null
           reward_id?: string
+          source?: string
           status?: Database["public"]["Enums"]["redemption_status"]
           tenant_id?: string
+          token_expires_at?: string | null
         }
         Relationships: [
           {
@@ -2537,6 +2904,7 @@ export type Database = {
           image_url: string | null
           min_tier_id: string | null
           name: string
+          sort: number
           stock: number | null
           tenant_id: string
           visible_in_catalog: boolean
@@ -2551,6 +2919,7 @@ export type Database = {
           image_url?: string | null
           min_tier_id?: string | null
           name: string
+          sort?: number
           stock?: number | null
           tenant_id: string
           visible_in_catalog?: boolean
@@ -2565,6 +2934,7 @@ export type Database = {
           image_url?: string | null
           min_tier_id?: string | null
           name?: string
+          sort?: number
           stock?: number | null
           tenant_id?: string
           visible_in_catalog?: boolean
@@ -3106,6 +3476,7 @@ export type Database = {
           currency: string
           default_event_attendance_points: number
           feature_flags: Json
+          feedback_whatsapp_phone: string | null
           google_maps_review_url: string | null
           guest_idle_hours_to_rescan: number
           id: string
@@ -3134,6 +3505,7 @@ export type Database = {
           currency?: string
           default_event_attendance_points?: number
           feature_flags?: Json
+          feedback_whatsapp_phone?: string | null
           google_maps_review_url?: string | null
           guest_idle_hours_to_rescan?: number
           id?: string
@@ -3162,6 +3534,7 @@ export type Database = {
           currency?: string
           default_event_attendance_points?: number
           feature_flags?: Json
+          feedback_whatsapp_phone?: string | null
           google_maps_review_url?: string | null
           guest_idle_hours_to_rescan?: number
           id?: string
@@ -3455,6 +3828,7 @@ export type Database = {
           discount_scope: string | null
           icon: string | null
           id: string
+          image_url: string | null
           kind: string
           label: string
           partner_id: string | null
@@ -3474,6 +3848,7 @@ export type Database = {
           discount_scope?: string | null
           icon?: string | null
           id?: string
+          image_url?: string | null
           kind: string
           label: string
           partner_id?: string | null
@@ -3493,6 +3868,7 @@ export type Database = {
           discount_scope?: string | null
           icon?: string | null
           id?: string
+          image_url?: string | null
           kind?: string
           label?: string
           partner_id?: string | null
@@ -4020,6 +4396,16 @@ export type Database = {
         Returns: Json
       }
       active_tenant_id: { Args: never; Returns: string }
+      add_punch_stamp: {
+        Args: {
+          p_customer_id: string
+          p_qty?: number
+          p_source?: string
+          p_template_id: string
+          p_visit_id?: string
+        }
+        Returns: Json
+      }
       add_staff_ticket: {
         Args: {
           p_assigned_to_guest_id?: string
@@ -4043,6 +4429,10 @@ export type Database = {
       cancel_pending_ticket: {
         Args: { p_browser_token: string; p_ticket_id: string }
         Returns: Json
+      }
+      cancel_reward_redemption: {
+        Args: { p_qr_token: string; p_redemption_id: string }
+        Returns: undefined
       }
       cancel_ticket_item: {
         Args: { p_reason: string; p_ticket_item_id: string }
@@ -4072,6 +4462,14 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      claim_pending_redemption: {
+        Args: {
+          p_qr_token: string
+          p_redemption_id: string
+          p_ttl_minutes?: number
+        }
+        Returns: Json
+      }
       close_table: {
         Args: { p_customer_id: string; p_items: Json; p_notes?: string }
         Returns: {
@@ -4079,6 +4477,26 @@ export type Database = {
           points_awarded: number
           visit_id: string
         }[]
+      }
+      club_has_password: {
+        Args: { p_link_slug: string; p_phone: string }
+        Returns: boolean
+      }
+      club_login: {
+        Args: { p_link_slug: string; p_password: string; p_phone: string }
+        Returns: Json
+      }
+      club_request_reset: {
+        Args: { p_ip?: string; p_link_slug: string; p_phone: string }
+        Returns: Json
+      }
+      club_set_password_with_ticket: {
+        Args: { p_password: string; p_reset_ticket: string }
+        Returns: Json
+      }
+      club_verify_reset_code: {
+        Args: { p_code: string; p_link_slug: string; p_phone: string }
+        Returns: Json
       }
       complete_job: { Args: { p_id: string }; Returns: undefined }
       create_tenant_with_owner: {
@@ -4090,6 +4508,7 @@ export type Database = {
           currency: string
           default_event_attendance_points: number
           feature_flags: Json
+          feedback_whatsapp_phone: string | null
           google_maps_review_url: string | null
           guest_idle_hours_to_rescan: number
           id: string
@@ -4137,6 +4556,10 @@ export type Database = {
       }
       delete_category_cascade: {
         Args: { p_category_id: string }
+        Returns: Json
+      }
+      deliver_reward_redemption: {
+        Args: { p_redeem_token: string }
         Returns: Json
       }
       encrypt_meta_token: {
@@ -4235,6 +4658,10 @@ export type Database = {
         Args: { p_browser_token: string; p_qr_token: string }
         Returns: Json
       }
+      get_redemption_by_token: {
+        Args: { p_redeem_token: string }
+        Returns: Json
+      }
       get_salon_occupancy: { Args: { p_tenant_id: string }; Returns: Json }
       get_session_state: {
         Args: { p_browser_token: string; p_qr_token: string }
@@ -4317,6 +4744,10 @@ export type Database = {
         Args: { p_category_id: string; p_new_parent_id: string }
         Returns: undefined
       }
+      move_menu_items: {
+        Args: { p_item_ids: string[]; p_target_category_id: string }
+        Returns: number
+      }
       move_session: {
         Args: { p_new_physical_table_id: string; p_session_id: string }
         Returns: Json
@@ -4374,6 +4805,10 @@ export type Database = {
         Args: { p_reason: string; p_ticket_id: string }
         Returns: Json
       }
+      remove_punch_stamp: {
+        Args: { p_card_id: string; p_qty?: number }
+        Returns: Json
+      }
       reorder_menu_categories: {
         Args: { p_ordered_ids: string[]; p_parent_id: string }
         Returns: undefined
@@ -4382,8 +4817,28 @@ export type Database = {
         Args: { p_category_id: string; p_ordered_ids: string[] }
         Returns: undefined
       }
+      reorder_partner_benefits: {
+        Args: { p_ordered_ids: string[]; p_partner_id: string }
+        Returns: undefined
+      }
+      reorder_rewards: {
+        Args: { p_ordered_ids: string[]; p_tenant_id: string }
+        Returns: undefined
+      }
+      reorder_tier_benefits: {
+        Args: { p_ordered_ids: string[]; p_tier_id: string }
+        Returns: undefined
+      }
       request_bill: {
         Args: { p_browser_token: string; p_qr_token: string }
+        Returns: Json
+      }
+      request_reward_redemption: {
+        Args: {
+          p_qr_token: string
+          p_reward_id: string
+          p_ttl_minutes?: number
+        }
         Returns: Json
       }
       requeue_stuck_jobs: {
@@ -4413,20 +4868,36 @@ export type Database = {
         Args: { p_context?: Json; p_customer_id: string; p_flow_id: string }
         Returns: string
       }
-      submit_capture: {
-        Args: {
-          p_birthdate?: string
-          p_email?: string
-          p_first_name: string
-          p_ip: string
-          p_last_name: string
-          p_link_slug: string
-          p_opt_in: boolean
-          p_phone: string
-          p_user_agent: string
-        }
-        Returns: Json
-      }
+      submit_capture:
+        | {
+            Args: {
+              p_birthdate?: string
+              p_email?: string
+              p_first_name: string
+              p_ip: string
+              p_last_name: string
+              p_link_slug: string
+              p_opt_in: boolean
+              p_phone: string
+              p_user_agent: string
+            }
+            Returns: Json
+          }
+        | {
+            Args: {
+              p_birthdate?: string
+              p_email?: string
+              p_first_name: string
+              p_ip: string
+              p_last_name: string
+              p_link_slug: string
+              p_opt_in: boolean
+              p_password?: string
+              p_phone: string
+              p_user_agent: string
+            }
+            Returns: Json
+          }
       submit_ticket: {
         Args: {
           p_browser_token: string
@@ -4601,7 +5072,12 @@ export type Database = {
       message_direction: "inbound" | "outbound"
       message_status: "queued" | "sent" | "delivered" | "read" | "failed"
       points_rule_type: "per_amount" | "per_item"
-      punch_trigger_type: "item" | "category" | "tag" | "visit_window"
+      punch_trigger_type:
+        | "item"
+        | "category"
+        | "tag"
+        | "visit_window"
+        | "manual"
       recipient_status:
         | "pending"
         | "sending"
@@ -4827,7 +5303,7 @@ export const Constants = {
       message_direction: ["inbound", "outbound"],
       message_status: ["queued", "sent", "delivered", "read", "failed"],
       points_rule_type: ["per_amount", "per_item"],
-      punch_trigger_type: ["item", "category", "tag", "visit_window"],
+      punch_trigger_type: ["item", "category", "tag", "visit_window", "manual"],
       recipient_status: [
         "pending",
         "sending",

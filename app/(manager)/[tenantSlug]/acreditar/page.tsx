@@ -31,7 +31,7 @@ export default async function AcreditarPage({
       <PageHeader
         eyebrow="Cajero"
         title="Acreditar puntos"
-        description="Escaneá el QR del cliente y cargá el monto pagado. Sin items, sin mesa."
+        description="Un escáner para todo: QR del socio para acreditar y sellar, QR de canje para entregarlo."
       />
       <AwardScreen tenantSlug={tenantSlug} />
     </div>

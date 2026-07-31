@@ -12,12 +12,17 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 import {
+  createPartnerBenefitSchema,
   createPartnerSchema,
   createRewardSchema,
   createRuleSchema,
   createTierBenefitSchema,
   createTierSchema,
+  reorderPartnerBenefitsSchema,
+  reorderRewardsSchema,
+  reorderTierBenefitsSchema,
   type UpdatePointsRedemptionConfigInput,
+  updatePartnerBenefitSchema,
   updatePartnerSchema,
   updatePointsRedemptionConfigSchema,
   updateRewardSchema,
@@ -581,6 +586,7 @@ type TierBenefitData = {
   label: string
   description: string | null
   icon: string | null
+  image_url: string | null
   reward_id: string | null
   cadence: 'none' | 'birthday' | 'monthly'
   quantity: number
@@ -600,6 +606,7 @@ function tierBenefitRow(tenantId: string, d: TierBenefitData) {
     label: d.label,
     description: d.description,
     icon: d.icon,
+    image_url: d.image_url,
     reward_id: d.kind === 'recurring_reward' ? d.reward_id : null,
     cadence: d.kind === 'recurring_reward' ? d.cadence : 'none',
     quantity: d.kind === 'recurring_reward' ? d.quantity : 1,
@@ -714,7 +721,6 @@ export async function createPartner(slug: string, input: unknown): Promise<Loyal
     tenant_id: tenant.id,
     name: parsed.data.name,
     logo_url: parsed.data.logo_url,
-    discount_label: parsed.data.discount_label,
     category: parsed.data.category,
     url: parsed.data.url,
     active: parsed.data.active,
@@ -737,12 +743,12 @@ export async function updatePartner(slug: string, input: unknown): Promise<Loyal
   }
 
   const supabase = await createClient()
+  // `discount_label` no se toca: es legacy de solo lectura (ver schemas).
   const { error } = await supabase
     .from('partners')
     .update({
       name: parsed.data.name,
       logo_url: parsed.data.logo_url,
-      discount_label: parsed.data.discount_label,
       category: parsed.data.category,
       url: parsed.data.url,
       active: parsed.data.active,
@@ -800,6 +806,275 @@ export async function deletePartner(slug: string, id: string): Promise<LoyaltyAc
   }
 
   revalidatePath(`/${slug}/club/aliados`)
+  revalidatePath(`/${slug}/menu`)
+  return { ok: true }
+}
+
+/**
+ * Borra el `discount_label` viejo de la marca. Ese texto libre no sabía a qué
+ * nivel aplicaba; la migración ya lo convirtió en un partner_benefit para todos
+ * los niveles, así que el dueño puede limpiarlo cuando lo ve duplicado.
+ */
+export async function clearPartnerLegacyDiscount(
+  slug: string,
+  id: string,
+): Promise<LoyaltyActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+  const idParsed = z.string().uuid().safeParse(id)
+  if (!idParsed.success) return { ok: false, message: 'ID inválido.' }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('partners')
+    .update({ discount_label: null })
+    .eq('id', idParsed.data)
+    .eq('tenant_id', tenant.id)
+  if (error) return { ok: false, message: 'No pudimos limpiar el descuento viejo.' }
+
+  revalidatePath(`/${slug}/club`)
+  revalidatePath(`/${slug}/menu`)
+  return { ok: true, message: 'Descuento viejo eliminado.' }
+}
+
+// ──────────────────────────────────────────────────────────
+// Beneficios de marcas aliadas (partner_benefits + partner_benefit_tiers)
+// ──────────────────────────────────────────────────────────
+
+/**
+ * Reescribe los niveles de un beneficio: borra los vínculos actuales y vuelve a
+ * insertar los elegidos. Un beneficio sin niveles queda cargado pero invisible
+ * (la UI lo avisa), no es un error.
+ */
+async function syncPartnerBenefitTiers(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  opts: { tenantId: string; benefitId: string; tierIds: string[] },
+): Promise<boolean> {
+  const { error: delError } = await supabase
+    .from('partner_benefit_tiers')
+    .delete()
+    .eq('benefit_id', opts.benefitId)
+    .eq('tenant_id', opts.tenantId)
+  if (delError) return false
+  if (opts.tierIds.length === 0) return true
+
+  const { error: insError } = await supabase.from('partner_benefit_tiers').insert(
+    opts.tierIds.map((tierId) => ({
+      tenant_id: opts.tenantId,
+      benefit_id: opts.benefitId,
+      tier_id: tierId,
+    })),
+  )
+  return !insError
+}
+
+export async function createPartnerBenefit(
+  slug: string,
+  input: unknown,
+): Promise<LoyaltyActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = createPartnerBenefitSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('partner_benefits')
+    .insert({
+      tenant_id: tenant.id,
+      partner_id: parsed.data.partner_id,
+      label: parsed.data.label,
+      description: parsed.data.description,
+      discount_pct: parsed.data.discount_pct,
+      image_url: parsed.data.image_url,
+      active: parsed.data.active,
+    })
+    .select('id')
+    .single()
+  if (error || !data) {
+    console.error('[points.createPartnerBenefit]', error?.message)
+    return { ok: false, message: 'No pudimos crear el beneficio.' }
+  }
+
+  const linked = await syncPartnerBenefitTiers(supabase, {
+    tenantId: tenant.id,
+    benefitId: data.id,
+    tierIds: parsed.data.tier_ids,
+  })
+
+  revalidatePath(`/${slug}/club`)
+  revalidatePath(`/${slug}/menu`)
+  return linked
+    ? { ok: true, message: 'Beneficio agregado.' }
+    : { ok: false, message: 'Se creó el beneficio pero no pudimos guardar los niveles.' }
+}
+
+export async function updatePartnerBenefit(
+  slug: string,
+  input: unknown,
+): Promise<LoyaltyActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = updatePartnerBenefitSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('partner_benefits')
+    .update({
+      label: parsed.data.label,
+      description: parsed.data.description,
+      discount_pct: parsed.data.discount_pct,
+      image_url: parsed.data.image_url,
+      active: parsed.data.active,
+    })
+    .eq('id', parsed.data.id)
+    .eq('tenant_id', tenant.id)
+  if (error) {
+    console.error('[points.updatePartnerBenefit]', error.message)
+    return { ok: false, message: 'No pudimos actualizar el beneficio.' }
+  }
+
+  const linked = await syncPartnerBenefitTiers(supabase, {
+    tenantId: tenant.id,
+    benefitId: parsed.data.id,
+    tierIds: parsed.data.tier_ids,
+  })
+
+  revalidatePath(`/${slug}/club`)
+  revalidatePath(`/${slug}/menu`)
+  return linked
+    ? { ok: true }
+    : { ok: false, message: 'Guardamos el beneficio pero no los niveles. Probá de nuevo.' }
+}
+
+export async function togglePartnerBenefit(
+  slug: string,
+  id: string,
+  active: boolean,
+): Promise<LoyaltyActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+  const idParsed = z.string().uuid().safeParse(id)
+  if (!idParsed.success) return { ok: false, message: 'ID inválido.' }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('partner_benefits')
+    .update({ active })
+    .eq('id', idParsed.data)
+    .eq('tenant_id', tenant.id)
+  if (error) return { ok: false, message: 'No pudimos actualizar.' }
+
+  revalidatePath(`/${slug}/club`)
+  revalidatePath(`/${slug}/menu`)
+  return { ok: true }
+}
+
+export async function deletePartnerBenefit(slug: string, id: string): Promise<LoyaltyActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+  const idParsed = z.string().uuid().safeParse(id)
+  if (!idParsed.success) return { ok: false, message: 'ID inválido.' }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('partner_benefits')
+    .delete()
+    .eq('id', idParsed.data)
+    .eq('tenant_id', tenant.id)
+  if (error) return { ok: false, message: 'No pudimos borrar.' }
+
+  revalidatePath(`/${slug}/club`)
+  revalidatePath(`/${slug}/menu`)
+  return { ok: true }
+}
+
+// ──────────────────────────────────────────────────────────
+// Reordenamientos (drag & drop). Toda la escritura ocurre dentro de una RPC
+// SECURITY DEFINER que revalida owner + tenant: acá sólo validamos la forma.
+// ──────────────────────────────────────────────────────────
+
+/** Mapea el error de las RPC de reorden a un mensaje accionable. */
+function reorderErrorMessage(message: string): string {
+  if (message.includes('forbidden')) return 'No tenés permiso para reordenar.'
+  if (message.includes('not_found')) return 'No encontramos lo que estás reordenando.'
+  return 'No pudimos guardar el orden.'
+}
+
+export async function reorderTierBenefits(
+  slug: string,
+  tierId: string,
+  orderedIds: string[],
+): Promise<LoyaltyActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = reorderTierBenefitsSchema.safeParse({ tier_id: tierId, ordered_ids: orderedIds })
+  if (!parsed.success) return { ok: false, message: 'Orden inválido.' }
+
+  const supabase = await createClient()
+  const { error } = await supabase.rpc('reorder_tier_benefits', {
+    p_tier_id: parsed.data.tier_id,
+    p_ordered_ids: parsed.data.ordered_ids,
+  })
+  if (error) return { ok: false, message: reorderErrorMessage(error.message) }
+
+  revalidatePath(`/${slug}/club`)
+  revalidatePath(`/${slug}/menu`)
+  return { ok: true }
+}
+
+export async function reorderRewards(
+  slug: string,
+  orderedIds: string[],
+): Promise<LoyaltyActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = reorderRewardsSchema.safeParse({ ordered_ids: orderedIds })
+  if (!parsed.success) return { ok: false, message: 'Orden inválido.' }
+
+  const supabase = await createClient()
+  const { error } = await supabase.rpc('reorder_rewards', {
+    p_tenant_id: tenant.id,
+    p_ordered_ids: parsed.data.ordered_ids,
+  })
+  if (error) return { ok: false, message: reorderErrorMessage(error.message) }
+
+  revalidatePath(`/${slug}/club`)
+  revalidatePath(`/${slug}/menu`)
+  return { ok: true }
+}
+
+export async function reorderPartnerBenefits(
+  slug: string,
+  partnerId: string,
+  orderedIds: string[],
+): Promise<LoyaltyActionState> {
+  const tenant = await authorizeOwner(slug)
+  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = reorderPartnerBenefitsSchema.safeParse({
+    partner_id: partnerId,
+    ordered_ids: orderedIds,
+  })
+  if (!parsed.success) return { ok: false, message: 'Orden inválido.' }
+
+  const supabase = await createClient()
+  const { error } = await supabase.rpc('reorder_partner_benefits', {
+    p_partner_id: parsed.data.partner_id,
+    p_ordered_ids: parsed.data.ordered_ids,
+  })
+  if (error) return { ok: false, message: reorderErrorMessage(error.message) }
+
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }

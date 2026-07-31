@@ -100,6 +100,7 @@ export default async function NuevaReservaPage({
         rateTiers={tiers}
         bonusPerGuestCents={bonus?.bonus_per_guest_cents ?? 0}
         linkedManagerId={linkedManager?.id ?? null}
+        canManageManagers={access.role === 'owner'}
       />
     </div>
   )

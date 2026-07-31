@@ -16,10 +16,14 @@ import { WalletCarousel } from './wallet-carousel'
 import { formatPoints } from './wallet-format'
 import { WalletMoreButton } from './wallet-more-button'
 
-// Catálogo de canje: carrusel horizontal por daypart (foto-forward). El canje lo
-// hace el staff → CTA informativo "Mostrá tu QR en la caja". Premium sin foto:
-// tile con gradiente teñido + glifo. Estados: bloqueado > agotado > te faltan >
-// canjeable (destacada).
+// Catálogo de canje: carrusel horizontal por daypart (foto-forward). Premium sin
+// foto: tile con gradiente teñido + glifo. Estados: bloqueado > agotado > te
+// faltan > canjeable (destacada).
+//
+// El canje pasó a ser AUTO-SERVICIO: la card no explica nada, se toca y abre el
+// detalle (RewardDetail) donde el socio pide su código. La card mide 9.5rem en un
+// carrusel — un botón adentro no entra ni se toca bien, así que el target táctil
+// es la card entera.
 
 type Reward = WalletData['rewards'][number]
 type CatMeta = { label: string; glyph: LucideIcon; hue: string }
@@ -37,9 +41,14 @@ function metaFor(r: Reward): CatMeta {
   return (r.category ? CATEGORY_META[r.category] : undefined) ?? OTHER_META
 }
 
-/** Canjeables primero; luego por costo asc. */
+/**
+ * Canjeables primero (lo que ya puede pedir tiene que estar arriba), y dentro de
+ * cada grupo manda el orden que el dueño armó arrastrando en el editor (ITEM 7).
+ * El costo queda de desempate para las filas que nunca se reordenaron.
+ */
 const byAffordability = (a: Reward, b: Reward): number =>
   Number(b.affordable && !b.tierLocked) - Number(a.affordable && !a.tierLocked) ||
+  a.sort - b.sort ||
   a.costPoints - b.costPoints
 
 function RewardCard({
@@ -47,28 +56,36 @@ function RewardCard({
   glyph,
   hue,
   pointsBalance,
+  onSelect,
 }: {
   reward: Reward
   glyph: LucideIcon
   hue: string
   pointsBalance: number
+  onSelect: (reward: Reward) => void
 }) {
   const { affordable, tierLocked } = reward
   const canRedeem = affordable && !tierLocked
   const missing = Math.max(0, reward.costPoints - pointsBalance)
   const soldOut = !tierLocked && reward.stock !== null && reward.stock <= 0
+  const progressPct =
+    reward.costPoints > 0
+      ? Math.max(0, Math.min(100, Math.round((pointsBalance / reward.costPoints) * 100)))
+      : 100
   const Glyph = glyph
 
   return (
-    <article
+    <button
+      type="button"
+      onClick={() => onSelect(reward)}
       style={{ '--cat': hue, '--acc': 'var(--brand-accent, var(--primary))' } as CSSProperties}
       className={cn(
-        'w-[9.5rem] shrink-0 snap-start overflow-hidden rounded-2xl border bg-card',
+        'press-lift w-[9.5rem] shrink-0 snap-start overflow-hidden rounded-2xl border bg-card text-left outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-foreground',
         canRedeem
           ? 'border-(--acc)/45 shadow-md ring-1 ring-(--acc)/15'
           : 'card-hairline border-border/70',
       )}
-      aria-label={`Recompensa: ${reward.name}`}
+      aria-label={`Ver ${reward.name} — ${formatPoints(reward.costPoints)} puntos`}
     >
       <div className="relative aspect-[4/3] w-full overflow-hidden">
         {reward.imageUrl ? (
@@ -116,10 +133,13 @@ function RewardCard({
       </div>
 
       <div className="p-2.5">
-        <h3 className="line-clamp-2 min-h-[2.1rem] text-[12.5px] font-semibold leading-tight text-foreground">
+        {/* `span` y no `h3`: ahora la card ES el botón, y un heading adentro de un
+            botón se aplana en los lectores de pantalla. El nombre accesible sale
+            del aria-label. */}
+        <span className="line-clamp-2 block min-h-[2.1rem] text-[12.5px] font-semibold leading-tight text-foreground">
           {reward.name}
-        </h3>
-        <p className="mt-1 line-clamp-1 text-[10px]">
+        </span>
+        <span className="mt-1 line-clamp-1 block text-[10px]">
           {tierLocked ? (
             <span className="text-muted-foreground">
               Desde{' '}
@@ -133,26 +153,46 @@ function RewardCard({
             <span className="text-muted-foreground">
               Te faltan{' '}
               <span className="font-semibold tabular-nums text-foreground">
-                {formatPoints(missing)}
+                {formatPoints(missing)} pts
               </span>
             </span>
           ) : (
-            <span className="font-medium text-(--acc)">Mostrá tu QR en la caja</span>
+            <span className="font-medium text-(--acc)">Tocá para canjear</span>
           )}
-        </p>
+        </span>
+        {/* Barra sólo cuando falta: ver "cuánto me falta" hace que el bloqueo se
+            sienta alcanzable en vez de un no seco. */}
+        {!tierLocked && !soldOut && !affordable ? (
+          <div
+            className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-secondary"
+            role="progressbar"
+            aria-valuenow={progressPct}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`Progreso hacia ${reward.name}`}
+          >
+            <div
+              className="h-full rounded-full bg-(--acc)/70"
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+        ) : null}
       </div>
-    </article>
+    </button>
   )
 }
 
 export function RewardsGrid({
   rewards,
   pointsBalance,
+  onSelect,
   previewCount,
   onMore,
 }: {
   rewards: Reward[]
   pointsBalance: number
+  /** Abre el detalle donde se pide el canje (vista in-place de la wallet). */
+  onSelect: (reward: Reward) => void
   /** Si está, muestra sólo N (carrusel plano) + CTA "ver todo" (wallet compacta). */
   previewCount?: number
   onMore?: () => void
@@ -173,7 +213,7 @@ export function RewardsGrid({
             <span className="font-medium text-foreground tabular-nums">
               {formatPoints(pointsBalance)} pts
             </span>{' '}
-            para canjear por lo que quieras.
+            para gastar. Tocá el que quieras y te damos el código.
           </p>
         </div>
         <WalletCarousel>
@@ -186,6 +226,7 @@ export function RewardsGrid({
                 glyph={m.glyph}
                 hue={m.hue}
                 pointsBalance={pointsBalance}
+                onSelect={onSelect}
               />
             )
           })}
@@ -228,7 +269,7 @@ export function RewardsGrid({
           <span className="font-medium text-foreground tabular-nums">
             {formatPoints(pointsBalance)} pts
           </span>{' '}
-          canjeables por lo que quieras.
+          en lo que se te cante. Tocá un beneficio para ver el detalle y canjearlo.
         </p>
       </div>
 
@@ -261,6 +302,7 @@ export function RewardsGrid({
                   glyph={section.meta.glyph}
                   hue={section.meta.hue}
                   pointsBalance={pointsBalance}
+                  onSelect={onSelect}
                 />
               ))}
             </WalletCarousel>

@@ -32,6 +32,26 @@ function subText(b: Benefit): string | null {
   }
 }
 
+/**
+ * Cómo se usa este beneficio. No todos se "canjean": un descuento se aplica solo
+ * cuando pagás y un beneficio de aliado se muestra en la otra marca. El único que
+ * genera un canje con QR es el `recurring_reward` — cuando te toca, aparece en
+ * "Beneficios para retirar" con su botón. Poner el mismo CTA en todas las cards
+ * prometía un botón que en la mitad de los casos no existe.
+ */
+function usageHint(b: Benefit): string | null {
+  switch (b.kind) {
+    case 'recurring_reward':
+      return 'Te lo acreditamos y lo retirás con QR'
+    case 'discount':
+      return 'Se aplica al pagar'
+    case 'partner':
+      return 'Mostrá tu carnet en la marca'
+    default:
+      return null
+  }
+}
+
 export function BenefitCard({
   benefit,
   muted = false,
@@ -45,6 +65,7 @@ export function BenefitCard({
   const photo =
     benefit.imageUrl ?? (benefit.kind === 'partner' ? (benefit.partner?.logoUrl ?? null) : null)
   const sub = subText(benefit)
+  const hint = muted ? null : usageHint(benefit)
 
   return (
     <article className="w-[9.5rem] shrink-0 snap-start overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
@@ -93,6 +114,9 @@ export function BenefitCard({
         </p>
         {sub ? (
           <p className="mt-0.5 line-clamp-1 text-[10px] text-muted-foreground">{sub}</p>
+        ) : null}
+        {hint ? (
+          <p className="mt-1 line-clamp-1 text-[10px] font-medium text-(--acc)">{hint}</p>
         ) : null}
       </div>
     </article>

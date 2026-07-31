@@ -75,7 +75,16 @@ describe('captureSubmitSchema', () => {
     last_name: 'García',
     email: 'ana@mail.com',
     birthdate: '1990-05-15',
+    // Obligatoria desde el rediseño de la cuenta del socio: sin contraseña el
+    // alta funcionaba como un login sin autenticación.
+    password: 'secreta123',
   }
+
+  it('la contraseña es obligatoria y tiene mínimo', () => {
+    expect(captureSubmitSchema.safeParse({ ...valid, password: undefined }).success).toBe(false)
+    expect(captureSubmitSchema.safeParse({ ...valid, password: '12345' }).success).toBe(false)
+    expect(captureSubmitSchema.safeParse({ ...valid, password: '123456' }).success).toBe(true)
+  })
 
   it('honeypot vacío permite pasar', () => {
     const r = captureSubmitSchema.safeParse({ ...valid, website: '' })

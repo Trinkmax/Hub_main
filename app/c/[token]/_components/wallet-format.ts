@@ -4,26 +4,21 @@
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 
-const ARS = new Intl.NumberFormat('es-AR', {
-  style: 'currency',
-  currency: 'ARS',
-  maximumFractionDigits: 0,
-})
-
-/** Centavos → pesos formateados ($ 12.500). */
-export function formatArs(cents: number): string {
-  return ARS.format(Math.round(cents) / 100)
-}
+// Ojo: acá NO hay helper de plata. La wallet del socio dejó de mostrar montos
+// (ver visits-timeline.tsx) porque cruzar "gasté $X" con "sumé N pts" despeja la
+// tasa de acumulación en diez segundos, y esa es información de administración.
 
 /** Entero con separadores de miles (1.250). */
 export function formatPoints(value: number): string {
   return value.toLocaleString('es-AR')
 }
 
-/** Tasa de acumulación en criollo: "1 punto cada $ 1.000". */
-export function formatEarnRate(rate: { points: number; everyCents: number }): string {
-  const pts = rate.points === 1 ? '1 punto' : `${formatPoints(rate.points)} puntos`
-  return `${pts} cada ${formatArs(rate.everyCents)}`
+/** Cuenta regresiva mm:ss (vencimiento del QR de canje). */
+export function formatCountdown(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const mins = Math.floor(total / 60)
+  const secs = total % 60
+  return `${mins}:${String(secs).padStart(2, '0')}`
 }
 
 /** dd/MM/yyyy en zona local del navegador (visitas, canjes). */

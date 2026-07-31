@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { SlidingTabs } from '@/components/ui/sliding-tabs'
 import { wouldDropTier } from '@/lib/points/category'
 import { progressToNext, resolveTier, sortedActiveTiers } from '@/lib/points/tiers'
+import { buildPartnerTiers, resolvePartnersForTier } from '@/lib/wallet/partner-benefits'
 import type { WalletData } from '@/lib/wallet/queries'
 import { computeRewardState } from '@/lib/wallet/reward-state'
 import type { SimConfig } from '@/lib/wallet/simulator'
@@ -54,9 +55,29 @@ function buildWallet(config: SimConfig, s: SimState, expiresAt: string): WalletD
       imageUrl: r.imageUrl,
       stock: r.stock,
       category: r.category,
+      sort: r.sort,
       ...state,
     }
   })
+
+  // Marca pausada = "Próximamente": no promete ningún beneficio (espejo de
+  // lib/wallet/queries.ts).
+  const benefitsByTier = new Map(Object.entries(config.partnerBenefitsByTier))
+  const partnerResolution = resolvePartnersForTier(
+    config.partners.filter((p) => p.active).map((p) => p.id),
+    benefitsByTier,
+    tiers,
+    current?.id ?? null,
+  )
+  const partnersResolved: WalletData['partners'] = config.partners.map((p) => {
+    const r = p.active ? partnerResolution.get(p.id) : undefined
+    return { ...p, myBenefit: r?.myBenefit ?? null, unlockTierName: r?.unlockTierName ?? null }
+  })
+  const partnerTiers = buildPartnerTiers(
+    partnersResolved.filter((p) => p.active),
+    benefitsByTier,
+    tiers,
+  )
 
   const drop =
     s.expiryPoints > 0
@@ -109,7 +130,12 @@ function buildWallet(config: SimConfig, s: SimState, expiresAt: string): WalletD
     earn: config.earn,
     benefits: current ? (config.benefitsByTier[current.id] ?? []) : [],
     progression,
-    partners: config.partners,
+    // Los aliados por nivel (ITEM 9) se resuelven con los MISMOS helpers puros
+    // que usa la billetera real: si acá se pasara `config.partners` crudo, el
+    // dueño vería en la vista previa un "Nuestros Aliados" sin beneficios y
+    // ninguna sección "Aliados por categoría" — justo lo que viene a revisar.
+    partners: partnersResolved,
+    partnerTiers,
     rewards,
     punchCards: [],
     visits: [],

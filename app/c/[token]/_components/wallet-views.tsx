@@ -1,31 +1,42 @@
 'use client'
 
 import { ChevronLeft } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import type { WalletData } from '@/lib/wallet/queries'
 import { Carnet } from './carnet'
 import { HistoryAccordion } from './history-accordion'
 import { HowItWorks } from './how-it-works'
+import { PartnerTiers } from './partner-tiers'
 import { PendingBenefits } from './pending-benefits'
 import { PersonalQr } from './personal-qr'
 import { PunchCards } from './punch-cards'
+import type { WalletTicket } from './redemption-ticket'
 import { ReviewCta } from './review-cta'
+import { RewardDetail } from './reward-detail'
 import { RewardsGrid } from './rewards-grid'
 import { TierLadder } from './tier-ladder'
 import { TierProgression } from './tier-progression'
 import { UpcomingEvents } from './upcoming-events'
 import { VisitsTimeline } from './visits-timeline'
+import { formatPoints } from './wallet-format'
 import { WalletHeader } from './wallet-header'
 import { WalletPartners } from './wallet-partners'
 
 // Orquestador de la wallet como VISTAS in-place (main → niveles / canjeables /
-// cómo funciona), no scroll infinito ni navegación por rutas. Funciona igual
-// standalone (/c/[token]) y embebida en el sheet de la carta (que no puede
-// navegar). Al cambiar de vista resetea el scroll del contenedor (window o
-// cuerpo del sheet).
+// detalle de un beneficio / cómo funciona), no scroll infinito ni navegación por
+// rutas. Funciona igual standalone (/c/[token]) y embebida en el sheet de la
+// carta (que no puede navegar). Al cambiar de vista resetea el scroll del
+// contenedor (window o cuerpo del sheet).
+//
+// El canje generado se guarda también acá (`issued`): la action devuelve el
+// ticket con su QR y lo mostramos en el acto, sin esperar a que el refresh del
+// server traiga de vuelta el mismo dato. `router.refresh()` corre igual detrás
+// para que el resto de la wallet (puntos, tarjetas, pendientes) quede al día.
 
-type View = 'main' | 'niveles' | 'canjeables' | 'comofunciona'
+type View = 'main' | 'niveles' | 'canjeables' | 'comofunciona' | 'beneficio'
+type Reward = WalletData['rewards'][number]
 
 function resetScroll(el: HTMLElement | null): void {
   let p = el?.parentElement ?? null
@@ -77,7 +88,12 @@ export function WalletViews({
   embedded?: boolean
 }): React.JSX.Element {
   const [view, setView] = useState<View>('main')
+  const [selected, setSelected] = useState<Reward | null>(null)
+  const [issued, setIssued] = useState<WalletTicket | null>(null)
+  const [cancelledId, setCancelledId] = useState<string | null>(null)
+  const [rewardOrigin, setRewardOrigin] = useState<View>('main')
   const rootRef = useRef<HTMLDivElement>(null)
+  const router = useRouter()
 
   // Al cambiar de vista: en `main` volvés arriba del todo (muestra el saludo del
   // sheet). En una sub-vista, llevás su tope al tope del scroll (el header del
@@ -105,10 +121,40 @@ export function WalletViews({
     ledger,
     redemptions,
     pendingBenefits,
+    partnerTiers,
   } = data
   const hasTiers = progression.length > 0
   const hasRewards = rewards.length > 0
   const tierName = tier.current?.name
+
+  // El canje recién generado gana sobre el que trajo el server: si acabás de
+  // pedirlo, el refresh todavía puede no haber llegado. Y al cancelar tapamos el
+  // que sigue viniendo en el payload viejo, o el ticket reaparecería un segundo.
+  const fromServer = data.activeRedemption ?? null
+  const activeTicket: WalletTicket | null =
+    issued ?? (fromServer && fromServer.redemptionId !== cancelledId ? fromServer : null)
+
+  const onSelectReward = (reward: Reward) => {
+    // "Volver" tiene que devolverte de donde viniste: al catálogo si estabas ahí,
+    // al inicio si tocaste una card del carrusel de la portada.
+    setRewardOrigin(view === 'canjeables' ? 'canjeables' : 'main')
+    setSelected(reward)
+    setView('beneficio')
+  }
+
+  const onIssued = (ticket: WalletTicket) => {
+    setCancelledId(null)
+    setIssued(ticket)
+    setSelected(null)
+    setView('main')
+    router.refresh()
+  }
+
+  const onCleared = (redemptionId: string) => {
+    setIssued(null)
+    setCancelledId(redemptionId)
+    router.refresh()
+  }
 
   return (
     <main className={embedded ? 'bg-transparent' : 'bg-app-gradient min-h-[100dvh]'}>
@@ -136,7 +182,8 @@ export function WalletViews({
               windowMonths={categoryWindowMonths}
             />
             <TierProgression progression={progression} variant="full" />
-            <WalletPartners partners={partners} />
+            <PartnerTiers progression={progression} partnerTiers={partnerTiers} />
+            <WalletPartners partners={partners} tierName={tierName} />
           </div>
         ) : view === 'canjeables' ? (
           <div
@@ -145,10 +192,32 @@ export function WalletViews({
           >
             <BackHeader
               title="Catálogo de canje"
-              subtitle="Mostrá tu QR en la caja para canjear"
+              subtitle="Elegí uno y te damos el código"
               onBack={() => setView('main')}
             />
-            <RewardsGrid rewards={rewards} pointsBalance={customer.pointsBalance} />
+            <RewardsGrid
+              rewards={rewards}
+              pointsBalance={customer.pointsBalance}
+              onSelect={onSelectReward}
+            />
+          </div>
+        ) : view === 'beneficio' && selected ? (
+          <div
+            key={`beneficio-${selected.id}`}
+            className="animate-in fade-in slide-in-from-right-3 flex flex-col gap-6 duration-[var(--duration-slow)]"
+          >
+            <BackHeader
+              title={selected.name}
+              subtitle={`${formatPoints(selected.costPoints)} pts · tenés ${formatPoints(customer.pointsBalance)}`}
+              onBack={() => setView(rewardOrigin)}
+            />
+            <RewardDetail
+              reward={selected}
+              pointsBalance={customer.pointsBalance}
+              qrToken={customer.qrToken}
+              hasActiveRedemption={activeTicket !== null}
+              onIssued={onIssued}
+            />
           </div>
         ) : view === 'comofunciona' ? (
           <div
@@ -183,7 +252,13 @@ export function WalletViews({
               onCanjeables={hasRewards ? () => setView('canjeables') : undefined}
               onHelp={() => setView('comofunciona')}
             />
-            <PendingBenefits benefits={pendingBenefits} />
+            <PendingBenefits
+              benefits={pendingBenefits}
+              active={activeTicket}
+              qrToken={customer.qrToken}
+              onIssued={onIssued}
+              onCleared={onCleared}
+            />
             <TierLadder
               progression={progression}
               tier={tier}
@@ -198,11 +273,18 @@ export function WalletViews({
             <RewardsGrid
               rewards={rewards}
               pointsBalance={customer.pointsBalance}
+              onSelect={onSelectReward}
               previewCount={6}
               onMore={hasRewards ? () => setView('canjeables') : undefined}
             />
-            <WalletPartners partners={partners} />
-            <PunchCards cards={punchCards} />
+            <WalletPartners partners={partners} tierName={tierName} />
+            <PunchCards
+              cards={punchCards}
+              tenantName={tenant.name}
+              qrToken={customer.qrToken}
+              blocked={activeTicket !== null}
+              onIssued={onIssued}
+            />
             <PersonalQr qrDataUrl={qrDataUrl} qrToken={customer.qrToken} />
             <VisitsTimeline visits={visits} />
             <UpcomingEvents events={events} />

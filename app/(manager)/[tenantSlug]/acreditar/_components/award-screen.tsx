@@ -9,8 +9,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { formatPhoneForDisplay } from '@/lib/phone'
 import { awardPointsByAmount, lookupCustomerByQr } from '@/lib/points/actions'
+import { parseScannedCode } from '@/lib/redemptions/scan'
+import { PunchStamper } from './punch-stamper'
+import { RedemptionPanel } from './redemption-panel'
 
-type Step = 'idle' | 'scanning' | 'manual' | 'confirm' | 'success'
+type Step = 'idle' | 'scanning' | 'manual' | 'confirm' | 'success' | 'redemption'
 type Customer = {
   id: string
   first_name: string
@@ -25,18 +28,11 @@ type AwardResultData = {
   new_balance: number
 }
 
-// Extrae el qr_token de varios formatos posibles:
-//  - URL completa "https://app/c/<token>"
-//  - Path "/c/<token>"
-//  - Token raw "<token>"
-function extractTokenFrom(raw: string): string | null {
-  const trimmed = raw.trim()
-  if (!trimmed) return null
-  const slashMatch = trimmed.match(/\/c\/([A-Za-z0-9_-]+)/)
-  if (slashMatch?.[1]) return slashMatch[1]
-  if (/^[A-Za-z0-9]{16,128}$/.test(trimmed)) return trimmed
-  return null
-}
+// Un solo escáner para los dos QR que circulan por el bar (ver
+// lib/redemptions/scan.ts): el personal del socio (/c/…) acredita puntos y sella
+// tarjetas; el de un canje (/v/…) abre la validación. Nadie tiene que acordarse
+// de qué pantalla abrir. Un token pelado (carga manual) se interpreta como QR de
+// socio, que es lo que se tipea acá el 99% de las veces.
 
 function fmtCents(c: number) {
   return `$${(c / 100).toLocaleString('es-AR', { maximumFractionDigits: 0 })}`
@@ -48,18 +44,24 @@ export function AwardScreen({ tenantSlug }: { tenantSlug: string }) {
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [amountPesos, setAmountPesos] = useState('')
   const [lastResult, setLastResult] = useState<AwardResultData | null>(null)
+  const [redeemToken, setRedeemToken] = useState<string | null>(null)
   const [lookupBusy, startLookup] = useTransition()
   const [awardBusy, startAward] = useTransition()
 
   const resolveToken = useCallback(
-    (token: string) => {
-      const cleaned = extractTokenFrom(token)
-      if (!cleaned) {
-        toast.error('No reconocimos el QR. Probá manual.')
+    (raw: string) => {
+      const scanned = parseScannedCode(raw, 'customer')
+      if (!scanned) {
+        toast.error('No reconocimos el código. Probá de nuevo o pegalo a mano.')
+        return
+      }
+      if (scanned.kind === 'redemption') {
+        setRedeemToken(scanned.token)
+        setStep('redemption')
         return
       }
       startLookup(async () => {
-        const r = await lookupCustomerByQr(tenantSlug, cleaned)
+        const r = await lookupCustomerByQr(tenantSlug, scanned.token)
         if (!r.ok) {
           toast.error(r.message)
           return
@@ -117,93 +119,119 @@ export function AwardScreen({ tenantSlug }: { tenantSlug: string }) {
     setCustomer(null)
     setAmountPesos('')
     setLastResult(null)
+    setRedeemToken(null)
+  }
+
+  if (step === 'redemption' && redeemToken) {
+    return <RedemptionPanel tenantSlug={tenantSlug} redeemToken={redeemToken} onReset={reset} />
   }
 
   if (step === 'success' && lastResult && customer) {
     return (
-      <div className="card-hairline rounded-2xl border bg-card p-6 text-center">
-        <CheckCircle2 className="mx-auto size-12 text-primary" />
-        <h2 className="mt-3 font-display text-2xl font-semibold tracking-tight">
-          +{lastResult.points_awarded.toLocaleString('es-AR')} puntos
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Para {customer.first_name} {customer.last_name}
-          {' · '}
-          {fmtCents(lastResult.amount_cents)} pagados
-        </p>
-        <p className="mt-3 text-xs uppercase tracking-wider text-muted-foreground">Nuevo balance</p>
-        <p className="font-display text-3xl font-semibold tabular-nums">
-          {lastResult.new_balance.toLocaleString('es-AR')}
-        </p>
-        <div className="mt-6 flex justify-center gap-2">
-          <Button onClick={reset} className="gap-2">
-            <RotateCcw className="size-3.5" />
-            Acreditar a otro cliente
-          </Button>
+      <div className="space-y-6">
+        <div className="card-hairline rounded-2xl border bg-card p-6 text-center">
+          <CheckCircle2 className="mx-auto size-12 text-primary" />
+          <h2 className="mt-3 font-display text-2xl font-semibold tracking-tight">
+            +{lastResult.points_awarded.toLocaleString('es-AR')} puntos
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Para {customer.first_name} {customer.last_name}
+            {' · '}
+            {fmtCents(lastResult.amount_cents)} pagados
+          </p>
+          <p className="mt-3 text-xs uppercase tracking-wider text-muted-foreground">
+            Nuevo balance
+          </p>
+          <p className="font-display text-3xl font-semibold tabular-nums">
+            {lastResult.new_balance.toLocaleString('es-AR')}
+          </p>
+          <div className="mt-6 flex justify-center gap-2">
+            <Button onClick={reset} className="gap-2">
+              <RotateCcw className="size-3.5" />
+              Acreditar a otro cliente
+            </Button>
+          </div>
         </div>
+
+        {/* Sigue a mano después de acreditar: sellar es otra acción de la misma
+            visita y obligar a re-escanear el QR era pura fricción. */}
+        <PunchStamper
+          tenantSlug={tenantSlug}
+          customerId={customer.id}
+          customerName={customer.first_name}
+        />
       </div>
     )
   }
 
   if (step === 'confirm' && customer) {
     return (
-      <form
-        onSubmit={onConfirmAward}
-        className="card-hairline space-y-5 rounded-2xl border bg-card p-6"
-      >
-        <div className="flex items-center gap-3 rounded-lg bg-secondary/40 p-3">
-          <User2 className="size-5 text-primary" />
-          <div className="min-w-0 flex-1">
-            <p className="font-medium leading-tight">
-              {customer.first_name} {customer.last_name}
-            </p>
-            <p className="text-xs font-mono text-muted-foreground">
-              {formatPhoneForDisplay(customer.phone)}
+      <div className="space-y-6">
+        <form
+          onSubmit={onConfirmAward}
+          className="card-hairline space-y-5 rounded-2xl border bg-card p-6"
+        >
+          <div className="flex items-center gap-3 rounded-lg bg-secondary/40 p-3">
+            <User2 className="size-5 text-primary" />
+            <div className="min-w-0 flex-1">
+              <p className="font-medium leading-tight">
+                {customer.first_name} {customer.last_name}
+              </p>
+              <p className="text-xs font-mono text-muted-foreground">
+                {formatPhoneForDisplay(customer.phone)}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Balance</p>
+              <p className="font-display text-base font-semibold tabular-nums">
+                {customer.points_balance.toLocaleString('es-AR')}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label htmlFor="amount-pesos">Monto pagado ($)</Label>
+            <Input
+              id="amount-pesos"
+              type="number"
+              inputMode="decimal"
+              min={1}
+              step="1"
+              required
+              autoFocus
+              value={amountPesos}
+              onChange={(e) => setAmountPesos(e.target.value)}
+              placeholder="4500"
+              className="text-2xl tabular-nums"
+            />
+            {/* Sin tasa acá: las reglas de acumulación se configuran (y se leen)
+                en el Club, y decir un número a mano ya nos dejó mintiendo antes. */}
+            <p className="text-xs text-muted-foreground">
+              Los puntos salen de las reglas del Club, según el monto.
             </p>
           </div>
-          <div className="text-right">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Balance</p>
-            <p className="font-display text-base font-semibold tabular-nums">
-              {customer.points_balance.toLocaleString('es-AR')}
-            </p>
+
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+            <Button type="button" variant="ghost" onClick={reset} disabled={awardBusy}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={awardBusy} className="gap-2">
+              {awardBusy ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Star className="size-3.5" />
+              )}
+              {awardBusy ? 'Acreditando…' : 'Acreditar puntos'}
+            </Button>
           </div>
-        </div>
+        </form>
 
-        <div className="grid gap-1.5">
-          <Label htmlFor="amount-pesos">Monto pagado ($)</Label>
-          <Input
-            id="amount-pesos"
-            type="number"
-            inputMode="decimal"
-            min={1}
-            step="1"
-            required
-            autoFocus
-            value={amountPesos}
-            onChange={(e) => setAmountPesos(e.target.value)}
-            placeholder="4500"
-            className="text-2xl tabular-nums"
-          />
-          <p className="text-xs text-muted-foreground">
-            Se acredita 1 punto por cada peso (configurable en{' '}
-            <span className="font-mono">Puntos</span>).
-          </p>
-        </div>
-
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
-          <Button type="button" variant="ghost" onClick={reset} disabled={awardBusy}>
-            Cancelar
-          </Button>
-          <Button type="submit" disabled={awardBusy} className="gap-2">
-            {awardBusy ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Star className="size-3.5" />
-            )}
-            {awardBusy ? 'Acreditando…' : 'Acreditar puntos'}
-          </Button>
-        </div>
-      </form>
+        <PunchStamper
+          tenantSlug={tenantSlug}
+          customerId={customer.id}
+          customerName={customer.first_name}
+        />
+      </div>
     )
   }
 
@@ -224,8 +252,10 @@ export function AwardScreen({ tenantSlug }: { tenantSlug: string }) {
             components={{ finder: true, torch: true }}
           />
         </div>
-        <p className="text-center text-xs text-muted-foreground">
-          {lookupBusy ? 'Buscando cliente…' : 'Apuntá la cámara al QR del cliente.'}
+        <p className="text-center text-xs text-muted-foreground text-balance">
+          {lookupBusy
+            ? 'Buscando cliente…'
+            : 'Apuntá la cámara: sirve tanto el QR personal del socio como el de un canje.'}
         </p>
         <div className="flex justify-between gap-2">
           <Button variant="ghost" size="sm" onClick={() => setStep('idle')}>
@@ -246,13 +276,13 @@ export function AwardScreen({ tenantSlug }: { tenantSlug: string }) {
         onSubmit={onManualSubmit}
         className="card-hairline space-y-3 rounded-2xl border bg-card p-6"
       >
-        <Label htmlFor="manual-token">Pegá el código del cliente</Label>
+        <Label htmlFor="manual-token">Pegá el código del socio o del canje</Label>
         <Input
           id="manual-token"
           autoFocus
           value={manualToken}
           onChange={(e) => setManualToken(e.target.value)}
-          placeholder="https://app/c/abc123… o token raw"
+          placeholder=".../c/abc123… , .../v/abc123… o el código suelto"
         />
         <div className="flex justify-between gap-2">
           <Button type="button" variant="ghost" onClick={() => setStep('idle')}>
@@ -269,8 +299,9 @@ export function AwardScreen({ tenantSlug }: { tenantSlug: string }) {
 
   return (
     <div className="card-hairline space-y-3 rounded-2xl border bg-card p-6">
-      <p className="text-sm text-muted-foreground">
-        Pedile al cliente que abra su pantalla con QR personal y elegí:
+      <p className="text-sm text-muted-foreground text-balance">
+        Escaneá el QR del socio para acreditar puntos y sellar tarjetas, o el de un canje para
+        entregarlo. La pantalla se acomoda sola.
       </p>
       <div className="grid gap-2 sm:grid-cols-2">
         <Button onClick={() => setStep('scanning')} size="lg" className="h-16 gap-2">

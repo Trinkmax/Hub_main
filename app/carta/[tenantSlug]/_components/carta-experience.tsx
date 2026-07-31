@@ -234,10 +234,15 @@ export function CartaExperience(props: {
       </main>
 
       {/* CAJÓN DE LA BILLETERA — el borde verde asoma desde abajo y se arrastra
-          hacia arriba para abrir. Si el cliente aún no es socio, el MISMO labio
-          (mismo gesto: arrastrá o tocá) invita a sumarse al club → ClubSheet. */}
+          hacia arriba para abrir. Si en este celular no hay sesión, el MISMO labio
+          (mismo gesto: arrastrá o tocá) abre el club → ClubSheet, que ofrece los
+          dos caminos: sumarse o entrar con la cuenta que ya existe. */}
       {walletContent && walletSummary ? (
-        <WalletDrawer summary={walletSummary} initialOpen={walletInitiallyOpen}>
+        <WalletDrawer
+          summary={walletSummary}
+          tenantSlug={tenantSlug}
+          initialOpen={walletInitiallyOpen}
+        >
           {walletContent}
         </WalletDrawer>
       ) : (

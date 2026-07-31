@@ -51,6 +51,14 @@ export const RESERVATION_OPERATOR_ROLES: ReadonlyArray<TenantRole> = [
 /** Lecturas operativas del día (capacidad, timeline, eventos del día). */
 export const SALON_READ_ROLES: ReadonlyArray<TenantRole> = ['owner', 'cashier', 'waiter', 'host']
 
+/**
+ * Validar y entregar un canje del club (escanear el QR del socio, sellar tarjetas).
+ * Espeja exactamente lo que enforcean `get_redemption_by_token`,
+ * `deliver_reward_redemption` y `add_punch_stamp` en la DB. `host` queda afuera a
+ * propósito (gestiona reservas, no la caja); `editor` y `kitchen` tampoco.
+ */
+export const REDEMPTION_STAFF_ROLES: ReadonlyArray<TenantRole> = ['owner', 'cashier', 'waiter']
+
 // ──────────────────────────────────────────────────────────
 // Ruteo del workspace manager por rol
 // ──────────────────────────────────────────────────────────

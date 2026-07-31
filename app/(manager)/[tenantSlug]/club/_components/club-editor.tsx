@@ -19,7 +19,7 @@ import { SlidingTabs } from '@/components/ui/sliding-tabs'
 import type { getCapturePromptConfig } from '@/lib/capture-prompt/queries'
 import type { listItemTags } from '@/lib/item-tags/queries'
 import type { listMenu } from '@/lib/menu/queries'
-import type { TierBenefit } from '@/lib/points/benefits'
+import type { PartnerBenefit, TierBenefit } from '@/lib/points/benefits'
 import type {
   getPointsRedemptionConfig,
   listActiveRewards,
@@ -67,6 +67,8 @@ export type ClubEditorProps = {
   rewards: Awaited<ReturnType<typeof listRewards>>
   rules: Awaited<ReturnType<typeof listRules>>
   partners: Awaited<ReturnType<typeof listPartners>>
+  /** Beneficios de cada marca aliada con los niveles a los que llega cada uno. */
+  partnerBenefits: PartnerBenefit[]
   redemptionConfig: Awaited<ReturnType<typeof getPointsRedemptionConfig>>
   welcomeConfig: Awaited<ReturnType<typeof getWelcomeRewardConfig>>
   capturePrompt: Awaited<ReturnType<typeof getCapturePromptConfig>>
@@ -167,6 +169,7 @@ export function ClubEditor(props: ClubEditorProps): React.JSX.Element {
     rewards,
     rules,
     partners,
+    partnerBenefits,
     redemptionConfig,
     welcomeConfig,
     capturePrompt,
@@ -288,6 +291,7 @@ export function ClubEditor(props: ClubEditorProps): React.JSX.Element {
             >
               <TiersList
                 tenantSlug={tenantSlug}
+                tenantId={tenantId}
                 tiers={tiers}
                 benefitsByTier={benefitsByTier}
                 rewards={activeRewards}
@@ -315,10 +319,17 @@ export function ClubEditor(props: ClubEditorProps): React.JSX.Element {
         ) : clubTab === 'aliados' ? (
           <div className="space-y-5">
             <InfoBanner>
-              Las marcas inactivas no se muestran a los clientes. Activá cada una cuando cierres el
-              acuerdo y cargues su logo.
+              Cada marca tiene su propia lista de beneficios y cada beneficio elige a qué niveles
+              llega: Guapa estética puede dar 10% a Select y Gold, y 30% a Black. El socio ve sólo
+              el beneficio de SU nivel, no la suma de los de abajo.
             </InfoBanner>
-            <PartnersManagerReal tenantSlug={tenantSlug} tenantId={tenantId} partners={partners} />
+            <PartnersManagerReal
+              tenantSlug={tenantSlug}
+              tenantId={tenantId}
+              partners={partners}
+              tiers={tiers}
+              partnerBenefits={partnerBenefits}
+            />
           </div>
         ) : clubTab === 'bienvenida' ? (
           <div className="space-y-6">

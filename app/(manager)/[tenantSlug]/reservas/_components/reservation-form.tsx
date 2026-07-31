@@ -72,6 +72,12 @@ type Props = {
    * promete "el gestor sos vos". Se ignora si no está en `managers` (inactivo).
    */
   linkedManagerId?: string | null
+  /**
+   * ¿Este rol puede dar de alta gestores? (owner). Solo entonces mostramos el
+   * link a Configuración → Comisiones → Gestores; al resto le decimos a quién
+   * pedírselo en vez de mandarlo a una página que no puede abrir.
+   */
+  canManageManagers?: boolean
   // Edit mode props
   reservationId?: string
   initialValues?: Partial<ReservationFormInput> & {
@@ -99,6 +105,12 @@ function ARSFormat(cents: number): string {
     currency: 'ARS',
     maximumFractionDigits: 0,
   }).format(Math.round(cents / 100))
+}
+
+/** 'YYYY-MM-DD' → 'dd/MM' (así habla el bar de las fechas). */
+function ddMM(iso: string): string {
+  const [, m, d] = iso.split('-')
+  return `${d}/${m}`
 }
 
 function quickChips(today: string): Array<{ label: string; date: string }> {
@@ -145,6 +157,7 @@ export function ReservationForm({
   rateTiers,
   bonusPerGuestCents,
   linkedManagerId,
+  canManageManagers = false,
   reservationId,
   initialValues,
 }: Props) {
@@ -203,6 +216,13 @@ export function ReservationForm({
     useState<ScheduledEventWithTemplate[]>(initialEventsForDate)
   const [capacity, setCapacity] = useState<DayCapacityBucket[]>([])
 
+  // Fecha real de cada evento que pasó por el combo. Sin esto, al mover la
+  // fecha de la reserva el evento elegido desaparecía de la lista y no había
+  // manera de contarle al usuario a qué día pertenecía.
+  const [eventDates, setEventDates] = useState<Record<string, string>>(() =>
+    Object.fromEntries(initialEventsForDate.map((e) => [e.id, e.event_date])),
+  )
+
   // Refetch eventos cuando cambia la fecha
   useEffect(() => {
     if (values.reservation_date === initialDate) {
@@ -211,7 +231,14 @@ export function ReservationForm({
     }
     startEvents(async () => {
       const r = await fetchScheduledEventsForDate(tenantSlug, values.reservation_date)
-      if (r.ok) setEventsForDate(r.events)
+      if (r.ok) {
+        setEventsForDate(r.events)
+        setEventDates((prev) => {
+          const next = { ...prev }
+          for (const e of r.events) next[e.id] = e.event_date
+          return next
+        })
+      }
     })
   }, [values.reservation_date, initialDate, initialEventsForDate, tenantSlug])
 
@@ -319,9 +346,31 @@ export function ReservationForm({
     mode,
   ])
 
+  // ── Coherencia fecha ↔ evento ─────────────────────────────
+  // Cambiar la fecha con un evento ya elegido dejaba la reserva apuntando a un
+  // evento de otro día (la DB lo rechaza con un trigger). No lo limpiamos solos:
+  // si le borrás la selección sin avisar, el usuario no entiende qué pasó.
+  // Mostramos el choque y ofrecemos las dos salidas posibles.
+  const selectedEventDate = values.scheduled_event_id
+    ? (eventDates[values.scheduled_event_id] ?? null)
+    : null
+  const eventDateMismatch =
+    values.zone === 'event_floating' &&
+    !!values.scheduled_event_id &&
+    (selectedEventDate !== null
+      ? selectedEventDate !== values.reservation_date
+      : !eventsForDate.some((e) => e.id === values.scheduled_event_id))
+
   // Submit
   const onSubmit = form.handleSubmit(
     (data) => {
+      if (eventDateMismatch) {
+        form.setError('scheduled_event_id', {
+          message: 'La fecha no coincide con el evento.',
+        })
+        toast.error('La fecha de la reserva no coincide con la del evento elegido.')
+        return
+      }
       if (typeof window !== 'undefined' && data.primary_manager_id) {
         window.localStorage.setItem(lastManagerKey, data.primary_manager_id)
       }
@@ -338,12 +387,18 @@ export function ReservationForm({
           toast.success(
             result.message ?? (mode === 'create' ? 'Reserva creada.' : 'Reserva actualizada.'),
           )
+          // Volvemos a la lista PARADA EN EL DÍA de la reserva: la lista arranca
+          // en hoy, así que al cargar una para el 31/07 el dueño volvía y no la
+          // veía ("las reservas no salen una vez registradas"). `nueva` la
+          // resalta y muestra el aviso de creada.
           if (mode === 'create' && result.data?.id) {
-            router.push(`/${tenantSlug}/reservas/${result.data.id}`)
+            router.push(
+              `/${tenantSlug}/reservas?day=${data.reservation_date}&nueva=${result.data.id}`,
+            )
           } else {
-            router.push(`/${tenantSlug}/reservas`)
-            router.refresh()
+            router.push(`/${tenantSlug}/reservas?day=${data.reservation_date}`)
           }
+          router.refresh()
         } else {
           toast.error(result.message)
           if (result.field) {
@@ -594,7 +649,47 @@ export function ReservationForm({
                   )}
                 </SelectContent>
               </Select>
-              {form.formState.errors.scheduled_event_id?.message ? (
+              {eventDateMismatch ? (
+                <div
+                  role="alert"
+                  className="space-y-2 rounded-lg border border-destructive/50 bg-destructive/5 p-3"
+                >
+                  <p className="text-sm font-medium text-destructive">
+                    La fecha no coincide con el evento
+                    {selectedEventDate ? ` (el evento es del ${ddMM(selectedEventDate)})` : ''}.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    No podemos guardarla así. Elegí cómo seguir:
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedEventDate ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-11"
+                        onClick={() =>
+                          form.setValue('reservation_date', selectedEventDate, {
+                            shouldValidate: true,
+                          })
+                        }
+                      >
+                        Volver al {ddMM(selectedEventDate)}
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-11"
+                      onClick={() => {
+                        form.setValue('scheduled_event_id', undefined, { shouldValidate: true })
+                        form.clearErrors('scheduled_event_id')
+                      }}
+                    >
+                      Elegir otro evento
+                    </Button>
+                  </div>
+                </div>
+              ) : form.formState.errors.scheduled_event_id?.message ? (
                 <p className="text-sm text-destructive">
                   {form.formState.errors.scheduled_event_id.message}
                 </p>
@@ -818,6 +913,11 @@ export function ReservationForm({
             </p>
           </div>
         </div>
+        <ManagersHint
+          tenantSlug={tenantSlug}
+          count={managers.length}
+          canManage={canManageManagers}
+        />
       </FieldGroup>
 
       {/* Origen */}
@@ -894,7 +994,16 @@ export function ReservationForm({
             Atajo: ⌘/Ctrl + Enter para confirmar
           </p>
         </div>
-        <Button type="submit" disabled={submitting} className="min-w-[160px] h-11 text-base">
+        <Button
+          type="submit"
+          disabled={submitting || eventDateMismatch}
+          title={
+            eventDateMismatch
+              ? 'La fecha de la reserva no coincide con la del evento elegido.'
+              : undefined
+          }
+          className="min-w-[160px] h-11 text-base"
+        >
           {submitting ? 'Guardando…' : mode === 'create' ? 'Crear reserva' : 'Guardar cambios'}
         </Button>
       </div>
@@ -926,6 +1035,84 @@ function FieldGroup({
       </header>
       <div className="space-y-3">{children}</div>
     </section>
+  )
+}
+
+/**
+ * Aviso del combo de gestores. El ABM existe hace rato (Configuración →
+ * Comisiones → tab Gestores) pero nadie lo encontraba: el bar terminó con un
+ * solo gestor cargado y todas las reservas quedaron atribuidas a esa persona.
+ * El link está siempre; el aviso fuerte aparece cuando hay 1 o ninguno.
+ *
+ * OJO con el copy: la página de Comisiones abre SIEMPRE en el tab "Tarifas"
+ * (`defaultValue` fijo, todavía no lee el `?tab=`), así que el texto nombra el
+ * tab explícitamente — mandarlo a una página donde el ABM no se ve es
+ * exactamente el problema que este aviso viene a resolver. El `?tab=gestores`
+ * queda puesto para cuando esa página lo respete.
+ */
+function ManagersHint({
+  tenantSlug,
+  count,
+  canManage,
+}: {
+  tenantSlug: string
+  count: number
+  canManage: boolean
+}) {
+  const href = `/${tenantSlug}/configuracion/comisiones?tab=gestores`
+
+  if (count === 0) {
+    return (
+      <div role="alert" className="rounded-lg border border-destructive/50 bg-destructive/5 p-3">
+        <p className="text-sm font-medium text-destructive">No hay gestores cargados.</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Sin al menos un gestor no se puede guardar la reserva.{' '}
+          {canManage ? (
+            <>
+              <a href={href} target="_blank" rel="noopener" className="text-primary underline">
+                Cargalos en Comisiones
+              </a>
+              , tab «Gestores».
+            </>
+          ) : (
+            'Pedile al dueño que los cargue en Configuración → Comisiones → tab «Gestores».'
+          )}
+        </p>
+      </div>
+    )
+  }
+
+  if (count === 1) {
+    return (
+      <div className="rounded-lg border border-amber-300/60 bg-amber-50/70 p-3 dark:border-amber-800/60 dark:bg-amber-950/30">
+        <p className="text-xs text-amber-900 dark:text-amber-100">
+          Hay un solo gestor cargado, así que todas las reservas van a quedar a su nombre. ¿Falta
+          alguien?{' '}
+          {canManage ? (
+            <>
+              <a href={href} target="_blank" rel="noopener" className="font-medium underline">
+                Agregalos en Comisiones
+              </a>
+              , tab «Gestores».
+            </>
+          ) : (
+            'Pedile al dueño que agregue al resto en Configuración → Comisiones → tab «Gestores».'
+          )}
+        </p>
+      </div>
+    )
+  }
+
+  if (!canManage) return null
+
+  return (
+    <p className="text-xs text-muted-foreground">
+      ¿Falta alguien en la lista?{' '}
+      <a href={href} target="_blank" rel="noopener" className="underline hover:text-foreground">
+        Agregalos en Comisiones
+      </a>
+      , tab «Gestores».
+    </p>
   )
 }
 

@@ -36,6 +36,7 @@ export async function getReviewContextByToken(token: string): Promise<ReviewCont
 
 export type ReviewSettings = {
   googleMapsReviewUrl: string | null
+  feedbackWhatsappPhone: string | null
   reviewGatingEnabled: boolean
   reviewRewardPoints: number
 }
@@ -44,11 +45,14 @@ export async function getReviewSettings(tenantId: string): Promise<ReviewSetting
   const supabase = await createClient()
   const { data } = await supabase
     .from('tenants')
-    .select('google_maps_review_url, review_gating_enabled, review_reward_points')
+    .select(
+      'google_maps_review_url, feedback_whatsapp_phone, review_gating_enabled, review_reward_points',
+    )
     .eq('id', tenantId)
     .maybeSingle()
   return {
     googleMapsReviewUrl: data?.google_maps_review_url ?? null,
+    feedbackWhatsappPhone: data?.feedback_whatsapp_phone ?? null,
     reviewGatingEnabled: data?.review_gating_enabled ?? true,
     reviewRewardPoints: data?.review_reward_points ?? 0,
   }
@@ -60,20 +64,25 @@ export type ReviewListItem = {
   comment: string | null
   createdAt: string
   redirectedToMaps: boolean
+  customerId: string | null
   customerName: string | null
 }
 
 export async function listReviews(opts: {
   tenantId: string
+  /** Filtro por estrellas del panel (searchParam `?rating=`). undefined = todas. */
+  rating?: 1 | 2 | 3 | 4 | 5
   limit?: number
 }): Promise<ReviewListItem[]> {
   const supabase = await createClient()
-  const { data, error } = await supabase
+  let query = supabase
     .from('reviews')
     .select(
-      'id, rating, comment, created_at, redirected_to_maps, customer:customers(first_name, last_name)',
+      'id, rating, comment, created_at, redirected_to_maps, customer_id, customer:customers(first_name, last_name)',
     )
     .eq('tenant_id', opts.tenantId)
+  if (opts.rating !== undefined) query = query.eq('rating', opts.rating)
+  const { data, error } = await query
     .order('created_at', { ascending: false })
     .limit(opts.limit ?? 100)
   if (error) {
@@ -86,6 +95,7 @@ export async function listReviews(opts: {
     comment: string | null
     created_at: string
     redirected_to_maps: boolean
+    customer_id: string | null
     customer:
       | { first_name: string; last_name: string }
       | { first_name: string; last_name: string }[]
@@ -99,6 +109,7 @@ export async function listReviews(opts: {
       comment: r.comment,
       createdAt: r.created_at,
       redirectedToMaps: r.redirected_to_maps,
+      customerId: r.customer_id,
       customerName: c ? `${c.first_name} ${c.last_name}`.trim() : null,
     }
   })

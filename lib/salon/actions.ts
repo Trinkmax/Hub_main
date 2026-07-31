@@ -13,7 +13,7 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 import type { Tenant, TenantRole } from '@/lib/tenant/types'
-import { humanizeSalonError } from './humanize'
+import { eventDateMismatchCode, humanizeSalonError } from './humanize'
 import {
   actualGuestsSchema,
   bonusRuleSchema,
@@ -99,6 +99,108 @@ function asObject(input: FormData | Record<string, unknown>): Record<string, unk
 }
 
 // ──────────────────────────────────────────────────────────
+// Helpers de reservas
+// ──────────────────────────────────────────────────────────
+
+/**
+ * Marca al cliente como "adquirido por reserva".
+ *
+ * La pestaña Personas → Reservas filtra por `customers.acquisition_channel =
+ * 'reservation'`, y ese canal solo se escribía cuando la reserva CREABA el
+ * cliente. Si la reserva reusaba un cliente que ya existía (alta por QR del
+ * club, walk-in, import), el canal quedaba en el viejo y el cliente nunca
+ * aparecía ahí aunque tuviera reservas.
+ *
+ * Best-effort igual que el insert del cliente: si falla, la reserva se guarda
+ * igual. Pero lo logueamos con contexto (sin PII: solo ids) — antes se tragaba
+ * el error en silencio y por eso nadie vio el bug durante meses.
+ */
+async function markCustomerAcquiredByReservation(
+  supabase: SBAny,
+  tenantId: string,
+  customerId: string,
+): Promise<void> {
+  const { data: current, error: readError } = await supabase
+    .from('customers')
+    .select('acquisition_channel')
+    .eq('tenant_id', tenantId)
+    .eq('id', customerId)
+    .maybeSingle()
+
+  if (readError) {
+    console.error('[salon.reservation] no pudimos leer acquisition_channel', {
+      tenantId,
+      customerId,
+      error: readError.message,
+    })
+    return
+  }
+  if (
+    !current ||
+    (current as { acquisition_channel: string | null }).acquisition_channel === 'reservation'
+  ) {
+    return
+  }
+
+  const { error: updateError } = await supabase
+    .from('customers')
+    .update({ acquisition_channel: 'reservation' })
+    .eq('tenant_id', tenantId)
+    .eq('id', customerId)
+
+  if (updateError) {
+    console.error('[salon.reservation] no pudimos marcar acquisition_channel=reservation', {
+      tenantId,
+      customerId,
+      error: updateError.message,
+    })
+  }
+}
+
+/**
+ * Chequea que el evento programado sea de este bar y de la MISMA fecha que la
+ * reserva. El trigger `trg_validate_reservation_event_date` es la garantía
+ * dura; esto lo adelanta para devolver un error de campo (se pinta abajo del
+ * combo de evento) en vez de una excepción cruda de Postgres.
+ *
+ * Devuelve el `ActionState` de error, o `null` si está todo bien.
+ */
+async function checkEventMatchesDate(
+  supabase: SBAny,
+  tenantId: string,
+  eventId: string,
+  reservationDate: string,
+): Promise<ActionState | null> {
+  const { data, error } = await supabase
+    .from('scheduled_events')
+    .select('event_date, tenant_id')
+    .eq('id', eventId)
+    .maybeSingle()
+
+  if (error) {
+    console.error('[salon.reservation] no pudimos validar la fecha del evento', {
+      tenantId,
+      eventId,
+      error: error.message,
+    })
+    // Sin lectura no bloqueamos: el trigger sigue cubriendo el caso.
+    return null
+  }
+  if (!data) {
+    return badInput(humanizeSalonError('reservation_event_not_found'), 'scheduled_event_id')
+  }
+
+  const row = data as { event_date: string; tenant_id: string }
+  if (row.tenant_id !== tenantId) {
+    return badInput(humanizeSalonError('reservation_event_tenant_mismatch'), 'scheduled_event_id')
+  }
+  if (row.event_date !== reservationDate) {
+    return badInput(humanizeSalonError(eventDateMismatchCode(row.event_date)), 'scheduled_event_id')
+  }
+  return null
+}
+
+// ──────────────────────────────────────────────────────────
 // Reservas — CRUD
 // ──────────────────────────────────────────────────────────
 
@@ -177,6 +279,16 @@ export async function createSalonReservation(
     scheduledEventIdFinal = ensuredId as string
   }
 
+  if (scheduledEventIdFinal) {
+    const mismatch = await checkEventMatchesDate(
+      supabase,
+      access.tenant.id,
+      scheduledEventIdFinal,
+      parsed.data.reservation_date,
+    )
+    if (mismatch) return mismatch
+  }
+
   const { data, error } = await supabase
     .from('salon_reservations')
     .insert({
@@ -207,6 +319,15 @@ export async function createSalonReservation(
   if (error) return { ok: false, message: humanizeSalonError(error.message), code: error.message }
 
   const newId = (data as { id: string }).id
+
+  // Recién ahora que la reserva existe: el cliente preexistente (elegido en el
+  // combo o matcheado por teléfono) pasa a contarse como adquirido por reserva,
+  // así aparece en Personas → Reservas. Va DESPUÉS del insert a propósito — si
+  // se marcaba antes, una reserva rechazada (fecha que no coincide con el
+  // evento) dejaba al cliente reetiquetado sin tener ninguna reserva.
+  if (customerId) {
+    await markCustomerAcquiredByReservation(supabase, access.tenant.id, customerId)
+  }
 
   await logAudit({
     tenantId: access.tenant.id,
@@ -243,6 +364,17 @@ export async function updateSalonReservation(
 
   const supabase = (await createClient()) as SBAny
   const { id, ...patch } = parsed.data
+
+  if (patch.scheduled_event_id) {
+    const mismatch = await checkEventMatchesDate(
+      supabase,
+      access.tenant.id,
+      patch.scheduled_event_id,
+      patch.reservation_date,
+    )
+    if (mismatch) return mismatch
+  }
+
   const { error } = await supabase
     .from('salon_reservations')
     .update({
@@ -269,6 +401,13 @@ export async function updateSalonReservation(
     .eq('tenant_id', access.tenant.id)
     .eq('id', id)
   if (error) return { ok: false, message: humanizeSalonError(error.message) }
+
+  // Re-vincular un cliente desde la edición cuenta igual que vincularlo al
+  // crear: si no, la reserva queda linkeada pero el cliente sigue fuera de
+  // Personas → Reservas.
+  if (patch.customer_id) {
+    await markCustomerAcquiredByReservation(supabase, access.tenant.id, patch.customer_id)
+  }
 
   // Si cambió gestor / actual_guests / meal_type, recalc.
   await supabase.rpc('recalc_reservation_commission', { p_reservation_id: id })

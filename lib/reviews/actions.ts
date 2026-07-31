@@ -13,11 +13,20 @@ import {
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
+import { buildFeedbackWhatsappUrl } from './feedback'
 import { decideReviewRedirect } from './gating'
-import { reviewSettingsSchema, submitReviewSchema } from './schemas'
+import { attachReviewCommentSchema, reviewSettingsSchema, submitReviewSchema } from './schemas'
 
 export type SubmitReviewResult =
-  | { ok: true; redirectTo: string | null; awardedPoints: number }
+  | {
+      ok: true
+      reviewId: string
+      /** URL de Google Maps si corresponde derivar (5★ con gating ON). */
+      redirectTo: string | null
+      /** wa.me con el feedback ya redactado, para los que NO van a Google. */
+      feedbackWhatsappUrl: string | null
+      awardedPoints: number
+    }
   | { ok: false; message: string }
 
 /**
@@ -48,7 +57,7 @@ export async function submitReview(input: {
   const service = createServiceClient()
   const { data: customer } = await service
     .from('customers')
-    .select('id, tenant_id')
+    .select('id, tenant_id, first_name, last_name')
     .eq('qr_token', parsed.data.token)
     .is('deleted_at', null)
     .maybeSingle()
@@ -56,7 +65,9 @@ export async function submitReview(input: {
 
   const { data: tenant } = await service
     .from('tenants')
-    .select('google_maps_review_url, review_gating_enabled, review_reward_points')
+    .select(
+      'name, google_maps_review_url, feedback_whatsapp_phone, review_gating_enabled, review_reward_points',
+    )
     .eq('id', customer.tenant_id)
     .maybeSingle()
   if (!tenant) return { ok: false, message: 'No encontramos el bar.' }
@@ -105,7 +116,78 @@ export async function submitReview(input: {
     }
   }
 
-  return { ok: true, redirectTo: decision.redirectTo, awardedPoints }
+  // El brazo de WhatsApp es el de "no me fue bien": sólo para puntajes < 5 y
+  // sólo si la reseña no se derivó a Google (si va a Maps, pedirle además que
+  // escriba por WhatsApp sería pedirle dos cosas). Un 5★ sin enlace de Maps
+  // cargado termina en el agradecimiento normal, no en WhatsApp.
+  const feedbackWhatsappUrl =
+    decision.redirectTo || parsed.data.rating >= 5
+      ? null
+      : buildFeedbackWhatsappUrl({
+          phone: tenant.feedback_whatsapp_phone,
+          tenantName: tenant.name,
+          customerName: `${customer.first_name} ${customer.last_name}`.trim(),
+          rating: parsed.data.rating,
+          comment: parsed.data.comment,
+        })
+
+  return {
+    ok: true,
+    reviewId: review.id,
+    redirectTo: decision.redirectTo,
+    feedbackWhatsappUrl,
+    awardedPoints,
+  }
+}
+
+export type AttachReviewCommentResult = { ok: true } | { ok: false; message: string }
+
+/**
+ * Guarda el comentario que el cliente escribe en la pantalla puente de 5★
+ * (la reseña ya se insertó al tocar la quinta estrella). Google no permite
+ * pre-cargar el texto de una reseña por URL, así que igual se lo copiamos al
+ * portapapeles — pero el bar se queda con el comentario aunque nunca lo pegue.
+ */
+export async function attachReviewComment(input: {
+  token: string
+  reviewId: string
+  comment: string
+}): Promise<AttachReviewCommentResult> {
+  const ip = await getRequestIp()
+  try {
+    rateLimit({ key: `review-comment:${ip}`, limit: 10, windowMs: 60_000 })
+  } catch (e) {
+    if (e instanceof RateLimitedError) {
+      return { ok: false, message: 'Esperá un minuto antes de reintentar.' }
+    }
+    throw e
+  }
+
+  const parsed = attachReviewCommentSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  }
+
+  const service = createServiceClient()
+  const { data: customer } = await service
+    .from('customers')
+    .select('id')
+    .eq('qr_token', parsed.data.token)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (!customer) return { ok: false, message: 'No reconocimos el enlace.' }
+
+  // El token es la capability: sólo puede escribir sobre SU propia reseña.
+  const { error } = await service
+    .from('reviews')
+    .update({ comment: parsed.data.comment })
+    .eq('id', parsed.data.reviewId)
+    .eq('customer_id', customer.id)
+  if (error) {
+    console.error('[reviews.attachComment]', error.code, error.message)
+    return { ok: false, message: 'No pudimos guardar tu comentario.' }
+  }
+  return { ok: true }
 }
 
 // ──────────────────────────────────────────────────────────
@@ -146,6 +228,7 @@ export async function updateReviewSettingsAction(
     .from('tenants')
     .update({
       google_maps_review_url: parsed.data.google_maps_review_url,
+      feedback_whatsapp_phone: parsed.data.feedback_whatsapp_phone,
       review_gating_enabled: parsed.data.review_gating_enabled,
       review_reward_points: parsed.data.review_reward_points,
     })
@@ -164,6 +247,8 @@ export async function updateReviewSettingsAction(
     payload: {
       gating: parsed.data.review_gating_enabled,
       has_maps_url: parsed.data.google_maps_review_url !== null,
+      // El teléfono es PII: registramos si está cargado, nunca el número.
+      has_feedback_phone: parsed.data.feedback_whatsapp_phone !== null,
       reward_points: parsed.data.review_reward_points,
     },
   })

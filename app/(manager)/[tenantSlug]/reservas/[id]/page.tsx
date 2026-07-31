@@ -2,6 +2,7 @@ import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { formatDayLabel } from '@/lib/salon/date-presets'
 import {
   getBonusRule,
   getSalonReservation,
@@ -58,8 +59,10 @@ export default async function ReservaDetailPage({
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <PageHeader
         eyebrow={
+          // Vuelve al día DE ESTA reserva, no a hoy: si no, salir del detalle
+          // de una reserva del 31/07 devolvía una lista donde no estaba.
           <Link
-            href={`/${tenantSlug}/reservas`}
+            href={`/${tenantSlug}/reservas?day=${reservation.reservation_date}`}
             className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="size-3.5" />
@@ -67,7 +70,7 @@ export default async function ReservaDetailPage({
           </Link>
         }
         title={reservation.guest_name}
-        description={`${reservation.reservation_date} · ${reservation.reservation_time_local.slice(0, 5)} · ${reservation.estimated_guests} personas`}
+        description={`${formatDayLabel(reservation.reservation_date)} · ${reservation.reservation_time_local.slice(0, 5)} · ${reservation.estimated_guests} personas`}
       />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
@@ -80,6 +83,7 @@ export default async function ReservaDetailPage({
           initialEventsForDate={eventsForDate}
           rateTiers={tiers}
           bonusPerGuestCents={bonus?.bonus_per_guest_cents ?? 0}
+          canManageManagers={access.role === 'owner'}
           reservationId={reservation.id}
           initialValues={{
             customer_id: reservation.customer_id ?? undefined,

@@ -1,8 +1,9 @@
 'use client'
 
-import { AlertTriangle, CheckCircle2, Circle, Clock4 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Circle, Clock4, Wallet } from 'lucide-react'
 import { ContactButton } from '@/components/messaging/contact-button'
 import { ReservationStatusControls } from '@/components/reservations/reservation-status-controls'
+import { ARSFormat } from '@/lib/salon/format'
 import type { ReservationWithJoins } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
@@ -40,6 +41,35 @@ export function ReservationDetailSidebar({
           />
         </div>
       ) : null}
+
+      {/* Seña + nota: los dos datos que el dueño mira antes de sentar la mesa.
+          Se leen acá sin tener que bajar hasta el bloque "Extras" del form. */}
+      <section className="space-y-3 rounded-xl border border-border/70 bg-card p-4">
+        <header className="flex items-center gap-2">
+          <Wallet className="size-4 text-muted-foreground" />
+          <span className="text-xs uppercase tracking-wide text-muted-foreground">Seña y nota</span>
+        </header>
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-sm text-muted-foreground">Seña</span>
+          {reservation.deposit_cents > 0 ? (
+            <span className="font-mono text-base font-semibold tabular-nums">
+              {ARSFormat(reservation.deposit_cents)}
+            </span>
+          ) : (
+            <span className="text-sm text-muted-foreground">Sin seña</span>
+          )}
+        </div>
+        <div className="space-y-1 border-t border-border/60 pt-3">
+          <span className="text-sm text-muted-foreground">Comentario del cliente</span>
+          {reservation.comments ? (
+            <p className="max-h-56 overflow-y-auto whitespace-pre-wrap break-words text-sm">
+              {reservation.comments}
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">Sin comentarios.</p>
+          )}
+        </div>
+      </section>
 
       {/* Timeline operativo */}
       <section className="rounded-xl border border-border/70 bg-card p-4">

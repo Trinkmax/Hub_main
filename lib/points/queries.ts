@@ -1,10 +1,10 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
-import type { Partner, TierBenefit } from './benefits'
+import type { Partner, PartnerBenefit, TierBenefit } from './benefits'
 import type { LoyaltyTier } from './tiers'
 import type { PointsRule } from './types'
 
-export type { Partner, TierBenefit } from './benefits'
+export type { Partner, PartnerBenefit, TierBenefit } from './benefits'
 export type { LoyaltyTier } from './tiers'
 
 export type Reward = {
@@ -18,15 +18,16 @@ export type Reward = {
   min_tier_id: string | null
   category: string | null
   visible_in_catalog: boolean
+  sort: number
 }
 
 const REWARD_COLUMNS =
-  'id, name, description, cost_points, stock, active, image_url, min_tier_id, category, visible_in_catalog'
+  'id, name, description, cost_points, stock, active, image_url, min_tier_id, category, visible_in_catalog, sort'
 
 const TIER_COLUMNS = 'id, name, color, badge_icon, min_category_points, sort, perks, active'
 
 const TIER_BENEFIT_COLUMNS =
-  'id, tier_id, kind, label, description, icon, reward_id, cadence, quantity, discount_pct, discount_scope, partner_id, sort, active'
+  'id, tier_id, kind, label, description, icon, image_url, reward_id, cadence, quantity, discount_pct, discount_scope, partner_id, sort, active'
 
 const PARTNER_COLUMNS = 'id, name, logo_url, discount_label, category, url, active, sort'
 
@@ -41,12 +42,15 @@ export async function listRules(opts: { tenantId: string }): Promise<PointsRule[
   return (data ?? []) as unknown as PointsRule[]
 }
 
+// El orden del catálogo lo decide el dueño arrastrando (`sort`), no el costo.
+// `cost_points` queda como desempate estable para las que comparten sort.
 export async function listRewards(opts: { tenantId: string }): Promise<Reward[]> {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('rewards')
     .select(REWARD_COLUMNS)
     .eq('tenant_id', opts.tenantId)
+    .order('sort', { ascending: true })
     .order('cost_points', { ascending: true })
   if (error) throw error
   return (data ?? []) as Reward[]
@@ -59,6 +63,7 @@ export async function listActiveRewards(opts: { tenantId: string }): Promise<Rew
     .select(REWARD_COLUMNS)
     .eq('tenant_id', opts.tenantId)
     .eq('active', true)
+    .order('sort', { ascending: true })
     .order('cost_points', { ascending: true })
   return (data ?? []) as Reward[]
 }
@@ -95,6 +100,32 @@ export async function listPartners(opts: { tenantId: string }): Promise<Partner[
     .order('name', { ascending: true })
   if (error) throw error
   return (data ?? []) as Partner[]
+}
+
+/**
+ * Beneficios de todas las marcas aliadas con los niveles a los que aplica cada
+ * uno (N:N vía partner_benefit_tiers). Una sola query embebida: el editor
+ * necesita el mapa completo para avisar qué nivel se queda sin nada.
+ */
+export async function listPartnerBenefits(opts: { tenantId: string }): Promise<PartnerBenefit[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('partner_benefits')
+    .select(
+      'id, partner_id, label, description, discount_pct, image_url, sort, active, partner_benefit_tiers(tier_id)',
+    )
+    .eq('tenant_id', opts.tenantId)
+    .order('sort', { ascending: true })
+  if (error) throw error
+
+  type Row = Omit<PartnerBenefit, 'tier_ids'> & {
+    partner_benefit_tiers: { tier_id: string }[] | null
+  }
+  return (data ?? []).map((row) => {
+    const r = row as unknown as Row
+    const { partner_benefit_tiers, ...rest } = r
+    return { ...rest, tier_ids: (partner_benefit_tiers ?? []).map((t) => t.tier_id) }
+  })
 }
 
 export type LedgerEntry = {

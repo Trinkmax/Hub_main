@@ -1,8 +1,10 @@
 import 'server-only'
 import { subMonths } from 'date-fns'
+import QRCode from 'qrcode'
+import { getAppUrl } from '@/lib/app-url'
 import type { TierBenefitCadence, TierBenefitKind } from '@/lib/points/benefits'
 import { computeExpiry, wouldDropTier } from '@/lib/points/category'
-import { type EarnRate, hasItemBonus, resolveEarnRate } from '@/lib/points/earn-rate'
+import { hasItemBonus } from '@/lib/points/earn-rate'
 import {
   type LoyaltyTier,
   progressToNext,
@@ -11,8 +13,20 @@ import {
 } from '@/lib/points/tiers'
 import type { PointsRule } from '@/lib/points/types'
 import { createServiceClient } from '@/lib/supabase/service'
+import {
+  buildPartnerTiers,
+  groupBenefitsByTier,
+  type PartnerBenefitRow,
+  type PartnerBenefitTierRow,
+  resolvePartnersForTier,
+  type WalletPartnerBenefit,
+  type WalletPartnerTierEntry,
+} from './partner-benefits'
+import { loadWalletPunchCards, type WalletPunchCard } from './punch-cards'
 import { computeRewardState } from './reward-state'
 
+export type { WalletPartnerBenefit, WalletPartnerTierEntry } from './partner-benefits'
+export type { WalletPunchCard } from './punch-cards'
 export { computeRewardState } from './reward-state'
 
 /** Cota generosa para traer el ledger positivo (la ventana real ≤ 24 meses). */
@@ -34,18 +48,11 @@ export type WalletReward = {
   imageUrl: string | null
   stock: number | null
   category: string | null
+  /** Orden manual del dueño (ITEM 7). Desempata dentro de "lo que ya podés canjear". */
+  sort: number
   affordable: boolean
   tierLocked: boolean
   minTierName: string | null
-}
-
-export type WalletPunchCard = {
-  id: string
-  templateName: string
-  imageUrl: string | null
-  currentStamps: number
-  threshold: number
-  rewardName: string | null
 }
 
 export type WalletBenefit = {
@@ -54,7 +61,10 @@ export type WalletBenefit = {
   label: string
   description: string | null
   icon: string | null
-  /** Foto del reward asociado (recurring_reward) para las tarjetas foto-forward. */
+  /**
+   * Foto de la tarjeta. Prioridad: la propia del beneficio (ITEM 6), y si no
+   * tiene, la de la recompensa vinculada (recurring_reward).
+   */
   imageUrl: string | null
   quantity: number
   cadence: TierBenefitCadence
@@ -78,12 +88,34 @@ export type WalletExpiry = {
   toTierName: string | null
 }
 
-/** Cómo suma puntos el socio (para "Cómo funciona"). Sale de la config real del tenant. */
+/**
+ * Cómo suma puntos el socio (para "Cómo funciona").
+ *
+ * OJO — acá NO va la tasa ($ por punto). Es información de administración: el
+ * socio tiene que sentir que consumir suma, no poder calcular el tipo de cambio.
+ * Y no alcanza con sacarla del JSX: este objeto se serializa entero en el payload
+ * RSC y queda legible en el HTML, así que la tasa no entra al payload. La tasa sí
+ * se muestra, y así tiene que seguir, en el panel del dueño (/club?tab=programa).
+ */
 export type WalletEarn = {
-  /** Tasa por monto, si se puede enunciar sin mentir (ver resolveEarnRate). */
-  rate: EarnRate | null
   /** Hay reglas por producto activas → "algunos productos suman extra". */
   itemBonus: boolean
+}
+
+/**
+ * Canje con QR vivo. Es UNO SOLO por socio a la vez (lo enforcea la RPC): los
+ * puntos se descuentan cuando el mozo valida, no al generar el código, así que
+ * permitir varios abiertos dejaría prometer más de lo que el saldo banca.
+ */
+export type WalletActiveRedemption = {
+  redemptionId: string
+  rewardName: string
+  imageUrl: string | null
+  costPoints: number
+  redeemToken: string
+  expiresAt: string
+  /** QR ya renderizado en el server (apunta a `${appUrl}/v/<token>`). */
+  qrDataUrl: string
 }
 
 /** Un escalón de la escalera de niveles con sus beneficios (para la vista aspiracional). */
@@ -151,7 +183,17 @@ export type WalletData = {
     category: string | null
     url: string | null
     active: boolean
+    /** Lo que esta marca le da en SU nivel (null = en su nivel no le da nada). */
+    myBenefit: WalletPartnerBenefit | null
+    /** Nivel más bajo donde esta marca sí da algo, cuando `myBenefit` es null. */
+    unlockTierName: string | null
   }>
+  /**
+   * Aliados por categoría, en el mismo orden que `progression` (vista 'niveles').
+   * Opcional: el simulador del club arma un WalletData sintético y todavía no lo
+   * completa — ver nota en simulator.ts.
+   */
+  partnerTiers?: Array<{ tierId: string; entries: WalletPartnerTierEntry[] }>
   rewards: WalletReward[]
   punchCards: WalletPunchCard[]
   visits: Array<{ id: string; visitedAt: string; totalAmountCents: number }>
@@ -169,7 +211,11 @@ export type WalletData = {
     rewardName: string
     imageUrl: string | null
     kind: 'welcome' | 'tier' | 'reward'
+    /** Puntos que se descuentan al entregarlo (0 en regalos y beneficios de nivel). */
+    costPoints?: number
   }>
+  /** El canje con QR vivo, si hay uno. Va arriba de todo en la wallet. */
+  activeRedemption?: WalletActiveRedemption | null
 }
 
 function benefitKind(notes: string | null): 'welcome' | 'tier' | 'reward' {
@@ -213,7 +259,7 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
     { data: tiersData },
     { data: rewardsData },
     { data: benefitsData },
-    { data: cardsData },
+    punchCards,
     { data: visitsData },
     { data: redemptionsData },
     { data: ledgerData },
@@ -222,6 +268,8 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
     { data: pendingData },
     { data: partnersData },
     { data: rulesData },
+    { data: partnerBenefitsData },
+    { data: partnerBenefitTiersData },
   ] = await Promise.all([
     service
       .from('tenants')
@@ -234,28 +282,23 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
       .eq('tenant_id', tenantId),
     service
       .from('rewards')
-      .select('id, name, description, cost_points, stock, image_url, min_tier_id, category')
+      .select('id, name, description, cost_points, stock, image_url, min_tier_id, category, sort')
       .eq('tenant_id', tenantId)
       .eq('active', true)
       .eq('visible_in_catalog', true)
+      // ITEM 7: manda el orden que el dueño armó arrastrando en el editor. El
+      // costo queda de desempate para las filas que nunca se tocaron.
+      .order('sort', { ascending: true })
       .order('cost_points', { ascending: true }),
     service
       .from('tier_benefits')
       .select(
-        'id, tier_id, kind, label, description, icon, quantity, cadence, discount_pct, discount_scope, sort, reward:rewards(image_url), partner:partners(name, logo_url, discount_label, category, url)',
+        'id, tier_id, kind, label, description, icon, image_url, quantity, cadence, discount_pct, discount_scope, sort, reward:rewards(image_url), partner:partners(name, logo_url, discount_label, category, url)',
       )
       .eq('tenant_id', tenantId)
       .eq('active', true)
       .order('sort', { ascending: true }),
-    service
-      .from('customer_punch_cards')
-      .select(
-        'id, current_stamps, threshold_snapshot, template:punch_card_templates!inner(name, image_url, reward:rewards(name))',
-      )
-      .eq('customer_id', customerId)
-      .eq('tenant_id', tenantId)
-      .is('completed_at', null)
-      .is('expired_at', null),
+    loadWalletPunchCards(service, tenantId, customerId),
     service
       .from('visits')
       .select('id, visited_at, total_amount_cents')
@@ -301,7 +344,9 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
       .limit(5),
     service
       .from('reward_redemptions')
-      .select('id, notes, reward:rewards(name, image_url)')
+      .select(
+        'id, notes, points_spent, redeem_token, token_expires_at, reward:rewards(name, image_url)',
+      )
       .eq('tenant_id', tenantId)
       .eq('customer_id', customerId)
       .eq('status', 'pending')
@@ -313,12 +358,21 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
       .eq('tenant_id', tenantId)
       .order('active', { ascending: false })
       .order('sort', { ascending: true }),
-    // Reglas de acumulación → "cómo sumás" (la tasa real, no una hardcodeada).
+    // Reglas de acumulación → sólo para saber si hay bonus por producto.
+    // La tasa por monto NO se lee acá a propósito: ver WalletEarn.
     service
       .from('points_rules')
       .select('id, type, config, priority, active')
       .eq('tenant_id', tenantId)
       .eq('active', true),
+    // Beneficios de aliados + a qué niveles corresponden.
+    service
+      .from('partner_benefits')
+      .select('id, partner_id, label, description, discount_pct, image_url, sort')
+      .eq('tenant_id', tenantId)
+      .eq('active', true)
+      .order('sort', { ascending: true }),
+    service.from('partner_benefit_tiers').select('benefit_id, tier_id').eq('tenant_id', tenantId),
   ])
 
   if (!tenant) return null
@@ -347,7 +401,7 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
     : null
 
   const rules = (rulesData ?? []) as unknown as PointsRule[]
-  const earn: WalletEarn = { rate: resolveEarnRate(rules), itemBonus: hasItemBonus(rules) }
+  const earn: WalletEarn = { itemBonus: hasItemBonus(rules) }
 
   const pickName = (reward: { name: string } | { name: string }[] | null): string =>
     (Array.isArray(reward) ? reward[0]?.name : reward?.name) ?? 'Recompensa'
@@ -362,6 +416,7 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
       image_url: string | null
       min_tier_id: string | null
       category: string | null
+      sort: number | null
     }>
   ).map((r) => {
     const state = computeRewardState(r, { pointsBalance: balance, categoryPoints, tiers })
@@ -373,6 +428,7 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
       imageUrl: r.image_url,
       stock: r.stock,
       category: r.category,
+      sort: r.sort ?? 0,
       ...state,
     }
   })
@@ -394,6 +450,7 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
     label: string
     description: string | null
     icon: string | null
+    image_url: string | null
     quantity: number
     cadence: string
     discount_pct: number | null
@@ -409,7 +466,10 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
       label: b.label,
       description: b.description,
       icon: b.icon,
-      imageUrl: rw?.image_url ?? null,
+      // La foto PROPIA del beneficio (ITEM 6) le gana a la prestada de la
+      // recompensa vinculada: si el dueño se tomó el trabajo de subirla, es la
+      // que quiere ver. La de la recompensa queda de fallback.
+      imageUrl: b.image_url ?? rw?.image_url ?? null,
       quantity: b.quantity,
       cadence: b.cadence as TierBenefitCadence,
       discountPct: b.discount_pct,
@@ -443,34 +503,90 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
 
   const benefits: WalletBenefit[] = current ? (benefitsByTier.get(current.id) ?? []) : []
 
-  type CardRow = {
+  // ── Aliados: qué le toca en SU nivel + la escalera completa ────────────
+  const partnerRows = (partnersData ?? []) as Array<{
     id: string
-    current_stamps: number
-    threshold_snapshot: number
-    template:
-      | {
-          name: string
-          image_url: string | null
-          reward: { name: string } | { name: string }[] | null
-        }
-      | Array<{
-          name: string
-          image_url: string | null
-          reward: { name: string } | { name: string }[] | null
-        }>
-      | null
-  }
-  const punchCards: WalletPunchCard[] = ((cardsData ?? []) as unknown as CardRow[]).map((c) => {
-    const tpl = Array.isArray(c.template) ? c.template[0] : c.template
+    name: string
+    logo_url: string | null
+    discount_label: string | null
+    category: string | null
+    url: string | null
+    active: boolean
+  }>
+  const partnerBenefitsByTier = groupBenefitsByTier(
+    (partnerBenefitsData ?? []) as PartnerBenefitRow[],
+    (partnerBenefitTiersData ?? []) as PartnerBenefitTierRow[],
+  )
+  // Una marca pausada NO promete nada: sale como "Próximamente" y punto. Los
+  // beneficios nacen `active = true` mientras que la marca nace `active = false`
+  // (el dueño la carga como borrador y la prende cuando cierra el acuerdo), así
+  // que sin este filtro el socio vería el 30% de una marca que todavía no existe.
+  const activePartnerIds = partnerRows.filter((p) => p.active).map((p) => p.id)
+  const partnerResolution = resolvePartnersForTier(
+    activePartnerIds,
+    partnerBenefitsByTier,
+    tiers,
+    current?.id ?? null,
+  )
+  const partners: WalletData['partners'] = partnerRows.map((p) => {
+    const resolved = p.active ? partnerResolution.get(p.id) : undefined
     return {
-      id: c.id,
-      templateName: tpl?.name ?? 'Tarjeta',
-      imageUrl: tpl?.image_url ?? null,
-      currentStamps: c.current_stamps,
-      threshold: c.threshold_snapshot,
-      rewardName: tpl ? pickName(tpl.reward) : null,
+      id: p.id,
+      name: p.name,
+      logoUrl: p.logo_url,
+      discountLabel: p.discount_label,
+      category: p.category,
+      url: p.url,
+      active: p.active,
+      myBenefit: resolved?.myBenefit ?? null,
+      unlockTierName: resolved?.unlockTierName ?? null,
     }
   })
+  const partnerTiers = buildPartnerTiers(
+    partners.filter((p) => p.active),
+    partnerBenefitsByTier,
+    tiers,
+  )
+
+  // ── Canjes pendientes + el que ya tiene QR vivo ────────────────────────
+  type PendingRow = {
+    id: string
+    notes: string | null
+    points_spent: number
+    redeem_token: string | null
+    token_expires_at: string | null
+    reward:
+      | { name: string; image_url: string | null }
+      | { name: string; image_url: string | null }[]
+      | null
+  }
+  const pendingRows = (pendingData ?? []) as PendingRow[]
+  const nowMs = now.getTime()
+  const liveRow = pendingRows.find(
+    (p) =>
+      p.redeem_token !== null &&
+      p.token_expires_at !== null &&
+      new Date(p.token_expires_at).getTime() > nowMs,
+  )
+  let activeRedemption: WalletActiveRedemption | null = null
+  if (liveRow?.redeem_token && liveRow.token_expires_at) {
+    const reward = Array.isArray(liveRow.reward) ? liveRow.reward[0] : liveRow.reward
+    const appUrl = await getAppUrl()
+    activeRedemption = {
+      redemptionId: liveRow.id,
+      rewardName: reward?.name ?? 'Beneficio',
+      imageUrl: reward?.image_url ?? null,
+      costPoints: liveRow.points_spent,
+      redeemToken: liveRow.redeem_token,
+      expiresAt: liveRow.token_expires_at,
+      qrDataUrl: await QRCode.toDataURL(`${appUrl}/v/${liveRow.redeem_token}`, {
+        width: 420,
+        margin: 1,
+        errorCorrectionLevel: 'M',
+        color: { dark: '#000000', light: '#ffffff' },
+      }),
+    }
+  }
 
   return {
     customer: {
@@ -515,25 +631,8 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
     earn,
     benefits,
     progression,
-    partners: (
-      (partnersData ?? []) as Array<{
-        id: string
-        name: string
-        logo_url: string | null
-        discount_label: string | null
-        category: string | null
-        url: string | null
-        active: boolean
-      }>
-    ).map((p) => ({
-      id: p.id,
-      name: p.name,
-      logoUrl: p.logo_url,
-      discountLabel: p.discount_label,
-      category: p.category,
-      url: p.url,
-      active: p.active,
-    })),
+    partners,
+    partnerTiers,
     rewards,
     punchCards,
     visits: (
@@ -577,23 +676,19 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
         startsAt: `${e.event_date}T${e.starts_at_local}`,
       }
     }),
-    pendingBenefits: (
-      (pendingData ?? []) as Array<{
-        id: string
-        notes: string | null
-        reward:
-          | { name: string; image_url: string | null }
-          | { name: string; image_url: string | null }[]
-          | null
-      }>
-    ).map((p) => {
-      const reward = Array.isArray(p.reward) ? p.reward[0] : p.reward
-      return {
-        redemptionId: p.id,
-        rewardName: reward?.name ?? 'Beneficio',
-        imageUrl: reward?.image_url ?? null,
-        kind: benefitKind(p.notes),
-      }
-    }),
+    // El que ya tiene QR vivo se muestra aparte (activeRedemption), no dos veces.
+    pendingBenefits: pendingRows
+      .filter((p) => p.id !== activeRedemption?.redemptionId)
+      .map((p) => {
+        const reward = Array.isArray(p.reward) ? p.reward[0] : p.reward
+        return {
+          redemptionId: p.id,
+          rewardName: reward?.name ?? 'Beneficio',
+          imageUrl: reward?.image_url ?? null,
+          kind: benefitKind(p.notes),
+          costPoints: p.points_spent,
+        }
+      }),
+    activeRedemption,
   }
 }

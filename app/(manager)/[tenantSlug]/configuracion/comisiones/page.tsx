@@ -25,12 +25,26 @@ type RpcMember = {
 export const metadata = { title: 'Comisiones · Configuración' }
 export const dynamic = 'force-dynamic'
 
+const TABS = ['tarifas', 'bonus', 'gestores'] as const
+type TabValue = (typeof TABS)[number]
+
 export default async function ComisionesConfigPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantSlug: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { tenantSlug } = await params
+  const sp = await searchParams
+
+  // El form de reserva linkea acá con ?tab=gestores cuando falta cargar un
+  // gestor. Sin esto la página abría siempre en "Tarifas" y el dueño no
+  // encontraba el ABM — que es justo el problema que ese link viene a resolver.
+  const requestedTab = typeof sp.tab === 'string' ? sp.tab : undefined
+  const activeTab: TabValue = TABS.includes(requestedTab as TabValue)
+    ? (requestedTab as TabValue)
+    : 'tarifas'
 
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
@@ -74,7 +88,7 @@ export default async function ComisionesConfigPage({
         title="Comisiones"
         description="Tarifas por tipo de servicio + bonus por evento lleno + qué gestores cobran."
       />
-      <Tabs defaultValue="tarifas">
+      <Tabs defaultValue={activeTab}>
         <TabsList>
           <TabsTrigger value="tarifas">Tarifas</TabsTrigger>
           <TabsTrigger value="bonus">Bonus full</TabsTrigger>

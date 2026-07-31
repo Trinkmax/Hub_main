@@ -87,6 +87,12 @@ export type ReservationFilters = {
   q?: string // busca en guest_name
   page?: number
   pageSize?: number
+  /**
+   * Orden por fecha. 'desc' (default) sirve al modo día / histórico; en un
+   * rango a futuro ("esta semana", "este mes") lo que se quiere leer es la
+   * agenda en el orden en que va a pasar, así que ahí va 'asc'.
+   */
+  sort?: 'asc' | 'desc'
 }
 
 export async function listSalonReservations(
@@ -97,12 +103,13 @@ export async function listSalonReservations(
   const page = Math.max(1, opts.page ?? 1)
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
+  const ascending = opts.sort === 'asc'
 
   let q = supabase
     .from('salon_reservations')
     .select(RESERVATION_JOIN_SELECT, { count: 'exact' })
     .eq('tenant_id', opts.tenantId)
-    .order('reservation_date', { ascending: false })
+    .order('reservation_date', { ascending })
     .order('reservation_time_local', { ascending: true })
     .range(from, to)
 
@@ -125,6 +132,37 @@ export async function listSalonReservations(
   if (error) throw error
   const rows = (data ?? []).map((r: Record<string, unknown>) => flattenReservation(r))
   return { rows, total: count ?? 0 }
+}
+
+/**
+ * Totales del período para la barra de rango: cuántas reservas y cuántos
+ * cubiertos hay entre dos fechas. En modo día ese número lo da
+ * `getDayCapacitySnapshot` (que además conoce el tope del salón); en un rango
+ * el tope no significa nada, pero el volumen sí — sin esto, al pasar a "este
+ * mes" se perdía el contador de cubiertos.
+ *
+ * Excluye canceladas y no-show: no ocupan mesa.
+ */
+export async function getRangeReservationTotals(opts: {
+  tenantId: string
+  from: string
+  to: string
+}): Promise<{ reservations: number; guests: number }> {
+  const supabase = (await createClient()) as SBAny
+  const { data, error } = await supabase
+    .from('salon_reservations')
+    .select('estimated_guests, actual_guests')
+    .eq('tenant_id', opts.tenantId)
+    .gte('reservation_date', opts.from)
+    .lte('reservation_date', opts.to)
+    .not('status', 'in', '(cancelled,no_show)')
+  if (error) throw error
+
+  const rows = (data ?? []) as Array<{ estimated_guests: number; actual_guests: number | null }>
+  return {
+    reservations: rows.length,
+    guests: rows.reduce((acc, r) => acc + (r.actual_guests ?? r.estimated_guests ?? 0), 0),
+  }
 }
 
 export async function getSalonReservation(opts: {

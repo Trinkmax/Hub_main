@@ -1,6 +1,14 @@
 'use client'
 
-import { CalendarCheck, ChefHat, ClipboardList, Inbox, type LucideIcon, User } from 'lucide-react'
+import {
+  CalendarCheck,
+  ChefHat,
+  ClipboardList,
+  Inbox,
+  type LucideIcon,
+  ScanLine,
+  User,
+} from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { FeatureKey, TenantFeatures } from '@/lib/platform/features'
@@ -25,6 +33,15 @@ const TABS: Tab[] = [
       p === `/${s}/salon` ||
       p === `/${s}/salon/reservas-operativo` ||
       p.startsWith(`/${s}/salon/reservas-operativo/`),
+  },
+  {
+    label: 'Validar',
+    icon: ScanLine,
+    href: (s) => `/${s}/salon/validar`,
+    match: (p, s) => p.startsWith(`/${s}/salon/validar`),
+    // Sin `feature`: validar canjes es del club (fidelización), no del servicio
+    // de mesa. Detrás de `table_service` — apagado en HUB — no aparecería nunca.
+    roles: ['owner', 'cashier', 'waiter'],
   },
   {
     label: 'Mesas',

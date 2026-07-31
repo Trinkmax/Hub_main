@@ -1,14 +1,28 @@
 import 'server-only'
 import type { TierBenefitCadence, TierBenefitKind } from '@/lib/points/benefits'
-import { hasItemBonus, resolveEarnRate } from '@/lib/points/earn-rate'
+import { hasItemBonus } from '@/lib/points/earn-rate'
 import type { LoyaltyTier } from '@/lib/points/tiers'
 import type { PointsRule } from '@/lib/points/types'
 import { createServiceClient } from '@/lib/supabase/service'
+import type { PartnerBenefitRow, PartnerBenefitTierRow } from './partner-benefits'
+import { groupBenefitsByTier } from './partner-benefits'
 import type { WalletBenefit, WalletData, WalletEarn } from './queries'
 
 // Config de fidelización del tenant SIN cliente: alimenta el simulador de wallet
 // del admin. El simulador arma un WalletData sintético con puntos ajustables y
 // re-renderiza el MISMO componente de wallet, sin tocar la DB (todo client-side).
+//
+// Aliados por categoría: la resolución depende del nivel SIMULADO, que sólo
+// existe del lado del cliente, así que acá va la materia prima
+// (`partnerBenefitsByTier`) y el simulador la resuelve con los helpers PUROS de
+// partner-benefits.ts:
+//
+//   const byTier = new Map(Object.entries(config.partnerBenefitsByTier))
+//   partners: config.partners.map((p) => {
+//     const r = resolvePartnersForTier([p.id], byTier, tiers, current?.id ?? null).get(p.id)
+//     return { ...p, myBenefit: r?.myBenefit ?? null, unlockTierName: r?.unlockTierName ?? null }
+//   }),
+//   partnerTiers: buildPartnerTiers(config.partners, byTier, tiers),
 
 export type SimReward = {
   id: string
@@ -19,6 +33,8 @@ export type SimReward = {
   stock: number | null
   category: string | null
   minTierId: string | null
+  /** Orden manual del dueño (ITEM 7): la vista previa tiene que respetarlo. */
+  sort: number
 }
 
 export type SimConfig = {
@@ -29,6 +45,8 @@ export type SimConfig = {
   benefitsByTier: Record<string, WalletBenefit[]>
   rewards: SimReward[]
   partners: WalletData['partners']
+  /** Beneficios de aliados por `tier_id` (materia prima para resolver por nivel). */
+  partnerBenefitsByTier: Record<string, PartnerBenefitRow[]>
 }
 
 type PartnerJoin = {
@@ -57,6 +75,8 @@ export async function getSimulatorConfig(tenantSlug: string): Promise<SimConfig 
     { data: rewardsData },
     { data: partnersData },
     { data: rulesData },
+    { data: partnerBenefitsData },
+    { data: partnerBenefitTiersData },
   ] = await Promise.all([
     service
       .from('loyalty_tiers')
@@ -72,10 +92,11 @@ export async function getSimulatorConfig(tenantSlug: string): Promise<SimConfig 
       .order('sort', { ascending: true }),
     service
       .from('rewards')
-      .select('id, name, description, cost_points, stock, image_url, min_tier_id, category')
+      .select('id, name, description, cost_points, stock, image_url, min_tier_id, category, sort')
       .eq('tenant_id', tenantId)
       .eq('active', true)
       .eq('visible_in_catalog', true)
+      .order('sort', { ascending: true })
       .order('cost_points', { ascending: true }),
     service
       .from('partners')
@@ -88,6 +109,13 @@ export async function getSimulatorConfig(tenantSlug: string): Promise<SimConfig 
       .select('id, type, config, priority, active')
       .eq('tenant_id', tenantId)
       .eq('active', true),
+    service
+      .from('partner_benefits')
+      .select('id, partner_id, label, description, discount_pct, image_url, sort')
+      .eq('tenant_id', tenantId)
+      .eq('active', true)
+      .order('sort', { ascending: true }),
+    service.from('partner_benefit_tiers').select('benefit_id, tier_id').eq('tenant_id', tenantId),
   ])
 
   const benefitsByTier: Record<string, WalletBenefit[]> = {}
@@ -144,8 +172,14 @@ export async function getSimulatorConfig(tenantSlug: string): Promise<SimConfig 
       (tenant as { category_window_months?: number | null }).category_window_months ?? 4,
     earn: ((): WalletEarn => {
       const rules = (rulesData ?? []) as unknown as PointsRule[]
-      return { rate: resolveEarnRate(rules), itemBonus: hasItemBonus(rules) }
+      return { itemBonus: hasItemBonus(rules) }
     })(),
+    partnerBenefitsByTier: Object.fromEntries(
+      groupBenefitsByTier(
+        (partnerBenefitsData ?? []) as PartnerBenefitRow[],
+        (partnerBenefitTiersData ?? []) as PartnerBenefitTierRow[],
+      ),
+    ),
     tiers: (tiersData ?? []) as LoyaltyTier[],
     benefitsByTier,
     rewards: (
@@ -158,6 +192,7 @@ export async function getSimulatorConfig(tenantSlug: string): Promise<SimConfig 
         image_url: string | null
         min_tier_id: string | null
         category: string | null
+        sort: number | null
       }>
     ).map((r) => ({
       id: r.id,
@@ -167,6 +202,7 @@ export async function getSimulatorConfig(tenantSlug: string): Promise<SimConfig 
       imageUrl: r.image_url,
       stock: r.stock,
       category: r.category,
+      sort: r.sort ?? 0,
       minTierId: r.min_tier_id,
     })),
     partners: (
@@ -187,6 +223,9 @@ export async function getSimulatorConfig(tenantSlug: string): Promise<SimConfig 
       category: p.category,
       url: p.url,
       active: p.active,
+      // Sin nivel simulado no hay resolución posible acá; la hace el simulador.
+      myBenefit: null,
+      unlockTierName: null,
     })),
   }
 }

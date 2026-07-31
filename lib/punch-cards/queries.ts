@@ -1,31 +1,46 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
+import {
+  RoleRequiredError,
+  requireRole,
+  requireTenantAccess,
+  TenantNotFoundError,
+  UnauthenticatedError,
+} from '@/lib/tenant'
+import type { PunchTriggerType } from './schemas'
 
 export type PunchCardTemplateRow = {
   id: string
   name: string
   description: string | null
   image_url: string | null
-  trigger_type: 'item' | 'category' | 'tag' | 'visit_window'
+  stamp_icon: string | null
+  reward_label: string | null
+  trigger_type: PunchTriggerType
   trigger_ref_id: string | null
   threshold: number
   reward_id: string
   reward_name?: string
   expires_after_days: number | null
   active: boolean
+  sort: number
   config: Record<string, unknown>
   created_at: string
 }
 
+const TEMPLATE_COLUMNS =
+  'id, name, description, image_url, stamp_icon, reward_label, trigger_type, trigger_ref_id, threshold, reward_id, expires_after_days, active, sort, config, created_at'
+
 export async function listPunchCardTemplates(tenantId: string): Promise<PunchCardTemplateRow[]> {
   const supabase = await createClient()
+  // El orden lo decide el dueño arrastrando (`sort`); `created_at` desempata
+  // las que nunca se movieron.
   const { data, error } = await supabase
     .from('punch_card_templates')
-    .select(
-      'id, name, description, image_url, trigger_type, trigger_ref_id, threshold, reward_id, expires_after_days, active, config, created_at, rewards(name)',
-    )
+    .select(`${TEMPLATE_COLUMNS}, rewards(name)`)
     .eq('tenant_id', tenantId)
-    .order('created_at', { ascending: false })
+    .order('sort', { ascending: true })
+    .order('created_at', { ascending: true })
   if (error || !data) {
     console.error('[punch-cards.list]', error?.message)
     return []
@@ -89,4 +104,90 @@ export async function getCustomerLunchSnapshot(opts: {
     reward_name: rewardName,
     config: (template.config as Record<string, unknown>) ?? {},
   }
+}
+
+export type CustomerPunchCard = {
+  /** null mientras el cliente no tenga tarjeta iniciada (todavía va en 0). */
+  cardId: string | null
+  templateId: string
+  templateName: string
+  stampIcon: string | null
+  imageUrl: string | null
+  current: number
+  threshold: number
+  remaining: number
+}
+
+/**
+ * Tarjetas del cliente para la caja (/acreditar) y la ficha del socio.
+ * Parte de los TEMPLATES activos y le pega la tarjeta en curso, así las que
+ * están en cero también aparecen y el cajero puede sellar la primera.
+ */
+export async function listCustomerPunchCards(
+  tenantSlug: string,
+  customerId: string,
+): Promise<CustomerPunchCard[]> {
+  let tenantId: string
+  try {
+    const { tenant, role } = await requireTenantAccess(tenantSlug)
+    requireRole(role, ['owner', 'cashier', 'waiter'])
+    tenantId = tenant.id
+  } catch (error) {
+    if (
+      error instanceof RoleRequiredError ||
+      error instanceof TenantNotFoundError ||
+      error instanceof UnauthenticatedError
+    ) {
+      return []
+    }
+    throw error
+  }
+
+  const supabase = await createClient()
+  const { data: templates, error } = await supabase
+    .from('punch_card_templates')
+    .select('id, name, stamp_icon, image_url, threshold, sort, created_at')
+    .eq('tenant_id', tenantId)
+    .eq('active', true)
+    .order('sort', { ascending: true })
+    .order('created_at', { ascending: true })
+  if (error || !templates || templates.length === 0) {
+    if (error) console.error('[punch-cards.listCustomer]', error.message)
+    return []
+  }
+
+  const { data: cards } = await supabase
+    .from('customer_punch_cards')
+    .select('id, template_id, current_stamps, threshold_snapshot')
+    .eq('tenant_id', tenantId)
+    .eq('customer_id', customerId)
+    .is('completed_at', null)
+    .is('expired_at', null)
+
+  const byTemplate = new Map<string, { id: string; current: number; threshold: number }>()
+  for (const c of cards ?? []) {
+    byTemplate.set(c.template_id, {
+      id: c.id,
+      current: c.current_stamps,
+      threshold: c.threshold_snapshot,
+    })
+  }
+
+  return templates.map((t) => {
+    const card = byTemplate.get(t.id)
+    // El umbral vigente para el cliente es el congelado al iniciar la tarjeta:
+    // subir el threshold del template no debe alargar una tarjeta ya empezada.
+    const threshold = card?.threshold ?? t.threshold
+    const current = card?.current ?? 0
+    return {
+      cardId: card?.id ?? null,
+      templateId: t.id,
+      templateName: t.name,
+      stampIcon: t.stamp_icon,
+      imageUrl: t.image_url,
+      current,
+      threshold,
+      remaining: Math.max(0, threshold - current),
+    }
+  })
 }

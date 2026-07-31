@@ -1,0 +1,12 @@
+-- ============================================================
+-- punch_trigger_type += 'manual'
+-- ============================================================
+-- Va en su propia migración a propósito: Postgres no deja USAR un valor de enum
+-- recién agregado dentro de la misma transacción que lo agrega, y el CHECK de
+-- `punch_card_templates_trigger_ref_check` (migración siguiente) lo usa.
+--
+-- 'manual' = la tarjeta la sella el cajero con el botón "+1" en /acreditar, sin
+-- atarla a un ítem de la carta. Es el modo que pidió el dueño para "6 cafés y
+-- el 7mo gratis" sin depender del módulo de mesas (apagado en HUB).
+-- ============================================================
+alter type public.punch_trigger_type add value if not exists 'manual';

@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import type { z } from 'zod'
+import { z } from 'zod'
 import { logAudit } from '@/lib/audit'
 import { createClient } from '@/lib/supabase/server'
 import {
@@ -15,6 +15,9 @@ import {
   createPunchCardSchema,
   lunchVisitSchema,
   punchCardIdSchema,
+  reorderPunchCardsSchema,
+  stampSchema,
+  triggerNeedsRef,
   updatePunchCardSchema,
 } from './schemas'
 
@@ -65,6 +68,73 @@ function flattenIssues(error: z.ZodError): Record<string, string> {
   return out
 }
 
+type PunchCardFields = z.infer<typeof createPunchCardSchema>
+
+/**
+ * Lee el FormData del editor y lo valida. La `config` viaja como JSON en un
+ * input hidden (el form la arma en el cliente); `trigger_ref_id` sólo aplica a
+ * los disparadores que apuntan a algo del catálogo.
+ */
+function parsePunchCardForm<S extends z.ZodType>(
+  formData: FormData,
+  schema: S,
+): { ok: true; data: z.infer<S> } | { ok: false; state: PunchCardActionState } {
+  const triggerType = String(formData.get('trigger_type') ?? '')
+  const configRaw = formData.get('config')
+  let configParsed: unknown
+  if (typeof configRaw === 'string' && configRaw.length > 0) {
+    try {
+      configParsed = JSON.parse(configRaw)
+    } catch {
+      return { ok: false, state: { ok: false, message: 'Configuración inválida.' } }
+    }
+  }
+
+  const parsed = schema.safeParse({
+    id: formData.get('id'),
+    name: formData.get('name'),
+    description: formData.get('description'),
+    image_url: formData.get('image_url') || null,
+    stamp_icon: formData.get('stamp_icon') || null,
+    reward_label: formData.get('reward_label') || null,
+    trigger_type: triggerType,
+    trigger_ref_id: triggerNeedsRef(triggerType) ? formData.get('trigger_ref_id') || null : null,
+    threshold: formData.get('threshold'),
+    reward_id: formData.get('reward_id'),
+    expires_after_days: formData.get('expires_after_days') || null,
+    active: formData.get('active') === 'on',
+    config: configParsed,
+  })
+  if (!parsed.success) {
+    return {
+      ok: false,
+      state: {
+        ok: false,
+        message: parsed.error.issues[0]?.message ?? 'Datos inválidos',
+        fieldErrors: flattenIssues(parsed.error),
+      },
+    }
+  }
+  return { ok: true, data: parsed.data }
+}
+
+/** Columnas comunes a insert y update (sin `tenant_id` ni `id`). */
+function templateRow(d: PunchCardFields) {
+  return {
+    name: d.name,
+    description: d.description ?? null,
+    image_url: d.image_url ?? null,
+    stamp_icon: d.stamp_icon ?? null,
+    reward_label: d.reward_label ?? null,
+    trigger_type: d.trigger_type,
+    trigger_ref_id: d.trigger_ref_id ?? null,
+    threshold: d.threshold,
+    reward_id: d.reward_id,
+    expires_after_days: d.expires_after_days ?? null,
+    config: d.config ?? {},
+  }
+}
+
 export async function createPunchCard(
   slug: string,
   _prev: PunchCardActionState,
@@ -73,49 +143,15 @@ export async function createPunchCard(
   const access = await authorize(slug)
   if (!access) return { ok: false, message: 'No tenés permiso.' }
 
-  const triggerType = formData.get('trigger_type')
-  const configRaw = formData.get('config')
-  let configParsed: unknown
-  if (typeof configRaw === 'string' && configRaw.length > 0) {
-    try {
-      configParsed = JSON.parse(configRaw)
-    } catch {
-      return { ok: false, message: 'Configuración inválida.' }
-    }
-  }
-  const parsed = createPunchCardSchema.safeParse({
-    name: formData.get('name'),
-    description: formData.get('description'),
-    image_url: formData.get('image_url') || null,
-    trigger_type: triggerType,
-    trigger_ref_id: triggerType === 'visit_window' ? null : formData.get('trigger_ref_id') || null,
-    threshold: formData.get('threshold'),
-    reward_id: formData.get('reward_id'),
-    expires_after_days: formData.get('expires_after_days') || null,
-    config: configParsed,
-  })
-  if (!parsed.success) {
-    return {
-      ok: false,
-      message: parsed.error.issues[0]?.message ?? 'Datos inválidos',
-      fieldErrors: flattenIssues(parsed.error),
-    }
-  }
+  const parsed = parsePunchCardForm(formData, createPunchCardSchema)
+  if (!parsed.ok) return parsed.state
 
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('punch_card_templates')
     .insert({
       tenant_id: access.tenant.id,
-      name: parsed.data.name,
-      description: parsed.data.description ?? null,
-      image_url: parsed.data.image_url ?? null,
-      trigger_type: parsed.data.trigger_type,
-      trigger_ref_id: parsed.data.trigger_ref_id ?? null,
-      threshold: parsed.data.threshold,
-      reward_id: parsed.data.reward_id,
-      expires_after_days: parsed.data.expires_after_days ?? null,
-      config: parsed.data.config ?? {},
+      ...templateRow(parsed.data),
     })
     .select('id')
     .single()
@@ -123,7 +159,7 @@ export async function createPunchCard(
     console.error('[punch-cards.create]', error?.message)
     return { ok: false, message: 'No se pudo crear la card.' }
   }
-  revalidatePath(`/${slug}/club/punch-cards`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true, templateId: data.id }
 }
@@ -136,61 +172,83 @@ export async function updatePunchCard(
   const access = await authorize(slug)
   if (!access) return { ok: false, message: 'No tenés permiso.' }
 
-  const triggerType = formData.get('trigger_type')
-  const configRaw = formData.get('config')
-  let configParsed: unknown
-  if (typeof configRaw === 'string' && configRaw.length > 0) {
-    try {
-      configParsed = JSON.parse(configRaw)
-    } catch {
-      return { ok: false, message: 'Configuración inválida.' }
-    }
-  }
-  const parsed = updatePunchCardSchema.safeParse({
-    id: formData.get('id'),
-    name: formData.get('name'),
-    description: formData.get('description'),
-    image_url: formData.get('image_url') || null,
-    trigger_type: triggerType,
-    trigger_ref_id: triggerType === 'visit_window' ? null : formData.get('trigger_ref_id') || null,
-    threshold: formData.get('threshold'),
-    reward_id: formData.get('reward_id'),
-    expires_after_days: formData.get('expires_after_days') || null,
-    active: formData.get('active') === 'on',
-    config: configParsed,
-  })
-  if (!parsed.success) {
-    return {
-      ok: false,
-      message: parsed.error.issues[0]?.message ?? 'Datos inválidos',
-      fieldErrors: flattenIssues(parsed.error),
-    }
-  }
+  const parsed = parsePunchCardForm(formData, updatePunchCardSchema)
+  if (!parsed.ok) return parsed.state
 
   const supabase = await createClient()
   const { error } = await supabase
     .from('punch_card_templates')
-    .update({
-      name: parsed.data.name,
-      description: parsed.data.description ?? null,
-      image_url: parsed.data.image_url ?? null,
-      trigger_type: parsed.data.trigger_type,
-      trigger_ref_id: parsed.data.trigger_ref_id ?? null,
-      threshold: parsed.data.threshold,
-      reward_id: parsed.data.reward_id,
-      expires_after_days: parsed.data.expires_after_days ?? null,
-      active: parsed.data.active,
-      config: parsed.data.config ?? {},
-    })
+    .update({ ...templateRow(parsed.data), active: parsed.data.active })
     .eq('id', parsed.data.id)
     .eq('tenant_id', access.tenant.id)
   if (error) {
     console.error('[punch-cards.update]', error.message)
     return { ok: false, message: 'No se pudo actualizar.' }
   }
-  revalidatePath(`/${slug}/club/punch-cards`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true, templateId: parsed.data.id }
+}
+
+export async function togglePunchCard(
+  slug: string,
+  id: string,
+  active: boolean,
+): Promise<PunchCardActionState> {
+  const access = await authorize(slug)
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = punchCardIdSchema.safeParse({ id })
+  if (!parsed.success) return { ok: false, message: 'Id inválido.' }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('punch_card_templates')
+    .update({ active })
+    .eq('id', parsed.data.id)
+    .eq('tenant_id', access.tenant.id)
+  if (error) {
+    console.error('[punch-cards.toggle]', error.message)
+    return { ok: false, message: 'No se pudo actualizar.' }
+  }
+  revalidatePath(`/${slug}/club`)
+  revalidatePath(`/${slug}/menu`)
+  return { ok: true }
+}
+
+/**
+ * Guarda el orden que dejó el dueño arrastrando. Sin RPC dedicada: son pocas
+ * tarjetas y cada update va filtrado por tenant (+ RLS owner encima).
+ */
+export async function reorderPunchCards(
+  slug: string,
+  orderedIds: string[],
+): Promise<PunchCardActionState> {
+  const access = await authorize(slug)
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = reorderPunchCardsSchema.safeParse({ ordered_ids: orderedIds })
+  if (!parsed.success) return { ok: false, message: 'Orden inválido.' }
+  if (parsed.data.ordered_ids.length === 0) return { ok: true }
+
+  const supabase = await createClient()
+  const results = await Promise.all(
+    parsed.data.ordered_ids.map((id, index) =>
+      supabase
+        .from('punch_card_templates')
+        .update({ sort: index + 1 })
+        .eq('id', id)
+        .eq('tenant_id', access.tenant.id),
+    ),
+  )
+  const failed = results.find((r) => r.error)
+  if (failed?.error) {
+    console.error('[punch-cards.reorder]', failed.error.message)
+    return { ok: false, message: 'No pudimos guardar el orden.' }
+  }
+  revalidatePath(`/${slug}/club`)
+  revalidatePath(`/${slug}/menu`)
+  return { ok: true }
 }
 
 export async function registerLunchVisit(
@@ -261,6 +319,110 @@ export async function registerLunchVisit(
   }
 }
 
+// ──────────────────────────────────────────────────────────
+// Sellos manuales (el cajero aprieta "+1" en /acreditar)
+// ──────────────────────────────────────────────────────────
+
+export type StampActionState =
+  | { ok: true; remaining: number; completed: boolean; templateName: string }
+  | { ok: false; message: string }
+
+/** Los códigos vienen como `raise exception` de add_punch_stamp (errcode P0001). */
+function stampErrorMessage(raw: string): string {
+  if (raw.includes('punch_daily_limit')) return 'Ya llegó al máximo de sellos de hoy.'
+  if (raw.includes('punch_card_already_full')) return 'La tarjeta ya está completa.'
+  if (raw.includes('template_not_found')) return 'La tarjeta no está activa.'
+  if (raw.includes('customer_not_found')) return 'No encontramos al cliente.'
+  if (raw.includes('forbidden')) return 'No tenés permiso para sellar.'
+  return 'No pudimos sellar la tarjeta.'
+}
+
+export async function addStampAction(
+  tenantSlug: string,
+  customerId: string,
+  templateId: string,
+): Promise<StampActionState> {
+  const access = await authorizeStaff(tenantSlug)
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = stampSchema.safeParse({ customer_id: customerId, template_id: templateId })
+  if (!parsed.success) return { ok: false, message: 'Datos inválidos.' }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('add_punch_stamp', {
+    p_customer_id: parsed.data.customer_id,
+    p_template_id: parsed.data.template_id,
+    p_qty: 1,
+    p_source: 'manual',
+  })
+  if (error) {
+    // Los códigos de negocio son esperables (tope diario, tarjeta llena): no
+    // ensucian el log; el resto sí, para poder diagnosticarlo.
+    const message = stampErrorMessage(error.message)
+    if (message === 'No pudimos sellar la tarjeta.') {
+      console.error('[punch-cards.addStamp]', error.message)
+    }
+    return { ok: false, message }
+  }
+
+  const result = (data ?? {}) as {
+    template_name?: string
+    remaining?: number
+    completed?: boolean
+  }
+
+  await logAudit({
+    tenantId: access.tenant.id,
+    userId: null,
+    action: 'punch_card.stamp_added',
+    entity: 'customer',
+    entityId: parsed.data.customer_id,
+    payload: { template_id: parsed.data.template_id, completed: Boolean(result.completed) },
+  })
+
+  revalidatePath(`/${tenantSlug}/clientes/${parsed.data.customer_id}`)
+  return {
+    ok: true,
+    remaining: result.remaining ?? 0,
+    completed: Boolean(result.completed),
+    templateName: result.template_name ?? 'Tarjeta',
+  }
+}
+
+/** Deshacer un sello mal puesto. Sólo owner/cashier (lo valida también la RPC). */
+export async function removeStampAction(
+  tenantSlug: string,
+  cardId: string,
+): Promise<{ ok: true; current: number } | { ok: false; message: string }> {
+  const access = await authorizeStaff(tenantSlug)
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+
+  const parsed = z.string().uuid().safeParse(cardId)
+  if (!parsed.success) return { ok: false, message: 'Id inválido.' }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('remove_punch_stamp', {
+    p_card_id: parsed.data,
+    p_qty: 1,
+  })
+  if (error) {
+    if (error.message.includes('punch_card_empty')) {
+      return { ok: false, message: 'La tarjeta no tiene sellos para sacar.' }
+    }
+    if (error.message.includes('punch_card_not_found')) {
+      return { ok: false, message: 'No encontramos esa tarjeta.' }
+    }
+    if (error.message.includes('forbidden')) {
+      return { ok: false, message: 'Sólo el dueño o la caja pueden sacar un sello.' }
+    }
+    console.error('[punch-cards.removeStamp]', error.message)
+    return { ok: false, message: 'No pudimos sacar el sello.' }
+  }
+
+  const result = (data ?? {}) as { current_stamps?: number }
+  return { ok: true, current: result.current_stamps ?? 0 }
+}
+
 export async function deletePunchCard(slug: string, id: string): Promise<PunchCardActionState> {
   const access = await authorize(slug)
   if (!access) return { ok: false, message: 'No tenés permiso.' }
@@ -284,7 +446,7 @@ export async function deletePunchCard(slug: string, id: string): Promise<PunchCa
     console.error('[punch-cards.delete]', error.message)
     return { ok: false, message: 'No se pudo eliminar.' }
   }
-  revalidatePath(`/${slug}/club/punch-cards`)
+  revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true }
 }

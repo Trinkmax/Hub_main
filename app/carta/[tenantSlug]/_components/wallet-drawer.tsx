@@ -1,8 +1,20 @@
 'use client'
 
-import { ChevronUp, Wallet, X } from 'lucide-react'
+import { ChevronUp, LogOut, Wallet, X } from 'lucide-react'
 import Image from 'next/image'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
+import { clubLogout } from '@/lib/club-auth/actions'
 import { cn } from '@/lib/utils'
 import { useDismissOnBack } from './use-dismiss-on-back'
 
@@ -42,6 +54,61 @@ function rubber(overshoot: number, max = 120): number {
   return (1 - 1 / ((overshoot * 0.5) / max + 1)) * max
 }
 
+/**
+ * Pie de la billetera: cerrar sesión + la línea legal.
+ *
+ * Va al FINAL del cuerpo scrolleable a propósito. El socio abre esto en la mesa
+ * para que le escaneen el QR; un botón de salir cerca del carnet sería un
+ * desastre táctil. Acá hay que scrollear hasta el fondo y además confirmar.
+ */
+function WalletFooter({
+  tenantSlug,
+  firstName,
+}: {
+  tenantSlug: string
+  firstName: string
+}): React.JSX.Element {
+  return (
+    <div className="mx-auto mt-10 flex max-w-md flex-col items-center gap-2 px-4 text-center">
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex h-11 items-center gap-2 rounded-full px-4 text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <LogOut className="size-4" aria-hidden />
+            Cerrar sesión
+          </button>
+        </AlertDialogTrigger>
+        {/* El AlertDialog se portaliza al body, fuera del `force-light` del cajón:
+            sin la clase acá saldría con el tema del sistema. */}
+        <AlertDialogContent className="force-light">
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Cerrar sesión, {firstName}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Vas a tener que volver a entrar con tu teléfono y tu contraseña. Tus puntos y
+              beneficios quedan intactos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="h-11">Seguir con mi sesión</AlertDialogCancel>
+            <form action={clubLogout}>
+              <input type="hidden" name="tenant_slug" value={tenantSlug} />
+              <AlertDialogAction type="submit" className="h-11 w-full">
+                Cerrar sesión
+              </AlertDialogAction>
+            </form>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <p className="text-[11px] leading-relaxed text-muted-foreground/70">
+        Tu billetera es personal. No compartas tu QR ni tu contraseña.
+      </p>
+    </div>
+  )
+}
+
 /** Chip compacto del nivel: color del nivel si es hex, sino el acento de marca. */
 function TierChip({ name, color }: { name: string; color: string | null }): React.JSX.Element {
   const isHex = color !== null && /^#[0-9a-fA-F]{6}$/.test(color)
@@ -79,10 +146,13 @@ function TierChip({ name, color }: { name: string; color: string | null }): Reac
  */
 export function WalletDrawer({
   summary,
+  tenantSlug,
   children,
   initialOpen = false,
 }: {
   summary: WalletSummary
+  /** Necesario para cerrar sesión: la cookie de identidad es tenant-scoped. */
+  tenantSlug: string
   children: React.ReactNode
   initialOpen?: boolean
 }): React.JSX.Element {
@@ -572,6 +642,8 @@ export function WalletDrawer({
           </header>
 
           {children}
+
+          <WalletFooter tenantSlug={tenantSlug} firstName={summary.firstName} />
 
           <div className="h-[max(env(safe-area-inset-bottom),8px)]" />
         </div>

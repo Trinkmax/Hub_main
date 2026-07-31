@@ -1,4 +1,7 @@
+import { MessageSquare } from 'lucide-react'
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/ui/page-header'
 import { getReviewSettings } from '@/lib/reviews/queries'
 import {
@@ -36,7 +39,15 @@ export default async function ResenasSettingsPage({
       <PageHeader
         eyebrow="Configuración"
         title="Reseñas"
-        description="Definí adónde van las reseñas de tus clientes y cuántos puntos otorgás por dejar una opinión."
+        description="Las de 5★ van a tu ficha de Google; el resto llega a tu WhatsApp como feedback privado. Cargá los dos destinos y cuántos puntos das por opinar."
+        actions={
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/${tenantSlug}/reviews`}>
+              <MessageSquare className="size-4" aria-hidden="true" />
+              Ver reseñas
+            </Link>
+          </Button>
+        }
       />
       <ReviewSettingsForm tenantSlug={tenantSlug} settings={settings} />
     </div>

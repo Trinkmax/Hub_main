@@ -120,6 +120,8 @@ const tierBenefitBase = z.object({
   label: z.string().trim().min(1, 'Nombre requerido').max(80),
   description: optionalText(200),
   icon: optionalText(40),
+  // Foto e ícono conviven: la foto manda en la billetera, el ícono en los chips.
+  image_url: optionalText(500),
   reward_id: optionalUuid,
   cadence: tierBenefitCadenceSchema.default('monthly'),
   quantity: z.coerce.number().int().min(1, 'Mínimo 1').max(20, 'Máximo 20').default(1),
@@ -151,13 +153,14 @@ export type CreateTierBenefitInput = z.infer<typeof createTierBenefitSchema>
 export type UpdateTierBenefitInput = z.infer<typeof updateTierBenefitSchema>
 
 // ──────────────────────────────────────────────────────────
-// Marcas aliadas (partners)
+// Marcas aliadas (partners) + sus beneficios por nivel
 // ──────────────────────────────────────────────────────────
 
+// `discount_label` NO está: quedó como legacy de solo lectura. El descuento se
+// carga como partner_benefit, que sí sabe a qué niveles corresponde.
 export const createPartnerSchema = z.object({
   name: z.string().trim().min(1, 'Nombre requerido').max(80),
   logo_url: optionalText(500),
-  discount_label: optionalText(40),
   category: optionalText(40),
   url: optionalText(500),
   active: z.coerce.boolean().default(false),
@@ -168,6 +171,42 @@ export const updatePartnerSchema = createPartnerSchema.extend({ id: z.string().u
 
 export type CreatePartnerInput = z.infer<typeof createPartnerSchema>
 export type UpdatePartnerInput = z.infer<typeof updatePartnerSchema>
+
+const partnerBenefitBase = z.object({
+  partner_id: z.string().uuid(),
+  label: z.string().trim().min(1, 'Poné el beneficio (ej: 10% off)').max(80),
+  description: optionalText(200),
+  discount_pct: optionalNumber(z.coerce.number().min(0, 'Mínimo 0%').max(100, 'Máximo 100%')),
+  image_url: optionalText(500),
+  active: z.coerce.boolean().default(true),
+  // Set arbitrario de niveles: el dueño puede saltear uno a propósito.
+  tier_ids: z.array(z.string().uuid()).max(50).default([]),
+})
+
+export const createPartnerBenefitSchema = partnerBenefitBase
+export const updatePartnerBenefitSchema = partnerBenefitBase.extend({ id: z.string().uuid() })
+
+export type CreatePartnerBenefitInput = z.infer<typeof createPartnerBenefitSchema>
+export type UpdatePartnerBenefitInput = z.infer<typeof updatePartnerBenefitSchema>
+
+// ──────────────────────────────────────────────────────────
+// Reordenamientos (drag & drop) — el orden viaja como array de uuids
+// ──────────────────────────────────────────────────────────
+
+/** Lista de ids en el orden final. Vacía = no-op (las RPC también lo toleran). */
+export const orderedIdsSchema = z.array(z.string().uuid()).max(500)
+
+export const reorderTierBenefitsSchema = z.object({
+  tier_id: z.string().uuid(),
+  ordered_ids: orderedIdsSchema,
+})
+
+export const reorderRewardsSchema = z.object({ ordered_ids: orderedIdsSchema })
+
+export const reorderPartnerBenefitsSchema = z.object({
+  partner_id: z.string().uuid(),
+  ordered_ids: orderedIdsSchema,
+})
 
 // ──────────────────────────────────────────────────────────
 // Redención de puntos como descuento al cobrar

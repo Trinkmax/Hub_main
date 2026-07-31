@@ -3,7 +3,10 @@
 import { ChevronUp, Wallet } from 'lucide-react'
 import { useCallback, useRef } from 'react'
 
-// El "labio" del club para el cliente que TODAVÍA no es socio.
+// El "labio" del club para el cliente que no tiene sesión abierta en este celular.
+// Ojo: "sin sesión" NO es lo mismo que "no es socio" — al que perdió la cookie el
+// copy viejo ("Sumate al club") le mentía y lo mandaba a un alta que ya había
+// hecho. Por eso ahora nombra el club y aclara los dos caminos.
 //
 // Antes era un <button> con sólo `onClick`, pero dibujado EXACTAMENTE como el asa
 // del cajón de la billetera (mismo pill de arrastre, mismo chevron hacia arriba):
@@ -128,7 +131,7 @@ export function ClubLip({ onOpen }: { onOpen: () => void }): React.JSX.Element {
       <button
         ref={ref}
         type="button"
-        aria-label="Sumate al club"
+        aria-label="Abrir el club de beneficios"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -139,8 +142,11 @@ export function ClubLip({ onOpen }: { onOpen: () => void }): React.JSX.Element {
         <span className="h-1.5 w-10 rounded-full bg-current/40" aria-hidden />
         <span className="flex items-center gap-2 text-sm font-semibold">
           <Wallet className="size-4" aria-hidden />
-          Sumate al club
+          Club de beneficios
           <ChevronUp className="wallet-hint-bob size-4" aria-hidden />
+        </span>
+        <span className="text-[11px] font-medium leading-none text-current/75">
+          Sumate o entrá con tu cuenta
         </span>
       </button>
     </nav>

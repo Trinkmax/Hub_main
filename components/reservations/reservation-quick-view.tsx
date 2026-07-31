@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { updateActualGuests, updateSalonReservation } from '@/lib/salon/actions'
 import { fetchDayCapacity } from '@/lib/salon/client-actions'
+import { ARSFormat } from '@/lib/salon/format'
 import {
   type DayCapacityBucket,
   MEAL_TYPE_LABELS,
@@ -112,6 +113,15 @@ export function ReservationQuickView({
             </Field>
           )}
           <Field label="Origen">{ORIGIN_LABELS[r.origin]}</Field>
+          {/* La seña se veía solo entrando a la edición completa; es lo primero
+              que pregunta el dueño cuando mira una reserva. */}
+          <Field label="Seña">
+            {r.deposit_cents > 0 ? (
+              <span className="font-mono tabular-nums">{ARSFormat(r.deposit_cents)}</span>
+            ) : (
+              <span className="text-muted-foreground">Sin seña</span>
+            )}
+          </Field>
           <Field label="Gestor">
             {r.primary_manager?.display_name ?? '—'}
             {r.assistant_manager ? ` + ${r.assistant_manager.display_name}` : ''}
@@ -126,9 +136,14 @@ export function ReservationQuickView({
         </dl>
 
         {r.comments ? (
-          <p className="rounded-lg bg-secondary/50 p-3 text-sm text-muted-foreground">
-            {r.comments}
-          </p>
+          <div className="rounded-lg bg-secondary/50 p-3">
+            <p className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+              Comentario del cliente
+            </p>
+            <p className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words text-sm">
+              {r.comments}
+            </p>
+          </div>
         ) : null}
 
         <div data-tour="quick-estado">

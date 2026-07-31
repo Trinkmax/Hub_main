@@ -10,10 +10,19 @@ import { captureSubmitSchema } from './schemas'
 export type CaptureActionState =
   | {
       ok: true
+      kind: 'joined'
       was_new: boolean
       welcome_bonus_points?: number
       welcome_reward_name?: string | null
     }
+  /**
+   * El teléfono YA es socio: la RPC no devuelve el `qr_token` pase lo que pase.
+   * No es un error — es la defensa contra que alguien tome una cuenta ajena
+   * sabiendo un teléfono. `hasPassword` decide a dónde lo manda el sheet:
+   * `true` → poné tu contraseña; `false` → te mandamos un código por WhatsApp
+   * (único camino que prueba que el teléfono es suyo).
+   */
+  | { ok: true; kind: 'needs_login'; hasPassword: boolean }
   | { ok: false; message: string }
 
 type SubmitCaptureResult = {
@@ -21,6 +30,8 @@ type SubmitCaptureResult = {
   tenant_id: string | null
   qr_token: string | null
   was_new: boolean
+  needs_login?: boolean
+  has_password?: boolean
   welcome_reward_name: string | null
   welcome_bonus_points: number | null
 }
@@ -32,7 +43,9 @@ type SubmitCaptureResult = {
  * (SECURITY DEFINER) y la lectura del link valida `active = true` por RLS.
  *
  * Al sumarse, se setea una cookie httpOnly con el `qr_token` del cliente para que
- * la carta pueda abrir su wallet (/c/[token]) sin login.
+ * la carta pueda abrir su wallet (/c/[token]) sin login. La contraseña es
+ * obligatoria: es lo que hace que esa cookie sea una sesión y no una puerta
+ * abierta para cualquiera que sepa el teléfono del socio.
  */
 export async function submitCapture(formData: FormData): Promise<CaptureActionState> {
   const ip = await getRequestIp()
@@ -54,6 +67,7 @@ export async function submitCapture(formData: FormData): Promise<CaptureActionSt
     last_name: formData.get('last_name'),
     email: formData.get('email'),
     birthdate: formData.get('birthdate'),
+    password: formData.get('password'),
     website: formData.get('website') ?? '',
   })
   if (!parsed.success) {
@@ -72,9 +86,15 @@ export async function submitCapture(formData: FormData): Promise<CaptureActionSt
     p_opt_in: true,
     p_ip: ip,
     p_user_agent: userAgent ?? '',
+    // Nombrar los 10 argumentos desambigua la sobrecarga de `submit_capture`
+    // (quedó la vieja de 9 params en la DB) — sin esto PostgREST no sabe cuál llamar.
+    p_password: parsed.data.password,
   })
 
   if (error) {
+    if (error.message.includes('weak_password')) {
+      return { ok: false, message: 'La contraseña necesita al menos 6 caracteres.' }
+    }
     // Email ya usado por otro cliente del bar (índice único por tenant).
     if (error.message.includes('customers_tenant_email_uidx') || error.code === '23505') {
       return { ok: false, message: 'Ese email ya está registrado con otro teléfono.' }
@@ -84,6 +104,13 @@ export async function submitCapture(formData: FormData): Promise<CaptureActionSt
   }
 
   const result = data as SubmitCaptureResult | null
+
+  // Ya es socio: la RPC se guarda el token a propósito, tenga contraseña o no.
+  // Que lo reclame el dueño del teléfono — con su contraseña, o probando que el
+  // teléfono es suyo con el código de WhatsApp.
+  if (result?.needs_login) {
+    return { ok: true, kind: 'needs_login', hasPassword: Boolean(result.has_password) }
+  }
 
   // Identidad por cookie: la carta lee este token para mostrar la wallet sin login.
   if (result?.qr_token && result.tenant_id) {
@@ -99,6 +126,7 @@ export async function submitCapture(formData: FormData): Promise<CaptureActionSt
 
   return {
     ok: true,
+    kind: 'joined',
     was_new: Boolean(result?.was_new),
     welcome_bonus_points: result?.welcome_bonus_points ?? 0,
     welcome_reward_name: result?.welcome_reward_name ?? null,

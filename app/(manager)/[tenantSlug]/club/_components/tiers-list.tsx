@@ -74,12 +74,15 @@ function BenefitChips({ benefits }: { benefits: TierBenefit[] }) {
 
 export function TiersList({
   tenantSlug,
+  tenantId,
   tiers,
   benefitsByTier,
   rewards,
   partners,
 }: {
   tenantSlug: string
+  /** Necesario para subir fotos de beneficio al bucket del tenant. */
+  tenantId: string
   tiers: LoyaltyTier[]
   /** Beneficios de cada nivel, agrupados por tier_id. */
   benefitsByTier: Record<string, TierBenefit[]>
@@ -270,6 +273,7 @@ export function TiersList({
                 <div className="flex shrink-0 items-center gap-1">
                   <BenefitsEditor
                     tenantSlug={tenantSlug}
+                    tenantId={tenantId}
                     tier={{ id: tier.id, name: tier.name }}
                     benefits={tierBenefits}
                     rewards={rewards}

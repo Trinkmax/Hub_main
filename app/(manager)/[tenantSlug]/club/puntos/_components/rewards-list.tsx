@@ -1,11 +1,22 @@
 'use client'
 
 import {
+  closestCenter,
+  DndContext,
+  type DragEndEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import { arrayMove, rectSortingStrategy, SortableContext, useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import {
   Beer,
   Camera,
   Coffee,
   EyeOff,
   Gift,
+  GripVertical,
   Lock,
   Pause,
   Pencil,
@@ -42,7 +53,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { deleteReward, type LoyaltyActionState, updateReward } from '@/lib/points/actions'
+import {
+  deleteReward,
+  type LoyaltyActionState,
+  reorderRewards,
+  updateReward,
+} from '@/lib/points/actions'
 import type { Reward } from '@/lib/points/queries'
 import { REWARD_CATEGORIES } from '@/lib/points/schemas'
 import type { LoyaltyTier } from '@/lib/points/tiers'
@@ -156,6 +172,115 @@ function RewardMedia({ reward, onEdit }: { reward: Reward; onEdit: () => void })
   )
 }
 
+/**
+ * Firma del CONTENIDO (no del orden): si cambia, la grilla se resincroniza con
+ * el server; si sólo cambió el orden, respetamos el optimista del drag.
+ */
+function contentSignature(list: readonly Reward[]): string {
+  return list
+    .map(
+      (r) =>
+        `${r.id}:${r.name}:${r.active ? 1 : 0}:${r.image_url ?? ''}:${r.cost_points}:${r.category ?? ''}:${r.stock ?? ''}:${r.visible_in_catalog ? 1 : 0}:${r.min_tier_id ?? ''}`,
+    )
+    .sort()
+    .join('|')
+}
+
+/** Card arrastrable del catálogo. El grip es el único activador del drag. */
+function RewardCard({
+  reward,
+  lockedTier,
+  pending,
+  onEdit,
+  onToggle,
+  onDelete,
+}: {
+  reward: Reward
+  lockedTier: string | null
+  pending: boolean
+  onEdit: () => void
+  onToggle: () => void
+  onDelete: () => void
+}) {
+  const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
+    id: reward.id,
+  })
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.55 : 1,
+      }}
+      className={cn(
+        'card-hairline group flex flex-col overflow-hidden rounded-xl border bg-card',
+        isDragging && 'relative z-10 shadow-lg',
+      )}
+    >
+      <RewardMedia reward={reward} onEdit={onEdit} />
+      <div className="flex flex-1 flex-col gap-1.5 p-2.5">
+        <p className="truncate text-sm font-medium leading-tight" title={reward.name}>
+          {reward.name}
+        </p>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+          <span>stock: {reward.stock === null ? '∞' : reward.stock}</span>
+          {lockedTier ? (
+            <span className="inline-flex items-center gap-0.5 normal-case tracking-normal">
+              <Lock className="size-3" aria-hidden />
+              {lockedTier}
+            </span>
+          ) : null}
+        </div>
+        {/* Acciones — siempre visibles (el dueño usa tablet). */}
+        <div className="mt-auto flex items-center justify-between gap-0.5 pt-1">
+          <button
+            {...attributes}
+            {...listeners}
+            type="button"
+            aria-label={`Reordenar ${reward.name}`}
+            // touch-none: sin esto el gesto de arrastre en tablet scrollea la página.
+            className="size-9 shrink-0 cursor-grab touch-none rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground active:cursor-grabbing"
+          >
+            <GripVertical className="mx-auto size-3.5" />
+          </button>
+          <div className="flex items-center gap-0.5">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-9 text-muted-foreground hover:text-foreground"
+              onClick={onEdit}
+              aria-label={`Editar ${reward.name}`}
+            >
+              <Pencil className="size-3.5" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-9 text-muted-foreground hover:text-foreground"
+              onClick={onToggle}
+              disabled={pending}
+              aria-label={reward.active ? 'Pausar' : 'Activar'}
+            >
+              {reward.active ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-9 text-muted-foreground hover:text-destructive"
+              onClick={onDelete}
+              aria-label={`Borrar ${reward.name}`}
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function RewardsList({
   tenantSlug,
   tenantId,
@@ -170,6 +295,15 @@ export function RewardsList({
   const [pending, start] = useTransition()
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
   const [editing, setEditing] = useState<Reward | null>(null)
+
+  // Orden optimista: el drag no espera al server. `rewards` ya viene ordenado
+  // por `sort` desde listRewards.
+  const [order, setOrder] = useState<Reward[]>(rewards)
+  if (contentSignature(rewards) !== contentSignature(order)) {
+    setOrder(rewards)
+  }
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
 
   const sortedTiers = tiers
     .slice()
@@ -217,73 +351,67 @@ export function RewardsList({
     )
   }
 
-  const groups = groupRewards(rewards)
+  const groups = groupRewards(order)
+
+  // Se arrastra DENTRO de cada categoría, pero el `sort` que guardamos es
+  // global: mandamos la lista completa aplanada para que no queden empates.
+  const onDragEnd = (groupKey: string) => (e: DragEndEvent) => {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    const group = groups.find((g) => g.key === groupKey)
+    if (!group) return
+    const oldIndex = group.items.findIndex((r) => r.id === active.id)
+    const newIndex = group.items.findIndex((r) => r.id === over.id)
+    if (oldIndex < 0 || newIndex < 0) return
+
+    const previous = order
+    const movedItems = arrayMove(group.items, oldIndex, newIndex)
+    const next = groups.flatMap((g) => (g.key === groupKey ? movedItems : g.items))
+    setOrder(next)
+    start(async () => {
+      const result = await reorderRewards(
+        tenantSlug,
+        next.map((r) => r.id),
+      )
+      if (!result.ok) {
+        toast.error(result.message)
+        setOrder(previous)
+      }
+    })
+  }
 
   return (
     <div className="space-y-5">
+      <p className="text-xs text-muted-foreground">
+        Arrastrá desde el asa para cambiar el orden en que se ven en la carta.
+      </p>
       {groups.map((group) => (
         <div key={group.key} className="space-y-2.5">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             {group.label}
           </h3>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-            {group.items.map((r) => {
-              const lockedTier = tierName(r.min_tier_id)
-              return (
-                <div
-                  key={r.id}
-                  className="card-hairline group flex flex-col overflow-hidden rounded-xl border bg-card"
-                >
-                  <RewardMedia reward={r} onEdit={() => setEditing(r)} />
-                  <div className="flex flex-1 flex-col gap-1.5 p-2.5">
-                    <p className="truncate text-sm font-medium leading-tight" title={r.name}>
-                      {r.name}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-                      <span>stock: {r.stock === null ? '∞' : r.stock}</span>
-                      {lockedTier ? (
-                        <span className="inline-flex items-center gap-0.5 normal-case tracking-normal">
-                          <Lock className="size-3" aria-hidden />
-                          {lockedTier}
-                        </span>
-                      ) : null}
-                    </div>
-                    {/* Acciones — siempre visibles (el dueño usa tablet). */}
-                    <div className="mt-auto flex items-center justify-end gap-0.5 pt-1">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="size-7 text-muted-foreground hover:text-foreground"
-                        onClick={() => setEditing(r)}
-                        aria-label={`Editar ${r.name}`}
-                      >
-                        <Pencil className="size-3.5" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="size-7 text-muted-foreground hover:text-foreground"
-                        onClick={() => onToggle(r)}
-                        disabled={pending}
-                        aria-label={r.active ? 'Pausar' : 'Activar'}
-                      >
-                        {r.active ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="size-7 text-muted-foreground hover:text-destructive"
-                        onClick={() => setPendingDelete(r.id)}
-                        aria-label={`Borrar ${r.name}`}
-                      >
-                        <Trash2 className="size-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+          <DndContext
+            id={`rewards-${group.key}`}
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={onDragEnd(group.key)}
+          >
+            <SortableContext items={group.items.map((r) => r.id)} strategy={rectSortingStrategy}>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+                {group.items.map((r) => (
+                  <RewardCard
+                    key={r.id}
+                    reward={r}
+                    lockedTier={tierName(r.min_tier_id)}
+                    pending={pending}
+                    onEdit={() => setEditing(r)}
+                    onToggle={() => onToggle(r)}
+                    onDelete={() => setPendingDelete(r.id)}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
         </div>
       ))}
 

@@ -283,3 +283,64 @@ TODO el trabajo de fondo — un bug ahí frena difusiones, flows y jobs.**
   Síntoma original: la diseñadora (rol `editor`) recibía "No pudimos reordenar." /
   "No pudimos mover la categoría." al arrastrar. Verificado contra la DB: editor
   reordena OK.
+
+## Tanda de 16 correcciones del dueño (jul 2026)
+
+Hallazgos y deudas que quedaron fuera del alcance de esa tanda:
+
+- **Review gating a Google sigue PRENDIDO por decisión del dueño.** Hoy sólo las
+  reseñas de 5★ ven el botón para publicar en Google (`tenants.review_gating_enabled
+  = true`, lógica en `lib/reviews/gating.ts`). Se le señaló que esto contradice las
+  políticas de Google Business Profile sobre *review gating* y que puede penalizar
+  la ficha del local; ratificó el flujo ("5★ → Google, el resto → WhatsApp de
+  feedback"). Queda anotado como riesgo asumido, no como bug. Si en algún momento
+  Google marca la ficha, el interruptor para mandar todas ya existe.
+- **Google no permite prellenar el texto de una reseña por URL.** El pedido era
+  "que te lleve a Google Maps con el comentario listo para publicarse". No hay API
+  ni parámetro para eso: se implementó lo máximo posible (copiar el comentario al
+  portapapeles + abrir la ficha), pero la reseña la tiene que pegar el cliente.
+- **La sesión del socio sigue siendo el `qr_token` en cookie.** Al agregar login con
+  contraseña se mantuvo la cookie `hub_wallet_<tenantId>` con el `qr_token` (180
+  días) para no romper `/c/[token]`, `/print/c-qr` ni el escaneo del staff. El
+  problema conceptual persiste: es la MISMA credencial que el mostrador escanea
+  para acreditar y canjear, y no se puede revocar sin rotar el QR físico del
+  cliente (`rotate_customer_qr_token`). Migrar a una tabla `customer_sessions`
+  (token propio, expiración, revocación) cuando haya margen.
+- **Plantilla de WhatsApp para el código de recuperación: no existe todavía.** El
+  flujo de "olvidé mi contraseña" manda texto libre si el socio está dentro de la
+  ventana de 24 h, y plantilla si está fuera. El tenant hub NO tiene ninguna
+  plantilla apta cargada (`hello_world`, `test_difusiones` y las demo
+  `jaspers_market_*`), así que fuera de ventana el envío falla hasta que el dueño
+  cree y Meta apruebe una UTILITY con dos variables (nombre del bar + código).
+  Pendiente confirmar además si el número conectado es productivo o el número de
+  prueba de Meta (allowed-list) — si es el de prueba, no le llega a nadie real.
+- **21 reservas históricas tienen `customer_id` null.** Son anteriores al
+  auto-vínculo por teléfono (Matias Burgos, Melisa Puentes, Luciana Viola, etc.):
+  esa gente existe como reserva pero no tiene ficha en el CRM y no va a aparecer
+  en ninguna vista de Personas. El backfill de `acquisition_channel` no las cubre
+  (no hay a quién marcarle el canal). Definir si se crean clientes a partir de
+  `guest_phone` — ojo con los teléfonos mal normalizados: ya hay un duplicado
+  real de "Franco Delucchi" (`+54 351 327 5110` con espacios vs `+5493513275110`).
+- **Stock de recompensas: no se reserva al generar el QR de canje.** Se valida al
+  pedir y se vuelve a validar al entregar. Con dos clientes peleando la última
+  unidad, el segundo se entera en el mostrador. Es el trade-off elegido para no
+  necesitar un proceso de devolución de reservas vencidas; a este volumen no pasa.
+- **Canjes pendientes vencidos no se limpian.** `reward_redemptions.token_expires_at`
+  vencido deja la fila en `pending` con un token muerto (inofensivo: `deliver`
+  rechaza vencidos). Si molesta en el historial, sumar un barrido al cron.
+- **`punch_card_stamps` no tiene tope de tamaño ni archivado.** Un sello por
+  consumo; a volumen de bar tarda años en importar, pero es una tabla que sólo
+  crece.
+- **El login del club distingue "socio sin contraseña" de "no es socio".** Cuando
+  alguien intenta entrar con el teléfono de un socio que todavía no creó
+  contraseña, la respuesta es distinta a la genérica ("Todavía no tenés
+  contraseña…"), así que la pantalla se puede usar para averiguar si un teléfono
+  es socio de HUB. Se dejó a propósito: los ~11 socios previos al rediseño no
+  tienen contraseña y sin ese cartel quedan encerrados afuera. Lo que sí se cerró
+  es el envío automático de WhatsApp en ese caso (era un cañón de spam contra el
+  teléfono de cualquier socio y contra la cuota del WABA): ahora el código lo pide
+  el usuario con un tap y ese pedido sí pasa por el rate limit por teléfono.
+  Cuando todos los socios tengan contraseña, unificar el mensaje.
+- **`resolveEarnRate` quedó sin llamadores.** Al sacar la tasa de puntos de la
+  billetera (item 3) el helper dejó de usarse, pero sigue exportado y testeado en
+  `lib/points/earn-rate.ts`. Borrarlo o darle uso en el panel del dueño.

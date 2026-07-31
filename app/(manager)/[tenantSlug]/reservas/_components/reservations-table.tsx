@@ -1,5 +1,7 @@
 import { Cake, ChevronLeft, ChevronRight, GlassWater, Users } from 'lucide-react'
 import Link from 'next/link'
+import { Fragment } from 'react'
+import { ReservationCommentPopover } from '@/components/reservations/comment-popover'
 import { ReservationQuickView } from '@/components/reservations/reservation-quick-view'
 import { StatusPill } from '@/components/reservations/status-pill'
 import { Button } from '@/components/ui/button'
@@ -14,7 +16,10 @@ import {
   DataTableScroll,
   DataTableShell,
 } from '@/components/ui/data-table'
+import { formatDayLabel } from '@/lib/salon/date-presets'
+import { ARSFormat } from '@/lib/salon/format'
 import { MEAL_TYPE_LABELS, type ReservationWithJoins, ZONE_LABELS } from '@/lib/salon/types'
+import { cn } from '@/lib/utils'
 
 function formatDate(d: string): string {
   // 'YYYY-MM-DD' → 'dd/MM'
@@ -46,6 +51,26 @@ function dayName(d: string): string {
     .replace('.', '')
 }
 
+/** Las canceladas y no-show siguen listándose, pero no ocupan mesa. */
+function coversOf(rows: ReservationWithJoins[]): number {
+  return rows
+    .filter((r) => r.status !== 'cancelled' && r.status !== 'no_show')
+    .reduce((acc, r) => acc + (r.actual_guests ?? r.estimated_guests ?? 0), 0)
+}
+
+/** Agrupa preservando el orden que vino del server (asc o desc según el modo). */
+function groupByDate(
+  rows: ReservationWithJoins[],
+): Array<{ date: string; rows: ReservationWithJoins[] }> {
+  const groups: Array<{ date: string; rows: ReservationWithJoins[] }> = []
+  for (const row of rows) {
+    const last = groups[groups.length - 1]
+    if (last && last.date === row.reservation_date) last.rows.push(row)
+    else groups.push({ date: row.reservation_date, rows: [row] })
+  }
+  return groups
+}
+
 export function ReservationsTable({
   tenantSlug,
   rows,
@@ -53,6 +78,8 @@ export function ReservationsTable({
   totalPages,
   totalCount,
   searchParams,
+  groupByDay = false,
+  highlightId,
 }: {
   tenantSlug: string
   rows: ReservationWithJoins[]
@@ -60,6 +87,10 @@ export function ReservationsTable({
   totalPages: number
   totalCount: number
   searchParams: Record<string, string | string[] | undefined>
+  /** Modo rango: subheader por día en vez de repetir la fecha en cada fila. */
+  groupByDay?: boolean
+  /** Reserva recién creada — se resalta para que se vea de una. */
+  highlightId?: string
 }) {
   const baseQs = new URLSearchParams()
   for (const [k, v] of Object.entries(searchParams)) {
@@ -74,110 +105,155 @@ export function ReservationsTable({
     return `/${tenantSlug}/reservas${q ? `?${q}` : ''}`
   }
 
+  const groups = groupByDay ? groupByDate(rows) : [{ date: '', rows }]
+  const columnCount = groupByDay ? 8 : 9
+
   return (
     <DataTableShell>
       <DataTableScroll>
         <DataTableRoot>
           <DataTableHead>
             <tr>
-              <DataTableHeader>Fecha</DataTableHeader>
+              {groupByDay ? null : <DataTableHeader>Fecha</DataTableHeader>}
               <DataTableHeader>Hora</DataTableHeader>
               <DataTableHeader>Cliente</DataTableHeader>
               <DataTableHeader>Personas</DataTableHeader>
-              <DataTableHeader>Tipo</DataTableHeader>
-              <DataTableHeader>Zona / Evento</DataTableHeader>
+              <DataTableHeader>Servicio / Zona</DataTableHeader>
+              <DataTableHeader className="text-right">Seña</DataTableHeader>
               <DataTableHeader>Gestor</DataTableHeader>
               <DataTableHeader>Estado</DataTableHeader>
               <DataTableHeader className="w-1 text-right">·</DataTableHeader>
             </tr>
           </DataTableHead>
           <DataTableBody>
-            {rows.map((r) => {
-              const guestsLabel = r.actual_guests ?? r.estimated_guests
-              const guestsHint =
-                r.actual_guests !== null && r.actual_guests !== r.estimated_guests
-                  ? ` (est ${r.estimated_guests})`
-                  : ''
-              return (
-                <DataTableRow key={r.id}>
-                  <DataTableCell>
-                    <div className="flex flex-col leading-tight">
-                      <span className="font-medium">{formatDate(r.reservation_date)}</span>
-                      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                        {dayName(r.reservation_date)}
+            {groups.map((group) => (
+              <Fragment key={group.date || 'all'}>
+                {groupByDay ? (
+                  <tr className="bg-secondary/40">
+                    <th
+                      scope="colgroup"
+                      colSpan={columnCount}
+                      className="px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+                    >
+                      {formatDayLabel(group.date)}
+                      <span className="font-normal normal-case tracking-normal">
+                        {' · '}
+                        {group.rows.length} {group.rows.length === 1 ? 'reserva' : 'reservas'}
+                        {' · '}
+                        {coversOf(group.rows)} cubiertos
                       </span>
-                    </div>
-                  </DataTableCell>
-                  <DataTableCell className="font-mono text-sm tabular-nums">
-                    {formatTime(r.reservation_time_local)}
-                  </DataTableCell>
-                  <DataTableCell>
-                    <div className="flex items-center gap-2">
-                      <div className="flex flex-col leading-tight">
-                        <span className="font-medium">{r.guest_name}</span>
-                        {r.customer ? (
-                          <span className="text-[11px] text-muted-foreground">
-                            CRM · {r.customer.phone}
-                          </span>
-                        ) : r.guest_phone ? (
-                          <span className="text-[11px] text-muted-foreground">{r.guest_phone}</span>
-                        ) : null}
-                      </div>
-                      {r.cake_count > 0 ? (
-                        <Cake
-                          className="size-3.5 text-pink-500"
-                          aria-label={`${r.cake_count} torta(s)`}
-                        />
-                      ) : null}
-                      {r.champagne_count > 0 ? (
-                        <GlassWater
-                          className="size-3.5 text-amber-500"
-                          aria-label={`${r.champagne_count} champagne`}
-                        />
-                      ) : null}
-                    </div>
-                  </DataTableCell>
-                  <DataTableCell>
-                    <span className="inline-flex items-center gap-1 tabular-nums">
-                      <Users className="size-3.5 text-muted-foreground" />
-                      <span className="font-semibold">{guestsLabel}</span>
-                      <span className="text-[11px] text-muted-foreground">{guestsHint}</span>
-                    </span>
-                  </DataTableCell>
-                  <DataTableCell className="text-[12px]">
-                    {MEAL_TYPE_LABELS[r.meal_type]}
-                  </DataTableCell>
-                  <DataTableCell>
-                    <div className="flex items-center gap-2">
-                      {r.scheduled_event?.template?.color_hex ? (
-                        <span
-                          className="size-2 rounded-full"
-                          style={{ backgroundColor: r.scheduled_event.template.color_hex }}
-                          aria-hidden
-                        />
-                      ) : null}
-                      <span className="text-sm">{zoneOrEvent(r)}</span>
-                    </div>
-                  </DataTableCell>
-                  <DataTableCell>
-                    <div className="flex flex-col leading-tight">
-                      <span className="text-sm">{r.primary_manager?.display_name ?? '—'}</span>
-                      {r.assistant_manager ? (
-                        <span className="text-[11px] text-muted-foreground">
-                          + {r.assistant_manager.display_name}
+                    </th>
+                  </tr>
+                ) : null}
+
+                {group.rows.map((r) => {
+                  const guestsLabel = r.actual_guests ?? r.estimated_guests
+                  const guestsHint =
+                    r.actual_guests !== null && r.actual_guests !== r.estimated_guests
+                      ? ` (est ${r.estimated_guests})`
+                      : ''
+                  return (
+                    <DataTableRow
+                      key={r.id}
+                      className={cn(
+                        r.id === highlightId &&
+                          'bg-emerald-50/70 dark:bg-emerald-950/30 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/30',
+                      )}
+                    >
+                      {groupByDay ? null : (
+                        <DataTableCell>
+                          <div className="flex flex-col leading-tight">
+                            <span className="font-medium">{formatDate(r.reservation_date)}</span>
+                            <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                              {dayName(r.reservation_date)}
+                            </span>
+                          </div>
+                        </DataTableCell>
+                      )}
+                      <DataTableCell className="font-mono text-sm tabular-nums">
+                        {formatTime(r.reservation_time_local)}
+                      </DataTableCell>
+                      <DataTableCell>
+                        <div className="flex items-center gap-2">
+                          <div className="flex min-w-0 flex-col leading-tight">
+                            <span className="font-medium">{r.guest_name}</span>
+                            {r.customer ? (
+                              <span className="text-[11px] text-muted-foreground">
+                                CRM · {r.customer.phone}
+                              </span>
+                            ) : r.guest_phone ? (
+                              <span className="text-[11px] text-muted-foreground">
+                                {r.guest_phone}
+                              </span>
+                            ) : null}
+                          </div>
+                          {r.comments ? <ReservationCommentPopover comment={r.comments} /> : null}
+                          {r.cake_count > 0 ? (
+                            <Cake
+                              className="size-3.5 text-pink-500"
+                              aria-label={`${r.cake_count} torta(s)`}
+                            />
+                          ) : null}
+                          {r.champagne_count > 0 ? (
+                            <GlassWater
+                              className="size-3.5 text-amber-500"
+                              aria-label={`${r.champagne_count} champagne`}
+                            />
+                          ) : null}
+                        </div>
+                      </DataTableCell>
+                      <DataTableCell>
+                        <span className="inline-flex items-center gap-1 tabular-nums">
+                          <Users className="size-3.5 text-muted-foreground" />
+                          <span className="font-semibold">{guestsLabel}</span>
+                          <span className="text-[11px] text-muted-foreground">{guestsHint}</span>
                         </span>
-                      ) : null}
-                    </div>
-                  </DataTableCell>
-                  <DataTableCell>
-                    <StatusPill status={r.status} />
-                  </DataTableCell>
-                  <DataTableCell className="text-right">
-                    <ReservationQuickView tenantSlug={tenantSlug} reservation={r} />
-                  </DataTableCell>
-                </DataTableRow>
-              )
-            })}
+                      </DataTableCell>
+                      <DataTableCell>
+                        {/* Servicio + zona en dos líneas: eran dos columnas y la
+                            tabla ya scrolleaba de más al sumar la seña. */}
+                        <div className="flex flex-col leading-tight">
+                          <span className="text-[12px]">{MEAL_TYPE_LABELS[r.meal_type]}</span>
+                          <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                            {r.scheduled_event?.template?.color_hex ? (
+                              <span
+                                className="size-2 shrink-0 rounded-full"
+                                style={{ backgroundColor: r.scheduled_event.template.color_hex }}
+                                aria-hidden
+                              />
+                            ) : null}
+                            {zoneOrEvent(r)}
+                          </span>
+                        </div>
+                      </DataTableCell>
+                      <DataTableCell className="text-right font-mono text-sm tabular-nums">
+                        {r.deposit_cents > 0 ? (
+                          ARSFormat(r.deposit_cents)
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </DataTableCell>
+                      <DataTableCell>
+                        <div className="flex flex-col leading-tight">
+                          <span className="text-sm">{r.primary_manager?.display_name ?? '—'}</span>
+                          {r.assistant_manager ? (
+                            <span className="text-[11px] text-muted-foreground">
+                              + {r.assistant_manager.display_name}
+                            </span>
+                          ) : null}
+                        </div>
+                      </DataTableCell>
+                      <DataTableCell>
+                        <StatusPill status={r.status} />
+                      </DataTableCell>
+                      <DataTableCell className="text-right">
+                        <ReservationQuickView tenantSlug={tenantSlug} reservation={r} />
+                      </DataTableCell>
+                    </DataTableRow>
+                  )
+                })}
+              </Fragment>
+            ))}
           </DataTableBody>
         </DataTableRoot>
       </DataTableScroll>

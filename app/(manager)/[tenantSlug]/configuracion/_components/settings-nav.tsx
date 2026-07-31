@@ -1,6 +1,6 @@
 'use client'
 
-import { type LucideIcon, Palette, UsersRound } from 'lucide-react'
+import { type LucideIcon, Palette, Star, UsersRound } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -16,11 +16,22 @@ type Group = {
   items: SubItem[]
 }
 
+// Reseñas y Comisiones existían pero no estaban linkeadas en ningún lado: el
+// único acceso era el botón "Configurar" de /reviews. El dueño nunca encontró
+// la pantalla donde se carga el enlace de Google (por eso las 5★ no derivaban).
 const GROUPS: Group[] = [
   {
     label: 'Equipo',
     icon: UsersRound,
-    items: [{ label: 'Miembros', href: (s) => `/${s}/configuracion/equipo` }],
+    items: [
+      { label: 'Miembros', href: (s) => `/${s}/configuracion/equipo` },
+      { label: 'Comisiones', href: (s) => `/${s}/configuracion/comisiones` },
+    ],
+  },
+  {
+    label: 'Reseñas',
+    icon: Star,
+    items: [{ label: 'Google y WhatsApp', href: (s) => `/${s}/configuracion/resenas` }],
   },
   {
     label: 'Apariencia',
@@ -55,7 +66,7 @@ export function SettingsNav({ tenantSlug }: { tenantSlug: string }) {
                         'flex h-8 items-center rounded-md px-2.5 text-sm transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)]',
                         active
                           ? 'bg-secondary font-medium text-foreground'
-                          : 'text-muted-foreground hover:bg-[--cream-tint] hover:text-foreground',
+                          : 'text-muted-foreground hover:bg-(--cream-tint) hover:text-foreground',
                       )}
                     >
                       {item.label}
