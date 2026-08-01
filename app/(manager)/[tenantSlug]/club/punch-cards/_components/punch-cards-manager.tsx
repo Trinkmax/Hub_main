@@ -53,6 +53,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
+import { IconPicker } from '@/components/ui/icon-picker'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -255,6 +256,7 @@ function PunchCardFormFields({
   const [threshold, setThreshold] = useState(String(template?.threshold ?? 6))
   const [rewardId, setRewardId] = useState(template?.reward_id ?? '')
   const [rewardLabel, setRewardLabel] = useState(template?.reward_label ?? '')
+  const [stampIcon, setStampIcon] = useState<string | null>(template?.stamp_icon ?? null)
 
   const cfg = template?.config
   const [hoursFrom, setHoursFrom] = useState(() => timeFromConfig(cfg?.hours_from, '12:00'))
@@ -324,19 +326,14 @@ function PunchCardFormFields({
         label="Foto de la tarjeta (opcional)"
       />
 
-      <div className="grid gap-1.5">
-        <Label htmlFor="pc-stamp-icon">Ícono del sello (opcional)</Label>
-        <Input
-          id="pc-stamp-icon"
-          name="stamp_icon"
-          maxLength={40}
-          defaultValue={template?.stamp_icon ?? ''}
-          placeholder="Nombre de un ícono de Lucide (ej: Coffee)"
-        />
-        <p className="text-[11px] text-muted-foreground">
-          Es el dibujo de cada sello. Si lo dejás vacío usamos un sello genérico.
-        </p>
-      </div>
+      <input type="hidden" name="stamp_icon" value={stampIcon ?? ''} />
+      <IconPicker
+        id="pc-stamp-icon"
+        value={stampIcon}
+        onChange={setStampIcon}
+        label="Ícono del sello (opcional)"
+        hint="Es el dibujo de cada sello en la billetera. Si no elegís ninguno usamos un sello genérico."
+      />
 
       {/* ── La frase que arma el dueño: sellos → premio ── */}
       <div className="grid gap-3 rounded-xl border border-border/60 bg-background/40 p-3">

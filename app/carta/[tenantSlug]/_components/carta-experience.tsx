@@ -256,6 +256,7 @@ export function CartaExperience(props: {
         onClose={() => setSheet('none')}
         tenantName={tenantName}
         tenantSlug={tenantSlug}
+        logoUrl={logoUrl}
         linkSlug={captureLinkSlug}
       />
     </div>

@@ -25,7 +25,7 @@ import { parseScannedCode } from '@/lib/redemptions/scan'
 // Un código pegado a mano se interpreta como canje: acá se tipea cuando la
 // cámara no engancha el QR del beneficio.
 
-type Step = 'idle' | 'scanning' | 'manual' | 'redemption' | 'customer'
+type Step = 'idle' | 'scanning' | 'resolving' | 'manual' | 'redemption' | 'customer'
 type Customer = {
   id: string
   first_name: string
@@ -51,6 +51,7 @@ export function ValidateScreen({
     (raw: string) => {
       const scanned = parseScannedCode(raw, 'redemption')
       if (!scanned) {
+        setStep('idle')
         toast.error('No reconocimos el código. Probá de nuevo o pegalo a mano.')
         return
       }
@@ -59,9 +60,15 @@ export function ValidateScreen({
         setStep('redemption')
         return
       }
+      // El QR personal del socio necesita un viaje al server para resolverlo. Sin
+      // este estado el mozo escanea, la cámara se cierra, y se queda mirando los
+      // dos botones del inicio sin ninguna señal de que algo está pasando —
+      // parece que el escaneo no funcionó y vuelve a intentar.
+      setStep('resolving')
       startLookup(async () => {
         const r = await lookupCustomerByQr(tenantSlug, scanned.token)
         if (!r.ok) {
+          setStep('idle')
           toast.error(r.message)
           return
         }
@@ -123,6 +130,17 @@ export function ValidateScreen({
     )
   }
 
+  if (step === 'resolving') {
+    return (
+      <div className="card-hairline flex flex-col items-center gap-3 rounded-2xl border bg-card p-10 text-center">
+        <Loader2 className="size-6 animate-spin text-primary" aria-hidden="true" />
+        <p className="text-sm text-muted-foreground" aria-live="polite">
+          Buscando al socio…
+        </p>
+      </div>
+    )
+  }
+
   if (step === 'scanning') {
     return (
       <div className="card-hairline space-y-4 rounded-2xl border bg-card p-4">
@@ -131,7 +149,6 @@ export function ValidateScreen({
             onScan={(codes: IDetectedBarcode[]) => {
               const code = codes[0]?.rawValue
               if (!code) return
-              setStep('idle')
               resolveCode(code)
             }}
             onError={(e) => {
@@ -146,7 +163,7 @@ export function ValidateScreen({
           />
         </div>
         <p className="text-center text-xs text-muted-foreground text-balance">
-          {lookupBusy ? 'Buscando al socio…' : 'Apuntá al código que te muestra el socio.'}
+          Apuntá al código que te muestra el socio.
         </p>
         <div className="flex justify-between gap-2">
           <Button variant="ghost" size="lg" className="h-11" onClick={() => setStep('idle')}>

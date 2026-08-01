@@ -53,6 +53,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import { IconPicker } from '@/components/ui/icon-picker'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -744,18 +745,12 @@ export function BenefitsEditor({
               onChange={(url) => set('imageUrl', url)}
               label="Foto del beneficio (opcional)"
             />
-            <div className="grid gap-1.5">
-              <Label htmlFor="benefit-icon" className="text-xs text-muted-foreground">
-                Ícono (opcional)
-              </Label>
-              <Input
-                id="benefit-icon"
-                value={form.icon}
-                onChange={(e) => set('icon', e.target.value)}
-                maxLength={40}
-                placeholder="Nombre de un ícono de Lucide (ej: Coffee)"
-              />
-            </div>
+            <IconPicker
+              id="benefit-icon"
+              value={form.icon || null}
+              onChange={(name) => set('icon', name ?? '')}
+              hint="Se usa en los listados compactos. En la tarjeta grande manda la foto."
+            />
           </div>
 
           <Button type="button" onClick={handleSubmit} disabled={pending} className="h-11 w-full">

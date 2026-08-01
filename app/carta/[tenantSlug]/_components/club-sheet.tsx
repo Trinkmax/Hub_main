@@ -14,6 +14,7 @@ import {
   Sparkles,
   Wallet,
 } from 'lucide-react'
+import Image from 'next/image'
 import { useActionState, useEffect, useRef, useState } from 'react'
 import { useFormStatus } from 'react-dom'
 import PhoneInput from 'react-phone-number-input'
@@ -170,12 +171,14 @@ export function ClubSheet({
   onClose,
   tenantName,
   tenantSlug,
+  logoUrl,
   linkSlug,
 }: {
   open: boolean
   onClose: () => void
   tenantName: string
   tenantSlug: string
+  logoUrl: string | null
   linkSlug: string | null
 }): React.JSX.Element {
   const [signupState, submitSignup] = useActionState(signupAction, null)
@@ -292,6 +295,7 @@ export function ClubSheet({
   const backTo = back[mode]
 
   const heading = getHeading(mode, tenantName)
+  const isBrandStep = mode === 'choose' || mode === 'signup'
   const hiddenLink = linkSlug ? <input type="hidden" name="link_slug" value={linkSlug} /> : null
   const hiddenPhone = <input type="hidden" name="phone" value={phone ?? ''} />
 
@@ -353,9 +357,25 @@ export function ClubSheet({
             ) : null}
 
             <div className="mb-5 flex flex-col items-center gap-2 px-8 text-center">
-              <span className="flex size-12 items-center justify-center rounded-2xl bg-[color:var(--brand-accent,var(--primary))]/12 text-[color:var(--brand-accent,var(--primary))]">
-                {heading.icon}
-              </span>
+              {/* En los pasos de MARCA (elegir camino / alta) manda el logo del
+                  bar: es la primera vez que el comensal ve el club y tiene que
+                  saber de quién es. En los pasos OPERATIVOS (entrar, recuperar)
+                  gana el ícono de estado, que le dice dónde está parado. */}
+              {isBrandStep && logoUrl ? (
+                <Image
+                  src={logoUrl}
+                  alt={tenantName}
+                  width={220}
+                  height={90}
+                  className="h-11 w-auto max-w-[190px] object-contain"
+                  unoptimized
+                  priority
+                />
+              ) : (
+                <span className="flex size-12 items-center justify-center rounded-2xl bg-[color:var(--brand-accent,var(--primary))]/12 text-[color:var(--brand-accent,var(--primary))]">
+                  {heading.icon}
+                </span>
+              )}
               <SheetTitle className="font-serif text-2xl font-semibold tracking-tight text-balance">
                 {heading.title}
               </SheetTitle>

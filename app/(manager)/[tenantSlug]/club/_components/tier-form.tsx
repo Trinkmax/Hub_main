@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { IconPicker } from '@/components/ui/icon-picker'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -72,6 +73,7 @@ export function TierForm({
   // Estado controlado de los campos que necesitan reactividad (color preview, switch).
   const [color, setColor] = useState<string>(defaults?.color ?? DEFAULT_COLOR)
   const [active, setActive] = useState<boolean>(tier?.active ?? true)
+  const [badgeIcon, setBadgeIcon] = useState<string | null>(defaults?.badge_icon ?? null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   // Reset a los valores de partida cada vez que se abre (importante al reusar
@@ -181,19 +183,14 @@ export function TierForm({
               </p>
             </div>
 
-            <div className="grid gap-1.5">
-              <Label htmlFor="tier-badge">Ícono (opcional)</Label>
-              <Input
-                id="tier-badge"
-                name="badge_icon"
-                maxLength={40}
-                defaultValue={defaults?.badge_icon ?? ''}
-                placeholder="Crown"
-              />
-              <p className="text-[11px] text-muted-foreground">
-                Nombre de un ícono de Lucide (ej: Crown, Star, Gem).
-              </p>
-            </div>
+            <input type="hidden" name="badge_icon" value={badgeIcon ?? ''} />
+            <IconPicker
+              id="tier-badge"
+              value={badgeIcon}
+              onChange={setBadgeIcon}
+              label="Ícono del nivel (opcional)"
+              hint="Acompaña al nombre del nivel en el carnet del socio."
+            />
           </div>
 
           {/* Umbral + orden */}
