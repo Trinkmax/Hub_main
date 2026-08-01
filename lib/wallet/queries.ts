@@ -216,6 +216,13 @@ export type WalletData = {
   }>
   /** El canje con QR vivo, si hay uno. Va arriba de todo en la wallet. */
   activeRedemption?: WalletActiveRedemption | null
+  /**
+   * Hash del estado visible en el momento de renderizar. El cliente lo compara
+   * contra `wallet_pulse` cada pocos segundos y refresca sólo si cambió — así el
+   * canje entregado y los puntos recién acreditados aparecen solos, sin que el
+   * socio tenga que recargar.
+   */
+  rev: string | null
 }
 
 function benefitKind(notes: string | null): 'welcome' | 'tier' | 'reward' {
@@ -690,5 +697,24 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
         }
       }),
     activeRedemption,
+    rev: await computeWalletRev(service, token),
   }
+}
+
+/**
+ * Baseline del pulso. Usa la MISMA función que consulta el cliente: si el hash
+ * se calculara en dos lugares distintos, cualquier divergencia daría un refresh
+ * infinito (el cliente vería "cambió" en cada tick) o ninguno.
+ */
+async function computeWalletRev(
+  service: ReturnType<typeof createServiceClient>,
+  token: string,
+): Promise<string | null> {
+  const { data, error } = await service.rpc('wallet_pulse', { p_qr_token: token })
+  if (error) {
+    console.error('[wallet] pulse baseline', error.message)
+    return null
+  }
+  const rev = (data as { rev?: string | null } | null)?.rev
+  return typeof rev === 'string' ? rev : null
 }

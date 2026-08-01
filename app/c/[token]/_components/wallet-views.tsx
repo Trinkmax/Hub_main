@@ -22,6 +22,7 @@ import { UpcomingEvents } from './upcoming-events'
 import { VisitsTimeline } from './visits-timeline'
 import { formatPoints } from './wallet-format'
 import { WalletHeader } from './wallet-header'
+import { WalletLive } from './wallet-live'
 import { WalletPartners } from './wallet-partners'
 
 // Orquestador de la wallet como VISTAS in-place (main → niveles / canjeables /
@@ -158,6 +159,9 @@ export function WalletViews({
 
   return (
     <main className={embedded ? 'bg-transparent' : 'bg-app-gradient min-h-[100dvh]'}>
+      {/* Mantiene la pantalla al día sola: el canje que el mozo acaba de validar
+          y los puntos que el cajero acaba de acreditar aparecen sin recargar. */}
+      <WalletLive qrToken={customer.qrToken} rev={data.rev} urgent={activeTicket !== null} />
       <div
         ref={rootRef}
         className={cn(

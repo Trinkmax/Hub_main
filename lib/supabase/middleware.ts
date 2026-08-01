@@ -27,6 +27,7 @@ const PUBLIC_PREFIXES = [
   '/carta/', // carta read-only pública (QR de la carta)
   '/r/', // página pública de reseña
   '/v/', // QR de canje del socio: lo abre sin sesión para mostrárselo al mozo
+  '/api/wallet/', // pulso de la billetera del socio (capability por qr_token, sin sesión)
   '/api/webhooks/',
   '/api/cron/', // jobs de fondo: se auto-protegen con Bearer CRON_SECRET en cada route handler
   '/_next/',

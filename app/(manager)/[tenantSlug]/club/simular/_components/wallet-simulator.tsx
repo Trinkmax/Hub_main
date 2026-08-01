@@ -85,6 +85,9 @@ function buildWallet(config: SimConfig, s: SimState, expiresAt: string): WalletD
       : { drops: false, toTierName: null }
 
   return {
+    // El simulador es una vista previa sintética: no hay socio real que pueda
+    // canjear ni caja que le acredite, así que no tiene nada que refrescar.
+    rev: null,
     customer: {
       id: 'sim',
       firstName: 'Vista',

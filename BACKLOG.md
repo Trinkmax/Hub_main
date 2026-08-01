@@ -344,3 +344,13 @@ Hallazgos y deudas que quedaron fuera del alcance de esa tanda:
 - **`resolveEarnRate` quedó sin llamadores.** Al sacar la tasa de puntos de la
   billetera (item 3) el helper dejó de usarse, pero sigue exportado y testeado en
   `lib/points/earn-rate.ts`. Borrarlo o darle uso en el panel del dueño.
+- **La billetera se actualiza por pulso, no por Realtime.** `/c/[token]` (y la
+  billetera embebida en la carta) consultan `wallet_pulse` cada 3 s con el QR de
+  canje en pantalla y cada 20 s el resto del tiempo, y sólo refrescan cuando el
+  hash cambió. No es `postgres_changes` porque no puede serlo: la pantalla es
+  anónima (la identidad es el `qr_token`, no una sesión de Supabase) y los claims
+  de una suscripción se fijan al hacer JOIN — con claims `anon` la RLS filtra
+  todos los eventos. Para que Realtime entregara habría que abrir policies de
+  lectura sobre `customers` y `reward_redemptions` para `anon`. Si en algún
+  momento el socio pasa a tener sesión propia (ver la nota de `customer_sessions`
+  más arriba), ahí sí conviene migrar a Realtime y borrar el poller.
