@@ -148,3 +148,25 @@ export function buildPartnerTiers(
     return { tierId: tier.id, entries }
   })
 }
+
+/**
+ * Qué marcas llegan a la billetera del socio: SÓLO las publicadas.
+ *
+ * La marca oculta (`active = false`) es un borrador — el dueño la carga y la
+ * prende cuando cierra el acuerdo. Antes salía como "Próximamente" y el
+ * resultado era una billetera llena de promesas de acuerdos inexistentes (18 de
+ * 18 marcas en borrador se veían todas). Decisión del dueño: oculta = no
+ * aparece, y si están todas ocultas la sección entera desaparece.
+ *
+ * El filtro es EXACTAMENTE el switch y nada más: una marca publicada sin
+ * beneficios cargados se muestra igual (con su nombre y rubro, sin chip). Si
+ * también la escondiéramos, el dueño prendería el switch y no pasaría nada
+ * visible — el control tiene que significar lo que dice.
+ *
+ * Vive acá y no en la query porque el simulador del club arma su propio
+ * WalletData: si cada uno filtrara por su cuenta, el preview del dueño mostraría
+ * algo distinto de lo que ve el socio.
+ */
+export function visibleWalletPartners<T extends { active: boolean }>(partners: readonly T[]): T[] {
+  return partners.filter((p) => p.active)
+}

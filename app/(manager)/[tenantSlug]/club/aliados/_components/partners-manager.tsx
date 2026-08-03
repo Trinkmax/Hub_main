@@ -885,7 +885,7 @@ function PartnerCard({
             <span className="truncate font-medium text-foreground">{partner.name}</span>
             {partner.active ? null : (
               <Badge variant="warning" className="gap-1">
-                Oculta · sale como "Próximamente"
+                Oculta · no se ve en la billetera
               </Badge>
             )}
           </div>
@@ -1152,8 +1152,11 @@ export function PartnersManager({
                 <strong className="text-foreground">
                   {hiddenCount} {hiddenCount === 1 ? 'marca oculta' : 'marcas ocultas'}
                 </strong>{' '}
-                de {partners.length}. En la billetera del socio salen como "Próximamente". Prendé el
-                switch de cada una para publicarlas.
+                de {partners.length}.{' '}
+                {hiddenCount === partners.length
+                  ? 'La sección "Nuestros Aliados" no aparece en la billetera del socio.'
+                  : 'No se ven en la billetera del socio.'}{' '}
+                Prendé el switch de cada una para publicarlas.
               </p>
             </div>
           ) : (

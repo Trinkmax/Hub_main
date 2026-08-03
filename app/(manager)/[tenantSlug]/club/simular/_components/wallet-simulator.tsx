@@ -9,7 +9,11 @@ import { Button } from '@/components/ui/button'
 import { SlidingTabs } from '@/components/ui/sliding-tabs'
 import { wouldDropTier } from '@/lib/points/category'
 import { progressToNext, resolveTier, sortedActiveTiers } from '@/lib/points/tiers'
-import { buildPartnerTiers, resolvePartnersForTier } from '@/lib/wallet/partner-benefits'
+import {
+  buildPartnerTiers,
+  resolvePartnersForTier,
+  visibleWalletPartners,
+} from '@/lib/wallet/partner-benefits'
 import type { WalletData } from '@/lib/wallet/queries'
 import { computeRewardState } from '@/lib/wallet/reward-state'
 import type { SimConfig } from '@/lib/wallet/simulator'
@@ -60,8 +64,9 @@ function buildWallet(config: SimConfig, s: SimState, expiresAt: string): WalletD
     }
   })
 
-  // Marca pausada = "Próximamente": no promete ningún beneficio (espejo de
-  // lib/wallet/queries.ts).
+  // Marca oculta = no existe para el socio, y la publicada que no da nada en
+  // ningún nivel tampoco se muestra. Espejo EXACTO de lib/wallet/queries.ts: si
+  // el simulador y la billetera real se separan, el simulador miente.
   const benefitsByTier = new Map(Object.entries(config.partnerBenefitsByTier))
   const partnerResolution = resolvePartnersForTier(
     config.partners.filter((p) => p.active).map((p) => p.id),
@@ -69,15 +74,13 @@ function buildWallet(config: SimConfig, s: SimState, expiresAt: string): WalletD
     tiers,
     current?.id ?? null,
   )
-  const partnersResolved: WalletData['partners'] = config.partners.map((p) => {
-    const r = p.active ? partnerResolution.get(p.id) : undefined
-    return { ...p, myBenefit: r?.myBenefit ?? null, unlockTierName: r?.unlockTierName ?? null }
-  })
-  const partnerTiers = buildPartnerTiers(
-    partnersResolved.filter((p) => p.active),
-    benefitsByTier,
-    tiers,
+  const partnersResolved: WalletData['partners'] = visibleWalletPartners(
+    config.partners.map((p) => {
+      const r = p.active ? partnerResolution.get(p.id) : undefined
+      return { ...p, myBenefit: r?.myBenefit ?? null, unlockTierName: r?.unlockTierName ?? null }
+    }),
   )
+  const partnerTiers = buildPartnerTiers(partnersResolved, benefitsByTier, tiers)
 
   const drop =
     s.expiryPoints > 0

@@ -20,6 +20,7 @@ import {
   type PartnerBenefitRow,
   type PartnerBenefitTierRow,
   resolvePartnersForTier,
+  visibleWalletPartners,
   type WalletPartnerBenefit,
   type WalletPartnerTierEntry,
 } from './partner-benefits'
@@ -565,9 +566,12 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
     (partnerBenefitsData ?? []) as PartnerBenefitRow[],
     (partnerBenefitTiersData ?? []) as PartnerBenefitTierRow[],
   )
-  // Una marca pausada NO promete nada: sale como "Próximamente" y punto. Los
-  // beneficios nacen `active = true` mientras que la marca nace `active = false`
-  // (el dueño la carga como borrador y la prende cuando cierra el acuerdo), así
+  // Una marca oculta NO EXISTE para el socio. Antes salía como "Próximamente" y
+  // el resultado era una billetera llena de promesas vacías (18 de 18 marcas en
+  // borrador se veían todas). Decisión del dueño: oculta = no aparece.
+  //
+  // La marca nace `active = false` (se carga como borrador y se prende cuando el
+  // acuerdo está cerrado) mientras que sus beneficios nacen `active = true`, así
   // que sin este filtro el socio vería el 30% de una marca que todavía no existe.
   const activePartnerIds = partnerRows.filter((p) => p.active).map((p) => p.id)
   const partnerResolution = resolvePartnersForTier(
@@ -576,25 +580,23 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
     tiers,
     current?.id ?? null,
   )
-  const partners: WalletData['partners'] = partnerRows.map((p) => {
-    const resolved = p.active ? partnerResolution.get(p.id) : undefined
-    return {
-      id: p.id,
-      name: p.name,
-      logoUrl: p.logo_url,
-      discountLabel: p.discount_label,
-      category: p.category,
-      url: p.url,
-      active: p.active,
-      myBenefit: resolved?.myBenefit ?? null,
-      unlockTierName: resolved?.unlockTierName ?? null,
-    }
-  })
-  const partnerTiers = buildPartnerTiers(
-    partners.filter((p) => p.active),
-    partnerBenefitsByTier,
-    tiers,
+  const partners: WalletData['partners'] = visibleWalletPartners(
+    partnerRows.map((p) => {
+      const resolved = p.active ? partnerResolution.get(p.id) : undefined
+      return {
+        id: p.id,
+        name: p.name,
+        logoUrl: p.logo_url,
+        discountLabel: p.discount_label,
+        category: p.category,
+        url: p.url,
+        active: p.active,
+        myBenefit: resolved?.myBenefit ?? null,
+        unlockTierName: resolved?.unlockTierName ?? null,
+      }
+    }),
   )
+  const partnerTiers = buildPartnerTiers(partners, partnerBenefitsByTier, tiers)
 
   // ── Canjes pendientes + el que ya tiene QR vivo ────────────────────────
   type PendingRow = {

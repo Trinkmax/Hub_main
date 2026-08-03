@@ -46,7 +46,7 @@ import { WalletPartners } from './wallet-partners'
 // (lib/wallet/ticket-state.ts), que es donde vive el arreglo del QR que quedaba
 // pegado para siempre después de que el mozo validaba.
 
-type View = 'main' | 'niveles' | 'canjeables' | 'comofunciona' | 'beneficio'
+type View = 'main' | 'niveles' | 'canjeables' | 'comofunciona' | 'beneficio' | 'aliados'
 type Reward = WalletData['rewards'][number]
 
 /**
@@ -287,6 +287,22 @@ export function WalletViews({
               onIssued={onIssued}
             />
           </div>
+        ) : view === 'aliados' ? (
+          <div
+            key="aliados"
+            className="animate-in fade-in slide-in-from-right-3 flex flex-col gap-6 duration-[var(--duration-slow)]"
+          >
+            <BackHeader
+              title="Nuestros aliados"
+              subtitle={
+                partners.length === 1 ? '1 marca amiga' : `${partners.length} marcas amigas`
+              }
+              onBack={() => setView('main')}
+            />
+            <WalletPartners partners={partners} tierName={tierName} variant="full" />
+            {/* Debajo, la misma escalera por categoría: responde "¿y si subo?". */}
+            <PartnerTiers progression={progression} partnerTiers={partnerTiers} />
+          </div>
         ) : view === 'comofunciona' ? (
           <div
             key="comofunciona"
@@ -352,7 +368,12 @@ export function WalletViews({
               previewCount={6}
               onMore={hasRewards ? () => setView('canjeables') : undefined}
             />
-            <WalletPartners partners={partners} tierName={tierName} />
+            <WalletPartners
+              partners={partners}
+              tierName={tierName}
+              previewCount={6}
+              onMore={() => setView('aliados')}
+            />
             <PunchCards
               cards={punchCards}
               tenantName={tenant.name}
