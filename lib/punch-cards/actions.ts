@@ -90,6 +90,9 @@ function parsePunchCardForm<S extends z.ZodType>(
     }
   }
 
+  // Los niveles vienen como N inputs con el mismo name (checkboxes del editor).
+  const tierIds = formData.getAll('tier_ids').filter((v): v is string => typeof v === 'string')
+
   const parsed = schema.safeParse({
     id: formData.get('id'),
     name: formData.get('name'),
@@ -104,6 +107,8 @@ function parsePunchCardForm<S extends z.ZodType>(
     expires_after_days: formData.get('expires_after_days') || null,
     active: formData.get('active') === 'on',
     config: configParsed,
+    tier_ids: tierIds,
+    show_when_locked: formData.get('show_when_locked') !== 'off',
   })
   if (!parsed.success) {
     return {
@@ -132,7 +137,46 @@ function templateRow(d: PunchCardFields) {
     reward_id: d.reward_id,
     expires_after_days: d.expires_after_days ?? null,
     config: d.config ?? {},
+    show_when_locked: d.show_when_locked,
   }
+}
+
+/**
+ * Reescribe el set de niveles de una tarjeta. Se hace por borrar-e-insertar (no
+ * por diff) porque son un puñado de filas y el diff sólo agrega formas de que
+ * queden inconsistentes. `tenant_id` va explícito en las dos puntas: la RLS lo
+ * exige y el trigger `trg_pctt_tenant_match` verifica que el nivel sea del mismo
+ * bar que la tarjeta.
+ */
+async function syncTemplateTiers(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tenantId: string,
+  templateId: string,
+  tierIds: readonly string[],
+): Promise<boolean> {
+  const { error: delError } = await supabase
+    .from('punch_card_template_tiers')
+    .delete()
+    .eq('tenant_id', tenantId)
+    .eq('template_id', templateId)
+  if (delError) {
+    console.error('[punch-cards.tiers.delete]', delError.message)
+    return false
+  }
+  if (tierIds.length === 0) return true
+
+  const { error: insError } = await supabase.from('punch_card_template_tiers').insert(
+    tierIds.map((tierId) => ({
+      template_id: templateId,
+      tier_id: tierId,
+      tenant_id: tenantId,
+    })),
+  )
+  if (insError) {
+    console.error('[punch-cards.tiers.insert]', insError.message)
+    return false
+  }
+  return true
 }
 
 export async function createPunchCard(
@@ -159,6 +203,9 @@ export async function createPunchCard(
     console.error('[punch-cards.create]', error?.message)
     return { ok: false, message: 'No se pudo crear la card.' }
   }
+  if (!(await syncTemplateTiers(supabase, access.tenant.id, data.id, parsed.data.tier_ids))) {
+    return { ok: false, message: 'Creamos la tarjeta pero no pudimos guardar las categorías.' }
+  }
   revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
   return { ok: true, templateId: data.id }
@@ -184,6 +231,11 @@ export async function updatePunchCard(
   if (error) {
     console.error('[punch-cards.update]', error.message)
     return { ok: false, message: 'No se pudo actualizar.' }
+  }
+  if (
+    !(await syncTemplateTiers(supabase, access.tenant.id, parsed.data.id, parsed.data.tier_ids))
+  ) {
+    return { ok: false, message: 'Guardamos la tarjeta pero no pudimos guardar las categorías.' }
   }
   revalidatePath(`/${slug}/club`)
   revalidatePath(`/${slug}/menu`)
@@ -289,6 +341,11 @@ export async function registerLunchVisit(
     if (code.includes('template_not_found')) {
       return { ok: false, message: 'La tarjeta no está activa.' }
     }
+    // Lo tira el trigger de `customer_punch_cards`, no la RPC: el almuerzo sella
+    // por su cuenta y el portero de categoría vive en la tabla.
+    if (code.includes('punch_tier_locked')) {
+      return { ok: false, message: 'Esta tarjeta es de otra categoría.' }
+    }
     console.error('[punch-cards.lunch]', error.message)
     return { ok: false, message: 'No pudimos registrar el almuerzo.' }
   }
@@ -331,6 +388,9 @@ export type StampActionState =
 function stampErrorMessage(raw: string): string {
   if (raw.includes('punch_daily_limit')) return 'Ya llegó al máximo de sellos de hoy.'
   if (raw.includes('punch_card_already_full')) return 'La tarjeta ya está completa.'
+  // Lo tira `add_punch_stamp` y también el trigger de la tabla, que cubre los
+  // otros caminos de sellado (almuerzo, cobro de mesa).
+  if (raw.includes('punch_tier_locked')) return 'Esta tarjeta es de otra categoría.'
   if (raw.includes('template_not_found')) return 'La tarjeta no está activa.'
   if (raw.includes('customer_not_found')) return 'No encontramos al cliente.'
   if (raw.includes('forbidden')) return 'No tenés permiso para sellar.'

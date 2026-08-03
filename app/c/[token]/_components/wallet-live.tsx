@@ -28,6 +28,16 @@ import { useEffect, useRef } from 'react'
 const FAST_MS = 3_000
 const SLOW_MS = 20_000
 
+/**
+ * Cuánto esperamos como mucho a que el refresh se note antes de volver a
+ * consultar. Sin este techo el poller se puede colgar para siempre: la bandera
+ * de "estoy refrescando" se bajaba SÓLO cuando llegaba un `rev` nuevo, y si el
+ * refresh devuelve el mismo hash (payload cacheado por el router, o
+ * `computeWalletRev` que falló y mandó `null`) ese efecto no vuelve a correr.
+ * Resultado: la billetera dejaba de actualizarse sola y nadie se enteraba.
+ */
+const REFRESH_GRACE_MS = 6_000
+
 export function WalletLive({
   qrToken,
   rev,
@@ -54,6 +64,7 @@ export function WalletLive({
     if (!qrToken) return
     let cancelled = false
     let timer = 0
+    let grace = 0
 
     const check = async () => {
       if (cancelled || document.hidden || refreshingRef.current) return
@@ -67,6 +78,12 @@ export function WalletLive({
         if (!next || next === revRef.current) return
         revRef.current = next
         refreshingRef.current = true
+        // Red de seguridad: si el refresh no trae un `rev` distinto, igual
+        // volvemos a escuchar (ver REFRESH_GRACE_MS).
+        window.clearTimeout(grace)
+        grace = window.setTimeout(() => {
+          refreshingRef.current = false
+        }, REFRESH_GRACE_MS)
         router.refresh()
       } catch {
         // Sin señal, celular en el subsuelo del bar: se reintenta al próximo tick.
@@ -82,6 +99,9 @@ export function WalletLive({
         urgent ? FAST_MS : SLOW_MS,
       )
     }
+    // Un chequeo ya, sin esperar el primer tick: al montar con el QR abierto el
+    // mozo puede haber validado hace un segundo.
+    void check()
     loop()
 
     const onVisible = () => {
@@ -93,6 +113,7 @@ export function WalletLive({
     return () => {
       cancelled = true
       window.clearTimeout(timer)
+      window.clearTimeout(grace)
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('focus', onVisible)
     }

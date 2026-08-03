@@ -61,6 +61,14 @@ const basePunchCard = z.object({
   reward_id: z.string().uuid('Elegí qué se gana al completarla'),
   expires_after_days: z.coerce.number().int().min(1).max(365).nullable().optional(),
   config: punchConfigSchema.optional(),
+  /**
+   * Niveles habilitados a sellarla. Vacío = todos, que es lo que hace que las
+   * tarjetas de siempre sigan andando igual. El set es arbitrario (no "de tal
+   * nivel para arriba") porque el dueño puede querer saltear un nivel.
+   */
+  tier_ids: z.array(z.string().uuid()).max(20).default([]),
+  /** Qué ve el socio que no llega al nivel: bloqueada (true) o nada. */
+  show_when_locked: z.coerce.boolean().default(true),
 })
 
 const refineTriggerRef = (

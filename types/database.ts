@@ -1377,6 +1377,111 @@ export type Database = {
           },
         ]
       }
+      flow_execution_events: {
+        Row: {
+          action_label: string
+          action_type: string
+          customer_id: string | null
+          detail: Json
+          error: string | null
+          execution_id: string
+          flow_id: string
+          id: string
+          node_id: string | null
+          occurred_at: string
+          status: string
+          step_position: number | null
+          tenant_id: string
+        }
+        Insert: {
+          action_label: string
+          action_type: string
+          customer_id?: string | null
+          detail?: Json
+          error?: string | null
+          execution_id: string
+          flow_id: string
+          id?: string
+          node_id?: string | null
+          occurred_at?: string
+          status: string
+          step_position?: number | null
+          tenant_id: string
+        }
+        Update: {
+          action_label?: string
+          action_type?: string
+          customer_id?: string | null
+          detail?: Json
+          error?: string | null
+          execution_id?: string
+          flow_id?: string
+          id?: string
+          node_id?: string | null
+          occurred_at?: string
+          status?: string
+          step_position?: number | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flow_execution_events_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flow_execution_events_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "mv_customer_stats"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "flow_execution_events_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_churn_risk"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "flow_execution_events_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customer_stats"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "flow_execution_events_execution_id_fkey"
+            columns: ["execution_id"]
+            isOneToOne: false
+            referencedRelation: "flow_executions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flow_execution_events_flow_id_fkey"
+            columns: ["flow_id"]
+            isOneToOne: false
+            referencedRelation: "flows"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flow_execution_events_node_id_fkey"
+            columns: ["node_id"]
+            isOneToOne: false
+            referencedRelation: "flow_nodes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flow_execution_events_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       flow_executions: {
         Row: {
           completed_at: string | null
@@ -2548,6 +2653,49 @@ export type Database = {
           },
         ]
       }
+      punch_card_template_tiers: {
+        Row: {
+          created_at: string
+          template_id: string
+          tenant_id: string
+          tier_id: string
+        }
+        Insert: {
+          created_at?: string
+          template_id: string
+          tenant_id: string
+          tier_id: string
+        }
+        Update: {
+          created_at?: string
+          template_id?: string
+          tenant_id?: string
+          tier_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "punch_card_template_tiers_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "punch_card_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "punch_card_template_tiers_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "punch_card_template_tiers_tier_id_fkey"
+            columns: ["tier_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_tiers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       punch_card_templates: {
         Row: {
           active: boolean
@@ -2560,6 +2708,7 @@ export type Database = {
           name: string
           reward_id: string
           reward_label: string | null
+          show_when_locked: boolean
           sort: number
           stamp_icon: string | null
           tenant_id: string
@@ -2579,6 +2728,7 @@ export type Database = {
           name: string
           reward_id: string
           reward_label?: string | null
+          show_when_locked?: boolean
           sort?: number
           stamp_icon?: string | null
           tenant_id: string
@@ -2598,6 +2748,7 @@ export type Database = {
           name?: string
           reward_id?: string
           reward_label?: string | null
+          show_when_locked?: boolean
           sort?: number
           stamp_icon?: string | null
           tenant_id?: string
@@ -4538,6 +4689,10 @@ export type Database = {
         }
       }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      customer_effective_tier: {
+        Args: { p_customer_id: string }
+        Returns: string
+      }
       customers_for_birthday_flow: {
         Args: { p_flow_id: string }
         Returns: {
@@ -4752,6 +4907,10 @@ export type Database = {
         Args: { p_new_physical_table_id: string; p_session_id: string }
         Returns: Json
       }
+      punch_template_allows_customer: {
+        Args: { p_customer_id: string; p_template_id: string }
+        Returns: boolean
+      }
       recalc_event_commissions: {
         Args: { p_scheduled_event_id: string }
         Returns: undefined
@@ -4868,36 +5027,21 @@ export type Database = {
         Args: { p_context?: Json; p_customer_id: string; p_flow_id: string }
         Returns: string
       }
-      submit_capture:
-        | {
-            Args: {
-              p_birthdate?: string
-              p_email?: string
-              p_first_name: string
-              p_ip: string
-              p_last_name: string
-              p_link_slug: string
-              p_opt_in: boolean
-              p_phone: string
-              p_user_agent: string
-            }
-            Returns: Json
-          }
-        | {
-            Args: {
-              p_birthdate?: string
-              p_email?: string
-              p_first_name: string
-              p_ip: string
-              p_last_name: string
-              p_link_slug: string
-              p_opt_in: boolean
-              p_password?: string
-              p_phone: string
-              p_user_agent: string
-            }
-            Returns: Json
-          }
+      submit_capture: {
+        Args: {
+          p_birthdate?: string
+          p_email?: string
+          p_first_name: string
+          p_ip: string
+          p_last_name: string
+          p_link_slug: string
+          p_opt_in: boolean
+          p_password?: string
+          p_phone: string
+          p_user_agent: string
+        }
+        Returns: Json
+      }
       submit_ticket: {
         Args: {
           p_browser_token: string
@@ -5034,6 +5178,7 @@ export type Database = {
         Returns: Database["public"]["Enums"]["tenant_role"]
       }
       user_tenant_ids: { Args: never; Returns: string[] }
+      wallet_pulse: { Args: { p_qr_token: string }; Returns: Json }
     }
     Enums: {
       broadcast_status:

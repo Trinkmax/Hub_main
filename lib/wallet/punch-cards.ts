@@ -32,6 +32,17 @@ export type WalletPunchCard = {
   completed: boolean
   /** Canje generado al completarla, si sigue pendiente de retiro. */
   pendingRedemptionId: string | null
+  /** Niveles habilitados a sellarla. Vacío = todos. */
+  tierIds: string[]
+  /** Si el que no llega la ve bloqueada o no la ve. */
+  showWhenLocked: boolean
+  /**
+   * La completa quien resuelve el nivel del socio (getWalletByToken): acá
+   * todavía no se sabe en qué categoría está.
+   */
+  lockedByTier?: boolean
+  /** Nombres de los niveles que la desbloquean, ya listos para mostrar. */
+  requiredTierNames?: string[]
 }
 
 type TemplateRow = {
@@ -43,6 +54,7 @@ type TemplateRow = {
   reward_label: string | null
   threshold: number
   sort: number
+  show_when_locked: boolean
   reward: { name: string } | { name: string }[] | null
 }
 
@@ -71,7 +83,7 @@ export async function loadWalletPunchCards(
       supabase
         .from('punch_card_templates')
         .select(
-          'id, name, description, image_url, stamp_icon, reward_label, threshold, sort, reward:rewards(name)',
+          'id, name, description, image_url, stamp_icon, reward_label, threshold, sort, show_when_locked, reward:rewards(name)',
         )
         .eq('tenant_id', tenantId)
         .eq('active', true)
@@ -93,6 +105,26 @@ export async function loadWalletPunchCards(
   const templates = (templatesData ?? []) as unknown as TemplateRow[]
   if (templates.length === 0) return []
   const cards = (cardsData ?? []) as unknown as CardRow[]
+
+  // Niveles que habilitan cada tarjeta. Se traen todos de una (los templates
+  // activos de un bar son pocas decenas) en vez de una consulta por tarjeta.
+  const tierIdsByTemplate = new Map<string, string[]>()
+  {
+    const { data, error } = await supabase
+      .from('punch_card_template_tiers')
+      .select('template_id, tier_id')
+      .eq('tenant_id', tenantId)
+      .in(
+        'template_id',
+        templates.map((t) => t.id),
+      )
+    if (error) console.error('[wallet.punchCards] tiers', error.message)
+    for (const row of (data ?? []) as Array<{ template_id: string; tier_id: string }>) {
+      const list = tierIdsByTemplate.get(row.template_id)
+      if (list) list.push(row.tier_id)
+      else tierIdsByTemplate.set(row.template_id, [row.tier_id])
+    }
+  }
 
   // Una tarjeta completa sólo sigue siendo "canjeable" mientras su canje esté
   // pendiente; si el mozo ya lo entregó vuelve a mostrarse el progreso vigente.
@@ -138,6 +170,8 @@ export async function loadWalletPunchCards(
       rewardLabel: tpl.reward_label ?? name,
       completed,
       pendingRedemptionId: claimablePending ? claimableRedemptionId : null,
+      tierIds: tierIdsByTemplate.get(tpl.id) ?? [],
+      showWhenLocked: tpl.show_when_locked !== false,
     }
   })
 }

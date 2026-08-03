@@ -1,9 +1,9 @@
 import Link from 'next/link'
+import { StarRating } from '@/components/reviews/star-rating'
 import { StatCard } from '@/components/ui/stat-card'
 import type { ReviewInsights } from '@/lib/reviews/queries'
 import { cn } from '@/lib/utils'
 import { type RatingFilter, reviewsHref } from './reviews-filters'
-import { StarRating } from './star-rating'
 
 // Fila de insights del panel de reseñas: promedio + total + % 5★ + distribución.
 // Server component puro (recibe los datos por props). Las barras de distribución

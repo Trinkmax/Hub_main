@@ -1,9 +1,10 @@
 'use client'
 
-import { Check, PartyPopper, QrCode, Stamp } from 'lucide-react'
+import { Check, Lock, PartyPopper, QrCode, Stamp } from 'lucide-react'
 import { useTransition } from 'react'
 import { toast } from 'sonner'
 import { StorageImage } from '@/components/media/storage-image'
+import { formatRequiredTiers } from '@/lib/punch-cards/tier-gate'
 import { cn } from '@/lib/utils'
 import { claimPendingRedemption } from '@/lib/wallet/actions'
 import type { WalletData } from '@/lib/wallet/queries'
@@ -72,6 +73,21 @@ function StampGrid({
   )
 }
 
+/**
+ * La tarjeta existe pero es de otra categoría. La frase cambia según si ya tenía
+ * sellos: al que bajó de nivel no se le dice "todavía no la podés usar" cuando
+ * ya juntó 3 — se le dice que sus sellos siguen ahí. No perdió nada.
+ */
+function lockedLine(card: PunchCard, tiers: string): string {
+  const prize = card.rewardLabel ?? card.rewardName
+  if (card.currentStamps > 0) {
+    return `Tus ${card.currentStamps} sellos te esperan. Volvé a ${tiers} para seguir sumando.`
+  }
+  return prize
+    ? `Es exclusiva de ${tiers}. Llegá a ese nivel y empezás a sumar para ${prize}.`
+    : `Es exclusiva de ${tiers}. Llegá a ese nivel para empezar a sellarla.`
+}
+
 /** La frase que pidió el dueño: dónde estás y cuánto falta, en criollo. */
 function progressLine(card: PunchCard): string {
   const prize = card.rewardLabel ?? card.rewardName
@@ -102,7 +118,11 @@ function PunchCardRow({
 }) {
   const [busy, startClaim] = useTransition()
   const pendingId = card.pendingRedemptionId
-  const claimable = card.completed && pendingId !== null
+  const locked = card.lockedByTier === true
+  // Una tarjeta bloqueada no se canjea aunque esté completa: los sellos son de
+  // cuando sí tenía el nivel.
+  const claimable = !locked && card.completed && pendingId !== null
+  const requiredTiers = formatRequiredTiers(card.requiredTierNames ?? [])
 
   const onClaim = () => {
     if (!pendingId) return
@@ -120,10 +140,21 @@ function PunchCardRow({
     <article
       className={cn(
         'rounded-2xl border bg-card p-4 transition-colors',
-        card.completed ? 'border-(--brand-accent)/45 shadow-md' : 'card-hairline border-border/70',
+        locked
+          ? 'border-dashed border-border/70 bg-secondary/25'
+          : card.completed
+            ? 'border-(--brand-accent)/45 shadow-md'
+            : 'card-hairline border-border/70',
       )}
     >
-      <div className="flex items-center gap-3">
+      {locked && requiredTiers ? (
+        <p className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-(--brand-accent)/10 px-2.5 py-1 text-[11px] font-semibold text-(--brand-accent)">
+          <Lock className="size-3" aria-hidden="true" />
+          Exclusiva {requiredTiers}
+        </p>
+      ) : null}
+
+      <div className={cn('flex items-center gap-3', locked && 'opacity-60')}>
         <div className="relative grid size-11 shrink-0 place-items-center overflow-hidden rounded-lg bg-(--cream-tint)">
           {card.imageUrl ? (
             <StorageImage src={card.imageUrl} sizes="44px">
@@ -152,20 +183,26 @@ function PunchCardRow({
         </span>
       </div>
 
-      <div className="mt-3">
+      {/* Los sellos se muestran igual aunque esté bloqueada: ver el premio y
+          cuánto cuesta es justo lo que da ganas de subir de nivel. */}
+      <div className={cn('mt-3', locked && 'opacity-45 saturate-50')}>
         <StampGrid current={card.currentStamps} threshold={card.threshold} icon={card.stampIcon} />
       </div>
 
       <p
         className={cn(
           'mt-3 text-xs text-balance',
-          card.completed ? 'font-semibold text-(--brand-accent)' : 'text-muted-foreground',
+          locked
+            ? 'text-muted-foreground'
+            : card.completed
+              ? 'font-semibold text-(--brand-accent)'
+              : 'text-muted-foreground',
         )}
       >
-        {card.completed ? (
+        {!locked && card.completed ? (
           <PartyPopper className="mr-1 inline size-3.5 align-[-2px]" aria-hidden="true" />
         ) : null}
-        {progressLine(card)}
+        {locked && requiredTiers ? lockedLine(card, requiredTiers) : progressLine(card)}
       </p>
 
       {claimable ? (
@@ -179,7 +216,7 @@ function PunchCardRow({
           <QrCode className="size-4" aria-hidden="true" />
           {busy ? 'Generando código…' : 'Canjear'}
         </button>
-      ) : card.completed ? (
+      ) : !locked && card.completed ? (
         <p className="mt-3 rounded-xl bg-(--cream-tint) px-3 py-2 text-center text-xs text-muted-foreground">
           Pedilo en la caja y te lo entregan.
         </p>

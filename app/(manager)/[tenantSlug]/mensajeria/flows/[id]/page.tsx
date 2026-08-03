@@ -61,9 +61,11 @@ export default async function EditFlowPage({
   const isGraphFlow = graphData.nodes.length > 0
 
   if (isGraphFlow) {
-    // New-style graph flow → graph editor
+    // New-style graph flow → graph editor.
+    // Alto: 4rem del topbar + 3.25rem de la barra de pestañas del layout. Sin
+    // descontar esa barra el canvas se pasaba de largo y aparecía scroll de página.
     return (
-      <div className="flex h-[calc(100vh-4rem)] flex-col px-4 py-4 sm:px-6">
+      <div className="flex h-[calc(100vh-7.25rem)] flex-col px-4 py-4 sm:px-6">
         <div className="mb-4 flex shrink-0 flex-col gap-3">
           <Link
             href={`/${tenantSlug}/mensajeria/flows`}

@@ -1,10 +1,10 @@
 import { formatInTimeZone } from 'date-fns-tz'
 import { MapPin } from 'lucide-react'
 import Link from 'next/link'
+import { StarRating } from '@/components/reviews/star-rating'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import type { ReviewListItem } from '@/lib/reviews/queries'
-import { StarRating } from './star-rating'
 
 // Lista de reseñas del manager. Server component puro. Fecha en el reloj del bar.
 

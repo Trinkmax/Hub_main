@@ -1,6 +1,7 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
+import { summarizeRatings } from './summary'
 
 export type ReviewContext = {
   firstName: string
@@ -113,6 +114,58 @@ export async function listReviews(opts: {
       customerName: c ? `${c.first_name} ${c.last_name}`.trim() : null,
     }
   })
+}
+
+export type CustomerReview = {
+  id: string
+  rating: number
+  comment: string | null
+  source: string
+  createdAt: string
+  visitId: string | null
+  redirectedToMaps: boolean
+}
+
+export type CustomerReviewsSnapshot = {
+  reviews: CustomerReview[]
+  total: number
+  average: number
+}
+
+/**
+ * Reseñas de un cliente para su ficha del CRM. Una sola ida a la DB: el total y
+ * el promedio se calculan sobre el mismo recorte (50 reseñas de un mismo cliente
+ * es techo de sobra; si alguna vez se pasara, se ven las últimas).
+ * Filtra por `tenant_id` además del cliente: defensa en profundidad sobre la RLS.
+ */
+export async function listCustomerReviews(
+  tenantId: string,
+  customerId: string,
+  limit = 50,
+): Promise<CustomerReviewsSnapshot> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('reviews')
+    .select('id, rating, comment, source, created_at, visit_id, redirected_to_maps')
+    .eq('tenant_id', tenantId)
+    .eq('customer_id', customerId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  // La ficha del cliente no puede caerse porque falle este bloque: degradamos a vacío.
+  if (error) {
+    console.error('[reviews.listCustomer]', error.message)
+    return { reviews: [], total: 0, average: 0 }
+  }
+  const reviews: CustomerReview[] = (data ?? []).map((r) => ({
+    id: r.id,
+    rating: r.rating,
+    comment: r.comment,
+    source: r.source,
+    createdAt: r.created_at,
+    visitId: r.visit_id,
+    redirectedToMaps: r.redirected_to_maps,
+  }))
+  return { reviews, ...summarizeRatings(reviews.map((r) => r.rating)) }
 }
 
 export type ReviewInsights = {

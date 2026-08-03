@@ -8,6 +8,7 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 import type { PunchTriggerType } from './schemas'
+import { isPunchCardUnlocked } from './tier-gate'
 
 export type PunchCardTemplateRow = {
   id: string
@@ -26,10 +27,14 @@ export type PunchCardTemplateRow = {
   sort: number
   config: Record<string, unknown>
   created_at: string
+  /** Niveles habilitados a sellarla. Vacío = todos. */
+  tier_ids: string[]
+  /** Qué ve el socio que no llega: bloqueada (true) o nada. */
+  show_when_locked: boolean
 }
 
 const TEMPLATE_COLUMNS =
-  'id, name, description, image_url, stamp_icon, reward_label, trigger_type, trigger_ref_id, threshold, reward_id, expires_after_days, active, sort, config, created_at'
+  'id, name, description, image_url, stamp_icon, reward_label, trigger_type, trigger_ref_id, threshold, reward_id, expires_after_days, active, sort, config, created_at, show_when_locked'
 
 export async function listPunchCardTemplates(tenantId: string): Promise<PunchCardTemplateRow[]> {
   const supabase = await createClient()
@@ -45,13 +50,34 @@ export async function listPunchCardTemplates(tenantId: string): Promise<PunchCar
     console.error('[punch-cards.list]', error?.message)
     return []
   }
-  type Joined = PunchCardTemplateRow & {
+  type Joined = Omit<PunchCardTemplateRow, 'tier_ids'> & {
     rewards: { name: string } | { name: string }[] | null
   }
-  return data.map((row) => {
-    const r = row as unknown as Joined
+  const rows = data as unknown as Joined[]
+
+  // Los niveles de todas las tarjetas en una sola consulta (no una por fila).
+  const tierIdsByTemplate = new Map<string, string[]>()
+  if (rows.length > 0) {
+    const { data: links, error: linkError } = await supabase
+      .from('punch_card_template_tiers')
+      .select('template_id, tier_id')
+      .eq('tenant_id', tenantId)
+    if (linkError) console.error('[punch-cards.list.tiers]', linkError.message)
+    for (const link of (links ?? []) as Array<{ template_id: string; tier_id: string }>) {
+      const list = tierIdsByTemplate.get(link.template_id)
+      if (list) list.push(link.tier_id)
+      else tierIdsByTemplate.set(link.template_id, [link.tier_id])
+    }
+  }
+
+  return rows.map((r) => {
     const rew = Array.isArray(r.rewards) ? r.rewards[0] : r.rewards
-    return { ...r, reward_name: rew?.name }
+    return {
+      ...r,
+      reward_name: rew?.name,
+      tier_ids: tierIdsByTemplate.get(r.id) ?? [],
+      show_when_locked: r.show_when_locked !== false,
+    }
   })
 }
 
@@ -116,6 +142,10 @@ export type CustomerPunchCard = {
   current: number
   threshold: number
   remaining: number
+  /** La tarjeta es de otra categoría: el "+1" no va a poder sellarla. */
+  lockedByTier: boolean
+  /** Niveles que la habilitan, para explicarle al cajero por qué no puede. */
+  requiredTierNames: string[]
 }
 
 /**
@@ -156,13 +186,37 @@ export async function listCustomerPunchCards(
     return []
   }
 
-  const { data: cards } = await supabase
-    .from('customer_punch_cards')
-    .select('id, template_id, current_stamps, threshold_snapshot')
-    .eq('tenant_id', tenantId)
-    .eq('customer_id', customerId)
-    .is('completed_at', null)
-    .is('expired_at', null)
+  // Nivel del socio + qué niveles habilita cada tarjeta: sin esto el cajero
+  // aprieta "+1" y recién ahí se entera de que la tarjeta es de otra categoría.
+  const [{ data: cards }, { data: tierLinks }, { data: myTier }] = await Promise.all([
+    supabase
+      .from('customer_punch_cards')
+      .select('id, template_id, current_stamps, threshold_snapshot')
+      .eq('tenant_id', tenantId)
+      .eq('customer_id', customerId)
+      .is('completed_at', null)
+      .is('expired_at', null),
+    supabase
+      .from('punch_card_template_tiers')
+      .select('template_id, tier_id, loyalty_tiers(name)')
+      .eq('tenant_id', tenantId),
+    supabase.rpc('customer_effective_tier', { p_customer_id: customerId }),
+  ])
+
+  const currentTierId = typeof myTier === 'string' ? myTier : null
+  const tiersByTemplate = new Map<string, Array<{ id: string; name: string }>>()
+  type TierLink = {
+    template_id: string
+    tier_id: string
+    loyalty_tiers: { name: string } | { name: string }[] | null
+  }
+  for (const link of (tierLinks ?? []) as TierLink[]) {
+    const joined = Array.isArray(link.loyalty_tiers) ? link.loyalty_tiers[0] : link.loyalty_tiers
+    const entry = { id: link.tier_id, name: joined?.name ?? '' }
+    const list = tiersByTemplate.get(link.template_id)
+    if (list) list.push(entry)
+    else tiersByTemplate.set(link.template_id, [entry])
+  }
 
   const byTemplate = new Map<string, { id: string; current: number; threshold: number }>()
   for (const c of cards ?? []) {
@@ -179,6 +233,7 @@ export async function listCustomerPunchCards(
     // subir el threshold del template no debe alargar una tarjeta ya empezada.
     const threshold = card?.threshold ?? t.threshold
     const current = card?.current ?? 0
+    const allowed = tiersByTemplate.get(t.id) ?? []
     return {
       cardId: card?.id ?? null,
       templateId: t.id,
@@ -188,6 +243,11 @@ export async function listCustomerPunchCards(
       current,
       threshold,
       remaining: Math.max(0, threshold - current),
+      lockedByTier: !isPunchCardUnlocked(
+        allowed.map((a) => a.id),
+        currentTierId,
+      ),
+      requiredTierNames: allowed.map((a) => a.name).filter((n) => n.length > 0),
     }
   })
 }

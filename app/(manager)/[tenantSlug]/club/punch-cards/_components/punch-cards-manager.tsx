@@ -22,6 +22,7 @@ import {
   Check,
   GripVertical,
   Loader2,
+  Lock,
   Pencil,
   Plus,
   Stamp,
@@ -67,6 +68,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { isStorageUrl } from '@/lib/menu/media-urls'
 import { deleteMenuImageByUrl } from '@/lib/menu/upload-image'
+import { type LoyaltyTier, sortedActiveTiers } from '@/lib/points/tiers'
 import {
   createPunchCard,
   deletePunchCard,
@@ -77,6 +79,7 @@ import {
 } from '@/lib/punch-cards/actions'
 import type { PunchCardTemplateRow } from '@/lib/punch-cards/queries'
 import { PUNCH_TRIGGER_TYPES, type PunchTriggerType } from '@/lib/punch-cards/schemas'
+import { formatRequiredTiers } from '@/lib/punch-cards/tier-gate'
 import { cn } from '@/lib/utils'
 import { MenuImageUploader } from '../../../menu/_components/image-uploader'
 
@@ -230,8 +233,52 @@ type FormFieldsProps = {
   categories: NamedOption[]
   tags: NamedOption[]
   rewards: NamedOption[]
+  tiers: LoyaltyTier[]
   imageUrl: string | null
   onImageChange: (url: string | null) => void
+}
+
+/** Chip con el color del nivel. Tocable: es el selector múltiple de categorías. */
+function TierChip({
+  tier,
+  selected,
+  onToggle,
+}: {
+  tier: LoyaltyTier
+  selected: boolean
+  onToggle?: () => void
+}) {
+  const accent = tier.color ?? undefined
+  const style = selected
+    ? { backgroundColor: accent, borderColor: accent, color: accent ? '#fff' : undefined }
+    : { borderColor: accent, color: accent }
+
+  if (!onToggle) {
+    return (
+      <span
+        style={style}
+        className="inline-flex h-7 items-center rounded-full border px-2.5 text-[11px] font-medium"
+      >
+        {tier.name}
+      </span>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={selected}
+      style={style}
+      className={cn(
+        'inline-flex h-11 items-center rounded-full border px-3.5 text-xs font-medium transition-colors',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+        !selected && 'bg-background hover:bg-secondary/60',
+      )}
+    >
+      {tier.name}
+    </button>
+  )
 }
 
 /**
@@ -246,12 +293,15 @@ function PunchCardFormFields({
   categories,
   tags,
   rewards,
+  tiers,
   imageUrl,
   onImageChange,
 }: FormFieldsProps) {
   const [triggerType, setTriggerType] = useState<PunchTriggerType>(
     template?.trigger_type ?? 'manual',
   )
+  const [tierIds, setTierIds] = useState<string[]>(template?.tier_ids ?? [])
+  const [showWhenLocked, setShowWhenLocked] = useState(template?.show_when_locked !== false)
   const [name, setName] = useState(template?.name ?? '')
   const [threshold, setThreshold] = useState(String(template?.threshold ?? 6))
   const [rewardId, setRewardId] = useState(template?.reward_id ?? '')
@@ -286,6 +336,11 @@ function PunchCardFormFields({
     triggerType === 'item' ? items : triggerType === 'category' ? categories : tags
   const thresholdNum = Math.min(100, Math.max(2, Number(threshold) || 2))
   const rewardName = rewards.find((r) => r.id === rewardId)?.name ?? null
+
+  const ladder = sortedActiveTiers(tiers)
+  const toggleTier = (id: string) =>
+    setTierIds((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]))
+  const chosenTierNames = ladder.filter((t) => tierIds.includes(t.id)).map((t) => t.name)
 
   return (
     <>
@@ -550,6 +605,79 @@ function PunchCardFormFields({
         </div>
       </div>
 
+      {/* ── Categorías habilitadas ─────────────────────────────
+          Set arbitrario, no "de tal nivel para arriba": el dueño puede querer
+          saltear un nivel. Vacío = para todos, que es como venían funcionando
+          todas las tarjetas hasta ahora. */}
+      <fieldset className="grid gap-2.5 rounded-lg border border-border/60 bg-background/40 p-3">
+        <legend className="px-1 text-xs font-medium text-muted-foreground">
+          ¿Quiénes la pueden sellar?
+        </legend>
+
+        {tierIds.map((id) => (
+          <input key={id} type="hidden" name="tier_ids" value={id} />
+        ))}
+        <input type="hidden" name="show_when_locked" value={showWhenLocked ? 'on' : 'off'} />
+
+        {ladder.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground">
+            Todavía no hay categorías cargadas. Creá los niveles en Puntos y niveles y volvé.
+          </p>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-2">
+              {ladder.map((t) => (
+                <TierChip
+                  key={t.id}
+                  tier={t}
+                  selected={tierIds.includes(t.id)}
+                  onToggle={() => toggleTier(t.id)}
+                />
+              ))}
+            </div>
+
+            {tierIds.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground">
+                <strong className="font-medium text-foreground">Todos los socios.</strong> Elegí una
+                o más categorías para que sea exclusiva.
+              </p>
+            ) : (
+              <p className="text-[11px] text-muted-foreground">
+                Exclusiva de{' '}
+                <strong className="font-medium text-foreground">
+                  {formatRequiredTiers(chosenTierNames)}
+                </strong>
+                . Al resto no se le puede sellar.
+              </p>
+            )}
+
+            {tierIds.length > 0 ? (
+              <div className="flex items-start gap-3 rounded-md bg-secondary/40 p-2.5">
+                <Switch
+                  id="pc-show-when-locked"
+                  checked={showWhenLocked}
+                  onCheckedChange={setShowWhenLocked}
+                />
+                <Label
+                  htmlFor="pc-show-when-locked"
+                  className="text-[11px] font-normal leading-snug text-muted-foreground"
+                >
+                  <span>
+                    <strong className="font-medium text-foreground">
+                      {showWhenLocked ? 'Se ve bloqueada' : 'No se ve'}
+                    </strong>{' '}
+                    para el que todavía no llegó.{' '}
+                    {showWhenLocked
+                      ? 'La ve con candado y qué categoría necesita — le da un motivo para subir.'
+                      : 'Es una sorpresa que aparece recién al llegar a la categoría.'}
+                  </span>
+                </Label>
+              </div>
+            ) : null}
+          </>
+        )}
+      </fieldset>
+
       <WalletPreview
         name={name}
         threshold={thresholdNum}
@@ -570,6 +698,7 @@ function PunchCardEditDialog({
   categories,
   tags,
   rewards,
+  tiers,
   onClose,
 }: {
   template: PunchCardTemplateRow
@@ -579,6 +708,7 @@ function PunchCardEditDialog({
   categories: NamedOption[]
   tags: NamedOption[]
   rewards: NamedOption[]
+  tiers: LoyaltyTier[]
   onClose: () => void
 }) {
   const [imageUrl, setImageUrl] = useState<string | null>(template.image_url)
@@ -627,6 +757,7 @@ function PunchCardEditDialog({
             categories={categories}
             tags={tags}
             rewards={rewards}
+            tiers={tiers}
             imageUrl={imageUrl}
             onImageChange={setImageUrl}
           />
@@ -666,12 +797,14 @@ function PunchCardEditDialog({
 // ── Fila arrastrable de la lista ────────────────────────────
 function TemplateRow({
   template,
+  tiers,
   pending,
   onEdit,
   onToggle,
   onDelete,
 }: {
   template: PunchCardTemplateRow
+  tiers: LoyaltyTier[]
   pending: boolean
   onEdit: () => void
   onToggle: () => void
@@ -682,6 +815,11 @@ function TemplateRow({
   })
 
   const prize = template.reward_label?.trim() || template.reward_name || 'el premio'
+  const exclusiveOf = formatRequiredTiers(
+    sortedActiveTiers(tiers)
+      .filter((t) => template.tier_ids.includes(t.id))
+      .map((t) => t.name),
+  )
 
   return (
     <li
@@ -729,6 +867,13 @@ function TemplateRow({
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="truncate text-sm font-medium">{template.name}</span>
           {template.active ? null : <Badge variant="warning">Apagada</Badge>}
+          {/* De un vistazo, cuál es exclusiva y de quién. */}
+          {exclusiveOf ? (
+            <Badge variant="outline" className="gap-1">
+              <Lock className="size-3" aria-hidden />
+              {exclusiveOf}
+            </Badge>
+          ) : null}
         </div>
         <p className="truncate text-[11px] text-muted-foreground">
           <span className="tabular-nums">{template.threshold}</span> sellos → {prize} ·{' '}
@@ -788,6 +933,7 @@ export function PunchCardsManager({
   categories,
   tags,
   rewards,
+  tiers,
 }: {
   tenantSlug: string
   tenantId: string
@@ -796,6 +942,7 @@ export function PunchCardsManager({
   categories: NamedOption[]
   tags: NamedOption[]
   rewards: NamedOption[]
+  tiers: LoyaltyTier[]
 }) {
   const [showCreate, setShowCreate] = useState(false)
   const [editing, setEditing] = useState<PunchCardTemplateRow | null>(null)
@@ -916,6 +1063,7 @@ export function PunchCardsManager({
                 categories={categories}
                 tags={tags}
                 rewards={rewards}
+                tiers={tiers}
                 imageUrl={createImageUrl}
                 onImageChange={setCreateImageUrl}
               />
@@ -975,6 +1123,7 @@ export function PunchCardsManager({
                 <TemplateRow
                   key={t.id}
                   template={t}
+                  tiers={tiers}
                   pending={pending}
                   onEdit={() => setEditing(t)}
                   onToggle={() => onToggle(t)}
@@ -995,6 +1144,7 @@ export function PunchCardsManager({
           categories={categories}
           tags={tags}
           rewards={rewards}
+          tiers={tiers}
           onClose={() => setEditing(null)}
         />
       ) : null}

@@ -2,7 +2,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 export default function Loading() {
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col px-4 py-4 sm:px-6">
+    // Mismo alto que la página real: topbar (4rem) + barra de pestañas (3.25rem).
+    <div className="flex h-[calc(100vh-7.25rem)] flex-col px-4 py-4 sm:px-6">
       <div className="mb-4 shrink-0 space-y-3">
         <Skeleton className="h-4 w-44" />
         <Skeleton className="h-6 w-56" />

@@ -360,6 +360,7 @@ export function ClubEditor(props: ClubEditorProps): React.JSX.Element {
             categories={menu.categories.map((c) => ({ id: c.id, name: c.name }))}
             tags={tags}
             rewards={rewards.map((r) => ({ id: r.id, name: r.name }))}
+            tiers={tiers}
           />
         )}
       </div>

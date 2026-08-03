@@ -354,3 +354,43 @@ Hallazgos y deudas que quedaron fuera del alcance de esa tanda:
   lectura sobre `customers` y `reward_redemptions` para `anon`. Si en algún
   momento el socio pasa a tener sesión propia (ver la nota de `customer_sessions`
   más arriba), ahí sí conviene migrar a Realtime y borrar el poller.
+
+## Registros de ejecución de automatizaciones (ago 2026)
+
+- **`flow_execution_events`: definir purga > 180 días.** La tabla es append-only
+  y crece con cada paso de cada flow por cada cliente (un flow de 5 pasos sobre
+  una difusión de 1.000 socios = 5.000 filas por corrida). No se agregó purga
+  automática para no perder historial antes de que el dueño lo use; definir la
+  retención (¿180 días?) y un job de `pg_cron` que borre lo viejo, o un archivado
+  a resumen mensual.
+- **El nodo `trigger` no deja registro.** En `executeGraphNode` el caso
+  `'trigger'` es defensivo (normalmente nunca es el nodo actual) y se dejó sin
+  loguear para no meter ruido: la entrada al flow ya queda como evento
+  `enrolled`, que escribe el RPC `start_flow_for_customer`. Si algún día el
+  trigger pasa a ser un paso real, agregarle su evento.
+- **El registro no cubre las difusiones.** `broadcast_recipients` ya tiene su
+  propio estado por destinatario; si el dueño pide la misma pantalla para
+  difusiones, conviene unificar la vista y no duplicar la tabla de eventos.
+
+## Punch cards por categoría (ago 2026)
+
+- **`register_lunch_visit` no filtra por categoría, sólo la rechaza.** A diferencia
+  del cobro de mesa (`_advance_punch_cards_for_visit`, que saltea en silencio las
+  tarjetas de otra categoría), el almuerzo apunta a UN template explícito: si no
+  corresponde, el trigger tira `punch_tier_locked` y la action lo traduce. Está
+  bien así, pero la UI de almuerzo podría ocultar el botón de entrada en vez de
+  dejar que el mozo lo toque y falle.
+- **Sin auditoría del cambio de niveles de una tarjeta.** `syncTemplateTiers`
+  borra e inserta sin escribir en `audit_log`. Volver exclusiva una tarjeta que
+  la gente ya estaba llenando es una decisión con impacto y hoy no queda rastro
+  de quién la tomó (CLAUDE.md §4 punto 8).
+
+## Deuda transversal detectada de paso
+
+- **[MEDIA] Fechas sin timezone explícita en 11 archivos.** Varias pantallas usan
+  `format(new Date(...))` de date-fns pelado, que renderiza en la TZ del sistema:
+  en Vercel (UTC) eso corre las fechas 3 horas contra `America/Argentina/Cordoba`.
+  Convive con 7 archivos que sí usan `formatInTimeZone`. Los más visibles son la
+  ficha del cliente (`clientes/[id]/_components/visits-tab.tsx` y el bloque
+  Insights de `page.tsx`). Amerita un barrido propio, no parches sueltos:
+  arreglar sólo algunos deja la app inconsistente consigo misma.

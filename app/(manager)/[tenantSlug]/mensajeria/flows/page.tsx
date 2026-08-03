@@ -1,4 +1,4 @@
-import { ChevronRight, Plus, Workflow, Zap } from 'lucide-react'
+import { ChevronRight, History, Plus, Workflow, Zap } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
@@ -83,6 +83,7 @@ export default async function FlowsPage({ params }: { params: Promise<{ tenantSl
                   <DataTableHeader>Se activa cuando</DataTableHeader>
                   <DataTableHeader>Pasos</DataTableHeader>
                   <DataTableHeader>Estado</DataTableHeader>
+                  <DataTableHeader className="w-28" />
                   <DataTableHeader className="w-8" />
                 </tr>
               </DataTableHead>
@@ -113,6 +114,17 @@ export default async function FlowsPage({ params }: { params: Promise<{ tenantSl
                       ) : (
                         <Badge variant="outline">En pausa</Badge>
                       )}
+                    </DataTableCell>
+                    {/* Atajo directo a "¿qué hizo?", que es la pregunta que
+                        aparece apenas la automatización está prendida. */}
+                    <DataTableCell>
+                      <Link
+                        href={`/${tenantSlug}/mensajeria/flows/${f.id}/registros`}
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-primary"
+                      >
+                        <History className="size-3.5" aria-hidden="true" />
+                        Registros
+                      </Link>
                     </DataTableCell>
                     <DataTableCell className="text-muted-foreground/40 group-hover:text-muted-foreground">
                       <ChevronRight className="size-4" />

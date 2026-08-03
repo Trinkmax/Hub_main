@@ -3,6 +3,7 @@ import { findOrCreateConversation } from '@/lib/meta/conversations'
 import { sendTemplate, type WhatsAppChannelLike } from '@/lib/meta/whatsapp'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { Database, Json } from '@/types/database'
+import { describeFlowAction, logFlowEvent } from './execution-log'
 import { type FlowStepConfig, flowStepConfigSchema } from './schemas'
 
 type FlowExecutionRow = Database['public']['Tables']['flow_executions']['Row']
@@ -126,24 +127,54 @@ async function tickLinear(execution: FlowExecutionRow): Promise<void> {
     return
   }
   const config = parseStep(stepRow)
+  // En modo lineal no hay node_id: el registro se ancla a la posición del paso.
+  const ref = { stepPosition: stepRow.position }
 
   switch (config.type) {
-    case 'send_template':
-      await runSendTemplate(execution, config)
+    case 'send_template': {
+      const result = await runSendTemplate(execution, config)
+      await logSendTemplate(execution, result, ref)
       await advance(execution, 1)
       return
-    case 'wait':
-      await scheduleWait(execution, config.minutes)
+    }
+    case 'wait': {
+      const nextRun = await scheduleWait(execution, config.minutes)
+      await logFlowEvent({
+        execution,
+        ...ref,
+        actionType: 'wait',
+        actionLabel: describeFlowAction('wait', config),
+        status: 'waiting',
+        detail: { wait_minutes: config.minutes, next_run_at: nextRun },
+      })
       return
+    }
     case 'condition': {
       const branchTrue = await evalCondition(execution, config)
+      await logFlowEvent({
+        execution,
+        ...ref,
+        actionType: 'condition',
+        actionLabel: describeFlowAction('condition', config),
+        status: 'executed',
+        detail: { branch: pickConditionBranch(branchTrue), field: config.field, op: config.op },
+      })
       await advance(execution, branchTrue ? 1 : config.else_offset)
       return
     }
-    case 'add_tag':
-      await runAddTag(execution, config.tag_id)
+    case 'add_tag': {
+      const { tagName } = await runAddTag(execution, config.tag_id)
+      await logFlowEvent({
+        execution,
+        ...ref,
+        actionType: 'add_tag',
+        actionLabel: describeFlowAction('add_tag', config, { tagName }),
+        status: 'executed',
+        detail: { tag_id: config.tag_id, tag_name: tagName },
+      })
       await advance(execution, 1)
       return
+    }
   }
 }
 
@@ -219,7 +250,8 @@ async function executeGraphNode(
 
     case 'send_template': {
       const config = parseNodeConfig(node, 'send_template')
-      await runSendTemplate(execution, config)
+      const result = await runSendTemplate(execution, config)
+      await logSendTemplate(execution, result, { nodeId: node.id })
       const nextId = nextNodeId(edges, node.id, null)
       if (!nextId) {
         await markCompleted(execution.id)
@@ -247,6 +279,15 @@ async function executeGraphNode(
         .from('flow_executions')
         .update({ current_node_id: nextId, next_run_at: nextRun })
         .eq('id', execution.id)
+      // La fila "Esperando" del registro: el cliente quedó frenado acá hasta nextRun.
+      await logFlowEvent({
+        execution,
+        nodeId: node.id,
+        actionType: 'wait',
+        actionLabel: describeFlowAction('wait', config),
+        status: 'waiting',
+        detail: { wait_minutes: config.minutes, next_run_at: nextRun },
+      })
       return
     }
 
@@ -254,6 +295,14 @@ async function executeGraphNode(
       const config = parseNodeConfig(node, 'condition')
       const result = await evalConditionFromConfig(execution, config)
       const branch = pickConditionBranch(result)
+      await logFlowEvent({
+        execution,
+        nodeId: node.id,
+        actionType: 'condition',
+        actionLabel: describeFlowAction('condition', config),
+        status: 'executed',
+        detail: { branch, field: config.field, op: config.op },
+      })
       const nextId = nextNodeId(edges, node.id, branch)
       if (!nextId) {
         await markCompleted(execution.id)
@@ -268,7 +317,15 @@ async function executeGraphNode(
 
     case 'add_tag': {
       const config = parseNodeConfig(node, 'add_tag')
-      await runAddTag(execution, config.tag_id)
+      const { tagName } = await runAddTag(execution, config.tag_id)
+      await logFlowEvent({
+        execution,
+        nodeId: node.id,
+        actionType: 'add_tag',
+        actionLabel: describeFlowAction('add_tag', config, { tagName }),
+        status: 'executed',
+        detail: { tag_id: config.tag_id, tag_name: tagName },
+      })
       const nextId = nextNodeId(edges, node.id, null)
       if (!nextId) {
         await markCompleted(execution.id)
@@ -309,10 +366,23 @@ function parseNodeConfig<K extends FlowStepConfig['type']>(
   return result as Extract<FlowStepConfig, { type: K }>
 }
 
+/**
+ * Resultado del envío para que el caller lo registre. Devolvemos el motivo del
+ * salto (en vez de sólo loguear en consola) porque "¿por qué a este cliente no
+ * le llegó?" es la pregunta que el dueño hace mirando la pantalla de registros.
+ */
+type SendTemplateResult = {
+  status: 'executed' | 'skipped'
+  reason?: 'blocked' | 'no_opt_in'
+  templateId: string
+  templateName: string | null
+  channelType: string | null
+}
+
 async function runSendTemplate(
   execution: FlowExecutionRow,
   config: Extract<FlowStepConfig, { type: 'send_template' }>,
-): Promise<void> {
+): Promise<SendTemplateResult> {
   const service = createServiceClient()
   const [{ data: customer }, { data: channel }, { data: template }] = await Promise.all([
     service
@@ -331,10 +401,16 @@ async function runSendTemplate(
     throw new FatalFlowError('missing customer/channel/template')
   }
 
+  const ref = {
+    templateId: config.template_id,
+    templateName: template.name,
+    channelType: channel.type,
+  }
+
   if (customer.is_blocked) {
     // No contactar (hard opt-out): ni siquiera un template transaccional.
     console.warn(`[flows.runSendTemplate] skip: cliente bloqueado (execution=${execution.id})`)
-    return
+    return { status: 'skipped', reason: 'blocked', ...ref }
   }
 
   if (
@@ -348,7 +424,7 @@ async function runSendTemplate(
     console.warn(
       `[flows.runSendTemplate] skip marketing sin opt-in (execution=${execution.id}, template=${template.name})`,
     )
-    return
+    return { status: 'skipped', reason: 'no_opt_in', ...ref }
   }
 
   const variables =
@@ -380,6 +456,34 @@ async function runSendTemplate(
     sent_at: new Date().toISOString(),
     flow_execution_id: execution.id,
   })
+
+  return { status: 'executed', ...ref }
+}
+
+// Motivos de salto en clave estable; la UI los traduce (nunca guardamos el
+// texto visible en la DB para poder reescribirlo sin migrar filas viejas).
+async function logSendTemplate(
+  execution: FlowExecutionRow,
+  result: SendTemplateResult,
+  ref: { nodeId?: string | null; stepPosition?: number | null },
+): Promise<void> {
+  const detail: Record<string, Json> = {
+    template_id: result.templateId,
+    template_name: result.templateName,
+    channel_type: result.channelType,
+  }
+  if (result.reason) detail.skip_reason = result.reason
+  await logFlowEvent({
+    execution,
+    ...ref,
+    actionType: 'send_template',
+    actionLabel: describeFlowAction('send_template', null, {
+      templateName: result.templateName,
+      channelType: result.channelType,
+    }),
+    status: result.status,
+    detail,
+  })
 }
 
 function resolveVariable(
@@ -394,7 +498,7 @@ function resolveVariable(
     .replace(/\{\{phone\}\}/g, customer.phone)
 }
 
-async function scheduleWait(execution: FlowExecutionRow, minutes: number): Promise<void> {
+async function scheduleWait(execution: FlowExecutionRow, minutes: number): Promise<string> {
   const service = createServiceClient()
   // En wait: avanzamos el step (lo damos por consumido) y dejamos next_run_at en
   // el futuro. El cron volverá a procesar la execution cuando llegue el momento.
@@ -403,6 +507,7 @@ async function scheduleWait(execution: FlowExecutionRow, minutes: number): Promi
     .from('flow_executions')
     .update({ current_step: execution.current_step + 1, next_run_at: nextRun })
     .eq('id', execution.id)
+  return nextRun
 }
 
 async function evalCondition(
@@ -462,14 +567,23 @@ export function compare(left: unknown, op: string, right: unknown): boolean {
   return false
 }
 
-async function runAddTag(execution: FlowExecutionRow, tagId: string): Promise<void> {
+async function runAddTag(
+  execution: FlowExecutionRow,
+  tagId: string,
+): Promise<{ tagName: string | null }> {
   const service = createServiceClient()
-  await service
-    .from('customer_tag_assignments')
-    .upsert(
-      { customer_id: execution.customer_id, tag_id: tagId },
-      { onConflict: 'customer_id,tag_id', ignoreDuplicates: true },
-    )
+  // El nombre se lee en paralelo sólo para el registro: en la grilla el dueño
+  // tiene que ver "Etiquetar: VIP", no un uuid.
+  const [, tagRes] = await Promise.all([
+    service
+      .from('customer_tag_assignments')
+      .upsert(
+        { customer_id: execution.customer_id, tag_id: tagId },
+        { onConflict: 'customer_id,tag_id', ignoreDuplicates: true },
+      ),
+    service.from('customer_tags').select('name').eq('id', tagId).maybeSingle(),
+  ])
+  return { tagName: tagRes.data?.name ?? null }
 }
 
 async function advance(execution: FlowExecutionRow, by: number): Promise<void> {
@@ -485,18 +599,40 @@ async function advance(execution: FlowExecutionRow, by: number): Promise<void> {
 
 async function markCompleted(executionId: string): Promise<void> {
   const service = createServiceClient()
-  await service
+  // El filtro por 'running' hace el cierre idempotente: si otra pasada ya la
+  // completó, no vuelve fila y no duplicamos el evento de cierre.
+  const { data } = await service
     .from('flow_executions')
     .update({ status: 'completed', completed_at: new Date().toISOString() })
     .eq('id', executionId)
+    .eq('status', 'running')
+    .select('id, tenant_id, flow_id, customer_id')
+    .maybeSingle()
+  if (!data) return
+  await logFlowEvent({
+    execution: data,
+    actionType: 'completed',
+    actionLabel: describeFlowAction('completed'),
+    status: 'executed',
+  })
 }
 
 export async function markFailed(executionId: string, err: string): Promise<void> {
   const service = createServiceClient()
-  await service
+  const { data } = await service
     .from('flow_executions')
     .update({ status: 'failed', error: err, completed_at: new Date().toISOString() })
     .eq('id', executionId)
+    .select('id, tenant_id, flow_id, customer_id')
+    .maybeSingle()
+  if (!data) return
+  await logFlowEvent({
+    execution: data,
+    actionType: 'failed',
+    actionLabel: describeFlowAction('failed'),
+    status: 'error',
+    error: err,
+  })
 }
 
 // Marker export para que TS no se queje del Json import si fuera unused.

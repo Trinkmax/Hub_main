@@ -19,6 +19,8 @@ import {
   listCustomerVisits,
 } from '@/lib/points/queries'
 import { getCustomerLunchSnapshot } from '@/lib/punch-cards/queries'
+import { listCustomerReviews } from '@/lib/reviews/queries'
+import { formatReviewsSummary } from '@/lib/reviews/summary'
 import { getCustomerInsights } from '@/lib/stats/queries'
 import {
   RoleRequiredError,
@@ -32,6 +34,7 @@ import { CustomerTags } from './_components/customer-tags'
 import { DeleteButton } from './_components/delete-button'
 import { LedgerTab } from './_components/ledger-tab'
 import { LunchCardPanel } from './_components/lunch-card-panel'
+import { ReviewsTab } from './_components/reviews-tab'
 import { VisitsTab } from './_components/visits-tab'
 
 export const metadata = { title: 'Cliente' }
@@ -58,7 +61,7 @@ export default async function CustomerDetailPage({
     throw error
   }
 
-  const [customer, allTags, visits, ledger, redemptions, insights, lunchSnapshot] =
+  const [customer, allTags, visits, ledger, redemptions, insights, lunchSnapshot, reviews] =
     await Promise.all([
       getCustomerById({ tenantId: access.tenant.id, id }),
       listTags({ tenantId: access.tenant.id }),
@@ -67,9 +70,16 @@ export default async function CustomerDetailPage({
       listCustomerRedemptions({ tenantId: access.tenant.id, customerId: id }),
       getCustomerInsights(access.tenant.id, id),
       getCustomerLunchSnapshot({ tenantId: access.tenant.id, customerId: id }),
+      listCustomerReviews(access.tenant.id, id),
     ])
 
   if (!customer) notFound()
+
+  // Índice visita → reseña para marcar en la pestaña Visitas cuál dejó comentario.
+  const reviewedVisits: Record<string, number> = {}
+  for (const review of reviews.reviews) {
+    if (review.visitId) reviewedVisits[review.visitId] ??= review.rating
+  }
 
   type C = {
     id: string
@@ -214,46 +224,48 @@ export default async function CustomerDetailPage({
         />
       ) : null}
 
-      {insights ? (
+      {/* Un cliente puede tener reseñas sin visitas cargadas: el bloque igual se muestra. */}
+      {insights || reviews.total > 0 ? (
         <div className="card-hairline rounded-xl border bg-card p-5">
           <div className="mb-4 flex items-center gap-2">
             <Sparkles className="size-4 text-primary" />
             <h2 className="font-display text-base font-semibold tracking-tight">Insights</h2>
           </div>
           <div className="grid gap-x-6 gap-y-2.5 text-sm sm:grid-cols-2">
-            <InsightLine label="Plato favorito" value={insights.favorite_item_name ?? '—'} />
+            <InsightLine label="Plato favorito" value={insights?.favorite_item_name ?? '—'} />
             <InsightLine
               label="Categoría favorita"
-              value={insights.favorite_category_name ?? '—'}
+              value={insights?.favorite_category_name ?? '—'}
             />
             <InsightLine
               label="Ticket promedio"
-              value={fmtCents(Number(insights.avg_ticket_cents ?? 0))}
+              value={fmtCents(Number(insights?.avg_ticket_cents ?? 0))}
             />
             <InsightLine
               label="Frecuencia"
               value={
-                insights.visit_frequency_days != null
-                  ? `Cada ${Number(insights.visit_frequency_days).toFixed(1)} días`
+                insights?.visit_frequency_days != null
+                  ? `Cada ${Number(insights?.visit_frequency_days).toFixed(1)} días`
                   : '—'
               }
             />
             <InsightLine
               label="Días sin venir"
               value={
-                insights.days_since_last_visit != null
-                  ? `${insights.days_since_last_visit} días`
+                insights?.days_since_last_visit != null
+                  ? `${insights?.days_since_last_visit} días`
                   : '—'
               }
             />
             <InsightLine
               label="Última visita"
               value={
-                insights.last_visit_at
-                  ? format(new Date(insights.last_visit_at), "d 'de' MMM yyyy", { locale: es })
+                insights?.last_visit_at
+                  ? format(new Date(insights?.last_visit_at), "d 'de' MMM yyyy", { locale: es })
                   : '—'
               }
             />
+            <InsightLine label="Reseñas" value={formatReviewsSummary(reviews)} />
           </div>
         </div>
       ) : null}
@@ -285,6 +297,18 @@ export default async function CustomerDetailPage({
             Mensajes
           </TabsTrigger>
           <TabsTrigger
+            value="resenas"
+            className="gap-1.5 data-[state=active]:bg-card data-[state=active]:shadow-sm"
+          >
+            Reseñas
+            {/* El contador se ve sin abrir la pestaña: si el cliente se quejó, se nota. */}
+            {reviews.total > 0 ? (
+              <span className="rounded-full bg-secondary px-1.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
+                {reviews.total}
+              </span>
+            ) : null}
+          </TabsTrigger>
+          <TabsTrigger
             value="notas"
             className="data-[state=active]:bg-card data-[state=active]:shadow-sm"
           >
@@ -293,7 +317,7 @@ export default async function CustomerDetailPage({
         </TabsList>
 
         <TabsContent value="visitas" className="mt-4">
-          <VisitsTab visits={visits} />
+          <VisitsTab visits={visits} reviewedVisits={reviewedVisits} />
         </TabsContent>
 
         <TabsContent value="puntos" className="mt-4">
@@ -336,6 +360,10 @@ export default async function CustomerDetailPage({
               description="Cuando le mandes un broadcast o reciba un mensaje 1-a-1, va a aparecer acá."
             />
           </div>
+        </TabsContent>
+
+        <TabsContent value="resenas" className="mt-4">
+          <ReviewsTab reviews={reviews.reviews} />
         </TabsContent>
 
         <TabsContent value="notas" className="mt-4">

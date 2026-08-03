@@ -5,6 +5,11 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import type { WalletData } from '@/lib/wallet/queries'
+import {
+  type DeliveredRedemption,
+  resolveActiveTicket,
+  shouldCelebrateDelivery,
+} from '@/lib/wallet/ticket-state'
 import { Carnet } from './carnet'
 import { HistoryAccordion } from './history-accordion'
 import { HowItWorks } from './how-it-works'
@@ -12,6 +17,7 @@ import { PartnerTiers } from './partner-tiers'
 import { PendingBenefits } from './pending-benefits'
 import { PersonalQr } from './personal-qr'
 import { PunchCards } from './punch-cards'
+import { RedemptionSuccess } from './redemption-success'
 import type { WalletTicket } from './redemption-ticket'
 import { ReviewCta } from './review-cta'
 import { RewardDetail } from './reward-detail'
@@ -35,9 +41,40 @@ import { WalletPartners } from './wallet-partners'
 // ticket con su QR y lo mostramos en el acto, sin esperar a que el refresh del
 // server traiga de vuelta el mismo dato. `router.refresh()` corre igual detrás
 // para que el resto de la wallet (puntos, tarjetas, pendientes) quede al día.
+//
+// Quién gana entre el optimista y el server lo decide `resolveActiveTicket`
+// (lib/wallet/ticket-state.ts), que es donde vive el arreglo del QR que quedaba
+// pegado para siempre después de que el mozo validaba.
 
 type View = 'main' | 'niveles' | 'canjeables' | 'comofunciona' | 'beneficio'
 type Reward = WalletData['rewards'][number]
+
+/**
+ * Canjes ya festejados, por pestaña. Sin esto, un F5 dentro de la ventana de
+ * frescura vuelve a tirar la animación de algo que el socio ya vio.
+ */
+const CELEBRATED_KEY = 'hub_wallet_canjes_festejados'
+
+function readCelebrated(): string[] {
+  try {
+    const raw = window.sessionStorage.getItem(CELEBRATED_KEY)
+    const parsed: unknown = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function markCelebrated(id: string): void {
+  try {
+    window.sessionStorage.setItem(
+      CELEBRATED_KEY,
+      JSON.stringify([...readCelebrated(), id].slice(-10)),
+    )
+  } catch {
+    // Incógnito o storage lleno. El peor caso es repetir un festejo: se sigue.
+  }
+}
 
 function resetScroll(el: HTMLElement | null): void {
   let p = el?.parentElement ?? null
@@ -93,6 +130,10 @@ export function WalletViews({
   const [issued, setIssued] = useState<WalletTicket | null>(null)
   const [cancelledId, setCancelledId] = useState<string | null>(null)
   const [rewardOrigin, setRewardOrigin] = useState<View>('main')
+  /** El canje que el mozo acaba de entregar, mientras dura el tilde verde. */
+  const [celebrating, setCelebrating] = useState<DeliveredRedemption | null>(null)
+  /** Último canje que el server confirmó: ver `resolveActiveTicket`. */
+  const acknowledgedRef = useRef<string | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
 
@@ -128,12 +169,35 @@ export function WalletViews({
   const hasRewards = rewards.length > 0
   const tierName = tier.current?.name
 
-  // El canje recién generado gana sobre el que trajo el server: si acabás de
-  // pedirlo, el refresh todavía puede no haber llegado. Y al cancelar tapamos el
-  // que sigue viniendo en el payload viejo, o el ticket reaparecería un segundo.
+  // El canje recién generado se muestra en el acto, sin esperar el refresh; pero
+  // en cuanto el server lo confirma, la verdad pasa a ser el server. Ver el POR
+  // QUÉ completo en lib/wallet/ticket-state.ts.
   const fromServer = data.activeRedemption ?? null
-  const activeTicket: WalletTicket | null =
-    issued ?? (fromServer && fromServer.redemptionId !== cancelledId ? fromServer : null)
+  const { ticket: activeTicket } = resolveActiveTicket({
+    issued,
+    fromServer,
+    acknowledgedId: acknowledgedRef.current,
+    cancelledId,
+  })
+
+  useEffect(() => {
+    if (fromServer) acknowledgedRef.current = fromServer.redemptionId
+  }, [fromServer])
+
+  // El mozo validó: el QR se convierte en el tilde verde. Va en un efecto y no
+  // en el render porque escribe en sessionStorage y mueve la vista.
+  const lastDelivered = data.lastDelivered ?? null
+  useEffect(() => {
+    if (!lastDelivered) return
+    if (!shouldCelebrateDelivery(lastDelivered, readCelebrated(), Date.now())) return
+    markCelebrated(lastDelivered.redemptionId)
+    setIssued(null)
+    setCancelledId(null)
+    setCelebrating(lastDelivered)
+    // La entrega es lo más importante que puede pasar en esta pantalla: si el
+    // socio estaba mirando otra vista, lo traemos a ver la confirmación.
+    setView('main')
+  }, [lastDelivered])
 
   const onSelectReward = (reward: Reward) => {
     // "Volver" tiene que devolverte de donde viniste: al catálogo si estabas ahí,
@@ -256,9 +320,16 @@ export function WalletViews({
               onCanjeables={hasRewards ? () => setView('canjeables') : undefined}
               onHelp={() => setView('comofunciona')}
             />
+            {celebrating ? (
+              <RedemptionSuccess
+                delivered={celebrating}
+                pointsBalance={customer.pointsBalance}
+                onDone={() => setCelebrating(null)}
+              />
+            ) : null}
             <PendingBenefits
               benefits={pendingBenefits}
-              active={activeTicket}
+              active={celebrating ? null : activeTicket}
               qrToken={customer.qrToken}
               onIssued={onIssued}
               onCleared={onCleared}

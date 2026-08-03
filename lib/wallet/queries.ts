@@ -12,6 +12,7 @@ import {
   sortedActiveTiers,
 } from '@/lib/points/tiers'
 import type { PointsRule } from '@/lib/points/types'
+import { resolvePunchCardLock } from '@/lib/punch-cards/tier-gate'
 import { createServiceClient } from '@/lib/supabase/service'
 import {
   buildPartnerTiers,
@@ -24,13 +25,21 @@ import {
 } from './partner-benefits'
 import { loadWalletPunchCards, type WalletPunchCard } from './punch-cards'
 import { computeRewardState } from './reward-state'
+import type { DeliveredRedemption } from './ticket-state'
 
 export type { WalletPartnerBenefit, WalletPartnerTierEntry } from './partner-benefits'
 export type { WalletPunchCard } from './punch-cards'
 export { computeRewardState } from './reward-state'
+export type { DeliveredRedemption } from './ticket-state'
 
 /** Cota generosa para traer el ledger positivo (la ventana real ≤ 24 meses). */
 const MAX_WINDOW_MONTHS = 24
+
+/**
+ * Cuánto sigue siendo "recién" una entrega. Es la ventana en la que la billetera
+ * muestra el tilde de canjeado en vez del QR; más allá, el canje es historia.
+ */
+const DELIVERY_FRESH_MS = 2 * 60 * 1000
 
 // ──────────────────────────────────────────────────────────
 // Wallet del cliente — lectura pública por qr_token (capability).
@@ -217,6 +226,13 @@ export type WalletData = {
   /** El canje con QR vivo, si hay uno. Va arriba de todo en la wallet. */
   activeRedemption?: WalletActiveRedemption | null
   /**
+   * El canje que el mozo entregó recién (últimos minutos), si hay. Con esto la
+   * billetera reemplaza el QR por el tilde verde de "canjeado" en vez de dejar
+   * un código muerto en pantalla. Opcional: el simulador del club arma un
+   * WalletData sintético y no lo completa.
+   */
+  lastDelivered?: DeliveredRedemption | null
+  /**
    * Hash del estado visible en el momento de renderizar. El cliente lo compara
    * contra `wallet_pulse` cada pocos segundos y refresca sólo si cambió — así el
    * canje entregado y los puntos recién acreditados aparecen solos, sin que el
@@ -315,7 +331,10 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
       .limit(50),
     service
       .from('reward_redemptions')
-      .select('id, points_spent, redeemed_at, status, reward:rewards(name)')
+      // `delivered_at` viaja acá y no en una query aparte: el canje que el mozo
+      // acaba de validar queda primero en este mismo orden, así que alcanza para
+      // detectar la entrega y festejarla (ver `lastDelivered`).
+      .select('id, points_spent, redeemed_at, delivered_at, status, reward:rewards(name)')
       .eq('tenant_id', tenantId)
       .eq('customer_id', customerId)
       .order('redeemed_at', { ascending: false })
@@ -387,6 +406,28 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
   const tiers = (tiersData ?? []) as LoyaltyTier[]
   const current = resolveTier(categoryPoints, tiers)
   const progress = progressToNext(categoryPoints, tiers)
+
+  // Tarjetas de sellos exclusivas de una categoría. El filtro se resuelve acá y
+  // no dentro de `loadWalletPunchCards` porque el nivel del socio sale de
+  // `resolveTier`, que es la única fuente de verdad: leer `current_tier_id` de
+  // la fila podría mostrar un nivel viejo si el recompute todavía no corrió.
+  const tierNameById = new Map(tiers.map((t) => [t.id, t.name]))
+  const visiblePunchCards = punchCards
+    .map((card) => {
+      const { hidden, locked } = resolvePunchCardLock(
+        { tierIds: card.tierIds, showWhenLocked: card.showWhenLocked },
+        current?.id ?? null,
+      )
+      if (hidden) return null
+      return {
+        ...card,
+        lockedByTier: locked,
+        requiredTierNames: card.tierIds
+          .map((id) => tierNameById.get(id))
+          .filter((n): n is string => typeof n === 'string'),
+      }
+    })
+    .filter((c): c is NonNullable<typeof c> => c !== null)
 
   const windowMonths =
     (tenant as { category_window_months?: number | null }).category_window_months ?? 4
@@ -595,6 +636,33 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
     }
   }
 
+  // El canje que el mozo validó recién. Sale del mismo listado del historial: al
+  // entregar, la RPC sella `redeemed_at`, así que la entrega de hace 10 segundos
+  // queda primera en este orden y no hace falta ir de nuevo a la base.
+  type DeliveredRow = {
+    id: string
+    points_spent: number
+    delivered_at: string | null
+    status: string
+    reward: { name: string } | { name: string }[] | null
+  }
+  const deliveredCutoff = nowMs - DELIVERY_FRESH_MS
+  const deliveredRow = ((redemptionsData ?? []) as DeliveredRow[]).find(
+    (r) =>
+      r.status === 'delivered' &&
+      r.delivered_at !== null &&
+      new Date(r.delivered_at).getTime() >= deliveredCutoff,
+  )
+  const lastDelivered: DeliveredRedemption | null =
+    deliveredRow?.delivered_at != null
+      ? {
+          redemptionId: deliveredRow.id,
+          rewardName: pickName(deliveredRow.reward),
+          pointsSpent: deliveredRow.points_spent,
+          deliveredAt: deliveredRow.delivered_at,
+        }
+      : null
+
   return {
     customer: {
       id: customer.id,
@@ -641,7 +709,7 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
     partners,
     partnerTiers,
     rewards,
-    punchCards,
+    punchCards: visiblePunchCards,
     visits: (
       (visitsData ?? []) as Array<{ id: string; visited_at: string; total_amount_cents: number }>
     ).map((v) => ({
@@ -697,6 +765,7 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
         }
       }),
     activeRedemption,
+    lastDelivered,
     rev: await computeWalletRev(service, token),
   }
 }
