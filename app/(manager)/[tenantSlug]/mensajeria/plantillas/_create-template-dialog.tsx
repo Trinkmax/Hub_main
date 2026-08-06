@@ -1,7 +1,7 @@
 'use client'
 
 import { LightbulbIcon, PlusIcon } from 'lucide-react'
-import { useActionState, useCallback, useEffect, useMemo, useState } from 'react'
+import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { WhatsAppBubble } from '@/components/messaging/whatsapp-bubble'
 import { Button } from '@/components/ui/button'
@@ -25,9 +25,19 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  TEMPLATE_VARIABLES,
+  type VariableSourceKey,
+  variableDefinition,
+} from '@/lib/broadcasts/variables'
 import type { MetaActionState } from '@/lib/meta/actions'
 import { createTemplateAction } from '@/lib/meta/template-actions'
-import { extractPositionalVars, fillExamples } from '@/lib/meta/template-components'
+import {
+  caretOutsideVariable,
+  extractPositionalVars,
+  fillExamples,
+  renumberPositionalVars,
+} from '@/lib/meta/template-components'
 import { TEMPLATE_CATEGORIES } from '@/lib/meta/template-schemas'
 import { CATEGORY_LABELS } from './_template-display'
 
@@ -65,6 +75,9 @@ export function CreateTemplateDialog({
   const [headerExample, setHeaderExample] = useState('')
   const [bodyText, setBodyText] = useState('')
   const [bodyExamples, setBodyExamples] = useState<string[]>([])
+  /** Qué dato del cliente representa cada hueco: `{"1": "first_name"}`. */
+  const [variableHints, setVariableHints] = useState<Record<string, VariableSourceKey>>({})
+  const bodyRef = useRef<HTMLTextAreaElement>(null)
   const [footerText, setFooterText] = useState('')
   const [optOut, setOptOut] = useState(true)
   const [optOutLabel, setOptOutLabel] = useState('No recibir promociones')
@@ -85,6 +98,7 @@ export function CreateTemplateDialog({
     setHeaderExample('')
     setBodyText('')
     setBodyExamples([])
+    setVariableHints({})
     setFooterText('')
     setOptOut(true)
     setOptOutLabel('No recibir promociones')
@@ -119,8 +133,69 @@ export function CreateTemplateDialog({
     })
   }
 
-  function insertVariable() {
-    setBodyText((t) => `${t}{{${bodyVars.length + 1}}}`)
+  /**
+   * Escribe el cuerpo renumerando siempre las variables a 1..n en orden de
+   * aparición. Así borrar un `{{1}}` del medio no deja `{{2}} {{3}}`, que Meta
+   * rechaza por una regla que el dueño no tiene por qué conocer.
+   */
+  function changeBody(next: string) {
+    const fixed = renumberPositionalVars(next, {
+      examples: bodyExamples,
+      hints: variableHints,
+    })
+    setBodyText(fixed.text)
+    setBodyExamples(fixed.examples)
+    setVariableHints(fixed.hints as Record<string, VariableSourceKey>)
+  }
+
+  /** Inserta el dato donde está el cursor y deja el ejemplo ya cargado. */
+  function insertVariable(source: VariableSourceKey) {
+    const el = bodyRef.current
+    const raw = el ? (el.selectionStart ?? bodyText.length) : bodyText.length
+    const position = caretOutsideVariable(bodyText, raw)
+    const next = bodyVars.length + 1
+    const token = `{{${next}}}`
+    const merged = `${bodyText.slice(0, position)}${token}${bodyText.slice(position)}`
+
+    const fixed = renumberPositionalVars(merged, {
+      examples: bodyExamples,
+      hints: variableHints,
+    })
+    // El hueco recién puesto es el que quedó en la posición del cursor.
+    const insertedAt = (merged.slice(0, position).match(/\{\{\s*\d+\s*\}\}/g) ?? []).length + 1
+    const definition = variableDefinition(source)
+    const examples = [...fixed.examples]
+    if (!examples[insertedAt - 1]?.trim()) {
+      examples[insertedAt - 1] = definition?.example ?? ''
+    }
+
+    setBodyText(fixed.text)
+    setBodyExamples(examples)
+    setVariableHints({
+      ...(fixed.hints as Record<string, VariableSourceKey>),
+      [String(insertedAt)]: source,
+    })
+
+    // Dejar el cursor después del hueco para poder seguir escribiendo.
+    requestAnimationFrame(() => {
+      if (!el) return
+      el.focus()
+      const caret = position + token.length
+      el.setSelectionRange(caret, caret)
+    })
+  }
+
+  /** Cambia qué dato representa un hueco; si el ejemplo seguía siendo el que
+   *  pusimos por default, lo actualizamos para que no quede desfasado. */
+  function changeHint(position: number, source: VariableSourceKey) {
+    const previous = variableHints[String(position)]
+    const previousExample = previous ? variableDefinition(previous)?.example : undefined
+    const current = bodyExamples[position - 1] ?? ''
+
+    setVariableHints((prev) => ({ ...prev, [String(position)]: source }))
+    if (!current.trim() || current === previousExample) {
+      setExampleAt(position, variableDefinition(source)?.example ?? '')
+    }
   }
 
   const previewButtons = [
@@ -150,6 +225,7 @@ export function CreateTemplateDialog({
           {/* Campos serializados que no son inputs de texto simples */}
           <input type="hidden" name="channel_id" value={channelId} />
           <input type="hidden" name="bodyExamples" value={JSON.stringify(orderedBodyExamples)} />
+          <input type="hidden" name="variableHints" value={JSON.stringify(variableHints)} />
           <input type="hidden" name="optOut" value={optOut ? 'true' : 'false'} />
 
           {/* Columna izquierda: formulario */}
@@ -238,61 +314,95 @@ export function CreateTemplateDialog({
             </div>
 
             <div className="grid gap-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="tmpl-body">
-                  Cuerpo del mensaje <span className="text-destructive">*</span>
-                </Label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-[11px]"
-                  onClick={insertVariable}
-                >
-                  + Insertar variable
-                </Button>
-              </div>
+              <Label htmlFor="tmpl-body">
+                Cuerpo del mensaje <span className="text-destructive">*</span>
+              </Label>
               <Textarea
                 id="tmpl-body"
                 name="bodyText"
+                ref={bodyRef}
                 value={bodyText}
-                onChange={(e) => setBodyText(e.target.value)}
+                onChange={(e) => changeBody(e.target.value)}
                 placeholder="ej. ¡Hola {{1}}! Te esperamos con un beneficio especial."
                 maxLength={1024}
                 className="min-h-24 resize-y"
               />
-              <div className="flex gap-2 rounded-lg border border-border/60 bg-secondary/30 px-3 py-2.5">
-                <LightbulbIcon
-                  className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
-                  aria-hidden
-                />
-                <p className="text-muted-foreground text-xs">
-                  <strong className="text-foreground">¿Qué es {'{{1}}'}?</strong> Un hueco que se
-                  completa solo con el dato de cada cliente. Si escribís «¡Hola {'{{1}}'}!», Juan
-                  recibe «¡Hola Juan!» y Sofía recibe «¡Hola Sofía!». Tocá «+ Insertar variable»
-                  para agregar uno.
+
+              {/* Los datos del cliente, como botones. Se insertan donde está el
+                  cursor: el dueño escribe "¡Hola " y toca Nombre. */}
+              <div className="grid gap-1.5 rounded-lg border border-border/60 bg-secondary/30 p-2.5">
+                <p className="text-[11px] font-medium">
+                  Insertá un dato del cliente
+                  <span className="ml-1 font-normal text-muted-foreground">
+                    — se completa solo en cada mensaje
+                  </span>
                 </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {TEMPLATE_VARIABLES.map((v) => (
+                    <Button
+                      key={v.key}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 gap-1 rounded-full px-2.5 text-[11px]"
+                      title={v.hint}
+                      onClick={() => insertVariable(v.key)}
+                    >
+                      <PlusIcon className="size-3" aria-hidden />
+                      {v.label}
+                    </Button>
+                  ))}
+                </div>
               </div>
             </div>
 
             {bodyVars.length > 0 ? (
               <div className="grid gap-2 rounded-lg border border-border/60 bg-secondary/20 p-3">
-                <p className="text-xs font-medium">Ejemplos de las variables</p>
-                <p className="text-[11px] text-muted-foreground">
-                  WhatsApp pide un ejemplo de cada variable para entender el mensaje y aprobarlo. No
-                  se le manda a nadie.
-                </p>
-                {bodyVars.map((n) => (
-                  <div key={n} className="flex items-center gap-2">
-                    <code className="w-8 shrink-0 text-xs text-muted-foreground">{`{{${n}}}`}</code>
-                    <Input
-                      value={bodyExamples[n - 1] ?? ''}
-                      onChange={(e) => setExampleAt(n, e.target.value)}
-                      placeholder={n === 1 ? 'ej. Juan' : `Ejemplo para {{${n}}}`}
-                      className="h-8 flex-1 text-xs"
-                    />
-                  </div>
-                ))}
+                <div className="flex gap-2">
+                  <LightbulbIcon
+                    className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
+                    aria-hidden
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Cada hueco se completa con el dato de ese cliente. El ejemplo es lo que ve
+                    WhatsApp para aprobar el mensaje — no se le manda a nadie.
+                  </p>
+                </div>
+                {bodyVars.map((n) => {
+                  const hint = variableHints[String(n)] ?? 'custom'
+                  return (
+                    <div key={n} className="flex items-center gap-2">
+                      <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-foreground/10 font-mono text-[10px] font-semibold tabular-nums">
+                        {n}
+                      </span>
+                      <Select
+                        value={hint}
+                        onValueChange={(v) => changeHint(n, v as VariableSourceKey)}
+                      >
+                        <SelectTrigger
+                          className="h-8 w-40 text-xs"
+                          aria-label={`Qué dato va en el hueco ${n}`}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TEMPLATE_VARIABLES.map((v) => (
+                            <SelectItem key={v.key} value={v.key}>
+                              {v.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        value={bodyExamples[n - 1] ?? ''}
+                        onChange={(e) => setExampleAt(n, e.target.value)}
+                        placeholder={`ej. ${variableDefinition(hint)?.example ?? 'Juan'}`}
+                        aria-label={`Ejemplo del hueco ${n}`}
+                        className="h-8 flex-1 text-xs"
+                      />
+                    </div>
+                  )
+                })}
               </div>
             ) : null}
 

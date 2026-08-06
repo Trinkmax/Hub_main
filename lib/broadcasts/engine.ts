@@ -161,11 +161,24 @@ export async function handleSendBroadcastMessage(payload: unknown): Promise<void
   const { data: recipient, error: recErr } = await service
     .from('broadcast_recipients')
     .select(
-      'id, broadcast_id, customer_id, status, broadcast:broadcasts(id, tenant_id, channel_id, template_id, variable_mapping), customer:customers(phone, first_name, last_name, opt_in_marketing, is_blocked)',
+      'id, broadcast_id, customer_id, status, broadcast:broadcasts(id, tenant_id, channel_id, template_id, variable_mapping), customer:customers(phone, first_name, last_name, birthdate, points_balance, opt_in_marketing, is_blocked)',
     )
     .eq('id', data.recipient_id)
     .maybeSingle()
   if (recErr || !recipient) throw new Error(`recipient: ${recErr?.message ?? 'not found'}`)
+
+  // `birthdate` y `points_balance` alimentan los huecos del catálogo de
+  // variables (ver lib/broadcasts/variables.ts); pueden faltar y el mapeo cae
+  // al texto de respaldo.
+  type JoinedCustomer = {
+    phone: string
+    first_name: string
+    last_name: string
+    birthdate: string | null
+    points_balance: number | null
+    opt_in_marketing: boolean
+    is_blocked: boolean
+  }
 
   type Joined = typeof recipient & {
     broadcast:
@@ -184,22 +197,7 @@ export async function handleSendBroadcastMessage(payload: unknown): Promise<void
           variable_mapping: unknown
         }[]
       | null
-    customer:
-      | {
-          phone: string
-          first_name: string
-          last_name: string
-          opt_in_marketing: boolean
-          is_blocked: boolean
-        }
-      | {
-          phone: string
-          first_name: string
-          last_name: string
-          opt_in_marketing: boolean
-          is_blocked: boolean
-        }[]
-      | null
+    customer: JoinedCustomer | JoinedCustomer[] | null
   }
   const r = recipient as Joined
   const broadcast = Array.isArray(r.broadcast) ? r.broadcast[0] : r.broadcast

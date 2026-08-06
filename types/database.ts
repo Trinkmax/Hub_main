@@ -2067,6 +2067,7 @@ export type Database = {
           name: string
           status: Database["public"]["Enums"]["template_status"]
           tenant_id: string
+          variable_hints: Json
         }
         Insert: {
           category: string
@@ -2080,6 +2081,7 @@ export type Database = {
           name: string
           status?: Database["public"]["Enums"]["template_status"]
           tenant_id: string
+          variable_hints?: Json
         }
         Update: {
           category?: string
@@ -2093,6 +2095,7 @@ export type Database = {
           name?: string
           status?: Database["public"]["Enums"]["template_status"]
           tenant_id?: string
+          variable_hints?: Json
         }
         Relationships: [
           {

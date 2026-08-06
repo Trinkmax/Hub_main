@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { VARIABLE_SOURCES } from '@/lib/broadcasts/variables'
 import { extractPositionalVars, isContiguousFrom1 } from './template-components'
 
 export const TEMPLATE_CATEGORIES = ['MARKETING', 'UTILITY', 'AUTHENTICATION'] as const
@@ -27,6 +28,12 @@ export const createTemplateSchema = z
       .max(1024, 'El cuerpo no puede superar los 1024 caracteres.'),
     // Un ejemplo por cada variable {{n}} del cuerpo, en orden.
     bodyExamples: z.array(z.string().trim().min(1, 'Completá el ejemplo.')).default([]),
+    /**
+     * Qué dato del cliente representa cada hueco (`{"1":"first_name"}`). Es
+     * metadata nuestra: Meta solo ve `{{1}}`. Precarga la personalización de
+     * la difusión.
+     */
+    variableHints: z.record(z.string(), z.enum(VARIABLE_SOURCES)).default({}),
     headerText: z
       .string()
       .trim()

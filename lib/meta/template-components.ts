@@ -47,6 +47,58 @@ export function isContiguousFrom1(nums: number[]): boolean {
   return nums.every((n, i) => n === i + 1)
 }
 
+/**
+ * Corre el cursor fuera de un `{{n}}` si cayó adentro.
+ *
+ * Sin esto, tocar un botón de variable con el cursor en medio de otra
+ * (`{{|1}}`) escupía `{{{{2}}1}}` — texto roto que el dueño tiene que
+ * arreglar a mano sin entender qué pasó.
+ */
+export function caretOutsideVariable(text: string, position: number): number {
+  for (const match of text.matchAll(VAR_RE)) {
+    const start = match.index ?? 0
+    const end = start + match[0].length
+    if (position > start && position < end) return end
+  }
+  return position
+}
+
+/**
+ * Renumera las variables del texto para que queden 1, 2, 3… en orden de
+ * aparición, arrastrando ejemplos y significados.
+ *
+ * Meta exige numeración contigua desde 1. Si el dueño borra el `{{1}}` del
+ * medio del texto le queda `{{2}} {{3}}` y el alta se rechaza por una regla
+ * que no tiene por qué conocer. Corriendo esto en cada tecleada, el problema
+ * no puede existir. Una variable repetida (`{{1}}` dos veces) sigue siendo la
+ * misma después de renumerar.
+ */
+export function renumberPositionalVars(
+  text: string,
+  prev: { examples: string[]; hints: Record<string, string> },
+): { text: string; examples: string[]; hints: Record<string, string> } {
+  const order: number[] = []
+  for (const match of text.matchAll(VAR_RE)) {
+    const n = Number(match[1])
+    if (!order.includes(n)) order.push(n)
+  }
+
+  const oldToNew = new Map(order.map((old, i) => [old, i + 1]))
+  const nextText = text.replace(VAR_RE, (match, digits) => {
+    const mapped = oldToNew.get(Number(digits))
+    return mapped ? `{{${mapped}}}` : match
+  })
+
+  const examples = order.map((old) => prev.examples[old - 1] ?? '')
+  const hints: Record<string, string> = {}
+  order.forEach((old, i) => {
+    const hint = prev.hints[String(old)]
+    if (hint) hints[String(i + 1)] = hint
+  })
+
+  return { text: nextText, examples, hints }
+}
+
 /** Reemplaza `{{n}}` por su ejemplo (o deja el placeholder si falta). Para preview. */
 export function fillExamples(text: string, examples: string[]): string {
   return text.replace(VAR_RE, (_match, digits) => {

@@ -34,7 +34,14 @@ import {
   sendBroadcastTest,
 } from '@/lib/broadcasts/actions'
 import { renderTemplateBodyPreview } from '@/lib/broadcasts/preview'
-import { templateBodyParamCount, type VariableMapping } from '@/lib/broadcasts/variables'
+import {
+  TEMPLATE_VARIABLES,
+  templateBodyParamCount,
+  VARIABLE_SOURCES,
+  type VariableMapping,
+  type VariableSourceKey,
+  variableDefinition,
+} from '@/lib/broadcasts/variables'
 import { fillExamples, parseMetaComponents } from '@/lib/meta/template-components'
 import { formatPhoneForDisplay } from '@/lib/phone'
 
@@ -45,6 +52,8 @@ type Template = {
   language: string
   channel_id: string
   components: unknown
+  /** `{"1":"first_name"}` — lo que se eligió al escribir la plantilla. */
+  variable_hints?: unknown
 }
 type Audience = { id: string; name: string; customer_count_cached: number }
 type EventOption = { id: string; name: string; date: string; time: string }
@@ -57,11 +66,20 @@ function eventShortDate(ymd: string): string {
 
 const initial: BroadcastActionState = { ok: true }
 
-// Ejemplo con el que se arma la vista previa (una clienta inventada).
-const EXAMPLE = {
-  first_name: 'Ana',
-  last_name: 'Pérez',
-  phone: formatPhoneForDisplay('+5493515551234'),
+/**
+ * `variable_hints` viene como jsonb: lo bajamos a `{posición: fuente}` tirando
+ * cualquier clave que no sea una fuente conocida (una plantilla vieja o tocada
+ * a mano no puede romper el formulario).
+ */
+function parseHints(raw: unknown): Record<string, VariableSourceKey> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: Record<string, VariableSourceKey> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === 'string' && VARIABLE_SOURCES.includes(value as VariableSourceKey)) {
+      out[key] = value as VariableSourceKey
+    }
+  }
+  return out
 }
 
 const STEPS = [
@@ -108,9 +126,11 @@ export function BroadcastForm({
   const audience = audiences.find((a) => a.id === audienceId)
   const paramCount = useMemo(() => templateBodyParamCount(template?.components), [template])
   const parsedTemplate = useMemo(() => parseMetaComponents(template?.components), [template])
+  const hints = useMemo(() => parseHints(template?.variable_hints), [template])
 
-  // Completa el mapping con el default visible ("Nombre") para cada hueco.
-  // Sin esto, la UI mostraba "Nombre" pero se enviaba el hueco vacío.
+  // Precarga cada hueco con lo que se eligió al escribir la plantilla
+  // (`variable_hints`); si esa plantilla es vieja y no lo tiene, cae en
+  // "Nombre". Sin esto la UI mostraba "Nombre" pero se enviaba el hueco vacío.
   useEffect(() => {
     if (!templateId || paramCount === 0) return
     setMapping((m) => {
@@ -119,13 +139,14 @@ export function BroadcastForm({
       for (let i = 1; i <= paramCount; i += 1) {
         const key = String(i)
         if (!next[key]) {
-          next[key] = { source: 'first_name' }
+          const hint = hints[key]
+          next[key] = { source: hint ?? 'first_name' }
           changed = true
         }
       }
       return changed ? next : m
     })
-  }, [templateId, paramCount])
+  }, [templateId, paramCount, hints])
 
   const previewValues = useMemo(
     () =>
@@ -136,7 +157,9 @@ export function BroadcastForm({
           const fixed = d?.value?.trim()
           return fixed && fixed.length > 0 ? fixed : '…'
         }
-        return EXAMPLE[source]
+        return source === 'phone'
+          ? formatPhoneForDisplay('+5493515551234')
+          : (variableDefinition(source)?.example ?? '…')
       }),
     [paramCount, mapping],
   )
@@ -310,10 +333,11 @@ export function BroadcastForm({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="first_name">El nombre del cliente</SelectItem>
-                        <SelectItem value="last_name">El apellido del cliente</SelectItem>
-                        <SelectItem value="phone">El teléfono del cliente</SelectItem>
-                        <SelectItem value="custom">Un texto fijo, igual para todos</SelectItem>
+                        {TEMPLATE_VARIABLES.map((v) => (
+                          <SelectItem key={v.key} value={v.key}>
+                            {v.longLabel}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                     {def.source === 'custom' ? (

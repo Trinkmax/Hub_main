@@ -238,7 +238,15 @@ export async function sendBroadcastTest(
     return { ok: false, message: 'Canal no conectado.' }
   if (!template) return { ok: false, message: 'Template no encontrado.' }
   const count = templateBodyParamCount(template.components)
-  const sampleCustomer = { first_name: 'Prueba', last_name: 'HUB', phone }
+  // Cliente de mentira para el envío de prueba: cubre todos los huecos del
+  // catálogo así el mensaje llega completo y no con espacios en blanco.
+  const sampleCustomer = {
+    first_name: 'Prueba',
+    last_name: 'HUB',
+    phone,
+    birthdate: '1990-03-15',
+    points_balance: 250,
+  }
   const variables = resolveTemplateVariables(parsed.data.variable_mapping, sampleCustomer, count)
   try {
     await sendTemplate(

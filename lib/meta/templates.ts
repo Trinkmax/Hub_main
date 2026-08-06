@@ -158,6 +158,9 @@ export async function createTemplate(
       language: input.language,
       category: input.category,
       components: components as unknown as Json,
+      // Qué dato del cliente va en cada {{n}}: lo elige el editor con botones
+      // y lo lee la difusión para precargar la personalización.
+      variable_hints: (input.variableHints ?? {}) as unknown as Json,
       status: mapStatus(metaStatus as MetaTemplateStatus),
       last_synced_at: now,
     },

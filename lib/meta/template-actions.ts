@@ -60,12 +60,20 @@ export async function createTemplateAction(
     bodyExamples = []
   }
 
+  let variableHints: unknown = {}
+  try {
+    variableHints = JSON.parse((formData.get('variableHints') as string) || '{}')
+  } catch {
+    variableHints = {}
+  }
+
   const parsed = createTemplateSchema.safeParse({
     name: formData.get('name'),
     language: formData.get('language'),
     category: formData.get('category'),
     bodyText: formData.get('bodyText'),
     bodyExamples,
+    variableHints,
     headerText: formData.get('headerText') || undefined,
     headerExample: formData.get('headerExample') || undefined,
     footerText: formData.get('footerText') || undefined,
