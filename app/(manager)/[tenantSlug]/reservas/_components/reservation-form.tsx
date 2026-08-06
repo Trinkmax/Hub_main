@@ -28,7 +28,9 @@ import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -37,6 +39,7 @@ import { calculateCommission, type RateTier } from '@/lib/commissions/calculate'
 import { type CustomerSearchResult, searchCustomers } from '@/lib/customers/search'
 import { createSalonReservation, updateSalonReservation } from '@/lib/salon/actions'
 import { fetchDayCapacity, fetchScheduledEventsForDate } from '@/lib/salon/client-actions'
+import { groupManagersForSelect, pickDefaultManagerId } from '@/lib/salon/managers'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import { type CreateSalonReservationInput, createSalonReservationSchema } from '@/lib/salon/schemas'
 import { QuickTemplateDialog } from './quick-template-dialog'
@@ -68,10 +71,16 @@ type Props = {
   bonusPerGuestCents: number
   /**
    * Gestor de reservas vinculado a la cuenta del usuario actual (si existe).
-   * En modo create es el default de "Gestor principal" — el tour del host
-   * promete "el gestor sos vos". Se ignora si no está en `managers` (inactivo).
+   * Marca la fila "Vos" en el combo y es el default de create cuando el
+   * dispositivo todavía no eligió a nadie. Se ignora si no está en
+   * `managers` (inactivo).
    */
   linkedManagerId?: string | null
+  /**
+   * Último gestor elegido en este dispositivo, leído de la cookie en el server.
+   * Es el primer candidato a default en create — ver `pickDefaultManagerId`.
+   */
+  lastManagerId?: string | null
   /**
    * ¿Este rol puede dar de alta gestores? (owner). Solo entonces mostramos el
    * link a Configuración → Comisiones → Gestores; al resto le decimos a quién
@@ -157,6 +166,7 @@ export function ReservationForm({
   rateTiers,
   bonusPerGuestCents,
   linkedManagerId,
+  lastManagerId,
   canManageManagers = false,
   reservationId,
   initialValues,
@@ -167,23 +177,22 @@ export function ReservationForm({
   const [, startCapacity] = useTransition()
   const [, startEvents] = useTransition()
 
-  // localStorage default: último gestor usado
-  const lastManagerKey = `salon:last-manager:${tenantSlug}`
+  // Clave vieja del último gestor usado. Quedó en localStorage de los
+  // dispositivos que ya venían cargando reservas; abajo la migramos a cookie.
+  const legacyLastManagerKey = `salon:last-manager:${tenantSlug}`
 
-  // Default de "Gestor principal" en create: gestor vinculado a la cuenta >
-  // último usado (localStorage) > primero de la lista. En edit siempre manda
-  // el gestor ya guardado en la reserva (initialValues).
-  const defaultPrimary = (() => {
-    if (initialValues?.primary_manager_id) return initialValues.primary_manager_id
-    if (mode === 'create' && linkedManagerId && managers.some((m) => m.id === linkedManagerId)) {
-      return linkedManagerId
-    }
-    if (typeof window !== 'undefined') {
-      const saved = window.localStorage.getItem(lastManagerKey)
-      if (saved && managers.some((m) => m.id === saved)) return saved
-    }
-    return managers[0]?.id ?? ''
-  })()
+  const defaultPrimary = pickDefaultManagerId({
+    managers,
+    mode,
+    currentManagerId: initialValues?.primary_manager_id,
+    lastUsedManagerId: lastManagerId,
+    selfManagerId: linkedManagerId,
+  })
+
+  const managerGroups = useMemo(
+    () => groupManagersForSelect(managers, linkedManagerId),
+    [managers, linkedManagerId],
+  )
 
   const form = useForm<ReservationFormInput>({
     resolver: zodResolver(createSalonReservationSchema) as never,
@@ -222,6 +231,21 @@ export function ReservationForm({
   const [eventDates, setEventDates] = useState<Record<string, string>>(() =>
     Object.fromEntries(initialEventsForDate.map((e) => [e.id, e.event_date])),
   )
+
+  // Migración de la memoria del último gestor: localStorage → cookie. Los
+  // dispositivos que ya venían cargando reservas tienen ahí a quién eligieron
+  // siempre; sin esto, la primera carga después del deploy caería en "sos vos"
+  // y la comisión se iría a otra persona. Sólo aplica el valor: la cookie la
+  // escribe el server al guardar. Corre una sola vez — el `removeItem` la hace
+  // idempotente.
+  useEffect(() => {
+    if (mode !== 'create' || lastManagerId || initialValues?.primary_manager_id) return
+    const saved = window.localStorage.getItem(legacyLastManagerKey)
+    if (!saved) return
+    window.localStorage.removeItem(legacyLastManagerKey)
+    if (!managers.some((m) => m.id === saved)) return
+    form.setValue('primary_manager_id', saved, { shouldValidate: true })
+  }, [mode, lastManagerId, legacyLastManagerKey, managers, initialValues?.primary_manager_id, form])
 
   // Refetch eventos cuando cambia la fecha
   useEffect(() => {
@@ -371,9 +395,7 @@ export function ReservationForm({
         toast.error('La fecha de la reserva no coincide con la del evento elegido.')
         return
       }
-      if (typeof window !== 'undefined' && data.primary_manager_id) {
-        window.localStorage.setItem(lastManagerKey, data.primary_manager_id)
-      }
+      // El último gestor usado lo persiste `createSalonReservation` en cookie.
       startSubmit(async () => {
         const action =
           mode === 'create'
@@ -859,20 +881,15 @@ export function ReservationForm({
                 <SelectValue placeholder="Elegí un gestor" />
               </SelectTrigger>
               <SelectContent>
-                {managers.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    <span className="flex items-center gap-2">
-                      {m.display_name}
-                      {m.commission_eligible ? (
-                        <span
-                          className="rounded-full bg-amber-100 px-1.5 py-0 text-[10px] font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-200"
-                          title="Cobra comisión"
-                        >
-                          $$
-                        </span>
-                      ) : null}
-                    </span>
-                  </SelectItem>
+                {managerGroups.map((g) => (
+                  <SelectGroup key={g.key}>
+                    {g.label ? <SelectLabel>{g.label}</SelectLabel> : null}
+                    {g.items.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        <ManagerOption manager={m} isSelf={m.id === linkedManagerId} />
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 ))}
               </SelectContent>
             </Select>
@@ -880,7 +897,9 @@ export function ReservationForm({
               <p className="text-xs text-destructive">
                 {form.formState.errors.primary_manager_id.message}
               </p>
-            ) : null}
+            ) : (
+              <p className="text-xs text-muted-foreground">Es quien se lleva la comisión.</p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -899,13 +918,20 @@ export function ReservationForm({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">Nadie</SelectItem>
-                {managers
-                  .filter((m) => m.id !== values.primary_manager_id)
-                  .map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.display_name}
-                    </SelectItem>
-                  ))}
+                {managerGroups.map((g) => {
+                  const items = g.items.filter((m) => m.id !== values.primary_manager_id)
+                  if (items.length === 0) return null
+                  return (
+                    <SelectGroup key={g.key}>
+                      {g.label ? <SelectLabel>{g.label}</SelectLabel> : null}
+                      {items.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          <ManagerOption manager={m} isSelf={m.id === linkedManagerId} />
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )
+                })}
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
@@ -1035,6 +1061,32 @@ function FieldGroup({
       </header>
       <div className="space-y-3">{children}</div>
     </section>
+  )
+}
+
+/**
+ * Fila de un gestor dentro del combo. "Vos" es el ancla para encontrarse
+ * rápido en una lista que ahora tiene a todo el equipo; "$$" marca a quien
+ * cobra comisión, que es el dato con plata atrás.
+ */
+function ManagerOption({ manager, isSelf }: { manager: ReservationManagerRow; isSelf: boolean }) {
+  return (
+    <span className="flex items-center gap-2">
+      {manager.display_name}
+      {isSelf ? (
+        <span className="rounded-full border bg-muted px-1.5 py-0 text-[10px] font-medium text-muted-foreground">
+          Vos
+        </span>
+      ) : null}
+      {manager.commission_eligible ? (
+        <span
+          className="rounded-full bg-amber-100 px-1.5 py-0 text-[10px] font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-200"
+          title="Cobra comisión"
+        >
+          $$
+        </span>
+      ) : null}
+    </span>
   )
 }
 

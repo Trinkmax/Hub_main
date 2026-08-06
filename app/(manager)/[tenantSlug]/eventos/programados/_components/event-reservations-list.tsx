@@ -1,5 +1,6 @@
 'use client'
 
+import { Users } from 'lucide-react'
 import { ContactButton } from '@/components/messaging/contact-button'
 import type { ReservationWithJoins } from '@/lib/salon/types'
 
@@ -18,6 +19,7 @@ export function EventReservationsList({
     <ul className="divide-y divide-border/60">
       {reservations.map((r) => {
         const contactPhone = r.customer?.phone ?? r.guest_phone ?? null
+        const guests = r.actual_guests ?? r.estimated_guests
         return (
           <li key={r.id} className="flex items-center justify-between gap-3 py-2 text-sm">
             <div className="flex min-w-0 flex-col">
@@ -27,8 +29,15 @@ export function EventReservationsList({
               </span>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <span className="font-mono text-base font-semibold tabular-nums">
-                {r.actual_guests ?? r.estimated_guests}
+              {/* Pastilla con ícono: el número suelto no decía de qué era, y
+                  pegado al botón se leía como parte del botón. */}
+              <span
+                className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 font-semibold tabular-nums"
+                title={`${guests} ${guests === 1 ? 'persona' : 'personas'}`}
+              >
+                <Users className="size-3.5 text-muted-foreground" aria-hidden />
+                {guests}
+                <span className="sr-only">{guests === 1 ? 'persona' : 'personas'}</span>
               </span>
               {contactPhone ? (
                 <ContactButton

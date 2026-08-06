@@ -2,7 +2,17 @@
 
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { ArrowLeft, ArrowRight, Calendar, Megaphone, Send, Sparkles, Users } from 'lucide-react'
+import {
+  ArrowLeft,
+  ArrowRight,
+  Calendar,
+  Megaphone,
+  MessageSquareText,
+  Send,
+  Sparkles,
+  Users,
+} from 'lucide-react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useActionState, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -236,9 +246,15 @@ export function BroadcastForm({
                 <div className="rounded-lg border border-warning/40 bg-warning/5 p-4 text-sm">
                   <p className="font-medium text-warning">Todavía no tenés mensajes listos</p>
                   <p className="mt-1 text-muted-foreground">
-                    Creá uno en Mensajería → Plantillas. WhatsApp lo revisa (suelen ser unos
-                    minutos) y aparece acá.
+                    Se escriben desde acá mismo, no hace falta entrar a Meta: WhatsApp lo revisa
+                    (suelen ser unos minutos) y aparece en esta lista.
                   </p>
+                  <Button asChild variant="outline" size="sm" className="mt-3 gap-2">
+                    <Link href={`/${tenantSlug}/mensajeria/plantillas`}>
+                      <MessageSquareText className="size-4" />
+                      Escribir una plantilla
+                    </Link>
+                  </Button>
                 </div>
               ) : (
                 <Select value={templateId} onValueChange={setTemplateId}>

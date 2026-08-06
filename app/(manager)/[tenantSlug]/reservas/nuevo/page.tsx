@@ -1,7 +1,9 @@
 import { ArrowLeft } from 'lucide-react'
+import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { lastManagerCookieName } from '@/lib/salon/managers'
 import {
   getBonusRule,
   getManagerForUser,
@@ -62,6 +64,11 @@ export default async function NuevaReservaPage({
 
   const user = await getCurrentUser()
 
+  // Último gestor usado en este dispositivo. Se lee acá (no en el cliente) para
+  // que el combo llegue ya resuelto desde el server.
+  const cookieStore = await cookies()
+  const lastManagerId = cookieStore.get(lastManagerCookieName(tenantSlug))?.value ?? null
+
   const [managers, templates, eventsToday, tiers, bonus, linkedManager] = await Promise.all([
     listManagers({ tenantId: access.tenant.id, onlyActive: true }),
     listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: true }),
@@ -100,6 +107,7 @@ export default async function NuevaReservaPage({
         rateTiers={tiers}
         bonusPerGuestCents={bonus?.bonus_per_guest_cents ?? 0}
         linkedManagerId={linkedManager?.id ?? null}
+        lastManagerId={lastManagerId}
         canManageManagers={access.role === 'owner'}
       />
     </div>

@@ -202,6 +202,39 @@ export default async function MisNumerosPage({
         }
       />
 
+      {/* Cambiar de gestor (solo dueño).
+          Antes este picker sólo aparecía cuando la cuenta del dueño no estaba
+          vinculada a ningún gestor. Desde que el equipo se auto-provisiona,
+          TODO dueño tiene gestor propio y ese empty state ya no se ve nunca:
+          sin esto se quedaba sin manera de mirar los números de Luz. */}
+      {access.role === 'owner' && activeManagers.length > 1 ? (
+        <details className="card-hairline group rounded-xl border bg-card/60 px-4 py-3 text-sm">
+          <summary className="flex cursor-pointer list-none items-center gap-2 font-medium [&::-webkit-details-marker]:hidden">
+            <UserRound className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+            Ver los números de otro gestor
+            <ChevronDown
+              className="ml-auto size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+              aria-hidden
+            />
+          </summary>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {activeManagers.map((m) => (
+              <Button
+                key={m.id}
+                asChild
+                size="sm"
+                variant={m.id === manager.id ? 'default' : 'outline'}
+              >
+                <Link href={monthHref(tenantSlug, ym, m.id)}>
+                  {m.display_name}
+                  {m.id === ownManager?.id ? ' (vos)' : ''}
+                </Link>
+              </Button>
+            ))}
+          </div>
+        </details>
+      ) : null}
+
       {/* ¿Cómo se calcula? */}
       <details className="card-hairline group rounded-xl border bg-card/60 px-4 py-3 text-sm">
         <summary className="flex cursor-pointer list-none items-center gap-2 font-medium [&::-webkit-details-marker]:hidden">

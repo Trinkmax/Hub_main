@@ -16,6 +16,11 @@ export interface ContactButtonProps extends VariantProps<typeof buttonVariants> 
 /**
  * Botón embebible "Contactar" que abre el ContactCustomerSheet.
  * Si `phone` está vacío o es inválido, no renderiza nada.
+ *
+ * `size="icon"` renderiza solo el ícono: esa variante es un cuadrado fijo
+ * (`size-9`) y el label desbordaba encima de lo que tuviera al lado — en las
+ * listas de reservas se comía la cantidad de personas. El nombre accesible
+ * queda en el `aria-label`.
  */
 export function ContactButton({
   tenantSlug,
@@ -29,6 +34,8 @@ export function ContactButton({
   const normalized = tryNormalizePhone(phone)
   if (!normalized) return null
 
+  const iconOnly = size === 'icon'
+
   return (
     <ContactCustomerSheet
       tenantSlug={tenantSlug}
@@ -36,9 +43,14 @@ export function ContactButton({
       customerId={customerId}
       name={name}
       trigger={
-        <Button variant={variant} size={size}>
+        <Button
+          variant={variant}
+          size={size}
+          aria-label={iconOnly ? 'Contactar' : undefined}
+          title={iconOnly ? 'Contactar' : undefined}
+        >
           <MessageCircle className="size-4" aria-hidden />
-          Contactar
+          {iconOnly ? null : 'Contactar'}
         </Button>
       }
     />

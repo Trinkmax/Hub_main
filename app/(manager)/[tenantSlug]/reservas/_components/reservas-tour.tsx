@@ -43,8 +43,9 @@ const RESERVAS_TOUR: TourDefinition = (() => {
         title: 'Cargar una reserva',
         body: (
           <>
-            Nombre, teléfono, cuántos son, franja y zona — y el gestor sos vos, así la comisión
-            queda a tu nombre. El teléfono además conecta al cliente con el club de puntos.
+            Nombre, teléfono, cuántos son, franja y zona. Mirá el <strong>gestor</strong> antes de
+            guardar: ahí queda la comisión, y el combo se acuerda del último que usaste en este
+            dispositivo. El teléfono además conecta al cliente con el club de puntos.
           </>
         ),
       },

@@ -306,7 +306,7 @@ export async function getMonthCapacity(opts: {
   const [resResult, overrides, defaults] = await Promise.all([
     supabase
       .from('salon_reservations')
-      .select('reservation_date, zone, estimated_guests, actual_guests, status')
+      .select('reservation_date, zone, estimated_guests, actual_guests, status, scheduled_event_id')
       .eq('tenant_id', opts.tenantId)
       .gte('reservation_date', from)
       .lte('reservation_date', to)
@@ -322,6 +322,7 @@ export async function getMonthCapacity(opts: {
     estimated_guests: number
     actual_guests: number | null
     status: SalonReservationStatus
+    scheduled_event_id: string | null
   }>
 
   const physicalOverrides = overrides

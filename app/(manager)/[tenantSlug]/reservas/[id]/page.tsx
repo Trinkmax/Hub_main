@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/ui/page-header'
 import { formatDayLabel } from '@/lib/salon/date-presets'
 import {
   getBonusRule,
+  getManagerForUser,
   getSalonReservation,
   listManagers,
   listRateTiers,
@@ -12,6 +13,7 @@ import {
   listScheduledTemplates,
 } from '@/lib/salon/queries'
 import {
+  getCurrentUser,
   RESERVATION_STAFF_ROLES,
   RoleRequiredError,
   requireRole,
@@ -44,7 +46,9 @@ export default async function ReservaDetailPage({
   const reservation = await getSalonReservation({ tenantId: access.tenant.id, id })
   if (!reservation) notFound()
 
-  const [managers, templates, eventsForDate, tiers, bonus] = await Promise.all([
+  const user = await getCurrentUser()
+
+  const [managers, templates, eventsForDate, tiers, bonus, linkedManager] = await Promise.all([
     listManagers({ tenantId: access.tenant.id, onlyActive: true }),
     listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: true }),
     listScheduledEventsForDate({
@@ -53,6 +57,11 @@ export default async function ReservaDetailPage({
     }),
     listRateTiers({ tenantId: access.tenant.id }),
     getBonusRule({ tenantId: access.tenant.id }),
+    // Solo para marcar "Vos" en el combo de gestores; en edit el default lo
+    // manda la reserva guardada.
+    user
+      ? getManagerForUser({ tenantId: access.tenant.id, userId: user.id })
+      : Promise.resolve(null),
   ])
 
   return (
@@ -83,6 +92,7 @@ export default async function ReservaDetailPage({
           initialEventsForDate={eventsForDate}
           rateTiers={tiers}
           bonusPerGuestCents={bonus?.bonus_per_guest_cents ?? 0}
+          linkedManagerId={linkedManager?.id ?? null}
           canManageManagers={access.role === 'owner'}
           reservationId={reservation.id}
           initialValues={{

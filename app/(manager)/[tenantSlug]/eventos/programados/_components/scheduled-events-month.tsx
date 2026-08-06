@@ -260,6 +260,7 @@ export function ScheduledEventsMonth({
                     })
                   : null
               }
+              eventLoad={monthCapacity.events}
               onOpenDay={setDayDialogDate}
             />
           ))}
@@ -274,7 +275,12 @@ export function ScheduledEventsMonth({
 
       <DragOverlay dropAnimation={null}>
         {activeDrag?.kind === 'template' ? <TemplateChip template={activeDrag.template} /> : null}
-        {activeDrag?.kind === 'event' ? <EventCardOverlay event={activeDrag.event} /> : null}
+        {activeDrag?.kind === 'event' ? (
+          <EventCardOverlay
+            event={activeDrag.event}
+            used={monthCapacity.events[activeDrag.event.id] ?? 0}
+          />
+        ) : null}
       </DragOverlay>
 
       <TemplateDropDialog
@@ -421,8 +427,8 @@ function MonthAgenda({
                     <span className="truncate">
                       {e.name_override ?? e.template?.name ?? 'Evento'}
                     </span>
-                    <span className="ml-auto shrink-0 text-[10px] tabular-nums opacity-70">
-                      {e.capacity}
+                    <span className="ml-auto shrink-0 text-[10px] opacity-70">
+                      <EventLoad used={monthCapacity.events[e.id] ?? 0} capacity={e.capacity} />
                     </span>
                   </Link>
                 )
@@ -509,7 +515,7 @@ function TemplateChip({ template }: { template: ScheduledEventTemplateRow }) {
   )
 }
 
-function EventCardOverlay({ event }: { event: ScheduledEventWithTemplate }) {
+function EventCardOverlay({ event, used }: { event: ScheduledEventWithTemplate; used: number }) {
   const color = event.template?.color_hex ?? '#7c3aed'
   return (
     <div
@@ -524,9 +530,29 @@ function EventCardOverlay({ event }: { event: ScheduledEventWithTemplate }) {
         {event.name_override ?? event.template?.name ?? 'Evento'}
       </span>
       <span className="block text-[10px] opacity-70 tabular-nums">
-        {event.starts_at_local.slice(0, 5)} · {event.capacity}
+        {event.starts_at_local.slice(0, 5)} · <EventLoad used={used} capacity={event.capacity} />
       </span>
     </div>
+  )
+}
+
+/**
+ * Ocupación del evento: `anotados/cupo`. Antes el chip mostraba solo el cupo,
+ * así que cargar reservas no cambiaba nada en el calendario y había que entrar
+ * al evento para saber cómo venía. El número es el mismo que muestra el detalle
+ * ("N/cupo personas reservadas").
+ */
+function EventLoad({ used, capacity }: { used: number; capacity: number }) {
+  const over = capacity > 0 && used > capacity
+  const full = !over && capacity > 0 && used >= capacity
+  return (
+    <span
+      className={cn('tabular-nums', (over || full) && 'font-semibold')}
+      title={`${used} de ${capacity} lugares reservados`}
+    >
+      {used}/{capacity}
+      {over ? ' ⚠' : null}
+    </span>
   )
 }
 
@@ -559,6 +585,7 @@ function DayCell({
   isDraggingTemplate,
   isDraggingEvent,
   capacity,
+  eventLoad,
   onOpenDay,
 }: {
   date: string | null
@@ -569,6 +596,8 @@ function DayCell({
   isDraggingTemplate: boolean
   isDraggingEvent: boolean
   capacity: { used: number; total: number } | null
+  /** Cubiertos anotados por evento, indexado por id. */
+  eventLoad: Record<string, number>
   onOpenDay: (date: string) => void
 }) {
   // Las celdas vacías de padding no son droppables.
@@ -637,7 +666,12 @@ function DayCell({
         </div>
         <div className="flex flex-col gap-1">
           {events.map((e) => (
-            <DraggableEvent key={e.id} event={e} tenantSlug={tenantSlug} />
+            <DraggableEvent
+              key={e.id}
+              event={e}
+              tenantSlug={tenantSlug}
+              used={eventLoad[e.id] ?? 0}
+            />
           ))}
         </div>
       </div>
@@ -648,9 +682,11 @@ function DayCell({
 function DraggableEvent({
   event,
   tenantSlug,
+  used,
 }: {
   event: ScheduledEventWithTemplate
   tenantSlug: string
+  used: number
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `${EVENT_PREFIX}${event.id}`,
@@ -701,7 +737,7 @@ function DraggableEvent({
           </span>
         </span>
         <span className="block pl-2.5 text-[10px] opacity-80 tabular-nums">
-          {event.starts_at_local.slice(0, 5)} · {event.capacity}
+          {event.starts_at_local.slice(0, 5)} · <EventLoad used={used} capacity={event.capacity} />
         </span>
       </Link>
     </div>

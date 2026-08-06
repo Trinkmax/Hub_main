@@ -12,6 +12,7 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 import type { MetaActionState } from './actions'
+import { humanizeTemplateError } from './errors'
 import { createTemplateSchema, deleteTemplateSchema } from './template-schemas'
 import { createTemplate, deleteTemplate } from './templates'
 
@@ -108,7 +109,13 @@ export async function createTemplateAction(
       message: `Plantilla "${parsed.data.name}" creada. Estado: ${result.status}.`,
     }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    // Loguear el error crudo (sin PII: son textos de plantilla y códigos Meta)
+    // para poder diagnosticar; al dueño le mostramos la versión en criollo.
+    console.error('[templates.create] Meta rechazó la plantilla', {
+      name: parsed.data.name,
+      error: (e as Error).message,
+    })
+    return { ok: false, message: humanizeTemplateError(e) }
   }
 }
 
@@ -158,6 +165,10 @@ export async function deleteTemplateAction(
     revalidatePath(`/${slug}/mensajeria/plantillas`)
     return { ok: true, message: `Plantilla "${parsed.data.name}" eliminada.` }
   } catch (e) {
-    return { ok: false, message: (e as Error).message }
+    console.error('[templates.delete] falló', {
+      name: parsed.data.name,
+      error: (e as Error).message,
+    })
+    return { ok: false, message: humanizeTemplateError(e) }
   }
 }

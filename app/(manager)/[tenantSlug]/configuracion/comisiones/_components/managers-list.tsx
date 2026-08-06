@@ -86,12 +86,21 @@ export function ManagersList({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">
-          Vinculada la cuenta del equipo, esa persona ve sus comisiones en{' '}
-          <span className="font-medium text-foreground">Mis números</span>.
-        </p>
-        <Button onClick={addNew} className="gap-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1 text-xs text-muted-foreground">
+          <p>
+            Todo el que entra al equipo aparece acá solo y queda disponible en el combo de reservas.
+            Apagá <span className="font-medium text-foreground">Activo</span> al que no tome
+            reservas — no se borra, sus comisiones viejas quedan.
+          </p>
+          <p>
+            Vinculada la cuenta del equipo, esa persona ve sus comisiones en{' '}
+            <span className="font-medium text-foreground">Mis números</span>. Si alguien ya estaba
+            cargado a mano y después le diste cuenta, vinculásela acá en vez de dejar dos filas con
+            el mismo nombre.
+          </p>
+        </div>
+        <Button onClick={addNew} className="shrink-0 gap-2">
           <Plus className="size-4" />
           Nuevo gestor
         </Button>

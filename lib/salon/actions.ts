@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { cookies } from 'next/headers'
 import { logAudit } from '@/lib/audit'
 import { createClient } from '@/lib/supabase/server'
 import {
@@ -14,6 +15,7 @@ import {
 } from '@/lib/tenant'
 import type { Tenant, TenantRole } from '@/lib/tenant/types'
 import { eventDateMismatchCode, humanizeSalonError } from './humanize'
+import { LAST_MANAGER_COOKIE_MAX_AGE, lastManagerCookieName } from './managers'
 import {
   actualGuestsSchema,
   bonusRuleSchema,
@@ -342,6 +344,17 @@ export async function createSalonReservation(
       manager: parsed.data.primary_manager_id,
       origin: parsed.data.origin,
     },
+  })
+
+  // Memoria del combo de gestores para la próxima carga en este dispositivo.
+  // La escribe el server (httpOnly) y la lee /reservas/nuevo, así el default
+  // llega resuelto en el HTML y no parpadea al hidratar.
+  ;(await cookies()).set(lastManagerCookieName(slug), parsed.data.primary_manager_id, {
+    path: '/',
+    maxAge: LAST_MANAGER_COOKIE_MAX_AGE,
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
   })
 
   revalidatePath(`/${slug}/reservas`)

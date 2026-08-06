@@ -5,6 +5,8 @@ export type MonthCapacity = {
   defaultTotal: number
   /** Por fecha YYYY-MM-DD con reservas u overrides: cubiertos usados y tope del día. */
   days: Record<string, { used: number; total: number }>
+  /** Cubiertos anotados por evento programado (`scheduled_events.id`). */
+  events: Record<string, number>
 }
 
 type AggregateInput = {
@@ -14,6 +16,7 @@ type AggregateInput = {
     estimated_guests: number
     actual_guests: number | null
     status: SalonReservationStatus
+    scheduled_event_id?: string | null
   }>
   overrides: Array<{ override_date: string; zone: 'planta_alta' | 'planta_baja'; capacity: number }>
   defaults: { planta_alta: number; planta_baja: number }
@@ -27,6 +30,13 @@ type AggregateInput = {
  *   `estimated_guests`. Excluye `cancelled`/`no_show` y `event_floating`
  *   (esas consumen el cupo de su evento, no el del salón).
  * - `total` = cap(PA) + cap(PB) con override por fecha aplicado por zona.
+ * - `events[id]` = cubiertos anotados en cada evento programado: TODA reserva
+ *   activa colgada del evento, sin importar zona ni tipo. Es el mismo criterio
+ *   que el detalle del evento ("N/cupo personas reservadas"), para que el
+ *   calendario y el detalle nunca muestren números distintos. Ojo: acá el
+ *   comensal real (`actual_guests`) pesa apenas la mesa lo carga, mientras que
+ *   el conteo de salón espera al `closed` — son dos contadores con criterios
+ *   distintos a propósito, no unificar sin pensarlo.
  *
  * Puro y determinístico — testeable sin DB. La query `getMonthCapacity`
  * le pasa filas crudas de Supabase.
@@ -34,6 +44,7 @@ type AggregateInput = {
 export function aggregateMonthCapacity(input: AggregateInput): MonthCapacity {
   const defaultTotal = input.defaults.planta_alta + input.defaults.planta_baja
   const days: Record<string, { used: number; total: number }> = {}
+  const events: Record<string, number> = {}
 
   const ensure = (date: string) => {
     const cur = days[date]
@@ -56,11 +67,17 @@ export function aggregateMonthCapacity(input: AggregateInput): MonthCapacity {
 
   for (const r of input.reservations) {
     if (r.status === 'cancelled' || r.status === 'no_show') continue
+
+    if (r.scheduled_event_id) {
+      events[r.scheduled_event_id] =
+        (events[r.scheduled_event_id] ?? 0) + (r.actual_guests ?? r.estimated_guests)
+    }
+
     if (r.zone !== 'planta_alta' && r.zone !== 'planta_baja') continue
     const guests =
       r.status === 'closed' && r.actual_guests != null ? r.actual_guests : r.estimated_guests
     ensure(r.reservation_date).used += guests
   }
 
-  return { defaultTotal, days }
+  return { defaultTotal, days, events }
 }

@@ -23,7 +23,7 @@
 ## Modelo de datos
 
 ```
-reservation_managers          ← 8 gestores HUB (Luz/Joaquin = commission_eligible)
+reservation_managers          ← quién puede figurar como gestor de una reserva
 scheduled_event_templates     ← Sushi Libre, Pizza Libre, Ramen, etc.
 scheduled_events              ← instancias calendizadas (fecha + cupo)
 salon_zone_capacity_overrides ← override puntual por (zona, fecha)
@@ -32,6 +32,34 @@ commission_rate_tiers         ← matriz (meal_type × rango personas → cents/
 commission_bonus_rules        ← bonus full event (configurable por tenant)
 commission_ledger             ← snapshot por reserva × gestor
 ```
+
+### Gestores — el equipo entra solo
+
+`reservation_managers` arrancó como un ABM 100% manual (Configuración →
+Comisiones → tab «Gestores»). Nadie lo mantenía: HUB terminó con **un solo
+gestor activo** y el combo "Gestor principal" ofrecía un único nombre aunque
+el bar tuviera diez cuentas cargando reservas.
+
+Desde `20260806190000_reservation_managers_from_memberships`:
+
+- Un trigger `after insert on memberships` llama a
+  `provision_reservation_manager(tenant, user)` → **todo miembro del equipo
+  tiene su gestor espejo**, con el nombre de su cuenta y `commission_eligible
+  = false` (la plata la habilita el dueño a mano).
+- Un trigger `after delete on memberships` lo pone `active = false`. Nunca se
+  borra: `salon_reservations` y `commission_ledger` lo referencian con
+  `on delete restrict` y hay que preservar el historial.
+- Los gestores **sin cuenta** siguen existiendo (una recepcionista que no usa
+  la app, un turno genérico): se cargan a mano en el ABM. Si más adelante esa
+  persona recibe cuenta y el `display_name` coincide, la provisión **vincula
+  la fila existente** en vez de duplicarla; si no coincide, el dueño la
+  vincula desde la columna "Cuenta del equipo".
+
+En el form, el combo agrupa en **Equipo** (con cuenta) y **Otros gestores**, y
+marca "Vos" + "$$" (cobra comisión) — ver `lib/salon/managers.ts`. El default
+es *el último gestor usado en ese dispositivo* y recién después "sos vos":
+quien carga la reserva no siempre es quien la tomó, y un default silencioso
+mueve la comisión de persona.
 
 ### Capacidad — dos dimensiones simultáneas
 
@@ -50,6 +78,15 @@ Una reserva consume del bucket según estas reglas (ver `evaluate_day_capacity`)
 | `event_floating` | cualquier | — | `event:<scheduled_event_id>` |
 | `planta_alta`/`baja` | `special` | true | `event:<scheduled_event_id>` |
 | `planta_alta`/`baja` | `special` | false | `zone:<zona>` |
+
+**Los dos contadores del calendario no son el mismo número** y es a propósito:
+
+- La pastilla del día (`CapacityBadge`, ej. `10/130`) es **el salón**: cubiertos
+  en Planta Alta + Planta Baja sobre el tope de esas zonas. La gente de un
+  evento `event_floating` NO suma ahí — consume el cupo de su evento.
+- El chip de cada evento (`EventLoad`, ej. `4/110`) es **el evento**: toda
+  reserva activa colgada de ese `scheduled_event`, igual que el número que
+  muestra su detalle. Ambos salen de `aggregateMonthCapacity`.
 
 ### Estado de la reserva — máquina
 
