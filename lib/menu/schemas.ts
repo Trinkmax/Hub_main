@@ -40,8 +40,13 @@ export const createMenuItemSchema = z.object({
     .union([z.string().trim().max(300), z.literal(''), z.null(), z.undefined()])
     .transform((v) => (v && v.length > 0 ? v : null)),
   price_cents: z.coerce.number().int().min(0).max(1_000_000_000_000),
+  // Vacío = sin override. Los vacíos van ANTES del número: `z.coerce.number()`
+  // convierte `''` y `null` en 0 y la union se queda con la primera rama que
+  // pasa, así que con el número adelante todo ítem sin override se guardaba en 0
+  // y la carta pública le colgaba un chip "+0 pts". Mismo criterio que
+  // `optionalNumber` en lib/points/schemas.ts.
   points_override: z
-    .union([z.coerce.number().int(), z.literal(''), z.null(), z.undefined()])
+    .union([z.literal(''), z.null(), z.undefined(), z.coerce.number().int()])
     .transform((v) => (typeof v === 'number' ? v : null)),
   image_url: z
     .union([z.string().trim().url().max(2048), z.literal(''), z.null(), z.undefined()])

@@ -13,6 +13,7 @@ import { createReward, type LoyaltyActionState } from '@/lib/points/actions'
 import { REWARD_CATEGORIES } from '@/lib/points/schemas'
 import type { LoyaltyTier } from '@/lib/points/tiers'
 import { MenuImageUploader } from '../../../menu/_components/image-uploader'
+import { StockField } from './stock-field'
 
 const initial: LoyaltyActionState = { ok: true }
 
@@ -57,6 +58,10 @@ export function NewRewardForm({
   const [visible, setVisible] = useState(true)
   // La foto viaja por un input hidden; la URL la resuelve el uploader (Storage).
   const [imageUrl, setImageUrl] = useState<string | null>(null)
+  // Stock: arranca ilimitado, que es lo que quiere el 90% de las recompensas de
+  // un bar. Con el switch prendido no se manda `stock` y el schema lo deja null.
+  const [unlimitedStock, setUnlimitedStock] = useState(true)
+  const [stock, setStock] = useState('')
 
   useEffect(() => {
     if (state.ok && state.message) {
@@ -64,6 +69,8 @@ export function NewRewardForm({
       formRef.current?.reset()
       setVisible(true)
       setImageUrl(null)
+      setUnlimitedStock(true)
+      setStock('')
     } else if (!state.ok) {
       toast.error(state.message)
     }
@@ -163,19 +170,13 @@ export function NewRewardForm({
             className="tabular-nums"
           />
         </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="rw-stock" className="text-[11px] text-muted-foreground">
-            Stock
-          </Label>
-          <Input
-            id="rw-stock"
-            name="stock"
-            type="number"
-            min={0}
-            placeholder="Ilimitado"
-            className="tabular-nums"
-          />
-        </div>
+        <StockField
+          idPrefix="rw"
+          unlimited={unlimitedStock}
+          onUnlimitedChange={setUnlimitedStock}
+          value={stock}
+          onValueChange={setStock}
+        />
         <SubmitBtn />
       </div>
     </form>

@@ -64,6 +64,7 @@ import { REWARD_CATEGORIES } from '@/lib/points/schemas'
 import type { LoyaltyTier } from '@/lib/points/tiers'
 import { cn } from '@/lib/utils'
 import { MenuImageUploader } from '../../../menu/_components/image-uploader'
+import { StockField } from './stock-field'
 
 const SELECT_CLASS =
   'border-input h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
@@ -225,7 +226,15 @@ function RewardCard({
           {reward.name}
         </p>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-          <span>stock: {reward.stock === null ? '∞' : reward.stock}</span>
+          {reward.stock === null ? (
+            <span>stock: ∞</span>
+          ) : reward.stock <= 0 ? (
+            <Badge variant="warning" className="px-1.5 py-0 text-[10px]">
+              Sin stock
+            </Badge>
+          ) : (
+            <span>stock: {reward.stock}</span>
+          )}
           {lockedTier ? (
             <span className="inline-flex items-center gap-0.5 normal-case tracking-normal">
               <Lock className="size-3" aria-hidden />
@@ -477,6 +486,8 @@ function EditRewardDialog({
   const [category, setCategory] = useState<string>('')
   const [visible, setVisible] = useState(true)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
+  const [unlimitedStock, setUnlimitedStock] = useState(true)
+  const [stock, setStock] = useState('')
 
   // Sincronizamos los controlados cada vez que cambia la recompensa.
   useEffect(() => {
@@ -484,6 +495,9 @@ function EditRewardDialog({
     setCategory(reward?.category ?? '')
     setVisible(reward?.visible_in_catalog ?? true)
     setImageUrl(reward?.image_url ?? null)
+    const current = reward?.stock ?? null
+    setUnlimitedStock(current === null)
+    setStock(current === null ? '' : String(current))
   }, [reward])
 
   const handleSubmit = (formData: FormData) => {
@@ -491,7 +505,9 @@ function EditRewardDialog({
     const name = String(formData.get('name') ?? '').trim()
     const description = String(formData.get('description') ?? '').trim()
     const costPoints = Number(formData.get('cost_points') ?? 0)
-    const stockRaw = String(formData.get('stock') ?? '').trim()
+    // El switch es la fuente de verdad del ilimitado; el input sólo existe
+    // cuando está apagado (y es `required`, así que no llega vacío).
+    const parsedStock = Number.parseInt(stock, 10)
 
     start(async () => {
       const result: LoyaltyActionState = await updateReward(tenantSlug, {
@@ -499,7 +515,7 @@ function EditRewardDialog({
         name,
         description: description.length > 0 ? description : null,
         cost_points: costPoints,
-        stock: stockRaw.length > 0 ? Number(stockRaw) : null,
+        stock: unlimitedStock ? null : Number.isFinite(parsedStock) ? parsedStock : 0,
         active: reward.active,
         category: category.length > 0 ? category : null,
         visible_in_catalog: visible,
@@ -596,20 +612,13 @@ function EditRewardDialog({
                   className="tabular-nums"
                 />
               </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="edit-rw-stock" className="text-[11px] text-muted-foreground">
-                  Stock
-                </Label>
-                <Input
-                  id="edit-rw-stock"
-                  name="stock"
-                  type="number"
-                  min={0}
-                  placeholder="Ilimitado"
-                  defaultValue={reward.stock ?? ''}
-                  className="tabular-nums"
-                />
-              </div>
+              <StockField
+                idPrefix="edit-rw"
+                unlimited={unlimitedStock}
+                onUnlimitedChange={setUnlimitedStock}
+                value={stock}
+                onValueChange={setStock}
+              />
             </div>
 
             {tiers.length > 0 ? (

@@ -54,9 +54,19 @@ const optionalText = (max: number) =>
     .union([z.string().trim().max(max), z.literal(''), z.null(), z.undefined()])
     .transform((v) => (typeof v === 'string' && v.length > 0 ? v : null))
 
+/**
+ * Número opcional donde vacío = null (ej. stock ilimitado, "sin descuento").
+ *
+ * OJO CON EL ORDEN: los vacíos van ANTES del schema numérico. `z.coerce.number()`
+ * come `''` y `null` y los convierte en 0 (`Number('') === 0`), y la union se
+ * queda con la primera rama que pasa — con el schema adelante, "sin stock
+ * definido" se guardaba como `stock = 0`, que la billetera muestra AGOTADO y la
+ * RPC de canje rechaza. Sólo se salvaban los schemas con `.min(1)`, y por
+ * accidente (el 0 no valida y cae a la rama siguiente).
+ */
 const optionalNumber = (schema: z.ZodType<number>) =>
   z
-    .union([schema, z.literal(''), z.null(), z.undefined()])
+    .union([z.literal(''), z.null(), z.undefined(), schema])
     .transform((v) => (typeof v === 'number' ? v : null))
 
 // ──────────────────────────────────────────────────────────
