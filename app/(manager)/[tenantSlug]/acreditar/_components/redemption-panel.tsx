@@ -25,7 +25,7 @@ import { deliverRedemption, lookupRedemption, type RedemptionView } from '@/lib/
 // (alguien vuelve con el mismo código) y tiene que gritar en rojo, con la hora y
 // el nombre de quién lo entregó, para que el mozo no dude.
 //
-// Compartida entre la caja (/acreditar) y el salón (/salon/validar): el mozo y
+// Compartida entre la caja (/acreditar) y el salón (/salon/escanear): el mozo y
 // el cajero validan igual.
 
 const DATE_FMT = new Intl.DateTimeFormat('es-AR', {

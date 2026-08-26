@@ -143,6 +143,13 @@
   --cream-tint:        oklch(0.965 0.022 88 / 65%);
   --forest-glow:       oklch(0.355 0.058 165 / 18%);
 
+  /* Alto del chrome del salón. Los declara el shell (topbar / tab bar) y los usa
+     el contenido para su padding y sus `sticky top-…`. Antes cada página lo
+     adivinaba (`pb-24`, `h-[calc(100dvh-56px-76px)]`) y ninguna coincidía con la
+     barra real: de ahí los scrolls raros y el contenido tapado. */
+  --salon-topbar-h: 3.5rem;
+  --salon-tabbar-h: calc(4.25rem + env(safe-area-inset-bottom));
+
   /* Aliases legacy para no romper componentes que aún referencian brand-* */
   --brand-rose:  var(--destructive);
   --brand-amber: var(--warning);

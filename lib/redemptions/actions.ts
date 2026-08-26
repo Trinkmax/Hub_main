@@ -175,7 +175,7 @@ export async function deliverRedemption(
     payload: { points_spent: result.points_spent ?? 0 },
   })
 
-  revalidatePath(`/${slug}/salon/validar`)
+  revalidatePath(`/${slug}/salon/escanear`)
   return {
     ok: true,
     customerName: result.customer_name?.trim() || 'Socio',

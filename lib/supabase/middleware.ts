@@ -10,6 +10,7 @@ import {
 } from '@/lib/tenant/roles'
 // Fuente ÚNICA de slugs reservados (evitamos el set duplicado/divergente de antes).
 import { RESERVED_SLUGS } from '@/lib/tenant/types'
+import { WORKSPACE_HEADER } from '@/lib/workspace'
 
 const PUBLIC_PATHS = new Set([
   '/login',
@@ -95,7 +96,32 @@ async function getActiveRoleAndSlug(
   return { role: row.role, slug }
 }
 
+/** `/{slug}/salon…` — el workspace mobile del staff, que es light-only. */
+const SALON_PATH_RE = /^\/[^/]+\/salon(?:\/|$)/
+
+export function isSalonWorkspacePath(pathname: string): boolean {
+  const slug = pathname.split('/').filter(Boolean)[0]
+  if (!slug || RESERVED_SLUGS.has(slug)) return false
+  return SALON_PATH_RE.test(pathname)
+}
+
 export async function updateSession(request: NextRequest) {
+  // El panel del salón se sirve SIEMPRE en modo claro (lo usa el mozo con el
+  // celular a plena luz, y el dueño lo pidió explícito). Marcamos el request
+  // acá para que el root layout emita el `<html>` claro DESDE EL SERVER y no
+  // haya flash oscuro. Se setea sobre `request.headers` — no sobre la response —
+  // porque `NextResponse.next({ request })` es lo que reenvía los headers al
+  // render, y `response` se reasigna adentro de `setAll` en cada refresh de
+  // cookies (setearlo ahí se perdería).
+  if (isSalonWorkspacePath(request.nextUrl.pathname)) {
+    try {
+      request.headers.set(WORKSPACE_HEADER, 'salon')
+    } catch {
+      // Headers inmutables en algún runtime: el script no-flash del <head> es
+      // la red de seguridad y corre igual antes del primer paint.
+    }
+  }
+
   let response = NextResponse.next({ request })
   const { url, anonKey } = getSupabaseClientEnv()
 

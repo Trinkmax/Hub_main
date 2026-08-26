@@ -1,7 +1,7 @@
 // HUB! Salón service worker — cache app shell + assets, network-first for HTML.
 // Mutations (POST/PUT/DELETE) NEVER se cachean (queremos avoid stale state).
 
-const VERSION = 'hub-salon-v1'
+const VERSION = 'hub-salon-v2'
 const SHELL_CACHE = `${VERSION}-shell`
 const ASSETS_CACHE = `${VERSION}-assets`
 

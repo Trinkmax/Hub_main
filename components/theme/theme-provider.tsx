@@ -27,6 +27,10 @@ function resolveSystemTheme(): ResolvedTheme {
 
 function applyClass(resolved: ResolvedTheme) {
   if (typeof document === 'undefined') return
+  // El salón es light-only: el root layout marcó el <html> y no lo tocamos más.
+  // Sin este guard el efecto de abajo vuelve a poner `dark` al montar y el mozo
+  // ve el panel claro parpadear a oscuro DESPUÉS de hidratar.
+  if (document.documentElement.dataset.forceLight === '1') return
   document.documentElement.classList.toggle('dark', resolved === 'dark')
 }
 

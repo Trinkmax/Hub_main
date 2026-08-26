@@ -4,24 +4,10 @@ import {
   listScheduledEventsForDate,
   listTimelineForDate,
 } from '@/lib/salon/queries'
-import type { MealType } from '@/lib/salon/types'
 import { requireTenantAccess, SALON_READ_ROLES, TenantNotFoundError } from '@/lib/tenant'
 import { TimelineView } from './_components/timeline-view'
 
-const VALID_MEALS = new Set<MealType>(['breakfast', 'lunch', 'tea_time', 'dinner', 'hub_event'])
-
-function parseMealsParam(raw: string | string[] | undefined): ReadonlySet<MealType> {
-  if (!raw) return new Set()
-  const list = (Array.isArray(raw) ? raw.join(',') : raw).split(',')
-  const out = new Set<MealType>()
-  for (const m of list) {
-    const trimmed = m.trim()
-    if (VALID_MEALS.has(trimmed as MealType)) out.add(trimmed as MealType)
-  }
-  return out
-}
-
-export const metadata = { title: 'Operativo · Reservas' }
+export const metadata = { title: 'Salón · Reservas' }
 export const dynamic = 'force-dynamic'
 
 function todayCordoba(): string {
@@ -53,9 +39,8 @@ export default async function ReservasOperativoPage({
 
   if (!SALON_READ_ROLES.includes(access.role)) notFound()
 
-  const date =
-    typeof sp.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : todayCordoba()
-  const initialMeals = parseMealsParam(sp.meals)
+  const today = todayCordoba()
+  const date = typeof sp.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : today
 
   const [reservations, capacity, scheduledEvents] = await Promise.all([
     listTimelineForDate({ tenantId: access.tenant.id, date }),
@@ -63,18 +48,19 @@ export default async function ReservasOperativoPage({
     listScheduledEventsForDate({ tenantId: access.tenant.id, date }),
   ])
 
+  // Sin wrapper `h-[100dvh]`: el shell del salón es el único scroller (ver
+  // components/shell/salon/app-shell-salon.tsx). Este div creaba un segundo
+  // contenedor scrolleable dentro de una página que ya scrolleaba.
   return (
-    <div className="flex h-[100dvh] flex-col">
-      <TimelineView
-        tenantSlug={tenantSlug}
-        tenantId={access.tenant.id}
-        role={access.role}
-        date={date}
-        initialReservations={reservations}
-        initialCapacity={capacity}
-        initialEvents={scheduledEvents}
-        initialMeals={initialMeals}
-      />
-    </div>
+    <TimelineView
+      tenantSlug={tenantSlug}
+      tenantId={access.tenant.id}
+      role={access.role}
+      date={date}
+      isToday={date === today}
+      initialReservations={reservations}
+      initialCapacity={capacity}
+      initialEvents={scheduledEvents}
+    />
   )
 }

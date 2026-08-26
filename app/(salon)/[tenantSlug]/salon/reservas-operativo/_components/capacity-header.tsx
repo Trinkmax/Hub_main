@@ -1,10 +1,17 @@
 'use client'
 
-import { motion } from 'motion/react'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import type { DayCapacityBucket } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
+/**
+ * La capacidad del día en una tira de una línea.
+ *
+ * Antes eran cuatro tarjetas con barra animada, "lugares libres" y un
+ * "¡Casi lleno!" parpadeando — 4 filas apiladas en un celular, que empujaban la
+ * lista de reservas casi fuera de la pantalla. Al mozo le alcanza con saber si
+ * hay lugar; el detalle es del dueño y vive en el manager.
+ */
 export function CapacityHeader({
   capacity,
   events,
@@ -12,123 +19,68 @@ export function CapacityHeader({
   capacity: DayCapacityBucket[]
   events: ScheduledEventWithTemplate[]
 }) {
-  const zonePA = capacity.find((b) => b.bucket === 'zone:planta_alta')
-  const zonePB = capacity.find((b) => b.bucket === 'zone:planta_baja')
+  const items: Array<{ key: string; label: string; bucket?: DayCapacityBucket; color?: string }> = [
+    {
+      key: 'pa',
+      label: 'Planta alta',
+      bucket: capacity.find((b) => b.bucket === 'zone:planta_alta'),
+    },
+    {
+      key: 'pb',
+      label: 'Planta baja',
+      bucket: capacity.find((b) => b.bucket === 'zone:planta_baja'),
+    },
+    ...events.map((e) => ({
+      key: e.id,
+      label: e.name_override ?? e.template?.name ?? 'Evento',
+      bucket: capacity.find((b) => b.bucket === `event:${e.id}`),
+      color: e.template?.color_hex ?? undefined,
+    })),
+  ]
+
+  const visible = items.filter((i) => i.bucket)
+  if (visible.length === 0) return null
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <CapacityBar title="Planta Alta" bucket={zonePA} color="#16a34a" />
-      <CapacityBar title="Planta Baja" bucket={zonePB} color="#0ea5e9" />
-      {events.map((e) => {
-        const b = capacity.find((x) => x.bucket === `event:${e.id}`)
+    <ul
+      aria-label="Ocupación del día"
+      className="-mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
+      {visible.map((item) => {
+        const b = item.bucket as DayCapacityBucket
+        const over = b.used > b.capacity
+        const full = !over && b.capacity > 0 && b.used >= b.capacity * 0.9
         return (
-          <CapacityBar
-            key={e.id}
-            title={e.name_override ?? e.template?.name ?? 'Evento'}
-            subtitle={`${e.starts_at_local.slice(0, 5)}`}
-            bucket={b}
-            color={e.template?.color_hex ?? '#7c3aed'}
-            isEvent
-          />
+          <li
+            key={item.key}
+            className={cn(
+              'flex shrink-0 snap-start items-center gap-2 rounded-full border px-3 py-1.5',
+              over
+                ? 'border-destructive/50 bg-destructive/10'
+                : full
+                  ? 'border-warning/50 bg-warning/10'
+                  : 'border-border/70 bg-card',
+            )}
+          >
+            {item.color ? (
+              <span
+                aria-hidden
+                className="size-2 shrink-0 rounded-full"
+                style={{ backgroundColor: item.color }}
+              />
+            ) : null}
+            <span className="text-xs font-medium text-muted-foreground">{item.label}</span>
+            <span
+              className={cn(
+                'font-mono text-xs font-semibold tabular-nums',
+                over ? 'text-destructive' : 'text-foreground',
+              )}
+            >
+              {b.used}/{b.capacity}
+            </span>
+          </li>
         )
       })}
-    </div>
-  )
-}
-
-function CapacityBar({
-  title,
-  subtitle,
-  bucket,
-  color,
-  isEvent,
-}: {
-  title: string
-  subtitle?: string
-  bucket?: DayCapacityBucket
-  color: string
-  isEvent?: boolean
-}) {
-  if (!bucket) {
-    return (
-      <div className="flex flex-col gap-2 rounded-xl border border-dashed border-border/60 bg-card/30 p-3">
-        <div className="flex items-baseline justify-between">
-          <h3 className="text-sm font-semibold">{title}</h3>
-          <span className="text-[10px] text-muted-foreground">sin capacidad</span>
-        </div>
-      </div>
-    )
-  }
-  const pct = bucket.capacity > 0 ? Math.min(100, (bucket.used / bucket.capacity) * 100) : 0
-  const isOver = bucket.used > bucket.capacity
-  const isFull = !isOver && bucket.used >= bucket.capacity * 0.9
-
-  return (
-    <motion.div
-      layout
-      className={cn(
-        'flex flex-col gap-2 rounded-xl border bg-card/70 p-3 transition-shadow',
-        isFull ? 'border-amber-300/60 shadow-[0_0_0_3px_rgba(245,158,11,0.1)]' : 'border-border/60',
-        isOver && 'border-rose-400/60 shadow-[0_0_0_3px_rgba(244,63,94,0.15)]',
-      )}
-    >
-      <div className="flex items-baseline justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <span
-            className={cn(
-              'size-2 shrink-0 rounded-full',
-              isEvent && 'ring-2 ring-offset-1 ring-offset-card',
-            )}
-            style={{
-              backgroundColor: color,
-              boxShadow: isEvent ? `0 0 0 2px ${color}33` : undefined,
-            }}
-            aria-hidden
-          />
-          <h3 className="truncate text-sm font-semibold">{title}</h3>
-          {subtitle ? <span className="text-[11px] text-muted-foreground">{subtitle}</span> : null}
-        </div>
-        <span
-          className={cn(
-            'font-mono text-base font-semibold tabular-nums',
-            isOver ? 'text-rose-600 dark:text-rose-400' : 'text-foreground',
-          )}
-        >
-          {bucket.used}
-          <span className="text-xs font-normal text-muted-foreground">/{bucket.capacity}</span>
-        </span>
-      </div>
-      <div className="relative h-2 overflow-hidden rounded-full bg-secondary">
-        <motion.div
-          animate={{ width: `${pct}%` }}
-          transition={{ duration: 0.4, ease: 'easeOut' }}
-          className="h-full rounded-full"
-          style={{
-            background: isOver ? '#ef4444' : isFull ? '#f59e0b' : color,
-          }}
-        />
-      </div>
-      <div className="flex items-baseline justify-between text-[11px]">
-        {isOver ? (
-          <span className="text-rose-600 dark:text-rose-400">
-            Overbooking +{bucket.used - bucket.capacity}
-          </span>
-        ) : (
-          <span className="text-muted-foreground">
-            {bucket.available} {bucket.available === 1 ? 'lugar libre' : 'lugares libres'}
-          </span>
-        )}
-        {isFull && !isOver ? (
-          <motion.span
-            initial={{ opacity: 0 }}
-            animate={{ opacity: [0, 1, 1, 0.6] }}
-            transition={{ duration: 1.6, repeat: Infinity }}
-            className="text-amber-600 dark:text-amber-400 font-medium"
-          >
-            ¡Casi lleno!
-          </motion.span>
-        ) : null}
-      </div>
-    </motion.div>
+    </ul>
   )
 }

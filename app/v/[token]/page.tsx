@@ -69,7 +69,7 @@ export default async function RedeemTokenPage({ params }: { params: Promise<{ to
       // Sólo los roles que pueden entregar: un `kitchen` o un `editor` con
       // membership rebotarían contra el notFound() de /validar.
       const canValidate = row2 !== null && REDEMPTION_STAFF_ROLES.includes(row2.role as TenantRole)
-      if (slug && canValidate) redirect(`/${slug}/salon/validar?code=${encodeURIComponent(token)}`)
+      if (slug && canValidate) redirect(`/${slug}/salon/escanear?code=${encodeURIComponent(token)}`)
     }
   }
 

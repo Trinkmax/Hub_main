@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { logAudit } from '@/lib/audit'
+import type { CustomerByQr } from '@/lib/customers/queries'
 import { createClient } from '@/lib/supabase/server'
 import {
   RoleRequiredError,
@@ -11,6 +12,7 @@ import {
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
+import { getCurrentUser } from '@/lib/tenant/current'
 import {
   createPartnerBenefitSchema,
   createPartnerSchema,
@@ -31,6 +33,13 @@ import {
 } from './schemas'
 
 export type LoyaltyActionState = { ok: true; message?: string } | { ok: false; message: string }
+
+/** Ventana del guard anti-doble-acreditación del mostrador. */
+const DUPLICATE_AWARD_WINDOW_MS = 3 * 60 * 1000
+
+function formatPesos(cents: number): string {
+  return `$${Math.round(cents / 100).toLocaleString('es-AR')}`
+}
 
 export type AwardResult =
   | {
@@ -86,6 +95,34 @@ export async function awardPointsByAmount(
     return { ok: false, message: 'Cliente no encontrado.' }
   }
 
+  // Guard de doble acreditación. `award_points_by_amount` no tiene clave de
+  // idempotencia: cada llamada inserta una visita sintética + su transacción,
+  // así que un reintento de red, un doble tap o dos mozos escaneando el mismo QR
+  // acreditan dos veces e inflan las stats del cliente. Acá cortamos el caso
+  // real del mostrador (mismo socio, mismo monto, en la misma ronda).
+  // No es a prueba de carreras — para eso hace falta un índice único parcial,
+  // anotado en BACKLOG.md.
+  const since = new Date(Date.now() - DUPLICATE_AWARD_WINDOW_MS).toISOString()
+  const { data: recent } = await supabase
+    .from('points_transactions')
+    .select('id, payload, created_at')
+    .eq('tenant_id', tenant.id)
+    .eq('customer_id', parsed.data.customer_id)
+    .eq('reason', 'qr_award')
+    .gte('created_at', since)
+    .limit(20)
+  const duplicate = (recent ?? []).some(
+    (row) =>
+      Number((row.payload as { amount_cents?: number } | null)?.amount_cents) ===
+      parsed.data.amount_cents,
+  )
+  if (duplicate) {
+    return {
+      ok: false,
+      message: `Ya le acreditaste ${formatPesos(parsed.data.amount_cents)} recién. Si es otra consumición, esperá un momento o cargá el monto exacto.`,
+    }
+  }
+
   const { data, error } = await supabase.rpc('award_points_by_amount', {
     p_customer_id: parsed.data.customer_id,
     p_amount_cents: parsed.data.amount_cents,
@@ -103,7 +140,7 @@ export async function awardPointsByAmount(
 
   await logAudit({
     tenantId: tenant.id,
-    userId: null,
+    userId: (await getCurrentUser())?.id ?? null,
     action: 'points.qr_award',
     entity: 'customer',
     entityId: parsed.data.customer_id,
@@ -111,6 +148,7 @@ export async function awardPointsByAmount(
   })
 
   revalidatePath(`/${slug}/clientes/${parsed.data.customer_id}`)
+  revalidatePath(`/${slug}/salon/escanear`)
 
   return {
     ok: true,
@@ -124,19 +162,7 @@ export async function awardPointsByAmount(
 export async function lookupCustomerByQr(
   slug: string,
   qrToken: string,
-): Promise<
-  | {
-      ok: true
-      customer: {
-        id: string
-        first_name: string
-        last_name: string
-        phone: string
-        points_balance: number
-      }
-    }
-  | { ok: false; message: string }
-> {
+): Promise<{ ok: true; customer: CustomerByQr } | { ok: false; message: string }> {
   const tenant = await authorizeAnyStaff(slug)
   if (!tenant) return { ok: false, message: 'No tenés permiso.' }
 

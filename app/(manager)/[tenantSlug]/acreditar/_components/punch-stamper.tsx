@@ -15,7 +15,7 @@ import type { WalletPunchCard } from '@/lib/wallet/punch-cards'
 // Muestra EXACTAMENTE lo mismo que ve el socio en su billetera (mismo loader),
 // así no hay discusión en el mostrador: las dos pantallas dicen lo mismo.
 //
-// Vive acá porque /acreditar es la caja, pero la pantalla de validación del
+// Vive acá porque /acreditar es la caja, pero la pantalla de escaneo del
 // salón lo reusa tal cual — el mozo con celular hace lo mismo que el cajero.
 
 type Props = {

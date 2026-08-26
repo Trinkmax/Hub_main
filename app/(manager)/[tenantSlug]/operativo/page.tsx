@@ -90,14 +90,19 @@ export default async function OperativoPage({
       {/* Tira de resumen / capacidad */}
       <section
         aria-label="Resumen del día"
-        className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"
+        className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
       >
         <SummaryStat label="Reservas" value={overview.reservationsCount} accent="default" />
         <SummaryStat label="Cubiertos" value={overview.estimatedGuests} accent="default" />
-        <SummaryStat label="Pendientes" value={overview.byStatus.pending} accent="muted" />
-        <SummaryStat label="Llegaron" value={overview.byStatus.arrived} accent="info" />
-        <SummaryStat label="Sentadas" value={overview.byStatus.seated} accent="success" />
-        <SummaryStat label="Cerradas" value={overview.byStatus.closed} accent="muted" />
+        <SummaryStat label="Por llegar" value={overview.byStatus.pending} accent="muted" />
+        {/* "Adentro" suma los tres estados de servicio efectivo: el salón sólo
+            marca "Llegó", así que contar `seated`/`closed` por separado daría 0
+            casi siempre. Cerrar mesas quedó como acción opcional del dueño. */}
+        <SummaryStat
+          label="Adentro"
+          value={overview.byStatus.arrived + overview.byStatus.seated + overview.byStatus.closed}
+          accent="success"
+        />
       </section>
 
       {overview.peak ? (

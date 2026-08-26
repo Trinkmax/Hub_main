@@ -3,6 +3,53 @@
 Hallazgos fuera del scope de la tarea en curso, anotados para retomar
 (ver CLAUDE.md §14.7). No bloquean el merge de la feature donde se detectaron.
 
+## Rediseño del panel de mozos (salón)
+
+- **`award_points_by_amount` no tiene clave de idempotencia.** La RPC inserta una
+  `visits` sintética + su `points_transactions` en cada llamada, sin ninguna
+  restricción: un reintento de red, un doble tap o dos mozos escaneando el mismo
+  QR acreditan dos veces e inflan `total_visits`/`total_spent_cents` del cliente
+  vía `visits_apply_stats`. Se agregó un guard en `awardPointsByAmount`
+  (`lib/points/actions.ts`): rechaza mismo `customer_id` + mismo `amount_cents`
+  dentro de 3 minutos. **No es a prueba de carreras** — dos requests simultáneas
+  pasan las dos. El fix real es un índice único parcial sobre
+  `points_transactions (tenant_id, customer_id, reason, (payload->>'amount_cents'))`
+  acotado por ventana de tiempo, o un `p_idempotency_key` en la RPC.
+- **Revertir `arrived` → `pending` deja la entry de comisión colgada.** Desde la
+  migración `20260826150000` la comisión se liquida al marcar "Llegó", pero
+  `transition_reservation_status` no llama a `recalc_reservation_commission` al
+  volver a `pending`, así que la fila de `commission_ledger` sobrevive. Es el
+  mismo comportamiento que ya tenía `closed` → `seated`, no una regresión nueva.
+  Limpiarlo implica que `recalc_reservation_commission` trate `pending` como
+  "sin servicio efectivo" (hoy sólo lo hace con `cancelled`/`no_show`), y eso
+  **borraría entries impagas ya existentes** de reservas en `pending` (al escribir
+  esto: 5 filas, $2.250 en HUB). Decidir con el dueño antes de tocarlo.
+- **Sintaxis Tailwind v4 rota en el resto de la app: `bg-[--var]` es no-op.** En
+  v4.2 la forma correcta de leer una CSS var en una utilidad es `bg-(--var)`, o
+  el token registrado en `@theme inline` (`bg-cream-tint`). Se corrigieron las
+  primitivas que usa el salón (`button`, `badge`, `empty-state`, `data-table`) —
+  ojo que eso **devuelve el hover a los botones `ghost`/`outline` en TODA la
+  app**, que estaba silenciosamente muerto. Quedan ~30 usos del patrón viejo en
+  `app/(manager)/**`, `components/shell/sidebar-nav.tsx`, `app/m/**` y
+  `app/onboarding/**`. Barrido global pendiente.
+- **Navegación client-side manager → salón saldría en oscuro.** El tema del salón
+  se decide en el `<html>` del root layout con el header `x-hub-workspace` que
+  pone el proxy. En una navegación client-side el `<html>` no se re-renderiza.
+  Hoy no pasa: los únicos links manager → salón (`nav-config.ts`) son
+  `newTab: true` y están detrás de `table_service`/`kitchen` (OFF en HUB). Si se
+  agrega un `<Link>` normal, hace falta un client component en el layout del
+  salón que setee/limpie `documentElement.dataset.forceLight`.
+- **`salon/mesas`, `salon/cocina` y `salon/mi-turno` siguen con el diseño viejo.**
+  El rediseño cubrió las 3 pantallas vivas de HUB (escanear, QR del club,
+  reservas). Esas tres están detrás de `table_service`/`kitchen` — apagadas en
+  HUB, vivas para otros tenants — y todavía tienen `PageHeader` duplicando el
+  título del topbar y una barra de acción `fixed bottom-0` que colisiona con la
+  tab bar (`mesas/[sessionId]/_components/session-detail.tsx:500`). Alinearlas al
+  contrato de scroll del shell cuando se prenda alguno de esos flags.
+- **`components/shell/salon/swipe-action.tsx` es código muerto.** Nadie lo
+  importa. O se conecta a un gesto real (swipe → "No vino" en la card de
+  reserva) o se borra.
+
 ## Carta del comensal + captura (rama `feat/carta-comensal-captura`)
 
 - **Imágenes de menú huérfanas en Storage (ítems).** `deleteMenuImageByUrl`
@@ -394,3 +441,14 @@ Hallazgos y deudas que quedaron fuera del alcance de esa tanda:
   ficha del cliente (`clientes/[id]/_components/visits-tab.tsx` y el bloque
   Insights de `page.tsx`). Amerita un barrido propio, no parches sueltos:
   arreglar sólo algunos deja la app inconsistente consigo misma.
+
+- **[BAJA] Cinco `optionalNumber` más con el orden de union frágil.** El bug del
+  stock (vacío → 0 porque `z.coerce.number()` come `''` y `null`, y la union se
+  queda con la primera rama que pasa) está arreglado en `lib/points/schemas.ts` y
+  en `points_override` de `lib/menu/schemas.ts`. Quedan con el schema numérico
+  adelante: `lib/punch-cards/schemas.ts:29`, `lib/tables/schemas.ts:6`,
+  `lib/salon/schemas.ts:210` y `:266`, y `lib/admin/tenant-config.ts:19` y `:22`.
+  Hoy no rompen, pero **por accidente**: todos validan `.min(1)`, así que el 0 que
+  sale de la coerción no pasa y cae a la rama del vacío. El día que alguno acepte
+  0 como valor legítimo, vuelve el mismo bug silencioso. Barrido mecánico: mover
+  `z.literal('')`, `z.null()` y `z.undefined()` delante del schema numérico.

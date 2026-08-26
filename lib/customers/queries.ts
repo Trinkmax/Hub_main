@@ -189,29 +189,49 @@ export async function listCustomerProgramaCounts(opts: {
   }
 }
 
-export async function getCustomerByQrToken(opts: { tenantId: string; token: string }): Promise<{
+export type CustomerByQr = {
   id: string
   first_name: string
   last_name: string
   phone: string
   points_balance: number
-} | null> {
+  /** Nivel vigente del socio, para que el mozo lo salude como corresponde. */
+  tier: { name: string; color: string | null } | null
+}
+
+/**
+ * El socio detrás de un QR personal (`/c/<token>`), tal como lo ve el staff al
+ * escanear. Incluye el nivel: en el mostrador cambia el trato, y el mozo lo
+ * tenía que adivinar.
+ */
+export async function getCustomerByQrToken(opts: {
+  tenantId: string
+  token: string
+}): Promise<CustomerByQr | null> {
   if (!opts.token || opts.token.length < 8 || opts.token.length > 128) return null
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('customers')
-    .select('id, first_name, last_name, phone, points_balance, tenant_id')
+    .select(
+      'id, first_name, last_name, phone, points_balance, tenant_id, tier:loyalty_tiers!customers_current_tier_id_fkey(name, color)',
+    )
     .eq('tenant_id', opts.tenantId)
     .eq('qr_token', opts.token)
     .is('deleted_at', null)
     .maybeSingle()
   if (error || !data) return null
+  const tierRaw = (data as { tier?: unknown }).tier
+  const tier = (Array.isArray(tierRaw) ? tierRaw[0] : tierRaw) as {
+    name: string
+    color: string | null
+  } | null
   return {
     id: data.id,
     first_name: data.first_name,
     last_name: data.last_name,
     phone: data.phone,
     points_balance: data.points_balance,
+    tier: tier ?? null,
   }
 }
 

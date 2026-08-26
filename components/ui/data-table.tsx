@@ -93,8 +93,8 @@ export function DataTableRow({
       className={cn(
         'transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)]',
         onClick
-          ? 'cursor-pointer hover:bg-[--cream-tint]'
-          : 'hover:bg-[--cream-tint]',
+          ? 'cursor-pointer hover:bg-cream-tint'
+          : 'hover:bg-cream-tint',
         className,
       )}
     >

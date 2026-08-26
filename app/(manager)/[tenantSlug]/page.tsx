@@ -80,11 +80,14 @@ async function getOnboardingStatus(
       .select('id', { head: true, count: 'exact' })
       .eq('tenant_id', tenantId)
       .limit(1),
+    // "Se atendió al menos una reserva". Desde que el salón marca sólo "Llegó"
+    // (rediseño del panel de mozos), esperar `closed` dejaba este paso del
+    // checklist sin completar para siempre.
     supabase
       .from('salon_reservations')
       .select('id', { head: true, count: 'exact' })
       .eq('tenant_id', tenantId)
-      .eq('status', 'closed')
+      .in('status', ['arrived', 'seated', 'closed'])
       .limit(1),
   ])
 

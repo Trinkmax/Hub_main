@@ -79,12 +79,13 @@ export function PullToRefresh({
 
   const opacity = Math.min(1, pullDistance / THRESHOLD)
   const ready = pullDistance >= THRESHOLD
+  const active = refreshing || pullDistance > 0
 
   return (
     <>
       <div
         aria-hidden
-        className="pointer-events-none fixed inset-x-0 top-14 z-10 flex justify-center"
+        className="pointer-events-none fixed inset-x-0 top-[var(--salon-topbar-h)] z-20 flex justify-center"
         style={{
           transform: `translateY(${refreshing ? THRESHOLD * 0.4 : pullDistance * 0.5}px)`,
           opacity: refreshing ? 1 : opacity,
@@ -99,13 +100,18 @@ export function PullToRefresh({
           {refreshing ? 'Actualizando…' : ready ? 'Soltá para actualizar' : 'Tirá para actualizar'}
         </div>
       </div>
+      {/* `transform` SOLO mientras se tira: un transform activo crea containing
+          block y rompe los `position: fixed` de las páginas de adentro (el
+          overlay del QR del club, por ejemplo). En reposo no seteamos nada. */}
       <div
-        style={{
-          transform: refreshing
-            ? `translateY(${THRESHOLD * 0.5}px)`
-            : `translateY(${pullDistance * 0.5}px)`,
-          transition: refreshing || pullDistance === 0 ? 'transform var(--duration-base)' : 'none',
-        }}
+        style={
+          active
+            ? {
+                transform: `translateY(${refreshing ? THRESHOLD * 0.5 : pullDistance * 0.5}px)`,
+                transition: refreshing ? 'transform var(--duration-base)' : 'none',
+              }
+            : undefined
+        }
       >
         {children}
       </div>

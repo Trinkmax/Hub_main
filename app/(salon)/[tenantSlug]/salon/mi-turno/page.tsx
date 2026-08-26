@@ -1,8 +1,7 @@
-import { LogOut, Settings2, ShieldCheck, Smartphone } from 'lucide-react'
+import { LogOut, Settings2, ShieldCheck } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { signOutAction } from '@/components/shell/sign-out-action'
-import { ThemeToggle } from '@/components/theme/theme-toggle'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { PageHeader } from '@/components/ui/page-header'
@@ -58,16 +57,6 @@ export default async function MiTurnoPage({ params }: { params: Promise<{ tenant
               {ROLE_LABEL[access.role] ?? access.role} · {access.tenant.name}
             </p>
           </div>
-        </div>
-      </Card>
-
-      <Card className="card-hairline gap-3 border-border/70 bg-card/85 p-5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Smartphone className="size-4 text-muted-foreground" aria-hidden />
-            <span className="text-sm font-medium">Apariencia</span>
-          </div>
-          <ThemeToggle variant="outline" />
         </div>
       </Card>
 

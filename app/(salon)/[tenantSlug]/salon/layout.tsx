@@ -22,14 +22,15 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f5edd7' },
-    { media: '(prefers-color-scheme: dark)', color: '#0f2a20' },
-  ],
+  // Un solo color: el salón es light-only (ver lib/workspace.ts). Con el par
+  // light/dark, un celular en modo oscuro pintaba la barra de estado verde
+  // noche arriba de un panel crema.
+  themeColor: '#f5edd7',
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  // Sin `maximumScale`/`userScalable: false`: bloquear el zoom rompe WCAG 1.4.4
+  // y en un salón oscuro el mozo a veces necesita agrandar. El auto-zoom de iOS
+  // al enfocar un input ya está cubierto por el `text-base` de <Input>.
 }
 
 export default async function SalonLayout({

@@ -1,18 +1,12 @@
-import { notFound } from 'next/navigation'
-import { PageHeader } from '@/components/ui/page-header'
-import { requireRole, requireTenantAccess } from '@/lib/tenant'
-import { REDEMPTION_STAFF_ROLES } from '@/lib/tenant/roles'
-import { ValidateScreen } from './_components/validate-screen'
-
-export const metadata = { title: 'Salón · Validar' }
-export const dynamic = 'force-dynamic'
+import { redirect } from 'next/navigation'
 
 /**
- * La pantalla del mozo: escanea y entrega. Acepta `?code=` porque el QR del
- * canje apunta a /v/<token> y esa página rebota acá con el token ya cargado
- * (staff que escanea con la cámara nativa del teléfono, por ejemplo).
+ * Compat: la pantalla se llama `/salon/escanear` desde el rediseño del panel de
+ * mozos (el mozo no "valida", suma puntos). Queda el redirect porque un celular
+ * con la PWA instalada puede tener la URL vieja en el historial o en la pantalla
+ * de inicio. Se puede borrar en un par de releases.
  */
-export default async function ValidarPage({
+export default async function ValidarRedirectPage({
   params,
   searchParams,
 }: {
@@ -21,22 +15,6 @@ export default async function ValidarPage({
 }) {
   const { tenantSlug } = await params
   const { code } = await searchParams
-
-  try {
-    const { role } = await requireTenantAccess(tenantSlug)
-    requireRole(role, REDEMPTION_STAFF_ROLES)
-  } catch {
-    notFound()
-  }
-
-  return (
-    <div className="space-y-6">
-      <PageHeader
-        eyebrow="Salón"
-        title="Validar"
-        description="Escaneá el QR del socio: si es un canje lo entregás, si es su QR personal le sellás las tarjetas."
-      />
-      <ValidateScreen tenantSlug={tenantSlug} initialCode={code ?? null} />
-    </div>
-  )
+  const qs = code ? `?code=${encodeURIComponent(code)}` : ''
+  redirect(`/${tenantSlug}/salon/escanear${qs}`)
 }

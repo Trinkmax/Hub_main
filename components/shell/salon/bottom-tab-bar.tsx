@@ -1,81 +1,21 @@
 'use client'
 
-import {
-  CalendarCheck,
-  ChefHat,
-  ClipboardList,
-  Inbox,
-  type LucideIcon,
-  ScanLine,
-  User,
-} from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import type { FeatureKey, TenantFeatures } from '@/lib/platform/features'
+import type { TenantFeatures } from '@/lib/platform/features'
 import type { TenantRole } from '@/lib/tenant/types'
 import { cn } from '@/lib/utils'
+import { visibleSalonTabs } from './salon-nav'
 
-type Tab = {
-  label: string
-  icon: LucideIcon
-  href: (slug: string) => string
-  match: (pathname: string, slug: string) => boolean
-  roles?: TenantRole[]
-  feature?: FeatureKey
-}
-
-const TABS: Tab[] = [
-  {
-    label: 'Reservas',
-    icon: CalendarCheck,
-    href: (s) => `/${s}/salon/reservas-operativo`,
-    match: (p, s) =>
-      p === `/${s}/salon` ||
-      p === `/${s}/salon/reservas-operativo` ||
-      p.startsWith(`/${s}/salon/reservas-operativo/`),
-  },
-  {
-    label: 'Validar',
-    icon: ScanLine,
-    href: (s) => `/${s}/salon/validar`,
-    match: (p, s) => p.startsWith(`/${s}/salon/validar`),
-    // Sin `feature`: validar canjes es del club (fidelización), no del servicio
-    // de mesa. Detrás de `table_service` — apagado en HUB — no aparecería nunca.
-    roles: ['owner', 'cashier', 'waiter'],
-  },
-  {
-    label: 'Mesas',
-    icon: ClipboardList,
-    href: (s) => `/${s}/salon/mesas`,
-    match: (p, s) => p === `/${s}/salon/mesas` || p.startsWith(`/${s}/salon/mesas/`),
-    feature: 'table_service',
-  },
-  {
-    label: 'Cocina',
-    icon: ChefHat,
-    href: (s) => `/${s}/salon/cocina`,
-    match: (p, s) => p.startsWith(`/${s}/salon/cocina`),
-    roles: ['owner', 'cashier', 'kitchen'],
-    feature: 'kitchen',
-  },
-  {
-    label: 'Mi turno',
-    icon: User,
-    href: (s) => `/${s}/salon/mi-turno`,
-    match: (p, s) => p.startsWith(`/${s}/salon/mi-turno`),
-    feature: 'table_service',
-  },
-  {
-    label: 'Mensajería',
-    icon: Inbox,
-    href: (s) => `/${s}/salon/bandeja`,
-    match: (p, s) => p.startsWith(`/${s}/salon/bandeja`),
-    // El host entra al salón SOLO por el panel de reservas (proxy lo limita);
-    // sin este gate vería un tab que lo rebota al home.
-    roles: ['owner', 'cashier', 'waiter', 'kitchen'],
-  },
-]
-
+/**
+ * Nav inferior del salón. Los tabs salen de `salon-nav.ts` (fuente única, la
+ * comparte con el topbar).
+ *
+ * La barra declara su propio alto en `--salon-tabbar-h` y el shell lo usa como
+ * padding del `<main>`: antes el shell hardcodeaba `pb-24` (96px) contra una
+ * barra que mide ~68px + safe-area, y cada pantalla que quiso calcular altos
+ * inventó su propio número. Ese desfasaje era la mitad de los "scrolls raros".
+ */
 export function BottomTabBar({
   tenantSlug,
   role,
@@ -88,49 +28,52 @@ export function BottomTabBar({
   isPlatformAdmin: boolean
 }) {
   const pathname = usePathname()
-  const visibleTabs = TABS.filter((tab) => {
-    const roleOk = !tab.roles || tab.roles.includes(role)
-    const featureOk = !tab.feature || isPlatformAdmin || features[tab.feature]
-    return roleOk && featureOk
-  })
+  const tabs = visibleSalonTabs({ role, features, isPlatformAdmin })
+  if (tabs.length === 0) return null
 
   return (
     <nav
       aria-label="Navegación salón"
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-border/70 bg-background/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/65"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/75"
     >
       <ul
-        className="mx-auto grid max-w-screen-md text-xs"
-        style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, minmax(0, 1fr))` }}
+        className="mx-auto grid max-w-screen-md"
+        style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
       >
-        {visibleTabs.map((tab) => {
-          const href = tab.href(tenantSlug)
+        {tabs.map((tab) => {
           const active = tab.match(pathname, tenantSlug)
           const Icon = tab.icon
 
           return (
-            <li key={tab.label}>
+            <li key={tab.key}>
               <Link
-                href={href}
+                href={tab.href(tenantSlug)}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'flex flex-col items-center gap-1 px-2 py-2 transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)]',
-                  active ? 'text-primary' : 'text-muted-foreground',
+                  'flex h-[4.25rem] flex-col items-center justify-center gap-1 px-1 transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)]',
+                  active ? 'text-primary' : 'text-muted-foreground active:text-foreground',
                 )}
               >
                 <span
                   className={cn(
-                    'flex size-8 items-center justify-center rounded-full transition-colors',
-                    active ? 'bg-[--cream-tint]' : 'bg-transparent',
+                    'flex h-7 w-12 items-center justify-center rounded-full transition-colors duration-[var(--duration-base)]',
+                    active ? 'bg-primary/12' : 'bg-transparent',
                   )}
                 >
                   <Icon
                     className={cn('size-5 transition-transform', active && 'scale-110')}
                     aria-hidden
-                    strokeWidth={active ? 2.5 : 2}
+                    strokeWidth={active ? 2.4 : 1.9}
                   />
                 </span>
-                <span className={cn('text-[11px]', active && 'font-semibold')}>{tab.label}</span>
+                <span
+                  className={cn(
+                    'max-w-full truncate text-[11px] leading-none',
+                    active ? 'font-semibold' : 'font-medium',
+                  )}
+                >
+                  {tab.label}
+                </span>
               </Link>
             </li>
           )
