@@ -58,19 +58,20 @@ export default async function FlowLogsPage({
   const filters = parsed.success ? parsed.data : flowLogFiltersSchema.parse({})
 
   const supabase = await createClient()
-  const { data: flow } = await supabase
-    .from('flows')
-    .select('id, name')
-    .eq('id', id)
-    .eq('tenant_id', access.tenant.id)
-    .maybeSingle()
-  if (!flow) notFound()
-
   const range = resolveLogRange(filters)
-  const [{ rows, total }, contacts] = await Promise.all([
-    listFlowExecutionEvents({ tenantId: access.tenant.id, flowId: flow.id, filters }),
-    listFlowLogContacts({ tenantId: access.tenant.id, flowId: flow.id }),
+  // El flow solo se usa para el 404 y el nombre; eventos y contactos ya filtran
+  // por tenant + flowId, así que los tres salen en paralelo (2 hops → 1).
+  const [{ data: flow }, { rows, total }, contacts] = await Promise.all([
+    supabase
+      .from('flows')
+      .select('id, name')
+      .eq('id', id)
+      .eq('tenant_id', access.tenant.id)
+      .maybeSingle(),
+    listFlowExecutionEvents({ tenantId: access.tenant.id, flowId: id, filters }),
+    listFlowLogContacts({ tenantId: access.tenant.id, flowId: id }),
   ])
+  if (!flow) notFound()
 
   const totalPages = Math.max(1, Math.ceil(total / LOG_PAGE_SIZE))
   const filtered = hasActiveLogFilters(filters)

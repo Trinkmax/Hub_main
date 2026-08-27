@@ -4,7 +4,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
 import type { LiveFloorData } from '@/lib/floor-plan/queries'
-import { getFloorPlan, getLiveFloor, listFloorAreas } from '@/lib/floor-plan/queries'
+import { getFloorPlan, getLiveFloor } from '@/lib/floor-plan/queries'
 import { requireFeature } from '@/lib/platform/guards'
 import { requireTenantAccess } from '@/lib/tenant'
 import { FloorPlanEditor } from './_components/floor-plan-editor'
@@ -31,12 +31,15 @@ export default async function MesasPage({ params }: { params: Promise<{ tenantSl
   const data = await getFloorPlan(tenant.id)
 
   // Áreas para el selector de la vista En vivo (mismo orden canónico que el editor).
-  const liveAreas = await listFloorAreas(tenant.id)
+  // getFloorPlan ya trae exactamente esta lista (misma query, mismo orden):
+  // reusarla evita el hop de listFloorAreas.
+  const liveAreas = data.areas
   // Live data del área default (la primera). Si no hay áreas, no hay vista en vivo.
-  const defaultAreaId = liveAreas[0]?.id ?? null
+  // Se pasa la fila del área para que getLiveFloor no la vuelva a leer.
+  const defaultArea = liveAreas[0]
   let initialLive: LiveFloorData | null = null
-  if (defaultAreaId) {
-    initialLive = await getLiveFloor(tenant.id, defaultAreaId)
+  if (defaultArea) {
+    initialLive = await getLiveFloor(tenant.id, defaultArea.id, defaultArea)
   }
 
   // Para el fallback accesible (datos planos serializables): mesas ubicadas

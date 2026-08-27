@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import QRCode from 'qrcode'
+import { cache } from 'react'
 import { WalletShell } from '@/app/c/[token]/_components/wallet-shell'
 import { BrandAccent } from '@/components/theme/brand-accent-provider'
 import { getAppUrl } from '@/lib/app-url'
@@ -22,7 +23,9 @@ type TenantRow = {
   brand_accent: string | null
 }
 
-async function resolveTenant(slug: string): Promise<TenantRow | null> {
+// `cache` de React: generateMetadata y la page piden el mismo tenant en el
+// mismo request; sin esto son dos hops idénticos a Supabase por render.
+const resolveTenant = cache(async (slug: string): Promise<TenantRow | null> => {
   const service = createServiceClient()
   const { data } = await service
     .from('tenants')
@@ -30,7 +33,7 @@ async function resolveTenant(slug: string): Promise<TenantRow | null> {
     .eq('slug', slug)
     .maybeSingle()
   return (data as TenantRow | null) ?? null
-}
+})
 
 export async function generateMetadata({
   params,

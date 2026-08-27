@@ -14,18 +14,21 @@ export type ReviewContext = {
 export async function getReviewContextByToken(token: string): Promise<ReviewContext | null> {
   if (!token || token.length < 16 || token.length > 128) return null
   const service = createServiceClient()
+  // Un solo hop: el tenant viene embebido por FK en vez de un segundo round-trip
+  // que dependía del `tenant_id` del cliente (2 → 1 hops secuenciales).
   const { data: customer } = await service
     .from('customers')
-    .select('first_name, tenant_id')
+    .select('first_name, tenant:tenants!customers_tenant_id_fkey(name, brand_accent, logo_url)')
     .eq('qr_token', token)
     .is('deleted_at', null)
     .maybeSingle()
   if (!customer) return null
-  const { data: tenant } = await service
-    .from('tenants')
-    .select('name, brand_accent, logo_url')
-    .eq('id', customer.tenant_id)
-    .maybeSingle()
+  const tenantRaw = (customer as { tenant?: unknown }).tenant
+  const tenant = (Array.isArray(tenantRaw) ? tenantRaw[0] : tenantRaw) as {
+    name: string
+    brand_accent: string | null
+    logo_url: string | null
+  } | null
   if (!tenant) return null
   return {
     firstName: customer.first_name,

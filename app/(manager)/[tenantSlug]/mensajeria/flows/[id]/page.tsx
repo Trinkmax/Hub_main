@@ -35,7 +35,9 @@ export default async function EditFlowPage({
   }
 
   const supabase = await createClient()
-  const [chRes, tplRes, tagsRes] = await Promise.all([
+  // El grafo del flow no depende de canales/plantillas/tags: entra en el mismo
+  // Promise.all en vez de esperar a que terminen (un hop secuencial menos).
+  const [chRes, tplRes, tagsRes, graphData] = await Promise.all([
     supabase
       .from('channels')
       .select('id, type, display_name')
@@ -47,14 +49,13 @@ export default async function EditFlowPage({
       .eq('tenant_id', access.tenant.id)
       .eq('status', 'approved'),
     supabase.from('customer_tags').select('id, name').eq('tenant_id', access.tenant.id),
+    // Try the graph representation first
+    getFlowGraph(access.tenant.id, id),
   ])
 
   const channels = chRes.data ?? []
   const templates = tplRes.data ?? []
   const tags = tagsRes.data ?? []
-
-  // Try the graph representation first
-  const graphData = await getFlowGraph(access.tenant.id, id)
 
   if (!graphData) notFound()
 

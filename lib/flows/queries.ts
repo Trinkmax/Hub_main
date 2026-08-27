@@ -46,18 +46,22 @@ export type FlowDetail = {
 
 export async function getFlow(tenantId: string, id: string): Promise<FlowDetail | null> {
   const supabase = await createClient()
-  const { data: flow } = await supabase
-    .from('flows')
-    .select('*')
-    .eq('id', id)
-    .eq('tenant_id', tenantId)
-    .maybeSingle()
+  // Los pasos solo dependen del id: van en paralelo con el flow (2 hops → 1).
+  // Y pedimos solo las columnas que devolvemos en vez de '*'.
+  const [{ data: flow }, { data: steps }] = await Promise.all([
+    supabase
+      .from('flows')
+      .select('id, name, trigger_type, trigger_config, active')
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .maybeSingle(),
+    supabase
+      .from('flow_steps')
+      .select('id, position, type, config')
+      .eq('flow_id', id)
+      .order('position', { ascending: true }),
+  ])
   if (!flow) return null
-  const { data: steps } = await supabase
-    .from('flow_steps')
-    .select('id, position, type, config')
-    .eq('flow_id', id)
-    .order('position', { ascending: true })
   return {
     id: flow.id,
     name: flow.name,

@@ -1,5 +1,5 @@
 import 'server-only'
-import { type ConversationTag, getTagsForConversationIds } from '@/lib/conversation-tags/queries'
+import type { ConversationTag } from '@/lib/conversation-tags/queries'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { ChannelType, MessageDirection, MessageStatus } from '@/types/database'
@@ -64,7 +64,8 @@ export async function listConversations(
       last_message_preview,
       last_message_direction,
       channel:channels!inner(type),
-      customer:customers(first_name, last_name)
+      customer:customers(first_name, last_name),
+      tag_assignments:conversation_tag_assignments(tag:conversation_tags(id, name, color, tenant_id))
     `,
     )
     .eq('tenant_id', tenantId)
@@ -109,7 +110,9 @@ export async function listConversations(
       | { first_name: string; last_name: string }
       | { first_name: string; last_name: string }[]
       | null
+    tag_assignments: Array<{ tag: JoinedTag | JoinedTag[] | null }> | null
   }
+  type JoinedTag = { id: string; name: string; color: string; tenant_id: string }
 
   const raw = data as unknown as Joined[]
   const hasMore = raw.length > limit
@@ -119,6 +122,14 @@ export async function listConversations(
   const rows = slice.map((row) => {
     const channel = Array.isArray(row.channel) ? row.channel[0] : row.channel
     const customer = Array.isArray(row.customer) ? row.customer[0] : row.customer
+    // Tags embebidas en la misma query (antes era un 2do hop con .in(ids)).
+    // Mismo doble check de tenant que getTagsForConversationIds.
+    const tags: ConversationTag[] = []
+    for (const a of row.tag_assignments ?? []) {
+      const tag = Array.isArray(a.tag) ? a.tag[0] : a.tag
+      if (!tag || tag.tenant_id !== tenantId) continue
+      tags.push({ id: tag.id, name: tag.name, color: tag.color })
+    }
     return {
       id: row.id,
       channel_id: row.channel_id,
@@ -130,20 +141,9 @@ export async function listConversations(
       unread_count: row.unread_count,
       preview: row.last_message_preview,
       preview_direction: row.last_message_direction,
-      tags: [] as ConversationTag[],
+      tags,
     }
   })
-
-  // Batch-fetch de tags para todas las conversaciones (una sola query, sin N+1)
-  if (rows.length > 0) {
-    const tagsMap = await getTagsForConversationIds(
-      tenantId,
-      rows.map((r) => r.id),
-    )
-    for (const row of rows) {
-      row.tags = tagsMap.get(row.id) ?? []
-    }
-  }
 
   return { rows, hasMore }
 }
@@ -251,18 +251,23 @@ export async function listMessages(
   )
   if (withMedia.length > 0) {
     const service = createServiceClient()
-    await Promise.all(
-      withMedia.map(async (row) => {
-        const env = row.media as Record<string, unknown>
-        const storagePath = env.storage_path as string
-        const { data: signed } = await service.storage
-          .from('message-media')
-          .createSignedUrl(storagePath, 3600)
-        row.media_url = signed?.signedUrl ?? null
-        row.media_type = (env.type as string | undefined) ?? null
-        row.media_mime = (env.mime as string | undefined) ?? null
-      }),
+    // Una sola llamada batch a Storage en vez de N createSignedUrl en paralelo.
+    const paths = withMedia.map(
+      (row) => (row.media as Record<string, unknown>).storage_path as string,
     )
+    const { data: signed } = await service.storage
+      .from('message-media')
+      .createSignedUrls(paths, 3600)
+    const urlByPath = new Map<string, string>()
+    for (const item of signed ?? []) {
+      if (item.path && item.signedUrl && !item.error) urlByPath.set(item.path, item.signedUrl)
+    }
+    for (const row of withMedia) {
+      const env = row.media as Record<string, unknown>
+      row.media_url = urlByPath.get(env.storage_path as string) ?? null
+      row.media_type = (env.type as string | undefined) ?? null
+      row.media_mime = (env.mime as string | undefined) ?? null
+    }
   }
 
   return rows

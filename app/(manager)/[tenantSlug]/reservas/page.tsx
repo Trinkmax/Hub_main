@@ -89,7 +89,12 @@ export default async function ReservasPage({
   const pageSize = rangeMode ? PAGE_SIZE_RANGE : PAGE_SIZE_DAY
   const page = Math.max(1, Number(sp.page ?? 1) || 1)
 
-  const [{ rows, total }, managers] = await Promise.all([
+  const nuevaId = typeof sp.nueva === 'string' ? sp.nueva : undefined
+
+  // Todo lo que depende solo de los searchParams sale en un único round-trip:
+  // el contador de cubiertos y la reserva "nueva" no necesitan el listado,
+  // así que esperarlas después sumaba 1–2 hops secuenciales a Supabase.
+  const [{ rows, total }, managers, dayBuckets, rangeTotals, nuevaPuntual] = await Promise.all([
     listSalonReservations({
       tenantId: access.tenant.id,
       q,
@@ -104,44 +109,41 @@ export default async function ReservasPage({
       sort: rangeMode ? 'asc' : 'desc',
     }),
     listManagers({ tenantId: access.tenant.id, onlyActive: true }),
+    // Contador de cubiertos: en modo día contra el tope del salón, en modo rango
+    // el volumen del período (el tope no significa nada sumando días).
+    day ? getDayCapacitySnapshot({ tenantId: access.tenant.id, date: day }) : null,
+    !day && (dateFrom || dateTo)
+      ? getRangeReservationTotals({
+          tenantId: access.tenant.id,
+          from: dateFrom ?? dateTo ?? today,
+          to: dateTo ?? dateFrom ?? today,
+        })
+      : null,
+    // Reserva recién creada: venimos redirigidos a SU día con ?nueva=<id>. Es la
+    // otra mitad del "cargo una reserva y no la veo" — antes la lista quedaba
+    // clavada en hoy y la reserva del 31/07 no aparecía por ningún lado.
+    // Se pide puntual en paralelo (aunque suela venir en la página cargada) para
+    // no pagar un hop extra justo el día más cargado del mes o con un filtro
+    // activo que la deja afuera: si no, ese es el único caso sin aviso.
+    nuevaId ? getSalonReservation({ tenantId: access.tenant.id, id: nuevaId }) : null,
   ])
 
-  // Contador de cubiertos: en modo día contra el tope del salón, en modo rango
-  // el volumen del período (el tope no significa nada sumando días).
   let dayCapacity: { used: number; total: number } | null = null
-  let rangeTotals: { reservations: number; guests: number } | null = null
-  if (day) {
-    const buckets = await getDayCapacitySnapshot({ tenantId: access.tenant.id, date: day })
-    const pa = buckets.find((b) => b.bucket === 'zone:planta_alta')
-    const pb = buckets.find((b) => b.bucket === 'zone:planta_baja')
+  if (dayBuckets) {
+    const pa = dayBuckets.find((b) => b.bucket === 'zone:planta_alta')
+    const pb = dayBuckets.find((b) => b.bucket === 'zone:planta_baja')
     dayCapacity = {
       used: (pa?.used ?? 0) + (pb?.used ?? 0),
       total: (pa?.capacity ?? 0) + (pb?.capacity ?? 0),
     }
-  } else if (dateFrom || dateTo) {
-    rangeTotals = await getRangeReservationTotals({
-      tenantId: access.tenant.id,
-      from: dateFrom ?? dateTo ?? today,
-      to: dateTo ?? dateFrom ?? today,
-    })
   }
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const hasFilters = Boolean(q || status || zone || managerId)
 
-  // Reserva recién creada: venimos redirigidos a SU día con ?nueva=<id>. Es la
-  // otra mitad del "cargo una reserva y no la veo" — antes la lista quedaba
-  // clavada en hoy y la reserva del 31/07 no aparecía por ningún lado.
-  // La busca primero en la página cargada, y si no está (día con más reservas
-  // que el page size, o filtro activo que la deja afuera) la pide puntual: si no,
-  // justo el día más cargado del mes es el único en el que el aviso no aparece.
-  const nuevaId = typeof sp.nueva === 'string' ? sp.nueva : undefined
+  // Prioriza la fila de la página cargada (misma referencia que resalta la tabla).
   const nuevaEnPagina = nuevaId ? rows.find((r) => r.id === nuevaId) : undefined
-  const nueva =
-    nuevaEnPagina ??
-    (nuevaId
-      ? ((await getSalonReservation({ tenantId: access.tenant.id, id: nuevaId })) ?? undefined)
-      : undefined)
+  const nueva = nuevaEnPagina ?? nuevaPuntual ?? undefined
   const dismissNuevaQs = new URLSearchParams()
   for (const [key, value] of Object.entries(sp)) {
     if (key === 'nueva') continue

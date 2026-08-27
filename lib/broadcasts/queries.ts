@@ -31,23 +31,27 @@ export async function listBroadcasts(tenantId: string): Promise<BroadcastListRow
 
 export async function getBroadcastDetail(tenantId: string, id: string) {
   const supabase = await createClient()
-  const { data: broadcast } = await supabase
-    .from('broadcasts')
-    .select(
-      'id, name, status, scheduled_at, started_at, completed_at, stats, channel:channels(display_name, type), template:message_templates(name, language), audience:audiences(name, customer_count_cached)',
-    )
-    .eq('id', id)
-    .eq('tenant_id', tenantId)
-    .maybeSingle()
+  // Los destinatarios solo dependen del id (no del row de broadcast): van en
+  // paralelo. 2 hops secuenciales → 1.
+  const [{ data: broadcast }, { data: recipients }] = await Promise.all([
+    supabase
+      .from('broadcasts')
+      .select(
+        'id, name, status, scheduled_at, started_at, completed_at, stats, channel:channels(display_name, type), template:message_templates(name, language), audience:audiences(name, customer_count_cached)',
+      )
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .maybeSingle(),
+    supabase
+      .from('broadcast_recipients')
+      .select(
+        'id, status, sent_at, delivered_at, read_at, replied_at, error, customer:customers(first_name, last_name, phone)',
+      )
+      .eq('broadcast_id', id)
+      .order('sent_at', { ascending: false, nullsFirst: false })
+      .limit(200),
+  ])
   if (!broadcast) return null
-  const { data: recipients } = await supabase
-    .from('broadcast_recipients')
-    .select(
-      'id, status, sent_at, delivered_at, read_at, replied_at, error, customer:customers(first_name, last_name, phone)',
-    )
-    .eq('broadcast_id', id)
-    .order('sent_at', { ascending: false, nullsFirst: false })
-    .limit(200)
   return {
     broadcast,
     recipients: (recipients ?? []) as Array<{

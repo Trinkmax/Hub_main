@@ -24,9 +24,11 @@ export type TagActionState = { ok: true } | { ok: false; message: string }
 
 async function authorizeOwnerCashier(slug: string) {
   try {
-    const { tenant, role } = await requireTenantAccess(slug)
+    // Devolvemos también el user: requireTenantAccess ya lo resolvió, así
+    // createTag no paga otro hop a Auth (`getUser`) solo para el audit log.
+    const { tenant, role, user } = await requireTenantAccess(slug)
     requireRole(role, ['owner', 'cashier'])
-    return tenant
+    return { tenant, user }
   } catch (error) {
     if (
       error instanceof RoleRequiredError ||
@@ -40,8 +42,9 @@ async function authorizeOwnerCashier(slug: string) {
 }
 
 export async function createTag(slug: string, formData: FormData): Promise<TagActionState> {
-  const tenant = await authorizeOwnerCashier(slug)
-  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+  const access = await authorizeOwnerCashier(slug)
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+  const { tenant, user } = access
 
   const parsed = createTagSchema.safeParse({
     name: formData.get('name'),
@@ -52,7 +55,6 @@ export async function createTag(slug: string, formData: FormData): Promise<TagAc
   }
 
   const supabase = await createClient()
-  const { data: user } = await supabase.auth.getUser()
   const { error } = await supabase
     .from('customer_tags')
     .insert({ tenant_id: tenant.id, name: parsed.data.name, color: parsed.data.color })
@@ -65,7 +67,7 @@ export async function createTag(slug: string, formData: FormData): Promise<TagAc
 
   await logAudit({
     tenantId: tenant.id,
-    userId: user.user?.id ?? null,
+    userId: user.id,
     action: 'tag.created',
     entity: 'customer_tag',
     payload: { name: parsed.data.name },
@@ -76,8 +78,9 @@ export async function createTag(slug: string, formData: FormData): Promise<TagAc
 }
 
 export async function deleteTag(slug: string, tagId: string): Promise<TagActionState> {
-  const tenant = await authorizeOwnerCashier(slug)
-  if (!tenant) return { ok: false, message: 'No tenés permiso.' }
+  const access = await authorizeOwnerCashier(slug)
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+  const { tenant } = access
 
   const idParsed = z.string().uuid().safeParse(tagId)
   if (!idParsed.success) return { ok: false, message: 'ID inválido.' }

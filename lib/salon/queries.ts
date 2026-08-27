@@ -84,6 +84,8 @@ export type ReservationFilters = {
   zone?: ReservationWithJoins['zone']
   status?: SalonReservationStatus | SalonReservationStatus[]
   managerId?: string
+  /** Solo las reservas colgadas de este evento programado. */
+  scheduledEventId?: string
   q?: string // busca en guest_name
   page?: number
   pageSize?: number
@@ -123,6 +125,7 @@ export async function listSalonReservations(
   if (opts.managerId) {
     q = q.or(`primary_manager_id.eq.${opts.managerId},assistant_manager_id.eq.${opts.managerId}`)
   }
+  if (opts.scheduledEventId) q = q.eq('scheduled_event_id', opts.scheduledEventId)
   if (opts.q && opts.q.trim().length >= 2) {
     const safe = opts.q.trim().replace(/[%,]/g, '')
     q = q.ilike('guest_name', `%${safe}%`)
@@ -700,33 +703,42 @@ export async function buildCommissionInputForReservation(opts: {
   const primary = normalizeJoin(r.primary as { commission_eligible: boolean } | null)
   const assistant = normalizeJoin(r.assistant as { commission_eligible: boolean } | null)
 
-  const tiers = await listRateTiers({ tenantId: opts.tenantId })
-  const bonus = await getBonusRule({ tenantId: opts.tenantId })
+  // Tarifas, bonus, evento y ocupación solo dependen de la reserva ya leída:
+  // eran 4 hops secuenciales (tiers → bonus → evento → uso), ahora viajan juntos.
+  const scheduledEventId = (r.scheduled_event_id as string | null) ?? null
+  const [tiers, bonus, evResult, usageResult] = await Promise.all([
+    listRateTiers({ tenantId: opts.tenantId }),
+    getBonusRule({ tenantId: opts.tenantId }),
+    scheduledEventId
+      ? supabase
+          .from('scheduled_events')
+          .select('capacity, full_bonus_active')
+          .eq('id', scheduledEventId)
+          .maybeSingle()
+      : null,
+    scheduledEventId
+      ? supabase
+          .from('salon_reservations')
+          .select('estimated_guests, actual_guests')
+          .eq('scheduled_event_id', scheduledEventId)
+          .not('status', 'in', '(cancelled,no_show)')
+      : null,
+  ])
 
   let scheduledEvent: CommissionInputForEngine['scheduledEvent'] = null
-  if (r.scheduled_event_id) {
-    const { data: ev } = await supabase
-      .from('scheduled_events')
-      .select('capacity, full_bonus_active')
-      .eq('id', r.scheduled_event_id as string)
-      .maybeSingle()
-    if (ev) {
-      const { data: usage } = await supabase
-        .from('salon_reservations')
-        .select('estimated_guests, actual_guests')
-        .eq('scheduled_event_id', r.scheduled_event_id as string)
-        .not('status', 'in', '(cancelled,no_show)')
-      const total = (usage ?? []).reduce(
-        (acc: number, x: Record<string, unknown>) =>
-          acc + Number((x.actual_guests as number) ?? (x.estimated_guests as number) ?? 0),
-        0,
-      )
-      const e = ev as Record<string, unknown>
-      scheduledEvent = {
-        capacity: Number(e.capacity ?? 0),
-        total_used: total,
-        full_bonus_active: Boolean(e.full_bonus_active),
-      }
+  const ev = evResult?.data ?? null
+  if (ev) {
+    const usage = usageResult?.data ?? []
+    const total = (usage as Array<Record<string, unknown>>).reduce(
+      (acc: number, x: Record<string, unknown>) =>
+        acc + Number((x.actual_guests as number) ?? (x.estimated_guests as number) ?? 0),
+      0,
+    )
+    const e = ev as Record<string, unknown>
+    scheduledEvent = {
+      capacity: Number(e.capacity ?? 0),
+      total_used: total,
+      full_bonus_active: Boolean(e.full_bonus_active),
     }
   }
 

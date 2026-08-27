@@ -31,14 +31,20 @@ export default async function SessionDetailPage({
 
   if (!['waiter', 'owner', 'cashier'].includes(role)) notFound()
 
-  const session = await getSessionForWaiter(sessionId)
-  if (!session) notFound()
+  // Sesión, tickets y flag de cocina son independientes entre sí: van en
+  // paralelo. Los ítems dependen de los tickets, así que se encadenan a esa
+  // promesa sin esperar al resto (5 hops secuenciales → 2 en el camino crítico).
+  const ticketsWithItems = listTicketsForSession(sessionId).then(async (tickets) => ({
+    tickets,
+    items: await listTicketItemsForTickets(tickets.map((t) => t.id)),
+  }))
 
-  const [tickets, kitchenFlowEnabled] = await Promise.all([
-    listTicketsForSession(sessionId),
+  const [session, { tickets, items }, kitchenFlowEnabled] = await Promise.all([
+    getSessionForWaiter(sessionId),
+    ticketsWithItems,
     getKitchenFlowEnabled(tenantId),
   ])
-  const items = await listTicketItemsForTickets(tickets.map((t) => t.id))
+  if (!session) notFound()
 
   return (
     <div className="space-y-6">

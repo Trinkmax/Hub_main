@@ -22,29 +22,30 @@ export type WaiterSessionDetail = {
 export async function getSessionForWaiter(sessionId: string): Promise<WaiterSessionDetail | null> {
   const supabase = await createClient()
   // party_size y alias se agregan en migraciones 20260527/20260528 — cast hasta regenerar types.
-  const { data: session } = await supabase
-    .from('table_sessions')
-    .select(
-      'id, status, opened_at, paid_at, total_cents, party_size, alias, physical_tables(label)',
-    )
-    .eq('id', sessionId)
-    .maybeSingle()
+  // Las tres queries dependen solo de sessionId: van en paralelo (3 hops → 1).
+  const [{ data: session }, { data: guests }, { data: billEvent }] = await Promise.all([
+    supabase
+      .from('table_sessions')
+      .select(
+        'id, status, opened_at, paid_at, total_cents, party_size, alias, physical_tables(label)',
+      )
+      .eq('id', sessionId)
+      .maybeSingle(),
+    supabase
+      .from('session_guests')
+      .select('id, display_name, customer_id, last_activity_at')
+      .eq('session_id', sessionId)
+      .order('joined_at', { ascending: true }),
+    supabase
+      .from('table_session_events')
+      .select('id')
+      .eq('session_id', sessionId)
+      .eq('type', 'bill_requested')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
   if (!session) return null
-
-  const { data: guests } = await supabase
-    .from('session_guests')
-    .select('id, display_name, customer_id, last_activity_at')
-    .eq('session_id', sessionId)
-    .order('joined_at', { ascending: true })
-
-  const { data: billEvent } = await supabase
-    .from('table_session_events')
-    .select('id')
-    .eq('session_id', sessionId)
-    .eq('type', 'bill_requested')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
 
   type SessionWithTable = typeof session & {
     party_size: number | null
@@ -145,12 +146,22 @@ export type SalonTableRow = {
 export async function listSalonTables(tenantId: string): Promise<SalonTableRow[]> {
   const supabase = await createClient()
 
-  const { data: tables, error: tablesErr } = await supabase
-    .from('physical_tables')
-    .select('id, label, capacity')
-    .eq('tenant_id', tenantId)
-    .eq('active', true)
-    .order('label', { ascending: true })
+  // Mesas y sesiones abiertas del tenant en paralelo (2 hops → 1): en vez de
+  // `.in(tableIds)` filtramos en JS contra las mesas activas, mismo resultado.
+  // party_size y alias se agregan en migraciones 20260527/20260528 — cast hasta regenerar.
+  const [{ data: tables, error: tablesErr }, { data: rawSessions }] = await Promise.all([
+    supabase
+      .from('physical_tables')
+      .select('id, label, capacity')
+      .eq('tenant_id', tenantId)
+      .eq('active', true)
+      .order('label', { ascending: true }),
+    supabase
+      .from('table_sessions')
+      .select('id, physical_table_id, opened_at, total_cents, party_size, alias')
+      .eq('tenant_id', tenantId)
+      .eq('status', 'open'),
+  ])
 
   if (tablesErr || !tables) {
     console.error('[sessions-waiter.listSalonTables]', tablesErr?.message)
@@ -159,14 +170,7 @@ export async function listSalonTables(tenantId: string): Promise<SalonTableRow[]
 
   const tableIds = tables.map((t) => t.id)
   if (tableIds.length === 0) return []
-
-  // party_size y alias se agregan en migraciones 20260527/20260528 — cast hasta regenerar.
-  const { data: rawSessions } = await supabase
-    .from('table_sessions')
-    .select('id, physical_table_id, opened_at, total_cents, party_size, alias')
-    .eq('tenant_id', tenantId)
-    .eq('status', 'open')
-    .in('physical_table_id', tableIds)
+  const tableIdSet = new Set(tableIds)
 
   type SessionRow = {
     id: string
@@ -177,7 +181,7 @@ export async function listSalonTables(tenantId: string): Promise<SalonTableRow[]
     alias: string | null
   }
   const sessions = ((rawSessions ?? []) as unknown as SessionRow[]).filter(
-    (s) => s.physical_table_id !== null,
+    (s) => s.physical_table_id !== null && tableIdSet.has(s.physical_table_id),
   )
   const sessionsByTable = new Map<string, SessionRow>()
   for (const s of sessions) {
@@ -277,27 +281,24 @@ export async function listSalonTables(tenantId: string): Promise<SalonTableRow[]
 
 export async function getCobroBreakdown(sessionId: string): Promise<CobroBreakdown | null> {
   const supabase = await createClient()
-  const { data: session } = await supabase
-    .from('table_sessions')
-    .select('id, total_cents')
-    .eq('id', sessionId)
-    .maybeSingle()
+  // Sesión, comensales e ítems dependen solo de sessionId: en paralelo (3 hops → 1).
+  const [{ data: session }, { data: guests }, { data: items }] = await Promise.all([
+    supabase.from('table_sessions').select('id, total_cents').eq('id', sessionId).maybeSingle(),
+    supabase
+      .from('session_guests')
+      .select('id, display_name, customer_id')
+      .eq('session_id', sessionId)
+      .order('joined_at', { ascending: true }),
+    supabase
+      .from('ticket_items')
+      .select(
+        'quantity, line_total_cents, assigned_to_guest_id, cancelled_at, menu_items(name), tickets!inner(session_id, status)',
+      )
+      .eq('tickets.session_id', sessionId)
+      .neq('tickets.status', 'cancelled')
+      .is('cancelled_at', null),
+  ])
   if (!session) return null
-
-  const { data: guests } = await supabase
-    .from('session_guests')
-    .select('id, display_name, customer_id')
-    .eq('session_id', sessionId)
-    .order('joined_at', { ascending: true })
-
-  const { data: items } = await supabase
-    .from('ticket_items')
-    .select(
-      'quantity, line_total_cents, assigned_to_guest_id, cancelled_at, menu_items(name), tickets!inner(session_id, status)',
-    )
-    .eq('tickets.session_id', sessionId)
-    .neq('tickets.status', 'cancelled')
-    .is('cancelled_at', null)
 
   type Joined = {
     quantity: number

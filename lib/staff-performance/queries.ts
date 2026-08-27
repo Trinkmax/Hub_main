@@ -83,38 +83,27 @@ export async function getStaffSummaries(
   const supabase = await createClient()
   const { fromIso, toIso } = toIsoBounds(range)
 
-  const { data: sessions, error: sErr } = await supabase
-    .from('table_sessions')
-    .select('id, party_size, total_cents')
-    .eq('tenant_id', tenantId)
-    .eq('status', 'paid')
-    .gte('paid_at', fromIso)
-    .lte('paid_at', toIso)
+  // Un solo hop: antes eran sesiones → (eventos + tickets + ítems) en 2 rondas.
+  // Embebemos las tres relaciones bajo table_sessions y filtramos ítems/tickets
+  // cancelados en memoria (mismo criterio que tenían los filtros server-side).
+  // resolveMembers no depende de las sesiones, así que corre en paralelo.
+  const [{ data: sessions, error: sErr }, members] = await Promise.all([
+    supabase
+      .from('table_sessions')
+      .select(
+        'id, party_size, total_cents, table_session_events(session_id, created_by_user_id), tickets(id, session_id, created_by_user_id, status, ticket_items(quantity, cancelled_at))',
+      )
+      .eq('tenant_id', tenantId)
+      .eq('status', 'paid')
+      .gte('paid_at', fromIso)
+      .lte('paid_at', toIso),
+    resolveMembers(tenantId),
+  ])
 
   if (sErr || !sessions || sessions.length === 0) {
     if (sErr) console.error('[staff-performance.sessions]', sErr.message)
     return []
   }
-
-  const sessionIds = sessions.map((s) => s.id)
-
-  const [eventsRes, ticketsRes, itemsRes, members] = await Promise.all([
-    supabase
-      .from('table_session_events')
-      .select('session_id, created_by_user_id')
-      .in('session_id', sessionIds),
-    supabase
-      .from('tickets')
-      .select('id, session_id, created_by_user_id, status')
-      .in('session_id', sessionIds),
-    supabase
-      .from('ticket_items')
-      .select('quantity, cancelled_at, ticket_id, tickets!inner(session_id, status)')
-      .in('tickets.session_id', sessionIds)
-      .is('cancelled_at', null)
-      .neq('tickets.status', 'cancelled'),
-    resolveMembers(tenantId),
-  ])
 
   type EventRow = { session_id: string; created_by_user_id: string | null }
   type TicketRow = {
@@ -122,43 +111,28 @@ export async function getStaffSummaries(
     session_id: string
     created_by_user_id: string | null
     status: string
+    ticket_items: Array<{ quantity: number; cancelled_at: string | null }> | null
   }
-  type ItemRow = {
-    quantity: number
-    cancelled_at: string | null
-    ticket_id: string
-    tickets: { session_id: string; status: string } | { session_id: string; status: string }[]
-  }
-
-  const eventsBySession = new Map<string, EventRow[]>()
-  for (const e of (eventsRes.data ?? []) as EventRow[]) {
-    const arr = eventsBySession.get(e.session_id) ?? []
-    arr.push(e)
-    eventsBySession.set(e.session_id, arr)
-  }
-
-  const ticketsBySession = new Map<string, TicketRow[]>()
-  for (const t of (ticketsRes.data ?? []) as TicketRow[]) {
-    const arr = ticketsBySession.get(t.session_id) ?? []
-    arr.push(t)
-    ticketsBySession.set(t.session_id, arr)
-  }
-
-  const itemsBySession = new Map<string, number>()
-  for (const raw of (itemsRes.data ?? []) as unknown as ItemRow[]) {
-    const tk = Array.isArray(raw.tickets) ? raw.tickets[0] : raw.tickets
-    if (!tk) continue
-    itemsBySession.set(tk.session_id, (itemsBySession.get(tk.session_id) ?? 0) + raw.quantity)
+  type SessionRow = {
+    id: string
+    party_size: number | null
+    total_cents: number | null
+    table_session_events: EventRow[] | null
+    tickets: TicketRow[] | null
   }
 
   const acc = new Map<string, StaffAccumulator>()
-  for (const s of sessions) {
-    const events = (eventsBySession.get(s.id) ?? []) as WithStaffUser[]
-    const tickets = (ticketsBySession.get(s.id) ?? []).filter(
-      (t) => t.status !== 'cancelled',
-    ) as WithStaffUser[]
-    const staff = staffForSession(events, tickets)
-    accumulateSession(acc, staff, s.party_size, s.total_cents ?? 0, itemsBySession.get(s.id) ?? 0)
+  for (const s of sessions as unknown as SessionRow[]) {
+    const events = (s.table_session_events ?? []) as WithStaffUser[]
+    const liveTickets = (s.tickets ?? []).filter((t) => t.status !== 'cancelled')
+    const staff = staffForSession(events, liveTickets as WithStaffUser[])
+    let items = 0
+    for (const t of liveTickets) {
+      for (const it of t.ticket_items ?? []) {
+        if (it.cancelled_at === null) items += it.quantity
+      }
+    }
+    accumulateSession(acc, staff, s.party_size, s.total_cents ?? 0, items)
   }
 
   const rows: StaffSummaryRow[] = []
@@ -189,9 +163,13 @@ export async function listStaffSessions(
   const supabase = await createClient()
   const { fromIso, toIso } = toIsoBounds(range)
 
+  // Un solo hop: eventos y tickets vienen embebidos en vez de una segunda
+  // ronda con .in(sessionIds).
   const { data: sessions } = await supabase
     .from('table_sessions')
-    .select('id, opened_at, paid_at, party_size, alias, total_cents, physical_tables(label)')
+    .select(
+      'id, opened_at, paid_at, party_size, alias, total_cents, physical_tables(label), table_session_events(session_id, created_by_user_id), tickets(session_id, created_by_user_id, status)',
+    )
     .eq('tenant_id', tenantId)
     .eq('status', 'paid')
     .gte('paid_at', fromIso)
@@ -199,44 +177,29 @@ export async function listStaffSessions(
     .order('paid_at', { ascending: false })
 
   if (!sessions || sessions.length === 0) return []
-  const sessionIds = sessions.map((s) => s.id)
-
-  const [eventsRes, ticketsRes] = await Promise.all([
-    supabase
-      .from('table_session_events')
-      .select('session_id, created_by_user_id')
-      .in('session_id', sessionIds),
-    supabase
-      .from('tickets')
-      .select('session_id, created_by_user_id, status')
-      .in('session_id', sessionIds),
-  ])
-
-  const staffBySession = new Map<string, Set<string>>()
-  for (const e of (eventsRes.data ?? []) as Array<{
-    session_id: string
-    created_by_user_id: string | null
-  }>) {
-    if (!e.created_by_user_id) continue
-    const set = staffBySession.get(e.session_id) ?? new Set()
-    set.add(e.created_by_user_id)
-    staffBySession.set(e.session_id, set)
-  }
-  for (const t of (ticketsRes.data ?? []) as Array<{
-    session_id: string
-    created_by_user_id: string | null
-    status: string
-  }>) {
-    if (!t.created_by_user_id || t.status === 'cancelled') continue
-    const set = staffBySession.get(t.session_id) ?? new Set()
-    set.add(t.created_by_user_id)
-    staffBySession.set(t.session_id, set)
-  }
 
   type Row = (typeof sessions)[number] & {
     alias: string | null
     party_size: number | null
     physical_tables: { label: string } | { label: string }[] | null
+    table_session_events: Array<{ session_id: string; created_by_user_id: string | null }> | null
+    tickets: Array<{ session_id: string; created_by_user_id: string | null; status: string }> | null
+  }
+
+  const staffBySession = new Map<string, Set<string>>()
+  for (const s of sessions as unknown as Row[]) {
+    for (const e of s.table_session_events ?? []) {
+      if (!e.created_by_user_id) continue
+      const set = staffBySession.get(s.id) ?? new Set()
+      set.add(e.created_by_user_id)
+      staffBySession.set(s.id, set)
+    }
+    for (const t of s.tickets ?? []) {
+      if (!t.created_by_user_id || t.status === 'cancelled') continue
+      const set = staffBySession.get(s.id) ?? new Set()
+      set.add(t.created_by_user_id)
+      staffBySession.set(s.id, set)
+    }
   }
 
   return sessions
@@ -267,14 +230,14 @@ export async function listStaffSessions(
 export async function getStaffSessionDetail(sessionId: string): Promise<StaffSessionDetail | null> {
   const supabase = await createClient()
 
-  const { data: session } = await supabase
-    .from('table_sessions')
-    .select('id, opened_at, paid_at, party_size, alias, total_cents, physical_tables(label)')
-    .eq('id', sessionId)
-    .maybeSingle()
-  if (!session) return null
-
-  const [eventsRes, ticketsRes, itemsRes, guestsRes] = await Promise.all([
+  // Las 5 queries sólo dependen de sessionId: van todas en paralelo (1 hop en
+  // vez de 2). Si la sesión no existe descartamos el resto igual que antes.
+  const [{ data: session }, eventsRes, ticketsRes, itemsRes, guestsRes] = await Promise.all([
+    supabase
+      .from('table_sessions')
+      .select('id, opened_at, paid_at, party_size, alias, total_cents, physical_tables(label)')
+      .eq('id', sessionId)
+      .maybeSingle(),
     supabase.from('table_session_events').select('created_by_user_id').eq('session_id', sessionId),
     supabase.from('tickets').select('id, created_by_user_id, status').eq('session_id', sessionId),
     supabase
@@ -291,6 +254,7 @@ export async function getStaffSessionDetail(sessionId: string): Promise<StaffSes
       .eq('session_id', sessionId)
       .not('customer_id', 'is', null),
   ])
+  if (!session) return null
 
   const events = ((eventsRes.data ?? []) as Array<{ created_by_user_id: string | null }>).map(
     (e) => ({ created_by_user_id: e.created_by_user_id }),

@@ -123,8 +123,12 @@ export default async function CanalesPage({
     throw error
   }
 
-  const configured = await isMetaConfigured()
-  const channels = await getChannelsForTenant(access.tenant.id)
+  // La config de Meta (platform_meta_config, cacheada) y los canales del
+  // tenant son independientes: en paralelo, 2 hops → 1.
+  const [configured, channels] = await Promise.all([
+    isMetaConfigured(),
+    getChannelsForTenant(access.tenant.id),
+  ])
   const wa = channels.find((c) => c.type === 'whatsapp')
   const ig = channels.find((c) => c.type === 'instagram')
   const now = new Date()

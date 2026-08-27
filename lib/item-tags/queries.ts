@@ -22,14 +22,22 @@ export type ItemTagRow = {
 }
 
 // Lista todos los tags del tenant + cuántos ítems los tienen asignados.
-// Se hace en dos pasos (tags + grouped count) para evitar joins complicados.
+// Se hace en dos queries (tags + assignments) pero EN PARALELO: el conteo se
+// filtra por tenant vía el embed !inner de item_tags, así no depende de tener
+// los tag_ids primero. 2 hops secuenciales → 1.
 export async function listItemTags(tenantId: string): Promise<ItemTagRow[]> {
   const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('item_tags')
-    .select('id, name, color, created_at')
-    .eq('tenant_id', tenantId)
-    .order('name', { ascending: true })
+  const [{ data, error }, { data: assignments, error: assignErr }] = await Promise.all([
+    supabase
+      .from('item_tags')
+      .select('id, name, color, created_at')
+      .eq('tenant_id', tenantId)
+      .order('name', { ascending: true }),
+    supabase
+      .from('menu_item_tag_assignments')
+      .select('tag_id, tag:item_tags!inner(tenant_id)')
+      .eq('tag.tenant_id', tenantId),
+  ])
   if (error) {
     console.error('[item-tags.list]', error.message)
     return []
@@ -37,15 +45,6 @@ export async function listItemTags(tenantId: string): Promise<ItemTagRow[]> {
   const tags = data ?? []
   if (tags.length === 0) return []
 
-  // Contamos assignments por tag_id. Hacemos un query simple a la tabla de
-  // join restringida a los tag_ids del tenant; RLS de menu_item_tag_assignments
-  // ya filtra por tenant pero el filtro explícito por tag_ids in (...) ayuda
-  // al planner.
-  const tagIds = tags.map((t) => t.id)
-  const { data: assignments, error: assignErr } = await supabase
-    .from('menu_item_tag_assignments')
-    .select('tag_id')
-    .in('tag_id', tagIds)
   if (assignErr) {
     console.error('[item-tags.list.counts]', assignErr.message)
     return tags.map((t) => ({ ...t, assignment_count: 0 }))
@@ -108,6 +107,39 @@ export async function getTagsByItemIds(itemIds: string[]): Promise<Map<string, I
     }
   }
   // Ordenamos cada lista por nombre para que la UI sea estable.
+  for (const list of out.values()) {
+    list.sort((a, b) => a.name.localeCompare(b.name))
+  }
+  return out
+}
+
+// Igual que getTagsByItemIds pero sin necesitar los ids: trae todas las
+// asignaciones cuyo tag pertenece al tenant. Permite disparar la query en
+// paralelo con la de menu_items (listMenu pasa de 2 hops secuenciales a 1).
+// El Map se consulta por item id, así que entradas de más no cambian nada.
+export async function getTagsByTenant(tenantId: string): Promise<Map<string, ItemTag[]>> {
+  const out = new Map<string, ItemTag[]>()
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('menu_item_tag_assignments')
+    .select('menu_item_id, tag:item_tags!inner(id, tenant_id, name, color)')
+    .eq('tag.tenant_id', tenantId)
+  if (error || !data) {
+    if (error) console.error('[item-tags.getTagsByTenant]', error.message)
+    return out
+  }
+
+  type Joined = { menu_item_id: string; tag: ItemTag | ItemTag[] | null }
+  for (const row of data as unknown as Joined[]) {
+    const t = Array.isArray(row.tag) ? row.tag[0] : row.tag
+    if (!t) continue
+    const list = out.get(row.menu_item_id)
+    if (list) {
+      list.push(t)
+    } else {
+      out.set(row.menu_item_id, [t])
+    }
+  }
   for (const list of out.values()) {
     list.sort((a, b) => a.name.localeCompare(b.name))
   }

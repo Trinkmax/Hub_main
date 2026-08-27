@@ -29,18 +29,23 @@ export default async function SalonMesasPage({
   if (!['waiter', 'owner', 'cashier'].includes(role)) notFound()
   await requireFeature(access.tenant, 'table_service')
 
-  const [tables, occupancy, liveAreas] = await Promise.all([
+  // Live data del área default para la pestaña Plano (null si el salón no tiene áreas).
+  // El live solo depende de las áreas: se encadena a listFloorAreas y corre en
+  // paralelo con mesas/ocupación en vez de esperar a todo el Promise.all.
+  // Se pasa la fila del área para que getLiveFloor no la vuelva a leer.
+  const livePromise = listFloorAreas(tenantId).then(
+    async (areas): Promise<{ areas: typeof areas; live: LiveFloorData | null }> => {
+      const defaultArea = areas[0]
+      const live = defaultArea ? await getLiveFloor(tenantId, defaultArea.id, defaultArea) : null
+      return { areas, live }
+    },
+  )
+
+  const [tables, occupancy, { areas: liveAreas, live: initialLive }] = await Promise.all([
     listSalonTables(tenantId),
     getSalonOccupancy(tenantId),
-    listFloorAreas(tenantId),
+    livePromise,
   ])
-
-  // Live data del área default para la pestaña Plano (null si el salón no tiene áreas).
-  const defaultAreaId = liveAreas[0]?.id ?? null
-  let initialLive: LiveFloorData | null = null
-  if (defaultAreaId) {
-    initialLive = await getLiveFloor(tenantId, defaultAreaId)
-  }
 
   return (
     <div className="space-y-6">

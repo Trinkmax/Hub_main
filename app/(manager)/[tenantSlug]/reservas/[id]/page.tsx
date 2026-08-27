@@ -43,26 +43,32 @@ export default async function ReservaDetailPage({
     throw e
   }
 
-  const reservation = await getSalonReservation({ tenantId: access.tenant.id, id })
-  if (!reservation) notFound()
-
   const user = await getCurrentUser()
 
-  const [managers, templates, eventsForDate, tiers, bonus, linkedManager] = await Promise.all([
-    listManagers({ tenantId: access.tenant.id, onlyActive: true }),
-    listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: true }),
-    listScheduledEventsForDate({
-      tenantId: access.tenant.id,
-      date: reservation.reservation_date,
-    }),
-    listRateTiers({ tenantId: access.tenant.id }),
-    getBonusRule({ tenantId: access.tenant.id }),
-    // Solo para marcar "Vos" en el combo de gestores; en edit el default lo
-    // manda la reserva guardada.
-    user
-      ? getManagerForUser({ tenantId: access.tenant.id, userId: user.id })
-      : Promise.resolve(null),
-  ])
+  // La reserva se pide en paralelo con los catálogos (no dependen de ella);
+  // solo los eventos del día se encadenan a su fecha. Antes eran 2 hops
+  // secuenciales (reserva → todo lo demás); ahora el camino crítico es
+  // reserva → eventos y el resto viaja junto.
+  const reservationPromise = getSalonReservation({ tenantId: access.tenant.id, id })
+  const [reservation, managers, templates, eventsForDate, tiers, bonus, linkedManager] =
+    await Promise.all([
+      reservationPromise,
+      listManagers({ tenantId: access.tenant.id, onlyActive: true }),
+      listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: true }),
+      reservationPromise.then((r) =>
+        r
+          ? listScheduledEventsForDate({ tenantId: access.tenant.id, date: r.reservation_date })
+          : [],
+      ),
+      listRateTiers({ tenantId: access.tenant.id }),
+      getBonusRule({ tenantId: access.tenant.id }),
+      // Solo para marcar "Vos" en el combo de gestores; en edit el default lo
+      // manda la reserva guardada.
+      user
+        ? getManagerForUser({ tenantId: access.tenant.id, userId: user.id })
+        : Promise.resolve(null),
+    ])
+  if (!reservation) notFound()
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">

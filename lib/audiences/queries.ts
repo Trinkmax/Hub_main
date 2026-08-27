@@ -7,13 +7,17 @@ export type AudienceListRow = {
   customer_count_cached: number
   last_calculated_at: string | null
   updated_at: string
+  /** Condiciones crudas (JSON). Van en el listado para resumirlas sin N+1. */
+  filters: unknown
 }
 
 export async function listAudiences(tenantId: string): Promise<AudienceListRow[]> {
   const supabase = await createClient()
+  // `filters` viaja en el listado: antes /audiencias hacía un getAudience por
+  // fila (N+1) solo para leerlo.
   const { data, error } = await supabase
     .from('audiences')
-    .select('id, name, customer_count_cached, last_calculated_at, updated_at')
+    .select('id, name, customer_count_cached, last_calculated_at, updated_at, filters')
     .eq('tenant_id', tenantId)
     .order('updated_at', { ascending: false })
   if (error) {

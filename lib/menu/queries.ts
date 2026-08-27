@@ -1,5 +1,5 @@
 import 'server-only'
-import { getTagsByItemIds, type ItemTag } from '@/lib/item-tags/queries'
+import { getTagsByTenant, type ItemTag } from '@/lib/item-tags/queries'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 
@@ -28,51 +28,36 @@ export type MenuItem = {
   tags: ItemTag[]
 }
 
-// Columnas estables que sí tipa database.ts. Para leer `featured` (mig
-// posterior, todavía no regenerada) usamos una segunda lectura en paralelo
-// indexada por id — así evitamos cast a `any` en el .select() y la query
-// pega un solo round-trip a Postgres (Promise.all).
+// `featured` ya está tipado en database.ts: va en el mismo select y nos
+// ahorramos la segunda lectura de menu_items que había antes.
 const MENU_ITEM_COLUMNS =
-  'id, category_id, name, description, price_cents, points_override, position, active, image_url, video_url'
-
-type FeaturedRow = { id: string; featured: boolean | null }
+  'id, category_id, name, description, price_cents, points_override, position, active, image_url, video_url, featured'
 
 export async function listMenu(opts: { tenantId: string }): Promise<{
   categories: MenuCategory[]
   items: MenuItem[]
 }> {
   const supabase = await createClient()
-  const [{ data: cats, error: e1 }, { data: items, error: e2 }, { data: featuredRows, error: e3 }] =
-    await Promise.all([
-      supabase
-        .from('menu_categories')
-        .select('id, name, position, active, image_url, parent_id')
-        .eq('tenant_id', opts.tenantId)
-        .order('position', { ascending: true }),
-      supabase
-        .from('menu_items')
-        .select(MENU_ITEM_COLUMNS)
-        .eq('tenant_id', opts.tenantId)
-        .not('category_id', 'is', null)
-        .order('position', { ascending: true }),
-      // featured no está aún en database.ts → cast aditivo al row tipo FeaturedRow.
-      supabase
-        .from('menu_items')
-        .select('id, featured')
-        .eq('tenant_id', opts.tenantId)
-        .returns<FeaturedRow[]>(),
-    ])
+  // Las tags se piden por tenant (no por ids de ítem) para que salgan en el
+  // mismo Promise.all: 2 hops secuenciales → 1.
+  const [{ data: cats, error: e1 }, { data: items, error: e2 }, tagsByItem] = await Promise.all([
+    supabase
+      .from('menu_categories')
+      .select('id, name, position, active, image_url, parent_id')
+      .eq('tenant_id', opts.tenantId)
+      .order('position', { ascending: true }),
+    supabase
+      .from('menu_items')
+      .select(MENU_ITEM_COLUMNS)
+      .eq('tenant_id', opts.tenantId)
+      .not('category_id', 'is', null)
+      .order('position', { ascending: true }),
+    getTagsByTenant(opts.tenantId),
+  ])
   if (e1) throw e1
   if (e2) throw e2
-  if (e3) throw e3
 
-  const featuredById = new Map<string, boolean>()
-  for (const row of (featuredRows ?? []) as FeaturedRow[]) {
-    featuredById.set(row.id, row.featured ?? false)
-  }
-
-  const rawItems = (items ?? []) as Omit<MenuItem, 'featured' | 'tags'>[]
-  const tagsByItem = await getTagsByItemIds(rawItems.map((i) => i.id))
+  const rawItems = (items ?? []) as Omit<MenuItem, 'tags'>[]
 
   const mergedItems: MenuItem[] = rawItems.map((i) => ({
     id: i.id,
@@ -85,7 +70,7 @@ export async function listMenu(opts: { tenantId: string }): Promise<{
     active: i.active,
     image_url: i.image_url,
     video_url: i.video_url,
-    featured: featuredById.get(i.id) ?? false,
+    featured: i.featured ?? false,
     tags: tagsByItem.get(i.id) ?? [],
   }))
 
@@ -106,7 +91,9 @@ export async function listActiveMenuPublic(opts: { tenantId: string }): Promise<
   items: MenuItem[]
 }> {
   const service = createServiceClient()
-  const [{ data: cats }, { data: items }] = await Promise.all([
+  // Tags vía service (bypass RLS) filtradas por tenant del tag, así van en el
+  // mismo Promise.all que categorías e ítems: 2 hops secuenciales → 1.
+  const [{ data: cats }, { data: items }, { data: assigns }] = await Promise.all([
     service
       .from('menu_categories')
       .select('id, name, position, active, image_url, parent_id')
@@ -115,37 +102,29 @@ export async function listActiveMenuPublic(opts: { tenantId: string }): Promise<
       .order('position', { ascending: true }),
     service
       .from('menu_items')
-      .select(
-        'id, category_id, name, description, price_cents, points_override, position, active, image_url, video_url, featured',
-      )
+      .select(MENU_ITEM_COLUMNS)
       .eq('tenant_id', opts.tenantId)
       .eq('active', true)
       .not('category_id', 'is', null)
       .order('position', { ascending: true }),
+    service
+      .from('menu_item_tag_assignments')
+      .select('menu_item_id, tag:item_tags!inner(id, tenant_id, name, color)')
+      .eq('tag.tenant_id', opts.tenantId),
   ])
 
   const rawItems = (items ?? []) as Array<Omit<MenuItem, 'tags'>>
 
-  // Tags vía service (mismo client, bypass RLS) — un round-trip indexado por item.
   const tagsByItem = new Map<string, ItemTag[]>()
-  if (rawItems.length > 0) {
-    const { data: assigns } = await service
-      .from('menu_item_tag_assignments')
-      .select('menu_item_id, tag:item_tags(id, tenant_id, name, color)')
-      .in(
-        'menu_item_id',
-        rawItems.map((i) => i.id),
-      )
-    type Joined = { menu_item_id: string; tag: ItemTag | ItemTag[] | null }
-    for (const row of (assigns ?? []) as unknown as Joined[]) {
-      const t = Array.isArray(row.tag) ? row.tag[0] : row.tag
-      if (!t) continue
-      const list = tagsByItem.get(row.menu_item_id)
-      if (list) list.push(t)
-      else tagsByItem.set(row.menu_item_id, [t])
-    }
-    for (const list of tagsByItem.values()) list.sort((a, b) => a.name.localeCompare(b.name))
+  type Joined = { menu_item_id: string; tag: ItemTag | ItemTag[] | null }
+  for (const row of (assigns ?? []) as unknown as Joined[]) {
+    const t = Array.isArray(row.tag) ? row.tag[0] : row.tag
+    if (!t) continue
+    const list = tagsByItem.get(row.menu_item_id)
+    if (list) list.push(t)
+    else tagsByItem.set(row.menu_item_id, [t])
   }
+  for (const list of tagsByItem.values()) list.sort((a, b) => a.name.localeCompare(b.name))
 
   const mergedItems: MenuItem[] = rawItems.map((i) => ({
     id: i.id,
@@ -173,7 +152,8 @@ export async function listActiveMenu(opts: { tenantId: string }): Promise<{
   items: MenuItem[]
 }> {
   const supabase = await createClient()
-  const [{ data: cats }, { data: items }, { data: featuredRows }] = await Promise.all([
+  // Mismo criterio que listMenu: tags por tenant en paralelo, 2 hops → 1.
+  const [{ data: cats }, { data: items }, tagsByItem] = await Promise.all([
     supabase
       .from('menu_categories')
       .select('id, name, position, active, image_url, parent_id')
@@ -187,21 +167,10 @@ export async function listActiveMenu(opts: { tenantId: string }): Promise<{
       .eq('active', true)
       .not('category_id', 'is', null)
       .order('position', { ascending: true }),
-    supabase
-      .from('menu_items')
-      .select('id, featured')
-      .eq('tenant_id', opts.tenantId)
-      .eq('active', true)
-      .returns<FeaturedRow[]>(),
+    getTagsByTenant(opts.tenantId),
   ])
 
-  const featuredById = new Map<string, boolean>()
-  for (const row of (featuredRows ?? []) as FeaturedRow[]) {
-    featuredById.set(row.id, row.featured ?? false)
-  }
-
-  const rawItems = (items ?? []) as Omit<MenuItem, 'featured' | 'tags'>[]
-  const tagsByItem = await getTagsByItemIds(rawItems.map((i) => i.id))
+  const rawItems = (items ?? []) as Omit<MenuItem, 'tags'>[]
 
   const mergedItems: MenuItem[] = rawItems.map((i) => ({
     id: i.id,
@@ -214,7 +183,7 @@ export async function listActiveMenu(opts: { tenantId: string }): Promise<{
     active: i.active,
     image_url: i.image_url,
     video_url: i.video_url,
-    featured: featuredById.get(i.id) ?? false,
+    featured: i.featured ?? false,
     tags: tagsByItem.get(i.id) ?? [],
   }))
 

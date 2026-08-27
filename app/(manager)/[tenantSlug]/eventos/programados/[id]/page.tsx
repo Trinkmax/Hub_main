@@ -1,6 +1,7 @@
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { z } from 'zod'
 import { PageHeader } from '@/components/ui/page-header'
 import {
   getScheduledEvent,
@@ -37,18 +38,24 @@ export default async function ScheduledEventPage({
     throw e
   }
 
-  const event = await getScheduledEvent({ tenantId: access.tenant.id, id })
-  if (!event) notFound()
+  // Un id que no es UUID no puede tumbar la página: getScheduledEvent
+  // devuelve null ante error, pero listSalonReservations hace throw, y ahora
+  // corren en paralelo (antes el 404 del evento cortaba antes).
+  if (!z.string().uuid().safeParse(id).success) notFound()
 
-  const [templates, { rows: reservations }] = await Promise.all([
+  // Las reservas se filtran por `scheduled_event_id` directo en la query (antes
+  // traía todo el día y filtraba en memoria), así no dependen de la fecha del
+  // evento y los tres fetches salen en un solo round-trip en vez de dos.
+  const [event, templates, { rows: reservations }] = await Promise.all([
+    getScheduledEvent({ tenantId: access.tenant.id, id }),
     listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: true }),
     listSalonReservations({
       tenantId: access.tenant.id,
-      dateFrom: event.event_date,
-      dateTo: event.event_date,
+      scheduledEventId: id,
       pageSize: 200,
     }),
   ])
+  if (!event) notFound()
 
   const eventReservations = reservations.filter((r) => r.scheduled_event_id === event.id)
   const totalGuests = eventReservations

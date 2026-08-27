@@ -34,14 +34,10 @@ export default async function SalonConfigPage({
   }
 
   const supabase = await createClient()
+  // Las tres lecturas son independientes: un solo hop en vez de dos.
   // total_seats se agrega en la migración 20260527 — cast hasta regenerar types.
-  const { data: tenantRow } = await supabase
-    .from('tenants')
-    .select('total_seats')
-    .eq('id', access.tenant.id)
-    .maybeSingle()
-
-  const [defaults, overrides] = await Promise.all([
+  const [{ data: tenantRow }, defaults, overrides] = await Promise.all([
+    supabase.from('tenants').select('total_seats').eq('id', access.tenant.id).maybeSingle(),
     getZoneCapacityDefaults({ tenantId: access.tenant.id }),
     listZoneOverrides({ tenantId: access.tenant.id }),
   ])

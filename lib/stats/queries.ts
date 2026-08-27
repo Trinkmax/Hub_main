@@ -192,20 +192,13 @@ export type CommunicationStats = {
 
 export async function getCommunicationStats(tenantId: string): Promise<CommunicationStats> {
   const supabase = await createClient()
-  // Agregamos los recipients de todas las difusiones del tenant.
-  // En la lectura RLS pasa: broadcast_recipients vía broadcasts.tenant_id.
-  const { data: broadcasts } = await supabase
-    .from('broadcasts')
-    .select('id')
-    .eq('tenant_id', tenantId)
-  const ids = (broadcasts ?? []).map((b) => b.id)
-  if (ids.length === 0) {
-    return { total_recipients: 0, sent: 0, delivered: 0, read: 0, failed: 0, opt_outs: 0 }
-  }
+  // Antes eran 2 hops secuenciales (ids de broadcasts → recipients .in(ids)).
+  // El join !inner filtra por broadcasts.tenant_id en un solo round-trip y
+  // devuelve exactamente los mismos recipients (RLS sigue pasando por broadcasts).
   const { data: recipients } = await supabase
     .from('broadcast_recipients')
-    .select('status')
-    .in('broadcast_id', ids)
+    .select('status, broadcasts!inner(tenant_id)')
+    .eq('broadcasts.tenant_id', tenantId)
   const counts = { sent: 0, delivered: 0, read: 0, failed: 0 }
   for (const r of recipients ?? []) {
     if (r.status in counts) counts[r.status as keyof typeof counts] += 1

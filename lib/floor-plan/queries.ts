@@ -92,44 +92,50 @@ const EMPTY: FloorPlanData = { areas: [], elements: [], unplacedTables: [] }
 export async function getFloorPlan(tenantId: string): Promise<FloorPlanData> {
   const supabase = await createClient()
 
-  // 1) Áreas del tenant, orden canónico.
-  const { data: areasData, error: areasError } = await supabase
-    .from('floor_plan_areas')
-    .select('id, name, position, width, height, number_start')
-    .eq('tenant_id', tenantId)
-    .order('position', { ascending: true })
-    .order('created_at', { ascending: true })
-    .order('id', { ascending: true })
+  // Las tres queries dependen solo de tenantId: en paralelo (3 hops → 1).
+  // Los chequeos de error se mantienen en el mismo orden (areas → elements → tables).
+  const [
+    { data: areasData, error: areasError },
+    { data: elementsData, error: elementsError },
+    { data: tablesData, error: tablesError },
+  ] = await Promise.all([
+    // 1) Áreas del tenant, orden canónico.
+    supabase
+      .from('floor_plan_areas')
+      .select('id, name, position, width, height, number_start')
+      .eq('tenant_id', tenantId)
+      .order('position', { ascending: true })
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true }),
+    // 2) Elementos del tenant + join a physical_tables (solo poblado en kind='table').
+    supabase
+      .from('floor_plan_elements')
+      .select(
+        'id, area_id, kind, shape, physical_table_id, x, y, width, height, rotation, corner_radius, z_index, label, color, physical_tables(label, capacity, qr_token, active)',
+      )
+      .eq('tenant_id', tenantId)
+      .order('z_index', { ascending: true })
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true }),
+    // 3) Mesas activas sin elemento (anti-join). PostgREST no soporta NOT EXISTS
+    // declarativo, así que traemos las activas y restamos las ya ubicadas.
+    supabase
+      .from('physical_tables')
+      .select('id, label, capacity, qr_token')
+      .eq('tenant_id', tenantId)
+      .eq('active', true)
+      .order('label', { ascending: true }),
+  ])
 
   if (areasError) {
     console.error('[floor-plan.getFloorPlan] areas', areasError.message)
     return EMPTY
   }
 
-  // 2) Elementos del tenant + join a physical_tables (solo poblado en kind='table').
-  const { data: elementsData, error: elementsError } = await supabase
-    .from('floor_plan_elements')
-    .select(
-      'id, area_id, kind, shape, physical_table_id, x, y, width, height, rotation, corner_radius, z_index, label, color, physical_tables(label, capacity, qr_token, active)',
-    )
-    .eq('tenant_id', tenantId)
-    .order('z_index', { ascending: true })
-    .order('created_at', { ascending: true })
-    .order('id', { ascending: true })
-
   if (elementsError) {
     console.error('[floor-plan.getFloorPlan] elements', elementsError.message)
     return EMPTY
   }
-
-  // 3) Mesas activas sin elemento (anti-join). PostgREST no soporta NOT EXISTS
-  // declarativo, así que traemos las activas y restamos las ya ubicadas.
-  const { data: tablesData, error: tablesError } = await supabase
-    .from('physical_tables')
-    .select('id, label, capacity, qr_token')
-    .eq('tenant_id', tenantId)
-    .eq('active', true)
-    .order('label', { ascending: true })
 
   if (tablesError) {
     console.error('[floor-plan.getFloorPlan] tables', tablesError.message)
@@ -333,17 +339,49 @@ export async function listFloorAreas(tenantId: string): Promise<AreaRow[]> {
  * 5. Mapear todo a LiveTable | LiveDecor.
  *
  * RLS SELECT abierta a miembros del tenant (owner + staff). No usa service_role.
+ *
+ * `knownArea`: si el caller ya tiene la fila del área (ej. de listFloorAreas /
+ * getFloorPlan) la pasa y se ahorra el hop de re-leerla.
  */
-export async function getLiveFloor(tenantId: string, areaId: string): Promise<LiveFloorData> {
+export async function getLiveFloor(
+  tenantId: string,
+  areaId: string,
+  knownArea?: AreaRow,
+): Promise<LiveFloorData> {
   const supabase = await createClient()
 
-  // 1) Área
-  const { data: areaData, error: areaError } = await supabase
-    .from('floor_plan_areas')
-    .select('id, name, position, width, height, number_start')
-    .eq('tenant_id', tenantId)
-    .eq('id', areaId)
-    .maybeSingle()
+  // 1) Área + 2) elementos + 3) sesiones abiertas del tenant, en paralelo
+  // (3 hops secuenciales → 1). Las sesiones se filtran en JS a las mesas del
+  // área (equivale al `.in(physicalTableIds)` anterior, mismo resultado).
+  const [
+    { data: areaData, error: areaError },
+    { data: elementsData, error: elementsError },
+    { data: rawSessions },
+  ] = await Promise.all([
+    knownArea
+      ? Promise.resolve({ data: knownArea, error: null })
+      : supabase
+          .from('floor_plan_areas')
+          .select('id, name, position, width, height, number_start')
+          .eq('tenant_id', tenantId)
+          .eq('id', areaId)
+          .maybeSingle(),
+    supabase
+      .from('floor_plan_elements')
+      .select(
+        'id, area_id, kind, shape, physical_table_id, x, y, width, height, rotation, corner_radius, z_index, label, color, physical_tables(label, capacity)',
+      )
+      .eq('tenant_id', tenantId)
+      .eq('area_id', areaId)
+      .order('z_index', { ascending: true })
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true }),
+    supabase
+      .from('table_sessions')
+      .select('id, physical_table_id, status, total_cents, party_size, alias, opened_at')
+      .eq('tenant_id', tenantId)
+      .eq('status', 'open'),
+  ])
 
   if (areaError || !areaData) {
     console.error('[floor-plan.getLiveFloor] area', areaError?.message ?? 'not found')
@@ -367,18 +405,6 @@ export async function getLiveFloor(tenantId: string, areaId: string): Promise<Li
     height: areaData.height,
     number_start: areaData.number_start,
   }
-
-  // 2) Elementos del área + join a physical_tables (solo kind='table' tiene FK).
-  const { data: elementsData, error: elementsError } = await supabase
-    .from('floor_plan_elements')
-    .select(
-      'id, area_id, kind, shape, physical_table_id, x, y, width, height, rotation, corner_radius, z_index, label, color, physical_tables(label, capacity)',
-    )
-    .eq('tenant_id', tenantId)
-    .eq('area_id', areaId)
-    .order('z_index', { ascending: true })
-    .order('created_at', { ascending: true })
-    .order('id', { ascending: true })
 
   if (elementsError) {
     console.error('[floor-plan.getLiveFloor] elements', elementsError.message)
@@ -413,20 +439,13 @@ export async function getLiveFloor(tenantId: string, areaId: string): Promise<Li
     return { area, tables: [], decor }
   }
 
-  const physicalTableIds = tableElements
-    .map((el) => el.physical_table_id)
-    .filter((id): id is string => id !== null)
+  const physicalTableIds = new Set(
+    tableElements.map((el) => el.physical_table_id).filter((id): id is string => id !== null),
+  )
 
-  // 3) Sesiones OPEN por mesa (a lo sumo una por índice único parcial).
-  const { data: rawSessions } = await supabase
-    .from('table_sessions')
-    .select('id, physical_table_id, status, total_cents, party_size, alias, opened_at')
-    .eq('tenant_id', tenantId)
-    .eq('status', 'open')
-    .in('physical_table_id', physicalTableIds)
-
+  // Sesiones OPEN por mesa del área (a lo sumo una por índice único parcial).
   const sessions = ((rawSessions ?? []) as unknown as RawSessionRow[]).filter(
-    (s) => s.physical_table_id !== null,
+    (s) => s.physical_table_id !== null && physicalTableIds.has(s.physical_table_id),
   )
 
   const sessionsByTableId = new Map<string, RawSessionRow>()
@@ -615,14 +634,14 @@ export async function getItemMoveTargets(
 ): Promise<ItemMoveTarget[]> {
   const supabase = await createClient()
 
-  const { data: src } = await supabase
-    .from('table_sessions')
-    .select('physical_table_id')
-    .eq('id', sourceSessionId)
-    .maybeSingle()
-  const sourceTableId = src?.physical_table_id ?? null
-
-  const [{ data: els }, { data: tbls }, { data: open }] = await Promise.all([
+  // La sesión origen no condiciona las otras tres queries: va en el mismo
+  // Promise.all (2 hops → 1).
+  const [{ data: src }, { data: els }, { data: tbls }, { data: open }] = await Promise.all([
+    supabase
+      .from('table_sessions')
+      .select('physical_table_id')
+      .eq('id', sourceSessionId)
+      .maybeSingle(),
     supabase
       .from('floor_plan_elements')
       .select('physical_table_id, floor_plan_areas(name, position)')
@@ -639,6 +658,7 @@ export async function getItemMoveTargets(
       .eq('tenant_id', tenantId)
       .eq('status', 'open'),
   ])
+  const sourceTableId = src?.physical_table_id ?? null
 
   const openByTable = new Map<
     string,

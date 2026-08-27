@@ -121,18 +121,20 @@ export default async function TemplatesPage({
   }
 
   const supabase = await createClient()
-  const { data: channel } = await supabase
-    .from('channels')
-    .select('id, status')
-    .eq('tenant_id', access.tenant.id)
-    .eq('type', 'whatsapp')
-    .maybeSingle()
-
-  const { data: templatesRaw } = await supabase
-    .from('message_templates')
-    .select('id, name, language, category, status, last_synced_at, components')
-    .eq('tenant_id', access.tenant.id)
-    .order('name', { ascending: true })
+  // Canal y plantillas son independientes: en paralelo, 2 hops → 1.
+  const [{ data: channel }, { data: templatesRaw }] = await Promise.all([
+    supabase
+      .from('channels')
+      .select('id, status')
+      .eq('tenant_id', access.tenant.id)
+      .eq('type', 'whatsapp')
+      .maybeSingle(),
+    supabase
+      .from('message_templates')
+      .select('id, name, language, category, status, last_synced_at, components')
+      .eq('tenant_id', access.tenant.id)
+      .order('name', { ascending: true }),
+  ])
 
   const templates = (templatesRaw ?? []) as TemplateRow[]
 

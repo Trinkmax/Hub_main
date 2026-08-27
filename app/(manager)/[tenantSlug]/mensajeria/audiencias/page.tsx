@@ -7,7 +7,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
 import {
   type AudienceBuilderOptions,
-  getAudience,
+  type AudienceListRow,
   getAudienceBuilderOptions,
   listAudiences,
 } from '@/lib/audiences/queries'
@@ -39,19 +39,15 @@ export default async function AudiencesPage({
     throw error
   }
 
-  const audiences = await listAudiences(access.tenant.id)
-
   // Para resumir las condiciones en una frase necesitamos los filtros de cada
-  // grupo y los nombres de niveles/etiquetas/eventos. Los grupos por bar son
-  // pocos, así que el fan-out es chico.
-  let summaries = new Map<string, string>()
-  if (audiences.length > 0) {
-    const [options, details] = await Promise.all([
-      getAudienceBuilderOptions(access.tenant.id),
-      Promise.all(audiences.map((a) => getAudience(access.tenant.id, a.id))),
-    ])
-    summaries = buildSummaries(details, options)
-  }
+  // grupo y los nombres de niveles/etiquetas/eventos. `filters` ya viene en el
+  // listado (antes: 1 getAudience por fila = N+1) y las opciones no dependen de
+  // nada, así que todo sale en un solo hop.
+  const [audiences, options] = await Promise.all([
+    listAudiences(access.tenant.id),
+    getAudienceBuilderOptions(access.tenant.id),
+  ])
+  const summaries = buildSummaries(audiences, options)
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
@@ -125,12 +121,11 @@ export default async function AudiencesPage({
 }
 
 function buildSummaries(
-  details: Awaited<ReturnType<typeof getAudience>>[],
+  details: AudienceListRow[],
   options: AudienceBuilderOptions,
 ): Map<string, string> {
   const map = new Map<string, string>()
   for (const detail of details) {
-    if (!detail) continue
     try {
       map.set(detail.id, summarizeFilter(detail.filters as unknown as AudienceFilter, options))
     } catch {

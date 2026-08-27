@@ -294,6 +294,7 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
     { data: rulesData },
     { data: partnerBenefitsData },
     { data: partnerBenefitTiersData },
+    rev,
   ] = await Promise.all([
     service
       .from('tenants')
@@ -400,6 +401,10 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
       .eq('active', true)
       .order('sort', { ascending: true }),
     service.from('partner_benefit_tiers').select('benefit_id, tier_id').eq('tenant_id', tenantId),
+    // El pulso sólo depende del token: viaja con el resto en vez de sumar un hop
+    // al final. Si algo muta entre medio, el cliente lo ve como "cambió" y
+    // refresca — es el lado seguro del race.
+    computeWalletRev(service, token),
   ])
 
   if (!tenant) return null
@@ -768,7 +773,7 @@ export async function getWalletByToken(token: string): Promise<WalletData | null
       }),
     activeRedemption,
     lastDelivered,
-    rev: await computeWalletRev(service, token),
+    rev,
   }
 }
 

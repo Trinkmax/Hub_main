@@ -95,15 +95,20 @@ export default async function MisNumerosPage({
   if (!user) notFound()
 
   // ── Identidad: ¿a qué gestor corresponde esta cuenta? ──
-  const ownManager = await getManagerForUser({ tenantId: access.tenant.id, userId: user.id })
+  // El listado de gestores (solo owner) no depende del gestor propio: van en
+  // paralelo en vez de dos hops secuenciales.
+  const [ownManager, activeManagers] = await Promise.all([
+    getManagerForUser({ tenantId: access.tenant.id, userId: user.id }),
+    access.role === 'owner'
+      ? listManagers({ tenantId: access.tenant.id, onlyActive: true })
+      : Promise.resolve<ReservationManagerRow[]>([]),
+  ])
 
   // El owner puede espiar cualquier gestor activo con ?as=<managerId>.
   const asParam = typeof sp.as === 'string' ? sp.as : undefined
   let manager: ReservationManagerRow | null = ownManager
   let spying = false
-  let activeManagers: ReservationManagerRow[] = []
   if (access.role === 'owner') {
-    activeManagers = await listManagers({ tenantId: access.tenant.id, onlyActive: true })
     if (asParam) {
       const spied = activeManagers.find((m) => m.id === asParam)
       if (spied) {

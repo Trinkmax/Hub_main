@@ -40,12 +40,20 @@ export async function listPunchCardTemplates(tenantId: string): Promise<PunchCar
   const supabase = await createClient()
   // El orden lo decide el dueño arrastrando (`sort`); `created_at` desempata
   // las que nunca se movieron.
-  const { data, error } = await supabase
-    .from('punch_card_templates')
-    .select(`${TEMPLATE_COLUMNS}, rewards(name)`)
-    .eq('tenant_id', tenantId)
-    .order('sort', { ascending: true })
-    .order('created_at', { ascending: true })
+  // Los niveles se filtran sólo por tenant (no dependen de los templates), así
+  // que van en paralelo: 2 hops secuenciales → 1.
+  const [{ data, error }, { data: links, error: linkError }] = await Promise.all([
+    supabase
+      .from('punch_card_templates')
+      .select(`${TEMPLATE_COLUMNS}, rewards(name)`)
+      .eq('tenant_id', tenantId)
+      .order('sort', { ascending: true })
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('punch_card_template_tiers')
+      .select('template_id, tier_id')
+      .eq('tenant_id', tenantId),
+  ])
   if (error || !data) {
     console.error('[punch-cards.list]', error?.message)
     return []
@@ -58,10 +66,6 @@ export async function listPunchCardTemplates(tenantId: string): Promise<PunchCar
   // Los niveles de todas las tarjetas en una sola consulta (no una por fila).
   const tierIdsByTemplate = new Map<string, string[]>()
   if (rows.length > 0) {
-    const { data: links, error: linkError } = await supabase
-      .from('punch_card_template_tiers')
-      .select('template_id, tier_id')
-      .eq('tenant_id', tenantId)
     if (linkError) console.error('[punch-cards.list.tiers]', linkError.message)
     for (const link of (links ?? []) as Array<{ template_id: string; tier_id: string }>) {
       const list = tierIdsByTemplate.get(link.template_id)
@@ -174,34 +178,36 @@ export async function listCustomerPunchCards(
   }
 
   const supabase = await createClient()
-  const { data: templates, error } = await supabase
-    .from('punch_card_templates')
-    .select('id, name, stamp_icon, image_url, threshold, sort, created_at')
-    .eq('tenant_id', tenantId)
-    .eq('active', true)
-    .order('sort', { ascending: true })
-    .order('created_at', { ascending: true })
+  // Nivel del socio + qué niveles habilita cada tarjeta: sin esto el cajero
+  // aprieta "+1" y recién ahí se entera de que la tarjeta es de otra categoría.
+  // Ninguna de las cuatro lecturas depende de otra (sólo tenantId/customerId),
+  // así que los templates viajan en el mismo Promise.all: 2 hops → 1.
+  const [{ data: templates, error }, { data: cards }, { data: tierLinks }, { data: myTier }] =
+    await Promise.all([
+      supabase
+        .from('punch_card_templates')
+        .select('id, name, stamp_icon, image_url, threshold, sort, created_at')
+        .eq('tenant_id', tenantId)
+        .eq('active', true)
+        .order('sort', { ascending: true })
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('customer_punch_cards')
+        .select('id, template_id, current_stamps, threshold_snapshot')
+        .eq('tenant_id', tenantId)
+        .eq('customer_id', customerId)
+        .is('completed_at', null)
+        .is('expired_at', null),
+      supabase
+        .from('punch_card_template_tiers')
+        .select('template_id, tier_id, loyalty_tiers(name)')
+        .eq('tenant_id', tenantId),
+      supabase.rpc('customer_effective_tier', { p_customer_id: customerId }),
+    ])
   if (error || !templates || templates.length === 0) {
     if (error) console.error('[punch-cards.listCustomer]', error.message)
     return []
   }
-
-  // Nivel del socio + qué niveles habilita cada tarjeta: sin esto el cajero
-  // aprieta "+1" y recién ahí se entera de que la tarjeta es de otra categoría.
-  const [{ data: cards }, { data: tierLinks }, { data: myTier }] = await Promise.all([
-    supabase
-      .from('customer_punch_cards')
-      .select('id, template_id, current_stamps, threshold_snapshot')
-      .eq('tenant_id', tenantId)
-      .eq('customer_id', customerId)
-      .is('completed_at', null)
-      .is('expired_at', null),
-    supabase
-      .from('punch_card_template_tiers')
-      .select('template_id, tier_id, loyalty_tiers(name)')
-      .eq('tenant_id', tenantId),
-    supabase.rpc('customer_effective_tier', { p_customer_id: customerId }),
-  ])
 
   const currentTierId = typeof myTier === 'string' ? myTier : null
   const tiersByTemplate = new Map<string, Array<{ id: string; name: string }>>()
