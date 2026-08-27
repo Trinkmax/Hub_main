@@ -1,7 +1,5 @@
 import { signOutAction } from '@/components/shell/sign-out-action'
 import { getTenantFeatures } from '@/lib/platform/features'
-import { isPlatformAdmin } from '@/lib/platform/is-admin'
-import { createClient } from '@/lib/supabase/server'
 import type { Tenant, TenantRole } from '@/lib/tenant/types'
 import { AccountSheet } from './account-sheet'
 import { BottomTabBar } from './bottom-tab-bar'
@@ -24,22 +22,24 @@ import { ServiceWorkerRegistration } from './service-worker-registration'
  *
  * Los altos del chrome son tokens (`--salon-topbar-h`, `--salon-tabbar-h`), no
  * números sueltos: la tab bar declara el suyo y el contenido lo consume.
+ *
+ * NO hace I/O: `isPlatformAdmin` y `email` vienen del `requireTenantAccess` del
+ * layout (un solo round-trip). Antes el shell pagaba 2 hops más por navegación.
  */
-export async function AppShellSalon({
+export function AppShellSalon({
   tenant,
   role,
+  isPlatformAdmin,
+  email,
   children,
 }: {
   tenant: Pick<Tenant, 'id' | 'name' | 'slug' | 'feature_flags'>
   role: TenantRole
+  isPlatformAdmin: boolean
+  email: string
   children: React.ReactNode
 }) {
   const features = getTenantFeatures(tenant)
-  const supabase = await createClient()
-  const [admin, { data: userData }] = await Promise.all([
-    isPlatformAdmin(),
-    supabase.auth.getUser(),
-  ])
 
   return (
     <div className="bg-app-gradient relative flex min-h-[100dvh] flex-col">
@@ -47,7 +47,7 @@ export async function AppShellSalon({
         tenant={tenant}
         account={
           <AccountSheet
-            email={userData.user?.email ?? ''}
+            email={email}
             role={role}
             tenantName={tenant.name}
             tenantSlug={tenant.slug}
@@ -66,7 +66,7 @@ export async function AppShellSalon({
         tenantSlug={tenant.slug}
         role={role}
         features={features}
-        isPlatformAdmin={admin}
+        isPlatformAdmin={isPlatformAdmin}
       />
 
       <ServiceWorkerRegistration />

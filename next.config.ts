@@ -25,6 +25,18 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   turbopack: {},
+  experimental: {
+    // Client Router Cache. Next 15 bajó `dynamic` de 30 s a 0: cada vuelta a
+    // una pantalla ya visitada volvía a pegarle al server (proxy + layout + page).
+    // Con 30 s, cambiar de tab en el salón (Mesas ↔ Reservas ↔ Escanear) o
+    // volver a un listado del manager es instantáneo si pasaron <30 s. Las
+    // mutaciones vía Server Action + revalidatePath siguen invalidando al toque,
+    // y el salón tiene pull-to-refresh + realtime para lo que cambia de afuera.
+    staleTimes: {
+      dynamic: 30,
+      static: 180,
+    },
+  },
   images: {
     // NUNCA usamos el optimizador de Vercel: la cuota Hobby (5K transformaciones/
     // mes, POR CUENTA) se agota y `/_next/image` devuelve 402, rompiendo todas las

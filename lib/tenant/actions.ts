@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, requireTenantAccess } from './access'
+import { getCurrentUser } from './current'
 import { RoleRequiredError, TenantNotFoundError, UnauthenticatedError } from './errors'
 
 const tenantIdSchema = z.string().uuid()
@@ -14,12 +15,10 @@ export async function setActiveTenant(tenantId: string): Promise<SetActiveTenant
   const parsed = tenantIdSchema.safeParse(tenantId)
   if (!parsed.success) return { ok: false, error: 'invalid_tenant_id' }
 
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getCurrentUser()
   if (!user) throw new UnauthenticatedError()
 
+  const supabase = await createClient()
   const { error: rpcError } = await supabase.rpc('set_active_tenant', {
     p_tenant: parsed.data,
   })

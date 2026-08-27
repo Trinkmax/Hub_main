@@ -5,8 +5,8 @@ import QRCode from 'qrcode'
 import { BrandAccent } from '@/components/theme/brand-accent-provider'
 import { getAppUrl } from '@/lib/app-url'
 import { redeemTokenSchema } from '@/lib/redemptions/schemas'
-import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
+import { getCurrentUser } from '@/lib/tenant/current'
 import { REDEMPTION_STAFF_ROLES } from '@/lib/tenant/roles'
 import type { TenantRole } from '@/lib/tenant/types'
 
@@ -52,12 +52,12 @@ export default async function RedeemTokenPage({ params }: { params: Promise<{ to
     | null
 
   if (row) {
-    const { data: auth } = await (await createClient()).auth.getUser()
-    if (auth.user) {
+    const authUser = await getCurrentUser()
+    if (authUser) {
       const { data: membership } = await service
         .from('memberships')
         .select('role, tenant:tenants(slug)')
-        .eq('user_id', auth.user.id)
+        .eq('user_id', authUser.id)
         .eq('tenant_id', row.tenant_id)
         .maybeSingle()
       const row2 = membership as {

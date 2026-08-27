@@ -51,7 +51,12 @@ export default async function SalonLayout({
   }
 
   return (
-    <AppShellSalon tenant={access.tenant} role={access.role}>
+    <AppShellSalon
+      tenant={access.tenant}
+      role={access.role}
+      isPlatformAdmin={access.isPlatformAdmin}
+      email={access.user.email ?? ''}
+    >
       {children}
     </AppShellSalon>
   )

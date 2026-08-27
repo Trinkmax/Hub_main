@@ -32,7 +32,13 @@ export default async function DashboardLayout({
   }
 
   return (
-    <AppShell tenant={access.tenant} role={access.role}>
+    <AppShell
+      tenant={access.tenant}
+      role={access.role}
+      memberships={access.memberships}
+      isPlatformAdmin={access.isPlatformAdmin}
+      email={access.user.email ?? ''}
+    >
       {children}
     </AppShell>
   )

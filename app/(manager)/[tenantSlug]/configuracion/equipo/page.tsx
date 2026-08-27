@@ -37,9 +37,7 @@ export default async function EquipoPage({ params }: { params: Promise<{ tenantS
   }
 
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = access.user
 
   const { data: rows, error } = await supabase.rpc('get_tenant_members', {
     p_tenant: access.tenant.id,

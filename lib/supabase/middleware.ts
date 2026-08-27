@@ -3,6 +3,12 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSupabaseClientEnv } from '@/lib/env'
 import {
+  claimForTenantId,
+  readActiveTenantId,
+  readTenantClaims,
+  roleForSlug,
+} from '@/lib/tenant/claims'
+import {
   canAccessManagerPath,
   canAccessSalonPath,
   homePathForRole,
@@ -38,6 +44,13 @@ const PUBLIC_PREFIXES = [
   '/forgot-password',
 ]
 
+/**
+ * Endpoints máquina-a-máquina: nunca traen cookie de sesión de un humano
+ * (pg_cron, Meta, el pulso de la billetera). Para estos ni instanciamos el
+ * cliente de Supabase — cero trabajo en el proxy.
+ */
+const MACHINE_PREFIXES = ['/api/cron/', '/api/webhooks/', '/api/wallet/', '/_next/', '/icons/']
+
 const STAFF_ROLES = new Set<string>(SALON_ROLES)
 
 export function isPublicPath(pathname: string) {
@@ -53,10 +66,19 @@ export function isPublicPath(pathname: string) {
   return false
 }
 
+export function isMachinePath(pathname: string) {
+  return MACHINE_PREFIXES.some((prefix) => pathname.startsWith(prefix))
+}
+
 type RoleLookup = {
   role: string
   slug: string
 }
+
+// ── Fallbacks a la DB ───────────────────────────────────────────────────────
+// Sólo se usan cuando el JWT todavía no trae `app_metadata.tenants` (token
+// emitido antes del deploy del hook; expira en ≤1 h). Después de eso el proxy
+// no toca la DB nunca.
 
 async function getRoleForSlug(
   supabase: SupabaseClient,
@@ -106,6 +128,8 @@ export function isSalonWorkspacePath(pathname: string): boolean {
 }
 
 export async function updateSession(request: NextRequest) {
+  const { pathname } = request.nextUrl
+
   // El panel del salón se sirve SIEMPRE en modo claro (lo usa el mozo con el
   // celular a plena luz, y el dueño lo pidió explícito). Marcamos el request
   // acá para que el root layout emita el `<html>` claro DESDE EL SERVER y no
@@ -113,7 +137,7 @@ export async function updateSession(request: NextRequest) {
   // porque `NextResponse.next({ request })` es lo que reenvía los headers al
   // render, y `response` se reasigna adentro de `setAll` en cada refresh de
   // cookies (setearlo ahí se perdería).
-  if (isSalonWorkspacePath(request.nextUrl.pathname)) {
+  if (isSalonWorkspacePath(pathname)) {
     try {
       request.headers.set(WORKSPACE_HEADER, 'salon')
     } catch {
@@ -123,6 +147,9 @@ export async function updateSession(request: NextRequest) {
   }
 
   let response = NextResponse.next({ request })
+
+  if (isMachinePath(pathname)) return response
+
   const { url, anonKey } = getSupabaseClientEnv()
 
   const supabase = createServerClient(url, anonKey, {
@@ -142,26 +169,39 @@ export async function updateSession(request: NextRequest) {
     },
   })
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // getClaims() = refresh de la sesión si venció (y reenvío de las cookies
+  // nuevas al render + al browser) + verificación LOCAL de la firma del JWT
+  // (ES256 contra el JWKS del proyecto, cacheado en memoria por auth-js).
+  // Cero round-trips a Supabase Auth en el camino feliz. NO reemplazar por
+  // getUser(): ese endpoint era el cuello de botella (p50 100–200 ms desde
+  // Vercel, cola de hasta 157 s en producción).
+  const { data: claimsData } = await supabase.auth.getClaims()
+  const claims = claimsData?.claims ?? null
+  const userId = typeof claims?.sub === 'string' ? claims.sub : null
 
-  const { pathname } = request.nextUrl
-
-  if (!user && !isPublicPath(pathname)) {
+  if (!userId && !isPublicPath(pathname)) {
     const loginUrl = request.nextUrl.clone()
     loginUrl.pathname = '/login'
     loginUrl.searchParams.set('redirectTo', pathname)
     return NextResponse.redirect(loginUrl)
   }
 
-  // Logged-in user landing on /login → bounce by role
-  if (user && pathname === '/login') {
-    const activeTenantId =
-      (user.app_metadata as { active_tenant_id?: string } | undefined)?.active_tenant_id ?? null
+  if (!userId || !claims) return response
 
+  // Memberships desde el JWT (null = token viejo sin el claim → fallback a DB).
+  const tenantClaims = readTenantClaims(claims.app_metadata)
+
+  // Logged-in user landing on /login → bounce by role
+  if (pathname === '/login') {
+    const activeTenantId = readActiveTenantId(claims.app_metadata)
     if (activeTenantId) {
-      const lookup = await getActiveRoleAndSlug(supabase, user.id, activeTenantId)
+      let lookup: RoleLookup | null = null
+      if (tenantClaims) {
+        const claim = claimForTenantId(tenantClaims, activeTenantId)
+        lookup = claim ? { role: claim.role, slug: claim.slug } : null
+      } else {
+        lookup = await getActiveRoleAndSlug(supabase, userId, activeTenantId)
+      }
       if (lookup) {
         return NextResponse.redirect(
           new URL(homePathForRole(lookup.role, lookup.slug), request.url),
@@ -175,24 +215,26 @@ export async function updateSession(request: NextRequest) {
   //  - staff de salón (cashier/waiter/kitchen) → siempre /salon
   //  - roles acotados del manager (editor/host) → solo sus prefijos permitidos
   //  - owner navega libre (peek mode en /salon permitido)
-  if (user) {
-    const segments = pathname.split('/').filter(Boolean)
-    const slug = segments[0]
-    const rest = segments.slice(1)
+  // Es SOLO ruteo: la autorización real la hace cada layout/page contra la DB
+  // (get_tenant_access bajo RLS) y cada Server Action con requireRole.
+  const segments = pathname.split('/').filter(Boolean)
+  const slug = segments[0]
+  const rest = segments.slice(1)
 
-    if (slug && !RESERVED_SLUGS.has(slug)) {
-      const role = await getRoleForSlug(supabase, user.id, slug)
-      if (role) {
-        const inSalon = rest[0] === 'salon'
-        if (inSalon) {
-          if (!STAFF_ROLES.has(role) && role !== 'owner' && !canAccessSalonPath(role, rest)) {
-            return NextResponse.redirect(new URL(homePathForRole(role, slug), request.url))
-          }
-        } else if (STAFF_ROLES.has(role)) {
-          return NextResponse.redirect(new URL(`/${slug}/salon`, request.url))
-        } else if (!canAccessManagerPath(role, rest)) {
+  if (slug && !RESERVED_SLUGS.has(slug)) {
+    const role = tenantClaims
+      ? roleForSlug(tenantClaims, slug)
+      : await getRoleForSlug(supabase, userId, slug)
+    if (role) {
+      const inSalon = rest[0] === 'salon'
+      if (inSalon) {
+        if (!STAFF_ROLES.has(role) && role !== 'owner' && !canAccessSalonPath(role, rest)) {
           return NextResponse.redirect(new URL(homePathForRole(role, slug), request.url))
         }
+      } else if (STAFF_ROLES.has(role)) {
+        return NextResponse.redirect(new URL(`/${slug}/salon`, request.url))
+      } else if (!canAccessManagerPath(role, rest)) {
+        return NextResponse.redirect(new URL(homePathForRole(role, slug), request.url))
       }
     }
   }

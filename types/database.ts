@@ -4825,6 +4825,7 @@ export type Database = {
         Args: { p_browser_token: string; p_qr_token: string }
         Returns: Json
       }
+      get_tenant_access: { Args: { p_slug: string }; Returns: Json }
       get_tenant_members: {
         Args: { p_tenant: string }
         Returns: {

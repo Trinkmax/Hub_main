@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { PageHeader } from '@/components/ui/page-header'
 import { requireFeature } from '@/lib/platform/guards'
-import { createClient } from '@/lib/supabase/server'
 import { requireTenantAccess, TenantNotFoundError } from '@/lib/tenant'
 
 export const metadata = { title: 'Salón · Mi turno' }
@@ -31,11 +30,7 @@ export default async function MiTurnoPage({ params }: { params: Promise<{ tenant
 
   await requireFeature(access.tenant, 'table_service')
 
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  const email = user?.email ?? ''
+  const email = access.user.email ?? ''
   const initial = email.charAt(0).toUpperCase()
 
   return (
