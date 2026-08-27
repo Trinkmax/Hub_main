@@ -452,3 +452,57 @@ Hallazgos y deudas que quedaron fuera del alcance de esa tanda:
   sale de la coerción no pasa y cae a la rama del vacío. El día que alguno acepte
   0 como valor legítimo, vuelve el mismo bug silencioso. Barrido mecánico: mover
   `z.literal('')`, `z.null()` y `z.undefined()` delante del schema numérico.
+
+## Optimización de performance (auditoría 27/08/2026)
+
+Contexto y cambios aplicados en `docs/optimizacion-2026-08.md`. Lo que quedó
+afuera a propósito:
+
+- **65 `multiple_permissive_policies` (advisor).** Patrón `X_member_read`
+  (SELECT) + `X_owner_write` (`for all`, que también cubre SELECT) en
+  broadcasts/flows/channels/templates/audiences/quick_messages/etc. Postgres
+  evalúa las dos por fila. Hoy es irrelevante (tablas de decenas de filas); el
+  fix es mecánico pero toca ~40 policies: reemplazar cada `for all` por tres
+  policies `insert/update/delete`. Hacerlo en una migración propia con test de
+  RLS que verifique que owner sigue escribiendo y member sigue leyendo.
+- **`user_role_in_tenant(tenant_id)` en policies de escritura** se evalúa por
+  fila (depende del `tenant_id` de la fila, no es initplan). Alternativa
+  initplan-able: `tenant_id in (select tenant_id from memberships where
+  user_id = (select auth.uid()) and role in (...))`. Mismo veredicto: sin
+  impacto hoy, refactor cuando alguna tabla pase de ~10k filas.
+- **Realtime `postgres_changes` → Broadcast.** `realtime.list_changes` es la
+  query con más llamadas de toda la DB (280k) porque Realtime pollea el WAL
+  mientras haya UN suscriptor, y evalúa RLS por cada cambio × suscriptor.
+  Supabase recomienda `realtime.broadcast_changes()` desde triggers para
+  escalar. Afecta inbox, difusiones en vivo, mesas/cocina y la billetera.
+- **Compute de Supabase.** El proyecto corre en la instancia más chica (60
+  conexiones = Nano o Micro, CPU compartida). Los picos de 60–157 s en
+  `/auth/v1/user` y `/rest/v1/*` NO fueron queries lentas (la DB responde en
+  <1 ms) sino el API gateway saturado. Para operar un bar en vivo, subir a
+  **Small** (2 vCPU dedicadas, 2 GB) es la única palanca que queda del lado de
+  infraestructura. Decisión del dueño.
+- **`refresh_stats()` cada 10 min hace `REFRESH MATERIALIZED VIEW CONCURRENTLY`
+  de 3 MVs** → 379 GB de temp files acumulados desde abril (work_mem de 2 MB).
+  Con el volumen actual es tolerable; cuando crezca, pasar a refresh
+  incremental por trigger o bajar la cadencia a 30 min.
+- **`getUser()` sigue en ~40 Server Actions** (customers, menu, item-tags,
+  tickets, tables, sessions-waiter…). Es UN hop por acción y da revocación
+  inmediata; aceptable. Si alguna acción de alta frecuencia del salón se
+  siente lenta, cambiarla a `getCurrentUser()` (claims).
+- **Vercel Hobby.** Sin `regions` explícito las funciones corren en `iad1`
+  (Washington), que coincide con la región del proyecto Supabase (us-east-1,
+  inferido de los logs: p50 90 ms desde IAD vs 190 ms desde GRU). NO mover la
+  región de Vercel sin mover Supabase. El dueño ve +100 ms por hop desde
+  Córdoba en cualquier caso — es el costo del datacenter en EE.UU.
+- **Revisión adversarial del fast-path — lows aceptados:** (a) el gate SQL de
+  `hub-dispatch` y `gatedTasksDue()` en Node deciden por separado con sus
+  propios relojes; si pg_cron arranca >55 s tarde en el minuto %15 el SQL
+  dispara pero Node no ve la tarea gated (se recupera en el próximo slot; el
+  único de un solo slot es el refresh de tokens Meta a las 04:20 UTC). Fix
+  limpio: mandar la decisión en el body del POST. (b) Un superadmin sin
+  membership recibe `null` de `get_tenant_access` (igual que antes); si se
+  quiere que abra cualquier bar, `left join` desde tenants + rol `owner`
+  virtual cuando `is_platform_admin()`. (c) `getCurrentUser()` ya no detecta
+  revocación inmediata de sesión (ban / sign-out global) hasta `jwt_expiry`;
+  documentado en `docs/optimizacion-2026-08.md` §6.
+

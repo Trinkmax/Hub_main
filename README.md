@@ -101,6 +101,25 @@ El manifest está en `public/manifest.webmanifest`. Los iconos en
 Ver `CLAUDE.md` para la estructura completa, la ley multi-tenant y las
 convenciones del proyecto.
 
+## Performance (leer antes de tocar auth, layouts o fetching)
+
+- **La sesión se verifica en proceso, no contra Supabase.** El proxy y
+  `getCurrentUser()` usan `supabase.auth.getClaims()` (firma ES256 contra el
+  JWKS del proyecto, cacheado en memoria). `getUser()` = un round-trip de
+  100–200 ms; se reserva para flujos donde importa la revocación inmediata.
+- **Un solo round-trip por navegación para el chrome.** `requireTenantAccess`
+  llama al RPC `get_tenant_access(slug)` que trae tenant + rol + memberships +
+  superadmin; los shells reciben todo por props y **no hacen I/O**. No volver
+  a meter `getUser()`/`getMembershipsForUser()`/`isPlatformAdmin()` en
+  layouts, topbars o sidebars.
+- **El proxy rutea por rol leyendo el JWT** (`app_metadata.tenants`, lo inyecta
+  `custom_access_token_hook`). Es sólo ruteo: cada page/action sigue validando
+  contra la DB bajo RLS.
+- **Queries independientes van en `Promise.all`.** Cada `await` secuencial a
+  Supabase es ~150 ms desde Vercel.
+- Diagnóstico completo, números y checklist de deploy en
+  `docs/optimizacion-2026-08.md`.
+
 ## Calidad
 
 - **Biome** reemplaza ESLint+Prettier.
