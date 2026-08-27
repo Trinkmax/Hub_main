@@ -79,3 +79,28 @@ export async function fetchReservationsForDate(
     return { ok: false, message: 'No pudimos leer las reservas del día.' }
   }
 }
+
+/**
+ * Capacidad + eventos del día en UNA server action. La timeline del salón los
+ * pedía con dos actions separadas cada 30 s: dos invocaciones de función por
+ * tick por dispositivo.
+ */
+export async function fetchDayExtras(
+  slug: string,
+  date: string,
+): Promise<
+  | { ok: true; buckets: DayCapacityBucket[]; events: ScheduledEventWithTemplate[] }
+  | { ok: false; message: string }
+> {
+  const access = await authorizeRead(slug)
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+  try {
+    const [buckets, events] = await Promise.all([
+      getDayCapacitySnapshot({ tenantId: access.tenant.id, date }),
+      listScheduledEventsForDate({ tenantId: access.tenant.id, date }),
+    ])
+    return { ok: true, buckets, events }
+  } catch {
+    return { ok: false, message: 'No pudimos leer el día.' }
+  }
+}

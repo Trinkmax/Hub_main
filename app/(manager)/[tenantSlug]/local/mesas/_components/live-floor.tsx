@@ -12,11 +12,13 @@ import { refreshLiveFloorAction } from '@/lib/floor-plan/live-actions'
 import type { AreaRow, LiveDecor, LiveFloorData, LiveTable } from '@/lib/floor-plan/queries'
 import { subscribeChanges } from '@/lib/realtime/subscribe'
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'
+import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 import { cn } from '@/lib/utils'
 import { LiveTableCard } from './live-table-card'
 import { PanZoomStage } from './pan-zoom-stage'
 
-const SAFETY_NET_INTERVAL_MS = 30_000
+// Realtime es el camino principal; esto es la red de seguridad (ver useVisibleInterval).
+const SAFETY_NET_INTERVAL_MS = 90_000
 const REALTIME_DEBOUNCE_MS = 500
 
 export type LiveFloorProps = {
@@ -123,15 +125,12 @@ export function LiveFloor({
       ],
     })
 
-    const safetyNet = window.setInterval(() => {
-      void refresh()
-    }, SAFETY_NET_INTERVAL_MS)
-
     return () => {
       cleanup()
-      window.clearInterval(safetyNet)
     }
   }, [tenantId, refresh, debouncedRefresh])
+
+  useVisibleInterval(refresh, SAFETY_NET_INTERVAL_MS)
 
   // Cambio de área activa → refetch inmediato (no esperar al debounce/Realtime).
   const onSelectArea = useCallback(

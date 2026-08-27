@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { AreaRow, LiveFloorData, LiveTable } from '@/lib/floor-plan/queries'
 import { subscribeChanges } from '@/lib/realtime/subscribe'
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'
+import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 import { activateTableByIdAction, activateTableByQrAction } from '@/lib/sessions-waiter/actions'
 import type { SalonOccupancy, SalonTableRow } from '@/lib/sessions-waiter/queries'
 import { filterTables } from '@/lib/sessions-waiter/table-search'
@@ -28,7 +29,9 @@ import { QrScannerSheet } from './qr-scanner-sheet'
 import { SalonSearch } from './salon-search'
 import { SalonTablesGrid } from './salon-tables-grid'
 
-const SAFETY_NET_INTERVAL_MS = 30_000
+// Realtime es el camino principal; esto es la red de seguridad. 30 s por tablet
+// abierta toda la noche eran ~1.000 invocaciones de Vercel por dispositivo.
+const SAFETY_NET_INTERVAL_MS = 90_000
 const REALTIME_DEBOUNCE_MS = 500
 
 type PendingActivation =
@@ -104,15 +107,12 @@ export function SalonView({
       ],
     })
 
-    const safetyNet = window.setInterval(() => {
-      void refresh()
-    }, SAFETY_NET_INTERVAL_MS)
-
     return () => {
       cleanup()
-      window.clearInterval(safetyNet)
     }
   }, [tenantId, refresh, debouncedRefresh])
+
+  useVisibleInterval(refresh, SAFETY_NET_INTERVAL_MS)
 
   const onScanned = useCallback((qrToken: string) => {
     setScannerOpen(false)

@@ -264,3 +264,34 @@ Sin tocar: el full de 1600 px sigue siendo lo que abre el detalle del plato en
 pantallas DPR 3 (en DPR 2 ya cae a la media). Las fotos de > 1 MB que quedaron
 de antes del pipeline se podrían recomprimir en un backfill aparte (cambia la
 URL → hay que repuntar `image_url`); no se hizo en esta tanda.
+
+## 8. Consumo de Vercel (`perf(vercel)` bis)
+
+Lo que mostraba el panel del equipo el 27/08 (US$ 8,23 de 20 en 7 días, para
+los 8 proyectos del equipo — no sólo HUB): Observability Events 3,26 · Fluid
+Provisioned Memory 1,46 · Fluid Active CPU 1,23 · Build CPU 1,05 · Fast Origin
+Transfer 0,83 · Function Invocations 0,26. Todos escalan con la **cantidad de
+invocaciones de funciones** y su duración. Lo que se hizo en HUB:
+
+| Fuente de invocaciones | Antes | Después |
+| --- | --- | --- |
+| Billetera del socio (`/api/wallet/[token]/pulse`) | polling **cada 3 s** con el QR en pantalla, 20 s el resto — 20 invocaciones/min por socio con la billetera abierta | La DB avisa por **Realtime Broadcast** (topic público `wallet:<sha256(qr_token)>`, sin datos) y el cliente refresca al recibirlo — cero funciones de Vercel. El polling queda de red de seguridad: 45 s / 3 min con el socket conectado, 15 s / 60 s sin socket, nada en segundo plano. Migración `20260827200000_wallet_broadcast` (triggers en `customers`, `reward_redemptions`, `customer_punch_cards`). |
+| Safety nets de las pantallas en vivo del salón (mesas, cocina, plano, timeline, `/m` esperando mozo) | `setInterval` de 30 s aunque la pestaña estuviera de fondo | `useVisibleInterval` a 90 s, **pausado con la pestaña oculta** y un fetch al volver. Realtime sigue siendo el camino principal. |
+| Timeline del salón | 2 server actions por tick (capacidad + eventos) | 1 (`fetchDayExtras`). |
+| `hub-dispatch` (pg_cron → `/api/cron/dispatch`) | 1.440 invocaciones/día | sólo cuando hay trabajo vencido o minuto % 15 (§2.3). |
+| Auth por navegación | 7 hops → función más lenta (más GB·s) | 1 hop (§2.1) — menos Fluid CPU/Memory por request. |
+| Client Router Cache | cada vuelta a una pantalla = render | `staleTimes` 30 s (§2.2). |
+
+Lo que NO se puede resolver desde el código de HUB:
+
+- **Observability Events es la línea más cara.** Se factura por evento
+  ingerido; si el equipo tiene *Observability Plus* activado y nadie mira
+  trazas, apagarlo (Team → Settings → Billing) elimina la línea. Bajar
+  invocaciones también la baja.
+- **Build CPU Minutes**: cada push a `main` es un build (hoy hubo 8). Batchear
+  commits y verificar que no esté activado *Enhanced build machine*.
+- **Otros proyectos del equipo**: `apart-cba` ("live layer for real-time
+  updates") huele a polling también; revisarlo con el mismo criterio.
+- **Fast Origin Transfer**: la carta pública se renderiza dinámica por la
+  cookie de la billetera. Si crece el tráfico, separar carta estática (cache
+  CDN) + billetera por fetch cliente. Backlog.

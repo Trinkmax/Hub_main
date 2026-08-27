@@ -4,8 +4,10 @@ import { Clock, ScanLine } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 import { subscribeChanges } from '@/lib/realtime/subscribe'
+import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 
-const POLL_INTERVAL_MS = 30_000
+// Realtime es el camino principal; esto es la red de seguridad (ver useVisibleInterval).
+const POLL_INTERVAL_MS = 90_000
 
 export function WaitingForWaiter({
   physicalTableId,
@@ -31,16 +33,11 @@ export function WaitingForWaiter({
       ],
     })
 
-    // Safety net: refrescar el server component cada 30s por si realtime no llegó.
-    const interval = window.setInterval(() => {
-      router.refresh()
-    }, POLL_INTERVAL_MS)
-
-    return () => {
-      cleanup()
-      window.clearInterval(interval)
-    }
+    return cleanup
   }, [physicalTableId, router])
+
+  // Safety net: refrescar el server component por si realtime no llegó.
+  useVisibleInterval(() => router.refresh(), POLL_INTERVAL_MS)
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 py-12 text-center">

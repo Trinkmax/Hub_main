@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { type AnyRealtimePayload, mergeRow } from '@/lib/realtime/optimistic-merge'
 import { subscribeChanges } from '@/lib/realtime/subscribe'
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'
+import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 import { cancelTicketItem, updateTicketStatus } from '@/lib/tickets/actions'
 import type { TicketItemRow, TicketRow } from '@/lib/tickets/queries'
 import { TICKET_STATUS_LABELS, type TicketStatus } from '@/lib/tickets/ticket-flow'
@@ -16,7 +17,8 @@ import { TICKET_STATUS_LABELS, type TicketStatus } from '@/lib/tickets/ticket-fl
 // inicial). Si un ticket cambia a `done`/`cancelled`, lo removemos del state.
 const KITCHEN_VISIBLE_STATUSES = new Set<TicketRow['status']>(['accepted', 'preparing', 'ready'])
 
-const SAFETY_NET_INTERVAL_MS = 30_000
+// Realtime es el camino principal; esto es la red de seguridad (ver useVisibleInterval).
+const SAFETY_NET_INTERVAL_MS = 90_000
 
 function elapsed(from: string): string {
   const ms = Date.now() - new Date(from).getTime()
@@ -97,16 +99,14 @@ export function KdsScreen({
       ],
     })
 
-    // Safety net periódico — Realtime no garantiza delivery 100%.
-    const safetyNet = window.setInterval(() => {
-      void refresh()
-    }, SAFETY_NET_INTERVAL_MS)
-
     return () => {
       cleanup()
-      window.clearInterval(safetyNet)
     }
   }, [tenantId, refresh, debouncedRefresh])
+
+  // Safety net periódico — Realtime no garantiza delivery 100%. Sólo con la
+  // pestaña visible: la pantalla de cocina olvidada de fondo no gasta.
+  useVisibleInterval(refresh, SAFETY_NET_INTERVAL_MS)
 
   const handle = (fn: () => Promise<{ ok: boolean; message?: string }>, success: string) => {
     startTransition(async () => {

@@ -508,3 +508,10 @@ afuera a propósito:
   revocación inmediata de sesión (ban / sign-out global) hasta `jwt_expiry`;
   documentado en `docs/optimizacion-2026-08.md` §6.
 
+- **Carta cacheable en CDN.** `/carta/[slug]` es `force-dynamic` porque lee la
+  cookie de la billetera; cada visita = render + Fast Origin Transfer en Vercel.
+  Alternativa: página estática con `s-maxage` + la billetera montada desde el
+  cliente (`/api/wallet`). Vale la pena cuando el tráfico de comensales crezca.
+- **Fotos full > 1 MB de antes del pipeline** (máx. 4,8 MB en `menu-images`):
+  recomprimir a 1600 px webp cambia la URL → repuntar `image_url`. Backfill
+  aparte; hoy la carta ya no las baja en tarjetas (variante `_m`).

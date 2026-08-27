@@ -8,11 +8,8 @@ import { Button } from '@/components/ui/button'
 import { type AnyRealtimePayload, mergeRow } from '@/lib/realtime/optimistic-merge'
 import { subscribeChanges } from '@/lib/realtime/subscribe'
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'
-import {
-  fetchDayCapacity,
-  fetchReservationsForDate,
-  fetchScheduledEventsForDate,
-} from '@/lib/salon/client-actions'
+import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
+import { fetchDayExtras, fetchReservationsForDate } from '@/lib/salon/client-actions'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import type { DayCapacityBucket, ReservationWithJoins, SalonZone } from '@/lib/salon/types'
 import { RESERVATION_OPERATOR_ROLES, RESERVATION_STAFF_ROLES } from '@/lib/tenant/roles'
@@ -38,7 +35,8 @@ import { ReservationCard } from './reservation-card'
  *   entero y el pull-to-refresh del shell ya cubre el refresco manual.
  */
 
-const SAFETY_NET_INTERVAL_MS = 30_000
+// Realtime es el camino principal; esto es la red de seguridad (ver useVisibleInterval).
+const SAFETY_NET_INTERVAL_MS = 90_000
 
 const ZONE_LABEL: Record<SalonZone, string> = {
   planta_alta: 'Alta',
@@ -95,13 +93,13 @@ export function TimelineView({
   // cualquier mozo: mostrarle el link era un callejón sin salida.
   const canCreate = RESERVATION_STAFF_ROLES.includes(role)
 
+  // Una sola server action (capacidad + eventos): cada action es una
+  // invocación de función aparte en Vercel.
   const refreshExtras = useCallback(async () => {
-    const [cap, ev] = await Promise.all([
-      fetchDayCapacity(tenantSlug, date),
-      fetchScheduledEventsForDate(tenantSlug, date),
-    ])
-    if (cap.ok) setCapacity(cap.buckets)
-    if (ev.ok) setEvents(ev.events)
+    const r = await fetchDayExtras(tenantSlug, date)
+    if (!r.ok) return
+    setCapacity(r.buckets)
+    setEvents(r.events)
   }, [tenantSlug, date])
 
   const debouncedCapacity = useDebouncedRefresh(refreshExtras, 600)
@@ -153,13 +151,13 @@ export function TimelineView({
       ],
     })
 
-    const interval = window.setInterval(() => void refreshExtras(), SAFETY_NET_INTERVAL_MS)
     return () => {
       cancelled = true
       cleanup()
-      window.clearInterval(interval)
     }
   }, [tenantId, tenantSlug, date, refreshExtras, debouncedCapacity])
+
+  useVisibleInterval(refreshExtras, SAFETY_NET_INTERVAL_MS)
 
   const totals = useMemo(() => {
     let waiting = 0
