@@ -8,7 +8,11 @@ import { Button } from '@/components/ui/button'
 import { type AnyRealtimePayload, mergeRow } from '@/lib/realtime/optimistic-merge'
 import { subscribeChanges } from '@/lib/realtime/subscribe'
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'
-import { fetchDayCapacity, fetchScheduledEventsForDate } from '@/lib/salon/client-actions'
+import {
+  fetchDayCapacity,
+  fetchReservationsForDate,
+  fetchScheduledEventsForDate,
+} from '@/lib/salon/client-actions'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import type { DayCapacityBucket, ReservationWithJoins, SalonZone } from '@/lib/salon/types'
 import { RESERVATION_OPERATOR_ROLES, RESERVATION_STAFF_ROLES } from '@/lib/tenant/roles'
@@ -110,6 +114,15 @@ export function TimelineView({
   // Realtime: si el host carga una reserva desde el manager, al mozo le aparece
   // sola en la lista.
   useEffect(() => {
+    // Al montar, sincronizar YA: con staleTimes (next.config.ts) la página puede
+    // venir del Client Router Cache con reservas de hasta 30 s; Realtime sólo
+    // trae cambios FUTUROS y el safety net de abajo no refresca reservas.
+    let cancelled = false
+    void fetchReservationsForDate(tenantSlug, date).then((res) => {
+      if (!cancelled && res.ok) setReservations(res.reservations)
+    })
+    void refreshExtras()
+
     const cleanup = subscribeChanges({
       channel: `salon-res-${tenantId}-${date}`,
       events: [
@@ -142,10 +155,11 @@ export function TimelineView({
 
     const interval = window.setInterval(() => void refreshExtras(), SAFETY_NET_INTERVAL_MS)
     return () => {
+      cancelled = true
       cleanup()
       window.clearInterval(interval)
     }
-  }, [tenantId, date, refreshExtras, debouncedCapacity])
+  }, [tenantId, tenantSlug, date, refreshExtras, debouncedCapacity])
 
   const totals = useMemo(() => {
     let waiting = 0

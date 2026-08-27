@@ -20,12 +20,16 @@ const ROLE_SET = new Set<string>(TENANT_ROLES)
 /**
  * `app_metadata.tenants` → lista de memberships del usuario.
  * - `null`: el claim NO está (token emitido antes del hook, o sesión anónima)
- *   → el caller debe caer a la DB.
+ *   o viene recortado (`tenants_truncated`) → el caller debe caer a la DB.
  * - `[]`: el claim está y el usuario no es miembro de ningún bar.
  */
 export function readTenantClaims(appMetadata: unknown): TenantClaim[] | null {
   if (!appMetadata || typeof appMetadata !== 'object') return null
-  const raw = (appMetadata as { tenants?: unknown }).tenants
+  const meta = appMetadata as { tenants?: unknown; tenants_truncated?: unknown }
+  // El hook corta la lista en 20 bares y lo marca: una lista recortada no
+  // sirve para rutear (el bar pedido puede ser el 21) → resolver por DB.
+  if (meta.tenants_truncated === true) return null
+  const raw = meta.tenants
   if (!Array.isArray(raw)) return null
   const out: TenantClaim[] = []
   for (const item of raw) {

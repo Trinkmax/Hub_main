@@ -22,6 +22,15 @@ describe('readTenantClaims', () => {
     expect(readTenantClaims({ tenants: [] })).toEqual([])
   })
 
+  it('devuelve null si el hook marcó la lista como recortada (resolver por DB)', () => {
+    expect(
+      readTenantClaims({
+        tenants: [{ id: 't1', slug: 'hub', role: 'owner' }],
+        tenants_truncated: true,
+      }),
+    ).toBeNull()
+  })
+
   it('parsea memberships válidas y descarta las malformadas o con rol desconocido', () => {
     const claims = readTenantClaims({
       tenants: [

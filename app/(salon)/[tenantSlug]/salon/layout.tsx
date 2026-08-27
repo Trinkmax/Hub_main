@@ -1,7 +1,10 @@
 import type { Metadata, Viewport } from 'next'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
+import { ClaimsRefresher } from '@/components/shell/claims-refresher'
+import { RefreshOnReturn } from '@/components/shell/refresh-on-return'
 import { AppShellSalon } from '@/components/shell/salon/app-shell-salon'
-import { requireTenantAccess, TenantNotFoundError } from '@/lib/tenant'
+import { requireTenantAccess, TenantNotFoundError, UnauthenticatedError } from '@/lib/tenant'
+import { roleForSlug } from '@/lib/tenant/claims'
 
 export const metadata: Metadata = {
   manifest: '/manifest.webmanifest',
@@ -47,8 +50,16 @@ export default async function SalonLayout({
     access = await requireTenantAccess(tenantSlug)
   } catch (error) {
     if (error instanceof TenantNotFoundError) notFound()
+    if (error instanceof UnauthenticatedError) {
+      redirect(`/login?reason=session&redirectTo=/${tenantSlug}/salon`)
+    }
     throw error
   }
+
+  // El proxy rutea por el rol del JWT (≤1 h de antigüedad). Si difiere del rol
+  // real que devolvió la DB, refrescar la sesión desde el browser (una vez/min).
+  const claimRole = access.user.tenants ? roleForSlug(access.user.tenants, tenantSlug) : null
+  const claimsStale = access.user.tenants !== null && claimRole !== access.role
 
   return (
     <AppShellSalon
@@ -57,6 +68,8 @@ export default async function SalonLayout({
       isPlatformAdmin={access.isPlatformAdmin}
       email={access.user.email ?? ''}
     >
+      {claimsStale ? <ClaimsRefresher /> : null}
+      <RefreshOnReturn />
       {children}
     </AppShellSalon>
   )

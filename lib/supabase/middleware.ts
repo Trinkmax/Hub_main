@@ -191,8 +191,12 @@ export async function updateSession(request: NextRequest) {
   // Memberships desde el JWT (null = token viejo sin el claim → fallback a DB).
   const tenantClaims = readTenantClaims(claims.app_metadata)
 
-  // Logged-in user landing on /login → bounce by role
+  // Logged-in user landing on /login → bounce by role. Excepción: si un layout
+  // nos mandó con ?reason=session es porque PostgREST rechazó el JWT que
+  // getClaims() dio por bueno (clave revocada, skew de reloj) — rebotar a home
+  // sería un loop; dejamos que el login re-emita la sesión.
   if (pathname === '/login') {
+    if (request.nextUrl.searchParams.get('reason') === 'session') return response
     const activeTenantId = readActiveTenantId(claims.app_metadata)
     if (activeTenantId) {
       let lookup: RoleLookup | null = null

@@ -44,7 +44,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   if (!id) return null
   return {
     id,
-    email: typeof claims.email === 'string' ? claims.email : null,
+    email: typeof claims.email === 'string' && claims.email.length > 0 ? claims.email : null,
     activeTenantId: readActiveTenantId(claims.app_metadata),
     tenants: readTenantClaims(claims.app_metadata),
   }

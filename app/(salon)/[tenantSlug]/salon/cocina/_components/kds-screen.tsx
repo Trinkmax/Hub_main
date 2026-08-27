@@ -59,6 +59,11 @@ export function KdsScreen({
   const debouncedRefresh = useDebouncedRefresh(refresh, 800)
 
   useEffect(() => {
+    // Al montar, sincronizar YA: con staleTimes (next.config.ts) esta pantalla
+    // puede venir del Client Router Cache con datos de hasta 30 s; Realtime
+    // sólo trae cambios FUTUROS y el safety net recién corre a los 30 s.
+    void refresh()
+
     const cleanup = subscribeChanges({
       channel: `kitchen-${tenantId}`,
       events: [
