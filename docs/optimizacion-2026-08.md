@@ -52,7 +52,7 @@ era el que ustedes vieron:
 Entre las 17:26 y las 17:35 UTC el promedio de `/auth/v1/user` desde Vercel fue
 de **23–41 segundos**. GoTrue (el servicio de auth) reportaba <1 s por request:
 la espera estaba **delante** del servicio, en el gateway de una instancia
-Nano/Micro (CPU compartida, 60 conexiones) que además atendía al cron cada
+`t4g.nano` del plan Free (CPU compartida, 60 conexiones) que además atendía al cron cada
 minuto, a Realtime polleando el WAL y a pg_net. Con 4 hops de auth por página,
 la probabilidad de que una navegación pisara al menos uno de esos picos era
 ~25–30 %.
@@ -148,14 +148,20 @@ Ver §5 (resultado del barrido por dominio).
    from logs where source='edge_logs' and log_attributes['request.cf.colo']='IAD'
    group by path order by n desc limit 20
    ```
-4. **Compute de Supabase.** Los picos de 60–157 s son de saturación del
-   gateway de la instancia chica, no de queries. Con los cambios de arriba
-   la carga por navegación baja ~7×, lo que debería alcanzar para HUB solo.
-   Para operar varios bares en vivo sin sustos, subir a **Small** (2 vCPU
-   dedicadas, 2 GB, 90 conexiones). Decisión del dueño; no requiere código.
-5. **NO cambiar la región de Vercel.** Supabase está en `us-east-1` (p50 90 ms
-   desde IAD vs 190 ms desde GRU en los logs) y Vercel Hobby corre en `iad1`:
-   ya están juntas. Mover una sola empeora todo.
+4. **Compute de Supabase.** El proyecto está en el plan **Free** (`t4g.nano`,
+   RAM al 58 % en reposo, CPU compartida). Los picos de 60–157 s son de
+   saturación del gateway de esa instancia, no de queries. Con los cambios de
+   arriba la carga por navegación baja ~7×, lo que debería alcanzar para HUB
+   solo. Para operar varios bares en vivo sin sustos: plan Pro (US$ 25/mes,
+   incluye Micro) y compute **Small** (+US$ 15/mes: 2 vCPU dedicadas, 2 GB, 90
+   conexiones). Decisión del dueño; no requiere código.
+5. **Regiones alineadas (hecho en el commit `perf(vercel)`).** Supabase está en
+   **`us-west-2` (Oregon)** — confirmado en Settings → Infrastructure, instancia
+   `t4g.nano` — y Vercel Hobby corría en `iad1` (Virginia): ~70 ms de ida y
+   vuelta extra en CADA hop (p50 90 ms desde IAD, que debería ser ~15 ms local).
+   `vercel.json` ahora fija `"regions": ["pdx1"]` (Portland, Oregon; una sola
+   región es válido en Hobby). Si algún día se migra el proyecto de Supabase a
+   otra región, mover `pdx1` con él.
 
 ## 4. Verificación (smoke ejecutado)
 

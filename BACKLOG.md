@@ -475,12 +475,13 @@ afuera a propósito:
   mientras haya UN suscriptor, y evalúa RLS por cada cambio × suscriptor.
   Supabase recomienda `realtime.broadcast_changes()` desde triggers para
   escalar. Afecta inbox, difusiones en vivo, mesas/cocina y la billetera.
-- **Compute de Supabase.** El proyecto corre en la instancia más chica (60
-  conexiones = Nano o Micro, CPU compartida). Los picos de 60–157 s en
+- **Compute de Supabase.** El proyecto corre en el plan Free (`t4g.nano`, 60
+  conexiones, CPU compartida, RAM 58 % en reposo). Los picos de 60–157 s en
   `/auth/v1/user` y `/rest/v1/*` NO fueron queries lentas (la DB responde en
   <1 ms) sino el API gateway saturado. Para operar un bar en vivo, subir a
   **Small** (2 vCPU dedicadas, 2 GB) es la única palanca que queda del lado de
-  infraestructura. Decisión del dueño.
+  infraestructura (requiere plan Pro US$ 25/mes + Small US$ 15/mes). Decisión
+  del dueño.
 - **`refresh_stats()` cada 10 min hace `REFRESH MATERIALIZED VIEW CONCURRENTLY`
   de 3 MVs** → 379 GB de temp files acumulados desde abril (work_mem de 2 MB).
   Con el volumen actual es tolerable; cuando crezca, pasar a refresh
@@ -489,11 +490,12 @@ afuera a propósito:
   tickets, tables, sessions-waiter…). Es UN hop por acción y da revocación
   inmediata; aceptable. Si alguna acción de alta frecuencia del salón se
   siente lenta, cambiarla a `getCurrentUser()` (claims).
-- **Vercel Hobby.** Sin `regions` explícito las funciones corren en `iad1`
-  (Washington), que coincide con la región del proyecto Supabase (us-east-1,
-  inferido de los logs: p50 90 ms desde IAD vs 190 ms desde GRU). NO mover la
-  región de Vercel sin mover Supabase. El dueño ve +100 ms por hop desde
-  Córdoba en cualquier caso — es el costo del datacenter en EE.UU.
+- **Regiones.** Supabase está en `us-west-2` (Oregon, `t4g.nano`); Vercel
+  Hobby corría en `iad1` (Virginia) → `vercel.json` fija `regions: ["pdx1"]`.
+  Si se migra Supabase de región, mover `pdx1` con él. El dueño ve +150 ms por
+  hop desde Córdoba en cualquier caso — es el costo del datacenter en EE.UU.;
+  mover Supabase a `sa-east-1` (São Paulo) requeriría un proyecto nuevo y
+  migrar datos (decisión aparte).
 - **Revisión adversarial del fast-path — lows aceptados:** (a) el gate SQL de
   `hub-dispatch` y `gatedTasksDue()` en Node deciden por separado con sus
   propios relojes; si pg_cron arranca >55 s tarde en el minuto %15 el SQL
