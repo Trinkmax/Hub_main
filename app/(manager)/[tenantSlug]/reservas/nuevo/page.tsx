@@ -61,6 +61,11 @@ export default async function NuevaReservaPage({
   const dateParam =
     typeof sp.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : undefined
   const initialDate = dateParam ?? today
+  // `?event=<uuid>` (viene del calendario / del evento): la reserva nace ya
+  // colgada de ese evento, con su hora y tipo de servicio. Sólo se honra si el
+  // evento es de `initialDate` (el link siempre manda `date` + `event`).
+  const eventParam =
+    typeof sp.event === 'string' && /^[0-9a-f-]{36}$/i.test(sp.event) ? sp.event : undefined
 
   const user = await getCurrentUser()
 
@@ -82,25 +87,49 @@ export default async function NuevaReservaPage({
       : Promise.resolve(null),
   ])
 
+  const targetEvent = eventParam ? (eventsToday.find((e) => e.id === eventParam) ?? null) : null
+  const targetEventName = targetEvent
+    ? (targetEvent.name_override ?? targetEvent.template?.name ?? 'Evento')
+    : null
+  const [, mm, dd] = initialDate.split('-')
+
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <PageHeader
         eyebrow={
           <Link
-            href={`/${tenantSlug}/reservas`}
+            href={
+              targetEvent
+                ? `/${tenantSlug}/eventos/programados/${targetEvent.id}`
+                : `/${tenantSlug}/reservas`
+            }
             className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="size-3.5" />
-            Volver a reservas
+            {targetEvent ? `Volver a ${targetEventName}` : 'Volver a reservas'}
           </Link>
         }
-        title="Nueva reserva"
-        description="Cargá los datos del cliente y la mesa. Se calcula la comisión en vivo."
+        title={targetEvent ? `Reserva para ${targetEventName}` : 'Nueva reserva'}
+        description={
+          targetEvent
+            ? `${dd}/${mm} · ${targetEvent.starts_at_local.slice(0, 5)} · el evento ya queda elegido abajo. Se calcula la comisión en vivo.`
+            : 'Cargá los datos del cliente y la mesa. Se calcula la comisión en vivo.'
+        }
       />
       <ReservationForm
         mode="create"
         tenantSlug={tenantSlug}
         initialDate={initialDate}
+        initialValues={
+          targetEvent
+            ? {
+                zone: 'event_floating',
+                scheduled_event_id: targetEvent.id,
+                reservation_time_local: targetEvent.starts_at_local.slice(0, 5),
+                meal_type: targetEvent.meal_type,
+              }
+            : undefined
+        }
         managers={managers}
         templates={templates}
         initialEventsForDate={eventsToday}

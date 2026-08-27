@@ -105,7 +105,14 @@ const ORIGINS: ReservationOrigin[] = [
   'in_person',
   'partner_referral',
 ]
-const ZONES: SalonZone[] = ['planta_alta', 'planta_baja', 'event_floating']
+// Las plantas se listan fijas; los eventos del día se suman como tiles al lado
+// (ver "Dónde se sienta"). `event_floating` sólo se setea al tocar un evento.
+const FLOOR_ZONES: SalonZone[] = ['planta_alta', 'planta_baja']
+
+const ZONE_TILE =
+  'flex min-h-16 flex-col items-center justify-center gap-0.5 rounded-xl border px-2 py-2 text-sm font-medium transition-all'
+const ZONE_TILE_ACTIVE = 'border-primary bg-primary/10 text-foreground shadow-inner'
+const ZONE_TILE_IDLE = 'border-border bg-card/40 text-muted-foreground hover:bg-secondary'
 const KINDS: ReservationKind[] = ['normal', 'birthday', 'special']
 
 function ARSFormat(cents: number): string {
@@ -565,41 +572,111 @@ export function ReservationForm({
         />
       </FieldGroup>
 
-      {/* Zona */}
+      {/* Dónde se sienta: plantas + eventos del día en UNA sola grilla. Antes
+          había que elegir "Sujeta a evento" y DESPUÉS buscar el evento en un
+          combo — dos veces la misma decisión. Ahora cada evento programado del
+          día es una opción más, con su hora y su ocupación a la vista. */}
       <FieldGroup title="Dónde se sienta" icon={Users}>
         <div className="grid gap-2 sm:grid-cols-3">
-          {ZONES.map((z) => {
+          {FLOOR_ZONES.map((z) => {
             const isActive = values.zone === z
-            const label =
-              z === 'planta_alta'
-                ? 'Planta Alta'
-                : z === 'planta_baja'
-                  ? 'Planta Baja'
-                  : 'Sujeta a evento'
+            const bucket = capacity.find((b) => b.bucket === `zone:${z}`) ?? null
             return (
               <button
                 type="button"
                 key={z}
+                aria-pressed={isActive}
                 onClick={() => form.setValue('zone', z, { shouldValidate: true })}
-                className={cn(
-                  'flex h-16 flex-col items-center justify-center rounded-xl border text-sm font-medium transition-all',
-                  isActive
-                    ? 'border-primary bg-primary/10 text-foreground shadow-inner'
-                    : 'border-border bg-card/40 text-muted-foreground hover:bg-secondary',
-                )}
+                className={cn(ZONE_TILE, isActive ? ZONE_TILE_ACTIVE : ZONE_TILE_IDLE)}
               >
-                {label}
-                {z === 'event_floating' ? (
-                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    Capacidad del evento
+                <span>{z === 'planta_alta' ? 'Planta Alta' : 'Planta Baja'}</span>
+                {bucket ? (
+                  <span className="text-[11px] tabular-nums text-muted-foreground">
+                    {bucket.used}/{bucket.capacity} personas
                   </span>
                 ) : null}
               </button>
             )
           })}
+          {eventsForDate.map((e) => (
+            <EventZoneTile
+              key={e.id}
+              event={e}
+              active={values.zone === 'event_floating' && values.scheduled_event_id === e.id}
+              bucket={capacity.find((b) => b.bucket === `event:${e.id}`) ?? null}
+              onSelect={() => {
+                form.setValue('zone', 'event_floating', { shouldValidate: true })
+                form.setValue('scheduled_event_id', e.id, { shouldValidate: true })
+                form.clearErrors('scheduled_event_id')
+              }}
+            />
+          ))}
         </div>
+        {eventsForDate.length === 0 && !eventDateMismatch ? (
+          <p className="text-xs text-muted-foreground">
+            Sin eventos programados para el {ddMM(values.reservation_date)}. Si la reserva es para
+            un evento,{' '}
+            <a
+              href={`/${tenantSlug}/eventos/programados`}
+              target="_blank"
+              rel="noopener"
+              className="text-primary underline"
+            >
+              programalo en el calendario
+            </a>{' '}
+            y va a aparecer acá como opción.
+          </p>
+        ) : null}
         {form.formState.errors.zone?.message ? (
           <p className="text-sm text-destructive">{form.formState.errors.zone.message}</p>
+        ) : null}
+        {eventDateMismatch ? (
+          <div
+            role="alert"
+            className="space-y-2 rounded-lg border border-destructive/50 bg-destructive/5 p-3"
+          >
+            <p className="text-sm font-medium text-destructive">
+              La fecha no coincide con el evento
+              {selectedEventDate ? ` (el evento es del ${ddMM(selectedEventDate)})` : ''}.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              No podemos guardarla así. Elegí cómo seguir:
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {selectedEventDate ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11"
+                  onClick={() =>
+                    form.setValue('reservation_date', selectedEventDate, {
+                      shouldValidate: true,
+                    })
+                  }
+                >
+                  Volver al {ddMM(selectedEventDate)}
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-11"
+                onClick={() => {
+                  // Sacarla del evento: vuelve a una planta para que el form
+                  // quede válido aunque ese día no haya otros eventos.
+                  form.setValue('zone', 'planta_alta', { shouldValidate: true })
+                  form.setValue('scheduled_event_id', undefined, { shouldValidate: true })
+                  form.clearErrors('scheduled_event_id')
+                }}
+              >
+                Sacarla del evento
+              </Button>
+            </div>
+          </div>
+        ) : form.formState.errors.scheduled_event_id?.message ? (
+          <p className="text-sm text-destructive">
+            {form.formState.errors.scheduled_event_id.message}
+          </p>
         ) : null}
       </FieldGroup>
 
@@ -611,115 +688,6 @@ export function ReservationForm({
           onChange={(v) => form.setValue('kind', v as ReservationKind, { shouldValidate: true })}
         />
       </FieldGroup>
-
-      {/* CALENDARIZADO: evento programado del día (zone=event_floating) */}
-      <AnimatePresence initial={false}>
-        {values.zone === 'event_floating' && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.18 }}
-          >
-            <FieldGroup title="Evento programado del día" icon={Sparkles}>
-              <p className="text-xs text-muted-foreground">
-                Elegí a qué evento ya programado del día se suma esta reserva.
-              </p>
-              <Select
-                value={values.scheduled_event_id ?? ''}
-                onValueChange={(v) =>
-                  form.setValue('scheduled_event_id', v || undefined, { shouldValidate: true })
-                }
-              >
-                <SelectTrigger
-                  className="h-11 text-base"
-                  aria-invalid={!!form.formState.errors.scheduled_event_id}
-                >
-                  <SelectValue placeholder="Elegí un evento del día…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {eventsForDate.length === 0 ? (
-                    <div className="px-3 py-2 text-sm text-muted-foreground">
-                      No hay eventos programados para esta fecha.{' '}
-                      <a
-                        href={`/${tenantSlug}/eventos/programados`}
-                        target="_blank"
-                        rel="noopener"
-                        className="text-primary underline"
-                      >
-                        Programar uno
-                      </a>
-                    </div>
-                  ) : (
-                    eventsForDate.map((e) => (
-                      <SelectItem key={e.id} value={e.id}>
-                        <span className="flex items-center gap-2">
-                          {e.template?.color_hex ? (
-                            <span
-                              className="size-2 rounded-full"
-                              style={{ backgroundColor: e.template.color_hex }}
-                              aria-hidden
-                            />
-                          ) : null}
-                          {e.name_override ?? e.template?.name ?? 'Evento'}{' '}
-                          <span className="text-xs text-muted-foreground">
-                            · {e.starts_at_local.slice(0, 5)} · cap {e.capacity}
-                          </span>
-                        </span>
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-              {eventDateMismatch ? (
-                <div
-                  role="alert"
-                  className="space-y-2 rounded-lg border border-destructive/50 bg-destructive/5 p-3"
-                >
-                  <p className="text-sm font-medium text-destructive">
-                    La fecha no coincide con el evento
-                    {selectedEventDate ? ` (el evento es del ${ddMM(selectedEventDate)})` : ''}.
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    No podemos guardarla así. Elegí cómo seguir:
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedEventDate ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-11"
-                        onClick={() =>
-                          form.setValue('reservation_date', selectedEventDate, {
-                            shouldValidate: true,
-                          })
-                        }
-                      >
-                        Volver al {ddMM(selectedEventDate)}
-                      </Button>
-                    ) : null}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="h-11"
-                      onClick={() => {
-                        form.setValue('scheduled_event_id', undefined, { shouldValidate: true })
-                        form.clearErrors('scheduled_event_id')
-                      }}
-                    >
-                      Elegir otro evento
-                    </Button>
-                  </div>
-                </div>
-              ) : form.formState.errors.scheduled_event_id?.message ? (
-                <p className="text-sm text-destructive">
-                  {form.formState.errors.scheduled_event_id.message}
-                </p>
-              ) : null}
-            </FieldGroup>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* ESPECIAL: formato pedido (cumple/recibida que pide Sushi/Pizza/Ramen) */}
       <AnimatePresence initial={false}>
@@ -1508,5 +1476,56 @@ function CustomerCombobox({
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * Un evento programado del día como opción de "Dónde se sienta": nombre con el
+ * color del formato, hora y ocupación real (si ya llegó la capacidad del día).
+ * Un toque = zona `event_floating` + `scheduled_event_id`.
+ */
+function EventZoneTile({
+  event,
+  active,
+  bucket,
+  onSelect,
+}: {
+  event: ScheduledEventWithTemplate
+  active: boolean
+  bucket: DayCapacityBucket | null
+  onSelect: () => void
+}) {
+  const color = event.template?.color_hex ?? 'var(--primary)'
+  const name = event.name_override ?? event.template?.name ?? 'Evento'
+  const used = bucket?.used ?? null
+  const cap = bucket?.capacity ?? event.capacity
+  const full = used !== null && cap > 0 && used >= cap
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onSelect}
+      className={cn(ZONE_TILE, active ? ZONE_TILE_ACTIVE : ZONE_TILE_IDLE)}
+      style={active ? { borderColor: color } : undefined}
+    >
+      <span className="flex max-w-full items-center gap-1.5">
+        <span
+          aria-hidden
+          className="size-2 shrink-0 rounded-full"
+          style={{ backgroundColor: color }}
+        />
+        <span className="truncate">{name}</span>
+      </span>
+      <span
+        className={cn(
+          'text-[11px] tabular-nums',
+          full ? 'text-destructive' : 'text-muted-foreground',
+        )}
+      >
+        {event.starts_at_local.slice(0, 5)} · {used !== null ? `${used}/${cap}` : `cap ${cap}`}
+        {full ? ' · lleno' : ''}
+      </span>
+      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Evento</span>
+    </button>
   )
 }

@@ -1,7 +1,8 @@
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, CalendarPlus } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { z } from 'zod'
+import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/ui/page-header'
 import {
   getScheduledEvent,
@@ -76,6 +77,16 @@ export default async function ScheduledEventPage({
         }
         title={event.name_override ?? event.template?.name ?? 'Evento'}
         description={`${event.event_date} · ${event.starts_at_local.slice(0, 5)} · ${totalGuests}/${event.capacity} personas reservadas`}
+        actions={
+          // Reservar desde el evento: llega al form con el evento, la fecha y
+          // la hora ya elegidos (antes había que volver a buscarlo en un combo).
+          <Button asChild className="gap-2">
+            <Link href={`/${tenantSlug}/reservas/nuevo?date=${event.event_date}&event=${event.id}`}>
+              <CalendarPlus className="size-4" />
+              Nueva reserva
+            </Link>
+          </Button>
+        }
       />
 
       <ScheduledEventForm

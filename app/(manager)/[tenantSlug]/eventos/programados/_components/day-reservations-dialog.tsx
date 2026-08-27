@@ -15,7 +15,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { fetchDayCapacity, fetchReservationsForDate } from '@/lib/salon/client-actions'
+import {
+  fetchDayCapacity,
+  fetchReservationsForDate,
+  fetchScheduledEventsForDate,
+} from '@/lib/salon/client-actions'
+import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import {
   type DayCapacityBucket,
   MEAL_TYPE_LABELS,
@@ -55,16 +60,19 @@ export function DayReservationsDialog({
   const [loading, setLoading] = useState(false)
   const [reservations, setReservations] = useState<ReservationWithJoins[]>([])
   const [buckets, setBuckets] = useState<DayCapacityBucket[]>([])
+  const [events, setEvents] = useState<ScheduledEventWithTemplate[]>([])
 
   const load = useCallback(async () => {
     if (!date) return
     setLoading(true)
-    const [resR, capR] = await Promise.all([
+    const [resR, capR, evR] = await Promise.all([
       fetchReservationsForDate(tenantSlug, date),
       fetchDayCapacity(tenantSlug, date),
+      fetchScheduledEventsForDate(tenantSlug, date),
     ])
     setReservations(resR.ok ? resR.reservations : [])
     setBuckets(capR.ok ? capR.buckets : [])
+    setEvents(evR.ok ? evR.events : [])
     setLoading(false)
   }, [tenantSlug, date])
 
@@ -79,13 +87,9 @@ export function DayReservationsDialog({
   const isOver = usedZones > totalZones
   const isFull = !isOver && totalZones > 0 && usedZones >= totalZones * 0.9
 
-  // Mapa id→{nombre,cap} de eventos del día derivado de las reservas con evento.
-  const eventBuckets = buckets.filter((b) => b.bucket.startsWith('event:'))
-  const eventNames = new Map<string, string>()
-  for (const r of reservations) {
-    if (r.scheduled_event) {
-      eventNames.set(r.scheduled_event.id, r.scheduled_event.template?.name ?? 'Evento')
-    }
+  const usedByEvent = new Map<string, DayCapacityBucket>()
+  for (const b of buckets) {
+    if (b.bucket.startsWith('event:')) usedByEvent.set(b.bucket.slice('event:'.length), b)
   }
 
   return (
@@ -125,16 +129,43 @@ export function DayReservationsDialog({
             <span>
               {ZONE_LABELS.planta_baja}: {pb?.used ?? 0}/{pb?.capacity ?? 0}
             </span>
-            {eventBuckets.map((b) => {
-              const id = b.bucket.slice('event:'.length)
-              return (
-                <span key={b.bucket}>
-                  {eventNames.get(id) ?? 'Evento'}: {b.used}/{b.capacity}
-                </span>
-              )
-            })}
           </div>
         </div>
+
+        {/* Eventos del día: cada uno con su botón. Reservar desde acá llega al
+            form con el evento ya elegido (antes: "Nueva reserva" → "Sujeta a
+            evento" → buscarlo en un combo — tres pasos para la misma decisión). */}
+        {events.length > 0 ? (
+          <ul className="space-y-1.5">
+            {events.map((e) => {
+              const b = usedByEvent.get(e.id)
+              const color = e.template?.color_hex ?? 'var(--primary)'
+              const name = e.name_override ?? e.template?.name ?? 'Evento'
+              return (
+                <li
+                  key={e.id}
+                  className="flex items-center gap-3 rounded-lg border border-border/60 bg-card/40 px-3 py-2 text-sm"
+                >
+                  <span
+                    aria-hidden
+                    className="size-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: color }}
+                  />
+                  <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
+                  <span className="text-[11px] text-muted-foreground tabular-nums">
+                    {e.starts_at_local.slice(0, 5)} · {b?.used ?? 0}/{b?.capacity ?? e.capacity}
+                  </span>
+                  <Button asChild size="sm" variant="outline" className="h-8 gap-1.5">
+                    <Link href={`/${tenantSlug}/reservas/nuevo?date=${date}&event=${e.id}`}>
+                      <CalendarPlus className="size-3.5" />
+                      Reservar
+                    </Link>
+                  </Button>
+                </li>
+              )
+            })}
+          </ul>
+        ) : null}
 
         {/* Listado */}
         {loading ? (
