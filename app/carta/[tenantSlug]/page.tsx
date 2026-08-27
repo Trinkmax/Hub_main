@@ -3,11 +3,13 @@ import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import QRCode from 'qrcode'
 import { cache } from 'react'
+import { preconnect } from 'react-dom'
 import { WalletShell } from '@/app/c/[token]/_components/wallet-shell'
 import { BrandAccent } from '@/components/theme/brand-accent-provider'
 import { getAppUrl } from '@/lib/app-url'
 import { getCanonicalCaptureLink } from '@/lib/capture/canonical'
 import { walletCookieName } from '@/lib/capture/cookie'
+import { getSupabaseClientEnv } from '@/lib/env'
 import { listActiveMenuPublic } from '@/lib/menu/queries'
 import { buildCategoryTree } from '@/lib/menu/tree'
 import { createServiceClient } from '@/lib/supabase/service'
@@ -68,6 +70,11 @@ export default async function CartaPage({
 }) {
   const { tenantSlug } = await params
   const sp = await searchParams
+
+  // Todas las fotos vienen de Supabase Storage: abrir DNS + TLS contra ese host
+  // desde el <head> ahorra ~100–300 ms en la primera imagen en 4G.
+  preconnect(new URL(getSupabaseClientEnv().url).origin)
+
   const tenant = await resolveTenant(tenantSlug)
   if (!tenant) notFound()
 

@@ -1,14 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { isStorageUrl, thumbUrlFor } from '@/lib/menu/media-urls'
+import { isStorageUrl, mediumUrlFor, thumbUrlFor } from '@/lib/menu/media-urls'
 import { cn } from '@/lib/utils'
 
 /**
  * Imagen de Supabase Storage SIN next/image (la cuota del optimizer de Vercel
  * está agotada y no se upgradea). Sirve variantes pregeneradas vía srcSet:
- * thumb 320px (`_t.{ext}`, ver lib/menu/media-urls.ts) + full 1600px, y el
- * browser elige según `sizes`.
+ * thumb 320px (`_t`) + media 800px (`_m`) + full 1600px (ver
+ * lib/menu/media-urls.ts), y el browser elige según `sizes` × DPR. Sin la
+ * media, una tarjeta de 190px en un celular retina bajaba el full (~600 KB).
  *
  * - Fill-style: absolute inset-0 + object-cover; el caller envuelve en un
  *   contenedor `relative` (mismo contrato que next/image fill).
@@ -38,6 +39,7 @@ export function StorageImage({
   // Sin thumb derivable (URLs ya derivadas, ej. posters `_vp.webp`) arrancamos en 1.
   const storage = isStorageUrl(src)
   const thumb = thumbUrlFor(src)
+  const medium = mediumUrlFor(src)
   const hasThumb = storage && thumb !== src
   const [attempt, setAttempt] = useState(hasThumb ? 0 : 1)
 
@@ -64,7 +66,7 @@ export function StorageImage({
         if (el?.complete && el.naturalWidth > 0 && !loaded) setLoaded(true)
       }}
       src={src}
-      srcSet={useSrcSet ? `${thumb} 320w, ${src} 1600w` : undefined}
+      srcSet={useSrcSet ? `${thumb} 320w, ${medium} 800w, ${src} 1600w` : undefined}
       sizes={useSrcSet ? sizes : undefined}
       alt={alt}
       loading={priority ? 'eager' : 'lazy'}

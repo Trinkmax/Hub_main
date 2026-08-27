@@ -237,3 +237,30 @@ igual que todas las anteriores aplicadas por MCP). No es nuevo, pero un
 (`create or replace`, `if not exists`, `unschedule` + `schedule`), con el único
 efecto de que `hub-dispatch` cambia de `jobid`. Alinear con `supabase migration
 repair` cuando se adopte el CLI como única vía.
+
+## 7. Carta: fotos más rápidas (`perf(carta)`)
+
+Diagnóstico: `menu-images` tiene 437 fotos "full" de **621 kB promedio (máx.
+4,8 MB)** y sólo existían dos variantes por foto: thumb 320 px y full 1600 px.
+En cualquier celular con DPR ≥ 2, una tarjeta de categoría de ~190 px CSS
+necesita ≥ 380 px reales → el browser elegía el full: **5–6 MB por pantalla**
+del hub de la carta. Además todas las tarjetas eran `loading="lazy"`, incluidas
+las 4–6 que están a la vista al abrir.
+
+Cambios:
+
+- **Variante media `_m.{ext}` (lado mayor 800 px)** en la convención de
+  `lib/menu/media-urls.ts`; el pipeline de upload (`lib/menu/upload-image.ts`)
+  la genera junto con el thumb; `StorageImage` la sirve en el `srcSet`
+  (`320w, 800w, 1600w`). Backfill de las 348 fotos existentes con
+  `npx tsx scripts/backfill-menu-media.ts --apply` (ahora también genera `_m`).
+  Para una tarjeta retina: ~60 kB en vez de ~600 kB.
+- **`priority`** (eager + `fetchpriority=high`) en las 4 primeras tarjetas del
+  hub y los 2 primeros recomendados; el resto sigue lazy.
+- **`preconnect`** al host de Supabase Storage desde el `<head>` de la carta
+  (DNS + TLS antes de la primera foto).
+
+Sin tocar: el full de 1600 px sigue siendo lo que abre el detalle del plato en
+pantallas DPR 3 (en DPR 2 ya cae a la media). Las fotos de > 1 MB que quedaron
+de antes del pipeline se podrían recomprimir en un backfill aparte (cambia la
+URL → hay que repuntar `image_url`); no se hizo en esta tanda.

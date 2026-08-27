@@ -1,9 +1,10 @@
 /**
  * Backfill de variantes de media del bucket `menu-images`.
  *
- * Genera los thumbnails `_t.{ext}` (lado mayor 320px) que faltan para las
- * imágenes ya subidas antes del pipeline nuevo (lib/menu/upload-image.ts), y
- * opcionalmente detecta/borra objetos huérfanos no referenciados por la DB.
+ * Genera las variantes que faltan para las imágenes ya subidas antes del
+ * pipeline actual (lib/menu/upload-image.ts): thumb `_t.{ext}` (lado mayor
+ * 320px) y media `_m.{ext}` (lado mayor 800px). Opcionalmente detecta/borra
+ * objetos huérfanos no referenciados por la DB.
  * Convención de sufijos en lib/menu/media-urls.ts.
  *
  * Uso (NUNCA corre nada contra Storage sin --apply):
@@ -24,6 +25,7 @@ import type { Database } from '../types/database'
 
 const BUCKET = 'menu-images'
 const THUMB_DIMENSION = 320
+const MEDIUM_DIMENSION = 800
 const FULL_DIMENSION = 1600
 const CACHE_CONTROL = '31536000'
 
@@ -86,6 +88,7 @@ const IMAGE_EXTS = new Set(['webp', 'avif', 'jpg', 'jpeg', 'png'])
 const VIDEO_SUFFIX = /_v\.[a-z0-9]+$/i
 const POSTER_SUFFIX = /_vp\.[a-z0-9]+$/i
 const THUMB_SUFFIX = /_t\.[a-z0-9]+$/i
+const MEDIUM_SUFFIX = /_m\.[a-z0-9]+$/i
 
 function extOf(path: string): string {
   const dot = path.lastIndexOf('.')
@@ -109,7 +112,7 @@ function publicUrlFor(path: string): string {
 }
 
 const isDerived = (p: string): boolean =>
-  THUMB_SUFFIX.test(p) || POSTER_SUFFIX.test(p) || VIDEO_SUFFIX.test(p)
+  THUMB_SUFFIX.test(p) || MEDIUM_SUFFIX.test(p) || POSTER_SUFFIX.test(p) || VIDEO_SUFFIX.test(p)
 
 const isBaseImage = (p: string): boolean => !isDerived(p) && IMAGE_EXTS.has(extOf(p))
 
@@ -229,17 +232,22 @@ async function migratePng(path: string): Promise<void> {
   const newBase = tenantFolder ? `${tenantFolder}/${stamp}_${rand}` : `${stamp}_${rand}`
   const fullPath = `${newBase}.webp`
   const thumbPath = `${newBase}_t.webp`
+  const mediumPath = `${newBase}_m.webp`
 
   if (!APPLY) {
-    console.log(`  [dry-run] png → regeneraría ${fullPath} + ${thumbPath} y repuntaría la DB`)
+    console.log(
+      `  [dry-run] png → regeneraría ${fullPath} + ${mediumPath} + ${thumbPath} y repuntaría la DB`,
+    )
     return
   }
 
   const original = await download(path)
   const full = await encodeResized(original, 'webp', FULL_DIMENSION)
+  const medium = await encodeResized(original, 'webp', MEDIUM_DIMENSION)
   const thumb = await encodeResized(original, 'webp', THUMB_DIMENSION)
-  if (!full || !thumb) throw new Error(`no se pudo encodear ${path} a webp`)
+  if (!full || !medium || !thumb) throw new Error(`no se pudo encodear ${path} a webp`)
   await upload(fullPath, full)
+  await upload(mediumPath, medium)
   await upload(thumbPath, thumb)
   const updated = await repointImageUrl(publicUrlFor(path), publicUrlFor(fullPath))
   console.log(`  png migrado → ${fullPath} (${updated} fila(s) de DB repuntadas)`)
@@ -289,8 +297,9 @@ function expectedPaths(referenced: Set<string>): Set<string> {
       // video referenciado → su poster derivado
       expected.add(`${base.slice(0, -2)}_vp.webp`)
     } else if (IMAGE_EXTS.has(ext)) {
-      // imagen referenciada → su thumb derivado
+      // imagen referenciada → sus derivados thumb + media
       expected.add(`${base}_t.${ext}`)
+      expected.add(`${base}_m.${ext}`)
     }
   }
   return expected
@@ -309,10 +318,14 @@ async function main(): Promise<void> {
   const pathSet = new Set(allPaths)
   console.log(`${allPaths.length} objetos en el bucket.\n`)
 
-  // --- 1) Thumbs faltantes -------------------------------------------------
+  // --- 1) Variantes faltantes (thumb 320 + media 800) ----------------------
   let generated = 0
   let skipped = 0
   let pngs = 0
+  const VARIANTS = [
+    { suffix: 't', dimension: THUMB_DIMENSION },
+    { suffix: 'm', dimension: MEDIUM_DIMENSION },
+  ] as const
   for (const path of allPaths) {
     if (!isBaseImage(path)) continue
     const ext = extOf(path)
@@ -324,34 +337,38 @@ async function main(): Promise<void> {
       continue
     }
 
-    const thumbPath = `${baseOf(path)}_t.${ext}`
-    if (pathSet.has(thumbPath)) {
+    const missing = VARIANTS.filter((v) => !pathSet.has(`${baseOf(path)}_${v.suffix}.${ext}`))
+    if (missing.length === 0) {
       skipped += 1
       continue
     }
 
     if (!APPLY) {
-      console.log(`[dry-run] generaría ${thumbPath}`)
-      generated += 1
+      for (const v of missing) console.log(`[dry-run] generaría ${baseOf(path)}_${v.suffix}.${ext}`)
+      generated += missing.length
       continue
     }
 
     try {
+      // Una sola descarga del original por imagen, aunque falten las dos variantes.
       const original = await download(path)
-      const encoded = await encodeResized(original, ext, THUMB_DIMENSION)
-      if (!encoded) {
-        console.warn(`⚠ ${path}: extensión sin encoder (${ext}), salteado`)
-        continue
+      for (const v of missing) {
+        const variantPath = `${baseOf(path)}_${v.suffix}.${ext}`
+        const encoded = await encodeResized(original, ext, v.dimension)
+        if (!encoded) {
+          console.warn(`⚠ ${path}: extensión sin encoder (${ext}), salteado`)
+          continue
+        }
+        await upload(variantPath, encoded)
+        console.log(`✓ ${variantPath} (${(encoded.buffer.length / 1024).toFixed(0)} KB)`)
+        generated += 1
       }
-      await upload(thumbPath, encoded)
-      console.log(`✓ ${thumbPath} (${(encoded.buffer.length / 1024).toFixed(0)} KB)`)
-      generated += 1
     } catch (err) {
       console.error(`✗ ${path}: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
   console.log(
-    `\nThumbs: ${generated} ${APPLY ? 'generados' : 'a generar'} · ${skipped} ya existían · ${pngs} png(s) especiales.\n`,
+    `\nVariantes: ${generated} ${APPLY ? 'generadas' : 'a generar'} · ${skipped} imágenes ya completas · ${pngs} png(s) especiales.\n`,
   )
 
   // --- 2) Huérfanos (opcional) --------------------------------------------

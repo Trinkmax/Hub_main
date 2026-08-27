@@ -6,6 +6,7 @@
  * archivo se crean siblings derivados con sufijos fijos antes de la extensión:
  *
  *   Imagen full   `{tenantId}/{stamp}_{rand}.{ext}`        (lado mayor 1600px)
+ *   Media         `{tenantId}/{stamp}_{rand}_m.{ext}`      (lado mayor 800px, MISMA ext que el full)
  *   Thumb         `{tenantId}/{stamp}_{rand}_t.{ext}`      (lado mayor 320px, MISMA ext que el full)
  *   Video         `{tenantId}/{stamp}_{rand}_v.{ext}`      (mp4 | webm | mov, tal cual sube)
  *   Poster        `{tenantId}/{stamp}_{rand}_vp.webp`      (frame ~0.5s, lado mayor 1280px)
@@ -54,8 +55,28 @@ export function thumbUrlFor(url: string): string {
   const slash = base.lastIndexOf('/')
   if (dot === -1 || dot < slash) return url
   const stem = base.slice(0, dot)
-  if (/_(?:t|v|vp)$/.test(stem)) return url
+  if (/_(?:t|m|v|vp)$/.test(stem)) return url
   return `${stem}_t${base.slice(dot)}${rest}`
+}
+
+/**
+ * URL de la variante media (lado mayor 800px): inserta `_m` antes de la
+ * extensión. Mismas reglas que `thumbUrlFor`. Existe porque entre el thumb
+ * (320px) y el full (1600px, ~600 KB) no había nada: cualquier celular con
+ * DPR ≥ 2 elegía el full para una tarjeta de 190px — 5-6 MB por pantalla de
+ * la carta.
+ *
+ *   .../abc123.webp        → .../abc123_m.webp
+ *   .../abc123_vp.webp     → .../abc123_vp.webp   (sin cambio)
+ */
+export function mediumUrlFor(url: string): string {
+  const [base, rest] = splitSuffix(url)
+  const dot = base.lastIndexOf('.')
+  const slash = base.lastIndexOf('/')
+  if (dot === -1 || dot < slash) return url
+  const stem = base.slice(0, dot)
+  if (/_(?:t|m|v|vp)$/.test(stem)) return url
+  return `${stem}_m${base.slice(dot)}${rest}`
 }
 
 /**

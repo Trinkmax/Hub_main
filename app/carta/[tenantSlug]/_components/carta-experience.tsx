@@ -272,13 +272,16 @@ function CardGrid({
 }): React.JSX.Element {
   return (
     <div className="grid grid-cols-2 gap-3">
-      {nodes.map((node) => (
+      {nodes.map((node, i) => (
         <CategoryHubCard
           key={node.id}
           name={node.name}
           imageUrl={node.image_url}
           subtitle={cardSubtitle(node)}
           onOpen={() => onOpen(node.id)}
+          // Las 4 primeras (2 filas) entran en la pantalla inicial: que no
+          // esperen al lazy-load ni compitan con el resto por la red.
+          priority={i < 4}
         />
       ))}
     </div>

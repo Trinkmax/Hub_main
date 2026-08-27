@@ -29,7 +29,7 @@ export function FeaturedCarousel({
         Recomendados
       </h2>
       <ul className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {items.map((it) => (
+        {items.map((it, i) => (
           <li key={`rec-${it.id}`} className="snap-start">
             <button
               type="button"
@@ -42,6 +42,8 @@ export function FeaturedCarousel({
                   src={it.image_url ?? (it.video_url ? posterUrlFor(it.video_url) : null)}
                   name={it.name}
                   sizes="248px"
+                  // Las dos primeras están a la vista al abrir la carta.
+                  priority={i < 2}
                   className="transition-transform duration-[var(--duration-slow)] group-hover:scale-105"
                 />
                 <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-warning/95 px-2 py-0.5 text-[10px] font-semibold text-warning-foreground shadow-sm">

@@ -11,10 +11,13 @@ const BUCKET = 'menu-images'
 const MAX_DIMENSION = 1600
 const QUALITY = 0.82
 
-// Variante thumbnail: lado mayor 320px, mismo formato que el full, path
-// `{base}_t.{ext}` (ver lib/menu/media-urls.ts). La carta pública la sirve
-// vía srcSet para que los thumbs de 76px no bajen el archivo de 1600px.
+// Variantes derivadas, mismo formato que el full (ver lib/menu/media-urls.ts):
+//   `{base}_t.{ext}` lado mayor 320px — filas de 76px de la carta
+//   `{base}_m.{ext}` lado mayor 800px — tarjetas de categoría/recomendados en
+//                     celulares retina (sin esta, el browser bajaba el full)
+// La carta las sirve vía srcSet y el browser elige según `sizes`.
 const THUMB_DIMENSION = 320
+const MEDIUM_DIMENSION = 800
 
 // Si el archivo ya viene chico y en un formato moderno, no lo recomprimimos —
 // re-encodear destruye calidad sin ganancia. Threshold tunado para el caso de
@@ -109,16 +112,20 @@ export async function processImageForUpload(file: File): Promise<EncodeResult> {
 }
 
 /**
- * Genera el thumbnail (lado mayor THUMB_DIMENSION) en el MISMO formato que el
- * full — la convención `_t.{ext}` exige extensión idéntica para que
- * `thumbUrlFor` sea derivable por string. Devuelve null si el browser no puede
- * encodear ese formato (p. ej. AVIF que entró por el skip de recompresión):
- * el thumb es best-effort, la carta cae al full vía onError.
+ * Genera una variante (lado mayor `maxDimension`) en el MISMO formato que el
+ * full — la convención `_t`/`_m` exige extensión idéntica para que
+ * `thumbUrlFor`/`mediumUrlFor` sean derivables por string. Devuelve null si el
+ * browser no puede encodear ese formato (p. ej. AVIF que entró por el skip de
+ * recompresión): las variantes son best-effort, la carta cae al full vía onError.
  */
-async function makeThumbBlob(file: File, targetType: string): Promise<Blob | null> {
+async function makeVariantBlob(
+  file: File,
+  targetType: string,
+  maxDimension: number,
+): Promise<Blob | null> {
   try {
     const bitmap = await createImageBitmap(file)
-    const ratio = Math.min(THUMB_DIMENSION / bitmap.width, THUMB_DIMENSION / bitmap.height, 1)
+    const ratio = Math.min(maxDimension / bitmap.width, maxDimension / bitmap.height, 1)
     const w = Math.max(1, Math.round(bitmap.width * ratio))
     const h = Math.max(1, Math.round(bitmap.height * ratio))
     const canvas = makeCanvas(w, h)
@@ -177,22 +184,31 @@ export async function uploadMenuImage(opts: {
   })
   if (error) throw error
 
-  // Thumb SIEMPRE (aunque el full haya salteado la recompresión): mismo
-  // formato, path `{base}_t.{ext}`. Best-effort — un fallo acá no rompe el
-  // upload: la carta cae al full vía onError de StorageImage.
-  try {
-    const thumb = await makeThumbBlob(opts.file, contentType)
-    if (thumb) {
-      const thumbPath = `${opts.tenantId}/${stamp}_${rand}_t.${ext}`
-      await supabase.storage.from(BUCKET).upload(thumbPath, thumb, {
-        contentType,
-        cacheControl: '31536000',
-        upsert: false,
-      })
-    }
-  } catch {
-    // best-effort
-  }
+  // Variantes SIEMPRE (aunque el full haya salteado la recompresión): mismo
+  // formato, paths `{base}_t.{ext}` y `{base}_m.{ext}`. Best-effort — un fallo
+  // acá no rompe el upload: la carta cae al full vía onError de StorageImage.
+  await Promise.all(
+    (
+      [
+        ['t', THUMB_DIMENSION],
+        ['m', MEDIUM_DIMENSION],
+      ] as const
+    ).map(async ([suffix, dim]) => {
+      try {
+        const variant = await makeVariantBlob(opts.file, contentType, dim)
+        if (!variant) return
+        await supabase.storage
+          .from(BUCKET)
+          .upload(`${opts.tenantId}/${stamp}_${rand}_${suffix}.${ext}`, variant, {
+            contentType,
+            cacheControl: '31536000',
+            upsert: false,
+          })
+      } catch {
+        // best-effort
+      }
+    }),
+  )
 
   const {
     data: { publicUrl },
@@ -218,7 +234,7 @@ export function storagePathFromUrl(url: string): string | null {
 
 /**
  * Borra una imagen del bucket junto con sus derivados por convención
- * (ver lib/menu/media-urls.ts): el thumb `_t.{ext}` siempre; y si la URL
+ * (ver lib/menu/media-urls.ts): `_t.{ext}` y `_m.{ext}` siempre; y si la URL
  * resulta ser de un video (`_v.{ext}`), también su poster `_vp.webp` —
  * defensa por si un caller le pasa la URL equivocada (para videos usar
  * `deleteMenuVideoByUrl` de lib/menu/upload-video.ts).
@@ -234,7 +250,7 @@ export async function deleteMenuImageByUrl(url: string): Promise<void> {
     if (base.endsWith('_v')) {
       paths.push(`${base.slice(0, -2)}_vp.webp`)
     } else {
-      paths.push(`${base}_t${ext}`)
+      paths.push(`${base}_t${ext}`, `${base}_m${ext}`)
     }
   }
   const supabase = getClient()

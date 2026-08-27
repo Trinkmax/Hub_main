@@ -31,11 +31,14 @@ export function CategoryHubCard({
   imageUrl,
   subtitle,
   onOpen,
+  priority = false,
 }: {
   name: string
   imageUrl: string | null
   subtitle: string
   onOpen: () => void
+  /** Las primeras tarjetas están a la vista al abrir: eager + fetchpriority alto. */
+  priority?: boolean
 }): React.JSX.Element {
   return (
     <button
@@ -49,6 +52,7 @@ export function CategoryHubCard({
           <StorageImage
             src={imageUrl}
             sizes="(max-width: 672px) 50vw, 320px"
+            priority={priority}
             className="transition-transform duration-[var(--duration-slow)] group-hover:scale-105"
           >
             <CategoryMonogram name={name} />
