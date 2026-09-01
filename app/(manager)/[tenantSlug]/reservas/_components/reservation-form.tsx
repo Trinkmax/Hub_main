@@ -14,6 +14,7 @@ import {
   Sparkles,
   User as UserIcon,
   Users,
+  X,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useRouter } from 'next/navigation'
@@ -39,6 +40,7 @@ import { calculateCommission, type RateTier } from '@/lib/commissions/calculate'
 import { type CustomerSearchResult, searchCustomers } from '@/lib/customers/search'
 import { createSalonReservation, updateSalonReservation } from '@/lib/salon/actions'
 import { fetchDayCapacity, fetchScheduledEventsForDate } from '@/lib/salon/client-actions'
+import { durationLabel, endsNextDay, isImplausibleSpan, tableSpanMinutes } from '@/lib/salon/format'
 import { groupManagersForSelect, pickDefaultManagerId } from '@/lib/salon/managers'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import { type CreateSalonReservationInput, createSalonReservationSchema } from '@/lib/salon/schemas'
@@ -212,6 +214,7 @@ export function ReservationForm({
       meal_type: 'dinner',
       reservation_date: initialDate,
       reservation_time_local: '21:30',
+      reservation_end_time_local: '',
       zone: 'planta_alta',
       scheduled_event_id: undefined,
       requested_template_id: undefined,
@@ -228,6 +231,17 @@ export function ReservationForm({
   })
 
   const values = form.watch()
+
+  // Una cena que arranca 21:30 y termina 00:30 es la noche típica del bar, no un
+  // error de carga: no lo bloqueamos, lo decimos.
+  const startTime = values.reservation_time_local ?? ''
+  const endTime = values.reservation_end_time_local || null
+  const crossesMidnight = endsNextDay(startTime, endTime)
+  const spanMinutes = tableSpanMinutes(startTime, endTime)
+  // 21:30 → 20:00 también "cruza medianoche", pero son 22h30 de mesa: casi
+  // seguro quisieron poner 00:00. Avisamos sin bloquear en vez de tapar el
+  // dedazo con un "termina al día siguiente" que suena tranquilizador.
+  const implausibleSpan = isImplausibleSpan(startTime, endTime)
   const [eventsForDate, setEventsForDate] =
     useState<ScheduledEventWithTemplate[]>(initialEventsForDate)
   const [capacity, setCapacity] = useState<DayCapacityBucket[]>([])
@@ -446,6 +460,7 @@ export function ReservationForm({
         meal_type: 'Servicio',
         reservation_date: 'Fecha',
         reservation_time_local: 'Horario',
+        reservation_end_time_local: 'Horario de fin',
         zone: 'Zona',
         scheduled_event_id: 'Evento programado',
         requested_template_id: 'Formato pedido',
@@ -506,7 +521,7 @@ export function ReservationForm({
 
       {/* Fecha + horario */}
       <FieldGroup title="Cuándo" icon={Calendar}>
-        <div className="grid gap-3 sm:grid-cols-[1fr_140px]">
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
           <div className="space-y-2">
             <Label
               htmlFor="reservation_date"
@@ -541,24 +556,91 @@ export function ReservationForm({
               ))}
             </div>
           </div>
-          <div className="space-y-2">
-            <Label
-              htmlFor="reservation_time_local"
-              className="text-xs uppercase tracking-wide text-muted-foreground"
-            >
-              Horario
-            </Label>
-            <div className="relative">
-              <Clock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="reservation_time_local"
-                type="time"
-                step={900}
-                aria-invalid={!!form.formState.errors.reservation_time_local}
-                {...form.register('reservation_time_local')}
-                className="h-11 pl-9 text-base tabular-nums"
-              />
+          {/* Los dos horarios van juntos y en ese orden: se leen como un rango.
+              En mobile quedan uno al lado del otro en vez de apilarse, que es
+              como el staff los piensa ("de nueve y media a doce y media"). */}
+          <div className="grid grid-cols-2 gap-3 sm:w-[292px]">
+            <div className="space-y-2">
+              <Label
+                htmlFor="reservation_time_local"
+                className="text-xs uppercase tracking-wide text-muted-foreground"
+              >
+                Horario
+              </Label>
+              <div className="relative">
+                <Clock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="reservation_time_local"
+                  type="time"
+                  step={900}
+                  aria-invalid={!!form.formState.errors.reservation_time_local}
+                  {...form.register('reservation_time_local')}
+                  className="h-11 pl-9 text-base tabular-nums"
+                />
+              </div>
             </div>
+            <div className="space-y-2">
+              <Label
+                htmlFor="reservation_end_time_local"
+                className="text-xs uppercase tracking-wide text-muted-foreground"
+              >
+                Hasta (opcional)
+              </Label>
+              <div className="relative">
+                <Clock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="reservation_end_time_local"
+                  type="time"
+                  step={900}
+                  aria-invalid={!!form.formState.errors.reservation_end_time_local}
+                  aria-describedby="reservation_end_time_hint"
+                  {...form.register('reservation_end_time_local')}
+                  className={cn('h-11 pl-9 text-base tabular-nums', endTime && 'pr-9')}
+                />
+                {/* Sin esto no se puede volver a "sin hora de fin" desde el
+                    celular: la rueda de iOS y el reloj de Android no tienen
+                    cómo dejar el campo vacío. Y puede llegar cargado solo,
+                    porque el alta desde un evento lo precarga. */}
+                {endTime ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Quitar el horario de fin"
+                    onClick={() =>
+                      form.setValue('reservation_end_time_local', '', { shouldValidate: true })
+                    }
+                    className="absolute right-1 top-1/2 size-8 -translate-y-1/2 rounded-md text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="size-3.5" />
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+            {/* Tres estados, no dos: sin fin es un consejo, con fin es el dato
+                que el dueño vino a buscar (cuánto dura la mesa), y un tramo
+                absurdo es un aviso. Decirle "dejalo vacío" a alguien que acaba
+                de completar el campo era un consejo desalineado. */}
+            <p
+              id="reservation_end_time_hint"
+              className={cn(
+                'col-span-2 text-[11px] leading-snug',
+                // Tinte de fondo, no color de texto: `--warning-foreground` está
+                // pensado SOBRE el ámbar y en dark mode queda casi negro sobre
+                // negro. Es el mismo patrón del chip de cubiertos.
+                implausibleSpan
+                  ? 'rounded-md border border-warning/50 bg-warning/10 px-2 py-1 text-foreground'
+                  : 'text-muted-foreground',
+              )}
+            >
+              {!endTime
+                ? 'Si no sabés hasta qué hora se quedan, dejalo vacío.'
+                : implausibleSpan
+                  ? `Serían ${durationLabel(spanMinutes ?? 0)} de mesa. ¿Está bien el horario?`
+                  : crossesMidnight
+                    ? `Termina al día siguiente · ${durationLabel(spanMinutes ?? 0)} de mesa.`
+                    : `${durationLabel(spanMinutes ?? 0)} de mesa.`}
+            </p>
           </div>
         </div>
       </FieldGroup>

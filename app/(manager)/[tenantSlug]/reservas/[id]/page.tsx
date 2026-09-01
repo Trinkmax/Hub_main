@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { formatDayLabel } from '@/lib/salon/date-presets'
+import { timeRangeLabel } from '@/lib/salon/format'
 import {
   getBonusRule,
   getManagerForUser,
@@ -85,7 +86,7 @@ export default async function ReservaDetailPage({
           </Link>
         }
         title={reservation.guest_name}
-        description={`${formatDayLabel(reservation.reservation_date)} · ${reservation.reservation_time_local.slice(0, 5)} · ${reservation.estimated_guests} personas`}
+        description={`${formatDayLabel(reservation.reservation_date)} · ${timeRangeLabel(reservation.reservation_time_local, reservation.reservation_end_time_local)} · ${reservation.estimated_guests} personas`}
       />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
@@ -110,6 +111,7 @@ export default async function ReservaDetailPage({
             meal_type: reservation.meal_type,
             reservation_date: reservation.reservation_date,
             reservation_time_local: reservation.reservation_time_local,
+            reservation_end_time_local: reservation.reservation_end_time_local?.slice(0, 5) ?? '',
             zone: reservation.zone,
             scheduled_event_id: reservation.scheduled_event_id ?? undefined,
             estimated_guests: reservation.estimated_guests,

@@ -21,6 +21,7 @@ import {
   fetchScheduledEventsForDate,
 } from '@/lib/salon/client-actions'
 import { summarizeDayCovers } from '@/lib/salon/covers'
+import { timeRangeLabel } from '@/lib/salon/format'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import {
   type DayCapacityBucket,
@@ -199,8 +200,8 @@ export function DayReservationsDialog({
                         type="button"
                         className="flex w-full items-center gap-3 rounded-lg border border-border/60 bg-card/40 px-3 py-2 text-left text-sm transition-colors hover:bg-secondary"
                       >
-                        <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                          {r.reservation_time_local.slice(0, 5)}
+                        <span className="whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground">
+                          {timeRangeLabel(r.reservation_time_local, r.reservation_end_time_local)}
                         </span>
                         <span className="flex-1 truncate font-medium">{r.guest_name}</span>
                         <span className="text-[11px] text-muted-foreground">{zoneOrEvent(r)}</span>

@@ -93,6 +93,7 @@ export function ReservationCard({
   }
 
   const time = reservation.reservation_time_local.slice(0, 5)
+  const endTime = reservation.reservation_end_time_local?.slice(0, 5) ?? null
   const shownGuests = reservation.actual_guests ?? reservation.estimated_guests
   const here = isHere(reservation.status)
   const canArrive = canOperate && reservation.status === 'pending'
@@ -127,6 +128,11 @@ export function ReservationCard({
         >
           <div className="shrink-0 text-center">
             <div className="font-mono text-lg font-semibold leading-none tabular-nums">{time}</div>
+            {endTime ? (
+              <div className="mt-0.5 font-mono text-[11px] leading-none tabular-nums text-muted-foreground">
+                → {endTime}
+              </div>
+            ) : null}
             <div className="mt-1 inline-flex items-center gap-0.5 text-xs font-medium tabular-nums text-muted-foreground">
               <Users className="size-3" aria-hidden />
               {shownGuests}

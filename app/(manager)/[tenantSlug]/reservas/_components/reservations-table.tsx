@@ -17,7 +17,7 @@ import {
   DataTableShell,
 } from '@/components/ui/data-table'
 import { formatDayLabel } from '@/lib/salon/date-presets'
-import { ARSFormat } from '@/lib/salon/format'
+import { ARSFormat, endsNextDay } from '@/lib/salon/format'
 import { MEAL_TYPE_LABELS, type ReservationWithJoins, ZONE_LABELS } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
@@ -171,7 +171,21 @@ export function ReservationsTable({
                         </DataTableCell>
                       )}
                       <DataTableCell className="font-mono text-sm tabular-nums">
-                        {formatTime(r.reservation_time_local)}
+                        <div className="flex flex-col leading-tight">
+                          <span>{formatTime(r.reservation_time_local)}</span>
+                          {r.reservation_end_time_local ? (
+                            <span
+                              className="text-[11px] text-muted-foreground"
+                              title={
+                                endsNextDay(r.reservation_time_local, r.reservation_end_time_local)
+                                  ? 'Termina a la madrugada del día siguiente'
+                                  : 'Hora de finalización'
+                              }
+                            >
+                              → {formatTime(r.reservation_end_time_local)}
+                            </span>
+                          ) : null}
+                        </div>
                       </DataTableCell>
                       <DataTableCell>
                         <div className="flex items-center gap-2">

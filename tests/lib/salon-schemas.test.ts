@@ -83,6 +83,76 @@ describe('createSalonReservationSchema', () => {
     }
   })
 
+  describe('horario de fin (opcional)', () => {
+    it('sin la clave → queda undefined, la action no toca la columna', () => {
+      const r = createSalonReservationSchema.safeParse({ ...baseValid })
+      expect(r.success).toBe(true)
+      if (r.success) expect(r.data.reservation_end_time_local).toBeUndefined()
+    })
+
+    it('cargado → normaliza con :00', () => {
+      const r = createSalonReservationSchema.safeParse({
+        ...baseValid,
+        reservation_end_time_local: '00:30',
+      })
+      expect(r.success).toBe(true)
+      if (r.success) expect(r.data.reservation_end_time_local).toBe('00:30:00')
+    })
+
+    it('vacío (input time sin completar) → null, no error', () => {
+      const r = createSalonReservationSchema.safeParse({
+        ...baseValid,
+        reservation_end_time_local: '',
+      })
+      expect(r.success).toBe(true)
+      if (r.success) expect(r.data.reservation_end_time_local).toBeNull()
+    })
+
+    it('null explícito → null', () => {
+      const r = createSalonReservationSchema.safeParse({
+        ...baseValid,
+        reservation_end_time_local: null,
+      })
+      expect(r.success).toBe(true)
+      if (r.success) expect(r.data.reservation_end_time_local).toBeNull()
+    })
+
+    it('antes del inicio → válido: es la madrugada del día siguiente', () => {
+      const r = createSalonReservationSchema.safeParse({
+        ...baseValid,
+        reservation_time_local: '21:30',
+        reservation_end_time_local: '00:30',
+      })
+      expect(r.success).toBe(true)
+    })
+
+    it('basura → error', () => {
+      const r = createSalonReservationSchema.safeParse({
+        ...baseValid,
+        reservation_end_time_local: '25:99',
+      })
+      expect(r.success).toBe(false)
+    })
+
+    it('en el update se comporta igual: ausente ≠ vacío', () => {
+      const base = {
+        ...baseValid,
+        id: '00000000-0000-4000-8000-0000000000ff',
+        kind: 'normal' as const,
+      }
+      const sin = updateSalonReservationSchema.safeParse(base)
+      expect(sin.success).toBe(true)
+      if (sin.success) expect(sin.data.reservation_end_time_local).toBeUndefined()
+
+      const vacio = updateSalonReservationSchema.safeParse({
+        ...base,
+        reservation_end_time_local: '',
+      })
+      expect(vacio.success).toBe(true)
+      if (vacio.success) expect(vacio.data.reservation_end_time_local).toBeNull()
+    })
+  })
+
   it('estimated_guests > 99 → error', () => {
     const r = createSalonReservationSchema.safeParse({ ...baseValid, estimated_guests: 200 })
     expect(r.success).toBe(false)

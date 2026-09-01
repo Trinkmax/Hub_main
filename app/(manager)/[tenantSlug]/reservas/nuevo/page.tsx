@@ -126,6 +126,9 @@ export default async function NuevaReservaPage({
                 zone: 'event_floating',
                 scheduled_event_id: targetEvent.id,
                 reservation_time_local: targetEvent.starts_at_local.slice(0, 5),
+                // El evento ya sabe hasta qué hora va; si lo tiene cargado, es
+                // la respuesta correcta y evita que la tengan que tipear.
+                reservation_end_time_local: targetEvent.ends_at_local?.slice(0, 5) ?? '',
                 meal_type: targetEvent.meal_type,
               }
             : undefined

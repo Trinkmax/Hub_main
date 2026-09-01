@@ -34,10 +34,34 @@ const optionalEmailField = z
 
 const dateField = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD)')
 
+/**
+ * HH:MM(:SS) con rango real: 00–23 h, 00–59 min. La versión vieja era
+ * `\d{2}:\d{2}` y dejaba pasar "25:99" — un `<input type="time">` no lo puede
+ * generar, pero una Server Action es un endpoint público y ahí llegaba hasta
+ * Postgres para explotar como error crudo de la base.
+ */
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/
+
 const timeField = z
   .string()
-  .regex(/^\d{2}:\d{2}(:\d{2})?$/, 'Horario inválido (HH:MM)')
+  .regex(TIME_RE, 'Horario inválido (HH:MM)')
   .transform((v) => (v.length === 5 ? `${v}:00` : v))
+
+/**
+ * Hora opcional. Tres estados, y los tres importan:
+ *   - `'21:30'` → `'21:30:00'` (cargada)
+ *   - `''` o `null` → `null` (el usuario la vació a propósito)
+ *   - ausente (`undefined`) → se queda `undefined`, y la action NO toca la columna
+ *
+ * Ese tercer caso es el que evita un borrado silencioso: `panelPayload` del
+ * quick-view manda un payload completo cada vez que alguien mueve la hora o las
+ * personas desde el popup. Si `undefined` colapsara a `null`, cada uno de esos
+ * toques borraría el horario de fin sin que nadie se entere.
+ */
+const optionalTimeField = z
+  .union([z.string().regex(TIME_RE, 'Horario inválido (HH:MM)'), z.literal(''), z.null()])
+  .transform((v) => (v ? (v.length === 5 ? `${v}:00` : v) : null))
+  .optional()
 
 const optionalText = (max: number) =>
   z
@@ -78,6 +102,7 @@ export const createSalonReservationSchema = z
     meal_type: mealTypeEnum,
     reservation_date: dateField,
     reservation_time_local: timeField,
+    reservation_end_time_local: optionalTimeField,
     zone: salonZoneEnum,
     scheduled_event_id: z.string().uuid().optional().nullable(),
     // Para reservas especiales (cumple/recibida) que piden un formato calendarizado
@@ -132,6 +157,7 @@ export const updateSalonReservationSchema = z
     meal_type: mealTypeEnum,
     reservation_date: dateField,
     reservation_time_local: timeField,
+    reservation_end_time_local: optionalTimeField,
     zone: salonZoneEnum,
     scheduled_event_id: z.string().uuid().optional().nullable(),
 

@@ -101,7 +101,15 @@ export function ReservationQuickView({
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
           <Field label="Cuándo">
             {fmtDate(r.reservation_date)}
+            {/* En modo editable la hora de inicio la muestra (y edita) el panel de
+                arriba, así que acá solo se agrega el fin. Sin esto, el dato
+                quedaba invisible justo en el popup que se abre desde la lista. */}
             {editable ? '' : ` · ${fmtTime(r.reservation_time_local)}`}
+            {r.reservation_end_time_local
+              ? editable
+                ? ` · termina ${fmtTime(r.reservation_end_time_local)}`
+                : ` – ${fmtTime(r.reservation_end_time_local)}`
+              : ''}
           </Field>
           {editable ? null : <Field label="Dónde">{zoneOrEvent(r)}</Field>}
           <Field label="Servicio">{MEAL_TYPE_LABELS[r.meal_type]}</Field>
@@ -300,6 +308,9 @@ function QuickEditPanel({
       meal_type: r.meal_type,
       reservation_date: r.reservation_date,
       reservation_time_local: `${timeRef.current}:00`,
+      // Va explícita aunque este panel no la edite: el payload es un snapshot de
+      // la fila, y si faltara, cada toque acá borraría el horario de fin.
+      reservation_end_time_local: r.reservation_end_time_local,
       zone: zoneRef.current,
       scheduled_event_id: r.scheduled_event_id,
       estimated_guests: isPost ? r.estimated_guests : guestsRef.current,

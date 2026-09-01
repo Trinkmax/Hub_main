@@ -3137,6 +3137,7 @@ export type Database = {
           origin: Database["public"]["Enums"]["reservation_origin"]
           primary_manager_id: string
           reservation_date: string
+          reservation_end_time_local: string | null
           reservation_time_local: string
           scheduled_event_id: string | null
           seated_at: string | null
@@ -3172,6 +3173,7 @@ export type Database = {
           origin?: Database["public"]["Enums"]["reservation_origin"]
           primary_manager_id: string
           reservation_date: string
+          reservation_end_time_local?: string | null
           reservation_time_local: string
           scheduled_event_id?: string | null
           seated_at?: string | null
@@ -3207,6 +3209,7 @@ export type Database = {
           origin?: Database["public"]["Enums"]["reservation_origin"]
           primary_manager_id?: string
           reservation_date?: string
+          reservation_end_time_local?: string | null
           reservation_time_local?: string
           scheduled_event_id?: string | null
           seated_at?: string | null
@@ -5091,6 +5094,7 @@ export type Database = {
           origin: Database["public"]["Enums"]["reservation_origin"]
           primary_manager_id: string
           reservation_date: string
+          reservation_end_time_local: string | null
           reservation_time_local: string
           scheduled_event_id: string | null
           seated_at: string | null
@@ -5145,6 +5149,7 @@ export type Database = {
           origin: Database["public"]["Enums"]["reservation_origin"]
           primary_manager_id: string
           reservation_date: string
+          reservation_end_time_local: string | null
           reservation_time_local: string
           scheduled_event_id: string | null
           seated_at: string | null

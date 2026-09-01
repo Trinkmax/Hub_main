@@ -305,6 +305,7 @@ export async function createSalonReservation(
       meal_type: parsed.data.meal_type,
       reservation_date: parsed.data.reservation_date,
       reservation_time_local: parsed.data.reservation_time_local,
+      reservation_end_time_local: parsed.data.reservation_end_time_local ?? null,
       zone: parsed.data.zone,
       scheduled_event_id: scheduledEventIdFinal,
       estimated_guests: parsed.data.estimated_guests,
@@ -401,6 +402,11 @@ export async function updateSalonReservation(
       meal_type: patch.meal_type,
       reservation_date: patch.reservation_date,
       reservation_time_local: patch.reservation_time_local,
+      // Solo si el payload la trae. Ausente ≠ vacía: una edición parcial (el
+      // quick-view mueve la hora o las personas) no tiene por qué borrar el fin.
+      ...(patch.reservation_end_time_local !== undefined
+        ? { reservation_end_time_local: patch.reservation_end_time_local }
+        : {}),
       zone: patch.zone,
       scheduled_event_id: patch.scheduled_event_id ?? null,
       estimated_guests: patch.estimated_guests,

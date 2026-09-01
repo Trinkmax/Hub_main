@@ -96,6 +96,12 @@ export type SalonReservationRow = {
   meal_type: MealType
   reservation_date: string
   reservation_time_local: string
+  /**
+   * Hora de fin, opcional (`null` en la enorme mayoría de las reservas: nadie
+   * sabe a qué hora se va a ir la gente). Si es <= `reservation_time_local`,
+   * cruza la medianoche. Informativa: no toca cupos ni comisiones.
+   */
+  reservation_end_time_local: string | null
   zone: SalonZone
   scheduled_event_id: string | null
   estimated_guests: number

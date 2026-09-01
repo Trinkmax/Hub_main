@@ -77,6 +77,7 @@ export function ReservationRow({
   }
 
   const time = reservation.reservation_time_local.slice(0, 5)
+  const endTime = reservation.reservation_end_time_local?.slice(0, 5) ?? null
   const guests = reservation.actual_guests ?? reservation.estimated_guests
   const allowed = nextAllowed(reservation.status)
   const isClosed = reservation.status === 'closed'
@@ -94,8 +95,9 @@ export function ReservationRow({
       }
     >
       {/* Hora */}
-      <span className="font-mono text-base font-semibold tabular-nums sm:w-14 sm:shrink-0">
-        {time}
+      <span className="flex flex-col font-mono leading-tight tabular-nums sm:w-14 sm:shrink-0">
+        <span className="text-base font-semibold">{time}</span>
+        {endTime ? <span className="text-[11px] text-muted-foreground">→ {endTime}</span> : null}
       </span>
 
       {/* Datos del huésped */}
