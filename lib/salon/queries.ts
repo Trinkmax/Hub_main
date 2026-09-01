@@ -144,28 +144,42 @@ export async function listSalonReservations(
  * el tope no significa nada, pero el volumen sí — sin esto, al pasar a "este
  * mes" se perdía el contador de cubiertos.
  *
+ * `guests` es el total (salón + eventos) y viene con el mismo desglose que el
+ * contador del día (`summarizeDayCovers`), para que las dos vistas de la MISMA
+ * pantalla hablen el mismo idioma.
+ *
  * Excluye canceladas y no-show: no ocupan mesa.
  */
 export async function getRangeReservationTotals(opts: {
   tenantId: string
   from: string
   to: string
-}): Promise<{ reservations: number; guests: number }> {
+}): Promise<{ reservations: number; guests: number; salon: number; eventos: number }> {
   const supabase = (await createClient()) as SBAny
   const { data, error } = await supabase
     .from('salon_reservations')
-    .select('estimated_guests, actual_guests')
+    .select('estimated_guests, actual_guests, zone')
     .eq('tenant_id', opts.tenantId)
     .gte('reservation_date', opts.from)
     .lte('reservation_date', opts.to)
     .not('status', 'in', '(cancelled,no_show)')
   if (error) throw error
 
-  const rows = (data ?? []) as Array<{ estimated_guests: number; actual_guests: number | null }>
-  return {
-    reservations: rows.length,
-    guests: rows.reduce((acc, r) => acc + (r.actual_guests ?? r.estimated_guests ?? 0), 0),
+  const rows = (data ?? []) as Array<{
+    estimated_guests: number
+    actual_guests: number | null
+    zone: SalonZone
+  }>
+
+  let salon = 0
+  let eventos = 0
+  for (const r of rows) {
+    const guests = r.actual_guests ?? r.estimated_guests ?? 0
+    if (r.zone === 'event_floating') eventos += guests
+    else salon += guests
   }
+
+  return { reservations: rows.length, guests: salon + eventos, salon, eventos }
 }
 
 export async function getSalonReservation(opts: {

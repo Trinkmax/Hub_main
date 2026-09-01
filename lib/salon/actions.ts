@@ -10,6 +10,7 @@ import {
   RoleRequiredError,
   requireRole,
   requireTenantAccess,
+  TEMPLATE_EDIT_ROLES,
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
@@ -73,6 +74,7 @@ async function authorize(
 
 const STAFF = RESERVATION_STAFF_ROLES
 const OPERATORS = RESERVATION_OPERATOR_ROLES
+const TEMPLATE_EDITORS = TEMPLATE_EDIT_ROLES
 const OWNER_ONLY = ['owner'] as const satisfies ReadonlyArray<TenantRole>
 
 function noAccess(): ActionState {
@@ -743,11 +745,17 @@ export async function deleteScheduledEvent(slug: string, id: string): Promise<Ac
   return { ok: true }
 }
 
+/**
+ * Alta y edición del catálogo de formatos. Owner + host (`TEMPLATE_EDIT_ROLES`):
+ * el anfitrión arma la agenda, así que también define los formatos que después
+ * arrastra al calendario. Las policies `set_staff_insert` (insert) y
+ * `set_host_update` (update) enforcean lo mismo en la DB.
+ */
 export async function upsertScheduledTemplate(
   slug: string,
   input: FormData | Record<string, unknown>,
 ): Promise<ActionState> {
-  const access = await authorize(slug, OWNER_ONLY)
+  const access = await authorize(slug, TEMPLATE_EDITORS)
   if (!access) return noAccess()
 
   const parsed = scheduledTemplateSchema.safeParse(asObject(input))
@@ -769,6 +777,7 @@ export async function upsertScheduledTemplate(
   }
 
   let id = parsed.data.id
+  const isUpdate = Boolean(id)
   if (id) {
     const { error } = await supabase
       .from('scheduled_event_templates')
@@ -786,17 +795,26 @@ export async function upsertScheduledTemplate(
     id = (data as { id: string }).id
   }
 
-  revalidatePath(`/${slug}/eventos/templates`)
+  // El catálogo ya no lo toca solo el dueño: dejamos rastro de quién lo cambió.
+  await logAudit({
+    tenantId: access.tenant.id,
+    userId: null,
+    action: isUpdate ? 'scheduled_event_template.updated' : 'scheduled_event_template.created',
+    entity: 'scheduled_event_template',
+    entityId: id,
+    payload: { name: parsed.data.name, slug: parsed.data.slug, role: access.role },
+  })
+
   revalidatePath(`/${slug}/eventos/programados`)
   return { ok: true, data: { id } }
 }
 
 /**
  * Alta rápida de formato desde el alta de reservas. A diferencia de
- * `upsertScheduledTemplate` (owner-only), esta la puede usar cualquier staff
- * (owner + cashier) — RLS lo permite vía la policy `set_staff_insert`. Solo
- * inserta (nunca edita), genera slug único y devuelve la fila completa para
- * que el form la agregue al combo y la seleccione.
+ * `upsertScheduledTemplate` (owner + host), esta la puede usar todo el staff de
+ * reservas (owner + cashier + host) — RLS lo permite vía la policy
+ * `set_staff_insert`. Solo inserta (nunca edita), genera slug único y devuelve
+ * la fila completa para que el form la agregue al combo y la seleccione.
  */
 export async function quickCreateScheduledTemplate(
   slug: string,
@@ -846,7 +864,6 @@ export async function quickCreateScheduledTemplate(
     payload: { name: parsed.data.name, source: 'quick_create' },
   })
 
-  revalidatePath(`/${slug}/eventos/templates`)
   revalidatePath(`/${slug}/eventos/programados`)
   return {
     ok: true,

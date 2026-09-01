@@ -40,6 +40,15 @@ export const MENU_EDIT_ROLES: ReadonlyArray<TenantRole> = ['owner', 'editor']
 /** CRUD de reservas + eventos del calendario (instancias). */
 export const RESERVATION_STAFF_ROLES: ReadonlyArray<TenantRole> = ['owner', 'cashier', 'host']
 
+/**
+ * Catálogo de formatos de evento (`scheduled_event_templates`): crear y editar.
+ * El anfitrión arma la agenda del bar, así que también define los formatos —
+ * poder crear un "Sushi Libre" pero no corregirle el nombre no es una capacidad
+ * usable. Borrar queda del owner (policy `set_owner_write`). Espeja exactamente
+ * las policies `set_staff_insert` + `set_host_update` de la DB.
+ */
+export const TEMPLATE_EDIT_ROLES: ReadonlyArray<TenantRole> = ['owner', 'host']
+
 /** Transiciones de estado / cantidad real de personas (incluye mozos). */
 export const RESERVATION_OPERATOR_ROLES: ReadonlyArray<TenantRole> = [
   'owner',

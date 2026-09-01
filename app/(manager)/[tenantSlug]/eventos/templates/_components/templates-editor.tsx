@@ -55,7 +55,7 @@ export function TemplatesEditor({
     const d = drafts[index]
     if (!d) return
     if (!d.name || !d.slug) {
-      toast.error('Nombre y slug requeridos.')
+      toast.error('Poné un nombre y un slug para el formato.')
       return
     }
     startTransition(async () => {
@@ -70,7 +70,7 @@ export function TemplatesEditor({
         active: d.active ?? true,
       } as Record<string, unknown>)
       if (r.ok) {
-        toast.success('Template guardado.')
+        toast.success('Formato guardado.')
         if (d._isNew && r.data?.id) {
           setDrafts((prev) =>
             prev.map((x, i) =>
@@ -93,12 +93,12 @@ export function TemplatesEditor({
       <div className="flex justify-end">
         <Button onClick={addNew} className="gap-2">
           <Plus className="size-4" />
-          Nuevo template
+          Nuevo formato
         </Button>
       </div>
       {drafts.length === 0 ? (
         <p className="rounded-xl border border-dashed bg-card/30 p-8 text-center text-sm text-muted-foreground">
-          Sin templates todavía. Creá el primero.
+          Sin formatos todavía. Creá el primero.
         </p>
       ) : null}
       {drafts.map((d, idx) => (

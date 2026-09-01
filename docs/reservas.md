@@ -71,22 +71,35 @@ mueve la comisión de persona.
 
 Una reserva consume del bucket según estas reglas (ver `evaluate_day_capacity`):
 
-| `zone` | `kind` | template.consume_special_reservations | Bucket consumido |
-|---|---|---|---|
-| `planta_alta` | cualquier | — | `zone:planta_alta` |
-| `planta_baja` | cualquier | — | `zone:planta_baja` |
-| `event_floating` | cualquier | — | `event:<scheduled_event_id>` |
-| `planta_alta`/`baja` | `special` | true | `event:<scheduled_event_id>` |
-| `planta_alta`/`baja` | `special` | false | `zone:<zona>` |
+| `zone` | `kind` | template.consume_special_reservations | Bucket de zona | Bucket de evento |
+|---|---|---|---|---|
+| `planta_alta` | cualquier | — | `zone:planta_alta` | — |
+| `planta_baja` | cualquier | — | `zone:planta_baja` | — |
+| `event_floating` | cualquier | — | `zone:event_floating` | `event:<scheduled_event_id>` |
+| `planta_alta`/`baja` | `special` | true | `zone:<zona>` | `event:<scheduled_event_id>` |
+| `planta_alta`/`baja` | `special` | false | `zone:<zona>` | — |
 
-**Los dos contadores del calendario no son el mismo número** y es a propósito:
+Los dos ejes son **ortogonales**: la zona dice *dónde se sienta*, el evento dice
+*a qué vino*. Una reserva cae en exactamente UN bucket de zona (por eso sumar
+los tres `zone:*` da el total del día sin doble conteo) y, si está atada a un
+evento, además suma a su `event:<uuid>`. Nunca sumes zonas + eventos.
 
-- La pastilla del día (`CapacityBadge`, ej. `10/130`) es **el salón**: cubiertos
-  en Planta Alta + Planta Baja sobre el tope de esas zonas. La gente de un
-  evento `event_floating` NO suma ahí — consume el cupo de su evento.
-- El chip de cada evento (`EventLoad`, ej. `4/110`) es **el evento**: toda
-  reserva activa colgada de ese `scheduled_event`, igual que el número que
-  muestra su detalle. Ambos salen de `aggregateMonthCapacity`.
+**Cubiertos = todo el mundo.** Hasta 08/2026 el contador del día sumaba solo
+`planta_alta + planta_baja`, así que un día con 30 a la carta + 12 de Sushi
+Libre mostraba **30** — mientras la misma pantalla en modo "Este mes" mostraba
+42. Hoy el criterio es uno solo en todas las superficies (`summarizeDayCovers`
+en `lib/salon/covers.ts`, y `aggregateMonthCapacity` para el mes):
+
+- **Cubiertos del día** = las tres zonas, contra el tope físico `cap(PA) +
+  cap(PB)`. La gente del evento igual ocupa mesa; el semáforo ámbar/rojo usa el
+  total. El bucket `zone:event_floating` viene con `capacity = 0` a propósito:
+  no tiene tope propio, el que le aplica es el del salón.
+- El chip de cada evento (`EventLoad`, ej. `4/110`) es **el cupo del evento**:
+  toda reserva activa colgada de ese `scheduled_event`, igual que el número que
+  muestra su detalle. Es otro control, no un segundo cubierto.
+
+Los dos usan `actual_guests ?? estimated_guests`: el comensal real pesa apenas
+la mesa lo carga, sin esperar al `closed`.
 
 ### Estado de la reserva — máquina
 

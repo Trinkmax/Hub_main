@@ -569,7 +569,7 @@ function CapacityBadge({ used, total }: { used: number; total: number }) {
             ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
             : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
       )}
-      title="Cubiertos / tope del salón"
+      title="Cubiertos del día (mesas a la carta + reservas de evento) / tope del salón"
     >
       {used}/{total}
     </span>

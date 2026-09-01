@@ -3,6 +3,48 @@
 Hallazgos fuera del scope de la tarea en curso, anotados para retomar
 (ver CLAUDE.md §14.7). No bloquean el merge de la feature donde se detectaron.
 
+## Cubiertos y reservas — inconsistencias vecinas (auditoría 31/08/2026)
+
+Detectadas mientras se arreglaba el contador de Cubiertos (que ahora suma salón
++ eventos en todas las superficies). Ninguna es el bug que reportó el dueño, pero
+todas son "la misma pregunta contestada con dos números en la misma pantalla".
+
+- **Detalle del evento: "0 personas" arriba y "Reservas asociadas (2)" abajo.**
+  `app/(manager)/[tenantSlug]/eventos/programados/[id]/page.tsx` — el contador de
+  personas excluye `cancelled`/`no_show` (correcto) pero el listado y su título
+  las incluyen. En HUB hay eventos (27/08, 28/08) con 2 reservas, todas muertas:
+  el dueño lee "0/40 personas reservadas" arriba de dos nombres. Fix: filtrar el
+  listado con el mismo criterio, o rotularlo "Reservas asociadas (2, 0 activas)".
+- **`timeline-view` del panel de mozos: el "N pax" por franja suma los no-show.**
+  `app/(salon)/[tenantSlug]/salon/reservas-operativo/_components/timeline-view.tsx`
+  — la tira de ocupación de arriba sí los excluye, así que en una noche con
+  no-shows los dos números de la misma pantalla no cierran.
+- **`/operativo`: el badge "Reservas de hoy" cuenta no-shows que el tile
+  "Reservas" descarta.** Dos veces la misma palabra en la misma pantalla con dos
+  números (`app/(manager)/[tenantSlug]/operativo/page.tsx`).
+- **El header de `/reservas` cuenta canceladas y no-show; ningún contador de
+  cubiertos lo hace.** `page.tsx` — el `total` sale de `listSalonReservations`,
+  que no filtra estado (correcto: es la cantidad de filas que muestra la lista).
+  En modo rango eso convive con la barra de período, que sí las excluye. Se
+  mitigó rotulando la barra como "N reservas activas", pero el header sigue
+  diciendo "42 reservas" un día que tiene 38 vivas. El fix de fondo es que el
+  header muestre las dos cifras, o que el filtro de estado tenga un default
+  visible.
+- **`getEventsRanking` (`lib/stats/queries.ts`) usa un tercer criterio.** Para el
+  mismo Sushi Libre el dueño puede leer 8 en el ranking, 10 en "Reservas
+  asociadas" y 22 personas en el header del evento.
+- **`coversOf()` del subheader por día de la tabla de reservas solo ve la página
+  cargada.** `reservations-table.tsx` — en modo rango con más de 100 reservas el
+  "12/09 · 8 reservas · 30 cubiertos" puede quedar corto. Necesita que el total
+  por día venga del server, no de las filas paginadas.
+- **"Cubiertos" en `/mis-numeros` y "Personas" en Comisiones miden otra cosa**
+  (lo facturado a cada gestor, con la reserva compartida contada en los dos).
+  Está bien que difieran del aforo, pero comparten etiqueta con el contador del
+  salón y nadie lo aclara en la UI. Falta un tooltip, no un cambio de número.
+- **Un bar nuevo sin `settings.salon_capacities` tiene tope 0** y el contador de
+  cubiertos le queda en rojo permanente desde el primer día. Debería resolverse
+  en el onboarding o con un fallback razonable.
+
 ## Rediseño del panel de mozos (salón)
 
 - **`award_points_by_amount` no tiene clave de idempotencia.** La RPC inserta una

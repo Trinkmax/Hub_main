@@ -20,6 +20,7 @@ import {
   fetchReservationsForDate,
   fetchScheduledEventsForDate,
 } from '@/lib/salon/client-actions'
+import { summarizeDayCovers } from '@/lib/salon/covers'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import {
   type DayCapacityBucket,
@@ -82,10 +83,11 @@ export function DayReservationsDialog({
 
   const pa = buckets.find((b) => b.bucket === 'zone:planta_alta')
   const pb = buckets.find((b) => b.bucket === 'zone:planta_baja')
-  const usedZones = (pa?.used ?? 0) + (pb?.used ?? 0)
-  const totalZones = (pa?.capacity ?? 0) + (pb?.capacity ?? 0)
-  const isOver = usedZones > totalZones
-  const isFull = !isOver && totalZones > 0 && usedZones >= totalZones * 0.9
+  // Mismo criterio que el contador de /reservas: el total del día incluye a la
+  // gente que vino por un evento, porque igual se sienta en el salón.
+  const covers = summarizeDayCovers(buckets)
+  const isOver = covers.used > covers.total
+  const isFull = !isOver && covers.total > 0 && covers.used >= covers.total * 0.9
 
   const usedByEvent = new Map<string, DayCapacityBucket>()
   for (const b of buckets) {
@@ -103,23 +105,29 @@ export function DayReservationsDialog({
         </DialogHeader>
 
         {/* Resumen de capacidad */}
-        <div className="space-y-2 rounded-xl border border-border/70 bg-card/60 p-3">
+        <div
+          className={cn(
+            'space-y-2 rounded-xl border p-3',
+            // Mismo semáforo (y mismos tokens) que el chip de /reservas.
+            isOver
+              ? 'border-destructive/50 bg-destructive/10'
+              : isFull
+                ? 'border-warning/50 bg-warning/10'
+                : 'border-border/70 bg-card/60',
+          )}
+        >
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-xs uppercase tracking-wide text-muted-foreground">
-              Cubiertos del salón
+              Cubiertos del día
             </span>
             <span
               className={cn(
                 'font-mono text-lg font-semibold tabular-nums',
-                isOver
-                  ? 'text-rose-600 dark:text-rose-400'
-                  : isFull
-                    ? 'text-amber-600 dark:text-amber-400'
-                    : 'text-foreground',
+                isOver ? 'text-destructive' : 'text-foreground',
               )}
             >
-              {usedZones}
-              <span className="text-sm font-normal text-muted-foreground">/{totalZones}</span>
+              {covers.used}
+              <span className="text-sm font-normal text-muted-foreground">/{covers.total}</span>
             </span>
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground tabular-nums">
@@ -129,6 +137,7 @@ export function DayReservationsDialog({
             <span>
               {ZONE_LABELS.planta_baja}: {pb?.used ?? 0}/{pb?.capacity ?? 0}
             </span>
+            {covers.eventos > 0 ? <span>Eventos: {covers.eventos}</span> : null}
           </div>
         </div>
 

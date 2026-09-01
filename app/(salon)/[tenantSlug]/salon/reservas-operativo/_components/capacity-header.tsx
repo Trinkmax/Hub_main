@@ -1,5 +1,6 @@
 'use client'
 
+import { summarizeDayCovers } from '@/lib/salon/covers'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import type { DayCapacityBucket } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
@@ -19,6 +20,12 @@ export function CapacityHeader({
   capacity: DayCapacityBucket[]
   events: ScheduledEventWithTemplate[]
 }) {
+  // Total del día primero: es la respuesta a "¿entramos?" y tiene que ser el
+  // MISMO número que el dueño ve en /reservas (salón + eventos sobre el tope
+  // físico). Antes el mozo veía tres chips sueltos sin total y el manager decía
+  // otra cosa.
+  const covers = summarizeDayCovers(capacity)
+
   const items: Array<{ key: string; label: string; bucket?: DayCapacityBucket; color?: string }> = [
     {
       key: 'pa',
@@ -41,11 +48,34 @@ export function CapacityHeader({
   const visible = items.filter((i) => i.bucket)
   if (visible.length === 0) return null
 
+  const totalOver = covers.used > covers.total
+  const totalFull = !totalOver && covers.total > 0 && covers.used >= covers.total * 0.9
+
   return (
     <ul
       aria-label="Ocupación del día"
       className="-mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
+      <li
+        className={cn(
+          'flex shrink-0 snap-start items-center gap-2 rounded-full border px-3 py-1.5',
+          totalOver
+            ? 'border-destructive/50 bg-destructive/10'
+            : totalFull
+              ? 'border-warning/50 bg-warning/10'
+              : 'border-border/70 bg-card',
+        )}
+      >
+        <span className="text-xs font-medium text-muted-foreground">Total</span>
+        <span
+          className={cn(
+            'font-mono text-xs font-semibold tabular-nums',
+            totalOver ? 'text-destructive' : 'text-foreground',
+          )}
+        >
+          {covers.used}/{covers.total}
+        </span>
+      </li>
       {visible.map((item) => {
         const b = item.bucket as DayCapacityBucket
         const over = b.used > b.capacity

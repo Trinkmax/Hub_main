@@ -32,8 +32,9 @@ const RESERVAS_TOUR: TourDefinition = (() => {
         title: 'El día que estás viendo',
         body: (
           <>
-            Movete con las flechas para ver otros días. El contador de cubiertos te dice cuántos
-            lugares quedan sobre la capacidad total del salón.
+            Movete con las flechas para ver otros días. El contador de cubiertos suma{' '}
+            <strong>toda</strong> la gente del día —las mesas a la carta y las que vienen por un
+            evento— sobre la capacidad total del salón. Si hay evento, abajo te muestra el desglose.
           </>
         ),
       },

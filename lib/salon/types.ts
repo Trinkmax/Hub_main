@@ -168,8 +168,22 @@ export type CommissionLedgerRow = {
 // ──────────────────────────────────────────────────────────
 
 export type DayCapacityBucket = {
-  bucket: string // 'zone:planta_alta' | 'zone:planta_baja' | 'event:<uuid>'
+  /**
+   * `zone:planta_alta` | `zone:planta_baja` | `zone:event_floating` | `event:<uuid>`
+   *
+   * Los `zone:*` son una PARTICIÓN de las reservas activas del día (cada reserva
+   * tiene exactamente una zona) — sumar los TRES da los cubiertos del día sin
+   * doble conteo. Los `event:<uuid>` son el otro eje (a qué evento vino): una
+   * reserva de planta atada a un evento aparece en los dos, así que **nunca**
+   * sumes `zone:*` + `event:*`. Usá `summarizeDayCovers` (lib/salon/covers.ts).
+   */
+  bucket: string
   used: number
+  /**
+   * Tope del bucket. Ojo: `zone:event_floating` viene con `capacity = 0` a
+   * propósito — no tiene tope propio, el que le aplica es el del salón
+   * (PA + PB). No lo pintes crudo como "22/0".
+   */
   capacity: number
   available: number
 }

@@ -8,7 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { MonthCapacity } from '@/lib/salon/month-capacity'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import type { ScheduledEventTemplateRow } from '@/lib/salon/types'
-import type { TenantRole } from '@/lib/tenant'
+import { TEMPLATE_EDIT_ROLES } from '@/lib/tenant/roles'
+import type { TenantRole } from '@/lib/tenant/types'
 import { TemplatesEditor } from '../../templates/_components/templates-editor'
 import { ScheduledEventsMonth } from './scheduled-events-month'
 
@@ -19,11 +20,13 @@ type Tab = 'calendario' | 'eventos'
  * reutilizable (Sushi Libre, Pizza Libre…) arrastrándolo a su fecha. La pestaña
  * "Formatos" (ex-Templates) es el catálogo de esos formatos.
  *
- * El EDITOR de formatos (pestaña "Formatos") es solo para el owner: las actions
- * upsertScheduledTemplate/removeTemplate y la RLS de templates son owner-only,
- * así que mostrárselo al staff era prometer un CRUD que siempre falla con
- * "No tenés permiso". El catálogo para ARRASTRAR formatos al calendario sí
- * queda disponible para todos los roles con acceso.
+ * El EDITOR de formatos (pestaña "Formatos") lo ven owner y anfitrión
+ * (`TEMPLATE_EDIT_ROLES`) — el mismo conjunto que enforcean la action
+ * `upsertScheduledTemplate` y las policies RLS. Al cajero se le sigue ocultando:
+ * mostrárselo era prometer un CRUD que siempre falla con "No tenés permiso"
+ * (él da de alta formatos por el atajo del alta de reserva, no por acá).
+ * El catálogo para ARRASTRAR formatos al calendario queda para todos los roles
+ * con acceso.
  */
 export function CalendarTabs({
   tenantSlug,
@@ -46,8 +49,8 @@ export function CalendarTabs({
   defaultTab: Tab
   role: TenantRole
 }) {
-  const isOwner = role === 'owner'
-  const [tab, setTab] = useState<Tab>(isOwner ? defaultTab : 'calendario')
+  const canEditTemplates = TEMPLATE_EDIT_ROLES.includes(role)
+  const [tab, setTab] = useState<Tab>(canEditTemplates ? defaultTab : 'calendario')
 
   return (
     <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="gap-5">
@@ -56,7 +59,7 @@ export function CalendarTabs({
           <CalendarPlus className="size-4" />
           Calendario
         </TabsTrigger>
-        {isOwner ? (
+        {canEditTemplates ? (
           <TabsTrigger value="eventos" className="gap-1.5 px-3">
             <Settings2 className="size-4" />
             Formatos
@@ -68,14 +71,14 @@ export function CalendarTabs({
         {activeTemplates.length === 0 && events.length === 0 ? (
           <EmptyState
             icon={Settings2}
-            title={isOwner ? 'Creá tus formatos primero' : 'Todavía no hay formatos'}
+            title={canEditTemplates ? 'Creá tus formatos primero' : 'Todavía no hay formatos'}
             description={
-              isOwner
+              canEditTemplates
                 ? 'Sushi Libre, Pizza Libre, Ramen… definí al menos un formato en la pestaña Formatos y después arrastralo al calendario.'
                 : 'Sushi Libre, Pizza Libre, Ramen… el dueño tiene que cargar los formatos antes de poder programar eventos en el calendario.'
             }
             action={
-              isOwner ? (
+              canEditTemplates ? (
                 <Button className="gap-2" onClick={() => setTab('eventos')}>
                   <Settings2 className="size-4" />
                   Ir a Formatos
@@ -95,7 +98,7 @@ export function CalendarTabs({
         )}
       </TabsContent>
 
-      {isOwner ? (
+      {canEditTemplates ? (
         <TabsContent value="eventos" className="space-y-4">
           <p className="text-sm text-muted-foreground text-pretty">
             El catálogo de formatos reutilizables — Sushi Libre, Pizza Libre, Ramen, etc. Cada uno

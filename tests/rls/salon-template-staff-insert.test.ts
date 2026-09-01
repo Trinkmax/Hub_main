@@ -14,6 +14,7 @@ const describeIfRls = RLS_TESTS_ENABLED ? describe : describe.skip
 describeIfRls('RLS — scheduled_event_templates staff insert', () => {
   let ownerA: Awaited<ReturnType<typeof createUserClient>>
   let cashierA: Awaited<ReturnType<typeof createUserClient>>
+  let hostA: Awaited<ReturnType<typeof createUserClient>>
   let ownerB: Awaited<ReturnType<typeof createUserClient>>
   let tenantA: { id: string; slug: string }
   let tenantB: { id: string; slug: string }
@@ -35,6 +36,7 @@ describeIfRls('RLS — scheduled_event_templates staff insert', () => {
   beforeAll(async () => {
     ownerA = await createUserClient({ email: uniqueEmail('tpl-ownerA') })
     cashierA = await createUserClient({ email: uniqueEmail('tpl-cashier') })
+    hostA = await createUserClient({ email: uniqueEmail('tpl-host') })
     ownerB = await createUserClient({ email: uniqueEmail('tpl-ownerB') })
     tenantA = await createTenant({
       name: 'Bar TPL A',
@@ -47,14 +49,16 @@ describeIfRls('RLS — scheduled_event_templates staff insert', () => {
       ownerId: ownerB.userId,
     })
     const service = getServiceClient()
-    await service
-      .from('memberships')
-      .insert([{ tenant_id: tenantA.id, user_id: cashierA.userId, role: 'cashier' }])
+    await service.from('memberships').insert([
+      { tenant_id: tenantA.id, user_id: cashierA.userId, role: 'cashier' },
+      { tenant_id: tenantA.id, user_id: hostA.userId, role: 'host' },
+    ])
   })
 
   afterAll(async () => {
     if (ownerA) await deleteUser(ownerA.userId)
     if (cashierA) await deleteUser(cashierA.userId)
+    if (hostA) await deleteUser(hostA.userId)
     if (ownerB) await deleteUser(ownerB.userId)
   })
 
@@ -97,5 +101,81 @@ describeIfRls('RLS — scheduled_event_templates staff insert', () => {
       .select('id')
       .single()
     expect(error).not.toBeNull()
+  })
+
+  // ── host (anfitrión): arma la agenda, así que crea Y edita formatos.
+  //    Espeja TEMPLATE_EDIT_ROLES en lib/tenant/roles.ts.
+
+  it('host de A inserta un formato → ok', async () => {
+    const { data, error } = await hostA.client
+      .from('scheduled_event_templates')
+      .insert(tpl({ name: 'Host Libre', slug: uniqueSlug('host-libre') }))
+      .select('id')
+      .single()
+    expect(error).toBeNull()
+    expect(data?.id).toBeTruthy()
+  })
+
+  it('host de A SÍ puede editar un formato existente', async () => {
+    const service = getServiceClient()
+    const { data: created } = await service
+      .from('scheduled_event_templates')
+      .insert(tpl({ slug: uniqueSlug('host-edit') }))
+      .select('id')
+      .single()
+    const id = (created as { id: string }).id
+
+    await hostA.client
+      .from('scheduled_event_templates')
+      .update({ name: 'Sushi Libre corregido' })
+      .eq('id', id)
+
+    const { data: after } = await service
+      .from('scheduled_event_templates')
+      .select('name')
+      .eq('id', id)
+      .single()
+    expect((after as { name: string }).name).toBe('Sushi Libre corregido')
+  })
+
+  it('host de A NO puede borrar un formato (borrar sigue owner-only)', async () => {
+    const service = getServiceClient()
+    const { data: created } = await service
+      .from('scheduled_event_templates')
+      .insert(tpl({ slug: uniqueSlug('host-delete') }))
+      .select('id')
+      .single()
+    const id = (created as { id: string }).id
+
+    await hostA.client.from('scheduled_event_templates').delete().eq('id', id)
+
+    const { data: after } = await service
+      .from('scheduled_event_templates')
+      .select('id')
+      .eq('id', id)
+      .maybeSingle()
+    expect(after).not.toBeNull()
+  })
+
+  it('host de A NO puede editar un formato del tenant B', async () => {
+    const service = getServiceClient()
+    const { data: created } = await service
+      .from('scheduled_event_templates')
+      .insert(tpl({ tenant_id: tenantB.id, slug: uniqueSlug('host-cross') }))
+      .select('id')
+      .single()
+    const id = (created as { id: string }).id
+
+    await hostA.client
+      .from('scheduled_event_templates')
+      .update({ name: 'Cross tenant' })
+      .eq('id', id)
+
+    const { data: after } = await service
+      .from('scheduled_event_templates')
+      .select('name')
+      .eq('id', id)
+      .single()
+    expect((after as { name: string }).name).not.toBe('Cross tenant')
   })
 })

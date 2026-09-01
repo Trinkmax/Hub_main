@@ -34,7 +34,7 @@ describe('aggregateMonthCapacity', () => {
     expect(r.days['2026-06-05']).toEqual({ used: 10, total: 60 })
   })
 
-  it('usa actual_guests solo si status=closed', () => {
+  it('usa actual_guests apenas está cargado, sin esperar el closed', () => {
     const r = aggregateMonthCapacity({
       reservations: [
         {
@@ -55,11 +55,12 @@ describe('aggregateMonthCapacity', () => {
       overrides: [],
       defaults,
     })
-    // closed → 7, seated → estimated 5 = 12
-    expect(r.days['2026-06-06']?.used).toBe(12)
+    // closed → 7, seated → 9 (el real ya cargado) = 16. Mismo criterio que el
+    // RPC evaluate_day_capacity, para que el mes y el día no discrepen.
+    expect(r.days['2026-06-06']?.used).toBe(16)
   })
 
-  it('excluye cancelled/no_show y zona event_floating', () => {
+  it('excluye cancelled/no_show pero SÍ cuenta las reservas de evento', () => {
     const r = aggregateMonthCapacity({
       reservations: [
         {
@@ -94,7 +95,8 @@ describe('aggregateMonthCapacity', () => {
       overrides: [],
       defaults,
     })
-    expect(r.days['2026-06-07']?.used).toBe(2)
+    // 8 del evento + 2 de planta baja = 10. Las canceladas y el no_show, afuera.
+    expect(r.days['2026-06-07']?.used).toBe(10)
   })
 
   it('aplica overrides por zona al total del día', () => {
@@ -127,7 +129,7 @@ describe('aggregateMonthCapacity', () => {
             status: 'pending',
             scheduled_event_id: 'ramen',
           },
-          // Mesa del salón sin evento: suma al día, no al evento.
+          // Mesa del salón sin evento: suma al día, pero no al evento.
           {
             reservation_date: '2026-08-06',
             zone: 'planta_alta',
@@ -141,7 +143,8 @@ describe('aggregateMonthCapacity', () => {
         defaults,
       })
       expect(r.events.ramen).toBe(4)
-      expect(r.days['2026-08-06']?.used).toBe(10)
+      // El día suma todo: 2 + 2 del evento + 10 de la mesa a la carta.
+      expect(r.days['2026-08-06']?.used).toBe(14)
     })
 
     it('el comensal real pesa apenas se carga (sin esperar el closed)', () => {

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
+import { type DayCovers, summarizeDayCovers } from '@/lib/salon/covers'
 import {
   detectPreset,
   formatDayLabel,
@@ -128,15 +129,9 @@ export default async function ReservasPage({
     nuevaId ? getSalonReservation({ tenantId: access.tenant.id, id: nuevaId }) : null,
   ])
 
-  let dayCapacity: { used: number; total: number } | null = null
-  if (dayBuckets) {
-    const pa = dayBuckets.find((b) => b.bucket === 'zone:planta_alta')
-    const pb = dayBuckets.find((b) => b.bucket === 'zone:planta_baja')
-    dayCapacity = {
-      used: (pa?.used ?? 0) + (pb?.used ?? 0),
-      total: (pa?.capacity ?? 0) + (pb?.capacity ?? 0),
-    }
-  }
+  // Cubiertos del día = salón + eventos. El desglose lo arma `summarizeDayCovers`
+  // a partir de los buckets del RPC (ver lib/salon/covers.ts).
+  const dayCapacity: DayCovers | null = dayBuckets ? summarizeDayCovers(dayBuckets) : null
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const hasFilters = Boolean(q || status || zone || managerId)
@@ -201,8 +196,16 @@ export default async function ReservasPage({
             </span>
             {rangeTotals ? (
               <span className="font-mono text-sm tabular-nums text-muted-foreground">
-                {rangeTotals.reservations} {rangeTotals.reservations === 1 ? 'reserva' : 'reservas'}{' '}
-                · {rangeTotals.guests} cubiertos
+                {/* "activas" no es adorno: el header de arriba cuenta TODAS las filas
+                    de la lista (incluidas canceladas y no_show) y este total las
+                    excluye. Sin la palabra, el dueño lee dos totales de reservas
+                    distintos en la misma pantalla y no sabe cuál creer. */}
+                {rangeTotals.reservations}{' '}
+                {rangeTotals.reservations === 1 ? 'reserva activa' : 'reservas activas'} ·{' '}
+                {rangeTotals.guests} cubiertos
+                {rangeTotals.eventos > 0
+                  ? ` (${rangeTotals.salon} salón · ${rangeTotals.eventos} eventos)`
+                  : null}
               </span>
             ) : null}
             <Button asChild variant="ghost" size="sm" className="ml-auto">

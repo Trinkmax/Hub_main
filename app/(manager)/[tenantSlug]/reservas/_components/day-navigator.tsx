@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useTransition } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import type { DayCovers } from '@/lib/salon/covers'
 import { cn } from '@/lib/utils'
 
 function shiftDay(day: string, delta: number): string {
@@ -36,7 +37,7 @@ export function DayNavigator({
   tenantSlug: string
   day: string
   today: string
-  capacity: { used: number; total: number } | null
+  capacity: DayCovers | null
 }) {
   const router = useRouter()
   const sp = useSearchParams()
@@ -101,20 +102,43 @@ export function DayNavigator({
       ) : null}
 
       {capacity ? (
-        <span
+        <div
           className={cn(
-            'ml-auto rounded-lg border px-3 py-1.5 font-mono text-sm font-semibold tabular-nums',
+            'flex w-full items-baseline justify-between gap-x-3 rounded-lg border px-3 py-1.5',
+            // `ml-auto` solo cuando la barra NO envolvió: si envuelve, el chip
+            // queda huérfano flotando a la derecha en vez de ser una fila más.
+            'sm:ml-auto sm:w-auto sm:flex-col sm:items-end sm:justify-start sm:gap-0 sm:leading-tight',
+            // Mismos tokens de estado que el panel del salón (capacity-header),
+            // no rose/amber crudos: es el mismo dato en dos pantallas.
             isOver
-              ? 'border-rose-300/60 text-rose-600 dark:text-rose-400'
+              ? 'border-destructive/50 bg-destructive/10'
               : isFull
-                ? 'border-amber-300/60 text-amber-600 dark:text-amber-400'
-                : 'border-border/60 text-foreground',
+                ? 'border-warning/50 bg-warning/10'
+                : 'border-border/70 bg-card/60',
           )}
-          title="Cubiertos reservados / tope del salón (Planta Alta + Planta Baja)"
+          title={
+            capacity.eventos > 0
+              ? `Cubiertos reservados / tope del salón (Planta Alta + Planta Baja). Incluye ${capacity.eventos} de reservas atadas a un evento: esa gente también ocupa mesa.`
+              : 'Cubiertos reservados / tope del salón (Planta Alta + Planta Baja)'
+          }
         >
-          Cubiertos {capacity.used}
-          <span className="font-normal text-muted-foreground">/{capacity.total}</span>
-        </span>
+          <span
+            className={cn(
+              'font-mono text-sm font-semibold tabular-nums',
+              isOver ? 'text-destructive' : 'text-foreground',
+            )}
+          >
+            Cubiertos {capacity.used}
+            <span className="font-normal text-muted-foreground">/{capacity.total}</span>
+          </span>
+          {/* El desglose solo cuando hay algo que desglosar: "30 salón · 0 eventos"
+              sería ruido los ~25 días del mes en que no cambia nada. */}
+          {capacity.eventos > 0 ? (
+            <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+              {capacity.salon} salón · {capacity.eventos} eventos
+            </span>
+          ) : null}
+        </div>
       ) : null}
     </div>
   )

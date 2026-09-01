@@ -25,18 +25,22 @@ type AggregateInput = {
 /**
  * Agrega, para un mes, los cubiertos reservados por día y el tope del día.
  *
- * - `used` = suma de comensales de reservas activas en zonas físicas
- *   (PA + PB). Usa `actual_guests` si la reserva está `closed`, si no
- *   `estimated_guests`. Excluye `cancelled`/`no_show` y `event_floating`
- *   (esas consumen el cupo de su evento, no el del salón).
- * - `total` = cap(PA) + cap(PB) con override por fecha aplicado por zona.
+ * - `used` = TODA reserva activa del día, sin importar la zona: las mesas a la
+ *   carta más las atadas a un evento (`event_floating`). Antes el badge del
+ *   calendario excluía las de evento y mostraba 30 en un día de 30 + 12, igual
+ *   que el contador de /reservas — y el dueño terminaba con dos números
+ *   distintos para el mismo día. Esa gente igual se sienta en el salón.
+ * - `total` = cap(PA) + cap(PB) con override por fecha aplicado por zona. Los
+ *   cubiertos de evento no traen tope propio: el que les aplica es el del salón.
  * - `events[id]` = cubiertos anotados en cada evento programado: TODA reserva
  *   activa colgada del evento, sin importar zona ni tipo. Es el mismo criterio
  *   que el detalle del evento ("N/cupo personas reservadas"), para que el
- *   calendario y el detalle nunca muestren números distintos. Ojo: acá el
- *   comensal real (`actual_guests`) pesa apenas la mesa lo carga, mientras que
- *   el conteo de salón espera al `closed` — son dos contadores con criterios
- *   distintos a propósito, no unificar sin pensarlo.
+ *   calendario y el detalle nunca muestren números distintos.
+ *
+ * Los dos contadores usan `actual_guests ?? estimated_guests` — el comensal real
+ * pesa apenas la mesa lo carga, sin esperar al `closed`. Es el mismo criterio
+ * que el RPC `evaluate_day_capacity`, así que el badge del mes y el contador de
+ * /reservas dan siempre el mismo número para el mismo día.
  *
  * Puro y determinístico — testeable sin DB. La query `getMonthCapacity`
  * le pasa filas crudas de Supabase.
@@ -68,14 +72,15 @@ export function aggregateMonthCapacity(input: AggregateInput): MonthCapacity {
   for (const r of input.reservations) {
     if (r.status === 'cancelled' || r.status === 'no_show') continue
 
+    const guests = r.actual_guests ?? r.estimated_guests
+
     if (r.scheduled_event_id) {
-      events[r.scheduled_event_id] =
-        (events[r.scheduled_event_id] ?? 0) + (r.actual_guests ?? r.estimated_guests)
+      events[r.scheduled_event_id] = (events[r.scheduled_event_id] ?? 0) + guests
     }
 
-    if (r.zone !== 'planta_alta' && r.zone !== 'planta_baja') continue
-    const guests =
-      r.status === 'closed' && r.actual_guests != null ? r.actual_guests : r.estimated_guests
+    // Toda reserva activa suma al día: la zona dice DÓNDE se sienta, no si
+    // cuenta. Cada reserva tiene exactamente una zona, así que no hay doble
+    // conteo con el contador por evento (son ejes ortogonales).
     ensure(r.reservation_date).used += guests
   }
 
