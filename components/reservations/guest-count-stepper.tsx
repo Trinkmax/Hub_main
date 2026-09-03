@@ -27,6 +27,7 @@ export function GuestCountStepper({
   disabled,
   className,
   label = 'persona',
+  muted = false,
 }: {
   value: number
   onChange: (next: number) => void
@@ -36,6 +37,8 @@ export function GuestCountStepper({
   className?: string
   /** Singular para los aria-label. "persona" → "Una persona menos". */
   label?: string
+  /** El número todavía no es un conteo real (es una propuesta): se ve apagado. */
+  muted?: boolean
 }) {
   const clamp = (n: number) => Math.max(MIN, Math.min(MAX, n))
   const btn = size === 'lg' ? 'size-12' : size === 'md' ? 'size-9' : 'size-7'
@@ -57,7 +60,11 @@ export function GuestCountStepper({
       </Button>
       <span
         aria-live="polite"
-        className={cn('text-center font-mono font-semibold tabular-nums', num)}
+        className={cn(
+          'text-center font-mono font-semibold tabular-nums',
+          num,
+          muted && 'text-muted-foreground',
+        )}
       >
         {value}
       </span>

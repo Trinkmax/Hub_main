@@ -63,44 +63,67 @@ const RESERVAS_TOUR: TourDefinition = (() => {
       },
       {
         id: 'personas',
-        kicker: 'El caso de todos los findes 👥',
-        title: '«Reservé para 6… al final somos 10»',
+        target: '[data-tour="reservas-lista"]',
+        kicker: 'Lo que más se pregunta 👥',
+        title: 'La columna «Asistieron» es cuánta gente vino',
         body: (
           <ul className="list-disc space-y-1.5 pl-4">
             <li>
-              Tocá la reserva y usá el <strong>− / +</strong> grande de arriba: cambia al instante y
-              se guarda solo.
+              El número gris con <strong>«sin contar»</strong> es <strong>lo que reservaron</strong>
+              : está ahí como punto de partida, nadie lo confirmó.
             </li>
-            <li>Antes de sentarlos ajustás las personas esperadas.</li>
             <li>
-              Con la mesa ya sentada, ajustás las <strong>personas reales</strong> — y tu comisión
-              se recalcula sola.
+              Tocás <strong>− / +</strong> y ese número pasa a ser{' '}
+              <strong>la gente que vino de verdad</strong>. La reserva queda marcada como «llegó».
+            </li>
+            <li>
+              ¿Te avisan antes que en vez de 4 van a ser 6? Eso es cambiar la reserva: entrá con{' '}
+              <strong>Ver</strong>.
             </li>
           </ul>
         ),
         demo: (
           <div className="space-y-2.5">
-            <div className="flex items-center justify-center gap-5">
-              <span className="flex size-11 items-center justify-center rounded-full border border-border bg-card text-xl text-muted-foreground">
-                −
-              </span>
-              <span className="text-center">
-                <span className="block font-serif text-4xl font-semibold leading-none tabular-nums">
-                  10
+            <div className="flex items-center justify-center gap-6 text-center">
+              <span>
+                <span className="block font-mono text-3xl font-semibold leading-none tabular-nums text-muted-foreground">
+                  4
                 </span>
-                <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  personas
+                <span className="mt-1 block text-[10px] italic text-muted-foreground">
+                  sin contar
                 </span>
               </span>
-              <span className="relative flex size-11 items-center justify-center rounded-full bg-primary text-xl text-primary-foreground">
-                <span className="absolute inset-0 animate-ping rounded-full bg-primary/40" />+
+              <span className="text-2xl text-muted-foreground">→</span>
+              <span>
+                <span className="block font-mono text-3xl font-semibold leading-none tabular-nums">
+                  3
+                </span>
+                <span className="mt-1 block text-[10px] text-muted-foreground">
+                  de 4 reservadas
+                </span>
               </span>
             </div>
             <p className="text-center text-[11px] leading-snug text-muted-foreground">
-              Así se ve arriba del panel al tocar una reserva — pasar de 6 a 10 son cuatro toques en
-              el <strong>+</strong>.
+              Un toque en <strong>−</strong> y quedó registrado que de 4 vinieron 3.
             </p>
           </div>
+        ),
+      },
+      {
+        id: 'pasar-lista',
+        kicker: 'El cierre de la noche 📋',
+        title: 'Pasar lista: todo el día de una',
+        body: (
+          <>
+            El botón <strong>Pasar lista</strong> abre las reservas del día juntas. Tocá el{' '}
+            <strong>✓</strong> en las que vinieron como reservaron, corregí con − / + las que no, y{' '}
+            <strong>Guardar todo</strong>. El numerito del botón te dice cuántas faltan contar.
+            <br />
+            <span className="text-muted-foreground">
+              Solo se guarda lo que tocaste: las que dejaste sin marcar quedan sin contar, no se dan
+              por asistidas.
+            </span>
+          </>
         ),
       },
       {
@@ -109,9 +132,11 @@ const RESERVAS_TOUR: TourDefinition = (() => {
         title: 'Llegó → Sentados → Mesa cerrada',
         body: (
           <>
-            En el mismo panel rápido vas marcando los estados a medida que pasa la noche. Cerrar la
-            mesa es lo que liquida tu comisión. ¿No vinieron? <strong>No vino</strong> también está
-            ahí. Y desde los chips de hora y zona cambiás esos datos al toque.
+            En el mismo panel rápido vas marcando los estados a medida que pasa la noche. La
+            comisión se calcula al marcar <strong>Llegó</strong>, sobre la gente que vino — y los
+            dueños la aprueban después desde el reporte. ¿No vinieron? <strong>No vino</strong>{' '}
+            también está ahí, y esa no paga nada. Desde los chips de hora y zona cambiás esos datos
+            al toque.
           </>
         ),
         demo: (

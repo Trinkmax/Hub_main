@@ -386,6 +386,7 @@ export function ReservationForm({
   ])
 
   // Preview de comisión client-side
+  const loadedActualGuests = initialValues?.actual_guests ?? null
   const commissionPreviewCents = useMemo(() => {
     const primary = managers.find((m) => m.id === values.primary_manager_id)
     const assistant = values.assistant_manager_id
@@ -409,7 +410,11 @@ export function ReservationForm({
       : null
     const entries = calculateCommission(
       {
-        guests: values.estimated_guests,
+        // En edición, la reserva puede tener asistencia cargada: el preview
+        // tiene que mostrar la MISMA plata que el ledger, o el form promete
+        // $2.080 y después el reporte dice $1.560.
+        guests: loadedActualGuests ?? values.estimated_guests,
+        bookedGuests: values.estimated_guests,
         meal_type: values.meal_type,
         primary: { id: values.primary_manager_id || 'x', eligible: !!primary?.commission_eligible },
         assistant: assistant
@@ -434,6 +439,7 @@ export function ReservationForm({
     rateTiers,
     bonusPerGuestCents,
     mode,
+    loadedActualGuests,
   ])
 
   // ── Coherencia fecha ↔ evento ─────────────────────────────

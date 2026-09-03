@@ -126,7 +126,7 @@ export function ReservationsTable({
               {groupByDay ? null : <DataTableHeader>Fecha</DataTableHeader>}
               <DataTableHeader>Hora</DataTableHeader>
               <DataTableHeader>Cliente</DataTableHeader>
-              <DataTableHeader>Personas</DataTableHeader>
+              <DataTableHeader>Asistieron</DataTableHeader>
               <DataTableHeader>Servicio / Zona</DataTableHeader>
               <DataTableHeader className="text-right">Seña</DataTableHeader>
               <DataTableHeader>Gestor</DataTableHeader>

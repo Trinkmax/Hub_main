@@ -3,6 +3,20 @@
 Hallazgos fuera del scope de la tarea en curso, anotados para retomar
 (ver CLAUDE.md §14.7). No bloquean el merge de la feature donde se detectaron.
 
+## Comisiones — deuda que sigue abierta (03/09/2026)
+
+- **Una comisión ya PAGADA sobrevive a la cancelación de la reserva.** El recalc
+  borra solo las impagas antes del early return, así que cancelar una reserva ya
+  liquidada deja la plata pagada y la reserva en `cancelled`. Es coherente con
+  "lo pagado es inmutable", pero el reporte no muestra esas filas por ningún
+  lado: nadie se entera de que pagó una reserva que después se cayó.
+- **`commission_ledger.calculation_version` está clavado en 1.** Cada fila es un
+  sello del momento en que se calculó y solo se refresca si alguien toca esa
+  reserva, así que el reporte puede sumar filas calculadas con reglas distintas
+  sin forma de distinguirlas. Hoy no hay daño (las 40 entries coinciden con la
+  regla vigente), pero el día que cambien las tarifas hace falta bumpear la
+  versión y tener un "recalcular el período" para las impagas.
+
 ## Comisiones y asistencia — deuda encontrada al hacer "Pasar lista" (03/09/2026)
 
 Todo esto es PRE-EXISTENTE y toca plata. Salió de auditar el registro de

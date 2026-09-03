@@ -5,11 +5,17 @@
  * en supabase/migrations/20260520020000_salon_reservations_rpcs.sql.
  *
  * Reglas (rioplatense):
- *   1) Si hay actual_guests cargado, se factura por ese número. Si no, por estimated_guests.
- *   2) Tarifa base: lookup en commission_rate_tiers por meal_type + rango de personas.
+ *   1) CUBIERTOS FACTURADOS: si hay actual_guests cargado, se factura por ese
+ *      número. Si no, por estimated_guests.
+ *   2) ESCALÓN DE TARIFA: lookup en commission_rate_tiers por meal_type + rango,
+ *      pero mirando lo RESERVADO (`bookedGuests`), no lo que vino. Si el escalón
+ *      siguiera al número real, una cena de 16 a la que vienen 15 caía de $130 a
+ *      $120 el cubierto y esa única persona costaba $280 — una penalización por
+ *      cruzar un borde. Ver migración 20260903130251.
  *      Si no hay tier que matchee → rate = 0 (no se rompe, queda 0 a pagar).
  *   3) Bonus full event: si la reserva está atada a un scheduled_event con
  *      full_bonus_active=true Y total_used >= capacity → aplicar bonus_per_guest.
+ *      `total_used` se suma con lo RESERVADO: "lleno" es que se agotó el cupo.
  *   4) Split:
  *        - ambos elegibles → 50/50. Si payable es impar, el primario se lleva el peso extra.
  *        - solo primario   → 100% primario.
@@ -30,7 +36,14 @@ export type RateTier = {
 }
 
 export type CommissionInput = {
+  /** Cubiertos que se facturan: `actual_guests ?? estimated_guests`. */
   guests: number
+  /**
+   * Cubiertos RESERVADOS, para elegir el escalón de tarifa. Si no viene, cae en
+   * `guests` — sirve para el preview del alta, donde todavía no hay asistencia y
+   * los dos números son el mismo.
+   */
+  bookedGuests?: number
   meal_type: MealType
   primary: { id: string; eligible: boolean }
   assistant: { id: string; eligible: boolean } | null
@@ -79,7 +92,8 @@ export function calculateCommission(
   if (input.status === 'cancelled' || input.status === 'no_show') return []
   if (input.guests <= 0) return []
 
-  const tier = pickRateTier(tiers, input.meal_type, input.guests)
+  // El escalón lo fija lo reservado; los cubiertos, lo que vino.
+  const tier = pickRateTier(tiers, input.meal_type, input.bookedGuests ?? input.guests)
   const rate = tier?.rate_per_guest_cents ?? 0
 
   let bonusPerGuest = 0

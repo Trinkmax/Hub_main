@@ -390,3 +390,45 @@ describe('calculateCommission — edge cases', () => {
     })
   })
 })
+
+describe('escalón de tarifa: lo fija lo RESERVADO, no lo que vino', () => {
+  // El corazón del arreglo de 20260903130251. Sin esto, una cena de 16 a la que
+  // vienen 15 cae de $130 a $120 el cubierto y esa única persona cuesta $280.
+  const base = {
+    meal_type: 'dinner' as const,
+    primary: { id: 'p', eligible: true },
+    assistant: null,
+    scheduledEvent: null,
+    status: 'arrived' as const,
+  }
+
+  it('16 reservadas, vinieron 15 → 15 cubiertos a la tarifa de 16', () => {
+    const [entry] = calculateCommission({ ...base, guests: 15, bookedGuests: 16 }, HUB_TIERS, 0)
+    expect(entry?.base_rate_per_guest_cents).toBe(13000)
+    expect(entry?.base_total_cents).toBe(15 * 13000)
+  })
+
+  it('sin bookedGuests cae en guests (preview del alta, donde son el mismo número)', () => {
+    const [entry] = calculateCommission({ ...base, guests: 15 }, HUB_TIERS, 0)
+    expect(entry?.base_rate_per_guest_cents).toBe(12000)
+  })
+
+  it('vinieron MÁS de lo reservado: se facturan los que vinieron', () => {
+    const [entry] = calculateCommission({ ...base, guests: 11, bookedGuests: 10 }, HUB_TIERS, 0)
+    expect(entry?.base_total_cents).toBe(11 * (entry?.base_rate_per_guest_cents ?? 0))
+  })
+
+  it('el bonus también se multiplica por los que vinieron', () => {
+    const [entry] = calculateCommission(
+      {
+        ...base,
+        guests: 15,
+        bookedGuests: 16,
+        scheduledEvent: { capacity: 16, total_used: 16, full_bonus_active: true },
+      },
+      HUB_TIERS,
+      20000,
+    )
+    expect(entry?.bonus_total_cents).toBe(15 * 20000)
+  })
+})

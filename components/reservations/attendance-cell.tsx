@@ -122,7 +122,15 @@ export function AttendanceCell({
     <span className="inline-flex flex-col items-start gap-0.5">
       <span className="inline-flex items-center gap-1">
         <Users className="size-3.5 shrink-0 text-muted-foreground" />
-        <GuestCountStepper value={value} onChange={bump} size="sm" disabled={pending} />
+        {/* Sin contar, el número se ve apagado: es la reserva mostrada como
+            punto de partida, no un conteo. Contado, se ve firme. */}
+        <GuestCountStepper
+          value={value}
+          onChange={bump}
+          size="sm"
+          disabled={pending}
+          muted={!confirmed}
+        />
       </span>
       {/* Marcador discreto y no un chip de color: con 111 de 137 reservas sin
           contar, un chip ámbar por fila pintaría la agenda entera y dejaría de
@@ -136,7 +144,7 @@ export function AttendanceCell({
         {confirmed
           ? value === estimatedGuests
             ? 'vinieron'
-            : `reservó ${estimatedGuests}`
+            : `de ${estimatedGuests} reservadas`
           : 'sin contar'}
       </span>
     </span>

@@ -766,9 +766,12 @@ export async function buildCommissionInputForReservation(opts: {
   const ev = evResult?.data ?? null
   if (ev) {
     const usage = usageResult?.data ?? []
+    // Lo RESERVADO, igual que la RPC: "lleno" es que se agotó el cupo, y el cupo
+    // se agota cuando se vende. Antes usaba `actual ?? estimated` y quedaba
+    // fuera de paridad con `recalc_reservation_commission`.
     const total = (usage as Array<Record<string, unknown>>).reduce(
       (acc: number, x: Record<string, unknown>) =>
-        acc + Number((x.actual_guests as number) ?? (x.estimated_guests as number) ?? 0),
+        acc + Number((x.estimated_guests as number) ?? 0),
       0,
     )
     const e = ev as Record<string, unknown>
