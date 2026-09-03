@@ -396,7 +396,13 @@ export function ReservationCard({
                 <Button
                   variant="secondary"
                   size="lg"
-                  disabled={pending || guests === shownGuests}
+                  // Contra `actual_guests` crudo y NO contra `shownGuests`
+                  // (que coalesce con el estimado): si el tablero del dueño
+                  // marcó la llegada sin contar, `actual_guests` queda null y
+                  // con la comparación vieja era imposible confirmar "vinieron
+                  // los que reservaron" — el botón nacía deshabilitado. Es el
+                  // mismo criterio que usa reservation-status-controls.tsx.
+                  disabled={pending || guests === reservation.actual_guests}
                   className="mt-3 h-12 w-full"
                   onClick={() =>
                     run(

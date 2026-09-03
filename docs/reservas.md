@@ -150,11 +150,30 @@ Si solo uno es eligible, recibe el 100%. Si ninguno, no se inserta entry.
 aplicado (no FK al tier), así un cambio de tarifa mid-mes no afecta
 lo ya pagado. Entries con `paid_at != null` son inmutables.
 
+**La comisión se paga por lo RESERVADO, no por lo que asistió**
+(`estimated_guests`, desde la migración `20260903124825`). No es una
+decisión contable sino de incentivos: la gestora es la que carga las
+reservas Y la que pasa lista, así que facturar por la asistencia le pedía
+escribir un número que le bajaba su propio sueldo. Con eso, o no lo anota
+o anota el estimado — y de hecho pasaba: 114 de 137 reservas sin contar,
+y de las 23 contadas, 21 se cargaron en un barrido entre las 3 y las 4 de
+la mañana, con llegó/sentada/cerrada a 4 segundos una de otra. Eso es un
+sello, no una medición.
+
+`actual_guests` es entonces **un dato de ocupación del dueño**: sirve para
+saber el ausentismo real y quién no viene, y no toca la liquidación. Un
+no-show total sigue pagando cero (el early return por `cancelled`/`no_show`
+no cambió); lo que se dejó de castigar es el faltante parcial, que no es
+responsabilidad del gestor — el bar bloqueó la mesa igual. El escalón de
+tarifa también mira lo reservado, si no una cena de 16 a la que vienen 15
+bajaba de $130 a $120 el cubierto y esa única persona costaba $280.
+
 **Recálculo idempotente**: el RPC `recalc_reservation_commission` borra
 todas las entries no pagadas de la reserva y reinserta según tarifas
-vigentes. Se dispara automáticamente al cerrar la reserva, actualizar
-`actual_guests`, o cuando el evento entero se llena (cascade reaplica
-el bonus a todas las reservas del evento).
+vigentes. Se dispara al cambiar de estado la reserva, al editarla, o cuando
+el evento entero se llena (cascade reaplica el bonus a todas sus reservas).
+**Ya NO se dispara al actualizar `actual_guests`**: registrar la asistencia
+es gratis para quien la registra, que es todo el punto.
 
 ---
 

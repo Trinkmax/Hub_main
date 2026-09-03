@@ -17,10 +17,10 @@ import { cn } from '@/lib/utils'
  *
  * Guarda por `bulkUpdateActualGuests` con UNA entrada, no por
  * `updateActualGuests`: esa escribe el número pero deja la reserva en
- * `pending`, y como la comisión se factura desde que hay `actual_guests`, se le
- * liquidaría al gestor una mesa que nadie confirmó que llegó. La action de lote
- * ya resuelve eso (si está `pending`, transiciona a `arrived`), así que anotar
- * la asistencia significa lo mismo desde la agenda que desde el salón.
+ * `pending`, y entonces el registro se contradice solo — "vinieron 18" en una
+ * mesa que figura como que nunca llegó. La action de lote transiciona a
+ * `arrived` cuando hace falta, así que anotar la asistencia significa lo mismo
+ * desde la agenda que desde el salón.
  *
  * Optimista con reversión: el número cambia YA y se guarda con debounce. Si
  * falla, vuelve al valor del server y avisa — nadie se queda creyendo que anotó

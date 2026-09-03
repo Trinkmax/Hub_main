@@ -9,6 +9,10 @@ Todo esto es PRE-EXISTENTE y toca plata. Salió de auditar el registro de
 asistencia real; ninguno lo introdujo la feature, pero varios se vuelven más
 visibles ahora que registrar la asistencia va a ser algo que pase todos los días.
 
+- **RESUELTOS por `20260903124825`** (comisión sobre lo reservado): el bonus de
+  "evento lleno" ya no depende de por dónde entró el número, corregir la
+  asistencia ya no puede reventar contra una comisión pagada, y la liquidación
+  dejó de moverse retroactivamente sola. Quedan los tres de abajo.
 - **Una comisión ya PAGADA rompe el recálculo.** `recalc_reservation_commission`
   (`20260520020000_salon_reservations_rpcs.sql`) borra la entry impaga y vuelve a
   insertar, pero respeta las pagadas: al re-insertar sobre una pagada choca con
@@ -17,13 +21,6 @@ visibles ahora que registrar la asistencia va a ser algo que pase todos los día
   ilegible. `bulkUpdateActualGuests` lo degrada bien (informa cuáles quedaron
   afuera en vez de abortar todo), pero el fondo sigue ahí. El fix correcto es que
   el recálculo trate la entry pagada como inmutable y registre el delta aparte.
-- **El bonus de "evento lleno" no cascadea al corregir cubiertos.**
-  `update_reservation_actual_guests` recalcula ESA reserva, pero no vuelve a
-  evaluar si el evento sigue lleno. Bajar de 20 a 18 puede dejar el evento por
-  debajo de su capacidad y el bonus queda pagado igual (y al revés). Peor: el
-  resultado depende de por dónde entró el número, porque
-  `transition_reservation_status` sí dispara `recalc_event_commissions`. Son
-  ~$200 por persona por cada reserva del evento.
 - **`recalc_reservation_commission` y `recalc_event_commissions` no validan
   tenant ni rol.** Son SECURITY DEFINER y reescriben `commission_ledger`. Con una
   sesión válida de cualquier bar se puede tocar el ledger de otro. Es el hallazgo
@@ -31,11 +28,10 @@ visibles ahora que registrar la asistencia va a ser algo que pase todos los día
 - **Los errores del recálculo se tragan** en `updateSalonReservation` y
   `cancelSalonReservation` (`lib/salon/actions.ts`): la reserva queda en 18 y el
   ledger sigue cobrando 20, sin ningún error visible.
-- **`/mis-numeros` no distingue "contado" de "estimado".** Cuando el bar empiece
-  a registrar la asistencia real, la comisión de un gestor va a bajar de forma
-  retroactiva y sin rastro en su pantalla. Debería mostrar por reserva si el
-  número está confirmado o es el estimado, y desde cuándo. Es un problema con una
-  persona, no un bug de UI.
+- **`/mis-numeros` podría mostrar la asistencia real como dato.** Ya no hay
+  riesgo de que la comisión baje sola (se paga por lo reservado), pero a la
+  gestora le sirve ver cuántos de los que trajo efectivamente vinieron. Es
+  información, no liquidación.
 
 ## Avisos de servicio — deuda y riesgos (02/09/2026)
 

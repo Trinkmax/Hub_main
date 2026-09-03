@@ -723,8 +723,13 @@ export async function updateActualGuests(
  * lista" del cierre de la noche.
  *
  * Una reserva en `pending` además pasa a `arrived`: si alguien anota que
- * vinieron 18, vinieron. Marcarlas una por una y después contar era justo la
- * fricción que dejó 111 de 137 reservas sin registrar.
+ * vinieron 18, vinieron, y dejarla en "pendiente" haría que el registro se
+ * contradiga solo. Marcarlas una por una y después contar era justo la fricción
+ * que dejó 111 de 137 reservas sin registrar.
+ *
+ * No mueve comisiones: desde 20260903124825 la liquidación se calcula sobre
+ * `estimated_guests`. Ver esa migración para el porqué — en dos palabras, quien
+ * escribe el número no puede ser quien lo paga.
  *
  * Va fila por fila y NO aborta al primer error: en un cierre de noche, que se
  * caiga todo el guardado porque una reserva se canceló mientras tanto sería
