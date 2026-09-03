@@ -1867,6 +1867,166 @@ export type Database = {
           },
         ]
       }
+      marketing_routine_checks: {
+        Row: {
+          completed_at: string
+          completed_by: string | null
+          id: string
+          routine_id: string
+          slot: number
+          tenant_id: string
+          week_start: string
+        }
+        Insert: {
+          completed_at?: string
+          completed_by?: string | null
+          id?: string
+          routine_id: string
+          slot: number
+          tenant_id: string
+          week_start: string
+        }
+        Update: {
+          completed_at?: string
+          completed_by?: string | null
+          id?: string
+          routine_id?: string
+          slot?: number
+          tenant_id?: string
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketing_routine_checks_routine_id_tenant_id_fkey"
+            columns: ["routine_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "marketing_routines"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "marketing_routine_checks_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      marketing_routines: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          id: string
+          position: number
+          slots: number
+          tenant_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          position?: number
+          slots?: number
+          tenant_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          position?: number
+          slots?: number
+          tenant_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketing_routines_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      marketing_tasks: {
+        Row: {
+          category: Database["public"]["Enums"]["marketing_task_category"]
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          created_by: string | null
+          defined_date: string | null
+          file_url: string | null
+          id: string
+          ideal_date: string | null
+          involved_user_id: string | null
+          kind: Database["public"]["Enums"]["marketing_task_kind"]
+          notes: string | null
+          responsible_user_id: string | null
+          specifications: string | null
+          status: Database["public"]["Enums"]["marketing_task_status"]
+          tenant_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          category?: Database["public"]["Enums"]["marketing_task_category"]
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          defined_date?: string | null
+          file_url?: string | null
+          id?: string
+          ideal_date?: string | null
+          involved_user_id?: string | null
+          kind?: Database["public"]["Enums"]["marketing_task_kind"]
+          notes?: string | null
+          responsible_user_id?: string | null
+          specifications?: string | null
+          status?: Database["public"]["Enums"]["marketing_task_status"]
+          tenant_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          category?: Database["public"]["Enums"]["marketing_task_category"]
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          defined_date?: string | null
+          file_url?: string | null
+          id?: string
+          ideal_date?: string | null
+          involved_user_id?: string | null
+          kind?: Database["public"]["Enums"]["marketing_task_kind"]
+          notes?: string | null
+          responsible_user_id?: string | null
+          specifications?: string | null
+          status?: Database["public"]["Enums"]["marketing_task_status"]
+          tenant_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketing_tasks_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       memberships: {
         Row: {
           created_at: string
@@ -2559,6 +2719,91 @@ export type Database = {
             columns: ["redemption_id"]
             isOneToOne: false
             referencedRelation: "reward_redemptions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      public_link_pages: {
+        Row: {
+          active: boolean
+          bio: string | null
+          created_at: string
+          headline: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          bio?: string | null
+          created_at?: string
+          headline?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          bio?: string | null
+          created_at?: string
+          headline?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "public_link_pages_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      public_links: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          highlight: boolean
+          icon: string | null
+          id: string
+          label: string
+          position: number
+          tenant_id: string
+          updated_at: string
+          url: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          highlight?: boolean
+          icon?: string | null
+          id?: string
+          label: string
+          position?: number
+          tenant_id: string
+          updated_at?: string
+          url: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          highlight?: boolean
+          icon?: string | null
+          id?: string
+          label?: string
+          position?: number
+          tenant_id?: string
+          updated_at?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "public_links_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
         ]
@@ -5231,6 +5476,18 @@ export type Database = {
         | "event_starting"
         | "tag_added"
       job_status: "pending" | "processing" | "done" | "failed"
+      marketing_task_category: "eventos" | "promociones" | "impresiones"
+      marketing_task_kind:
+        | "design"
+        | "shoot"
+        | "edit"
+        | "script"
+        | "ads"
+        | "publish"
+        | "print"
+        | "coordinate"
+        | "other"
+      marketing_task_status: "todo" | "in_progress" | "blocked" | "done"
       meal_type: "breakfast" | "lunch" | "tea_time" | "dinner" | "hub_event"
       message_direction: "inbound" | "outbound"
       message_status: "queued" | "sent" | "delivered" | "read" | "failed"
@@ -5469,6 +5726,19 @@ export const Constants = {
         "tag_added",
       ],
       job_status: ["pending", "processing", "done", "failed"],
+      marketing_task_category: ["eventos", "promociones", "impresiones"],
+      marketing_task_kind: [
+        "design",
+        "shoot",
+        "edit",
+        "script",
+        "ads",
+        "publish",
+        "print",
+        "coordinate",
+        "other",
+      ],
+      marketing_task_status: ["todo", "in_progress", "blocked", "done"],
       meal_type: ["breakfast", "lunch", "tea_time", "dinner", "hub_event"],
       message_direction: ["inbound", "outbound"],
       message_status: ["queued", "sent", "delivered", "read", "failed"],
@@ -5565,3 +5835,6 @@ export type TicketStatus = Database["public"]["Enums"]["ticket_status"]
 export type VisitSource = Database["public"]["Enums"]["visit_source"]
 export type FloorElementKind = Database["public"]["Enums"]["floor_element_kind"]
 export type FloorElementShape = Database["public"]["Enums"]["floor_element_shape"]
+export type MarketingTaskCategory = Database["public"]["Enums"]["marketing_task_category"]
+export type MarketingTaskKind = Database["public"]["Enums"]["marketing_task_kind"]
+export type MarketingTaskStatus = Database["public"]["Enums"]["marketing_task_status"]

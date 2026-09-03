@@ -68,6 +68,20 @@ describe('resolveNavGroups — rol + feature + superadmin', () => {
     expect(all).not.toContain('Configuración')
   })
 
+  it('el grupo Marketing es owner-only y trae el tablero + el link de la bio', () => {
+    const owner = resolveNavGroups('owner', SLUG, allOff, false)
+    expect(itemLabels(owner, 'Marketing')).toEqual(['Tareas', 'Link de Instagram'])
+    const tareas = group(owner, 'Marketing')?.items.find((i) => i.label === 'Tareas')
+    expect(tareas?.href).toBe('/hub/tareas')
+    const enlaces = group(owner, 'Marketing')?.items.find((i) => i.label === 'Link de Instagram')
+    expect(enlaces?.href).toBe('/hub/enlaces')
+
+    // Ningún rol acotado lo ve: es la mesa de los socios.
+    for (const role of ['waiter', 'cashier', 'kitchen', 'editor', 'host'] as const) {
+      expect(group(resolveNavGroups(role, SLUG, allOff, false), 'Marketing')).toBeUndefined()
+    }
+  })
+
   it('el owner ve Configuración anclada (pinned, grupo Sistema) y grupos colapsables', () => {
     const groups = resolveNavGroups('owner', SLUG, allOff, false)
     const sistema = group(groups, 'Sistema')
@@ -76,7 +90,7 @@ describe('resolveNavGroups — rol + feature + superadmin', () => {
     expect(sistema?.items[0]?.children?.map((c) => c.label)).toEqual(['Documentación'])
     // Hoy no colapsa (cockpit diario); el resto sí.
     expect(group(groups, 'Hoy')?.collapsible).toBeFalsy()
-    for (const label of ['Agenda', 'Clientes', 'Crecimiento', 'Negocio']) {
+    for (const label of ['Agenda', 'Clientes', 'Crecimiento', 'Marketing', 'Negocio']) {
       expect(group(groups, label)?.collapsible).toBe(true)
     }
   })

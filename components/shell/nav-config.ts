@@ -207,6 +207,26 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    // Lo que el bar muestra puertas afuera y cómo se organiza el equipo para
+    // producirlo. Owner-only: es la mesa de los socios.
+    label: 'Marketing',
+    collapsible: true,
+    items: [
+      {
+        label: 'Tareas',
+        href: (s) => `/${s}/tareas`,
+        icon: 'ListChecks',
+        roles: ['owner'],
+      },
+      {
+        label: 'Link de Instagram',
+        href: (s) => `/${s}/enlaces`,
+        icon: 'Link2',
+        roles: ['owner'],
+      },
+    ],
+  },
+  {
     label: 'Negocio',
     collapsible: true,
     items: [

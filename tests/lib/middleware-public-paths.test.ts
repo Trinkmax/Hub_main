@@ -14,6 +14,12 @@ describe('isPublicPath', () => {
     expect(isPublicPath('/api/webhooks/whatsapp')).toBe(true)
   })
 
+  it('el link público del bar (bio de Instagram) es público', () => {
+    expect(isPublicPath('/l/hub')).toBe(true)
+    // Y NO se lo traga la ruta de tenant: 'l' está en RESERVED_SLUGS.
+    expect(isPublicPath('/lomas/clientes')).toBe(false)
+  })
+
   it('las rutas de tenant NO son públicas', () => {
     expect(isPublicPath('/acme/clientes')).toBe(false)
     expect(isPublicPath('/acme/mensajeria/difusiones')).toBe(false)

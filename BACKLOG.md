@@ -651,3 +651,27 @@ afuera a propósito:
 - **Fotos full > 1 MB de antes del pipeline** (máx. 4,8 MB en `menu-images`):
   recomprimir a 1600 px webp cambia la URL → repuntar `image_url`. Backfill
   aparte; hoy la carta ya no las baja en tarjetas (variante `_m`).
+
+## Marketing — tareas + link público (03/09/2026)
+
+- **El link público no mide nada.** No hay contador de clicks por botón, así que
+  el dueño no sabe si la gente entra a la carta o al delivery. Requiere un
+  endpoint público de redirección (`/l/[slug]/[id]` → registra y redirige) o un
+  beacon; se dejó afuera para no sumar una tabla de eventos y un endpoint
+  anónimo escribible en la primera versión.
+- **El orden de los botones se guarda con N updates.** `reorderPublicLinks` hace
+  un update por fila. Con 6 botones es irrelevante; si alguna vez son 40, va un
+  RPC que reciba el array y haga un solo `update … from (values …)`.
+- **Reordenar es con flechas, no arrastrando.** `@dnd-kit` ya está instalado
+  (lo usa el plano y la carta), pero en una lista de 5 ítems que se edita desde
+  el celular las flechas son más confiables. Revisar si la lista crece.
+- **El link público no tiene QR imprimible.** `lib/qr.ts` y `/print/*` ya
+  resuelven el patrón; sería una hoja más si alguna vez quieren pegarlo en el
+  local.
+- **`marketing_tasks` no tiene hilo de comentarios.** El campo `notes` es un
+  textarea que pisa el anterior: no queda quién escribió qué ni cuándo. Si el
+  tablero se usa de verdad para discutir, hace falta una tabla hija.
+- **Sin realtime.** Si dos socios tienen el tablero abierto, cada uno ve los
+  cambios del otro al recargar (o al volver a la pestaña, por `RefreshOnReturn`).
+  `supabase.channel()` sobre `marketing_tasks` sería directo; se dejó afuera
+  porque el uso real es asincrónico.

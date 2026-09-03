@@ -50,17 +50,28 @@ LOGIN (cream/forest neutral)
    └── role staff     →  /[slug]/salon          (Salón POS, PWA)
 ```
 
-**Manager** (desktop-first): sidebar persistente con 6 dominios
-(Hoy / Clientes / Marketing / Catálogo / Insights / Ajustes), topbar
-con búsqueda ⌘K, tenant switcher y theme toggle. Pensado para uso
-prolongado con teclado/mouse.
+**Manager** (desktop-first): sidebar persistente por dominios
+(Hoy / Agenda / Clientes / Crecimiento / Marketing / Negocio, con
+Configuración anclada abajo), topbar con búsqueda ⌘K, tenant switcher y
+theme toggle. Pensado para uso prolongado con teclado/mouse.
 
 **Salón** (mobile-first): bottom-tab nav (Mesas, Cocina, Bandeja,
 Mi turno), gestos de swipe-left y pull-to-refresh, instalable como
 PWA con su propio service worker. Pensado para celular en turno.
 
+### Superficies públicas (sin login)
+
+`/carta/[slug]` (la carta) · `/c/[token]` (billetera del socio) ·
+`/capture/[slug]` (alta del cliente) · `/r/[token]` (reseña) ·
+`/v/[token]` (QR de canje) · **`/l/[slug]` (link de la bio de Instagram)**.
+
+Una ruta pública nueva se declara en TRES lugares: `PUBLIC_PREFIXES`
+(`lib/supabase/middleware.ts`), `RESERVED_SLUGS` (`lib/tenant/types.ts`) y el
+test `tests/lib/middleware-public-paths.test.ts`.
+
 `docs/redesign-2026.md` documenta el changelog y `docs/design-system.md`
-los tokens, tipografía y patrones.
+los tokens, tipografía y patrones. Las features tienen su propio README en
+`docs/features/`.
 
 ## Scripts
 

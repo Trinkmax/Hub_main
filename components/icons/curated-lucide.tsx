@@ -1,6 +1,7 @@
 import {
   BadgePercent,
   Beer,
+  Bike,
   Cake,
   CalendarDays,
   Coffee,
@@ -11,6 +12,8 @@ import {
   Handshake,
   IceCream2,
   type LucideIcon,
+  MapPin,
+  MessageCircle,
   Percent,
   Pizza,
   Scissors,
@@ -41,6 +44,7 @@ import {
 export const CURATED_ICONS: Record<string, LucideIcon> = {
   BadgePercent,
   Beer,
+  Bike,
   Cake,
   CalendarDays,
   Coffee,
@@ -50,6 +54,8 @@ export const CURATED_ICONS: Record<string, LucideIcon> = {
   GlassWater,
   Handshake,
   IceCream2,
+  MapPin,
+  MessageCircle,
   Percent,
   Pizza,
   Scissors,
@@ -67,6 +73,7 @@ export const CURATED_ICONS: Record<string, LucideIcon> = {
 export const ICON_LABELS: Record<string, string> = {
   BadgePercent: 'Descuento',
   Beer: 'Birra',
+  Bike: 'Delivery',
   Cake: 'Torta',
   CalendarDays: 'Fecha',
   Coffee: 'Café',
@@ -76,6 +83,8 @@ export const ICON_LABELS: Record<string, string> = {
   GlassWater: 'Trago',
   Handshake: 'Alianza',
   IceCream2: 'Helado',
+  MapPin: 'Ubicación',
+  MessageCircle: 'WhatsApp',
   Percent: 'Porcentaje',
   Pizza: 'Pizza',
   Scissors: 'Peluquería',
@@ -93,7 +102,11 @@ export const ICON_NAMES: readonly string[] = Object.keys(CURATED_ICONS)
 
 export function resolveIcon(name: string | null | undefined, fallback: LucideIcon): LucideIcon {
   if (!name) return fallback
-  return CURATED_ICONS[name] ?? fallback
+  // `Object.hasOwn` y no un índice suelto: `CURATED_ICONS` es un objeto literal,
+  // así que `CURATED_ICONS['constructor']` devuelve `Object` (heredado de
+  // Object.prototype) y el `?? fallback` no lo ataja. React lo renderizaría
+  // como componente y tiraría abajo la pantalla entera.
+  return Object.hasOwn(CURATED_ICONS, name) ? (CURATED_ICONS[name] ?? fallback) : fallback
 }
 
 export function LucideByName({
