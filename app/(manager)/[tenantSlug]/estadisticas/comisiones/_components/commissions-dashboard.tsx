@@ -163,7 +163,9 @@ export function CommissionsDashboard({
                   <tr>
                     <th className="px-3 py-2">Gestor</th>
                     <th className="px-3 py-2 text-right">Reservas</th>
-                    <th className="px-3 py-2 text-right">Personas</th>
+                    <th className="px-3 py-2 text-right">Reservado</th>
+                    <th className="px-3 py-2 text-right">Asistió</th>
+                    <th className="px-3 py-2 text-right">Se cobra</th>
                     <th className="px-3 py-2 text-right">Base</th>
                     <th className="px-3 py-2 text-right">Bonus</th>
                     <th className="px-3 py-2 text-right">Total</th>
@@ -179,7 +181,24 @@ export function CommissionsDashboard({
                       <td className="px-3 py-2 text-right font-mono tabular-nums">
                         {s.reservations_count}
                       </td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground">
+                        {s.booked_total}
+                      </td>
                       <td className="px-3 py-2 text-right font-mono tabular-nums">
+                        {s.attended_total}
+                        {/* Sin esto el reporte mezclaría conteos reales con
+                            estimados en una sola cifra, y los dueños estarían
+                            aprobando plata sobre algo que nadie midió. */}
+                        {s.uncounted_count > 0 ? (
+                          <span
+                            className="ml-1 text-[11px] font-normal text-warning"
+                            title={`${s.uncounted_count} ${s.uncounted_count === 1 ? 'reserva' : 'reservas'} sin contar: se cobran por lo reservado`}
+                          >
+                            +{s.uncounted_count} s/contar
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums font-semibold">
                         {s.guests_total}
                       </td>
                       <td className="px-3 py-2 text-right font-mono tabular-nums">

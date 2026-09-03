@@ -9,18 +9,11 @@ Todo esto es PRE-EXISTENTE y toca plata. Salió de auditar el registro de
 asistencia real; ninguno lo introdujo la feature, pero varios se vuelven más
 visibles ahora que registrar la asistencia va a ser algo que pase todos los días.
 
-- **RESUELTOS por `20260903124825`** (comisión sobre lo reservado): el bonus de
-  "evento lleno" ya no depende de por dónde entró el número, corregir la
-  asistencia ya no puede reventar contra una comisión pagada, y la liquidación
-  dejó de moverse retroactivamente sola. Quedan los tres de abajo.
-- **Una comisión ya PAGADA rompe el recálculo.** `recalc_reservation_commission`
-  (`20260520020000_salon_reservations_rpcs.sql`) borra la entry impaga y vuelve a
-  insertar, pero respeta las pagadas: al re-insertar sobre una pagada choca con
-  el índice único y la operación falla entera. En la práctica: después de la
-  primera liquidación, corregir los cubiertos de una reserva vieja tira un error
-  ilegible. `bulkUpdateActualGuests` lo degrada bien (informa cuáles quedaron
-  afuera en vez de abortar todo), pero el fondo sigue ahí. El fix correcto es que
-  el recálculo trate la entry pagada como inmutable y registre el delta aparte.
+- **RESUELTOS** (`20260903124825` + `20260903130251`): el bonus de "evento lleno"
+  ya no depende de por dónde entró el número; el escalón de tarifa dejó de
+  castigar el faltante; y una comisión ya PAGADA ya no rompe el recálculo (ahora
+  se saltea a ese gestor en vez de chocar contra el UNIQUE). Quedan los dos de
+  abajo.
 - **`recalc_reservation_commission` y `recalc_event_commissions` no validan
   tenant ni rol.** Son SECURITY DEFINER y reescriben `commission_ledger`. Con una
   sesión válida de cualquier bar se puede tocar el ledger de otro. Es el hallazgo

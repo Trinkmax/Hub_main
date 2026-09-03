@@ -9,6 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { formatARS } from '@/lib/commissions/calculate'
 import { markCommissionPaid } from '@/lib/salon/actions'
 import type { CommissionBreakdownEntry } from '@/lib/salon/queries'
+import { cn } from '@/lib/utils'
 
 export function ManagerCommissionsBreakdown({
   tenantSlug,
@@ -96,7 +97,7 @@ export function ManagerCommissionsBreakdown({
               </th>
               <th className="px-3 py-2">Fecha</th>
               <th className="px-3 py-2">Cliente</th>
-              <th className="px-3 py-2 text-right">Personas</th>
+              <th className="px-3 py-2 text-right">Reservó → vino</th>
               <th className="px-3 py-2 text-right">Tarifa</th>
               <th className="px-3 py-2 text-right">Base</th>
               <th className="px-3 py-2 text-right">Bonus</th>
@@ -127,16 +128,30 @@ export function ManagerCommissionsBreakdown({
                       {e.reservation.guest_name}
                     </Link>
                   </td>
+                  {/* Las dos cifras, no una: es la revisión que los dueños
+                      hacen antes de aprobar el pago. Un solo número no deja ver
+                      si vinieron menos ni si el conteo existe. */}
                   <td className="px-3 py-2 text-right font-mono tabular-nums">
-                    {e.guests_billed}
+                    <span className="text-muted-foreground">{e.reservation.estimated_guests}</span>
+                    <span className="mx-1 text-muted-foreground">→</span>
                     {noActual ? (
                       <span
-                        className="ml-1 rounded bg-amber-100 px-1 text-[9px] uppercase text-amber-900 dark:bg-amber-900/40 dark:text-amber-200"
-                        title="Sin cantidad real cargada"
+                        className="rounded bg-warning/20 px-1 text-[10px] uppercase tracking-wide text-foreground"
+                        title="Nadie contó esta reserva: se cobra por lo reservado"
                       >
-                        est
+                        sin contar
                       </span>
-                    ) : null}
+                    ) : (
+                      <span
+                        className={cn(
+                          'font-semibold',
+                          e.reservation.actual_guests !== e.reservation.estimated_guests &&
+                            'text-warning',
+                        )}
+                      >
+                        {e.reservation.actual_guests}
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right font-mono tabular-nums">
                     {formatARS(e.base_rate_per_guest_cents)}

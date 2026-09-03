@@ -530,7 +530,18 @@ export async function getBonusRule(opts: {
 export type CommissionSummaryRow = {
   manager: Pick<ReservationManagerRow, 'id' | 'display_name'>
   reservations_count: number
+  /** Cubiertos facturados (lo que el sistema propone cobrar). */
   guests_total: number
+  /** Cubiertos que se reservaron. */
+  booked_total: number
+  /** Cubiertos contados de verdad. Solo suma las reservas con conteo cargado. */
+  attended_total: number
+  /**
+   * Reservas sin conteo. Su comisión se está proponiendo sobre el ESTIMADO, así
+   * que los dueños tienen que saber cuántas son antes de aprobar el pago: si no,
+   * estarían firmando plata sobre un número que nadie midió.
+   */
+  uncounted_count: number
   base_cents: number
   bonus_cents: number
   payable_cents: number
@@ -549,7 +560,7 @@ export async function listCommissionSummary(opts: {
     .select(
       `manager_id, guests_billed, base_total_cents, bonus_total_cents, payable_cents, paid_at,
        manager:reservation_managers(id, display_name),
-       reservation:salon_reservations!inner(reservation_date)`,
+       reservation:salon_reservations!inner(reservation_date, estimated_guests, actual_guests)`,
     )
     .eq('tenant_id', opts.tenantId)
     .gte('reservation.reservation_date', opts.from)
@@ -571,14 +582,26 @@ export async function listCommissionSummary(opts: {
         manager: mgr,
         reservations_count: 0,
         guests_total: 0,
+        booked_total: 0,
+        attended_total: 0,
+        uncounted_count: 0,
         base_cents: 0,
         bonus_cents: 0,
         payable_cents: 0,
         paid_cents: 0,
         pending_cents: 0,
       } as CommissionSummaryRow)
+    const resRaw = row.reservation
+    const res = (Array.isArray(resRaw) ? resRaw[0] : resRaw) as {
+      estimated_guests: number
+      actual_guests: number | null
+    } | null
+
     cur.reservations_count += 1
     cur.guests_total += Number(row.guests_billed ?? 0)
+    cur.booked_total += Number(res?.estimated_guests ?? 0)
+    if (res?.actual_guests != null) cur.attended_total += Number(res.actual_guests)
+    else cur.uncounted_count += 1
     cur.base_cents += Number(row.base_total_cents ?? 0)
     cur.bonus_cents += Number(row.bonus_total_cents ?? 0)
     cur.payable_cents += Number(row.payable_cents ?? 0)
