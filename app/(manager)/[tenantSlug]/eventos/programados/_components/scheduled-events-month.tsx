@@ -15,7 +15,7 @@ import {
 import { ChevronLeft, ChevronRight, GripVertical, Loader2, Plus, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useCallback, useMemo, useState, useTransition } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { moveScheduledEvent } from '@/lib/salon/actions'
@@ -181,7 +181,7 @@ export function ScheduledEventsMonth({
       onDragEnd={handleDragEnd}
     >
       {/* Tira de templates draggables */}
-      <TemplateRail templates={templates} />
+      <TemplateRail templates={templates} tenantSlug={tenantSlug} />
 
       <div className="card-hairline rounded-2xl border bg-card p-3 sm:p-5">
         <header className="mb-4 flex items-center justify-between gap-2">
@@ -349,6 +349,21 @@ function MonthAgenda({
   today: string
   onOpenDay: (date: string) => void
 }) {
+  // El hook va ANTES de cualquier early return: si no, React rompe el orden.
+  const todayRef = useRef<HTMLDivElement | null>(null)
+  // Con el mes entero visible la lista pasó de ~6 filas a 31: abrir el
+  // calendario el día 25 te dejaba a tres pantallas de hoy. `block: 'center'`
+  // y no 'start' para que se vean los días de alrededor, que es lo que se mira
+  // cuando estás decidiendo dónde meter un evento.
+  useEffect(() => {
+    const el = todayRef.current
+    // En desktop este componente sigue montado (lo oculta `sm:hidden`), así que
+    // sin la guarda estaríamos scrolleando la página por un elemento invisible.
+    // `offsetParent === null` es exactamente "no tiene caja de layout".
+    if (!el || el.offsetParent === null) return
+    el.scrollIntoView({ block: 'center' })
+  }, [])
+
   const [y, m] = ym.split('-').map(Number)
   if (!y || !m) return null
   const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate()
@@ -376,8 +391,9 @@ function MonthAgenda({
         return (
           <div
             key={date}
+            ref={isToday ? todayRef : undefined}
             className={cn(
-              'rounded-lg border',
+              'scroll-mt-4 rounded-lg border',
               // Un mes son 30 filas: el día sin eventos va compacto y apagado
               // para que la lista siga siendo recorrible con el pulgar.
               isEmpty ? 'bg-card/20 px-2 py-1' : 'bg-card/40 p-2',
@@ -450,7 +466,13 @@ function MonthAgenda({
   )
 }
 
-function TemplateRail({ templates }: { templates: ScheduledEventTemplateRow[] }) {
+function TemplateRail({
+  templates,
+  tenantSlug,
+}: {
+  templates: ScheduledEventTemplateRow[]
+  tenantSlug: string
+}) {
   return (
     <div className="mb-4 rounded-2xl border border-border/60 bg-card/40 p-3">
       <div className="mb-2 flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
@@ -471,7 +493,21 @@ function TemplateRail({ templates }: { templates: ScheduledEventTemplateRow[] })
         className="flex gap-2 overflow-x-auto pb-1"
       >
         {templates.map((t) => (
-          <DraggableTemplate key={t.id} template={t} />
+          <Fragment key={t.id}>
+            {/* Desktop: se arrastra a la grilla. Mobile: la grilla está oculta,
+                así que arrastrar no puede funcionar — el gesto arrancaba, el chip
+                flotaba y moría en silencio, que es peor que no poder hacerlo.
+                Ahí el chip es un link al alta con el formato ya elegido. */}
+            <span className="hidden sm:contents">
+              <DraggableTemplate template={t} />
+            </span>
+            <Link
+              href={`/${tenantSlug}/eventos/programados/nuevo?template=${t.id}`}
+              className="sm:hidden"
+            >
+              <TemplateChip template={t} />
+            </Link>
+          </Fragment>
         ))}
       </div>
     </div>
@@ -482,6 +518,7 @@ function DraggableTemplate({ template }: { template: ScheduledEventTemplateRow }
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `${TMPL_PREFIX}${template.id}`,
   })
+
   return (
     <button
       ref={setNodeRef}
@@ -639,7 +676,7 @@ function DayCell({
         'group relative min-h-[92px] overflow-hidden rounded-lg border p-2 transition-colors',
         // Día con actividad resalta; día vacío queda liviano.
         hasEvents ? 'border-border/70 bg-card/70' : 'border-border/40 bg-transparent',
-        isWeekend && !hasEvents && 'bg-[--cream-tint]/40',
+        isWeekend && !hasEvents && 'bg-cream-tint/40',
         isToday && 'ring-1 ring-primary/40',
         // Resalta destinos válidos al arrastrar
         dragging && !isOver && 'border-dashed border-border/40',

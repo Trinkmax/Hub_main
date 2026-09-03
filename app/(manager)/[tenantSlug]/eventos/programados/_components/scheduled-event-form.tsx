@@ -40,6 +40,8 @@ type Props = {
   mode: 'create' | 'edit'
   templates: ScheduledEventTemplateRow[]
   presetDate?: string
+  /** Formato pre-elegido. Es el camino de mobile: se toca el chip del rail. */
+  presetTemplateId?: string
   initialValues?: Partial<ScheduledEventFormInput> & { id?: string }
 }
 
@@ -50,6 +52,7 @@ export function ScheduledEventForm({
   mode,
   templates,
   presetDate,
+  presetTemplateId,
   initialValues,
 }: Props) {
   const router = useRouter()
@@ -61,6 +64,7 @@ export function ScheduledEventForm({
     defaultValues: {
       template_id: templates[0]?.id ?? '',
       event_date: presetDate ?? new Date().toISOString().slice(0, 10),
+      ...(presetTemplateId ? { template_id: presetTemplateId } : {}),
       starts_at_local: '21:00',
       ends_at_local: undefined,
       capacity: templates[0]?.default_capacity ?? 40,
@@ -84,6 +88,33 @@ export function ScheduledEventForm({
     }
   }, [watchedTemplate, templates, mode, form])
 
+  /**
+   * Segundo callback de `handleSubmit`. Sin esto, un error de validación es
+   * SILENCIO ABSOLUTO: el form no pinta mensajes inline en ningún campo, así que
+   * el socio tocaba "Guardar" desde el celular y no pasaba nada — sin toast, sin
+   * marca, sin idea de qué faltaba. Y desde mobile este form es el único camino
+   * para programar un evento (el drag-and-drop es solo >=sm).
+   */
+  const onInvalid = (errors: Record<string, unknown>) => {
+    const LABELS: Record<string, string> = {
+      template_id: 'Formato',
+      event_date: 'Fecha',
+      starts_at_local: 'Hora de inicio',
+      ends_at_local: 'Hora de fin',
+      capacity: 'Cupo',
+      meal_type: 'Servicio',
+      attendance_points: 'Puntos por asistir',
+      name_override: 'Nombre',
+      notes: 'Notas',
+    }
+    const fields = Object.keys(errors).map((k) => LABELS[k] ?? k)
+    toast.error(
+      fields.length > 0
+        ? `Falta completar o corregir: ${fields.slice(0, 3).join(', ')}${fields.length > 3 ? ` y ${fields.length - 3} más` : ''}.`
+        : 'Revisá los campos antes de guardar.',
+    )
+  }
+
   const onSubmit = form.handleSubmit((data) => {
     startTransition(async () => {
       const r = await upsertScheduledEvent(tenantSlug, {
@@ -98,7 +129,7 @@ export function ScheduledEventForm({
         toast.error(r.message)
       }
     })
-  })
+  }, onInvalid)
 
   const onDelete = () => {
     if (!initialValues?.id) return

@@ -1,6 +1,6 @@
 import { CalendarCheck, CalendarPlus, MonitorSmartphone, PartyPopper } from 'lucide-react'
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
@@ -19,6 +19,7 @@ import {
   getSalonReservation,
   listManagers,
   listSalonReservations,
+  PageOutOfRangeError,
 } from '@/lib/salon/queries'
 import { salonStatusEnum, salonZoneEnum } from '@/lib/salon/schemas'
 import {
@@ -29,6 +30,7 @@ import {
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
+import { CancelledSection } from './_components/cancelled-section'
 import { DayNavigator } from './_components/day-navigator'
 import { ReservationRangeChips } from './_components/range-chips'
 import { ReservasTourButton } from './_components/reservas-tour'
@@ -43,6 +45,10 @@ const PAGE_SIZE_DAY = 25
 // Un mes entero no entra en 25 filas: paginar cada 25 arruina justo la vista
 // que el dueño pidió ("ver todas las reservas juntas en orden de fechas").
 const PAGE_SIZE_RANGE = 100
+// El bloque de canceladas se abre a mano y es de consulta: con 30 alcanza para
+// cualquier día y para casi cualquier mes. Si hay más, se dicen y se ofrece el
+// filtro por estado en vez de paginar un bloque que casi nadie abre.
+const CANCELLED_PREVIEW_SIZE = 30
 
 export default async function ReservasPage({
   params,
@@ -94,42 +100,99 @@ export default async function ReservasPage({
 
   const nuevaId = typeof sp.nueva === 'string' ? sp.nueva : undefined
 
+  // Misma vista pero desde la primera página: se usa cuando el `page` de la URL
+  // quedó apuntando a una página que ya no existe.
+  const firstPageQs = new URLSearchParams()
+  for (const [key, value] of Object.entries(sp)) {
+    if (key === 'page') continue
+    if (typeof value === 'string' && value) firstPageQs.set(key, value)
+  }
+  const firstPageHref = `/${tenantSlug}/reservas${
+    firstPageQs.toString() ? `?${firstPageQs.toString()}` : ''
+  }`
+
   // Todo lo que depende solo de los searchParams sale en un único round-trip:
   // el contador de cubiertos y la reserva "nueva" no necesitan el listado,
   // así que esperarlas después sumaba 1–2 hops secuenciales a Supabase.
-  const [{ rows, total }, managers, dayBuckets, rangeTotals, nuevaPuntual] = await Promise.all([
-    listSalonReservations({
-      tenantId: access.tenant.id,
-      q,
-      status,
-      zone,
-      managerId,
-      dateFrom,
-      dateTo,
-      page,
-      pageSize,
-      // Una agenda a futuro se lee de la fecha más cercana en adelante.
-      sort: rangeMode ? 'asc' : 'desc',
-    }),
-    listManagers({ tenantId: access.tenant.id, onlyActive: true }),
-    // Contador de cubiertos: en modo día contra el tope del salón, en modo rango
-    // el volumen del período (el tope no significa nada sumando días).
-    day ? getDayCapacitySnapshot({ tenantId: access.tenant.id, date: day }) : null,
-    !day && (dateFrom || dateTo)
-      ? getRangeReservationTotals({
-          tenantId: access.tenant.id,
-          from: dateFrom ?? dateTo ?? today,
-          to: dateTo ?? dateFrom ?? today,
-        })
-      : null,
-    // Reserva recién creada: venimos redirigidos a SU día con ?nueva=<id>. Es la
-    // otra mitad del "cargo una reserva y no la veo" — antes la lista quedaba
-    // clavada en hoy y la reserva del 31/07 no aparecía por ningún lado.
-    // Se pide puntual en paralelo (aunque suela venir en la página cargada) para
-    // no pagar un hop extra justo el día más cargado del mes o con un filtro
-    // activo que la deja afuera: si no, ese es el único caso sin aviso.
-    nuevaId ? getSalonReservation({ tenantId: access.tenant.id, id: nuevaId }) : null,
-  ])
+  let loaded: [
+    Awaited<ReturnType<typeof listSalonReservations>>,
+    Awaited<ReturnType<typeof listManagers>>,
+    Awaited<ReturnType<typeof getDayCapacitySnapshot>> | null,
+    Awaited<ReturnType<typeof getRangeReservationTotals>> | null,
+    Awaited<ReturnType<typeof getSalonReservation>> | null,
+    Awaited<ReturnType<typeof listSalonReservations>> | null,
+  ]
+  try {
+    loaded = await Promise.all([
+      listSalonReservations({
+        tenantId: access.tenant.id,
+        q,
+        status,
+        zone,
+        managerId,
+        dateFrom,
+        dateTo,
+        page,
+        pageSize,
+        // Las canceladas salen de la agenda de trabajo: mezcladas con las activas
+        // alguien termina armando la mesa igual. Van en su propio bloque al pie.
+        // Si el usuario filtró por estado, manda su filtro.
+        excludeStatus: ['cancelled'],
+        // Una agenda a futuro se lee de la fecha más cercana en adelante.
+        sort: rangeMode ? 'asc' : 'desc',
+      }),
+      listManagers({ tenantId: access.tenant.id, onlyActive: true }),
+      // Contador de cubiertos: en modo día contra el tope del salón, en modo rango
+      // el volumen del período (el tope no significa nada sumando días).
+      day ? getDayCapacitySnapshot({ tenantId: access.tenant.id, date: day }) : null,
+      !day && (dateFrom || dateTo)
+        ? getRangeReservationTotals({
+            tenantId: access.tenant.id,
+            from: dateFrom ?? dateTo ?? today,
+            to: dateTo ?? dateFrom ?? today,
+          })
+        : null,
+      // Reserva recién creada: venimos redirigidos a SU día con ?nueva=<id>. Es la
+      // otra mitad del "cargo una reserva y no la veo" — antes la lista quedaba
+      // clavada en hoy y la reserva del 31/07 no aparecía por ningún lado.
+      // Se pide puntual en paralelo (aunque suela venir en la página cargada) para
+      // no pagar un hop extra justo el día más cargado del mes o con un filtro
+      // activo que la deja afuera: si no, ese es el único caso sin aviso.
+      nuevaId ? getSalonReservation({ tenantId: access.tenant.id, id: nuevaId }) : null,
+      // Canceladas del mismo período. Va en el Promise.all para no sumar un hop
+      // secuencial. Solo en la vista por defecto: si el usuario eligió un estado
+      // está haciendo una búsqueda puntual, no trabajando la agenda — y si eligió
+      // "Cancelada", el listado principal ya se las muestra.
+      status
+        ? null
+        : listSalonReservations({
+            tenantId: access.tenant.id,
+            q,
+            zone,
+            managerId,
+            dateFrom,
+            dateTo,
+            status: 'cancelled',
+            page: 1,
+            pageSize: CANCELLED_PREVIEW_SIZE,
+            sort: rangeMode ? 'asc' : 'desc',
+          }),
+    ])
+  } catch (error) {
+    // Cancelar una reserva achica el listado; si el usuario estaba en la última
+    // página, esa página deja de existir y PostgREST responde 416. Volvemos a la
+    // primera con los mismos filtros en vez de mostrarle una pantalla de error
+    // (el workspace del manager no tiene error.tsx).
+    if (error instanceof PageOutOfRangeError) redirect(firstPageHref)
+    throw error
+  }
+
+  const [{ rows, total }, managers, dayBuckets, rangeTotals, nuevaPuntual, cancelled] = loaded
+
+  // El borde exacto `offset === total` no da 416: devuelve una página vacía. Sin
+  // esto el usuario ve "Sin resultados" cuando en realidad hay reservas, en la
+  // página anterior.
+  if (page > 1 && rows.length === 0 && total > 0) redirect(firstPageHref)
 
   // Cubiertos del día = salón + eventos. El desglose lo arma `summarizeDayCovers`
   // a partir de los buckets del RPC (ver lib/salon/covers.ts).
@@ -161,7 +224,11 @@ export default async function ReservasPage({
       <PageHeader
         eyebrow="Operaciones"
         title="Reservas"
-        description={`${total.toLocaleString('es-AR')} ${total === 1 ? 'reserva' : 'reservas'} · página ${page} de ${totalPages}`}
+        description={`${total.toLocaleString('es-AR')} ${total === 1 ? 'reserva activa' : 'reservas activas'}${
+          cancelled && cancelled.total > 0
+            ? ` · ${cancelled.total} cancelada${cancelled.total === 1 ? '' : 's'}`
+            : ''
+        } · página ${page} de ${totalPages}`}
         actions={
           <div className="flex flex-wrap gap-2">
             <ReservasTourButton role={access.role} />
@@ -263,15 +330,21 @@ export default async function ReservasPage({
             hasFilters
               ? 'Sin resultados'
               : rangeMode
-                ? 'No hay reservas en este período'
-                : 'No hay reservas este día'
+                ? 'No hay reservas activas en este período'
+                : cancelled && cancelled.total > 0
+                  ? 'Todas canceladas'
+                  : 'No hay reservas este día'
           }
           description={
             hasFilters
               ? 'Probá cambiar los filtros o limpiar todo para ver toda la lista.'
               : rangeMode
                 ? 'Probá con otro período (Este mes) o cargá una reserva nueva.'
-                : 'No hay reservas cargadas para esta fecha. Movete de día con las flechas, mirá la semana completa arriba, o cargá una nueva.'
+                : cancelled && cancelled.total > 0
+                  ? // Hay reservas, pero todas canceladas: decir "no hay
+                    // ninguna" sería mentira y mandaría a buscar un bug.
+                    'Las reservas de este día están todas canceladas — las ves abajo. Movete de día con las flechas o cargá una nueva.'
+                  : 'No hay reservas cargadas para esta fecha. Movete de día con las flechas, mirá la semana completa arriba, o cargá una nueva.'
           }
           action={
             <Button asChild className="gap-2">
@@ -298,6 +371,18 @@ export default async function ReservasPage({
           />
         </div>
       )}
+
+      {/* Al pie y colapsado: existe (alguien va a preguntar "¿esta no había
+          reservado?") pero cuesta un toque llegar, así que ya no se confunde
+          con la agenda de trabajo. */}
+      {cancelled ? (
+        <CancelledSection
+          tenantSlug={tenantSlug}
+          rows={cancelled.rows}
+          totalCount={cancelled.total}
+          showDate={rangeMode}
+        />
+      ) : null}
     </PageShell>
   )
 }

@@ -97,7 +97,11 @@ export function DayReservationsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      {/* `DialogContent` no trae alto máximo: en un celular de 640px con varios
+          eventos y reservas el contenido desbordaba arriba y abajo (está
+          centrado con translate -50%) y se perdían el título, la X y el botón
+          de cerrar, sin scroll para recuperarlos. */}
+      <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="font-serif capitalize">
             {date ? formatDateLong(date) : 'Día'}
@@ -187,7 +191,7 @@ export function DayReservationsDialog({
             No hay reservas para este día.
           </p>
         ) : (
-          <ScrollArea className="max-h-[50vh]">
+          <ScrollArea className="max-h-[45dvh]">
             <ul className="space-y-1.5 pr-3">
               {reservations.map((r) => (
                 <li key={r.id}>

@@ -25,6 +25,9 @@ export default async function NuevoEventoProgramadoPage({
   const { tenantSlug } = await params
   const sp = await searchParams
   const presetDate = typeof sp.date === 'string' ? sp.date : undefined
+  // Desde el celular no se puede arrastrar un formato al calendario, así que el
+  // chip del rail linkea acá con el formato ya elegido.
+  const presetTemplateId = typeof sp.template === 'string' ? sp.template : undefined
 
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
@@ -61,6 +64,7 @@ export default async function NuevoEventoProgramadoPage({
         mode="create"
         templates={templates}
         presetDate={presetDate}
+        presetTemplateId={presetTemplateId}
       />
     </div>
   )

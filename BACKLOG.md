@@ -3,6 +3,33 @@
 Hallazgos fuera del scope de la tarea en curso, anotados para retomar
 (ver CLAUDE.md §14.7). No bloquean el merge de la feature donde se detectaron.
 
+- **No hay `error.tsx` en el workspace del manager.** Solo existen en `/salon` y
+  en `/mensajeria`. Cualquier excepción no atrapada en `(manager)` se lleva
+  puesto el layout entero y muestra la pantalla de error por defecto de Next. Es
+  lo que convirtió un 416 de paginación en una caída total; se parchó el caso
+  puntual, pero falta el boundary.
+
+## Mobile del calendario de eventos — lo que queda (03/09/2026)
+
+- **`DialogContent` no tiene alto máximo.** `components/ui/dialog.tsx` centra con
+  `translate-y-[-50%]` y sin `max-h`: cualquier diálogo más alto que la pantalla
+  desborda arriba y abajo, y se pierden el título y la X sin scroll para
+  recuperarlos. Se parchó el del día (`day-reservations-dialog.tsx`), pero el
+  problema es de la primitiva y lo tienen TODOS los diálogos de la app. El fix
+  correcto es `max-h-[85dvh] overflow-y-auto` en el componente base, revisando
+  los que ya traen su propio `ScrollArea` para no anidar dos scrolls.
+- **La fila del diálogo del día mete 5 datos en una línea sin wrap**: con un
+  nombre largo, el cliente se comprime y el estado queda cortado.
+- **Desde el celular no se puede MOVER un evento de fecha.** En desktop se
+  arrastra; en mobile no hay reemplazo — hay que entrar al evento y editar la
+  fecha. Sería un ítem en el menú del evento.
+- **El tour de eventos enseña gestos que en el celular no existen** (arrastrar
+  al calendario, arrastrar para mover). Se auto-abre para el anfitrión, que es
+  justo quien trabaja desde el teléfono.
+- **El editor de Formatos en mobile** colapsa su grilla de 7 columnas a una sola
+  y queda un formulario largo con etiquetas de 11px. Ahora que Luz lo usa desde
+  el celular, conviene revisarlo.
+
 ## Comisiones — deuda que sigue abierta (03/09/2026)
 
 - **Una comisión ya PAGADA sobrevive a la cancelación de la reserva.** El recalc

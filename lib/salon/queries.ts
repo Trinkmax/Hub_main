@@ -83,6 +83,16 @@ export type ReservationFilters = {
   dateTo?: string
   zone?: ReservationWithJoins['zone']
   status?: SalonReservationStatus | SalonReservationStatus[]
+  /**
+   * Estados que NO entran en el listado. La agenda saca las `cancelled`: una
+   * reserva cancelada al lado de las activas se termina armando igual, que es
+   * justo el error que el dueño quiere evitar.
+   *
+   * Va en la QUERY y no en el cliente porque el listado pagina server-side: si
+   * se filtrara después de traer la página, una de 25 con 5 canceladas mostraría
+   * 20 filas, el total diría 25 y las páginas quedarían desparejas.
+   */
+  excludeStatus?: SalonReservationStatus[]
   managerId?: string
   /** Solo las reservas colgadas de este evento programado. */
   scheduledEventId?: string
@@ -95,6 +105,23 @@ export type ReservationFilters = {
    * agenda en el orden en que va a pasar, así que ahí va 'asc'.
    */
   sort?: 'asc' | 'desc'
+}
+
+/**
+ * La página pedida quedó fuera de rango: hay menos filas que el offset.
+ *
+ * Pasa de verdad y por el camino más común: el listado saca las canceladas, el
+ * dueño está parado en `?page=2` y cancela una reserva desde el popup. La action
+ * revalida sin tocar la URL, el listado vuelve con menos filas y PostgREST
+ * responde 416 (PGRST103). Sin este tipo, ese error subía como excepción y —como
+ * no hay `error.tsx` en el workspace del manager— se caía la pantalla entera
+ * justo por hacer lo que la feature vino a resolver.
+ */
+export class PageOutOfRangeError extends Error {
+  constructor() {
+    super('page_out_of_range')
+    this.name = 'PageOutOfRangeError'
+  }
 }
 
 export async function listSalonReservations(
@@ -121,6 +148,10 @@ export async function listSalonReservations(
   if (opts.status) {
     if (Array.isArray(opts.status)) q = q.in('status', opts.status)
     else q = q.eq('status', opts.status)
+  } else if (opts.excludeStatus?.length) {
+    // Solo cuando NO hay filtro explícito: si el usuario pidió ver las
+    // canceladas, mandan las canceladas.
+    q = q.not('status', 'in', `(${opts.excludeStatus.join(',')})`)
   }
   if (opts.managerId) {
     q = q.or(`primary_manager_id.eq.${opts.managerId},assistant_manager_id.eq.${opts.managerId}`)
@@ -132,7 +163,13 @@ export async function listSalonReservations(
   }
 
   const { data, error, count } = await q
-  if (error) throw error
+  if (error) {
+    // 416: pidió un offset mayor a la cantidad de filas. En ese camino
+    // postgrest-js no devuelve `count`, así que tragarse el error dejaría el
+    // header en cero: hay que avisar arriba para que redirija.
+    if ((error as { code?: string }).code === 'PGRST103') throw new PageOutOfRangeError()
+    throw error
+  }
   const rows = (data ?? []).map((r: Record<string, unknown>) => flattenReservation(r))
   return { rows, total: count ?? 0 }
 }
