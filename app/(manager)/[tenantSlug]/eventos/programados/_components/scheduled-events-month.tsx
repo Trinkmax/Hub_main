@@ -353,45 +353,50 @@ function MonthAgenda({
   if (!y || !m) return null
   const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate()
 
-  const daysWithEvents: Array<{ date: string; events: ScheduledEventWithTemplate[] }> = []
+  // TODOS los días del mes, tengan evento o no. Antes se filtraba por
+  // `dayEvents.length > 0` y en el celular el mes aparecía con agujeros: no se
+  // podía tocar el + de un día vacío para programar, ni ver la ocupación de un
+  // día que tenía reservas normales pero ningún evento. En desktop nunca se
+  // notó porque la grilla mensual dibuja el mes entero.
+  const days: Array<{ date: string; events: ScheduledEventWithTemplate[] }> = []
   for (let d = 1; d <= lastDay; d++) {
     const dateStr = `${ym}-${String(d).padStart(2, '0')}`
-    const dayEvents = events.filter((e) => e.event_date === dateStr)
-    if (dayEvents.length > 0) daysWithEvents.push({ date: dateStr, events: dayEvents })
-  }
-
-  if (daysWithEvents.length === 0) {
-    return (
-      <p className="rounded-lg border border-border/60 bg-card/40 px-3 py-4 text-center text-xs text-muted-foreground">
-        No hay eventos programados este mes.
-      </p>
-    )
+    days.push({ date: dateStr, events: events.filter((e) => e.event_date === dateStr) })
   }
 
   return (
     <>
-      {daysWithEvents.map(({ date, events: dayEvents }) => {
+      {days.map(({ date, events: dayEvents }) => {
         const capacity = monthCapacity.days[date] ?? {
           used: 0,
           total: monthCapacity.defaultTotal,
         }
         const isToday = date === today
+        const isEmpty = dayEvents.length === 0
         return (
           <div
             key={date}
             className={cn(
-              'rounded-lg border bg-card/40 p-2',
+              'rounded-lg border',
+              // Un mes son 30 filas: el día sin eventos va compacto y apagado
+              // para que la lista siga siendo recorrible con el pulgar.
+              isEmpty ? 'bg-card/20 px-2 py-1' : 'bg-card/40 p-2',
               isToday ? 'border-primary/40 ring-1 ring-primary/30' : 'border-border/60',
             )}
           >
-            <div className="mb-1.5 flex items-center justify-between gap-2">
+            <div className={cn('flex items-center justify-between gap-2', !isEmpty && 'mb-1.5')}>
               <button
                 type="button"
                 onClick={() => onOpenDay(date)}
                 className="-mx-1 flex items-center gap-2 rounded px-1 py-0.5 text-left transition-colors hover:bg-secondary"
-                aria-label={`Ver reservas del ${date}`}
+                aria-label={`Ver reservas del ${formatAgendaDate(date)}`}
               >
-                <span className="text-sm font-semibold capitalize tabular-nums">
+                <span
+                  className={cn(
+                    'capitalize tabular-nums',
+                    isEmpty ? 'text-sm text-muted-foreground' : 'text-sm font-semibold',
+                  )}
+                >
                   {formatAgendaDate(date)}
                 </span>
                 {isToday ? (
@@ -403,15 +408,19 @@ function MonthAgenda({
                   <CapacityBadge used={capacity.used} total={capacity.total} />
                 ) : null}
               </button>
+              {/* El `after` le estira el área táctil a ~44px sin mover el
+                  layout ni engordar la fila del día vacío. Mismo truco que el
+                  ícono de nota en la lista de reservas. Es EL gesto de esta
+                  pantalla en el celular: tiene que ser cómodo con el pulgar. */}
               <Link
                 href={`/${tenantSlug}/eventos/programados/nuevo?date=${date}`}
-                className="rounded p-1 text-muted-foreground transition-colors hover:bg-secondary"
-                aria-label={`Programar evento ${date}`}
+                className="relative rounded p-1 text-muted-foreground transition-colors after:absolute after:-inset-2.5 after:content-[''] hover:bg-secondary sm:after:hidden"
+                aria-label={`Programar evento el ${formatAgendaDate(date)}`}
               >
                 <Plus className="size-4" />
               </Link>
             </div>
-            <div className="space-y-1">
+            <div className={cn('space-y-1', isEmpty && 'hidden')}>
               {dayEvents.map((e) => {
                 const color = e.template?.color_hex ?? '#7c3aed'
                 return (
@@ -446,7 +455,15 @@ function TemplateRail({ templates }: { templates: ScheduledEventTemplateRow[] })
     <div className="mb-4 rounded-2xl border border-border/60 bg-card/40 p-3">
       <div className="mb-2 flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
         <Sparkles className="size-3.5" />
-        <span className="uppercase tracking-wide">Arrastrá un template al calendario</span>
+        {/* En mobile no hay grilla adonde soltar: el drag-and-drop es solo
+            >=sm. Decirle "arrastrá" a alguien que está en el celular es pedirle
+            algo que no puede hacer. */}
+        <span className="hidden uppercase tracking-wide sm:inline">
+          Arrastrá un template al calendario
+        </span>
+        <span className="uppercase tracking-wide sm:hidden">
+          Formatos del bar · programalos con el + de cada día
+        </span>
       </div>
       <div
         role="toolbar"
@@ -642,7 +659,7 @@ function DayCell({
             type="button"
             onClick={() => onOpenDay(date)}
             className="-mx-1 flex items-center gap-1.5 rounded px-1 py-0.5 transition-colors hover:bg-secondary"
-            aria-label={`Ver reservas del ${date}`}
+            aria-label={`Ver reservas del ${formatAgendaDate(date)}`}
           >
             <span
               className={cn(
