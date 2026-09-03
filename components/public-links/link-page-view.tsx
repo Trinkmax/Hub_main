@@ -53,30 +53,37 @@ export function LinkPageView({
       />
 
       <div className="relative mx-auto flex w-full max-w-[26rem] flex-col items-center px-5 py-12 sm:py-14">
-        <div className="flex size-24 items-center justify-center rounded-3xl border border-(--brand-accent)/15 bg-card p-3 shadow-sm">
-          {logoUrl ? (
+        {/* El logo va solo, grande y sin marco: ya dice el nombre del bar, así
+            que repetirlo abajo en serif era decir dos veces lo mismo. El título
+            sigue existiendo para lectores de pantalla y para el SEO, pero no se
+            dibuja. Sin logo cargado sí se muestra, porque es lo único que
+            identifica al bar. */}
+        {logoUrl ? (
+          <>
             <Image
               src={logoUrl}
-              alt={tenantName}
-              width={160}
-              height={68}
+              alt={title}
+              width={640}
+              height={272}
               // El optimizer de Vercel está apagado en este proyecto (loader
               // custom): el logo va tal cual, y es lo primero que se ve.
               unoptimized
               priority
-              className="h-auto w-full object-contain"
+              className="h-auto w-60 max-w-full object-contain sm:w-72"
             />
-          ) : (
-            <BrandWordmark className="text-2xl" />
-          )}
-        </div>
-
-        <h1 className="mt-6 text-balance text-center font-serif text-[28px] font-semibold leading-tight tracking-[-0.02em] sm:text-[32px]">
-          {title}
-        </h1>
+            <h1 className="sr-only">{title}</h1>
+          </>
+        ) : (
+          <>
+            <BrandWordmark className="text-3xl" />
+            <h1 className="mt-6 text-balance text-center font-serif text-[28px] font-semibold leading-tight tracking-[-0.02em] sm:text-[32px]">
+              {title}
+            </h1>
+          </>
+        )}
 
         {bio ? (
-          <p className="mt-3 max-w-[22rem] text-pretty text-center text-sm leading-relaxed text-muted-foreground">
+          <p className="mt-5 max-w-[22rem] text-pretty text-center text-sm leading-relaxed text-muted-foreground">
             {bio}
           </p>
         ) : null}
