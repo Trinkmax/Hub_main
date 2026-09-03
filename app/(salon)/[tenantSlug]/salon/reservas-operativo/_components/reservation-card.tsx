@@ -13,8 +13,9 @@ import {
   XCircle,
 } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { GuestCountStepper } from '@/components/reservations/guest-count-stepper'
 import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
 import { Button } from '@/components/ui/button'
 import {
@@ -85,12 +86,30 @@ export function ReservationCard({
   const [pending, startTransition] = useTransition()
   const [guests, setGuests] = useState(reservation.actual_guests ?? reservation.estimated_guests)
 
+  // Realtime reemplaza la fila cuando alguien confirma la llegada. Sin este
+  // re-sync el stepper de excepciones quedaba congelado en el número viejo y su
+  // botón "Guardar 20" pisaba los 18 recién confirmados.
+  useEffect(() => {
+    setGuests(reservation.actual_guests ?? reservation.estimated_guests)
+  }, [reservation.actual_guests, reservation.estimated_guests])
+  // Contador de llegada: sheet propio, separado del de excepciones. Arranca en
+  // lo reservado, que es la respuesta correcta la mayoría de las veces.
+  const [arriveOpen, setArriveOpen] = useState(false)
+  const [arriveGuests, setArriveGuests] = useState(reservation.estimated_guests)
+
   function run(p: Promise<{ ok: boolean; message?: string }>, label: string) {
     startTransition(async () => {
       const r = await p
-      if (r.ok) toast.success(label)
-      else toast.error(r.message ?? 'No pudimos guardarlo.')
-      setOpen(false)
+      if (r.ok) {
+        toast.success(label)
+        setOpen(false)
+        setArriveOpen(false)
+        return
+      }
+      // Se queda abierto a propósito: si se cerrara, el mozo perdería el conteo
+      // que acaba de hacer con la gente adelante y tendría que empezar de cero
+      // sin saber que falló.
+      toast.error(r.message ?? 'No pudimos guardarlo.')
     })
   }
 
@@ -207,13 +226,23 @@ export function ReservationCard({
           </div>
         </button>
 
-        {/* EL gesto del turno: un toque, sin sheet, sin confirmación. */}
+        {/* EL gesto del turno. Ahora abre el contador: el único momento en que
+            alguien SABE cuántos vinieron es este, con la gente adelante. El
+            número arranca en lo reservado, así que confirmar es un toque más;
+            corregir, dos o tres. Antes el conteo vivía a 4 toques dentro del
+            sheet de excepciones y por eso 114 de 137 reservas no lo tienen. */}
         {canArrive ? (
           <Button
             type="button"
             size="lg"
             disabled={pending}
-            onClick={() => run(markArrived(tenantSlug, reservation.id), 'Llegó')}
+            onClick={() => {
+              // `actual_guests` primero: si el encargado ya contó desde la
+              // agenda, arrancar en el estimado haría que el mozo le pise el
+              // dato sin enterarse.
+              setArriveGuests(reservation.actual_guests ?? reservation.estimated_guests)
+              setArriveOpen(true)
+            }}
             className="h-12 shrink-0 gap-1.5 px-4"
           >
             {pending ? (
@@ -232,6 +261,59 @@ export function ReservationCard({
           </span>
         ) : null}
       </motion.li>
+
+      {/* El contador de llegada. Sheet propio y no el de excepciones: este ES el
+          camino normal del turno, y tiene que abrir directo en el número, sin
+          nada más que mirar. */}
+      <Sheet open={arriveOpen} onOpenChange={setArriveOpen}>
+        <SheetContent side="bottom">
+          <SheetHeader className="text-left">
+            <SheetTitle className="flex items-center gap-2.5">
+              <span className="font-mono text-lg tabular-nums">{time}</span>
+              <span className="truncate">{reservation.guest_name}</span>
+            </SheetTitle>
+            <SheetDescription>¿Cuántos llegaron?</SheetDescription>
+          </SheetHeader>
+
+          {/* Los avisos también acá: es el momento en que el mozo la sienta. */}
+          <ServiceAlertChips alerts={alerts} className="px-4 pb-2" />
+
+          <div className="px-4 pb-4">
+            <GuestCountStepper
+              value={arriveGuests}
+              onChange={setArriveGuests}
+              size="lg"
+              disabled={pending}
+              className="py-2"
+            />
+            <p className="mb-4 text-center text-xs text-muted-foreground">
+              Reservó {reservation.estimated_guests}{' '}
+              {reservation.estimated_guests === 1 ? 'persona' : 'personas'}
+              {arriveGuests !== reservation.estimated_guests
+                ? ` · ${arriveGuests > reservation.estimated_guests ? 'vinieron' : 'faltaron'} ${Math.abs(arriveGuests - reservation.estimated_guests)}`
+                : ''}
+            </p>
+            <Button
+              size="xl"
+              disabled={pending}
+              className="h-14 w-full justify-center gap-3"
+              onClick={() =>
+                run(
+                  markArrived(tenantSlug, reservation.id, arriveGuests),
+                  `Llegó · ${arriveGuests} ${arriveGuests === 1 ? 'persona' : 'personas'}`,
+                )
+              }
+            >
+              {pending ? (
+                <Loader2 className="size-5 animate-spin" aria-hidden />
+              ) : (
+                <Check className="size-5" aria-hidden />
+              )}
+              Confirmar {arriveGuests} {arriveGuests === 1 ? 'persona' : 'personas'}
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Excepciones. No es el camino normal: acá se entra solo si algo se salió
           del libreto. */}
@@ -264,11 +346,16 @@ export function ReservationCard({
               <Button
                 size="xl"
                 disabled={pending}
-                onClick={() => run(markArrived(tenantSlug, reservation.id), 'Llegó')}
+                onClick={() =>
+                  run(
+                    markArrived(tenantSlug, reservation.id, guests),
+                    `Llegó · ${guests} ${guests === 1 ? 'persona' : 'personas'}`,
+                  )
+                }
                 className="h-14 w-full justify-start gap-3"
               >
                 <Check className="size-5" aria-hidden />
-                Llegó
+                Llegó · {guests} {guests === 1 ? 'persona' : 'personas'}
               </Button>
             ) : null}
 

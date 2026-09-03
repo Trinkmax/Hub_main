@@ -22,6 +22,7 @@ import {
 } from '@/lib/salon/queries'
 import { salonStatusEnum, salonZoneEnum } from '@/lib/salon/schemas'
 import {
+  RESERVATION_OPERATOR_ROLES,
   RESERVATION_STAFF_ROLES,
   RoleRequiredError,
   requireRole,
@@ -33,6 +34,7 @@ import { ReservationRangeChips } from './_components/range-chips'
 import { ReservasTourButton } from './_components/reservas-tour'
 import { ReservationsFilters } from './_components/reservations-filters'
 import { ReservationsTable } from './_components/reservations-table'
+import { RollCallDialog } from './_components/roll-call-dialog'
 
 export const metadata = { title: 'Reservas' }
 export const dynamic = 'force-dynamic'
@@ -133,6 +135,12 @@ export default async function ReservasPage({
   // a partir de los buckets del RPC (ver lib/salon/covers.ts).
   const dayCapacity: DayCovers | null = dayBuckets ? summarizeDayCovers(dayBuckets) : null
 
+  // Registrar asistencia es una operación de servicio: mismo conjunto que
+  // enforcean `updateActualGuests` y `transitionStatus` (incluye al mozo).
+  const canRecordAttendance = (RESERVATION_OPERATOR_ROLES as ReadonlyArray<string>).includes(
+    access.role,
+  )
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const hasFilters = Boolean(q || status || zone || managerId)
 
@@ -157,6 +165,11 @@ export default async function ReservasPage({
         actions={
           <div className="flex flex-wrap gap-2">
             <ReservasTourButton role={access.role} />
+            {/* Solo en modo día: "pasar lista" de un mes entero no es un cierre
+                de noche, es una migración de datos. */}
+            {day && canRecordAttendance ? (
+              <RollCallDialog tenantSlug={tenantSlug} day={day} dayLabel={formatDayLabel(day)} />
+            ) : null}
             <Button asChild variant="outline" className="gap-2">
               <Link
                 href={`/${tenantSlug}/salon/reservas-operativo`}
@@ -274,6 +287,8 @@ export default async function ReservasPage({
           <ReservationsTable
             tenantSlug={tenantSlug}
             rows={rows}
+            canRecordAttendance={canRecordAttendance}
+            today={today}
             page={page}
             totalPages={totalPages}
             totalCount={total}

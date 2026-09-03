@@ -26,6 +26,7 @@ import { LAST_MANAGER_COOKIE_MAX_AGE, lastManagerCookieName } from './managers'
 import {
   actualGuestsSchema,
   bonusRuleSchema,
+  bulkActualGuestsSchema,
   cancelReservationSchema,
   createSalonReservationSchema,
   idOnlySchema,
@@ -500,7 +501,12 @@ export async function updateSalonReservation(
       zone: patch.zone,
       scheduled_event_id: patch.scheduled_event_id ?? null,
       estimated_guests: patch.estimated_guests,
-      actual_guests: patch.actual_guests ?? null,
+      // Ausente ≠ vacío, igual que los avisos y el horario de fin. El form de
+      // edición valida con `createSalonReservationSchema`, que NO tiene este
+      // campo, así que zod lo strippea del payload: con `?? null`, guardar
+      // cualquier cambio de una reserva borraba la asistencia ya registrada y
+      // volvía a facturarle al gestor por el estimado.
+      ...(patch.actual_guests !== undefined ? { actual_guests: patch.actual_guests } : {}),
       cake_count: patch.cake_count,
       champagne_count: patch.champagne_count,
       deposit_cents: patch.deposit_cents,
@@ -632,8 +638,25 @@ export async function transitionStatus(
 }
 
 // Wrappers cómodos para llamar desde botones
-export async function markArrived(slug: string, id: string): Promise<ActionState> {
-  return transitionStatus(slug, { id, to: 'arrived' as SalonReservationStatus })
+/**
+ * Marca la llegada y, si se lo pasan, registra de una la cantidad real.
+ *
+ * El `actualGuests` es opcional porque no todos los caminos lo saben: el panel
+ * de mozos ahora sí lo pregunta (es el único momento en que alguien tiene la
+ * gente adelante), pero el tablero del dueño marca llegadas sueltas. Cuando no
+ * viene, `actual_guests` queda en null — que significa "nadie contó", distinto
+ * de "vinieron los que reservaron".
+ */
+export async function markArrived(
+  slug: string,
+  id: string,
+  actualGuests?: number,
+): Promise<ActionState> {
+  return transitionStatus(slug, {
+    id,
+    to: 'arrived' as SalonReservationStatus,
+    ...(typeof actualGuests === 'number' ? { actual_guests: actualGuests } : {}),
+  })
 }
 export async function markSeated(slug: string, id: string): Promise<ActionState> {
   return transitionStatus(slug, { id, to: 'seated' as SalonReservationStatus })
@@ -693,6 +716,112 @@ export async function updateActualGuests(
   revalidatePath(`/${slug}/salon/reservas-operativo`)
   revalidatePath(`/${slug}/operativo`)
   return { ok: true }
+}
+
+/**
+ * Guarda de una pasada la asistencia real de varias reservas: es el "Pasar
+ * lista" del cierre de la noche.
+ *
+ * Una reserva en `pending` además pasa a `arrived`: si alguien anota que
+ * vinieron 18, vinieron. Marcarlas una por una y después contar era justo la
+ * fricción que dejó 111 de 137 reservas sin registrar.
+ *
+ * Va fila por fila y NO aborta al primer error: en un cierre de noche, que se
+ * caiga todo el guardado porque una reserva se canceló mientras tanto sería
+ * peor que guardar 19 de 20 y decir cuál falló. Devuelve el conteo y los ids
+ * que no entraron.
+ */
+export async function bulkUpdateActualGuests(
+  slug: string,
+  input: Record<string, unknown>,
+): Promise<ActionState> {
+  const access = await authorize(slug, OPERATORS)
+  if (!access) return noAccess()
+
+  const parsed = bulkActualGuestsSchema.safeParse(input)
+  if (!parsed.success) {
+    const first = parsed.error.issues[0]
+    return badInput(first?.message ?? 'Datos inválidos', first?.path[0]?.toString())
+  }
+
+  const supabase = (await createClient()) as SBAny
+
+  // Estados actuales en UNA lectura: decide por fila si hay que transicionar a
+  // 'arrived' o solo corregir el número. Pedirlos de a uno serían N hops.
+  const ids = parsed.data.entries.map((e) => e.id)
+  const { data: rows, error: readError } = await supabase
+    .from('salon_reservations')
+    .select('id, status')
+    .eq('tenant_id', access.tenant.id)
+    .in('id', ids)
+  if (readError) return { ok: false, message: humanizeSalonError(readError.message) }
+
+  const statusById = new Map(
+    ((rows ?? []) as Array<{ id: string; status: SalonReservationStatus }>).map((r) => [
+      r.id,
+      r.status,
+    ]),
+  )
+
+  let saved = 0
+  const failed: string[] = []
+
+  for (const entry of parsed.data.entries) {
+    const status = statusById.get(entry.id)
+    // No está en este tenant, o se canceló mientras pasaban lista.
+    if (!status || status === 'cancelled' || status === 'no_show') {
+      failed.push(entry.id)
+      continue
+    }
+
+    const { error } =
+      status === 'pending'
+        ? await supabase.rpc('transition_reservation_status', {
+            p_reservation_id: entry.id,
+            p_to: 'arrived',
+            p_actual_guests: entry.actual_guests,
+          })
+        : await supabase.rpc('update_reservation_actual_guests', {
+            p_reservation_id: entry.id,
+            p_actual_guests: entry.actual_guests,
+          })
+
+    if (error) {
+      console.error('[salon.reservation] pasar lista: fila que falló', {
+        tenantId: access.tenant.id,
+        reservationId: entry.id,
+        error: error.message,
+      })
+      failed.push(entry.id)
+    } else {
+      saved += 1
+    }
+  }
+
+  await logAudit({
+    tenantId: access.tenant.id,
+    userId: null,
+    action: 'salon_reservation.attendance_roll_call',
+    entity: 'salon_reservation',
+    entityId: null,
+    payload: { saved, failed: failed.length },
+  })
+
+  revalidatePath(`/${slug}/reservas`)
+  revalidatePath(`/${slug}/salon/reservas-operativo`)
+  revalidatePath(`/${slug}/operativo`)
+
+  if (saved === 0) {
+    return { ok: false, message: 'No pudimos guardar ninguna. Recargá y probá de nuevo.' }
+  }
+  return {
+    ok: true,
+    message:
+      failed.length === 0
+        ? `Asistencia guardada en ${saved} ${saved === 1 ? 'reserva' : 'reservas'}.`
+        : `Guardamos ${saved}. ${failed.length} quedaron afuera (cancelada o modificada mientras tanto).`,
+    data: { saved, failed },
+  }
 }
 
 // ──────────────────────────────────────────────────────────

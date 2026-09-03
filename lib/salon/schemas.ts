@@ -226,6 +226,26 @@ export const transitionStatusSchema = z.object({
   actual_guests: z.union([z.coerce.number().int().min(1).max(99), z.null()]).optional(),
 })
 
+/**
+ * "Pasar lista": el barrido de fin de noche. Una fila por reserva con la
+ * cantidad que realmente vino.
+ *
+ * El tope de 200 no es defensivo por gusto: es una Server Action pública y el
+ * guardado hace una llamada al RPC por fila. Un array de 10.000 sería un
+ * timeout garantizado y un candidato a abuso.
+ */
+export const bulkActualGuestsSchema = z.object({
+  entries: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        actual_guests: z.coerce.number().int().min(1).max(99),
+      }),
+    )
+    .min(1, 'No hay nada para guardar')
+    .max(200, 'Demasiadas reservas en una sola pasada'),
+})
+
 export const actualGuestsSchema = z.object({
   id: z.string().uuid(),
   actual_guests: z.coerce.number().int().min(1).max(99),

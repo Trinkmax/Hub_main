@@ -1,6 +1,7 @@
-import { Cake, ChevronLeft, ChevronRight, GlassWater, Users } from 'lucide-react'
+import { Cake, ChevronLeft, ChevronRight, GlassWater } from 'lucide-react'
 import Link from 'next/link'
 import { Fragment } from 'react'
+import { AttendanceCell } from '@/components/reservations/attendance-cell'
 import { ReservationCommentPopover } from '@/components/reservations/comment-popover'
 import { ReservationQuickView } from '@/components/reservations/reservation-quick-view'
 import { alertRowTint, ServiceAlertChips } from '@/components/reservations/service-alert-chips'
@@ -82,6 +83,8 @@ export function ReservationsTable({
   searchParams,
   groupByDay = false,
   highlightId,
+  canRecordAttendance = false,
+  today,
 }: {
   tenantSlug: string
   rows: ReservationWithJoins[]
@@ -93,6 +96,10 @@ export function ReservationsTable({
   groupByDay?: boolean
   /** Reserva recién creada — se resalta para que se vea de una. */
   highlightId?: string
+  /** ¿Este rol puede registrar la asistencia? (`RESERVATION_OPERATOR_ROLES`) */
+  canRecordAttendance?: boolean
+  /** Hoy en el reloj del local, yyyy-MM-dd: nada a futuro se marca como asistido. */
+  today: string
 }) {
   const baseQs = new URLSearchParams()
   for (const [k, v] of Object.entries(searchParams)) {
@@ -155,11 +162,6 @@ export function ReservationsTable({
                     r.customer?.service_alerts,
                   )
                   const alertTone = highestSeverity(alerts)
-                  const guestsLabel = r.actual_guests ?? r.estimated_guests
-                  const guestsHint =
-                    r.actual_guests !== null && r.actual_guests !== r.estimated_guests
-                      ? ` (est ${r.estimated_guests})`
-                      : ''
                   return (
                     <DataTableRow
                       key={r.id}
@@ -238,11 +240,15 @@ export function ReservationsTable({
                         </div>
                       </DataTableCell>
                       <DataTableCell>
-                        <span className="inline-flex items-center gap-1 tabular-nums">
-                          <Users className="size-3.5 text-muted-foreground" />
-                          <span className="font-semibold">{guestsLabel}</span>
-                          <span className="text-[11px] text-muted-foreground">{guestsHint}</span>
-                        </span>
+                        <AttendanceCell
+                          tenantSlug={tenantSlug}
+                          reservationId={r.id}
+                          status={r.status}
+                          estimatedGuests={r.estimated_guests}
+                          actualGuests={r.actual_guests}
+                          canEdit={canRecordAttendance}
+                          isPast={r.reservation_date <= today}
+                        />
                       </DataTableCell>
                       <DataTableCell>
                         {/* Servicio + zona en dos líneas: eran dos columnas y la

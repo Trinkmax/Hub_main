@@ -204,10 +204,18 @@ export function ReservationQuickView({
  * Bloque de edición rápida: personas (stepper − / +, optimista con debounce de
  * 600ms y flush al cerrar el popup), hora y zona como chips con mini popover.
  *
- * - pending/arrived → edita `estimated_guests` vía updateSalonReservation
- *   (payload completo armado desde la reserva actual).
- * - seated/closed → edita `actual_guests` vía updateActualGuests (recalcula
- *   comisión server-side).
+ * - pending → edita `estimated_guests` vía updateSalonReservation (payload
+ *   completo armado desde la reserva actual). Todavía no llegaron: cambiar el
+ *   número es cambiar la reserva.
+ * - arrived/seated/closed → edita `actual_guests` vía updateActualGuests
+ *   (recalcula comisión server-side). Ya están adentro: el número que se toca
+ *   es cuánta gente vino.
+ *
+ * `arrived` estaba del lado del estimado y era la mitad del problema que
+ * reportó el dueño. Desde que la comisión se liquida al marcar "Llegó"
+ * (migración 20260826150000) casi ninguna mesa pasa a `seated`, así que la
+ * rama de asistencia no se ejecutaba nunca: el encargado creía estar anotando
+ * los 18 que vinieron y en realidad estaba reescribiendo la reserva de 20.
  * - Advertencia inline no bloqueante si el número proyectado supera la
  *   capacidad del día (fetchDayCapacity al abrir el popup).
  */
@@ -220,7 +228,7 @@ function QuickEditPanel({
   reservation: ReservationWithJoins
   onChanged?: () => void
 }) {
-  const isPost = r.status === 'seated' || r.status === 'closed'
+  const isPost = r.status === 'arrived' || r.status === 'seated' || r.status === 'closed'
   const serverGuests = isPost ? (r.actual_guests ?? r.estimated_guests) : r.estimated_guests
   const serverZone = r.zone
   const serverTime = fmtTime(r.reservation_time_local)

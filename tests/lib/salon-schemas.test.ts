@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  bulkActualGuestsSchema,
   cancelReservationSchema,
   createSalonReservationSchema,
   rateTierSchema,
@@ -18,6 +19,40 @@ const baseValid = {
   origin: 'whatsapp' as const,
   primary_manager_id: '00000000-0000-4000-8000-000000000001',
 }
+
+describe('bulkActualGuestsSchema — "Pasar lista"', () => {
+  const entry = (n: number) => ({ id: '00000000-0000-4000-8000-00000000000a', actual_guests: n })
+
+  it('camino feliz', () => {
+    const r = bulkActualGuestsSchema.safeParse({ entries: [entry(18)] })
+    expect(r.success).toBe(true)
+  })
+
+  it('lista vacía → error, no un guardado silencioso de nada', () => {
+    expect(bulkActualGuestsSchema.safeParse({ entries: [] }).success).toBe(false)
+  })
+
+  it('cero personas se rechaza: eso es "no vino", no una mesa de cero', () => {
+    expect(bulkActualGuestsSchema.safeParse({ entries: [entry(0)] }).success).toBe(false)
+  })
+
+  it('más de 99 por reserva se rechaza', () => {
+    expect(bulkActualGuestsSchema.safeParse({ entries: [entry(120)] }).success).toBe(false)
+  })
+
+  it('tope de 200 filas: es un endpoint público y cada fila es una llamada al RPC', () => {
+    const many = Array.from({ length: 201 }, () => entry(2))
+    expect(bulkActualGuestsSchema.safeParse({ entries: many }).success).toBe(false)
+    const ok = Array.from({ length: 200 }, () => entry(2))
+    expect(bulkActualGuestsSchema.safeParse({ entries: ok }).success).toBe(true)
+  })
+
+  it('un id que no es uuid se rechaza', () => {
+    expect(
+      bulkActualGuestsSchema.safeParse({ entries: [{ id: 'nope', actual_guests: 2 }] }).success,
+    ).toBe(false)
+  })
+})
 
 describe('createSalonReservationSchema', () => {
   it('camino feliz', () => {
