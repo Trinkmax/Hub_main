@@ -35,10 +35,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { calculateCommission, type RateTier } from '@/lib/commissions/calculate'
 import { type CustomerSearchResult, searchCustomers } from '@/lib/customers/search'
 import { createSalonReservation, updateSalonReservation } from '@/lib/salon/actions'
+import {
+  parseServiceAlerts,
+  SERVICE_ALERT_META,
+  SERVICE_ALERTS,
+  type ServiceAlert,
+} from '@/lib/salon/alerts'
 import { fetchDayCapacity, fetchScheduledEventsForDate } from '@/lib/salon/client-actions'
 import { durationLabel, endsNextDay, isImplausibleSpan, tableSpanMinutes } from '@/lib/salon/format'
 import { groupManagersForSelect, pickDefaultManagerId } from '@/lib/salon/managers'
@@ -94,6 +101,14 @@ type Props = {
   initialValues?: Partial<ReservationFormInput> & {
     actual_guests?: number | null
   }
+  /**
+   * Avisos guardados en la ficha del cliente linkeado. Prop aparte y NO dentro
+   * de `initialValues` a propósito: eso se spreadea en los `defaultValues` del
+   * form y terminaría viajando en el submit, y esto no es un campo de la
+   * reserva. Solo sirve para pre-marcar los chips y aclarar cuáles no se sacan
+   * desde acá.
+   */
+  customerServiceAlerts?: ServiceAlert[]
 }
 
 // 'hub_event' (asociar a un evento de la tabla `events`) quedó retirado: los
@@ -179,6 +194,7 @@ export function ReservationForm({
   canManageManagers = false,
   reservationId,
   initialValues,
+  customerServiceAlerts,
 }: Props) {
   const router = useRouter()
   const [templates, setTemplates] = useState<ScheduledEventTemplateRow[]>(templatesProp)
@@ -226,6 +242,8 @@ export function ReservationForm({
       primary_manager_id: defaultPrimary,
       assistant_manager_id: undefined,
       comments: undefined,
+      service_alerts: [],
+      highlight_comment: false,
       ...initialValues,
     },
   })
@@ -234,6 +252,24 @@ export function ReservationForm({
 
   // Una cena que arranca 21:30 y termina 00:30 es la noche típica del bar, no un
   // error de carga: no lo bloqueamos, lo decimos.
+  // Los avisos ya guardados en la ficha del cliente. Vienen del server en la
+  // edición y del combobox al elegir un cliente en el alta.
+  const [profileAlerts, setProfileAlerts] = useState<ServiceAlert[]>(() =>
+    parseServiceAlerts(customerServiceAlerts),
+  )
+  const selectedAlerts = parseServiceAlerts(values.service_alerts)
+  // Sin cliente linkeado (ni teléfono para crearlo) no hay ficha donde guardar
+  // el aviso permanente — la action lo resuelve igual, pero el copy no puede
+  // prometer algo que no va a pasar.
+  const hasCustomerLink = Boolean(values.customer_id || values.guest_phone)
+
+  function toggleAlert(alert: ServiceAlert) {
+    const next = selectedAlerts.includes(alert)
+      ? selectedAlerts.filter((a) => a !== alert)
+      : [...selectedAlerts, alert]
+    form.setValue('service_alerts', next, { shouldValidate: true })
+  }
+
   const startTime = values.reservation_time_local ?? ''
   const endTime = values.reservation_end_time_local || null
   const crossesMidnight = endsNextDay(startTime, endTime)
@@ -305,6 +341,15 @@ export function ReservationForm({
       form.setValue('scheduled_event_id', undefined)
     }
   }, [values.zone, values.scheduled_event_id, form])
+
+  // Si vacían el comentario después de destacarlo, el flag queda colgado: la
+  // reserva se guardaría con highlight_comment=true y comments=null, y el día
+  // que alguien escriba un comentario nuevo saldría destacado sin haberlo pedido.
+  useEffect(() => {
+    if (values.highlight_comment && !values.comments?.trim()) {
+      form.setValue('highlight_comment', false)
+    }
+  }, [values.highlight_comment, values.comments, form])
 
   // Auto-clear requested_template_id si kind=normal
   useEffect(() => {
@@ -471,6 +516,8 @@ export function ReservationForm({
         primary_manager_id: 'Gestor',
         assistant_manager_id: 'Asistente',
         comments: 'Comentarios',
+        service_alerts: 'Avisos',
+        highlight_comment: 'Destacar comentario',
       }
       const fields = Object.keys(errors).map((k) => LABELS[k] ?? k)
       const shown = fields.slice(0, 3).join(', ')
@@ -514,6 +561,16 @@ export function ReservationForm({
             form.setValue('guest_name', v.guest_name, { shouldValidate: true })
             form.setValue('guest_phone', v.guest_phone ?? undefined, { shouldValidate: true })
             form.setValue('guest_email', v.guest_email ?? undefined)
+            // Elegir a Melina tiene que traer "es celíaca" en el acto: si el
+            // aviso apareciera recién al guardar, el que carga la reserva no se
+            // entera justo cuando está hablando por teléfono con ella.
+            if (v.service_alerts) {
+              setProfileAlerts(v.service_alerts)
+              const next = [...new Set([...selectedAlerts, ...v.service_alerts])]
+              form.setValue('service_alerts', next, { shouldValidate: true })
+            } else if (!v.customer_id) {
+              setProfileAlerts([])
+            }
           }}
           error={form.formState.errors.guest_name?.message}
         />
@@ -1038,6 +1095,64 @@ export function ReservationForm({
               />
             </div>
           </div>
+          {/* Avisos: van pegados al comentario porque son la versión marcable de
+              lo que antes se escribía suelto ahí y nadie leía. Chips y no un
+              select múltiple: el staff carga reservas por teléfono desde el
+              celular, y esto tiene que ser un toque. */}
+          <div className="space-y-1.5">
+            <fieldset className="space-y-1.5">
+              <legend className="text-xs uppercase tracking-wide text-muted-foreground">
+                Avisos para cocina y salón
+              </legend>
+              <div className="flex flex-wrap gap-1.5">
+                {SERVICE_ALERTS.map((alert) => {
+                  const meta = SERVICE_ALERT_META[alert]
+                  const active = selectedAlerts.includes(alert)
+                  return (
+                    <button
+                      type="button"
+                      key={alert}
+                      aria-pressed={active}
+                      title={meta.hint}
+                      onClick={() => toggleAlert(alert)}
+                      className={cn(
+                        'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                        active
+                          ? meta.severity === 'critical'
+                            ? 'border-destructive/60 bg-destructive/10 text-destructive'
+                            : 'border-warning/60 bg-warning/15 text-foreground'
+                          : 'border-border bg-card/40 text-muted-foreground hover:bg-secondary',
+                      )}
+                    >
+                      {meta.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </fieldset>
+            {profileAlerts.length > 0 ? (
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                {profileAlerts.map((a) => SERVICE_ALERT_META[a].label).join(', ')}{' '}
+                {profileAlerts.length === 1 ? 'ya está' : 'ya están'} en la ficha de este cliente y
+                {profileAlerts.length === 1 ? ' aparece' : ' aparecen'} solos en cada reserva. Para
+                sacarlo hay que editar la ficha.
+              </p>
+            ) : hasCustomerLink ? (
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                Lo que es de la persona (celíaca, alérgica) queda guardado en su ficha y vuelve solo
+                la próxima vez.
+              </p>
+            ) : (
+              // Sin cliente en el CRM no hay ficha donde guardarlo. Decirlo:
+              // prometer "vuelve solo" y que no vuelva es peor que no prometerlo.
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                Estos avisos quedan solo en esta reserva. Cargá el teléfono para que se guarden en
+                la ficha del cliente y vuelvan solos la próxima vez.
+              </p>
+            )}
+          </div>
+
           <div className="space-y-1.5">
             <Label
               htmlFor="comments"
@@ -1048,9 +1163,29 @@ export function ReservationForm({
             <Textarea
               id="comments"
               {...form.register('comments')}
-              placeholder="Vegetarianos, alergias, promos ofrecidas, etc."
+              placeholder="Alergia a qué, mesa preferida, promos ofrecidas, etc."
               rows={3}
             />
+            {/* La válvula de escape para lo que no entra en ningún chip. Solo
+                tiene sentido si hay algo escrito. */}
+            {values.comments?.trim() ? (
+              <div className="flex items-center gap-2 pt-0.5">
+                <Switch
+                  id="highlight_comment"
+                  checked={Boolean(values.highlight_comment)}
+                  onCheckedChange={(v) =>
+                    form.setValue('highlight_comment', v, { shouldValidate: true })
+                  }
+                />
+                <Label
+                  htmlFor="highlight_comment"
+                  className="cursor-pointer text-[11px] font-normal leading-snug text-muted-foreground"
+                >
+                  Destacar este comentario: se lee entero en la agenda y en el panel de mozos, sin
+                  abrir nada.
+                </Label>
+              </div>
+            ) : null}
           </div>
         </div>
       </FieldGroup>
@@ -1441,6 +1576,8 @@ function CustomerCombobox({
     guest_name: string
     guest_phone: string | null
     guest_email: string | null
+    /** Avisos de la ficha del cliente elegido; `undefined` si se escribió a mano. */
+    service_alerts?: ServiceAlert[]
   }) => void
   error?: string
 }) {
@@ -1505,6 +1642,7 @@ function CustomerCombobox({
                         guest_name: `${c.first_name} ${c.last_name}`.trim(),
                         guest_phone: c.phone,
                         guest_email: null,
+                        service_alerts: parseServiceAlerts(c.service_alerts),
                       })
                       setOpen(false)
                     }}

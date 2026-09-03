@@ -15,6 +15,12 @@ import {
   UnauthenticatedError,
 } from '@/lib/tenant'
 import type { Tenant, TenantRole } from '@/lib/tenant/types'
+import {
+  mergeProfileAlerts,
+  parseServiceAlerts,
+  personScopedAlerts,
+  type ServiceAlert,
+} from './alerts'
 import { eventDateMismatchCode, humanizeSalonError } from './humanize'
 import { LAST_MANAGER_COOKIE_MAX_AGE, lastManagerCookieName } from './managers'
 import {
@@ -159,6 +165,82 @@ async function markCustomerAcquiredByReservation(
       error: updateError.message,
     })
   }
+}
+
+/**
+ * Sube a la ficha del cliente los avisos que son de la PERSONA (celíaca,
+ * alérgica, vegana, movilidad reducida) — no los de la noche (silla de bebé).
+ *
+ * Es lo que hace que nadie tenga que acordarse de recargar "celíaca" en cada
+ * reserva: el que la carga se entera una vez y el CRM lo recuerda. Aditivo a
+ * propósito: desmarcar el chip en la reserva del viernes NO borra la ficha, o
+ * un descuido dejaría sin aviso a las otras veinte reservas de esa persona.
+ * Para sacarlo de verdad se edita la ficha.
+ *
+ * Best-effort, igual que el link del cliente: si falla, la reserva se guarda
+ * igual con SUS avisos (que es lo que el mozo va a ver esa noche). Se loguea
+ * sin PII: solo ids.
+ */
+async function syncCustomerServiceAlerts(
+  supabase: SBAny,
+  tenantId: string,
+  customerId: string,
+  alerts: ReadonlyArray<ServiceAlert> | undefined,
+): Promise<void> {
+  const incoming = personScopedAlerts(alerts ?? [])
+  if (incoming.length === 0) return
+
+  const { data: current, error: readError } = await supabase
+    .from('customers')
+    .select('service_alerts')
+    .eq('tenant_id', tenantId)
+    .eq('id', customerId)
+    .maybeSingle()
+
+  if (readError || !current) {
+    if (readError) {
+      console.error('[salon.reservation] no pudimos leer service_alerts del cliente', {
+        tenantId,
+        customerId,
+        error: readError.message,
+      })
+    }
+    return
+  }
+
+  const merged = mergeProfileAlerts(
+    (current as { service_alerts: unknown }).service_alerts,
+    incoming,
+  )
+  const before = parseServiceAlerts((current as { service_alerts: unknown }).service_alerts)
+  if (merged.length === before.length) return // ya los sabía
+
+  const { error: updateError } = await supabase
+    .from('customers')
+    .update({ service_alerts: merged })
+    .eq('tenant_id', tenantId)
+    .eq('id', customerId)
+
+  if (updateError) {
+    console.error('[salon.reservation] no pudimos guardar los avisos en la ficha', {
+      tenantId,
+      customerId,
+      error: updateError.message,
+    })
+    return
+  }
+
+  // Es un dato de salud y queda pegado a la persona: cuando aparezca el primer
+  // "¿quién marcó a este señor como celíaco?" tiene que haber respuesta.
+  // Guardamos las claves del aviso, nunca el nombre ni el teléfono.
+  await logAudit({
+    tenantId,
+    userId: null,
+    action: 'customer.service_alerts.updated',
+    entity: 'customer',
+    entityId: customerId,
+    payload: { added: merged.filter((a) => !before.includes(a)), source: 'reservation' },
+  })
 }
 
 /**
@@ -316,6 +398,8 @@ export async function createSalonReservation(
       primary_manager_id: parsed.data.primary_manager_id,
       assistant_manager_id: parsed.data.assistant_manager_id ?? null,
       comments: parsed.data.comments ?? null,
+      service_alerts: parsed.data.service_alerts ?? [],
+      highlight_comment: parsed.data.highlight_comment ?? false,
       created_by: user?.id ?? null,
     })
     .select('id')
@@ -332,6 +416,12 @@ export async function createSalonReservation(
   // evento) dejaba al cliente reetiquetado sin tener ninguna reserva.
   if (customerId) {
     await markCustomerAcquiredByReservation(supabase, access.tenant.id, customerId)
+    await syncCustomerServiceAlerts(
+      supabase,
+      access.tenant.id,
+      customerId,
+      parsed.data.service_alerts,
+    )
   }
 
   await logAudit({
@@ -418,6 +508,12 @@ export async function updateSalonReservation(
       primary_manager_id: patch.primary_manager_id,
       assistant_manager_id: patch.assistant_manager_id ?? null,
       comments: patch.comments ?? null,
+      // Ausente ≠ vacío, igual que el horario de fin: una edición parcial no
+      // puede borrar el aviso de que la mesa es celíaca.
+      ...(patch.service_alerts !== undefined ? { service_alerts: patch.service_alerts } : {}),
+      ...(patch.highlight_comment !== undefined
+        ? { highlight_comment: patch.highlight_comment }
+        : {}),
     })
     .eq('tenant_id', access.tenant.id)
     .eq('id', id)
@@ -428,6 +524,12 @@ export async function updateSalonReservation(
   // Personas → Reservas.
   if (patch.customer_id) {
     await markCustomerAcquiredByReservation(supabase, access.tenant.id, patch.customer_id)
+    await syncCustomerServiceAlerts(
+      supabase,
+      access.tenant.id,
+      patch.customer_id,
+      patch.service_alerts,
+    )
   }
 
   // Si cambió gestor / actual_guests / meal_type, recalc.

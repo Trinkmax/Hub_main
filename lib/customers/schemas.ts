@@ -1,6 +1,7 @@
 import { isValidPhoneNumber } from 'libphonenumber-js'
 import { z } from 'zod'
 import { tryNormalizePhone } from '@/lib/phone'
+import { SERVICE_ALERTS } from '@/lib/salon/alerts'
 
 // Acepta E.164 nuevo (`+5493515551234`, vía react-phone-number-input) o
 // cualquier formato heredado que pase por tryNormalizePhone (imports viejos,
@@ -52,6 +53,15 @@ export const updateCustomerSchema = z.object({
   birthdate: birthdateField,
   opt_in_marketing: z.coerce.boolean().default(false),
   is_blocked: z.coerce.boolean().default(false),
+  /**
+   * Avisos permanentes (celíaca, alérgica…). Es la ÚNICA forma de sacar uno:
+   * desmarcar el chip en una reserva no toca la ficha a propósito, porque un
+   * descuido dejaría sin aviso a todas las demás reservas de esa persona.
+   */
+  service_alerts: z
+    .union([z.array(z.enum(SERVICE_ALERTS)), z.enum(SERVICE_ALERTS), z.literal(''), z.null()])
+    .transform((v) => (!v ? [] : Array.isArray(v) ? v : [v]))
+    .optional(),
 })
 
 export const customerIdSchema = z.object({ id: z.string().uuid() })

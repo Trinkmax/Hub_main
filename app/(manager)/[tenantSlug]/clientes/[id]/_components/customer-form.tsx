@@ -11,6 +11,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { type CustomerActionState, updateCustomer } from '@/lib/customers/actions'
+import { SERVICE_ALERT_META, SERVICE_ALERTS, type ServiceAlert } from '@/lib/salon/alerts'
+import { cn } from '@/lib/utils'
 
 const initial: CustomerActionState = { ok: true }
 
@@ -41,6 +43,7 @@ type CustomerFormData = {
   birthdate: string | null
   opt_in_marketing: boolean
   is_blocked: boolean
+  service_alerts: ServiceAlert[]
 }
 
 export function CustomerForm({
@@ -53,6 +56,7 @@ export function CustomerForm({
   const action = updateCustomer.bind(null, tenantSlug)
   const [state, formAction] = useActionState(action, initial)
   const [phone, setPhone] = useState<string | undefined>(customer.phone || undefined)
+  const [selected, setSelected] = useState<ServiceAlert[]>(customer.service_alerts)
 
   useEffect(() => {
     if (state.ok && state.message) {
@@ -140,6 +144,51 @@ export function CustomerForm({
           />
         </div>
       </div>
+
+      {/* Avisos permanentes. Esta ficha es el ÚNICO lugar donde se sacan: en una
+          reserva se pueden marcar (y suben acá solos), pero desmarcarlos ahí no
+          los borra, o un descuido dejaría sin aviso a todas las demás reservas
+          de esta persona. */}
+      <fieldset className="grid gap-1.5">
+        <legend className="text-sm font-medium">Avisos de servicio</legend>
+        <p className="text-xs text-muted-foreground">
+          Aparecen solos en cada reserva de esta persona, en la agenda y en el panel de mozos.
+        </p>
+        <div className="mt-1 flex flex-wrap gap-2">
+          {SERVICE_ALERTS.filter((a) => SERVICE_ALERT_META[a].scope === 'person').map((alert) => {
+            const meta = SERVICE_ALERT_META[alert]
+            const active = selected.includes(alert)
+            return (
+              <label
+                key={alert}
+                title={meta.hint}
+                className={cn(
+                  'inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                  active
+                    ? meta.severity === 'critical'
+                      ? 'border-destructive/60 bg-destructive/10 text-destructive'
+                      : 'border-warning/60 bg-warning/15 text-foreground'
+                    : 'border-border bg-card/40 text-muted-foreground hover:bg-secondary',
+                )}
+              >
+                <input
+                  type="checkbox"
+                  name="service_alerts"
+                  value={alert}
+                  checked={active}
+                  onChange={(e) =>
+                    setSelected((prev) =>
+                      e.target.checked ? [...prev, alert] : prev.filter((a) => a !== alert),
+                    )
+                  }
+                  className="sr-only"
+                />
+                {meta.label}
+              </label>
+            )
+          })}
+        </div>
+      </fieldset>
 
       <div className="grid gap-1.5">
         <Label htmlFor="notes">Notas internas</Label>

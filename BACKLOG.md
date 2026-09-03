@@ -3,6 +3,36 @@
 Hallazgos fuera del scope de la tarea en curso, anotados para retomar
 (ver CLAUDE.md §14.7). No bloquean el merge de la feature donde se detectaron.
 
+## Avisos de servicio — deuda y riesgos (02/09/2026)
+
+- **`z.coerce.boolean().default(false)` sigue en otros schemas.** `lib/customers/schemas.ts`
+  (`opt_in_marketing`, `is_blocked`) y `lib/punch-cards/schemas.ts` (`show_when_locked`,
+  `active`). El string `'false'` de un FormData es truthy, así que un checkbox
+  que mande `value="false"` explícito quedaría en `true`. Hoy no pasa porque
+  esos forms usan `=== 'on'` o Checkbox de shadcn, pero es una trampa armada.
+  El helper correcto está en `lib/salon/schemas.ts` (`checkboxField`).
+- **Los avisos permanentes no se pueden filtrar ni segmentar.** `service_alerts`
+  quedó FUERA de `CONDITION_FIELDS` (`lib/audiences/schemas.ts`) a propósito: es
+  dato de salud y una audiencia "celíacos" habilitaría mandarles una difusión.
+  Si el dueño lo pide alguna vez, es una decisión de producto + legal, no un
+  campo más en el builder. Sí podría tener sentido un filtro de solo lectura en
+  la agenda ("ver las reservas con aviso de este sábado").
+- **Un aviso mal cargado en una reserva se puede sacar de la reserva, pero de la
+  ficha solo desde `/clientes/[id]`.** Es deliberado (desmarcar en una reserva no
+  puede dejar sin aviso a las otras veinte), pero implica que el cajero que se
+  equivocó tiene que ir a la ficha. La ficha hoy la editan `owner` y `cashier`
+  (`lib/customers/actions.ts:173`): `host` NO puede corregir un aviso que él
+  mismo cargó. Revisar con el dueño si Luz debería poder.
+- **La tarjeta del mozo esconde el ícono de nota cuando hay torta o champagne**
+  (`reservation-card.tsx`, condición `reservation.comments && !extras`). El
+  comentario DESTACADO ahora se muestra siempre, así que el caso grave está
+  cubierto, pero una nota común sigue desapareciendo detrás de la torta.
+- **Realtime sigue sin traer los joins en un INSERT.** `mergeRow` ahora hace
+  merge en el UPDATE (conserva cliente/gestor/evento), pero una reserva que
+  entra nueva a la vista por Realtime se pinta sin joins hasta el próximo fetch:
+  sin nombre de gestor, sin color de evento y sin los avisos de la ficha. Lo
+  correcto sería refetchear esa fila puntual al recibir un INSERT.
+
 ## Cubiertos y reservas — inconsistencias vecinas (auditoría 31/08/2026)
 
 Detectadas mientras se arreglaba el contador de Cubiertos (que ahora suma salón

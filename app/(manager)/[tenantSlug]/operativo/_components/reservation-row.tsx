@@ -4,6 +4,7 @@ import { Cake, DoorClosed, DoorOpen, GlassWater, RotateCcw, Users, XCircle } fro
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,6 +25,7 @@ import {
   markSeated,
   revertStatus,
 } from '@/lib/salon/actions'
+import { resolveReservationAlerts } from '@/lib/salon/alerts'
 import type { ReservationWithJoins, SalonReservationStatus } from '@/lib/salon/types'
 import { STATUS_LABELS } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
@@ -78,6 +80,10 @@ export function ReservationRow({
 
   const time = reservation.reservation_time_local.slice(0, 5)
   const endTime = reservation.reservation_end_time_local?.slice(0, 5) ?? null
+  const alerts = resolveReservationAlerts(
+    reservation.service_alerts,
+    reservation.customer?.service_alerts,
+  )
   const guests = reservation.actual_guests ?? reservation.estimated_guests
   const allowed = nextAllowed(reservation.status)
   const isClosed = reservation.status === 'closed'
@@ -113,6 +119,12 @@ export function ReservationRow({
             <GlassWater className="size-3.5 shrink-0 text-amber-500" aria-label="Champán" />
           ) : null}
         </div>
+        <ServiceAlertChips alerts={alerts} className="mt-1" />
+        {reservation.highlight_comment && reservation.comments ? (
+          <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-snug text-foreground">
+            {reservation.comments}
+          </p>
+        ) : null}
         <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1">
             <Users className="size-3" />

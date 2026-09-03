@@ -1,6 +1,7 @@
 import { isValidPhoneNumber } from 'libphonenumber-js'
 import { z } from 'zod'
 import { tryNormalizePhone } from '@/lib/phone'
+import { SERVICE_ALERTS, type ServiceAlert } from './alerts'
 
 // ──────────────────────────────────────────────────────────
 // Field helpers (reusables)
@@ -72,6 +73,31 @@ const optionalText = (max: number) =>
 // Reservas
 // ──────────────────────────────────────────────────────────
 
+/**
+ * Avisos de servicio. Multi-select, así que llega como array — pero un form
+ * HTML con un solo chip marcado manda un string suelto y con ninguno no manda
+ * la clave. Los tres casos tienen que dar un array.
+ *
+ * `.optional()` por fuera a propósito: ausente se queda `undefined` y la action
+ * NO toca la columna. Es la misma defensa que el horario de fin — `panelPayload`
+ * del quick-view manda un payload completo cada vez que se mueve la hora o las
+ * personas, y si `undefined` colapsara a `[]`, cada uno de esos toques borraría
+ * el aviso de que la mesa 4 es celíaca.
+ */
+const serviceAlertsField = z
+  .union([z.array(z.enum(SERVICE_ALERTS)), z.enum(SERVICE_ALERTS), z.literal(''), z.null()])
+  .transform((v) => (!v ? [] : Array.isArray(v) ? v : [v]) as ServiceAlert[])
+  .optional()
+
+/**
+ * Checkbox/Switch tolerante al borde. `z.coerce.boolean()` NO sirve acá: el
+ * string `'false'` que manda un FormData es truthy y daría `true`.
+ */
+const checkboxField = z
+  .union([z.boolean(), z.literal('true'), z.literal('false'), z.literal('on'), z.literal('')])
+  .transform((v) => v === true || v === 'true' || v === 'on')
+  .optional()
+
 export const reservationKindEnum = z.enum(['normal', 'birthday', 'special'])
 export const mealTypeEnum = z.enum(['breakfast', 'lunch', 'tea_time', 'dinner', 'hub_event'])
 export const reservationOriginEnum = z.enum([
@@ -120,6 +146,8 @@ export const createSalonReservationSchema = z
     primary_manager_id: z.string().uuid({ message: 'Asignar gestor' }),
     assistant_manager_id: z.string().uuid().optional().nullable(),
     comments: optionalText(2000).optional(),
+    service_alerts: serviceAlertsField,
+    highlight_comment: checkboxField,
   })
   .superRefine((data, ctx) => {
     if (data.zone === 'event_floating' && !data.scheduled_event_id && !data.requested_template_id) {
@@ -172,6 +200,8 @@ export const updateSalonReservationSchema = z
     primary_manager_id: z.string().uuid(),
     assistant_manager_id: z.string().uuid().optional().nullable(),
     comments: optionalText(2000).optional(),
+    service_alerts: serviceAlertsField,
+    highlight_comment: checkboxField,
   })
   .superRefine((data, ctx) => {
     if (data.zone === 'event_floating' && !data.scheduled_event_id) {

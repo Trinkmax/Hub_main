@@ -15,6 +15,7 @@ import {
 import { motion } from 'motion/react'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -24,6 +25,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { markArrived, markNoShow, revertStatus, updateActualGuests } from '@/lib/salon/actions'
+import { highestSeverity, resolveReservationAlerts } from '@/lib/salon/alerts'
 import type { ReservationWithJoins, SalonReservationStatus } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
@@ -94,6 +96,15 @@ export function ReservationCard({
 
   const time = reservation.reservation_time_local.slice(0, 5)
   const endTime = reservation.reservation_end_time_local?.slice(0, 5) ?? null
+  const alerts = resolveReservationAlerts(
+    reservation.service_alerts,
+    reservation.customer?.service_alerts,
+  )
+  const alertTone = highestSeverity(alerts)
+  const stillMatters =
+    reservation.status === 'pending' ||
+    reservation.status === 'arrived' ||
+    reservation.status === 'seated'
   const shownGuests = reservation.actual_guests ?? reservation.estimated_guests
   const here = isHere(reservation.status)
   const canArrive = canOperate && reservation.status === 'pending'
@@ -111,6 +122,17 @@ export function ReservationCard({
         className={cn(
           'relative flex items-center gap-3 rounded-2xl border p-3 transition-colors',
           STATUS_STYLE[reservation.status],
+          // El fondo lo usa el estado y la franja izquierda el color del
+          // evento. Queda `outline`, que es una propiedad CSS aparte: `ring-*`
+          // de Tailwind es box-shadow y el `style={{ boxShadow }}` de abajo lo
+          // pisa, así que en toda reserva de evento el aro no se vería nunca.
+          //
+          // Solo mientras el aviso sirve: en `no_show` el rojo YA significa
+          // "no vino" (ver STATUS_STYLE) y en cerrada/cancelada la mesa terminó.
+          // Un aro rojo ahí sería rojo sobre rojo sin decir nada nuevo.
+          alertTone === 'critical' &&
+            stillMatters &&
+            'outline outline-2 -outline-offset-2 outline-destructive/50',
         )}
         style={
           tplColor && reservation.status !== 'cancelled'
@@ -151,6 +173,12 @@ export function ReservationCard({
                 <GlassWater className="size-3.5 shrink-0 text-primary" aria-label="Champagne" />
               ) : null}
             </div>
+            <ServiceAlertChips alerts={alerts} size="xs" className="mt-1" />
+            {reservation.highlight_comment && reservation.comments ? (
+              <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-snug text-foreground">
+                {reservation.comments}
+              </p>
+            ) : null}
             <p className="mt-0.5 truncate text-xs text-muted-foreground">
               {here || reservation.status !== 'pending' ? (
                 <span

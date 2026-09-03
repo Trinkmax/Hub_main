@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { Fragment } from 'react'
 import { ReservationCommentPopover } from '@/components/reservations/comment-popover'
 import { ReservationQuickView } from '@/components/reservations/reservation-quick-view'
+import { alertRowTint, ServiceAlertChips } from '@/components/reservations/service-alert-chips'
 import { StatusPill } from '@/components/reservations/status-pill'
 import { Button } from '@/components/ui/button'
 import {
@@ -16,6 +17,7 @@ import {
   DataTableScroll,
   DataTableShell,
 } from '@/components/ui/data-table'
+import { highestSeverity, resolveReservationAlerts } from '@/lib/salon/alerts'
 import { formatDayLabel } from '@/lib/salon/date-presets'
 import { ARSFormat, endsNextDay } from '@/lib/salon/format'
 import { MEAL_TYPE_LABELS, type ReservationWithJoins, ZONE_LABELS } from '@/lib/salon/types'
@@ -147,6 +149,12 @@ export function ReservationsTable({
                 ) : null}
 
                 {group.rows.map((r) => {
+                  // Avisos: los de la reserva más los de la ficha del cliente.
+                  const alerts = resolveReservationAlerts(
+                    r.service_alerts,
+                    r.customer?.service_alerts,
+                  )
+                  const alertTone = highestSeverity(alerts)
                   const guestsLabel = r.actual_guests ?? r.estimated_guests
                   const guestsHint =
                     r.actual_guests !== null && r.actual_guests !== r.estimated_guests
@@ -156,6 +164,10 @@ export function ReservationsTable({
                     <DataTableRow
                       key={r.id}
                       className={cn(
+                        alertRowTint(alertTone),
+                        // El verde de "recién creada" gana: es momentáneo y lo
+                        // acaba de provocar el usuario, así que no puede quedar
+                        // tapado por el tinte del aviso.
                         r.id === highlightId &&
                           'bg-emerald-50/70 dark:bg-emerald-950/30 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/30',
                       )}
@@ -198,6 +210,15 @@ export function ReservationsTable({
                             ) : r.guest_phone ? (
                               <span className="text-[11px] text-muted-foreground">
                                 {r.guest_phone}
+                              </span>
+                            ) : null}
+                            <ServiceAlertChips alerts={alerts} className="mt-1" />
+                            {/* Comentario destacado: se lee entero, sin abrir el
+                                popover. Es la válvula para lo que no entra en
+                                ningún chip ("silla de ruedas eléctrica"). */}
+                            {r.highlight_comment && r.comments ? (
+                              <span className="mt-1 line-clamp-2 max-w-[28ch] text-[11px] font-medium text-foreground">
+                                {r.comments}
                               </span>
                             ) : null}
                           </div>

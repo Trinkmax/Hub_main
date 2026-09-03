@@ -1121,6 +1121,7 @@ export type Database = {
           points_balance: number
           qr_token: string
           qr_token_generated_at: string
+          service_alerts: Database["public"]["Enums"]["service_alert"][]
           source: Database["public"]["Enums"]["customer_source"]
           tenant_id: string
           total_spent_cents: number
@@ -1150,6 +1151,7 @@ export type Database = {
           points_balance?: number
           qr_token?: string
           qr_token_generated_at?: string
+          service_alerts?: Database["public"]["Enums"]["service_alert"][]
           source?: Database["public"]["Enums"]["customer_source"]
           tenant_id: string
           total_spent_cents?: number
@@ -1179,6 +1181,7 @@ export type Database = {
           points_balance?: number
           qr_token?: string
           qr_token_generated_at?: string
+          service_alerts?: Database["public"]["Enums"]["service_alert"][]
           source?: Database["public"]["Enums"]["customer_source"]
           tenant_id?: string
           total_spent_cents?: number
@@ -3139,6 +3142,8 @@ export type Database = {
           reservation_date: string
           reservation_end_time_local: string | null
           reservation_time_local: string
+          highlight_comment: boolean
+          service_alerts: Database["public"]["Enums"]["service_alert"][]
           scheduled_event_id: string | null
           seated_at: string | null
           seated_by: string | null
@@ -3175,6 +3180,8 @@ export type Database = {
           reservation_date: string
           reservation_end_time_local?: string | null
           reservation_time_local: string
+          highlight_comment?: boolean
+          service_alerts?: Database["public"]["Enums"]["service_alert"][]
           scheduled_event_id?: string | null
           seated_at?: string | null
           seated_by?: string | null
@@ -3211,6 +3218,8 @@ export type Database = {
           reservation_date?: string
           reservation_end_time_local?: string | null
           reservation_time_local?: string
+          highlight_comment?: boolean
+          service_alerts?: Database["public"]["Enums"]["service_alert"][]
           scheduled_event_id?: string | null
           seated_at?: string | null
           seated_by?: string | null
@@ -5255,6 +5264,13 @@ export type Database = {
         | "closed"
         | "no_show"
         | "cancelled"
+      service_alert:
+        | "celiac"
+        | "allergy"
+        | "vegetarian"
+        | "vegan"
+        | "reduced_mobility"
+        | "baby_seat"
       salon_zone: "planta_alta" | "planta_baja" | "event_floating"
       session_event_type:
         | "session_opened"
@@ -5483,6 +5499,14 @@ export const Constants = {
         "closed",
         "no_show",
         "cancelled",
+      ],
+      service_alert: [
+        "celiac",
+        "allergy",
+        "vegetarian",
+        "vegan",
+        "reduced_mobility",
+        "baby_seat",
       ],
       salon_zone: ["planta_alta", "planta_baja", "event_floating"],
       session_event_type: [

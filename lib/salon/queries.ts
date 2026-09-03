@@ -31,7 +31,7 @@ const RESERVATION_JOIN_SELECT = `
     id, capacity, starts_at_local, meal_type,
     template:scheduled_event_templates(id, name, slug, color_hex, consume_special_reservations)
   ),
-  customer:customers(id, first_name, last_name, phone)
+  customer:customers(id, first_name, last_name, phone, service_alerts)
 `
 
 function normalizeJoin<T>(value: T | T[] | null | undefined): T | null {

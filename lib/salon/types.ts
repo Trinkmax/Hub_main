@@ -9,6 +9,8 @@
  * estos por `Database['public']['Tables']['*']['Row']` y borrar este file.
  */
 
+import type { ServiceAlert } from './alerts'
+
 export type ReservationKind = 'normal' | 'birthday' | 'special'
 
 export type MealType = 'breakfast' | 'lunch' | 'tea_time' | 'dinner' | 'hub_event'
@@ -113,6 +115,10 @@ export type SalonReservationRow = {
   primary_manager_id: string
   assistant_manager_id: string | null
   comments: string | null
+  /** Avisos de ESTA reserva. Lo que se muestra es la unión con los del cliente. */
+  service_alerts: ServiceAlert[]
+  /** El comentario libre es importante: se muestra abierto, no detrás del ícono. */
+  highlight_comment: boolean
   status: SalonReservationStatus
   arrived_at: string | null
   seated_at: string | null
@@ -205,7 +211,14 @@ export type ReservationWithJoins = SalonReservationRow & {
         > | null
       })
     | null
-  customer: { id: string; first_name: string; last_name: string; phone: string } | null
+  customer: {
+    id: string
+    first_name: string
+    last_name: string
+    phone: string
+    /** Avisos permanentes de la persona: viajan a toda reserva suya. */
+    service_alerts: ServiceAlert[]
+  } | null
 }
 
 export type ZoneCapacityLabels = Record<Exclude<SalonZone, 'event_floating'>, string>

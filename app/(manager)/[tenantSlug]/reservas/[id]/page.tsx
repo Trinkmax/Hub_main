@@ -1,7 +1,9 @@
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
 import { PageHeader } from '@/components/ui/page-header'
+import { resolveReservationAlerts } from '@/lib/salon/alerts'
 import { formatDayLabel } from '@/lib/salon/date-presets'
 import { timeRangeLabel } from '@/lib/salon/format'
 import {
@@ -89,6 +91,28 @@ export default async function ReservaDetailPage({
         description={`${formatDayLabel(reservation.reservation_date)} · ${timeRangeLabel(reservation.reservation_time_local, reservation.reservation_end_time_local)} · ${reservation.estimated_guests} personas`}
       />
 
+      {/* Avisos arriba del fold: es la pantalla donde el encargado confirma la
+          reserva por teléfono, y no puede tener que bajar para enterarse. */}
+      {(() => {
+        const alerts = resolveReservationAlerts(
+          reservation.service_alerts,
+          reservation.customer?.service_alerts,
+        )
+        if (alerts.length === 0 && !(reservation.highlight_comment && reservation.comments)) {
+          return null
+        }
+        return (
+          <div className="space-y-2">
+            <ServiceAlertChips alerts={alerts} />
+            {reservation.highlight_comment && reservation.comments ? (
+              <p className="rounded-lg border border-warning/50 bg-warning/10 px-3 py-2 text-sm leading-snug text-foreground">
+                {reservation.comments}
+              </p>
+            ) : null}
+          </div>
+        )
+      })()}
+
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <ReservationForm
           mode="edit"
@@ -102,6 +126,7 @@ export default async function ReservaDetailPage({
           linkedManagerId={linkedManager?.id ?? null}
           canManageManagers={access.role === 'owner'}
           reservationId={reservation.id}
+          customerServiceAlerts={reservation.customer?.service_alerts ?? []}
           initialValues={{
             customer_id: reservation.customer_id ?? undefined,
             guest_name: reservation.guest_name,
@@ -123,6 +148,8 @@ export default async function ReservaDetailPage({
             assistant_manager_id: reservation.assistant_manager_id ?? undefined,
             comments: reservation.comments ?? undefined,
             actual_guests: reservation.actual_guests,
+            service_alerts: reservation.service_alerts,
+            highlight_comment: reservation.highlight_comment,
           }}
         />
         <ReservationDetailSidebar tenantSlug={tenantSlug} reservation={reservation} />

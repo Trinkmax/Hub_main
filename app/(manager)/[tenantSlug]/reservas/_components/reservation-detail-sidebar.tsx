@@ -60,9 +60,22 @@ export function ReservationDetailSidebar({
           )}
         </div>
         <div className="space-y-1 border-t border-border/60 pt-3">
-          <span className="text-sm text-muted-foreground">Comentario del cliente</span>
+          <span className="text-sm text-muted-foreground">
+            {reservation.highlight_comment && reservation.comments
+              ? 'Comentario destacado'
+              : 'Comentario del cliente'}
+          </span>
           {reservation.comments ? (
-            <p className="max-h-56 overflow-y-auto whitespace-pre-wrap break-words text-sm">
+            // Si el encargado se tomó el trabajo de destacarlo, esta pantalla
+            // —donde se prepara la reserva— tiene que mostrarlo distinto. Si no,
+            // el switch no sirve para nada acá.
+            <p
+              className={cn(
+                'max-h-56 overflow-y-auto whitespace-pre-wrap break-words text-sm',
+                reservation.highlight_comment &&
+                  'rounded-lg border border-warning/50 bg-warning/10 px-3 py-2 font-medium',
+              )}
+            >
               {reservation.comments}
             </p>
           ) : (

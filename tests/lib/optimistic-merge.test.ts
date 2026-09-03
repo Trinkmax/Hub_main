@@ -82,3 +82,51 @@ describe('mergeRow', () => {
     expect(mergeRow(initial, payload, id)).toEqual(initial)
   })
 })
+
+describe('mergeRow — UPDATE conserva los joins', () => {
+  // Realtime manda solo las columnas de la tabla. Si el UPDATE reemplazara la
+  // fila entera, el mozo tocaría "Llegó" y perdería de esa tarjeta el gestor,
+  // el color del evento y el aviso "SIN TACC" que venía de la ficha del cliente.
+  type Row = {
+    id: string
+    status: string
+    customer: { id: string; service_alerts: string[] } | null
+    primary_manager: { display_name: string } | null
+  }
+
+  const existing: Row = {
+    id: 'r1',
+    status: 'pending',
+    customer: { id: 'c1', service_alerts: ['celiac'] },
+    primary_manager: { display_name: 'Luz' },
+  }
+
+  it('el payload crudo pisa las columnas pero no borra los joins', () => {
+    const out = mergeRow<Row>(
+      [existing],
+      {
+        eventType: 'UPDATE',
+        new: { id: 'r1', status: 'arrived' } as unknown as Row,
+        old: {},
+      } as never,
+      (r) => r.id,
+    )
+    expect(out[0]?.status).toBe('arrived')
+    expect(out[0]?.customer?.service_alerts).toEqual(['celiac'])
+    expect(out[0]?.primary_manager?.display_name).toBe('Luz')
+  })
+
+  it('una columna que sí viene en el payload se actualiza', () => {
+    const out = mergeRow<Row>(
+      [existing],
+      {
+        eventType: 'UPDATE',
+        new: { id: 'r1', status: 'seated', customer: null } as unknown as Row,
+        old: {},
+      } as never,
+      (r) => r.id,
+    )
+    // `customer` vino explícito en el payload: gana el payload.
+    expect(out[0]?.customer).toBeNull()
+  })
+})

@@ -66,12 +66,24 @@ export function mergeRow<Row>(
   }
 
   // UPDATE
+  //
+  // Merge, no reemplazo. El payload de Realtime trae SOLO las columnas de la
+  // tabla: los joins (cliente, gestor, evento) no viajan. Reemplazar la fila
+  // entera los borraba en silencio — el mozo tocaba "Llegó" y de esa tarjeta
+  // desaparecían el nombre del gestor, el color del evento y, desde que existen
+  // los avisos de servicio, el chip "SIN TACC" que venía de la ficha del
+  // cliente. Justo el dato que no se puede perder.
+  //
+  // El spread pisa toda columna real (que sí viene en el payload) y conserva lo
+  // que la fila ya tenía resuelto. Si cambiara un FK de un join, ese objeto
+  // queda un momento desactualizado hasta el próximo fetch completo: mucho
+  // menos grave que perderlo del todo.
   const nextId = getId(next)
   let found = false
   const merged = prev.map((row) => {
     if (getId(row) === nextId) {
       found = true
-      return next
+      return { ...row, ...next }
     }
     return row
   })

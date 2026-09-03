@@ -1,5 +1,6 @@
 'use server'
 
+import type { ServiceAlert } from '@/lib/salon/alerts'
 import { createClient } from '@/lib/supabase/server'
 import {
   RESERVATION_OPERATOR_ROLES,
@@ -15,6 +16,13 @@ export type CustomerSearchResult = {
   last_name: string
   phone: string
   points_balance: number
+  /**
+   * Avisos permanentes (celíaca, alérgica…). Viaja en la misma query para que
+   * el alta de reserva pueda avisar en el momento en que se elige al cliente,
+   * sin un hop extra. Es dato de salud: solo llega a staff (el requireRole de
+   * abajo ya lo acota) y nunca sale a una superficie pública.
+   */
+  service_alerts: ServiceAlert[]
 }
 
 export async function searchCustomers(
@@ -40,7 +48,7 @@ export async function searchCustomers(
   const isDigits = /^[\d+\s\-()]+$/.test(q)
   let builder = supabase
     .from('customers')
-    .select('id, first_name, last_name, phone, points_balance')
+    .select('id, first_name, last_name, phone, points_balance, service_alerts')
     .eq('tenant_id', access.tenant.id)
     .is('deleted_at', null)
     .limit(8)

@@ -21,6 +21,7 @@ import {
 import { getCustomerLunchSnapshot } from '@/lib/punch-cards/queries'
 import { listCustomerReviews } from '@/lib/reviews/queries'
 import { formatReviewsSummary } from '@/lib/reviews/summary'
+import { parseServiceAlerts, type ServiceAlert } from '@/lib/salon/alerts'
 import { getCustomerInsights } from '@/lib/stats/queries'
 import {
   RoleRequiredError,
@@ -98,6 +99,8 @@ export default async function CustomerDetailPage({
     created_at: string
     source: string
     qr_token: string
+    /** Avisos permanentes; la query trae `*`, así que llegan solos. */
+    service_alerts: ServiceAlert[] | null
     tags: { id: string; name: string; color: string }[]
   }
   const c = customer as unknown as C
@@ -333,7 +336,10 @@ export default async function CustomerDetailPage({
               Estos datos solo los ven los miembros del equipo.
             </p>
             <div className="mt-5">
-              <CustomerForm tenantSlug={tenantSlug} customer={c} />
+              <CustomerForm
+                tenantSlug={tenantSlug}
+                customer={{ ...c, service_alerts: parseServiceAlerts(c.service_alerts) }}
+              />
             </div>
           </div>
         </TabsContent>

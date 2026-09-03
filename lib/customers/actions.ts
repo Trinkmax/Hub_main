@@ -183,6 +183,8 @@ export async function updateCustomer(
     birthdate: formData.get('birthdate'),
     opt_in_marketing: formData.get('opt_in_marketing') === 'on',
     is_blocked: formData.get('is_blocked') === 'on',
+    // getAll: son checkboxes que comparten nombre, no un campo suelto.
+    service_alerts: formData.getAll('service_alerts'),
   })
   if (!parsed.success) {
     return {
@@ -228,6 +230,7 @@ export async function updateCustomer(
       birthdate: parsed.data.birthdate,
       opt_in_marketing: parsed.data.opt_in_marketing,
       is_blocked: parsed.data.is_blocked,
+      service_alerts: parsed.data.service_alerts ?? [],
       email_opt_in_at: parsed.data.email ? emailOptInTimestamp : null,
       ...(becomingOptIn ? { opt_in_at: nowIso, opt_in_ip: ip } : {}),
     })

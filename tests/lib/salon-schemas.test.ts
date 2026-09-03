@@ -153,6 +153,65 @@ describe('createSalonReservationSchema', () => {
     })
   })
 
+  describe('avisos de servicio', () => {
+    it('sin la clave → undefined, la action no toca la columna', () => {
+      const r = createSalonReservationSchema.safeParse({ ...baseValid })
+      expect(r.success).toBe(true)
+      if (r.success) expect(r.data.service_alerts).toBeUndefined()
+    })
+
+    it('array → tal cual', () => {
+      const r = createSalonReservationSchema.safeParse({
+        ...baseValid,
+        service_alerts: ['celiac', 'baby_seat'],
+      })
+      expect(r.success).toBe(true)
+      if (r.success) expect(r.data.service_alerts).toEqual(['celiac', 'baby_seat'])
+    })
+
+    it('un solo chip marcado llega como string suelto y se envuelve', () => {
+      const r = createSalonReservationSchema.safeParse({
+        ...baseValid,
+        service_alerts: 'celiac',
+      })
+      expect(r.success).toBe(true)
+      if (r.success) expect(r.data.service_alerts).toEqual(['celiac'])
+    })
+
+    it('vacío → array vacío (el usuario los desmarcó todos)', () => {
+      const r = createSalonReservationSchema.safeParse({ ...baseValid, service_alerts: '' })
+      expect(r.success).toBe(true)
+      if (r.success) expect(r.data.service_alerts).toEqual([])
+    })
+
+    it('un valor que no está en el enum → error, no se traga en silencio', () => {
+      const r = createSalonReservationSchema.safeParse({
+        ...baseValid,
+        service_alerts: ['gluten_free_maybe'],
+      })
+      expect(r.success).toBe(false)
+    })
+
+    it('highlight_comment: el string "false" de un FormData NO es true', () => {
+      // z.coerce.boolean() daría true acá, que es justo el bug que evitamos.
+      const r = createSalonReservationSchema.safeParse({
+        ...baseValid,
+        highlight_comment: 'false',
+      })
+      expect(r.success).toBe(true)
+      if (r.success) expect(r.data.highlight_comment).toBe(false)
+    })
+
+    it('highlight_comment: "on" y true son true; ausente es undefined', () => {
+      const on = createSalonReservationSchema.safeParse({ ...baseValid, highlight_comment: 'on' })
+      expect(on.success && on.data.highlight_comment).toBe(true)
+      const bool = createSalonReservationSchema.safeParse({ ...baseValid, highlight_comment: true })
+      expect(bool.success && bool.data.highlight_comment).toBe(true)
+      const none = createSalonReservationSchema.safeParse({ ...baseValid })
+      expect(none.success && none.data.highlight_comment).toBeUndefined()
+    })
+  })
+
   it('estimated_guests > 99 → error', () => {
     const r = createSalonReservationSchema.safeParse({ ...baseValid, estimated_guests: 200 })
     expect(r.success).toBe(false)

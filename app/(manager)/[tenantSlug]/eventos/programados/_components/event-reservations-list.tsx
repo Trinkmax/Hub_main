@@ -2,6 +2,8 @@
 
 import { Users } from 'lucide-react'
 import { ContactButton } from '@/components/messaging/contact-button'
+import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
+import { resolveReservationAlerts } from '@/lib/salon/alerts'
 import { timeRangeLabel } from '@/lib/salon/format'
 import type { ReservationWithJoins } from '@/lib/salon/types'
 
@@ -29,6 +31,13 @@ export function EventReservationsList({
                 {timeRangeLabel(r.reservation_time_local, r.reservation_end_time_local)} ·{' '}
                 {r.primary_manager?.display_name ?? '—'}
               </span>
+              {/* El dueño mira esta lista antes del evento: "¿cuántos celíacos
+                  vienen el sábado?" hoy no se puede contestar desde acá. */}
+              <ServiceAlertChips
+                alerts={resolveReservationAlerts(r.service_alerts, r.customer?.service_alerts)}
+                size="xs"
+                className="mt-1"
+              />
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {/* Pastilla con ícono: el número suelto no decía de qué era, y

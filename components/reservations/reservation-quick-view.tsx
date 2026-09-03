@@ -6,6 +6,7 @@ import type { ReactNode } from 'react'
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { ContactButton } from '@/components/messaging/contact-button'
+import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -19,6 +20,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { updateActualGuests, updateSalonReservation } from '@/lib/salon/actions'
+import { resolveReservationAlerts } from '@/lib/salon/alerts'
 import { fetchDayCapacity } from '@/lib/salon/client-actions'
 import { ARSFormat } from '@/lib/salon/format'
 import {
@@ -30,6 +32,7 @@ import {
   type SalonZone,
   ZONE_LABELS,
 } from '@/lib/salon/types'
+import { cn } from '@/lib/utils'
 import { ReservationStatusControls } from './reservation-status-controls'
 import { StatusPill } from './status-pill'
 
@@ -70,6 +73,7 @@ export function ReservationQuickView({
 }) {
   const [open, setOpen] = useState(false)
   const r = reservation
+  const alerts = resolveReservationAlerts(r.service_alerts, r.customer?.service_alerts)
   const editable = r.status !== 'cancelled' && r.status !== 'no_show'
   const guests = r.actual_guests ?? r.estimated_guests
   const guestsHint =
@@ -97,6 +101,8 @@ export function ReservationQuickView({
         {editable ? (
           <QuickEditPanel tenantSlug={tenantSlug} reservation={r} onChanged={onChanged} />
         ) : null}
+
+        {alerts.length > 0 ? <ServiceAlertChips alerts={alerts} className="pb-1" /> : null}
 
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
           <Field label="Cuándo">
@@ -144,9 +150,17 @@ export function ReservationQuickView({
         </dl>
 
         {r.comments ? (
-          <div className="rounded-lg bg-secondary/50 p-3">
+          <div
+            className={cn(
+              'rounded-lg p-3',
+              // Destacado: se tiñe el bloque que YA existe en vez de repetir el
+              // comentario arriba. Mostrarlo dos veces en un popup chico es peor
+              // que no destacarlo.
+              r.highlight_comment ? 'border border-warning/50 bg-warning/10' : 'bg-secondary/50',
+            )}
+          >
             <p className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">
-              Comentario del cliente
+              {r.highlight_comment ? 'Comentario destacado' : 'Comentario del cliente'}
             </p>
             <p className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words text-sm">
               {r.comments}
@@ -311,6 +325,10 @@ function QuickEditPanel({
       // Va explícita aunque este panel no la edite: el payload es un snapshot de
       // la fila, y si faltara, cada toque acá borraría el horario de fin.
       reservation_end_time_local: r.reservation_end_time_local,
+      // Snapshot fiel: sin estas dos, mover la hora o las personas desde acá
+      // borraría los avisos y el destacado de la reserva.
+      service_alerts: r.service_alerts,
+      highlight_comment: r.highlight_comment,
       zone: zoneRef.current,
       scheduled_event_id: r.scheduled_event_id,
       estimated_guests: isPost ? r.estimated_guests : guestsRef.current,
