@@ -10,6 +10,7 @@ import {
   getBonusRule,
   getManagerForUser,
   getSalonReservation,
+  listCakeOptions,
   listManagers,
   listRateTiers,
   listScheduledEventsForDate,
@@ -53,24 +54,34 @@ export default async function ReservaDetailPage({
   // secuenciales (reserva → todo lo demás); ahora el camino crítico es
   // reserva → eventos y el resto viaja junto.
   const reservationPromise = getSalonReservation({ tenantId: access.tenant.id, id })
-  const [reservation, managers, templates, eventsForDate, tiers, bonus, linkedManager] =
-    await Promise.all([
-      reservationPromise,
-      listManagers({ tenantId: access.tenant.id, onlyActive: true }),
-      listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: true }),
-      reservationPromise.then((r) =>
-        r
-          ? listScheduledEventsForDate({ tenantId: access.tenant.id, date: r.reservation_date })
-          : [],
-      ),
-      listRateTiers({ tenantId: access.tenant.id }),
-      getBonusRule({ tenantId: access.tenant.id }),
-      // Solo para marcar "Vos" en el combo de gestores; en edit el default lo
-      // manda la reserva guardada.
-      user
-        ? getManagerForUser({ tenantId: access.tenant.id, userId: user.id })
-        : Promise.resolve(null),
-    ])
+  const [
+    reservation,
+    managers,
+    templates,
+    eventsForDate,
+    tiers,
+    bonus,
+    linkedManager,
+    cakeOptions,
+  ] = await Promise.all([
+    reservationPromise,
+    listManagers({ tenantId: access.tenant.id, onlyActive: true }),
+    listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: true }),
+    reservationPromise.then((r) =>
+      r ? listScheduledEventsForDate({ tenantId: access.tenant.id, date: r.reservation_date }) : [],
+    ),
+    listRateTiers({ tenantId: access.tenant.id }),
+    getBonusRule({ tenantId: access.tenant.id }),
+    // Solo para marcar "Vos" en el combo de gestores; en edit el default lo
+    // manda la reserva guardada.
+    user
+      ? getManagerForUser({ tenantId: access.tenant.id, userId: user.id })
+      : Promise.resolve(null),
+    // El catálogo COMPLETO (no solo las activas): si esta reserva eligió una
+    // torta que después se dio de baja, tiene que seguir viéndose elegida en
+    // vez de aparecer en blanco como si nadie hubiera decidido nada.
+    listCakeOptions({ tenantId: access.tenant.id }),
+  ])
   if (!reservation) notFound()
 
   return (
@@ -121,6 +132,8 @@ export default async function ReservaDetailPage({
           managers={managers}
           templates={templates}
           initialEventsForDate={eventsForDate}
+          cakeOptions={cakeOptions.filter((c) => c.active || c.id === reservation?.cake_option_id)}
+          canManageCakes={access.role === 'owner'}
           rateTiers={tiers}
           bonusPerGuestCents={bonus?.bonus_per_guest_cents ?? 0}
           linkedManagerId={linkedManager?.id ?? null}
@@ -141,6 +154,7 @@ export default async function ReservaDetailPage({
             scheduled_event_id: reservation.scheduled_event_id ?? undefined,
             estimated_guests: reservation.estimated_guests,
             cake_count: reservation.cake_count,
+            cake_option_id: reservation.cake_option_id,
             champagne_count: reservation.champagne_count,
             deposit_cents: reservation.deposit_cents,
             origin: reservation.origin,

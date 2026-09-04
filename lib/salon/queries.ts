@@ -2,12 +2,15 @@ import 'server-only'
 import { createClient } from '@/lib/supabase/server'
 import { aggregateMonthCapacity, type MonthCapacity } from './month-capacity'
 import { computePeakWindow, type PeakWindow } from './peak'
+import type { ServiceRow } from './services'
 import type {
+  CakeOptionRow,
   CommissionBonusRuleRow,
   CommissionLedgerRow,
   CommissionRateTierRow,
   DayCapacityBucket,
   MealType,
+  ReservationKind,
   ReservationManagerRow,
   ReservationWithJoins,
   SalonReservationStatus,
@@ -31,7 +34,8 @@ const RESERVATION_JOIN_SELECT = `
     id, capacity, starts_at_local, meal_type,
     template:scheduled_event_templates(id, name, slug, color_hex, consume_special_reservations)
   ),
-  customer:customers(id, first_name, last_name, phone, service_alerts)
+  customer:customers(id, first_name, last_name, phone, service_alerts),
+  cake_option:cake_options(id, name, base, fillings)
 `
 
 function normalizeJoin<T>(value: T | T[] | null | undefined): T | null {
@@ -70,6 +74,7 @@ function flattenReservation(row: Record<string, unknown>): ReservationWithJoins 
     base.scheduled_event = null
   }
   base.customer = normalizeJoin(row.customer as ReservationWithJoins['customer'])
+  base.cake_option = normalizeJoin(row.cake_option as ReservationWithJoins['cake_option'])
   return base
 }
 
@@ -82,6 +87,10 @@ export type ReservationFilters = {
   dateFrom?: string // YYYY-MM-DD inclusive
   dateTo?: string
   zone?: ReservationWithJoins['zone']
+  /** Un solo servicio: desayuno, almuerzo, merienda o cena. */
+  mealType?: MealType
+  /** Solo cumpleaños / solo especiales — el filtro de "lo que no es una mesa más". */
+  kind?: ReservationWithJoins['kind']
   status?: SalonReservationStatus | SalonReservationStatus[]
   /**
    * Estados que NO entran en el listado. La agenda saca las `cancelled`: una
@@ -145,6 +154,8 @@ export async function listSalonReservations(
   if (opts.dateFrom) q = q.gte('reservation_date', opts.dateFrom)
   if (opts.dateTo) q = q.lte('reservation_date', opts.dateTo)
   if (opts.zone) q = q.eq('zone', opts.zone)
+  if (opts.mealType) q = q.eq('meal_type', opts.mealType)
+  if (opts.kind) q = q.eq('kind', opts.kind)
   if (opts.status) {
     if (Array.isArray(opts.status)) q = q.in('status', opts.status)
     else q = q.eq('status', opts.status)
@@ -191,11 +202,19 @@ export async function getRangeReservationTotals(opts: {
   tenantId: string
   from: string
   to: string
-}): Promise<{ reservations: number; guests: number; salon: number; eventos: number }> {
+}): Promise<{
+  reservations: number
+  guests: number
+  salon: number
+  eventos: number
+  /** Tortas comprometidas en el período: lo que el bar tiene que producir. */
+  cakes: number
+  birthdays: number
+}> {
   const supabase = (await createClient()) as SBAny
   const { data, error } = await supabase
     .from('salon_reservations')
-    .select('estimated_guests, actual_guests, zone')
+    .select('estimated_guests, actual_guests, zone, kind, cake_count')
     .eq('tenant_id', opts.tenantId)
     .gte('reservation_date', opts.from)
     .lte('reservation_date', opts.to)
@@ -206,17 +225,73 @@ export async function getRangeReservationTotals(opts: {
     estimated_guests: number
     actual_guests: number | null
     zone: SalonZone
+    kind: ReservationKind
+    cake_count: number
   }>
 
   let salon = 0
   let eventos = 0
+  let cakes = 0
+  let birthdays = 0
   for (const r of rows) {
     const guests = r.actual_guests ?? r.estimated_guests ?? 0
     if (r.zone === 'event_floating') eventos += guests
     else salon += guests
+    cakes += r.cake_count
+    if (r.kind === 'birthday') birthdays += 1
   }
 
-  return { reservations: rows.length, guests: salon + eventos, salon, eventos }
+  return { reservations: rows.length, guests: salon + eventos, salon, eventos, cakes, birthdays }
+}
+
+/**
+ * Las filas del día reducidas a lo que necesita el corte por servicio.
+ *
+ * Va aparte del listado paginado a propósito: los chips "Cena 12 · Merienda 3"
+ * tienen que seguir diciendo la verdad cuando el usuario filtra por un servicio
+ * (si salieran de la página cargada, filtrar por Cena dejaría los otros en 0 y
+ * no habría manera de volver). Son 7 columnas de un día: más barato que traer
+ * las reservas con sus joins de nuevo.
+ */
+export async function listDayServiceRows(opts: {
+  tenantId: string
+  date: string
+  /**
+   * Los OTROS filtros de la pantalla (zona, estado, gestor, búsqueda). Se
+   * aplican a propósito, y el de servicio NO: un chip tiene que contar lo que
+   * vas a ver si lo tocás. Si contara el día crudo, con "Planta Baja" activo
+   * diría "Cena 12" arriba de 4 filas; si además se filtrara por servicio, los
+   * otros chips darían 0 y no habría manera de volver.
+   */
+  zone?: SalonZone
+  status?: SalonReservationStatus
+  managerId?: string
+  q?: string
+}): Promise<ServiceRow[]> {
+  const supabase = (await createClient()) as SBAny
+  let query = supabase
+    .from('salon_reservations')
+    .select(
+      'meal_type, zone, status, kind, cake_count, estimated_guests, actual_guests, reservation_time_local',
+    )
+    .eq('tenant_id', opts.tenantId)
+    .eq('reservation_date', opts.date)
+
+  if (opts.zone) query = query.eq('zone', opts.zone)
+  if (opts.status) query = query.eq('status', opts.status)
+  if (opts.managerId) {
+    query = query.or(
+      `primary_manager_id.eq.${opts.managerId},assistant_manager_id.eq.${opts.managerId}`,
+    )
+  }
+  if (opts.q && opts.q.trim().length >= 2) {
+    const safe = opts.q.trim().replace(/[%,]/g, '')
+    query = query.ilike('guest_name', `%${safe}%`)
+  }
+
+  const { data, error } = await query
+  if (error) throw error
+  return (data ?? []) as ServiceRow[]
 }
 
 export async function getSalonReservation(opts: {
@@ -360,7 +435,9 @@ export async function getMonthCapacity(opts: {
   const [resResult, overrides, defaults] = await Promise.all([
     supabase
       .from('salon_reservations')
-      .select('reservation_date, zone, estimated_guests, actual_guests, status, scheduled_event_id')
+      .select(
+        'reservation_date, zone, estimated_guests, actual_guests, status, scheduled_event_id, kind, cake_count',
+      )
       .eq('tenant_id', opts.tenantId)
       .gte('reservation_date', from)
       .lte('reservation_date', to)
@@ -377,6 +454,8 @@ export async function getMonthCapacity(opts: {
     actual_guests: number | null
     status: SalonReservationStatus
     scheduled_event_id: string | null
+    kind: ReservationKind
+    cake_count: number
   }>
 
   const physicalOverrides = overrides
@@ -470,6 +549,53 @@ export async function listScheduledTemplates(opts: {
   const { data, error } = await q
   if (error) throw error
   return (data ?? []) as ScheduledEventTemplateRow[]
+}
+
+// ──────────────────────────────────────────────────────────
+// Tortas de cumpleaños
+// ──────────────────────────────────────────────────────────
+
+/**
+ * El menú de tortas del bar. `onlyActive` para el selector del alta de reserva
+ * (no se ofrece una torta dada de baja); completo para el editor del dueño.
+ */
+export async function listCakeOptions(opts: {
+  tenantId: string
+  onlyActive?: boolean
+}): Promise<CakeOptionRow[]> {
+  const supabase = (await createClient()) as SBAny
+  let q = supabase
+    .from('cake_options')
+    .select('*')
+    .eq('tenant_id', opts.tenantId)
+    .order('position', { ascending: true })
+    .order('created_at', { ascending: true })
+  if (opts.onlyActive) q = q.eq('active', true)
+  const { data, error } = await q
+  if (error) throw error
+  return (data ?? []) as CakeOptionRow[]
+}
+
+/**
+ * Cuántas reservas eligieron cada torta. El editor lo usa para no dejar borrar
+ * una opción que la cocina ya tiene comprometida (la FK es `restrict`, así que
+ * sin esto el dueño se comería un error crudo de Postgres).
+ */
+export async function countReservationsByCakeOption(opts: {
+  tenantId: string
+}): Promise<Record<string, number>> {
+  const supabase = (await createClient()) as SBAny
+  const { data, error } = await supabase
+    .from('salon_reservations')
+    .select('cake_option_id')
+    .eq('tenant_id', opts.tenantId)
+    .not('cake_option_id', 'is', null)
+  if (error) throw error
+  const counts: Record<string, number> = {}
+  for (const r of (data ?? []) as Array<{ cake_option_id: string }>) {
+    counts[r.cake_option_id] = (counts[r.cake_option_id] ?? 0) + 1
+  }
+  return counts
 }
 
 // ──────────────────────────────────────────────────────────

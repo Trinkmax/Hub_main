@@ -267,6 +267,50 @@ export type Database = {
           },
         ]
       }
+      cake_options: {
+        Row: {
+          active: boolean
+          base: string
+          created_at: string
+          fillings: string[]
+          id: string
+          name: string
+          position: number
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          base: string
+          created_at?: string
+          fillings?: string[]
+          id?: string
+          name: string
+          position?: number
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          base?: string
+          created_at?: string
+          fillings?: string[]
+          id?: string
+          name?: string
+          position?: number
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cake_options_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       channels: {
         Row: {
           connected_at: string | null
@@ -3365,6 +3409,7 @@ export type Database = {
           arrived_by: string | null
           assistant_manager_id: string | null
           cake_count: number
+          cake_option_id: string | null
           cancelled_at: string | null
           cancelled_reason: string | null
           champagne_count: number
@@ -3379,6 +3424,7 @@ export type Database = {
           guest_email: string | null
           guest_name: string
           guest_phone: string | null
+          highlight_comment: boolean
           id: string
           kind: Database["public"]["Enums"]["reservation_kind"]
           meal_type: Database["public"]["Enums"]["meal_type"]
@@ -3387,11 +3433,10 @@ export type Database = {
           reservation_date: string
           reservation_end_time_local: string | null
           reservation_time_local: string
-          highlight_comment: boolean
-          service_alerts: Database["public"]["Enums"]["service_alert"][]
           scheduled_event_id: string | null
           seated_at: string | null
           seated_by: string | null
+          service_alerts: Database["public"]["Enums"]["service_alert"][]
           status: Database["public"]["Enums"]["salon_reservation_status"]
           tenant_id: string
           updated_at: string
@@ -3403,6 +3448,7 @@ export type Database = {
           arrived_by?: string | null
           assistant_manager_id?: string | null
           cake_count?: number
+          cake_option_id?: string | null
           cancelled_at?: string | null
           cancelled_reason?: string | null
           champagne_count?: number
@@ -3417,6 +3463,7 @@ export type Database = {
           guest_email?: string | null
           guest_name: string
           guest_phone?: string | null
+          highlight_comment?: boolean
           id?: string
           kind?: Database["public"]["Enums"]["reservation_kind"]
           meal_type: Database["public"]["Enums"]["meal_type"]
@@ -3425,11 +3472,10 @@ export type Database = {
           reservation_date: string
           reservation_end_time_local?: string | null
           reservation_time_local: string
-          highlight_comment?: boolean
-          service_alerts?: Database["public"]["Enums"]["service_alert"][]
           scheduled_event_id?: string | null
           seated_at?: string | null
           seated_by?: string | null
+          service_alerts?: Database["public"]["Enums"]["service_alert"][]
           status?: Database["public"]["Enums"]["salon_reservation_status"]
           tenant_id: string
           updated_at?: string
@@ -3441,6 +3487,7 @@ export type Database = {
           arrived_by?: string | null
           assistant_manager_id?: string | null
           cake_count?: number
+          cake_option_id?: string | null
           cancelled_at?: string | null
           cancelled_reason?: string | null
           champagne_count?: number
@@ -3455,6 +3502,7 @@ export type Database = {
           guest_email?: string | null
           guest_name?: string
           guest_phone?: string | null
+          highlight_comment?: boolean
           id?: string
           kind?: Database["public"]["Enums"]["reservation_kind"]
           meal_type?: Database["public"]["Enums"]["meal_type"]
@@ -3463,11 +3511,10 @@ export type Database = {
           reservation_date?: string
           reservation_end_time_local?: string | null
           reservation_time_local?: string
-          highlight_comment?: boolean
-          service_alerts?: Database["public"]["Enums"]["service_alert"][]
           scheduled_event_id?: string | null
           seated_at?: string | null
           seated_by?: string | null
+          service_alerts?: Database["public"]["Enums"]["service_alert"][]
           status?: Database["public"]["Enums"]["salon_reservation_status"]
           tenant_id?: string
           updated_at?: string
@@ -3479,6 +3526,13 @@ export type Database = {
             columns: ["assistant_manager_id"]
             isOneToOne: false
             referencedRelation: "reservation_managers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "salon_reservations_cake_option_id_fkey"
+            columns: ["cake_option_id"]
+            isOneToOne: false
+            referencedRelation: "cake_options"
             referencedColumns: ["id"]
           },
           {
@@ -5073,6 +5127,14 @@ export type Database = {
         Args: { p_browser_token: string; p_qr_token: string }
         Returns: Json
       }
+      get_marketing_team: {
+        Args: { p_tenant: string }
+        Returns: {
+          member_id: string
+          member_name: string
+          member_role: Database["public"]["Enums"]["tenant_role"]
+        }[]
+      }
       get_redemption_by_token: {
         Args: { p_redeem_token: string }
         Returns: Json
@@ -5167,6 +5229,10 @@ export type Database = {
       move_session: {
         Args: { p_new_physical_table_id: string; p_session_id: string }
         Returns: Json
+      }
+      provision_reservation_manager: {
+        Args: { p_tenant: string; p_user: string }
+        Returns: string
       }
       punch_template_allows_customer: {
         Args: { p_customer_id: string; p_template_id: string }
@@ -5328,6 +5394,7 @@ export type Database = {
           arrived_by: string | null
           assistant_manager_id: string | null
           cake_count: number
+          cake_option_id: string | null
           cancelled_at: string | null
           cancelled_reason: string | null
           champagne_count: number
@@ -5342,6 +5409,7 @@ export type Database = {
           guest_email: string | null
           guest_name: string
           guest_phone: string | null
+          highlight_comment: boolean
           id: string
           kind: Database["public"]["Enums"]["reservation_kind"]
           meal_type: Database["public"]["Enums"]["meal_type"]
@@ -5353,6 +5421,7 @@ export type Database = {
           scheduled_event_id: string | null
           seated_at: string | null
           seated_by: string | null
+          service_alerts: Database["public"]["Enums"]["service_alert"][]
           status: Database["public"]["Enums"]["salon_reservation_status"]
           tenant_id: string
           updated_at: string
@@ -5383,6 +5452,7 @@ export type Database = {
           arrived_by: string | null
           assistant_manager_id: string | null
           cake_count: number
+          cake_option_id: string | null
           cancelled_at: string | null
           cancelled_reason: string | null
           champagne_count: number
@@ -5397,6 +5467,7 @@ export type Database = {
           guest_email: string | null
           guest_name: string
           guest_phone: string | null
+          highlight_comment: boolean
           id: string
           kind: Database["public"]["Enums"]["reservation_kind"]
           meal_type: Database["public"]["Enums"]["meal_type"]
@@ -5408,6 +5479,7 @@ export type Database = {
           scheduled_event_id: string | null
           seated_at: string | null
           seated_by: string | null
+          service_alerts: Database["public"]["Enums"]["service_alert"][]
           status: Database["public"]["Enums"]["salon_reservation_status"]
           tenant_id: string
           updated_at: string
@@ -5441,7 +5513,9 @@ export type Database = {
         Returns: Database["public"]["Enums"]["tenant_role"]
       }
       user_tenant_ids: { Args: never; Returns: string[] }
+      wallet_notify: { Args: { p_customer_id: string }; Returns: undefined }
       wallet_pulse: { Args: { p_qr_token: string }; Returns: Json }
+      wallet_topic: { Args: { p_qr_token: string }; Returns: string }
     }
     Enums: {
       broadcast_status:
@@ -5521,6 +5595,7 @@ export type Database = {
         | "closed"
         | "no_show"
         | "cancelled"
+      salon_zone: "planta_alta" | "planta_baja" | "event_floating"
       service_alert:
         | "celiac"
         | "allergy"
@@ -5528,7 +5603,6 @@ export type Database = {
         | "vegan"
         | "reduced_mobility"
         | "baby_seat"
-      salon_zone: "planta_alta" | "planta_baja" | "event_floating"
       session_event_type:
         | "session_opened"
         | "guest_joined"
@@ -5579,12 +5653,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -5608,11 +5682,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -5633,11 +5707,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -5658,11 +5732,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -5675,11 +5749,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -5770,6 +5844,7 @@ export const Constants = {
         "no_show",
         "cancelled",
       ],
+      salon_zone: ["planta_alta", "planta_baja", "event_floating"],
       service_alert: [
         "celiac",
         "allergy",
@@ -5778,7 +5853,6 @@ export const Constants = {
         "reduced_mobility",
         "baby_seat",
       ],
-      salon_zone: ["planta_alta", "planta_baja", "event_floating"],
       session_event_type: [
         "session_opened",
         "guest_joined",
@@ -5808,6 +5882,7 @@ export const Constants = {
     },
   },
 } as const
+
 export type BroadcastStatus = Database["public"]["Enums"]["broadcast_status"]
 export type ChannelStatus = Database["public"]["Enums"]["channel_status"]
 export type ChannelType = Database["public"]["Enums"]["channel_type"]

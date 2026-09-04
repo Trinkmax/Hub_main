@@ -7,6 +7,7 @@ import { lastManagerCookieName } from '@/lib/salon/managers'
 import {
   getBonusRule,
   getManagerForUser,
+  listCakeOptions,
   listManagers,
   listRateTiers,
   listScheduledEventsForDate,
@@ -74,18 +75,22 @@ export default async function NuevaReservaPage({
   const cookieStore = await cookies()
   const lastManagerId = cookieStore.get(lastManagerCookieName(tenantSlug))?.value ?? null
 
-  const [managers, templates, eventsToday, tiers, bonus, linkedManager] = await Promise.all([
-    listManagers({ tenantId: access.tenant.id, onlyActive: true }),
-    listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: true }),
-    listScheduledEventsForDate({ tenantId: access.tenant.id, date: initialDate }),
-    listRateTiers({ tenantId: access.tenant.id }),
-    getBonusRule({ tenantId: access.tenant.id }),
-    // "El gestor sos vos": default del select de gestor = el gestor de reservas
-    // vinculado a la cuenta que está cargando la reserva (si existe).
-    user
-      ? getManagerForUser({ tenantId: access.tenant.id, userId: user.id })
-      : Promise.resolve(null),
-  ])
+  const [managers, templates, eventsToday, tiers, bonus, linkedManager, cakeOptions] =
+    await Promise.all([
+      listManagers({ tenantId: access.tenant.id, onlyActive: true }),
+      listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: true }),
+      listScheduledEventsForDate({ tenantId: access.tenant.id, date: initialDate }),
+      listRateTiers({ tenantId: access.tenant.id }),
+      getBonusRule({ tenantId: access.tenant.id }),
+      // "El gestor sos vos": default del select de gestor = el gestor de reservas
+      // vinculado a la cuenta que está cargando la reserva (si existe).
+      user
+        ? getManagerForUser({ tenantId: access.tenant.id, userId: user.id })
+        : Promise.resolve(null),
+      // El menú de tortas viaja en el mismo round-trip: el desplegable tiene que
+      // estar listo apenas se marca el cumpleaños, sin un fetch extra al tocarlo.
+      listCakeOptions({ tenantId: access.tenant.id, onlyActive: true }),
+    ])
 
   const targetEvent = eventParam ? (eventsToday.find((e) => e.id === eventParam) ?? null) : null
   const targetEventName = targetEvent
@@ -136,6 +141,8 @@ export default async function NuevaReservaPage({
         managers={managers}
         templates={templates}
         initialEventsForDate={eventsToday}
+        cakeOptions={cakeOptions}
+        canManageCakes={access.role === 'owner'}
         rateTiers={tiers}
         bonusPerGuestCents={bonus?.bonus_per_guest_cents ?? 0}
         linkedManagerId={linkedManager?.id ?? null}

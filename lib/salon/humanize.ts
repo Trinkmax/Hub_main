@@ -28,6 +28,17 @@ export function humanizeSalonError(message: string): string {
   if (m.includes('customer_invalid')) return 'El cliente no pertenece a este bar.'
   if (m.includes('duplicate key') && m.includes('display_name'))
     return 'Ya existe un gestor con ese nombre.'
+  if (m.includes('cake_options_name_unique'))
+    return 'Ya tenés una torta con ese nombre. Poné otro (ej. "Opción 4").'
+  // FK `restrict`: la opción ya está elegida en alguna reserva. Borrarla dejaría
+  // a la cocina sin saber qué torta hacer, así que se desactiva en vez de borrar.
+  if (m.includes('salon_reservations_cake_option_id_fkey'))
+    return 'Esa torta ya está elegida en reservas cargadas. Desactivala en vez de borrarla.'
+  if (m.includes('cake_options_fillings_len')) return 'Cada torta lleva entre 1 y 4 rellenos.'
+  // La action ya limpia la opción cuando bajan las tortas a 0; esto cubre el
+  // payload viejo de una pestaña que quedó abierta.
+  if (m.includes('salon_reservations_cake_option_needs_cake'))
+    return 'Elegiste una torta pero la reserva quedó en 0 tortas. Volvé a marcar que lleva torta.'
   if (m.includes('duplicate key') && m.includes('template_id, event_date'))
     return 'Ya hay un evento programado de ese tipo para ese día.'
   if (m.includes('exclusion violation') && m.includes('commission_rate_tiers_no_overlap'))

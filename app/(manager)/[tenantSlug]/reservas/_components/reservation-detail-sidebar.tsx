@@ -1,7 +1,9 @@
 'use client'
 
-import { AlertTriangle, CheckCircle2, Circle, Clock4, Wallet } from 'lucide-react'
+import { AlertTriangle, Cake, CheckCircle2, Circle, Clock4, Wallet } from 'lucide-react'
 import { ContactButton } from '@/components/messaging/contact-button'
+import { CakeChip } from '@/components/reservations/cake-chip'
+import { ChampagneChip } from '@/components/reservations/celebration-chip'
 import { ReservationStatusControls } from '@/components/reservations/reservation-status-controls'
 import { ARSFormat } from '@/lib/salon/format'
 import type { ReservationWithJoins } from '@/lib/salon/types'
@@ -40,6 +42,28 @@ export function ReservationDetailSidebar({
             name={reservation.guest_name}
           />
         </div>
+      ) : null}
+
+      {/* Lo que el bar tiene que PRODUCIR para esta mesa. Va arriba de la seña:
+          la torta hay que encargarla con días, la seña se mira el mismo día. */}
+      {reservation.cake_count > 0 || reservation.champagne_count > 0 ? (
+        <section className="space-y-2 rounded-xl border border-primary/30 bg-primary/[0.06] p-4">
+          <header className="flex items-center gap-2">
+            <Cake className="size-4 text-primary" />
+            <span className="text-xs uppercase tracking-wide text-muted-foreground">
+              Lo prepara el bar
+            </span>
+          </header>
+          <div className="flex flex-wrap gap-1.5">
+            <CakeChip count={reservation.cake_count} option={reservation.cake_option} detailed />
+            <ChampagneChip count={reservation.champagne_count} />
+          </div>
+          {reservation.cake_count > 0 && !reservation.cake_option ? (
+            <p className="rounded-md border border-warning/50 bg-warning/10 px-2 py-1 text-[11px] text-warning-foreground">
+              Falta definir qué torta va. Elegila abajo, en Cumpleaños.
+            </p>
+          ) : null}
+        </section>
       ) : null}
 
       {/* Seña + nota: los dos datos que el dueño mira antes de sentar la mesa.

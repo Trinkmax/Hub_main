@@ -12,7 +12,16 @@ import {
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
-import { ChevronLeft, ChevronRight, GripVertical, Loader2, Plus, Sparkles } from 'lucide-react'
+import {
+  Cake,
+  ChevronLeft,
+  ChevronRight,
+  GripVertical,
+  Loader2,
+  PartyPopper,
+  Plus,
+  Sparkles,
+} from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
@@ -260,6 +269,7 @@ export function ScheduledEventsMonth({
                     })
                   : null
               }
+              celebrations={cell.date ? (monthCapacity.celebrations[cell.date] ?? null) : null}
               eventLoad={monthCapacity.events}
               onOpenDay={setDayDialogDate}
             />
@@ -422,6 +432,9 @@ function MonthAgenda({
                 ) : null}
                 {capacity.used > 0 ? (
                   <CapacityBadge used={capacity.used} total={capacity.total} />
+                ) : null}
+                {monthCapacity.celebrations[date] ? (
+                  <CelebrationBadge {...monthCapacity.celebrations[date]} />
                 ) : null}
               </button>
               {/* El `after` le estira el área táctil a ~44px sin mover el
@@ -639,6 +652,7 @@ function DayCell({
   isDraggingTemplate,
   isDraggingEvent,
   capacity,
+  celebrations,
   eventLoad,
   onOpenDay,
 }: {
@@ -650,6 +664,8 @@ function DayCell({
   isDraggingTemplate: boolean
   isDraggingEvent: boolean
   capacity: { used: number; total: number } | null
+  /** Cumpleaños y tortas del día. Lo que hay que PREPARAR, no lo que hay que sentar. */
+  celebrations: { birthdays: number; cakes: number } | null
   /** Cubiertos anotados por evento, indexado por id. */
   eventLoad: Record<string, number>
   onOpenDay: (date: string) => void
@@ -709,6 +725,9 @@ function DayCell({
             {capacity && capacity.used > 0 ? (
               <CapacityBadge used={capacity.used} total={capacity.total} />
             ) : null}
+            {/* El cumple deja de esconderse adentro del evento ya desde el mes:
+                el 21/09 el calendario decía "Pizza libre" y nada más. */}
+            {celebrations ? <CelebrationBadge {...celebrations} /> : null}
           </button>
           <Link
             href={`/${tenantSlug}/eventos/programados/nuevo?date=${date}`}
@@ -730,6 +749,34 @@ function DayCell({
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * El aviso de festejo en la celda del día: 🎂 con el número de tortas, o el
+ * gorrito si hay cumple sin torta. Chiquito pero destinado a saltar — es lo que
+ * hoy no se ve hasta que la gente está en la puerta.
+ */
+function CelebrationBadge({ birthdays, cakes }: { birthdays: number; cakes: number }) {
+  if (birthdays === 0 && cakes === 0) return null
+  // Manda la torta: es lo único de un día que hay que EMPEZAR con antelación.
+  const label =
+    cakes > 0
+      ? `${cakes} ${cakes === 1 ? 'torta' : 'tortas'}${birthdays > 0 ? ` · ${birthdays} ${birthdays === 1 ? 'cumple' : 'cumples'}` : ''}`
+      : `${birthdays} ${birthdays === 1 ? 'cumpleaños' : 'cumpleaños'}`
+  return (
+    <span
+      title={label}
+      className="inline-flex items-center gap-0.5 rounded-full border border-primary/30 bg-primary/10 px-1.5 py-px text-[10px] font-medium leading-tight text-primary"
+    >
+      <span className="sr-only">{label}</span>
+      {cakes > 0 ? (
+        <Cake className="size-2.5" aria-hidden />
+      ) : (
+        <PartyPopper className="size-2.5" aria-hidden />
+      )}
+      {cakes > 0 ? cakes : birthdays}
+    </span>
   )
 }
 

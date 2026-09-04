@@ -1,4 +1,4 @@
-import type { SalonReservationStatus, SalonZone } from './types'
+import type { ReservationKind, SalonReservationStatus, SalonZone } from './types'
 
 export type MonthCapacity = {
   /** Tope total del salón (PA + PB) sin overrides, para días sin entrada propia. */
@@ -7,6 +7,13 @@ export type MonthCapacity = {
   days: Record<string, { used: number; total: number }>
   /** Cubiertos anotados por evento programado (`scheduled_events.id`). */
   events: Record<string, number>
+  /**
+   * Festejos por día: cuántos cumpleaños hay y cuántas tortas tiene que hacer
+   * el bar. Va en el calendario porque el moco que motivó todo esto fue
+   * enterarse el mismo lunes 21 de que había un cumple con torta metido adentro
+   * de "Pizza libre" — a nivel mes no se veía nada.
+   */
+  celebrations: Record<string, { birthdays: number; cakes: number }>
 }
 
 type AggregateInput = {
@@ -17,6 +24,8 @@ type AggregateInput = {
     actual_guests: number | null
     status: SalonReservationStatus
     scheduled_event_id?: string | null
+    kind?: ReservationKind
+    cake_count?: number
   }>
   overrides: Array<{ override_date: string; zone: 'planta_alta' | 'planta_baja'; capacity: number }>
   defaults: { planta_alta: number; planta_baja: number }
@@ -49,6 +58,7 @@ export function aggregateMonthCapacity(input: AggregateInput): MonthCapacity {
   const defaultTotal = input.defaults.planta_alta + input.defaults.planta_baja
   const days: Record<string, { used: number; total: number }> = {}
   const events: Record<string, number> = {}
+  const celebrations: Record<string, { birthdays: number; cakes: number }> = {}
 
   const ensure = (date: string) => {
     const cur = days[date]
@@ -82,7 +92,14 @@ export function aggregateMonthCapacity(input: AggregateInput): MonthCapacity {
     // cuenta. Cada reserva tiene exactamente una zona, así que no hay doble
     // conteo con el contador por evento (son ejes ortogonales).
     ensure(r.reservation_date).used += guests
+
+    if (r.kind === 'birthday' || (r.cake_count ?? 0) > 0) {
+      const c = celebrations[r.reservation_date] ?? { birthdays: 0, cakes: 0 }
+      if (r.kind === 'birthday') c.birthdays += 1
+      c.cakes += r.cake_count ?? 0
+      celebrations[r.reservation_date] = c
+    }
   }
 
-  return { defaultTotal, days, events }
+  return { defaultTotal, days, events, celebrations }
 }

@@ -77,6 +77,36 @@ export type ScheduledEventRow = {
   updated_at: string
 }
 
+/**
+ * Una torta del menú del bar. Cada opción es un bizcochuelo con sus rellenos
+ * (dos, en el HUB). Vive por tenant y la edita el dueño desde Configuración —
+ * la cocina necesita saber CUÁL torta, no solo que hay una.
+ */
+export type CakeOptionRow = {
+  id: string
+  tenant_id: string
+  /** Cómo la nombra el bar: "Opción 1", "La clásica"… */
+  name: string
+  /** La masa: "Bizcochuelo de vainilla". */
+  base: string
+  /** Los rellenos, en orden. */
+  fillings: string[]
+  position: number
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** Lo mínimo que necesita una pantalla para mostrar qué torta va. */
+export type CakeOptionSummary = Pick<CakeOptionRow, 'id' | 'name' | 'base' | 'fillings'>
+
+/** "Opción 2 · chocolate con mousse de chocolate y crema y frutillas" */
+export function describeCake(option: CakeOptionSummary): string {
+  return `${option.name} · ${option.base}${
+    option.fillings.length > 0 ? ` con ${option.fillings.join(' y ')}` : ''
+  }`
+}
+
 export type SalonZoneCapacityOverrideRow = {
   id: string
   tenant_id: string
@@ -109,6 +139,11 @@ export type SalonReservationRow = {
   estimated_guests: number
   actual_guests: number | null
   cake_count: number
+  /**
+   * Qué torta del catálogo del bar le toca a esta mesa. `null` es legítimo:
+   * "traen torta" se carga apenas entra la reserva y el sabor se elige después.
+   */
+  cake_option_id: string | null
   champagne_count: number
   deposit_cents: number
   origin: ReservationOrigin
@@ -219,6 +254,8 @@ export type ReservationWithJoins = SalonReservationRow & {
     /** Avisos permanentes de la persona: viajan a toda reserva suya. */
     service_alerts: ServiceAlert[]
   } | null
+  /** La torta elegida, resuelta. `null` si no eligieron (o si no lleva torta). */
+  cake_option: CakeOptionSummary | null
 }
 
 export type ZoneCapacityLabels = Record<Exclude<SalonZone, 'event_floating'>, string>

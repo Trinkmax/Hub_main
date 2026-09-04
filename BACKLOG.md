@@ -675,3 +675,41 @@ afuera a propósito:
   cambios del otro al recargar (o al volver a la pestaña, por `RefreshOnReturn`).
   `supabase.channel()` sobre `marketing_tasks` sería directo; se dejó afuera
   porque el uso real es asincrónico.
+
+## Servicios, cumpleaños y tortas (04/09/2026)
+
+- **La pantalla de cocina no ve la torta.** `app/(salon)/[tenantSlug]/salon/cocina/`
+  no referencia reservas en ningún archivo: trabaja sobre comandas de mesa
+  (`tickets`), no sobre la agenda. La torta elegida hoy se ve en la agenda del
+  manager, en el panel operativo y en la tarjeta del mozo — que es quien la saca
+  — pero no en la pantalla de cocina. Si el bar quiere que cocina la vea ahí,
+  hace falta una tira "Tortas de hoy" que lea `salon_reservations` del día con
+  `cake_count > 0`; es una query y un componente, pero cruza dos dominios que
+  hoy no se tocan.
+- **Una sola opción de torta por reserva.** `cake_count` llega a 2 (2 reservas
+  históricas lo usan) y `cake_option_id` es una sola columna: si las dos tortas
+  fueran de sabores distintos, la segunda va en el comentario. Pasar a una tabla
+  puente `salon_reservation_cakes` después es una migración de datos, así que la
+  decisión está tomada a conciencia: el caso es raro y el join gratis en el
+  `select *` que ya hacen todas las pantallas vale más.
+- **`cake_count` no distingue "ausente" de "cero".** `updateSalonReservationSchema`
+  le pone `.default(0)`, así que un caller que omita el campo lo pone en 0 — y
+  desde ahora eso además limpia `cake_option_id`. Los dos callers actuales (el
+  form y `panelPayload` del quick-view) lo mandan siempre, así que no explota;
+  el próximo caller parcial tiene que mandarlo o hay que darle a `cake_count` el
+  mismo tratamiento "ausente ≠ vacío" que ya tienen `service_alerts`,
+  `reservation_end_time_local` y `cake_option_id`.
+- **No hay aviso prospectivo de tortas.** La agenda en modo rango ya suma
+  "N tortas" en el período y en la fila de cada día, pero nadie te avisa: si el
+  dueño no abre Reservas, no se entera. Un recordatorio (flow o mail semanal con
+  los festejos de los próximos 7 días) cerraría el círculo de "enterarse antes".
+- **El corte por servicio no llega al panel del mozo.** `reservas-operativo` es
+  deliberadamente cronológico (decisión documentada en `timeline-view.tsx`: el
+  mozo mira el día entero). Se le sumó el chip de torta en la tarjeta, pero no
+  el agrupado. Revisar solo si el bar empieza a tener meriendas y cenas grandes
+  el mismo día.
+- **`hub_event` sigue siendo un `meal_type`.** Son 17 filas legacy y el form ya
+  no lo ofrece, pero el corte por servicio lo muestra como un servicio más
+  ("Evento HUB") cuando un día tiene alguna. No se puede sacar sin perder esos
+  cubiertos; la salida limpia es migrar esas 17 filas a `dinner` y sacar el
+  valor del enum.

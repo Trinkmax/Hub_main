@@ -1,6 +1,7 @@
-import { CalendarCheck, CalendarPlus, MonitorSmartphone, PartyPopper } from 'lucide-react'
+import { Cake, CalendarCheck, CalendarPlus, MonitorSmartphone, PartyPopper } from 'lucide-react'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
+import { DayHighlights } from '@/components/reservations/day-highlights'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
@@ -13,15 +14,19 @@ import {
   thisWeek,
   todayInCordoba,
 } from '@/lib/salon/date-presets'
+import { buildDayHighlights, usedByEventMap } from '@/lib/salon/day-highlights'
 import {
   getDayCapacitySnapshot,
   getRangeReservationTotals,
   getSalonReservation,
+  listDayServiceRows,
   listManagers,
   listSalonReservations,
+  listScheduledEventsForDate,
   PageOutOfRangeError,
 } from '@/lib/salon/queries'
-import { salonStatusEnum, salonZoneEnum } from '@/lib/salon/schemas'
+import { mealTypeEnum, salonStatusEnum, salonZoneEnum } from '@/lib/salon/schemas'
+import { groupByService } from '@/lib/salon/services'
 import {
   RESERVATION_OPERATOR_ROLES,
   RESERVATION_STAFF_ROLES,
@@ -37,11 +42,17 @@ import { ReservasTourButton } from './_components/reservas-tour'
 import { ReservationsFilters } from './_components/reservations-filters'
 import { ReservationsTable } from './_components/reservations-table'
 import { RollCallDialog } from './_components/roll-call-dialog'
+import { ServiceChips } from './_components/service-chips'
 
 export const metadata = { title: 'Reservas' }
 export const dynamic = 'force-dynamic'
 
-const PAGE_SIZE_DAY = 25
+// Un día entero en una sola página: la agenda se lee cortada por SERVICIO
+// (Desayuno / Almuerzo / Merienda / Cena) y un servicio partido entre la página
+// 1 y la 2 rompe justo lo que el corte vino a arreglar — el encabezado diría
+// "Cena · 62 cubiertos" arriba de 9 filas. El día más cargado del HUB tiene 33
+// reservas; 200 deja margen de sobra sin traer una página gigante.
+const PAGE_SIZE_DAY = 200
 // Un mes entero no entra en 25 filas: paginar cada 25 arruina justo la vista
 // que el dueño pidió ("ver todas las reservas juntas en orden de fechas").
 const PAGE_SIZE_RANGE = 100
@@ -80,6 +91,12 @@ export default async function ReservasPage({
       ? salonZoneEnum.parse(sp.zone)
       : undefined
   const managerId = typeof sp.manager === 'string' ? sp.manager : undefined
+  // Filtro por servicio. Va en `?servicio=` (no `?meal=`) porque es lo que el
+  // dueño ve escrito en la URL cuando comparte un link con un socio.
+  const mealType =
+    typeof sp.servicio === 'string' && mealTypeEnum.safeParse(sp.servicio).success
+      ? mealTypeEnum.parse(sp.servicio)
+      : undefined
 
   // Modo rango (chips "Esta semana" / "Este mes" / rango libre) vs modo día
   // (default). El rango tiene prioridad.
@@ -121,6 +138,8 @@ export default async function ReservasPage({
     Awaited<ReturnType<typeof getRangeReservationTotals>> | null,
     Awaited<ReturnType<typeof getSalonReservation>> | null,
     Awaited<ReturnType<typeof listSalonReservations>> | null,
+    Awaited<ReturnType<typeof listDayServiceRows>> | null,
+    Awaited<ReturnType<typeof listScheduledEventsForDate>> | null,
   ]
   try {
     loaded = await Promise.all([
@@ -129,6 +148,7 @@ export default async function ReservasPage({
         q,
         status,
         zone,
+        mealType,
         managerId,
         dateFrom,
         dateTo,
@@ -169,6 +189,7 @@ export default async function ReservasPage({
             tenantId: access.tenant.id,
             q,
             zone,
+            mealType,
             managerId,
             dateFrom,
             dateTo,
@@ -177,6 +198,21 @@ export default async function ReservasPage({
             pageSize: CANCELLED_PREVIEW_SIZE,
             sort: rangeMode ? 'asc' : 'desc',
           }),
+      // Los chips de servicio cuentan el DÍA ENTERO, no la página filtrada: si
+      // no, elegir "Cena" dejaría "Merienda" en 0 y no habría cómo volver.
+      day
+        ? listDayServiceRows({
+            tenantId: access.tenant.id,
+            date: day,
+            // Todo menos el servicio: el chip cuenta lo que vas a ver si lo tocás.
+            zone,
+            status,
+            managerId,
+            q,
+          })
+        : null,
+      // Eventos del día para el renglón de hitos (eventos + cumpleaños juntos).
+      day ? listScheduledEventsForDate({ tenantId: access.tenant.id, date: day }) : null,
     ])
   } catch (error) {
     // Cancelar una reserva achica el listado; si el usuario estaba en la última
@@ -187,7 +223,16 @@ export default async function ReservasPage({
     throw error
   }
 
-  const [{ rows, total }, managers, dayBuckets, rangeTotals, nuevaPuntual, cancelled] = loaded
+  const [
+    { rows, total },
+    managers,
+    dayBuckets,
+    rangeTotals,
+    nuevaPuntual,
+    cancelled,
+    dayServiceRows,
+    dayEvents,
+  ] = loaded
 
   // El borde exacto `offset === total` no da 416: devuelve una página vacía. Sin
   // esto el usuario ve "Sin resultados" cuando en realidad hay reservas, en la
@@ -205,7 +250,34 @@ export default async function ReservasPage({
   )
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
-  const hasFilters = Boolean(q || status || zone || managerId)
+  const hasFilters = Boolean(q || status || zone || managerId || mealType)
+
+  // Corte por servicio del día entero: alimenta los chips de filtro (contadores
+  // que no mienten cuando hay un servicio elegido).
+  const dayServices = dayServiceRows ? groupByService(dayServiceRows) : []
+  const serviceChips = dayServices
+    .filter((b) => b.activeCount > 0)
+    .map((b) => ({
+      mealType: b.mealType,
+      label: b.label,
+      count: b.activeCount,
+      covers: b.covers,
+      cakes: b.cakes,
+    }))
+  const dayActiveCount = dayServices.reduce((acc, b) => acc + b.activeCount, 0)
+
+  // Eventos + cumpleaños del día, al mismo nivel: es lo que hay que PREPARAR.
+  const dayHighlights =
+    day && dayEvents
+      ? buildDayHighlights({
+          events: dayEvents,
+          // Los hitos salen de la página cargada, que en modo día es el día
+          // entero (PAGE_SIZE_DAY). Con un servicio filtrado se acotan al
+          // servicio, que es exactamente lo que se está mirando.
+          reservations: rows,
+          usedByEvent: usedByEventMap(dayBuckets ?? []),
+        })
+      : []
 
   // Prioriza la fila de la página cargada (misma referencia que resalta la tabla).
   const nuevaEnPagina = nuevaId ? rows.find((r) => r.id === nuevaId) : undefined
@@ -288,6 +360,25 @@ export default async function ReservasPage({
                   : null}
               </span>
             ) : null}
+            {/* Lo que hay que PRODUCIR en el período. Una torta se encarga con
+                días: verla recién al abrir el día correcto llega tarde. */}
+            {rangeTotals && (rangeTotals.cakes > 0 || rangeTotals.birthdays > 0) ? (
+              <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+                {rangeTotals.birthdays > 0 ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] font-medium leading-tight text-primary">
+                    <PartyPopper className="size-3" aria-hidden />
+                    {/* "cumpleaños" es invariable en singular y plural. */}
+                    {rangeTotals.birthdays} cumpleaños
+                  </span>
+                ) : null}
+                {rangeTotals.cakes > 0 ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] font-medium leading-tight text-primary">
+                    <Cake className="size-3" aria-hidden />
+                    {rangeTotals.cakes} {rangeTotals.cakes === 1 ? 'torta' : 'tortas'}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
             <Button asChild variant="ghost" size="sm" className="ml-auto">
               <Link href={`/${tenantSlug}/reservas`}>Volver a vista por día</Link>
             </Button>
@@ -295,7 +386,27 @@ export default async function ReservasPage({
         ) : day ? (
           <DayNavigator tenantSlug={tenantSlug} day={day} today={today} capacity={dayCapacity} />
         ) : null}
+
+        {/* El corte del día por servicio, pegado al navegador de día: son la
+            misma decisión ("qué día miro" → "qué servicio de ese día"). */}
+        {day && serviceChips.length > 0 ? (
+          <ServiceChips
+            tenantSlug={tenantSlug}
+            chips={serviceChips}
+            active={mealType}
+            totalCount={dayActiveCount}
+          />
+        ) : null}
       </div>
+
+      {day && dayHighlights.length > 0 ? (
+        <DayHighlights
+          tenantSlug={tenantSlug}
+          date={day}
+          highlights={dayHighlights}
+          canBook={canRecordAttendance}
+        />
+      ) : null}
 
       {nueva ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-emerald-300/60 bg-emerald-50/70 px-4 py-3 text-sm dark:border-emerald-800/60 dark:bg-emerald-950/30">

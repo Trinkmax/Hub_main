@@ -1,6 +1,6 @@
 'use client'
 
-import { type LucideIcon, Palette, Star, UsersRound } from 'lucide-react'
+import { Armchair, type LucideIcon, Palette, Star, UsersRound } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -26,6 +26,17 @@ const GROUPS: Group[] = [
     items: [
       { label: 'Miembros', href: (s) => `/${s}/configuracion/equipo` },
       { label: 'Comisiones', href: (s) => `/${s}/configuracion/comisiones` },
+    ],
+  },
+  {
+    // Capacidad del salón existía desde el arranque pero nadie la linkeó: la
+    // única forma de llegar era escribir la URL. Ahora vive con Tortas, que es
+    // lo otro que define cómo se toma una reserva.
+    label: 'Salón',
+    icon: Armchair,
+    items: [
+      { label: 'Capacidad', href: (s) => `/${s}/configuracion/salon` },
+      { label: 'Tortas de cumpleaños', href: (s) => `/${s}/configuracion/tortas` },
     ],
   },
   {

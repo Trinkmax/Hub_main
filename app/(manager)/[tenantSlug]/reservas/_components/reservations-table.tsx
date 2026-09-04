@@ -1,10 +1,12 @@
-import { Cake, ChevronLeft, ChevronRight, GlassWater } from 'lucide-react'
+import { ChevronLeft, ChevronRight, GlassWater } from 'lucide-react'
 import Link from 'next/link'
 import { Fragment } from 'react'
 import { AttendanceCell } from '@/components/reservations/attendance-cell'
+import { CakeChip } from '@/components/reservations/cake-chip'
 import { ReservationCommentPopover } from '@/components/reservations/comment-popover'
 import { ReservationQuickView } from '@/components/reservations/reservation-quick-view'
 import { alertRowTint, ServiceAlertChips } from '@/components/reservations/service-alert-chips'
+import { ServiceSummary } from '@/components/reservations/service-summary'
 import { StatusPill } from '@/components/reservations/status-pill'
 import { Button } from '@/components/ui/button'
 import {
@@ -21,6 +23,7 @@ import {
 import { highestSeverity, resolveReservationAlerts } from '@/lib/salon/alerts'
 import { formatDayLabel } from '@/lib/salon/date-presets'
 import { ARSFormat, endsNextDay } from '@/lib/salon/format'
+import { groupByService } from '@/lib/salon/services'
 import { MEAL_TYPE_LABELS, type ReservationWithJoins, ZONE_LABELS } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
@@ -114,8 +117,20 @@ export function ReservationsTable({
     return `/${tenantSlug}/reservas${q ? `?${q}` : ''}`
   }
 
-  const groups = groupByDay ? groupByDate(rows) : [{ date: '', rows }]
   const columnCount = groupByDay ? 8 : 9
+
+  // Dos ejes de lectura, uno por modo:
+  //   · rango  → por DÍA (la agenda de la semana se lee día por día)
+  //   · día    → por SERVICIO (armar el salón es una decisión por servicio:
+  //              la merienda de las 17 y la cena de las 22 no comparten nada)
+  const groups = groupByDay
+    ? groupByDate(rows).map((g) => ({ key: g.date, date: g.date, bucket: null, rows: g.rows }))
+    : groupByService(rows).map((b) => ({
+        key: b.mealType,
+        date: '',
+        bucket: b,
+        rows: b.rows,
+      }))
 
   return (
     <DataTableShell>
@@ -136,8 +151,16 @@ export function ReservationsTable({
           </DataTableHead>
           <DataTableBody>
             {groups.map((group) => (
-              <Fragment key={group.date || 'all'}>
-                {groupByDay ? (
+              <Fragment key={group.key || 'all'}>
+                {group.bucket ? (
+                  // Cabecera del servicio: cubiertos + desglose por zona. Es la
+                  // respuesta a "¿cuántos tengo en la cena y cuántos van arriba?"
+                  <tr className="bg-secondary/40">
+                    <th scope="colgroup" colSpan={columnCount} className="px-4 py-2.5 text-left">
+                      <ServiceSummary bucket={group.bucket} compact />
+                    </th>
+                  </tr>
+                ) : groupByDay ? (
                   <tr className="bg-secondary/40">
                     <th
                       scope="colgroup"
@@ -150,6 +173,22 @@ export function ReservationsTable({
                         {group.rows.length} {group.rows.length === 1 ? 'reserva' : 'reservas'}
                         {' · '}
                         {coversOf(group.rows)} cubiertos
+                        {/* En un rango la fila del día suma servicios distintos:
+                            sin el desglose, "38 cubiertos" no dice si es una
+                            merienda grande o una cena normal. */}
+                        {(() => {
+                          const services = groupByService(group.rows)
+                          const cakes = services.reduce((acc, b) => acc + b.cakes, 0)
+                          const parts: string[] = []
+                          if (services.length > 1) {
+                            parts.push(...services.map((b) => `${b.label} ${b.covers}`))
+                          }
+                          // La torta se encarga con días: en la agenda de la
+                          // semana tiene que estar en la fila del día, no a dos
+                          // clicks adentro.
+                          if (cakes > 0) parts.push(`${cakes} ${cakes === 1 ? 'torta' : 'tortas'}`)
+                          return parts.length > 0 ? ` · ${parts.join(' · ')}` : ''
+                        })()}
                       </span>
                     </th>
                   </tr>
@@ -215,6 +254,15 @@ export function ReservationsTable({
                               </span>
                             ) : null}
                             <ServiceAlertChips alerts={alerts} className="mt-1" />
+                            {/* Antes era un 🎂 sin sabor: decía que hay torta y
+                                nunca cuál, y la torta la hace el bar. */}
+                            {r.cake_count > 0 ? (
+                              <CakeChip
+                                count={r.cake_count}
+                                option={r.cake_option}
+                                className="mt-1 self-start"
+                              />
+                            ) : null}
                             {/* Comentario destacado: se lee entero, sin abrir el
                                 popover. Es la válvula para lo que no entra en
                                 ningún chip ("silla de ruedas eléctrica"). */}
@@ -225,12 +273,6 @@ export function ReservationsTable({
                             ) : null}
                           </div>
                           {r.comments ? <ReservationCommentPopover comment={r.comments} /> : null}
-                          {r.cake_count > 0 ? (
-                            <Cake
-                              className="size-3.5 text-pink-500"
-                              aria-label={`${r.cake_count} torta(s)`}
-                            />
-                          ) : null}
                           {r.champagne_count > 0 ? (
                             <GlassWater
                               className="size-3.5 text-amber-500"

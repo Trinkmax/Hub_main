@@ -1,9 +1,10 @@
 'use client'
 
-import { Cake, DoorClosed, DoorOpen, GlassWater, RotateCcw, Users, XCircle } from 'lucide-react'
+import { DoorClosed, DoorOpen, GlassWater, RotateCcw, Users, XCircle } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { CakeChip } from '@/components/reservations/cake-chip'
 import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
 import {
   AlertDialog,
@@ -112,14 +113,18 @@ export function ReservationRow({
           <span className={cn('truncate font-medium leading-tight', isNoShow && 'line-through')}>
             {reservation.guest_name}
           </span>
-          {reservation.cake_count > 0 ? (
-            <Cake className="size-3.5 shrink-0 text-pink-500" aria-label="Torta" />
-          ) : null}
           {reservation.champagne_count > 0 ? (
             <GlassWater className="size-3.5 shrink-0 text-amber-500" aria-label="Champán" />
           ) : null}
         </div>
         <ServiceAlertChips alerts={alerts} className="mt-1" />
+        {reservation.cake_count > 0 ? (
+          <CakeChip
+            count={reservation.cake_count}
+            option={reservation.cake_option}
+            className="mt-1"
+          />
+        ) : null}
         {reservation.highlight_comment && reservation.comments ? (
           <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-snug text-foreground">
             {reservation.comments}

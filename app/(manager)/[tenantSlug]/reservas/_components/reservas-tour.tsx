@@ -12,7 +12,10 @@ import type { TenantRole } from '@/lib/tenant/types'
  */
 const RESERVAS_TOUR: TourDefinition = (() => {
   return {
-    id: 'reservas@1',
+    // @2: se sumó el corte por servicio. El sufijo es la clave de
+    // localStorage, así que subirlo re-lanza el tour una vez a quien ya lo vio —
+    // que es exactamente lo que hace falta cuando la pantalla cambia de forma.
+    id: 'reservas@2',
     title: 'Gestionar reservas',
     steps: [
       {
@@ -35,6 +38,19 @@ const RESERVAS_TOUR: TourDefinition = (() => {
             Movete con las flechas para ver otros días. El contador de cubiertos suma{' '}
             <strong>toda</strong> la gente del día —las mesas a la carta y las que vienen por un
             evento— sobre la capacidad total del salón. Si hay evento, abajo te muestra el desglose.
+          </>
+        ),
+      },
+      {
+        id: 'servicios',
+        target: '[data-tour="reservas-servicios"]',
+        kicker: 'Nuevo ✨',
+        title: 'La agenda cortada por servicio',
+        body: (
+          <>
+            Desayuno, almuerzo, merienda y cena, cada uno con sus cubiertos y{' '}
+            <strong>en qué zona se sientan</strong>. Tocá un servicio para ver solo ese, o «Todo el
+            día» para volver. Si un servicio tiene torta, el chip te lo avisa con el 🎂.
           </>
         ),
       },

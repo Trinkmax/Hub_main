@@ -6,6 +6,8 @@ import type { ReactNode } from 'react'
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { ContactButton } from '@/components/messaging/contact-button'
+import { CakeChip } from '@/components/reservations/cake-chip'
+import { ChampagneChip } from '@/components/reservations/celebration-chip'
 import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
 import { Button } from '@/components/ui/button'
 import {
@@ -141,10 +143,13 @@ export function ReservationQuickView({
             {r.assistant_manager ? ` + ${r.assistant_manager.display_name}` : ''}
           </Field>
           {r.cake_count > 0 || r.champagne_count > 0 ? (
-            <Field label="Cumpleaños">
-              {r.cake_count > 0 ? `🎂 ${r.cake_count}` : ''}
-              {r.cake_count > 0 && r.champagne_count > 0 ? ' · ' : ''}
-              {r.champagne_count > 0 ? `🍾 ${r.champagne_count}` : ''}
+            // Qué torta va, no cuántas: la hace el bar y la cocina la tiene que
+            // poder leer desde acá sin abrir la edición completa.
+            <Field label="Cumpleaños" wide>
+              <span className="flex flex-wrap items-center gap-1.5">
+                <CakeChip count={r.cake_count} option={r.cake_option} detailed />
+                <ChampagneChip count={r.champagne_count} />
+              </span>
             </Field>
           ) : null}
         </dl>
@@ -342,6 +347,9 @@ function QuickEditPanel({
       estimated_guests: isPost ? r.estimated_guests : guestsRef.current,
       actual_guests: actualGuestsRef.current,
       cake_count: r.cake_count,
+      // Snapshot fiel, igual que los avisos: sin esto, mover la hora o las
+      // personas desde este popup borraría qué torta hay que hacer.
+      cake_option_id: r.cake_option_id,
       champagne_count: r.champagne_count,
       deposit_cents: r.deposit_cents,
       origin: r.origin,
@@ -600,9 +608,18 @@ function QuickEditPanel({
   )
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({
+  label,
+  children,
+  wide = false,
+}: {
+  label: string
+  children: ReactNode
+  /** Ocupa las dos columnas: para lo que no entra en media grilla (la torta). */
+  wide?: boolean
+}) {
   return (
-    <div className="space-y-0.5">
+    <div className={cn('space-y-0.5', wide && 'col-span-2')}>
       <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
       <dd className="font-medium">{children}</dd>
     </div>

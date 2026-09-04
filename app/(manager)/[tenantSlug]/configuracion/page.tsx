@@ -1,4 +1,4 @@
-import { ArrowRight, type LucideIcon, Palette, UsersRound } from 'lucide-react'
+import { Armchair, ArrowRight, type LucideIcon, Palette, UsersRound } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Card } from '@/components/ui/card'
@@ -27,6 +27,13 @@ const CARDS: SettingsCard[] = [
     description: 'Sumá owners, cajeros, mozos y cocineros con el rol que corresponde.',
     topics: ['Miembros', 'Roles e invitaciones'],
     href: (s) => `/${s}/configuracion/equipo`,
+  },
+  {
+    icon: Armchair,
+    title: 'Salón',
+    description: 'Cuánta gente entra por zona y qué tortas hace el bar para los cumpleaños.',
+    topics: ['Capacidad', 'Tortas'],
+    href: (s) => `/${s}/configuracion/salon`,
   },
   {
     icon: Palette,
@@ -58,7 +65,7 @@ export default async function ConfiguracionIndexPage({
       <PageHeader
         eyebrow="Ajustes"
         title="Configuración"
-        description="Tres grupos para que encuentres rápido lo que necesitás cambiar."
+        description="Cuatro grupos para que encuentres rápido lo que necesitás cambiar."
       />
 
       <div className="grid gap-4 sm:grid-cols-2">

@@ -309,3 +309,142 @@ Antes de mergear, verificar localmente:
 - **Torta/champagne**: selector con toggle Sí/No + stepper de cantidad
   (`BringsItemControl`).
 - Bonus condicional por día de semana o estacionalidad.
+
+---
+
+## Addendum 2026-09 — Servicios, festejos y tortas
+
+Tres pedidos del dueño del HUB, con el mismo diagnóstico de fondo: **la agenda
+mostraba todo al mismo nivel y lo importante se perdía adentro**.
+
+### 1. La agenda cortada por servicio
+
+> "Necesito que muestres las reservas filtrado por desayuno, almuerzo, merienda
+> y cena. Algo como desayuno: X reservas en salón, X en terraza — actualmente
+> está todo junto y se mezcla para poder leerlo."
+
+Armar el salón es una decisión **por servicio**, no por día: la merienda de 12
+personas a las 17:00 y la cena de 2 a las 22:30 no comparten nada. Ahora:
+
+- `lib/salon/services.ts` — `groupByService()` corta las filas por `meal_type`
+  (orden cronológico, que coincide con el `enumsortorder` del enum en Postgres)
+  y devuelve por servicio: cubiertos, **desglose por zona** (cubiertos **y**
+  mesas: 38 personas pueden ser 9 mesas o 19, y para armar el salón hacen falta
+  las dos), reservas activas, cumpleaños, tortas y la franja horaria real. Es genérico sobre `ServiceRow`
+  (7 columnas), así que sirve tanto con reservas completas como con la query
+  liviana del día.
+- `components/reservations/service-summary.tsx` — el encabezado: barra apilada
+  con la proporción por zona (`--chart-1` PA, `--chart-4` PB, `--chart-3`
+  evento) + números. La proporción se lee antes que los dígitos.
+- `/reservas` en modo día: chips de filtro (`?servicio=dinner`) y la tabla
+  agrupada por servicio en vez de una lista plana. En modo rango se conserva el
+  agrupado por día y el subheader suma el desglose por servicio.
+- **`PAGE_SIZE_DAY` pasó de 25 a 200**: un servicio partido entre la página 1 y
+  la 2 rompía justo lo que el corte vino a arreglar. El día más cargado del HUB
+  tiene 33 reservas.
+- Los contadores de los chips salen de `listDayServiceRows()` (el día entero),
+  **no** de la página cargada: si salieran de la página, filtrar por Cena
+  dejaría Merienda en 0 y no habría cómo volver.
+
+### 2. Cumpleaños y eventos, al mismo nivel
+
+> "El lunes 21 tenemos pizza libre. Metí un cumple de 15 que también va a comer
+> pizza libre de casualidad. El problema es que es un cumple y lleva torta y se
+> ve como pizza libre: no lo vamos a identificar. Debería ser cumpleaños y
+> eventos como si fueran lo mismo, no el cumpleaños dentro del evento."
+
+Es una corrección de **lectura**, no de datos: la reserva sigue colgada del
+evento (consume su cupo y liquida su comisión). Lo que cambia es dónde se lee.
+
+- `lib/salon/day-highlights.ts` — `buildDayHighlights()` mezcla eventos
+  programados y celebraciones (`kind = birthday | special`) en una sola lista
+  ordenada por hora. A igual hora el evento va primero: es el marco, la
+  celebración pasa adentro. Las canceladas y no-show quedan afuera (un hito es
+  algo que hay que preparar).
+- `components/reservations/day-highlights.tsx` — el renglón "Lo que pasa este
+  día". El cumple conserva **su zona real** (Planta Alta, aunque venga al
+  evento) y dice a qué evento viene. Sin estado: se usa igual desde el RSC de
+  `/reservas` y desde el diálogo del calendario.
+- El calendario mensual marca los días con festejo (`monthCapacity.celebrations`
+  → `CelebrationBadge`): a nivel mes el 21/09 decía "Pizza libre" y nada más.
+- La lista de reservas de un evento (`EventReservationsList`) marca "Cumple" /
+  "Especial" con pastilla propia.
+
+### 3. Qué torta va — catálogo por bar
+
+> "Agregamos la opción de personalizar la torta: cuando seleccionamos la opción
+> que lleva torta, debería abrir un desplegable con las opciones. Cada torta
+> trae dos rellenos."
+
+La torta **la hace el bar**. Anotar "torta: 1" y no el sabor era el moco caro.
+
+| Pieza | Dónde |
+|---|---|
+| Tabla `cake_options` (por tenant) + `salon_reservations.cake_option_id` | `supabase/migrations/20260904192724_cake_options_catalog.sql` |
+| Schemas + actions CRUD (`upsertCakeOption`, `deleteCakeOption`, `reorderCakeOptions`) | `lib/salon/schemas.ts`, `lib/salon/actions.ts` |
+| Editor del dueño | `/[slug]/configuracion/tortas` |
+| Selector en el alta/edición de reserva | `components/reservations/cake-option-picker.tsx` |
+| Chip de lectura (todas las pantallas) | `components/reservations/cake-chip.tsx` |
+
+Decisiones:
+
+- **Tarjetas, no un `<select>`.** Quien carga la reserva está eligiendo por
+  teléfono con el cliente del otro lado: tiene que poder dictarle los tres
+  bizcochuelos con sus rellenos de un vistazo. Son `<input type="radio">`
+  visualmente ocultos, así que se navega con flechas.
+- **"Todavía no saben cuál" es una opción de verdad**, no la ausencia de una: la
+  reserva entra hoy y el sabor se decide después. Sin ese botón, "no elegí" y
+  "eligieron y se borró" se ven igual. El chip lo muestra en ámbar: es una
+  tarea pendiente del bar.
+- **Una opción por reserva** (no una por torta). `cake_count` llega a 2 y en 194
+  reservas históricas solo 2 tienen dos tortas; para ese caso raro con dos
+  sabores distintos está el comentario. A cambio la opción viaja gratis en el
+  `select *` que ya hacen todas las pantallas, con un solo join más.
+- **`on delete restrict`** en la FK: borrar una opción que alguna reserva ya
+  eligió dejaría a la cocina sin saber qué hacer. El editor solo ofrece borrar
+  la que nadie usó; para el resto, desactivar (sale del selector, la historia
+  queda intacta).
+- **`cake_option_id` es "ausente ≠ vacío"** en la action de update, igual que
+  los avisos de servicio y el horario de fin: el popup del listado manda un
+  payload completo cada vez que se mueve la hora, y sin esa guarda cada toque
+  borraría qué torta hay que hacer. `cake_count = 0` sí la limpia siempre.
+
+### Seed HUB
+
+```
+Opción 1 · Bizcochuelo de vainilla   → Dulce de leche · Crema chantilly y frutillas
+Opción 2 · Bizcochuelo de chocolate  → Mousse de chocolate · Crema y frutillas
+Opción 3 · Bizcochuelo de vainilla   → Dulce de leche · Crema y durazno
+```
+
+### Tests
+
+- `tests/lib/salon-services.test.ts` — corte por servicio, zonas, canceladas,
+  franja horaria, totales.
+- `tests/lib/salon-day-highlights.test.ts` — el caso real 21/09 (Pizza libre +
+  cumple de 15 con torta), orden, zona real, cubiertos por evento.
+- `tests/lib/salon-cake-options.test.ts` — schema del catálogo y `describeCake`.
+- `tests/lib/salon-schemas.test.ts` — `cake_option_id`: uuid / vacío→null /
+  ausente→undefined.
+
+### Smoke manual
+
+1. `/hub/reservas` en un día con varios servicios → aparecen los chips
+   "Todo el día · Merienda 3 · Cena 12" y la tabla queda cortada por servicio
+   con la barra de zonas.
+2. Tocar "Cena" → la URL queda `?servicio=dinner`, la lista muestra solo cena y
+   los otros chips **siguen mostrando su número**.
+3. `/hub/eventos/programados` → el 21/09 tiene el badge 🎂 en la celda; abrir el
+   día muestra "Pizza libre" y, debajo y al mismo nivel, la tarjeta de
+   cumpleaños de Lourdes Roldan con 15p, Planta Alta, "en Pizza libre" y el chip
+   de la torta.
+4. `/hub/configuracion/tortas` → editar un relleno, guardar, ver el preview.
+   Intentar borrar la Opción 2 (ya elegida) → el editor ofrece desactivar.
+4b. En un día con dos servicios, cada encabezado dice `Cena · 62 cubiertos ·
+   12 reservas` y abajo `Planta Alta 38 (9 mesas) · Planta Baja 16 (4 mesas) ·
+   En evento 8 (2 mesas)`. Las tres zonas suman los cubiertos del servicio.
+5. `/hub/reservas/nuevo` → Cumpleaños → "¿Lleva torta?" Sí → se abre el
+   desplegable con las 3 opciones; elegir la 2 y guardar; abrir la reserva y
+   confirmar que quedó.
+6. Desde el popup del listado, mover la hora de esa reserva → la torta **sigue
+   elegida** (regresión de "ausente ≠ vacío").

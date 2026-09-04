@@ -256,6 +256,41 @@ describe('createSalonReservationSchema', () => {
     const r = createSalonReservationSchema.safeParse({ ...baseValid, cake_count: 5 })
     expect(r.success).toBe(false)
   })
+
+  describe('cake_option_id — la torta elegida', () => {
+    const CAKE = '00000000-0000-4000-8000-0000000000c1'
+
+    it('un uuid pasa tal cual', () => {
+      const r = createSalonReservationSchema.safeParse({
+        ...baseValid,
+        cake_count: 1,
+        cake_option_id: CAKE,
+      })
+      expect(r.success && r.data.cake_option_id).toBe(CAKE)
+    })
+
+    it('vacío o null es "la sacaron" → null', () => {
+      const vacio = createSalonReservationSchema.safeParse({ ...baseValid, cake_option_id: '' })
+      expect(vacio.success && vacio.data.cake_option_id).toBeNull()
+      const nulo = createSalonReservationSchema.safeParse({ ...baseValid, cake_option_id: null })
+      expect(nulo.success && nulo.data.cake_option_id).toBeNull()
+    })
+
+    it('ausente NO es null: la action no puede tocar la columna', () => {
+      // Es la defensa contra el payload completo del popup del listado: sin
+      // esto, mover la hora borraría qué torta hay que hacer.
+      const r = createSalonReservationSchema.safeParse({ ...baseValid })
+      expect(r.success && r.data.cake_option_id).toBeUndefined()
+    })
+
+    it('un id que no es uuid → error', () => {
+      const r = createSalonReservationSchema.safeParse({
+        ...baseValid,
+        cake_option_id: 'opcion-2',
+      })
+      expect(r.success).toBe(false)
+    })
+  })
 })
 
 describe('updateSalonReservationSchema', () => {

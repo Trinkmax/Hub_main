@@ -2,8 +2,11 @@
 
 import { CalendarPlus, Loader2 } from 'lucide-react'
 import Link from 'next/link'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { CakeChip } from '@/components/reservations/cake-chip'
+import { DayHighlights } from '@/components/reservations/day-highlights'
 import { ReservationQuickView } from '@/components/reservations/reservation-quick-view'
+import { ServiceSummary } from '@/components/reservations/service-summary'
 import { StatusPill } from '@/components/reservations/status-pill'
 import { Button } from '@/components/ui/button'
 import {
@@ -14,21 +17,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   fetchDayCapacity,
   fetchReservationsForDate,
   fetchScheduledEventsForDate,
 } from '@/lib/salon/client-actions'
 import { summarizeDayCovers } from '@/lib/salon/covers'
+import { buildDayHighlights, usedByEventMap } from '@/lib/salon/day-highlights'
 import { timeRangeLabel } from '@/lib/salon/format'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
-import {
-  type DayCapacityBucket,
-  MEAL_TYPE_LABELS,
-  type ReservationWithJoins,
-  ZONE_LABELS,
-} from '@/lib/salon/types'
+import { groupByService } from '@/lib/salon/services'
+import { type DayCapacityBucket, type ReservationWithJoins, ZONE_LABELS } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
 function formatDateLong(date: string): string {
@@ -90,10 +89,21 @@ export function DayReservationsDialog({
   const isOver = covers.used > covers.total
   const isFull = !isOver && covers.total > 0 && covers.used >= covers.total * 0.9
 
-  const usedByEvent = new Map<string, DayCapacityBucket>()
-  for (const b of buckets) {
-    if (b.bucket.startsWith('event:')) usedByEvent.set(b.bucket.slice('event:'.length), b)
-  }
+  // Eventos y cumpleaños en un solo renglón: el cumple deja de estar escondido
+  // adentro del evento (ver lib/salon/day-highlights.ts).
+  const highlights = useMemo(
+    () =>
+      buildDayHighlights({
+        events,
+        reservations,
+        usedByEvent: usedByEventMap(buckets),
+      }),
+    [events, reservations, buckets],
+  )
+
+  // La agenda del día cortada por servicio: desayuno / almuerzo / merienda /
+  // cena, cada uno con su desglose por zona.
+  const services = useMemo(() => groupByService(reservations), [reservations])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -146,42 +156,14 @@ export function DayReservationsDialog({
           </div>
         </div>
 
-        {/* Eventos del día: cada uno con su botón. Reservar desde acá llega al
+        {/* Eventos + cumpleaños, al mismo nivel. Reservar desde acá llega al
             form con el evento ya elegido (antes: "Nueva reserva" → "Sujeta a
             evento" → buscarlo en un combo — tres pasos para la misma decisión). */}
-        {events.length > 0 ? (
-          <ul className="space-y-1.5">
-            {events.map((e) => {
-              const b = usedByEvent.get(e.id)
-              const color = e.template?.color_hex ?? 'var(--primary)'
-              const name = e.name_override ?? e.template?.name ?? 'Evento'
-              return (
-                <li
-                  key={e.id}
-                  className="flex items-center gap-3 rounded-lg border border-border/60 bg-card/40 px-3 py-2 text-sm"
-                >
-                  <span
-                    aria-hidden
-                    className="size-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: color }}
-                  />
-                  <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
-                  <span className="text-[11px] text-muted-foreground tabular-nums">
-                    {e.starts_at_local.slice(0, 5)} · {b?.used ?? 0}/{b?.capacity ?? e.capacity}
-                  </span>
-                  <Button asChild size="sm" variant="outline" className="h-8 gap-1.5">
-                    <Link href={`/${tenantSlug}/reservas/nuevo?date=${date}&event=${e.id}`}>
-                      <CalendarPlus className="size-3.5" />
-                      Reservar
-                    </Link>
-                  </Button>
-                </li>
-              )
-            })}
-          </ul>
+        {date ? (
+          <DayHighlights tenantSlug={tenantSlug} date={date} highlights={highlights} />
         ) : null}
 
-        {/* Listado */}
+        {/* Listado, cortado por servicio */}
         {loading ? (
           <div className="flex items-center justify-center py-10 text-muted-foreground">
             <Loader2 className="size-5 animate-spin" />
@@ -191,35 +173,66 @@ export function DayReservationsDialog({
             No hay reservas para este día.
           </p>
         ) : (
-          <ScrollArea className="max-h-[45dvh]">
-            <ul className="space-y-1.5 pr-3">
-              {reservations.map((r) => (
-                <li key={r.id}>
-                  <ReservationQuickView
-                    tenantSlug={tenantSlug}
-                    reservation={r}
-                    onChanged={load}
-                    trigger={
-                      <button
-                        type="button"
-                        className="flex w-full items-center gap-3 rounded-lg border border-border/60 bg-card/40 px-3 py-2 text-left text-sm transition-colors hover:bg-secondary"
-                      >
-                        <span className="whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground">
-                          {timeRangeLabel(r.reservation_time_local, r.reservation_end_time_local)}
-                        </span>
-                        <span className="flex-1 truncate font-medium">{r.guest_name}</span>
-                        <span className="text-[11px] text-muted-foreground">{zoneOrEvent(r)}</span>
-                        <span className="text-[11px] text-muted-foreground tabular-nums">
-                          {r.actual_guests ?? r.estimated_guests}p · {MEAL_TYPE_LABELS[r.meal_type]}
-                        </span>
-                        <StatusPill status={r.status} />
-                      </button>
-                    }
-                  />
-                </li>
-              ))}
-            </ul>
-          </ScrollArea>
+          <div className="space-y-4">
+            {services.map((bucket) => (
+              <section key={bucket.mealType} className="space-y-1.5">
+                {/* Banda, no tarjeta: en 360px el diálogo ya es una caja con
+                    borde y adentro van las filas con borde. Un tercer borde acá
+                    es card-dentro-de-card-dentro-de-card. */}
+                <ServiceSummary
+                  bucket={bucket}
+                  compact
+                  className="rounded-lg bg-secondary/50 px-3 py-2"
+                />
+                <ul className="space-y-1.5">
+                  {bucket.rows.map((r) => (
+                    <li key={r.id}>
+                      <ReservationQuickView
+                        tenantSlug={tenantSlug}
+                        reservation={r}
+                        onChanged={load}
+                        trigger={
+                          <button
+                            type="button"
+                            className={cn(
+                              'flex w-full items-center gap-2.5 rounded-lg border border-border/60 bg-card/40 px-3 py-2 text-left text-sm transition-colors hover:bg-secondary',
+                              (r.status === 'cancelled' || r.status === 'no_show') && 'opacity-60',
+                            )}
+                          >
+                            <span className="whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground">
+                              {timeRangeLabel(
+                                r.reservation_time_local,
+                                r.reservation_end_time_local,
+                              )}
+                            </span>
+                            <span className="flex min-w-0 flex-1 flex-col leading-tight">
+                              <span className="truncate font-medium">{r.guest_name}</span>
+                              {/* La torta viaja con la fila: es lo que el bar
+                                  tiene que producir, no un detalle del cliente. */}
+                              {r.cake_count > 0 ? (
+                                <CakeChip
+                                  count={r.cake_count}
+                                  option={r.cake_option}
+                                  className="mt-1 self-start"
+                                />
+                              ) : null}
+                            </span>
+                            <span className="hidden text-[11px] text-muted-foreground sm:inline">
+                              {zoneOrEvent(r)}
+                            </span>
+                            <span className="whitespace-nowrap text-[11px] text-muted-foreground tabular-nums">
+                              {r.actual_guests ?? r.estimated_guests}p
+                            </span>
+                            <StatusPill status={r.status} />
+                          </button>
+                        }
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
         )}
 
         <DialogFooter>

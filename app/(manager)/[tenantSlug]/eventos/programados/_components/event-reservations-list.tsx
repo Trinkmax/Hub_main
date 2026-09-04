@@ -2,6 +2,8 @@
 
 import { Users } from 'lucide-react'
 import { ContactButton } from '@/components/messaging/contact-button'
+import { CakeChip } from '@/components/reservations/cake-chip'
+import { CelebrationChip } from '@/components/reservations/celebration-chip'
 import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
 import { resolveReservationAlerts } from '@/lib/salon/alerts'
 import { timeRangeLabel } from '@/lib/salon/format'
@@ -26,7 +28,13 @@ export function EventReservationsList({
         return (
           <li key={r.id} className="flex items-center justify-between gap-3 py-2 text-sm">
             <div className="flex min-w-0 flex-col">
-              <span className="truncate font-medium">{r.guest_name}</span>
+              <span className="flex items-center gap-1.5">
+                <span className="truncate font-medium">{r.guest_name}</span>
+                {/* El festejo no puede quedar disuelto adentro del evento: es
+                    justo la lista donde el 21/09 el cumple de 15 se leía como
+                    una mesa más de Pizza libre. */}
+                <CelebrationChip kind={r.kind} />
+              </span>
               <span className="text-xs text-muted-foreground">
                 {timeRangeLabel(r.reservation_time_local, r.reservation_end_time_local)} ·{' '}
                 {r.primary_manager?.display_name ?? '—'}
@@ -38,6 +46,9 @@ export function EventReservationsList({
                 size="xs"
                 className="mt-1"
               />
+              {r.cake_count > 0 ? (
+                <CakeChip count={r.cake_count} option={r.cake_option} className="mt-1 self-start" />
+              ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {/* Pastilla con ícono: el número suelto no decía de qué era, y

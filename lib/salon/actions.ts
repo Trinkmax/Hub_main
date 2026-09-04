@@ -27,6 +27,7 @@ import {
   actualGuestsSchema,
   bonusRuleSchema,
   bulkActualGuestsSchema,
+  cakeOptionSchema,
   cancelReservationSchema,
   createSalonReservationSchema,
   idOnlySchema,
@@ -393,6 +394,10 @@ export async function createSalonReservation(
       scheduled_event_id: scheduledEventIdFinal,
       estimated_guests: parsed.data.estimated_guests,
       cake_count: parsed.data.cake_count,
+      // Elegir torta sin decir que traen torta deja a la cocina sin cantidad, y
+      // la DB lo rechaza con un check. Manda `cake_count`: si es 0, no hay torta
+      // y tampoco sabor — así "saqué la torta" limpia las dos cosas de una.
+      cake_option_id: parsed.data.cake_count > 0 ? (parsed.data.cake_option_id ?? null) : null,
       champagne_count: parsed.data.champagne_count,
       deposit_cents: parsed.data.deposit_cents,
       origin: parsed.data.origin,
@@ -508,6 +513,15 @@ export async function updateSalonReservation(
       // volvía a facturarle al gestor por el estimado.
       ...(patch.actual_guests !== undefined ? { actual_guests: patch.actual_guests } : {}),
       cake_count: patch.cake_count,
+      // Ausente ≠ vacío, igual que los avisos: el popup del listado manda un
+      // payload completo cada vez que se mueve la hora, y sin esta guarda cada
+      // toque borraría qué torta hay que hacer. Con `cake_count` en 0 se limpia
+      // siempre (dejaron de traer torta ⇒ no hay sabor que guardar).
+      ...(patch.cake_count === 0
+        ? { cake_option_id: null }
+        : patch.cake_option_id !== undefined
+          ? { cake_option_id: patch.cake_option_id }
+          : {}),
       champagne_count: patch.champagne_count,
       deposit_cents: patch.deposit_cents,
       origin: patch.origin,
@@ -1388,5 +1402,134 @@ export async function removeZoneOverride(slug: string, id: string): Promise<Acti
   if (error) return { ok: false, message: humanizeSalonError(error.message) }
 
   revalidatePath(`/${slug}/configuracion/salon`)
+  return { ok: true }
+}
+
+// ──────────────────────────────────────────────────────────
+// Tortas de cumpleaños — el menú del bar
+// ──────────────────────────────────────────────────────────
+
+/**
+ * Alta y edición de una opción del menú de tortas. Solo el dueño: qué tortas
+ * hace el bar es una decisión de carta, no de servicio (el cajero y el anfitrión
+ * las ELIGEN al cargar la reserva, pero no las inventan).
+ */
+export async function upsertCakeOption(
+  slug: string,
+  input: FormData | Record<string, unknown>,
+): Promise<ActionState> {
+  const access = await authorize(slug, OWNER_ONLY)
+  if (!access) return noAccess()
+
+  const parsed = cakeOptionSchema.safeParse(asObject(input))
+  if (!parsed.success) {
+    const first = parsed.error.issues[0]
+    return badInput(first?.message ?? 'Datos inválidos', first?.path[0]?.toString())
+  }
+
+  const supabase = (await createClient()) as SBAny
+  const payload = {
+    tenant_id: access.tenant.id,
+    name: parsed.data.name,
+    base: parsed.data.base,
+    fillings: parsed.data.fillings,
+    position: parsed.data.position,
+    active: parsed.data.active,
+  }
+
+  let id = parsed.data.id
+  const isUpdate = Boolean(id)
+  if (id) {
+    const { error } = await supabase
+      .from('cake_options')
+      .update(payload)
+      .eq('tenant_id', access.tenant.id)
+      .eq('id', id)
+    if (error) return { ok: false, message: humanizeSalonError(error.message) }
+  } else {
+    const { data, error } = await supabase
+      .from('cake_options')
+      .insert(payload)
+      .select('id')
+      .single()
+    if (error) return { ok: false, message: humanizeSalonError(error.message) }
+    id = (data as { id: string }).id
+  }
+
+  await logAudit({
+    tenantId: access.tenant.id,
+    userId: null,
+    action: isUpdate ? 'cake_option.updated' : 'cake_option.created',
+    entity: 'cake_option',
+    entityId: id,
+    payload: { name: parsed.data.name, active: parsed.data.active },
+  })
+
+  revalidatePath(`/${slug}/configuracion/tortas`)
+  revalidatePath(`/${slug}/reservas/nuevo`)
+  return { ok: true, data: { id }, message: 'Torta guardada.' }
+}
+
+/**
+ * Borrado real. La FK es `restrict` a propósito: si alguna reserva ya eligió
+ * esta torta, Postgres frena y `humanizeSalonError` explica que hay que
+ * desactivarla. Borrar es para la opción que se cargó mal y nadie usó.
+ */
+export async function deleteCakeOption(slug: string, id: string): Promise<ActionState> {
+  const access = await authorize(slug, OWNER_ONLY)
+  if (!access) return noAccess()
+  const parsed = idOnlySchema.safeParse({ id })
+  if (!parsed.success) return badInput('ID inválido')
+
+  const supabase = (await createClient()) as SBAny
+  const { error } = await supabase
+    .from('cake_options')
+    .delete()
+    .eq('tenant_id', access.tenant.id)
+    .eq('id', id)
+  if (error) return { ok: false, message: humanizeSalonError(error.message) }
+
+  await logAudit({
+    tenantId: access.tenant.id,
+    userId: null,
+    action: 'cake_option.deleted',
+    entity: 'cake_option',
+    entityId: id,
+  })
+
+  revalidatePath(`/${slug}/configuracion/tortas`)
+  revalidatePath(`/${slug}/reservas/nuevo`)
+  return { ok: true, message: 'Torta eliminada.' }
+}
+
+/**
+ * Reordena el menú completo. El operador elige de memoria ("la 2"), así que el
+ * orden del selector tiene que ser el que el dueño decidió — no el alfabeto ni
+ * la fecha de carga.
+ */
+export async function reorderCakeOptions(slug: string, ids: string[]): Promise<ActionState> {
+  const access = await authorize(slug, OWNER_ONLY)
+  if (!access) return noAccess()
+  if (!Array.isArray(ids) || ids.length === 0) return badInput('Nada para ordenar')
+  if (ids.length > 50) return badInput('Demasiadas tortas')
+  for (const id of ids) {
+    if (!idOnlySchema.safeParse({ id }).success) return badInput('ID inválido')
+  }
+
+  const supabase = (await createClient()) as SBAny
+  // Una por una y no un upsert masivo: el upsert necesitaría mandar la fila
+  // entera (nombre, base, rellenos) y un reorder no tiene por qué poder pisar
+  // el contenido de una torta.
+  for (const [index, id] of ids.entries()) {
+    const { error } = await supabase
+      .from('cake_options')
+      .update({ position: index + 1 })
+      .eq('tenant_id', access.tenant.id)
+      .eq('id', id)
+    if (error) return { ok: false, message: humanizeSalonError(error.message) }
+  }
+
+  revalidatePath(`/${slug}/configuracion/tortas`)
+  revalidatePath(`/${slug}/reservas/nuevo`)
   return { ok: true }
 }

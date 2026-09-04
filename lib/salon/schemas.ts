@@ -98,6 +98,22 @@ const checkboxField = z
   .transform((v) => v === true || v === 'true' || v === 'on')
   .optional()
 
+/**
+ * Torta elegida del catálogo del bar. Tres estados, y los tres importan — misma
+ * defensa que el horario de fin:
+ *   - `'<uuid>'` → la eligieron
+ *   - `''` o `null` → la sacaron a propósito (o dejaron de traer torta)
+ *   - ausente (`undefined`) → la action NO toca la columna
+ *
+ * Sin ese tercer caso, cada vez que alguien mueve la hora o las personas desde
+ * el popup del listado (que manda un payload completo) se borraría la torta y
+ * la cocina se quedaría sin saber cuál hacer.
+ */
+const cakeOptionField = z
+  .union([z.string().uuid('Torta inválida'), z.literal(''), z.null()])
+  .transform((v) => (v ? v : null))
+  .optional()
+
 export const reservationKindEnum = z.enum(['normal', 'birthday', 'special'])
 export const mealTypeEnum = z.enum(['breakfast', 'lunch', 'tea_time', 'dinner', 'hub_event'])
 export const reservationOriginEnum = z.enum([
@@ -139,6 +155,7 @@ export const createSalonReservationSchema = z
     estimated_guests: z.coerce.number().int().min(1).max(99),
 
     cake_count: z.coerce.number().int().min(0).max(2).default(0),
+    cake_option_id: cakeOptionField,
     champagne_count: z.coerce.number().int().min(0).max(2).default(0),
     deposit_cents: z.coerce.number().int().min(0).default(0),
 
@@ -193,6 +210,7 @@ export const updateSalonReservationSchema = z
     actual_guests: z.union([z.coerce.number().int().min(1).max(99), z.null()]).optional(),
 
     cake_count: z.coerce.number().int().min(0).max(2).default(0),
+    cake_option_id: cakeOptionField,
     champagne_count: z.coerce.number().int().min(0).max(2).default(0),
     deposit_cents: z.coerce.number().int().min(0).default(0),
 
@@ -312,6 +330,35 @@ export const scheduledEventSchema = z.object({
   notes: optionalText(500).optional(),
 })
 
+// ──────────────────────────────────────────────────────────
+// Tortas de cumpleaños
+// ──────────────────────────────────────────────────────────
+
+/**
+ * Una opción del menú de tortas. Los rellenos llegan como array desde el editor
+ * (un input por relleno); se limpian los vacíos antes de validar el largo, así
+ * que una fila en blanco al final no rompe el guardado.
+ */
+export const cakeOptionSchema = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().trim().min(1, 'Poné un nombre (ej. "Opción 1")').max(80),
+  base: z.string().trim().min(1, 'Poné el bizcochuelo').max(120),
+  fillings: z
+    .union([z.array(z.string()), z.string()])
+    .transform((v) => (Array.isArray(v) ? v : [v]).map((f) => f.trim()).filter(Boolean))
+    .pipe(
+      z
+        .array(z.string().max(120, 'Relleno demasiado largo'))
+        .min(1, 'Poné al menos un relleno')
+        .max(4, 'Máximo 4 rellenos'),
+    ),
+  position: z.coerce.number().int().min(0).max(999).default(0),
+  active: z
+    .union([z.boolean(), z.literal('true'), z.literal('false'), z.literal('on'), z.literal('')])
+    .transform((v) => v === true || v === 'true' || v === 'on')
+    .default(true),
+})
+
 export const idOnlySchema = z.object({ id: z.string().uuid() })
 
 export const moveScheduledEventSchema = z.object({
@@ -389,3 +436,4 @@ export type BonusRuleInput = z.infer<typeof bonusRuleSchema>
 export type ZoneCapacityOverrideInput = z.infer<typeof zoneCapacityOverrideSchema>
 export type ZoneCapacityDefaultsInput = z.infer<typeof zoneCapacityDefaultsSchema>
 export type MarkPaidInput = z.infer<typeof markPaidSchema>
+export type CakeOptionInput = z.infer<typeof cakeOptionSchema>

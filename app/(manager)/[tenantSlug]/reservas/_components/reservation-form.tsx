@@ -23,6 +23,7 @@ import { useForm } from 'react-hook-form'
 import PhoneInput from 'react-phone-number-input'
 import 'react-phone-number-input/style.css'
 import { toast } from 'sonner'
+import { CakeOptionPicker } from '@/components/reservations/cake-option-picker'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -56,6 +57,7 @@ import { QuickTemplateDialog } from './quick-template-dialog'
 type ReservationFormInput = CreateSalonReservationInput
 
 import {
+  type CakeOptionRow,
   type DayCapacityBucket,
   MEAL_TYPE_LABELS,
   type MealType,
@@ -76,6 +78,13 @@ type Props = {
   managers: ReservationManagerRow[]
   templates: ScheduledEventTemplateRow[]
   initialEventsForDate: ScheduledEventWithTemplate[]
+  /**
+   * El menú de tortas del bar. Se elige acá porque la torta la hace el bar y la
+   * cocina necesita saber CUÁL — no alcanza con "traen torta".
+   */
+  cakeOptions: CakeOptionRow[]
+  /** ¿Este rol puede editar el catálogo de tortas? (owner) — muestra el link. */
+  canManageCakes?: boolean
   rateTiers: RateTier[]
   bonusPerGuestCents: number
   /**
@@ -187,6 +196,8 @@ export function ReservationForm({
   managers,
   templates: templatesProp,
   initialEventsForDate,
+  cakeOptions,
+  canManageCakes = false,
   rateTiers,
   bonusPerGuestCents,
   linkedManagerId,
@@ -236,6 +247,7 @@ export function ReservationForm({
       requested_template_id: undefined,
       estimated_guests: 2,
       cake_count: 0,
+      cake_option_id: null,
       champagne_count: 0,
       deposit_cents: 0,
       origin: 'whatsapp',
@@ -517,6 +529,7 @@ export function ReservationForm({
         requested_template_id: 'Formato pedido',
         estimated_guests: 'Comensales',
         cake_count: 'Tortas',
+        cake_option_id: 'Torta elegida',
         champagne_count: 'Champagne',
         deposit_cents: 'Seña',
         primary_manager_id: 'Gestor',
@@ -958,9 +971,15 @@ export function ReservationForm({
               <div className="grid gap-3 sm:grid-cols-2">
                 <BringsItemControl
                   icon={Cake}
-                  label="¿Traen torta?"
+                  label="¿Lleva torta?"
                   value={values.cake_count}
-                  onChange={(v) => form.setValue('cake_count', v)}
+                  onChange={(v) => {
+                    form.setValue('cake_count', v)
+                    // Bajar a 0 tortas limpia el sabor: la DB tiene un check que
+                    // lo prohíbe y, sobre todo, guardar "opción 2" en una mesa
+                    // sin torta le deja a la cocina una comanda fantasma.
+                    if (v === 0) form.setValue('cake_option_id', null)
+                  }}
                 />
                 <BringsItemControl
                   icon={GlassWater}
@@ -969,6 +988,34 @@ export function ReservationForm({
                   onChange={(v) => form.setValue('champagne_count', v)}
                 />
               </div>
+
+              {/* El desplegable de tortas: se abre solo cuando hay torta que
+                  hacer. Es la mitad que faltaba — antes se anotaba "torta: 1" y
+                  el lunes nadie sabía de qué era. */}
+              <AnimatePresence initial={false}>
+                {values.cake_count > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="overflow-hidden"
+                  >
+                    <CakeOptionPicker
+                      className="pt-3"
+                      options={cakeOptions}
+                      value={values.cake_option_id ?? null}
+                      onChange={(id) =>
+                        form.setValue('cake_option_id', id, { shouldValidate: true })
+                      }
+                      cakeCount={values.cake_count}
+                      manageHref={
+                        canManageCakes ? `/${tenantSlug}/configuracion/tortas` : undefined
+                      }
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </FieldGroup>
           </motion.div>
         )}

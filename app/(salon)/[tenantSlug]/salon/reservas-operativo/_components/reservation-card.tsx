@@ -1,7 +1,6 @@
 'use client'
 
 import {
-  Cake,
   Check,
   GlassWater,
   Loader2,
@@ -15,6 +14,7 @@ import {
 import { motion } from 'motion/react'
 import { useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { CakeChip } from '@/components/reservations/cake-chip'
 import { GuestCountStepper } from '@/components/reservations/guest-count-stepper'
 import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
 import { Button } from '@/components/ui/button'
@@ -185,14 +185,20 @@ export function ReservationCard({
               <p className="truncate text-sm font-semibold leading-tight">
                 {reservation.guest_name}
               </p>
-              {reservation.cake_count > 0 ? (
-                <Cake className="size-3.5 shrink-0 text-primary" aria-label="Torta" />
-              ) : null}
               {reservation.champagne_count > 0 ? (
                 <GlassWater className="size-3.5 shrink-0 text-primary" aria-label="Champagne" />
               ) : null}
             </div>
             <ServiceAlertChips alerts={alerts} size="xs" className="mt-1" />
+            {/* Qué torta va, no solo que hay una: la hace el bar y el que la
+                arma necesita el sabor, no un ícono. */}
+            {reservation.cake_count > 0 ? (
+              <CakeChip
+                count={reservation.cake_count}
+                option={reservation.cake_option}
+                className="mt-1"
+              />
+            ) : null}
             {reservation.highlight_comment && reservation.comments ? (
               <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-snug text-foreground">
                 {reservation.comments}
