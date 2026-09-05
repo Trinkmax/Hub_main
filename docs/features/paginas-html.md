@@ -75,9 +75,27 @@ candado: se pone en rojo si desaparece el sandbox o si alguien agrega
 
 Tres solapas a la izquierda y la previa a la derecha (arriba, en celular).
 
-- **Código** — un textarea monospace. Se puede pegar, arrastrar un archivo
-  `.html` encima o subirlo con el botón. `⌘S` / `Ctrl+S` guarda. Arriba a la
+- **Código** — un textarea monospace. `⌘S` / `Ctrl+S` guarda. Arriba a la
   derecha, el peso contra el techo de 512 KB.
+
+  El archivo `.html` entra por **tres puertas**, porque arrastrarlo es el gesto
+  que la gente prueba primero:
+  1. **soltándolo sobre el listado** de páginas → abre el alta con el nombre ya
+     sacado del archivo (`halloween-2026.html` → "Halloween 2026") y, apenas se
+     crea la página, guarda el código adentro;
+  2. **soltándolo en cualquier parte del editor** — todo el editor es zona de
+     drop, no sólo el textarea, así que también funciona estando en Imágenes o
+     Historial (vuelve solo a Código);
+  3. con el botón **Subir .html**.
+
+  Con el editor vacío, el cartel "Arrastrá tu archivo .html acá" se dibuja
+  ENCIMA del textarea pero con `pointer-events-none`: se ve la invitación y aun
+  así hacés click y escribís. Una zona de drop que no se anuncia es una zona de
+  drop que no existe.
+
+  Soltar una **imagen** en el editor no falla en silencio: avisa que ese archivo
+  va en la solapa Imágenes. (El drop de la galería hace `stopPropagation` para
+  que soltar una foto ahí no dispare además el handler del editor.)
 - **Imágenes** — la galería del bar (ver abajo).
 - **Historial** — visitas + las últimas 20 versiones.
 

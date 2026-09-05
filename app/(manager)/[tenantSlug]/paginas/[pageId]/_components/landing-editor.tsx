@@ -8,6 +8,7 @@ import {
   Check,
   Clock,
   Code2,
+  FileUp,
   Images,
   Loader2,
   Settings2,
@@ -99,6 +100,11 @@ export function LandingEditor({
   const [settingsOpen, setSettingsOpen] = useState(false)
   // Intento de volver al listado con cambios sin guardar.
   const [leaving, setLeaving] = useState(false)
+  // Hay un archivo encima del editor ahora mismo (todo el editor es zona de
+  // drop, no sólo el textarea: si estás mirando Imágenes o Historial y soltás
+  // tu landing, tiene que entrar igual).
+  const [dropping, setDropping] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   // Sube en cada apertura de Ajustes: remonta el diálogo para que su estado
   // (link, indexable) vuelva a salir de las props. Sin esto, cancelar dejaba lo
   // tipeado en memoria y el guardado siguiente aplicaba cambios descartados.
@@ -214,7 +220,13 @@ export function LandingEditor({
 
   async function loadFile(file: File) {
     if (!/\.html?$/i.test(file.name) && file.type !== 'text/html') {
-      toast.error('Tiene que ser un archivo .html')
+      // El error más probable: soltar una foto en el editor en vez de en la
+      // galería. Decirlo así ahorra el viaje a preguntar.
+      toast.error(
+        file.type.startsWith('image/')
+          ? 'Eso es una imagen: soltala en la solapa Imágenes.'
+          : 'Tiene que ser un archivo .html',
+      )
       return
     }
     const text = await file.text()
@@ -222,12 +234,13 @@ export function LandingEditor({
       toast.error('El archivo pasa los 512 KB. Subí las imágenes por separado.')
       return
     }
+    setTab('codigo')
     if (html.trim().length > 0) {
       setDroppedHtml(text)
       return
     }
     setHtml(text)
-    toast.success('Archivo cargado. Revisá la previa y guardá.')
+    toast.success(`"${file.name}" cargado. Mirá la previa y guardá.`)
   }
 
   function viewVersion(version: LandingVersionRow) {
@@ -281,7 +294,57 @@ export function LandingEditor({
   }
 
   return (
-    <div className="mx-auto w-full max-w-screen-2xl space-y-4 px-4 py-6 sm:px-6 lg:px-8">
+    // biome-ignore lint/a11y/noStaticElementInteractions: soltar el archivo es un atajo; el botón "Subir .html" hace exactamente lo mismo con teclado.
+    <div
+      className="relative mx-auto w-full max-w-screen-2xl space-y-4 px-4 py-6 sm:px-6 lg:px-8"
+      onDragOver={(event) => {
+        // Sólo reaccionamos a archivos: arrastrar texto seleccionado dentro del
+        // textarea no tiene que prender la zona de drop.
+        if (!event.dataTransfer.types.includes('Files')) return
+        event.preventDefault()
+        setDropping(true)
+      }}
+      onDragLeave={(event) => {
+        // `dragleave` también salta al pasar de un hijo a otro: sólo apagamos
+        // cuando el puntero se fue de verdad del editor.
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setDropping(false)
+        }
+      }}
+      onDrop={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return
+        event.preventDefault()
+        setDropping(false)
+        const file = event.dataTransfer.files?.[0]
+        if (file) void loadFile(file)
+      }}
+    >
+      {/* El input vive acá arriba porque lo abren dos lugares: el botón de la
+          barra y el cartel del editor vacío. */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".html,.htm,text/html"
+        className="sr-only"
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          if (file) void loadFile(file)
+          // Permite volver a elegir el MISMO archivo después de corregirlo.
+          event.target.value = ''
+        }}
+      />
+
+      {dropping ? (
+        <div className="pointer-events-none fixed inset-0 z-50 grid place-items-center bg-background/70 backdrop-blur-sm">
+          <div className="card-hairline flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-primary bg-card px-10 py-8 shadow-lg">
+            <div className="flex size-14 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <FileUp className="size-7" aria-hidden />
+            </div>
+            <p className="font-serif text-xl font-semibold">Soltá tu archivo .html</p>
+            <p className="text-sm text-muted-foreground">Lo cargamos en el editor al instante.</p>
+          </div>
+        </div>
+      ) : null}
       {/* ── Barra de la página ───────────────────────────── */}
       {/* top-16 y z-10: el topbar del shell es `sticky top-0 z-20 h-14`. Con el
           mismo z-index ganaba esta barra (va después en el DOM) y tapaba el
@@ -452,7 +515,10 @@ export function LandingEditor({
                   >
                     {Math.round(chars / 1024)} KB / 512 KB
                   </span>
-                  <FilePicker onFile={loadFile} />
+                  <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+                    <Upload className="size-4" aria-hidden />
+                    Subir .html
+                  </Button>
                 </div>
               ) : null}
             </div>
@@ -470,7 +536,7 @@ export function LandingEditor({
                 ref={textareaRef}
                 value={html}
                 onChange={setHtml}
-                onFile={loadFile}
+                onPick={() => fileInputRef.current?.click()}
                 overflow={overflow}
               />
             </TabsContent>
@@ -573,65 +639,31 @@ export function LandingEditor({
   )
 }
 
-/** Botón que abre el explorador de archivos (el mismo handler que el drop). */
-function FilePicker({ onFile }: { onFile: (file: File) => void }) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  return (
-    <>
-      <input
-        ref={inputRef}
-        type="file"
-        accept=".html,.htm,text/html"
-        className="sr-only"
-        onChange={(event) => {
-          const file = event.target.files?.[0]
-          if (file) onFile(file)
-          // Permite volver a elegir el MISMO archivo después de corregirlo.
-          event.target.value = ''
-        }}
-      />
-      <Button variant="outline" size="sm" onClick={() => inputRef.current?.click()}>
-        <Upload className="size-4" aria-hidden />
-        Subir .html
-      </Button>
-    </>
-  )
-}
-
 function CodePanel({
   ref,
   value,
   onChange,
-  onFile,
+  onPick,
   overflow,
 }: {
   ref: React.RefObject<HTMLTextAreaElement | null>
   value: string
   onChange: (value: string) => void
-  onFile: (file: File) => void
+  onPick: () => void
   overflow: boolean
 }) {
-  const [dragging, setDragging] = useState(false)
+  // Con el editor vacío, el textarea solo no comunica que se puede arrastrar un
+  // archivo: el cartel se dibuja ENCIMA pero sin capturar el mouse
+  // (`pointer-events-none`), así que hacer click igual entra a escribir. Sólo el
+  // botón vuelve a ser clickeable.
+  const empty = value.trim().length === 0
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: soltar el archivo es un atajo; el botón "Subir .html" hace lo mismo con teclado.
     <div
       className={cn(
         'card-hairline relative overflow-hidden rounded-xl border bg-card transition-colors',
-        dragging && 'border-primary ring-2 ring-primary/30',
         overflow && 'border-destructive',
       )}
-      onDragOver={(event) => {
-        event.preventDefault()
-        setDragging(true)
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(event) => {
-        event.preventDefault()
-        setDragging(false)
-        const file = event.dataTransfer.files?.[0]
-        if (file) onFile(file)
-      }}
     >
       <textarea
         ref={ref}
@@ -642,14 +674,35 @@ function CodePanel({
         autoCorrect="off"
         aria-label="Código HTML de la página"
         placeholder={
-          '<!doctype html>\n<html lang="es-AR">\n  <head>\n    <meta charset="utf-8">\n    <meta name="viewport" content="width=device-width, initial-scale=1">\n    <title>Halloween en el bar</title>\n  </head>\n  <body>\n    ¡Pegá acá tu landing!\n  </body>\n</html>'
+          empty
+            ? undefined
+            : '<!doctype html>\n<html lang="es-AR">\n  <head>\n    <meta charset="utf-8">\n  </head>\n</html>'
         }
         className="block h-[52dvh] w-full resize-y bg-transparent p-4 font-mono text-[13px] leading-relaxed outline-none placeholder:text-muted-foreground/50 lg:h-[calc(100dvh-16rem)]"
       />
 
-      {dragging ? (
-        <div className="pointer-events-none absolute inset-0 grid place-items-center bg-card/85">
-          <p className="font-serif text-lg font-semibold">Soltá el archivo .html</p>
+      {empty ? (
+        <div className="pointer-events-none absolute inset-0 grid place-items-center p-6">
+          <div className="flex max-w-sm flex-col items-center text-center">
+            <div className="mb-4 flex size-14 items-center justify-center rounded-full border border-primary/20 bg-cream-tint text-primary shadow-2xs">
+              <FileUp className="size-6" aria-hidden />
+            </div>
+            <p className="font-serif text-lg font-semibold tracking-tight">
+              Arrastrá tu archivo .html acá
+            </p>
+            <p className="mt-1.5 text-sm text-muted-foreground text-pretty">
+              O pegá el código directamente: hacé click en cualquier lado y escribí.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="pointer-events-auto mt-4"
+              onClick={onPick}
+            >
+              <Upload className="size-4" aria-hidden />
+              Buscar el archivo en la compu
+            </Button>
+          </div>
         </div>
       ) : null}
     </div>

@@ -112,11 +112,16 @@ export function MediaPanel({
       <div
         onDragOver={(event) => {
           event.preventDefault()
+          event.stopPropagation()
           setDragging(true)
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={(event) => {
           event.preventDefault()
+          // El editor entero también escucha drops (para el .html): sin esto,
+          // soltar una foto acá dispararía además su handler y avisaría que
+          // "eso es una imagen" justo cuando el lugar es el correcto.
+          event.stopPropagation()
           setDragging(false)
           if (event.dataTransfer.files.length > 0) void upload(event.dataTransfer.files)
         }}

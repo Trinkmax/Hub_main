@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { createLandingPage, type LandingActionState } from '@/lib/landings/actions'
+import { createLandingPage, type LandingActionState, saveLandingHtml } from '@/lib/landings/actions'
 import { checkSlugFormat, LANDING_SLUG_HINT, suggestLandingSlug } from '@/lib/landings/schemas'
 
 const INITIAL: LandingActionState = { ok: false, message: '' }
@@ -55,19 +55,25 @@ export function NewPageButton({
   )
 }
 
-function NewPageDialog({
+export function NewPageDialog({
   tenantSlug,
   urlPrefix,
   open,
   onOpenChange,
+  initialTitle = '',
+  initialHtml = null,
 }: {
   tenantSlug: string
   urlPrefix: string
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Cuando llega de un archivo arrastrado: el nombre sale del archivo. */
+  initialTitle?: string
+  /** El HTML del archivo soltado: se guarda apenas se crea la página. */
+  initialHtml?: string | null
 }) {
   const router = useRouter()
-  const [title, setTitle] = useState('')
+  const [title, setTitle] = useState(initialTitle)
   const [slug, setSlug] = useState('')
   // Mientras el dueño no toque el link a mano, lo derivamos del nombre. Apenas
   // lo edita, deja de moverse solo (si no, escribir el nombre le pisaría lo suyo).
@@ -83,13 +89,24 @@ function NewPageDialog({
 
   useEffect(() => {
     if (state.ok && state.id) {
-      toast.success('Página creada. Ahora pegá el HTML.')
+      const pageId = state.id
       onOpenChange(false)
-      router.push(`/${tenantSlug}/paginas/${state.id}`)
+      // Si vino de un archivo, el HTML se guarda enseguida y el dueño cae en el
+      // editor con su landing ya adentro — no en una pantalla en blanco.
+      if (initialHtml !== null) {
+        void saveLandingHtml(tenantSlug, { id: pageId, html: initialHtml }).then((result) => {
+          if (result.ok) toast.success('Archivo cargado. Mirá la previa y publicá.')
+          else toast.error(result.message)
+          router.push(`/${tenantSlug}/paginas/${pageId}`)
+        })
+        return
+      }
+      toast.success('Página creada. Ahora pegá el HTML.')
+      router.push(`/${tenantSlug}/paginas/${pageId}`)
     } else if (!state.ok && state.message) {
       toast.error(state.message)
     }
-  }, [state, onOpenChange, router, tenantSlug])
+  }, [state, onOpenChange, router, tenantSlug, initialHtml])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -97,7 +114,9 @@ function NewPageDialog({
         <DialogHeader>
           <DialogTitle className="font-serif text-xl">Nueva página</DialogTitle>
           <DialogDescription>
-            Primero el nombre y el link. El HTML lo pegás en la pantalla siguiente.
+            {initialHtml !== null
+              ? 'Ponele nombre y link a tu archivo. El código ya lo tenemos.'
+              : 'Primero el nombre y el link. El HTML lo pegás en la pantalla siguiente.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -158,7 +177,11 @@ function NewPageDialog({
               Cancelar
             </Button>
             <Button type="submit" disabled={pending || slugError !== null}>
-              {pending ? 'Creando…' : 'Crear y cargar el HTML'}
+              {pending
+                ? 'Creando…'
+                : initialHtml !== null
+                  ? 'Crear con este archivo'
+                  : 'Crear y cargar el HTML'}
             </Button>
           </DialogFooter>
         </form>
