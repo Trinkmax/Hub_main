@@ -147,24 +147,13 @@ export class PageOutOfRangeError extends Error {
   }
 }
 
-export async function listSalonReservations(
-  opts: ReservationFilters,
-): Promise<{ rows: ReservationWithJoins[]; total: number }> {
-  const supabase = (await createClient()) as SBAny
-  const pageSize = opts.pageSize ?? 25
-  const page = Math.max(1, opts.page ?? 1)
-  const from = (page - 1) * pageSize
-  const to = from + pageSize - 1
-  const ascending = opts.sort === 'asc'
-
-  let q = supabase
-    .from('salon_reservations')
-    .select(RESERVATION_JOIN_SELECT, { count: 'exact' })
-    .eq('tenant_id', opts.tenantId)
-    .order('reservation_date', { ascending })
-    .order('reservation_time_local', { ascending: true })
-    .range(from, to)
-
+/**
+ * Los filtros del listado, aplicados a un query ya armado. Compartido entre la
+ * página (paginada) y la exportación (entera): un filtro nuevo se agrega acá y
+ * los dos lo respetan.
+ */
+function applyReservationFilters(query: SBAny, opts: ReservationFilters): SBAny {
+  let q = query
   if (opts.dateFrom) q = q.gte('reservation_date', opts.dateFrom)
   if (opts.dateTo) q = q.lte('reservation_date', opts.dateTo)
   if (opts.zone) q = q.eq('zone', opts.zone)
@@ -186,6 +175,57 @@ export async function listSalonReservations(
     const safe = opts.q.trim().replace(/[%,]/g, '')
     q = q.ilike('guest_name', `%${safe}%`)
   }
+  return q
+}
+
+/** Tope de la exportación: el mes más cargado del HUB tiene ~400 reservas. */
+export const EXPORT_MAX_ROWS = 2000
+
+/**
+ * Todas las reservas que cumplen los filtros, sin paginar, para exportar.
+ * Devuelve `truncated` si se llegó al tope: la planilla lo dice, no lo esconde.
+ */
+export async function listSalonReservationsForExport(
+  opts: Omit<ReservationFilters, 'page' | 'pageSize' | 'sort'>,
+): Promise<{ rows: ReservationWithJoins[]; truncated: boolean }> {
+  const supabase = (await createClient()) as SBAny
+  const q = applyReservationFilters(
+    supabase
+      .from('salon_reservations')
+      .select(RESERVATION_JOIN_SELECT)
+      .eq('tenant_id', opts.tenantId)
+      .order('reservation_date', { ascending: true })
+      .order('reservation_time_local', { ascending: true })
+      .order('guest_name', { ascending: true })
+      .limit(EXPORT_MAX_ROWS + 1),
+    opts,
+  )
+  const { data, error } = await q
+  if (error) throw error
+  const all = (data ?? []).map((r: Record<string, unknown>) => flattenReservation(r))
+  return { rows: all.slice(0, EXPORT_MAX_ROWS), truncated: all.length > EXPORT_MAX_ROWS }
+}
+
+export async function listSalonReservations(
+  opts: ReservationFilters,
+): Promise<{ rows: ReservationWithJoins[]; total: number }> {
+  const supabase = (await createClient()) as SBAny
+  const pageSize = opts.pageSize ?? 25
+  const page = Math.max(1, opts.page ?? 1)
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+  const ascending = opts.sort === 'asc'
+
+  const q = applyReservationFilters(
+    supabase
+      .from('salon_reservations')
+      .select(RESERVATION_JOIN_SELECT, { count: 'exact' })
+      .eq('tenant_id', opts.tenantId)
+      .order('reservation_date', { ascending })
+      .order('reservation_time_local', { ascending: true })
+      .range(from, to),
+    opts,
+  )
 
   const { data, error, count } = await q
   if (error) {

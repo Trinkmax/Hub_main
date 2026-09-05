@@ -1,4 +1,11 @@
-import { Cake, CalendarCheck, CalendarPlus, MonitorSmartphone, PartyPopper } from 'lucide-react'
+import {
+  Cake,
+  CalendarCheck,
+  CalendarPlus,
+  Download,
+  MonitorSmartphone,
+  PartyPopper,
+} from 'lucide-react'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { DayHighlights } from '@/components/reservations/day-highlights'
@@ -302,6 +309,16 @@ export default async function ReservasPage({
     dismissNuevaQs.toString() ? `?${dismissNuevaQs.toString()}` : ''
   }`
 
+  // Exportar = lo que se está viendo (día o rango + filtros), entero, sin
+  // paginar. El link lleva los mismos parámetros que la página.
+  const exportQs = new URLSearchParams({ slug: tenantSlug })
+  for (const key of ['day', 'from', 'to', 'q', 'status', 'zone', 'servicio', 'manager']) {
+    const value = sp[key]
+    if (typeof value === 'string' && value) exportQs.set(key, value)
+  }
+  if (!rangeMode && day) exportQs.set('day', day)
+  const exportHref = `/api/reservas/export?${exportQs.toString()}`
+
   return (
     <PageShell>
       <PageHeader
@@ -320,6 +337,13 @@ export default async function ReservasPage({
             {day && canRecordAttendance ? (
               <RollCallDialog tenantSlug={tenantSlug} day={day} dayLabel={formatDayLabel(day)} />
             ) : null}
+            <Button asChild variant="outline" className="gap-2">
+              {/* <a> pelado y no <Link>: es una descarga, no una navegación. */}
+              <a href={exportHref} download title="Descargar planilla (Excel / Sheets)">
+                <Download className="size-4" />
+                Exportar
+              </a>
+            </Button>
             <Button asChild variant="outline" className="gap-2">
               <Link
                 href={`/${tenantSlug}/salon/reservas-operativo`}

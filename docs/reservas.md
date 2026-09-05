@@ -630,3 +630,26 @@ un tablero que late con el salón.
 8. Flechas de fecha → mañana muestra el banner ámbar y no ofrece Llegó; ayer
    sí. A la 1:30 de la madrugada, "Hoy" sigue siendo la noche anterior.
 9. Desktop ≥ 1024 px: la ficha se abre al costado; `/`, `↑↓`, `Enter`, `Esc`.
+
+### Exportar el listado (2026-09-05)
+
+Botón **Exportar** en la cabecera de `/[slug]/reservas`: descarga una planilla
+CSV con **todo lo que se está viendo** (el día o el rango elegido, con los
+filtros activos: búsqueda, estado, zona, servicio, gestor), sin paginar y
+ordenado por fecha, hora (la madrugada al final de su noche) y nombre. Abre
+directo en Excel/Sheets: separador `;`, BOM UTF-8 (tildes bien), fechas
+`dd/MM/yyyy`, seña en pesos, avisos y estados con las palabras del bar.
+
+- Ruta: `GET /api/reservas/export?slug=&day=|from=&to=&q=&status=&zone=&servicio=&manager=`
+  (`app/api/reservas/export/route.ts`). Solo owner/cashier/host
+  (`RESERVATION_STAFF_ROLES`); cada descarga queda en `audit_log`
+  (`salon_reservations.exported`, con período y cantidad, sin PII).
+- Lógica pura en `lib/salon/export.ts` (`sortForExport`, `reservationToExportRow`,
+  `reservationsToCsv`, `exportFilename`); query `listSalonReservationsForExport`
+  comparte los filtros con el listado (`applyReservationFilters`). Tope de
+  2000 filas: si se supera, la respuesta lleva `X-Export-Truncated: true`.
+- Tests: `tests/lib/salon-export.test.ts`.
+- Smoke manual: en un día con reservas, tocar **Exportar** → baja
+  `reservas-hub-2026-09-05.csv`; abrirlo en Excel → columnas separadas, "García"
+  con tilde, filas en orden de hora y nombre; con "Esta semana" activo el
+  archivo se llama `reservas-hub-<lunes>_<domingo>.csv` y trae toda la semana.
