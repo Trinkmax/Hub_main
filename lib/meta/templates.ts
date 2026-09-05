@@ -171,6 +171,87 @@ export async function createTemplate(
   return { meta_template_id: metaTemplateId, status: metaStatus }
 }
 
+/**
+ * Componentes de una plantilla AUTHENTICATION tal como los pide Meta: el
+ * cuerpo lo escribe Meta en el idioma elegido, con la recomendación de no
+ * compartir el código, un pie con la expiración y el botón "Copiar código".
+ * Vive aparte para que la action del club y el test la lean igual.
+ */
+export function buildOtpTemplateComponents(opts: {
+  codeExpirationMinutes: number
+  buttonText: string
+}): Record<string, unknown>[] {
+  return [
+    { type: 'BODY', add_security_recommendation: true },
+    { type: 'FOOTER', code_expiration_minutes: opts.codeExpirationMinutes },
+    {
+      type: 'BUTTONS',
+      buttons: [{ type: 'OTP', otp_type: 'COPY_CODE', text: opts.buttonText }],
+    },
+  ]
+}
+
+/**
+ * Crea (o intenta crear) la plantilla de código de un solo uso del club.
+ *
+ * Es la única categoría con la que Meta acepta mandar códigos fuera de la
+ * ventana de 24 h: una UTILITY con "tu código es {{2}}" la rechaza o la
+ * recategoriza. Suele aprobarse en segundos. El upsert local la deja
+ * `pending` hasta el próximo sync (o `approved` si Meta ya la devolvió así).
+ */
+export async function createOtpTemplate(
+  channel: ChannelRow,
+  input: { name: string; language: string; codeExpirationMinutes?: number; buttonText?: string },
+): Promise<{ meta_template_id: string; status: string }> {
+  if (channel.type !== 'whatsapp') throw new Error('Solo canales WhatsApp admiten templates.')
+  if (!channel.encrypted_access_token) throw new Error('Canal sin token; reconectá el canal.')
+
+  const accessToken = await decryptToken(channel.encrypted_access_token)
+  const components = buildOtpTemplateComponents({
+    codeExpirationMinutes: input.codeExpirationMinutes ?? 10,
+    buttonText: input.buttonText ?? 'Copiar código',
+  })
+
+  const res = await metaFetch<CreateTemplateResponse>(
+    graphUrl(`${channel.external_account_id}/message_templates`),
+    {
+      method: 'POST',
+      accessToken,
+      body: {
+        name: input.name,
+        language: input.language,
+        category: 'AUTHENTICATION',
+        // Un código que llega tarde no sirve: si Meta no lo entrega en 10
+        // minutos, que lo descarte en vez de despertar al socio a las 3 AM.
+        message_send_ttl_seconds: (input.codeExpirationMinutes ?? 10) * 60,
+        components,
+      },
+    },
+  )
+
+  const metaTemplateId = res.id ?? ''
+  const metaStatus = res.status ?? 'PENDING'
+  const service = createServiceClient()
+  const { error } = await service.from('message_templates').upsert(
+    {
+      tenant_id: channel.tenant_id,
+      channel_id: channel.id,
+      meta_template_id: metaTemplateId,
+      name: input.name,
+      language: input.language,
+      category: 'AUTHENTICATION',
+      components: components as unknown as Json,
+      variable_hints: {} as unknown as Json,
+      status: mapStatus(metaStatus as MetaTemplateStatus),
+      last_synced_at: new Date().toISOString(),
+    },
+    { onConflict: 'channel_id,name,language' },
+  )
+  if (error) throw new Error(`Local upsert failed: ${error.message}`)
+
+  return { meta_template_id: metaTemplateId, status: metaStatus }
+}
+
 export async function deleteTemplate(channel: ChannelRow, name: string): Promise<void> {
   if (channel.type !== 'whatsapp') throw new Error('Solo canales WhatsApp admiten templates.')
   if (!channel.encrypted_access_token) throw new Error('Canal sin token; reconectá el canal.')

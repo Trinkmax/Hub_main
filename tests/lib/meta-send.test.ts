@@ -24,7 +24,7 @@ vi.mock('@/lib/meta/env', async () => {
 
 import { MetaApiError, mapMetaErrorToStatus } from '@/lib/meta/errors'
 import { sendDM } from '@/lib/meta/instagram'
-import { sendTemplate, sendText } from '@/lib/meta/whatsapp'
+import { sendOtpTemplate, sendTemplate, sendText } from '@/lib/meta/whatsapp'
 
 type FetchArgs = { url: string; init: RequestInit }
 
@@ -144,6 +144,39 @@ describe('whatsapp.sendTemplate', () => {
     if (!captured) throw new Error('fetch not called')
     const body = JSON.parse(String((captured as FetchArgs).init.body))
     expect(body.template.components).toBeUndefined()
+  })
+})
+
+describe('whatsapp.sendOtpTemplate', () => {
+  it('manda el código dos veces: en el cuerpo y en el botón "Copiar código"', async () => {
+    let captured: FetchArgs | null = null
+    mockFetchOnce((args) => {
+      captured = args
+      return { status: 200, body: { messages: [{ id: 'wamid.OTP' }] } }
+    })
+
+    const res = await sendOtpTemplate(
+      WA_CHANNEL,
+      '5491100',
+      'hub_codigo_recuperacion',
+      'es_AR',
+      '482913',
+    )
+    expect(res.meta_message_id).toBe('wamid.OTP')
+    if (!captured) throw new Error('fetch not called')
+    const body = JSON.parse(String((captured as FetchArgs).init.body))
+    expect(body.type).toBe('template')
+    expect(body.template.name).toBe('hub_codigo_recuperacion')
+    expect(body.template.language).toEqual({ code: 'es_AR' })
+    expect(body.template.components).toEqual([
+      { type: 'body', parameters: [{ type: 'text', text: '482913' }] },
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: '0',
+        parameters: [{ type: 'text', text: '482913' }],
+      },
+    ])
   })
 })
 

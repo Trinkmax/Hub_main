@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
+import { getClubOtpTemplateName } from '@/lib/club-auth/message'
 import { createClient } from '@/lib/supabase/server'
 import {
   RoleRequiredError,
@@ -16,6 +17,7 @@ import {
   TenantNotFoundError,
 } from '@/lib/tenant'
 import type { TemplateStatus } from '@/types/database'
+import { ClubOtpTemplateButton } from './_club-otp-button'
 import { CreateTemplateDialog } from './_create-template-dialog'
 import { DeleteTemplateButton } from './_delete-template-button'
 import { TemplateSyncButton } from './_sync-button'
@@ -148,6 +150,10 @@ export default async function TemplatesPage({
           channel ? (
             <div className="flex flex-wrap items-center gap-2">
               <TemplateSyncButton channelId={channel.id} tenantSlug={tenantSlug} />
+              {/* Sólo hasta que exista: es configuración de una vez. */}
+              {templates.some((t) => t.name === getClubOtpTemplateName()) ? null : (
+                <ClubOtpTemplateButton channelId={channel.id} tenantSlug={tenantSlug} />
+              )}
               <CreateTemplateDialog tenantSlug={tenantSlug} channelId={channel.id} />
             </div>
           ) : null

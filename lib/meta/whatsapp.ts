@@ -92,6 +92,50 @@ export async function sendTemplate(
   return { meta_message_id: id }
 }
 
+/**
+ * Manda una plantilla de categoría AUTHENTICATION (código de un solo uso).
+ *
+ * Meta arma el cuerpo de estas plantillas (no se escribe: "*123456* es tu
+ * código de verificación…") y exige DOS parámetros con el mismo código: el
+ * del cuerpo y el del botón "Copiar código" (`sub_type: url`, index 0). Con
+ * `sendTemplate` a secas Meta rechaza el envío por faltar el del botón.
+ */
+export async function sendOtpTemplate(
+  channel: WhatsAppChannelLike,
+  to: string,
+  templateName: string,
+  language: string,
+  code: string,
+): Promise<WhatsAppSendResult> {
+  const accessToken = await getAccessToken(channel)
+  const url = graphUrl(`${requirePhoneId(channel)}/messages`)
+  const res = await metaFetch<SendResponse>(url, {
+    accessToken,
+    body: {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: formatForWhatsApp(to),
+      type: 'template',
+      template: {
+        name: templateName,
+        language: { code: language },
+        components: [
+          { type: 'body', parameters: [{ type: 'text', text: code }] },
+          {
+            type: 'button',
+            sub_type: 'url',
+            index: '0',
+            parameters: [{ type: 'text', text: code }],
+          },
+        ],
+      },
+    },
+  })
+  const id = res.messages?.[0]?.id
+  if (!id) throw new Error('WhatsApp send: missing message id in response')
+  return { meta_message_id: id }
+}
+
 export type WhatsAppMediaType = 'image' | 'video' | 'document' | 'audio'
 
 export async function sendMedia(

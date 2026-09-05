@@ -6,10 +6,17 @@ import { walletCookieName } from '@/lib/capture/cookie'
 import { getRequestIp } from '@/lib/ip'
 import { findOrCreateConversation, recordOutboundMessage } from '@/lib/meta/conversations'
 import { MetaApiError, mapMetaErrorToStatus } from '@/lib/meta/errors'
-import { sendTemplate, sendText, type WhatsAppChannelLike } from '@/lib/meta/whatsapp'
+import { createOtpTemplate, syncTemplates } from '@/lib/meta/templates'
+import {
+  sendOtpTemplate,
+  sendTemplate,
+  sendText,
+  type WhatsAppChannelLike,
+} from '@/lib/meta/whatsapp'
 import { RateLimitedError, rateLimit } from '@/lib/rate-limit'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
+import type { Database } from '@/types/database'
 import {
   buildClubOtpConversationPreview,
   buildClubOtpTemplateVariables,
@@ -109,12 +116,16 @@ function withinLimit(key: string, limit: number, windowMs: number): boolean {
 
 type OtpDispatchOutcome = 'sent' | 'no_channel' | 'send_failed'
 
+type ChannelRow = Database['public']['Tables']['channels']['Row']
+
 /**
  * Manda el código por el WhatsApp del bar y lo deja registrado en la bandeja.
  *
  * Dentro de la ventana de 24 h va como texto libre (llega siempre y se lee
- * mejor). Fuera de la ventana Meta sólo acepta plantillas aprobadas, así que
- * cae en la UTILITY configurada en `CLUB_OTP_TEMPLATE_NAME`.
+ * mejor). Fuera de la ventana Meta sólo acepta plantillas aprobadas: la de
+ * `CLUB_OTP_TEMPLATE_NAME`, que si el bar no la tiene se crea sola con la
+ * categoría AUTHENTICATION (la única con la que Meta deja mandar códigos) y
+ * suele aprobarse en segundos.
  *
  * El código no se loguea NUNCA (ni en la bandeja del bar): sólo viaja a Meta.
  */
@@ -181,18 +192,27 @@ async function dispatchOtpOverWhatsApp(opts: {
       return 'sent'
     }
 
-    const approved = await resolveApprovedTemplate(opts.tenantId, templateName ?? '')
-    const { meta_message_id } = await sendTemplate(
-      channel as WhatsAppChannelLike,
-      opts.phone,
-      templateName ?? '',
-      approved.language,
-      buildClubOtpTemplateVariables({
-        firstName: opts.firstName,
-        code: opts.code,
-        variableCount: approved.variableCount,
-      }),
-    )
+    const approved = await ensureOtpTemplate(channel as ChannelRow, templateName ?? '')
+    const { meta_message_id } =
+      approved.category === 'AUTHENTICATION'
+        ? await sendOtpTemplate(
+            channel as WhatsAppChannelLike,
+            opts.phone,
+            templateName ?? '',
+            approved.language,
+            opts.code,
+          )
+        : await sendTemplate(
+            channel as WhatsAppChannelLike,
+            opts.phone,
+            templateName ?? '',
+            approved.language,
+            buildClubOtpTemplateVariables({
+              firstName: opts.firstName,
+              code: opts.code,
+              variableCount: approved.variableCount,
+            }),
+          )
     await recordOutboundMessage({
       tenantId: opts.tenantId,
       conversationId,
@@ -223,30 +243,97 @@ async function dispatchOtpOverWhatsApp(opts: {
   }
 }
 
+type ResolvedOtpTemplate = {
+  language: string
+  category: string | null
+  variableCount: number | null
+}
+
 /**
- * Idioma y cantidad de variables con las que el tenant tiene aprobada la
- * plantilla. Si todavía no la sincronizó, mandamos igual con los defaults: Meta
- * es la autoridad final y su error queda registrado en la bandeja.
+ * Cómo tiene el tenant la plantilla del código: idioma, categoría y cantidad
+ * de variables. Manda la fila aprobada; si sólo hay una pendiente se devuelve
+ * igual (Meta es la autoridad final y su error queda registrado en la bandeja).
  */
-async function resolveApprovedTemplate(
+async function resolveOtpTemplate(
   tenantId: string,
   templateName: string,
-): Promise<{ language: string; variableCount: number | null }> {
-  if (!templateName) {
-    return { language: CLUB_OTP_TEMPLATE_FALLBACK_LANGUAGE, variableCount: null }
-  }
+): Promise<{ row: ResolvedOtpTemplate | null; approved: boolean }> {
   const service = createServiceClient()
   const { data } = await service
     .from('message_templates')
-    .select('language, components')
+    .select('language, category, components, status')
     .eq('tenant_id', tenantId)
     .eq('name', templateName)
-    .eq('status', 'approved')
-    .maybeSingle()
+  const rows = data ?? []
+  // Puede haber más de un idioma: la aprobada manda; si no, cualquiera.
+  const pick = rows.find((r) => r.status === 'approved') ?? rows[0]
+  if (!pick) return { row: null, approved: false }
   return {
-    language: data?.language ?? CLUB_OTP_TEMPLATE_FALLBACK_LANGUAGE,
-    variableCount: countTemplateBodyVariables(data?.components),
+    row: {
+      language: pick.language ?? CLUB_OTP_TEMPLATE_FALLBACK_LANGUAGE,
+      category: pick.category ?? null,
+      variableCount: countTemplateBodyVariables(pick.components),
+    },
+    approved: pick.status === 'approved',
   }
+}
+
+/**
+ * Garantiza que exista la plantilla del código y devuelve cómo mandarla.
+ *
+ * Es el arreglo de fondo del "no me llega el código": el bar nunca había
+ * creado la plantilla en su cuenta de Meta y el envío fallaba con "Template
+ * name does not exist". Ahora:
+ *   1. si el bar no la tiene, se crea (AUTHENTICATION) y se intenta mandar
+ *      igual: Meta las aprueba casi al instante;
+ *   2. si la tiene pero todavía figura pendiente, se re-sincroniza con Meta
+ *      antes de mandar, por si ya la aprobó desde el último intento.
+ * Si Meta la rechazó o algo falla, se sigue con lo que hay y el error real
+ * queda en la bandeja.
+ */
+async function ensureOtpTemplate(
+  channel: ChannelRow,
+  templateName: string,
+): Promise<ResolvedOtpTemplate> {
+  const fallback: ResolvedOtpTemplate = {
+    language: CLUB_OTP_TEMPLATE_FALLBACK_LANGUAGE,
+    category: 'AUTHENTICATION',
+    variableCount: 1,
+  }
+  if (!templateName) return fallback
+
+  let resolved = await resolveOtpTemplate(channel.tenant_id, templateName)
+
+  if (!resolved.row) {
+    try {
+      await createOtpTemplate(channel, {
+        name: templateName,
+        language: CLUB_OTP_TEMPLATE_FALLBACK_LANGUAGE,
+        codeExpirationMinutes: 10,
+      })
+      console.info('[club-auth] plantilla de código creada en Meta', {
+        tenantId: channel.tenant_id,
+        template: templateName,
+      })
+    } catch (e) {
+      console.error('[club-auth] no se pudo crear la plantilla de código', {
+        tenantId: channel.tenant_id,
+        template: templateName,
+        reason: e instanceof Error ? e.message : String(e),
+      })
+      return fallback
+    }
+    resolved = await resolveOtpTemplate(channel.tenant_id, templateName)
+  } else if (!resolved.approved) {
+    try {
+      await syncTemplates(channel)
+      resolved = await resolveOtpTemplate(channel.tenant_id, templateName)
+    } catch {
+      // Sin sync no pasa nada: se manda con lo que hay.
+    }
+  }
+
+  return resolved.row ?? fallback
 }
 
 /**

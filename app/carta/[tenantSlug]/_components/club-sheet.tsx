@@ -7,7 +7,6 @@ import {
   Eye,
   EyeOff,
   Gift,
-  KeyRound,
   LogIn,
   MessageCircle,
   ShieldCheck,
@@ -371,11 +370,11 @@ export function ClubSheet({
                   unoptimized
                   priority
                 />
-              ) : (
+              ) : heading.icon ? (
                 <span className="flex size-12 items-center justify-center rounded-2xl bg-[color:var(--brand-accent,var(--primary))]/12 text-[color:var(--brand-accent,var(--primary))]">
                   {heading.icon}
                 </span>
-              )}
+              ) : null}
               <SheetTitle className="font-serif text-2xl font-semibold tracking-tight text-balance">
                 {heading.title}
               </SheetTitle>
@@ -663,7 +662,7 @@ export function ClubSheet({
 function getHeading(
   mode: Mode,
   tenantName: string,
-): { icon: React.ReactNode; title: string; description: string } {
+): { icon: React.ReactNode | null; title: string; description: string } {
   switch (mode) {
     case 'signup':
       return {
@@ -679,7 +678,8 @@ function getHeading(
       }
     case 'forgot-phone':
       return {
-        icon: <KeyRound className="size-6" aria-hidden />,
+        // Sin ícono: la llave no aportaba y el dueño la pidió afuera.
+        icon: null,
         title: 'Recuperá tu acceso',
         description: 'Poné tu teléfono y te mandamos un código por WhatsApp.',
       }
@@ -691,7 +691,7 @@ function getHeading(
       }
     case 'forgot-password':
       return {
-        icon: <KeyRound className="size-6" aria-hidden />,
+        icon: null,
         title: 'Creá tu contraseña',
         description: 'Es la que vas a usar de acá en adelante para entrar a tu billetera.',
       }

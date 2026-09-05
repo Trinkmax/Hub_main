@@ -468,3 +468,31 @@ La wallet ahora la muestra, así que un error así se vuelve visible en vez de s
   categoría duran 4 meses". La vista "Cómo funciona" abre **in-place tanto en `/c/[token]` como
   embebida en el sheet de la carta** (no navega, no vuelve a la carta). Sin errores de consola ni
   hydration mismatch.
+
+## Addendum 2026-09 — El código de recuperación del club fuera de la ventana de 24 h
+
+**Síntoma:** "el código no llega si no tengo el chat abierto". Dentro de la
+ventana de 24 h (el socio le escribió al bar hace poco) el código va como texto
+libre y llega; fuera de ella WhatsApp solo acepta plantillas aprobadas, y la
+plantilla `hub_codigo_recuperacion` **nunca se había creado** en la cuenta de
+Meta de HUB (`(#132001) Template name does not exist`).
+
+**Arreglo:**
+- La plantilla tiene que ser de categoría **AUTHENTICATION** (la única con la
+  que Meta deja mandar códigos): cuerpo fijo que escribe Meta, pie con
+  vencimiento (10 min) y botón "Copiar código". `createOtpTemplate`
+  (`lib/meta/templates.ts`) la crea; `sendOtpTemplate` (`lib/meta/whatsapp.ts`)
+  la manda con el código en el cuerpo **y** en el botón (Meta exige los dos).
+- `requestClubPasswordReset` → `ensureOtpTemplate`: si el bar no la tiene, la
+  crea sola y manda; si la tiene pendiente, re-sincroniza con Meta antes de
+  mandar. Si el bar tenía una UTILITY vieja con dos variables, sigue usándola.
+- Botón **"Crear plantilla del código del club"** en Mensajería → Plantillas
+  (solo dueño, aparece hasta que exista) para dejarla creada antes de que un
+  socio la necesite. Script equivalente: `npx tsx scripts/create-club-otp-template.ts hub`
+  (necesita el `META_TOKEN_KEY` de producción).
+- El sheet "Recuperá tu acceso" de la carta ya no muestra el ícono de la llave.
+
+**Smoke manual:** desde un teléfono que NO le escribió al bar en 24 h, Carta →
+Club → "Recuperá tu acceso" → el WhatsApp llega como plantilla con el botón
+"Copiar código"; en Mensajería → Plantillas figura `hub_codigo_recuperacion`
+aprobada.

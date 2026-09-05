@@ -2,6 +2,10 @@
 
 import { revalidatePath } from 'next/cache'
 import { logAudit } from '@/lib/audit'
+import {
+  CLUB_OTP_TEMPLATE_FALLBACK_LANGUAGE,
+  getClubOtpTemplateName,
+} from '@/lib/club-auth/message'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import {
@@ -14,7 +18,7 @@ import {
 import type { MetaActionState } from './actions'
 import { humanizeTemplateError } from './errors'
 import { createTemplateSchema, deleteTemplateSchema } from './template-schemas'
-import { createTemplate, deleteTemplate } from './templates'
+import { createOtpTemplate, createTemplate, deleteTemplate } from './templates'
 
 async function authorizeOwner(slug: string) {
   try {
@@ -175,6 +179,71 @@ export async function deleteTemplateAction(
   } catch (e) {
     console.error('[templates.delete] falló', {
       name: parsed.data.name,
+      error: (e as Error).message,
+    })
+    return { ok: false, message: humanizeTemplateError(e) }
+  }
+}
+
+/**
+ * Crea la plantilla del código de recuperación del club (AUTHENTICATION) en
+ * la cuenta de Meta del bar. Es la que manda el "Recuperá tu acceso" de la
+ * carta cuando el socio está fuera de la ventana de 24 h: sin ella, el código
+ * no llega. Idempotente en la práctica: si ya existe, Meta lo dice y se
+ * muestra tal cual.
+ */
+export async function createClubOtpTemplateAction(
+  slug: string,
+  _prev: MetaActionState,
+  formData: FormData,
+): Promise<MetaActionState> {
+  const access = await authorizeOwner(slug)
+  if (!access) return { ok: false, message: 'Sin permisos.' }
+
+  const channelId = formData.get('channel_id')
+  if (typeof channelId !== 'string') return { ok: false, message: 'channel_id requerido.' }
+
+  const service = createServiceClient()
+  const { data: channel, error } = await service
+    .from('channels')
+    .select('*')
+    .eq('id', channelId)
+    .eq('tenant_id', access.tenant.id)
+    .eq('type', 'whatsapp')
+    .maybeSingle()
+  if (error || !channel) return { ok: false, message: 'Canal WhatsApp no encontrado.' }
+
+  const name = getClubOtpTemplateName()
+  try {
+    const { status } = await createOtpTemplate(channel, {
+      name,
+      language: CLUB_OTP_TEMPLATE_FALLBACK_LANGUAGE,
+      codeExpirationMinutes: 10,
+    })
+
+    const supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    await logAudit({
+      tenantId: access.tenant.id,
+      userId: user?.id ?? null,
+      action: 'template_created',
+      entity: 'message_templates',
+      payload: { name, category: 'AUTHENTICATION', channel_id: channelId, meta_status: status },
+    })
+
+    revalidatePath(`/${slug}/mensajeria/plantillas`)
+    return {
+      ok: true,
+      message:
+        status.toUpperCase() === 'APPROVED'
+          ? `Plantilla "${name}" creada y aprobada: el código ya llega fuera de la ventana de 24 h.`
+          : `Plantilla "${name}" enviada a WhatsApp (estado: ${status.toLowerCase()}). Suele aprobarse en minutos; tocá "Traer las novedades" para ver el estado.`,
+    }
+  } catch (e) {
+    console.error('[templates.create-otp] Meta rechazó la plantilla', {
+      name,
       error: (e as Error).message,
     })
     return { ok: false, message: humanizeTemplateError(e) }
