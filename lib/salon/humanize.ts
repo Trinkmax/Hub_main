@@ -30,10 +30,19 @@ export function humanizeSalonError(message: string): string {
     return 'Ya existe un gestor con ese nombre.'
   if (m.includes('cake_options_name_unique'))
     return 'Ya tenés una torta con ese nombre. Poné otro (ej. "Opción 4").'
-  // FK `restrict`: la opción ya está elegida en alguna reserva. Borrarla dejaría
-  // a la cocina sin saber qué torta hacer, así que se desactiva en vez de borrar.
-  if (m.includes('salon_reservations_cake_option_id_fkey'))
-    return 'Esa torta ya está elegida en reservas cargadas. Desactivala en vez de borrarla.'
+  // La MISMA FK falla en las dos direcciones y quieren decir cosas opuestas, así
+  // que hay que mirar el verbo del mensaje de Postgres:
+  //   · `update or delete on table "cake_options" …`      → borrar una torta en uso
+  //   · `insert or update on table "salon_reservations" …`  → elegir una que ya no existe
+  // Hay que buscar el VERBO del borrado: el mensaje del delete también termina
+  // con `on table "salon_reservations"`, así que mirar solo la tabla no alcanza.
+  // (El segundo caso pasa de verdad: el dueño borra la Opción 3 mientras un
+  // anfitrión la tenía seleccionada en otra pestaña.)
+  if (m.includes('salon_reservations_cake_option_id_fkey')) {
+    return m.includes('update or delete on table "cake_options"')
+      ? 'Esa torta ya está elegida en reservas cargadas. Desactivala en vez de borrarla.'
+      : 'Esa torta ya no está en el menú. Elegí otra.'
+  }
   if (m.includes('cake_options_fillings_len')) return 'Cada torta lleva entre 1 y 4 rellenos.'
   // La action ya limpia la opción cuando bajan las tortas a 0; esto cubre el
   // payload viejo de una pestaña que quedó abierta.

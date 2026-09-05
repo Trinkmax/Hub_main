@@ -47,7 +47,12 @@ export function EventReservationsList({
                 className="mt-1"
               />
               {r.cake_count > 0 ? (
-                <CakeChip count={r.cake_count} option={r.cake_option} className="mt-1 self-start" />
+                <CakeChip
+                  count={r.cake_count}
+                  option={r.cake_option}
+                  optionId={r.cake_option_id}
+                  className="mt-1 self-start"
+                />
               ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-2">

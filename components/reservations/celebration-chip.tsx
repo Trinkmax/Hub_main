@@ -1,4 +1,4 @@
-import { GlassWater, PartyPopper } from 'lucide-react'
+import { Cake, GlassWater, PartyPopper } from 'lucide-react'
 import type { ReservationKind } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
@@ -14,33 +14,48 @@ import { cn } from '@/lib/utils'
  * ícono de lucide (nunca emoji: renderiza distinto en Android que en macOS y no
  * hereda el color).
  */
+/** Los tres motivos por los que una mesa deja de ser una mesa más. */
+export type CelebrationKind = 'birthday' | 'special' | 'cake'
+
+const KIND_COPY: Record<CelebrationKind, { short: string; full: string }> = {
+  birthday: { short: 'Cumple', full: 'Cumpleaños' },
+  special: { short: 'Especial', full: 'Reserva especial' },
+  cake: { short: 'Con torta', full: 'Lleva torta (sin marcar como cumpleaños)' },
+}
+
 export function CelebrationChip({
   kind,
   compact = false,
   className,
 }: {
-  kind: ReservationKind
-  /** Solo el ícono + el número, para una celda de calendario. */
+  kind: ReservationKind | CelebrationKind
+  /** Solo el ícono, para una celda de calendario. */
   compact?: boolean
   className?: string
 }) {
   if (kind === 'normal') return null
-  const label = kind === 'birthday' ? 'Cumple' : 'Especial'
-  const full = kind === 'birthday' ? 'Cumpleaños' : 'Reserva especial'
+  const copy = KIND_COPY[kind]
+  const Icon = kind === 'cake' ? Cake : PartyPopper
+  const tone = kind === 'special' ? 'info' : 'primary'
 
   return (
     <span
-      title={full}
+      title={copy.full}
       className={cn(
         'inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-px text-[10px] font-medium leading-tight',
-        kind === 'birthday'
-          ? 'border-primary/30 bg-primary/10 text-primary'
-          : 'border-info/30 bg-info/10 text-info',
+        // El texto va en `foreground` y el color queda en el ícono y el borde:
+        // `text-info` a 10px sobre su propio tinte da 3.99:1 en claro (AA pide 4.5).
+        tone === 'primary'
+          ? 'border-primary/40 bg-primary/10 text-foreground'
+          : 'border-info/40 bg-info/10 text-foreground',
         className,
       )}
     >
-      <PartyPopper className="size-2.5" aria-hidden />
-      {compact ? <span className="sr-only">{full}</span> : label}
+      <Icon
+        className={cn('size-2.5', tone === 'primary' ? 'text-primary' : 'text-info')}
+        aria-hidden
+      />
+      {compact ? <span className="sr-only">{copy.full}</span> : copy.short}
     </span>
   )
 }

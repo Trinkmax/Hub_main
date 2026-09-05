@@ -417,13 +417,70 @@ Opción 2 · Bizcochuelo de chocolate  → Mousse de chocolate · Crema y frutil
 Opción 3 · Bizcochuelo de vainilla   → Dulce de leche · Crema y durazno
 ```
 
+### Correcciones de la revisión adversarial
+
+El diff pasó por un panel de revisores por dimensión + verificación adversarial
+(3 refutadores por hallazgo). Lo que sobrevivió y se arregló:
+
+- **El filtro `?servicio=` quedaba pegado.** Los chips —única UI que lo pone y
+  lo saca— se ocultaban con menos de dos servicios, así que filtrar "Merienda" y
+  pasar a un día que es todo cena dejaba la lista vacía sin forma de volver.
+  Ahora los chips se dibujan siempre que el filtro esté puesto (con el servicio
+  elegido en 0 si ese día no tiene), "Limpiar" lo conoce, y cambiar de período
+  lo borra (en modo rango no hay chips que lo muestren y la barra decía
+  "130 reservas" arriba de 8).
+- **Los hitos del día mezclaban dos fuentes.** Los eventos venían de su propia
+  query y los festejos de la página YA filtrada: con `?zone=` puesto el panel
+  mostraba "Pizza libre" y cero cumpleaños — el moco original de vuelta. Ahora
+  las celebraciones tienen su propia query (`listDayCelebrations`) y hablan del
+  día, no de la página.
+- **La torta era inalcanzable si la reserva no era cumpleaños.** Hay una fila
+  real así (28/05, `kind='normal'`, 2 tortas): mostraba el aviso ámbar "falta
+  elegir torta" y el bloque para elegirla no se renderizaba. El bloque ahora se
+  abre con `kind === 'birthday' || cake_count > 0 || champagne_count > 0`, y esas
+  reservas también suben al renglón de hitos (variante `cake`).
+- **Tres números para la misma pregunta.** El chip "Todo el día" contaba sin
+  no-show y el header los contaba como activas. Ahora el chip cuenta lo que se
+  lista.
+- **Contraste.** `text-warning-foreground` es para ir sobre el ámbar SÓLIDO:
+  sobre un tinte al 10% daba 1.3:1 en dark y el aviso "Falta elegir torta" —
+  justo el que la feature vino a hacer visible— desaparecía. Se pasó a
+  `text-foreground` con el ícono tintado, el patrón que el repo ya usa.
+- **`--chart-1` y `--chart-3` son el mismo ámbar en dark** (ΔE 0.044): la barra
+  de zonas se leía como un bloque. "En evento" pasó a `--chart-2` (terracota).
+- **La FK de la torta fallaba en las dos direcciones con el mismo mensaje.**
+  Borrar una torta en uso y elegir una torta borrada daban ambas "Desactivala en
+  vez de borrarla" — imposible de seguir en el segundo caso. Ahora se discrimina
+  por el verbo del mensaje de Postgres.
+- **Integridad multi-tenant (migración `20260904204655`).** La FK simple dejaba
+  meter la torta de OTRO bar en una reserva: RLS filtra filas al leer, no valores
+  al escribir. Se pasó a FK compuesta `(cake_option_id, tenant_id) →
+  cake_options(id, tenant_id)`, con test de RLS
+  (`tests/rls/cake-options.test.ts`). De paso se sacó el `default '{}'` de
+  `fillings`, que chocaba con su propio CHECK.
+- **Editor de tortas**: el reorder numeraba sobre las guardadas y el alta sobre
+  la lista completa, así que un borrador en el medio dejaba dos tortas
+  empatadas; la `position` ahora viaja explícita desde el índice visible. Y la
+  `key` de React ya no cambia al guardar (cambiaba de `nueva-0` al uuid y
+  `AnimatePresence` desmontaba la tarjeta recién guardada, con pérdida de foco).
+- **`/configuracion/tortas` era inalcanzable en mobile**: el nav lateral de
+  Configuración es `lg:block` y la card apuntaba a Capacidad. Ahora Tortas tiene
+  su propia card.
+- **Realtime**: `mergeRow` conserva los joins viejos a propósito, así que en el
+  panel del mozo el chip decía "Falta elegir torta" con la torta ya elegida (o
+  mostraba la anterior). `CakeChip` recibe además `cake_option_id` y distingue
+  "nadie eligió" de "el join no vino".
+
 ### Tests
 
 - `tests/lib/salon-services.test.ts` — corte por servicio, zonas, canceladas,
   franja horaria, totales.
 - `tests/lib/salon-day-highlights.test.ts` — el caso real 21/09 (Pizza libre +
   cumple de 15 con torta), orden, zona real, cubiertos por evento.
-- `tests/lib/salon-cake-options.test.ts` — schema del catálogo y `describeCake`.
+- `tests/lib/salon-cake-options.test.ts` — schema del catálogo, `describeCake` y
+  los mensajes de error de la FK en sus dos direcciones.
+- `tests/rls/cake-options.test.ts` — quién lee y quién escribe el menú, y que la
+  torta de un bar no entre en la reserva de otro (corre en el job `rls` de CI).
 - `tests/lib/salon-schemas.test.ts` — `cake_option_id`: uuid / vacío→null /
   ausente→undefined.
 

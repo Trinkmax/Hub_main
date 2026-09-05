@@ -48,7 +48,13 @@ export type EventHighlight = {
 }
 
 export type CelebrationHighlight = {
-  kind: 'birthday' | 'special'
+  /**
+   * `cake` es una reserva normal que igual lleva torta. Existe porque la torta
+   * la hace el bar: si se cuela en una mesa que nadie marcó como cumpleaños,
+   * perderla es el mismo moco. Hay una así en la base (28/05, kind='normal',
+   * 2 tortas), y el calendario del mes ya la contaba — el día no.
+   */
+  kind: 'birthday' | 'special' | 'cake'
   key: string
   id: string
   time: string
@@ -62,6 +68,8 @@ export type CelebrationHighlight = {
   eventColorHex: string | null
   cakeCount: number
   cake: CakeOptionSummary | null
+  /** La columna cruda: distingue "no eligieron" de "el join no vino" (Realtime). */
+  cakeOptionId: string | null
   champagneCount: number
   status: SalonReservationStatus
 }
@@ -71,6 +79,19 @@ export type DayHighlight = EventHighlight | CelebrationHighlight
 /** Un cumpleaños o una reserva especial merece subir al renglón de los hitos. */
 export function isCelebration(r: Pick<ReservationWithJoins, 'kind'>): boolean {
   return r.kind === 'birthday' || r.kind === 'special'
+}
+
+/** …y también cualquier mesa que deje una torta para hacer, sea del tipo que sea. */
+export function isDayHighlightWorthy(
+  r: Pick<ReservationWithJoins, 'kind' | 'cake_count'>,
+): boolean {
+  return isCelebration(r) || r.cake_count > 0
+}
+
+function celebrationKind(r: Pick<ReservationWithJoins, 'kind'>): CelebrationHighlight['kind'] {
+  if (r.kind === 'birthday') return 'birthday'
+  if (r.kind === 'special') return 'special'
+  return 'cake'
 }
 
 /**
@@ -101,9 +122,9 @@ export function buildDayHighlights(opts: {
   }))
 
   const celebrations: DayHighlight[] = opts.reservations
-    .filter((r) => isCelebration(r) && r.status !== 'cancelled' && r.status !== 'no_show')
+    .filter((r) => isDayHighlightWorthy(r) && r.status !== 'cancelled' && r.status !== 'no_show')
     .map((r) => ({
-      kind: r.kind === 'birthday' ? 'birthday' : 'special',
+      kind: celebrationKind(r),
       key: `res:${r.id}`,
       id: r.id,
       time: r.reservation_time_local.slice(0, 5),
@@ -119,6 +140,7 @@ export function buildDayHighlights(opts: {
       eventColorHex: r.scheduled_event?.template?.color_hex ?? null,
       cakeCount: r.cake_count,
       cake: r.cake_option ?? null,
+      cakeOptionId: r.cake_option_id,
       champagneCount: r.champagne_count,
       status: r.status,
     }))

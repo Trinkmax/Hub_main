@@ -29,8 +29,10 @@ const ZONE_STYLE: Record<keyof ZoneCovers, { label: string; bar: string; dot: st
   },
   event_floating: {
     label: 'En evento',
-    bar: 'bg-chart-3',
-    dot: 'bg-chart-3',
+    // chart-2 (terracota) y NO chart-3: en dark `--chart-1` y `--chart-3` son el
+    // mismo ámbar (misma L, hue 88 vs 70) y la barra se leía como un bloque.
+    bar: 'bg-chart-2',
+    dot: 'bg-chart-2',
   },
 }
 

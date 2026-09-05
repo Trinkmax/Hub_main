@@ -958,16 +958,24 @@ export function ReservationForm({
         </div>
       </FieldGroup>
 
-      {/* Cumpleaños extras (condicional) */}
+      {/* Cumpleaños extras (condicional).
+          Se abre también cuando la reserva YA tiene torta o champagne aunque el
+          tipo no sea Cumpleaños: si no, una reserva normal con torta cargada
+          (hay una real del 28/05) queda con el aviso ámbar "falta elegir torta"
+          y sin ningún control para resolverlo — ni siquiera para bajar las
+          tortas a 0. La DB no ata la torta al `kind`, así que la UI tampoco. */}
       <AnimatePresence initial={false}>
-        {values.kind === 'birthday' && (
+        {(values.kind === 'birthday' || values.cake_count > 0 || values.champagne_count > 0) && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.18 }}
           >
-            <FieldGroup title="Cumpleaños" icon={Cake}>
+            <FieldGroup
+              title={values.kind === 'birthday' ? 'Cumpleaños' : 'Torta y champagne'}
+              icon={Cake}
+            >
               <div className="grid gap-3 sm:grid-cols-2">
                 <BringsItemControl
                   icon={Cake}

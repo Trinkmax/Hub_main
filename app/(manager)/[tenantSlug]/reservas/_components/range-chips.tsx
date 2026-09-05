@@ -53,7 +53,10 @@ export function ReservationRangeChips({
   }
 
   function applyRange(range: DatePresetRange) {
-    push({ from: range.from, to: range.to, day: null })
+    // `servicio` se borra: el corte por servicio es una lectura del DÍA y en modo
+    // rango no hay chips que lo muestren. Si sobrevive, la agenda del mes lista 8
+    // reservas mientras la barra dice 130 y nada explica la diferencia.
+    push({ from: range.from, to: range.to, day: null, servicio: null })
   }
 
   function applyDraft() {
@@ -75,7 +78,7 @@ export function ReservationRangeChips({
         label="Hoy"
         active={active === 'today'}
         disabled={pending}
-        onClick={() => push({ from: null, to: null, day: null })}
+        onClick={() => push({ from: null, to: null, day: null, servicio: null })}
       />
       <Chip
         label="Esta semana"

@@ -19,6 +19,7 @@ import {
   getDayCapacitySnapshot,
   getRangeReservationTotals,
   getSalonReservation,
+  listDayCelebrations,
   listDayServiceRows,
   listManagers,
   listSalonReservations,
@@ -140,6 +141,7 @@ export default async function ReservasPage({
     Awaited<ReturnType<typeof listSalonReservations>> | null,
     Awaited<ReturnType<typeof listDayServiceRows>> | null,
     Awaited<ReturnType<typeof listScheduledEventsForDate>> | null,
+    Awaited<ReturnType<typeof listDayCelebrations>> | null,
   ]
   try {
     loaded = await Promise.all([
@@ -213,6 +215,10 @@ export default async function ReservasPage({
         : null,
       // Eventos del día para el renglón de hitos (eventos + cumpleaños juntos).
       day ? listScheduledEventsForDate({ tenantId: access.tenant.id, date: day }) : null,
+      // Y los festejos, con su propia query: los hitos hablan del DÍA, no de la
+      // página filtrada (si no, filtrar por zona escondía el cumple y dejaba el
+      // evento — el moco original de vuelta).
+      day ? listDayCelebrations({ tenantId: access.tenant.id, date: day }) : null,
     ])
   } catch (error) {
     // Cancelar una reserva achica el listado; si el usuario estaba en la última
@@ -232,6 +238,7 @@ export default async function ReservasPage({
     cancelled,
     dayServiceRows,
     dayEvents,
+    dayCelebrations,
   ] = loaded
 
   // El borde exacto `offset === total` no da 416: devuelve una página vacía. Sin
@@ -255,26 +262,30 @@ export default async function ReservasPage({
   // Corte por servicio del día entero: alimenta los chips de filtro (contadores
   // que no mienten cuando hay un servicio elegido).
   const dayServices = dayServiceRows ? groupByService(dayServiceRows) : []
+  // El chip cuenta lo que el usuario va a VER listado, no lo que ocupa mesa: el
+  // listado saca las canceladas (`excludeStatus`) pero deja las no-show, así que
+  // contar `activeCount` daba "Todo el día 16" al lado de un header que decía
+  // "22 reservas activas" — tres números para la misma pregunta. Si el usuario
+  // eligió un estado, manda su filtro y se cuentan todas las filas del bucket.
+  const listedCountOf = (b: (typeof dayServices)[number]) =>
+    status ? b.rows.length : b.rows.length - b.cancelledCount
   const serviceChips = dayServices
-    .filter((b) => b.activeCount > 0)
+    .filter((b) => listedCountOf(b) > 0)
     .map((b) => ({
       mealType: b.mealType,
       label: b.label,
-      count: b.activeCount,
+      count: listedCountOf(b),
       covers: b.covers,
       cakes: b.cakes,
     }))
-  const dayActiveCount = dayServices.reduce((acc, b) => acc + b.activeCount, 0)
+  const dayActiveCount = dayServices.reduce((acc, b) => acc + listedCountOf(b), 0)
 
   // Eventos + cumpleaños del día, al mismo nivel: es lo que hay que PREPARAR.
   const dayHighlights =
     day && dayEvents
       ? buildDayHighlights({
           events: dayEvents,
-          // Los hitos salen de la página cargada, que en modo día es el día
-          // entero (PAGE_SIZE_DAY). Con un servicio filtrado se acotan al
-          // servicio, que es exactamente lo que se está mirando.
-          reservations: rows,
+          reservations: dayCelebrations ?? [],
           usedByEvent: usedByEventMap(dayBuckets ?? []),
         })
       : []
@@ -389,7 +400,7 @@ export default async function ReservasPage({
 
         {/* El corte del día por servicio, pegado al navegador de día: son la
             misma decisión ("qué día miro" → "qué servicio de ese día"). */}
-        {day && serviceChips.length > 0 ? (
+        {day && (serviceChips.length > 0 || mealType) ? (
           <ServiceChips
             tenantSlug={tenantSlug}
             chips={serviceChips}
@@ -430,7 +441,15 @@ export default async function ReservasPage({
         <ReservationsFilters
           tenantSlug={tenantSlug}
           managers={managers.map((m) => ({ id: m.id, display_name: m.display_name }))}
-          defaults={{ q, status, zone, managerId, dateFrom: fromParam, dateTo: toParam }}
+          defaults={{
+            q,
+            status,
+            zone,
+            mealType,
+            managerId,
+            dateFrom: fromParam,
+            dateTo: toParam,
+          }}
         />
       </div>
 

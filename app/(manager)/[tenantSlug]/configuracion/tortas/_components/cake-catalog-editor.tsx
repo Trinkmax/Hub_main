@@ -158,7 +158,12 @@ export function CakeCatalogEditor({
         const rest = prev.filter((p) => p.id !== id)
         return [...rest, row]
       })
-      setDrafts((prev) => prev.map((x, i) => (i === index ? { ...x, id, key: id, fillings } : x)))
+      // La `key` NO cambia al guardar: si pasa de 'nueva-0' al uuid,
+      // AnimatePresence ve desaparecer una tarjeta y aparecer otra, corre el
+      // exit sobre la que se acaba de guardar (colapsa y vuelve) y el foco se
+      // cae a <body>. El uuid ya vive en `d.id`, que es lo que consume todo lo
+      // demás; `key` solo tiene que ser única y estable.
+      setDrafts((prev) => prev.map((x, i) => (i === index ? { ...x, id, fillings } : x)))
       toast.success('Torta guardada.')
     })
   }
@@ -195,10 +200,15 @@ export function CakeCatalogEditor({
     next[target] = a
     setDrafts(next)
 
-    const ids = next.map((d) => d.id).filter((id): id is string => Boolean(id))
-    if (ids.length === 0) return
+    // La posición es el índice VISIBLE, no el de la sublista de guardadas: si no,
+    // un borrador en el medio dejaba dos tortas empatadas y al recargar el orden
+    // no era el que el dueño había dejado.
+    const entries = next
+      .map((d, i) => ({ id: d.id, position: i + 1 }))
+      .filter((e): e is { id: string; position: number } => Boolean(e.id))
+    if (entries.length === 0) return
     startTransition(async () => {
-      const r = await reorderCakeOptions(tenantSlug, ids)
+      const r = await reorderCakeOptions(tenantSlug, entries)
       if (!r.ok) toast.error(r.message)
     })
   }

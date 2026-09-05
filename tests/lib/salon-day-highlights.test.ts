@@ -88,7 +88,14 @@ describe('buildDayHighlights', () => {
       events: [PIZZA],
       reservations: [
         reservation(),
-        reservation({ id: 'r2', kind: 'normal', guest_name: 'Cristina Vergara' }),
+        reservation({
+          id: 'r2',
+          kind: 'normal',
+          guest_name: 'Cristina Vergara',
+          cake_count: 0,
+          cake_option_id: null,
+          cake_option: null,
+        }),
       ],
     })
     expect(highlights).toHaveLength(2)
@@ -101,6 +108,12 @@ describe('buildDayHighlights', () => {
     expect(cumple?.zoneLabel).toBe('Planta Alta')
     // Y dice a qué evento viene: ese es el dato que se perdía.
     expect(cumple?.eventName).toBe('Pizza libre')
+  })
+
+  it('lleva el id crudo de la torta además del objeto (Realtime no manda joins)', () => {
+    const [, cumple] = buildDayHighlights({ events: [PIZZA], reservations: [reservation()] })
+    if (cumple?.kind === 'event') throw new Error('esperaba una celebración')
+    expect(cumple?.cakeOptionId).toBe('cake-2')
   })
 
   it('lleva la torta elegida, no solo que hay torta', () => {
@@ -133,12 +146,25 @@ describe('buildDayHighlights', () => {
     expect(highlights[0]?.id).toBe('c')
   })
 
-  it('las reservas normales no son hitos', () => {
+  it('una reserva normal SIN torta no es un hito', () => {
     const highlights = buildDayHighlights({
       events: [],
-      reservations: [reservation({ kind: 'normal' })],
+      reservations: [
+        reservation({ kind: 'normal', cake_count: 0, cake_option_id: null, cake_option: null }),
+      ],
     })
     expect(highlights).toEqual([])
+  })
+
+  it('una reserva normal CON torta sí: la torta la hace el bar igual', () => {
+    // Caso real: 28/05, kind='normal', 2 tortas. El calendario del mes ya la
+    // contaba y el día no la mostraba — la torta se perdía por no ser cumpleaños.
+    const highlights = buildDayHighlights({
+      events: [],
+      reservations: [reservation({ kind: 'normal', cake_count: 2 })],
+    })
+    expect(highlights).toHaveLength(1)
+    expect(highlights[0]?.kind).toBe('cake')
   })
 
   it('las especiales sí (no son una mesa más)', () => {

@@ -294,6 +294,38 @@ export async function listDayServiceRows(opts: {
   return (data ?? []) as ServiceRow[]
 }
 
+/**
+ * Los festejos del día — cumpleaños, reservas especiales y cualquier mesa que
+ * deje una torta para hacer — con sus joins.
+ *
+ * Va aparte del listado paginado por la misma razón que los chips: el renglón de
+ * hitos tiene que decir la verdad del DÍA. Si saliera de las filas cargadas,
+ * cualquier filtro activo (`?zone=`, `?q=`, `?servicio=`) haría desaparecer el
+ * cumple mientras el evento —que se pide con su propia query— sigue ahí: el
+ * cumpleaños volvería a esconderse adentro del evento, que es exactamente el
+ * moco que esto vino a arreglar.
+ *
+ * Son 0-3 filas por día (40 cumpleaños en 194 reservas de historia).
+ */
+export async function listDayCelebrations(opts: {
+  tenantId: string
+  date: string
+}): Promise<ReservationWithJoins[]> {
+  const supabase = (await createClient()) as SBAny
+  const { data, error } = await supabase
+    .from('salon_reservations')
+    .select(RESERVATION_JOIN_SELECT)
+    .eq('tenant_id', opts.tenantId)
+    .eq('reservation_date', opts.date)
+    // …o cualquier mesa con torta, sea del tipo que sea: la torta la hace el bar
+    // y perderla en una reserva "normal" es el mismo moco (hay una así del 28/05).
+    .or('kind.in.(birthday,special),cake_count.gt.0')
+    .not('status', 'in', '(cancelled,no_show)')
+    .order('reservation_time_local', { ascending: true })
+  if (error) throw error
+  return (data ?? []).map((r: Record<string, unknown>) => flattenReservation(r))
+}
+
 export async function getSalonReservation(opts: {
   tenantId: string
   id: string

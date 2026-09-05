@@ -55,12 +55,17 @@ export function ReservationDetailSidebar({
             </span>
           </header>
           <div className="flex flex-wrap gap-1.5">
-            <CakeChip count={reservation.cake_count} option={reservation.cake_option} detailed />
+            <CakeChip
+              count={reservation.cake_count}
+              option={reservation.cake_option}
+              optionId={reservation.cake_option_id}
+              detailed
+            />
             <ChampagneChip count={reservation.champagne_count} />
           </div>
           {reservation.cake_count > 0 && !reservation.cake_option ? (
-            <p className="rounded-md border border-warning/50 bg-warning/10 px-2 py-1 text-[11px] text-warning-foreground">
-              Falta definir qué torta va. Elegila abajo, en Cumpleaños.
+            <p className="rounded-md border border-warning/50 bg-warning/10 px-2 py-1 text-[11px] text-foreground">
+              Falta definir qué torta va. La elegís abajo, en el bloque de la torta.
             </p>
           ) : null}
         </section>

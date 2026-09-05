@@ -114,7 +114,7 @@ function EventCard({
           // `text-warning` pelado sobre la card no llega a AA en claro: el
           // patrón de la casa es el token de texto sobre su propio fondo.
           full
-            ? 'rounded-full bg-warning/15 px-1.5 font-semibold text-warning-foreground'
+            ? 'rounded-full bg-warning/15 px-1.5 font-semibold text-foreground'
             : 'text-muted-foreground',
         )}
       >
@@ -140,8 +140,8 @@ function CelebrationCard({
   tenantSlug: string
   celebration: CelebrationHighlight
 }) {
-  const isBirthday = c.kind === 'birthday'
-  const Icon = isBirthday ? Cake : PartyPopper
+  const isSpecial = c.kind === 'special'
+  const Icon = isSpecial ? PartyPopper : Cake
 
   return (
     <Link
@@ -149,9 +149,9 @@ function CelebrationCard({
       className={cn(
         'card-hairline block rounded-xl border p-3 transition-colors duration-[var(--duration-fast)]',
         // Más presencia que un evento a propósito: es lo que hoy se pasa por alto.
-        isBirthday
-          ? 'border-primary/35 bg-primary/[0.06] hover:bg-primary/10'
-          : 'border-info/35 bg-info/[0.06] hover:bg-info/10',
+        isSpecial
+          ? 'border-info/35 bg-info/[0.06] hover:bg-info/10'
+          : 'border-primary/35 bg-primary/[0.06] hover:bg-primary/10',
       )}
     >
       <div className="flex items-start gap-2.5">
@@ -159,7 +159,7 @@ function CelebrationCard({
           aria-hidden
           className={cn(
             'mt-px flex size-7 shrink-0 items-center justify-center rounded-lg',
-            isBirthday ? 'bg-primary/15 text-primary' : 'bg-info/15 text-info',
+            isSpecial ? 'bg-info/15 text-info' : 'bg-primary/15 text-primary',
           )}
         >
           <Icon className="size-4" />
@@ -167,7 +167,7 @@ function CelebrationCard({
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-            <CelebrationChip kind={isBirthday ? 'birthday' : 'special'} />
+            <CelebrationChip kind={c.kind} />
             <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
               {c.time}
             </span>
@@ -199,7 +199,7 @@ function CelebrationCard({
           </p>
           {c.cakeCount > 0 || c.champagneCount > 0 ? (
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <CakeChip count={c.cakeCount} option={c.cake} />
+              <CakeChip count={c.cakeCount} option={c.cake} optionId={c.cakeOptionId} />
               <ChampagneChip count={c.champagneCount} />
             </div>
           ) : null}

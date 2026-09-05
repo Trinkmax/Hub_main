@@ -88,6 +88,8 @@ export type ServiceBucket<T extends ServiceRow = ReservationWithJoins> = {
   activeCount: number
   /** Canceladas + no-show: se listan, pero aparte del total. */
   inactiveCount: number
+  /** Solo las canceladas. La agenda las saca del listado; las no-show no. */
+  cancelledCount: number
   /** Cumpleaños del servicio (los que hay que mirar dos veces). */
   birthdays: number
   /** Tortas comprometidas: la cocina las tiene que hacer. */
@@ -117,6 +119,7 @@ export function groupByService<T extends ServiceRow>(rows: T[]): Array<ServiceBu
         tablesByZone: EMPTY_ZONES(),
         activeCount: 0,
         inactiveCount: 0,
+        cancelledCount: 0,
         birthdays: 0,
         cakes: 0,
         from: null,
@@ -129,6 +132,7 @@ export function groupByService<T extends ServiceRow>(rows: T[]): Array<ServiceBu
 
     if (!occupiesTable(r)) {
       b.inactiveCount += 1
+      if (r.status === 'cancelled') b.cancelledCount += 1
       continue
     }
 

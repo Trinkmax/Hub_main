@@ -147,7 +147,12 @@ export function ReservationQuickView({
             // poder leer desde acá sin abrir la edición completa.
             <Field label="Cumpleaños" wide>
               <span className="flex flex-wrap items-center gap-1.5">
-                <CakeChip count={r.cake_count} option={r.cake_option} detailed />
+                <CakeChip
+                  count={r.cake_count}
+                  option={r.cake_option}
+                  optionId={r.cake_option_id}
+                  detailed
+                />
                 <ChampagneChip count={r.champagne_count} />
               </span>
             </Field>

@@ -3,7 +3,7 @@
 import { Cake } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTransition } from 'react'
-import type { MealType } from '@/lib/salon/types'
+import { MEAL_TYPE_LABELS, type MealType } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
 export type ServiceChip = {
@@ -44,9 +44,11 @@ export function ServiceChips({
   const sp = useSearchParams()
   const [pending, startTransition] = useTransition()
 
-  // Con un solo servicio en el día no hay nada que separar: el filtro sería un
-  // botón que no cambia nada.
-  if (chips.length < 2) return null
+  // Con un solo servicio en el día no hay nada que separar… salvo que el filtro
+  // YA esté puesto: ahí esconder los chips esconde la única manera de sacarlo.
+  // Pasaba de verdad — filtrás "Merienda" y pasás al día siguiente, que es todo
+  // cena: la lista quedaba vacía y no había cómo volver.
+  if (chips.length < 2 && active === undefined) return null
 
   function push(meal: MealType | null) {
     const next = new URLSearchParams(sp?.toString() ?? '')
@@ -70,7 +72,15 @@ export function ServiceChips({
         disabled={pending}
         onClick={() => push(null)}
       />
-      {chips.map((c) => (
+      {(chips.some((c) => c.mealType === active) || active === undefined
+        ? chips
+        : [
+            // El servicio filtrado no tiene reservas este día: igual se dibuja
+            // (en 0) para que se pueda desmarcar sin tocar la URL.
+            ...chips,
+            { mealType: active, label: MEAL_TYPE_LABELS[active], count: 0, covers: 0, cakes: 0 },
+          ]
+      ).map((c) => (
         <Chip
           key={c.mealType}
           label={c.label}

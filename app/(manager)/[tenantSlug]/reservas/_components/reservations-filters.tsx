@@ -26,6 +26,8 @@ type Defaults = {
   q?: string
   status?: string
   zone?: string
+  /** El servicio elegido en los chips. Solo para que "Limpiar" sepa que existe. */
+  mealType?: string
   managerId?: string
   dateFrom?: string
   dateTo?: string
@@ -70,6 +72,7 @@ export function ReservationsFilters({
     defaults.q ||
       defaults.status ||
       defaults.zone ||
+      defaults.mealType ||
       defaults.managerId ||
       defaults.dateFrom ||
       defaults.dateTo,

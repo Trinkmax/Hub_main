@@ -1,4 +1,4 @@
-import { Armchair, ArrowRight, type LucideIcon, Palette, UsersRound } from 'lucide-react'
+import { Armchair, ArrowRight, Cake, type LucideIcon, Palette, UsersRound } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Card } from '@/components/ui/card'
@@ -30,10 +30,20 @@ const CARDS: SettingsCard[] = [
   },
   {
     icon: Armchair,
-    title: 'Salón',
-    description: 'Cuánta gente entra por zona y qué tortas hace el bar para los cumpleaños.',
-    topics: ['Capacidad', 'Tortas'],
+    title: 'Capacidad del salón',
+    description: 'Cuánta gente entra por zona y los cupos puntuales de un día.',
+    topics: ['Planta Alta · Planta Baja', 'Cupos por fecha'],
     href: (s) => `/${s}/configuracion/salon`,
+  },
+  {
+    // Card propia y no un "topic" de Capacidad: el nav lateral de esta sección
+    // es `lg:block`, así que en un celular esta card es la ÚNICA forma de llegar
+    // a Tortas — y la app es mobile-first.
+    icon: Cake,
+    title: 'Tortas de cumpleaños',
+    description: 'El menú de tortas que hace el bar. Es lo que se elige al cargar una reserva.',
+    topics: ['Bizcochuelos', 'Rellenos'],
+    href: (s) => `/${s}/configuracion/tortas`,
   },
   {
     icon: Palette,
@@ -65,7 +75,7 @@ export default async function ConfiguracionIndexPage({
       <PageHeader
         eyebrow="Ajustes"
         title="Configuración"
-        description="Cuatro grupos para que encuentres rápido lo que necesitás cambiar."
+        description="Cada grupo con lo que se toca junto, para que encuentres rápido."
       />
 
       <div className="grid gap-4 sm:grid-cols-2">

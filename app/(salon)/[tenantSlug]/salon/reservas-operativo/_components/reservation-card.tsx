@@ -196,6 +196,7 @@ export function ReservationCard({
               <CakeChip
                 count={reservation.cake_count}
                 option={reservation.cake_option}
+                optionId={reservation.cake_option_id}
                 className="mt-1"
               />
             ) : null}

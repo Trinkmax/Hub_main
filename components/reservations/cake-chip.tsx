@@ -15,27 +15,48 @@ import { cn } from '@/lib/utils'
 export function CakeChip({
   count,
   option,
+  optionId,
   detailed = false,
   className,
 }: {
   count: number
   option: CakeOptionSummary | null
+  /**
+   * La columna cruda. Hace falta además del objeto porque el panel del salón se
+   * actualiza por Realtime y el payload de Postgres NO trae los joins: ahí llega
+   * `cake_option_id` con `cake_option` viejo o ausente. Sin este dato, una
+   * reserva con la torta ya elegida se pintaba en ámbar "Falta elegir torta"
+   * apenas entraba por Realtime — el aviso contrario al real.
+   */
+  optionId?: string | null
   /** Suma los rellenos debajo. Para el detalle de una reserva, no para una fila. */
   detailed?: boolean
   className?: string
 }) {
   if (count <= 0) return null
 
-  const pending = !option
-  const label = option ? option.name : 'Falta elegir torta'
+  // `optionId` manda cuando está: "no eligieron" ≠ "el join no vino".
+  const chosen = optionId !== undefined ? Boolean(optionId) : Boolean(option)
+  const pending = !chosen
+  const label = option ? option.name : pending ? 'Falta elegir torta' : 'Torta elegida'
 
   return (
     <span
-      title={option ? describeCake(option) : 'Traen torta pero todavía no eligieron cuál'}
+      title={
+        option
+          ? describeCake(option)
+          : pending
+            ? 'Lleva torta pero todavía no eligieron cuál'
+            : 'La torta ya está elegida — abrí la reserva para ver cuál'
+      }
       className={cn(
         'inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium leading-tight',
+        // `text-warning-foreground` es para ir sobre el ámbar SÓLIDO: sobre un
+        // tinte al 10% queda casi negro sobre casi negro en dark (1.3:1). El
+        // patrón de la casa sobre tinte es texto en `foreground` con el ícono
+        // tintado — el mismo que ya usan los chips de aviso de servicio.
         pending
-          ? 'border-warning/50 bg-warning/10 text-warning-foreground'
+          ? 'border-warning/50 bg-warning/10 text-foreground'
           : 'border-primary/30 bg-primary/10 text-foreground',
         className,
       )}

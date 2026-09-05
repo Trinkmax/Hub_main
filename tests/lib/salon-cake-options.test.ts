@@ -91,6 +91,17 @@ describe('humanizeSalonError — errores del catálogo de tortas', () => {
     expect(msg).toContain('Desactivala')
   })
 
+  it('la misma FK del otro lado dice "elegí otra", no "desactivala"', () => {
+    // El dueño borró la Opción 3 mientras el anfitrión la tenía seleccionada en
+    // otra pestaña: mandarlo a desactivar una torta que ya no existe (y que
+    // además él no puede editar) sería una instrucción imposible.
+    const msg = humanizeSalonError(
+      'insert or update on table "salon_reservations" violates foreign key constraint "salon_reservations_cake_option_id_fkey"',
+    )
+    expect(msg).toContain('ya no está en el menú')
+    expect(msg).not.toContain('Desactivala')
+  })
+
   it('nombre duplicado', () => {
     expect(
       humanizeSalonError(

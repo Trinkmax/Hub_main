@@ -1440,12 +1440,19 @@ export async function upsertCakeOption(
   let id = parsed.data.id
   const isUpdate = Boolean(id)
   if (id) {
-    const { error } = await supabase
+    // `.select('id')` para saber si REALMENTE se actualizó algo: un id que no
+    // existe (o de otro bar) matchea 0 filas y no da error, así que sin esto la
+    // pantalla decía "Torta guardada" sobre un cambio que nunca ocurrió.
+    const { data, error } = await supabase
       .from('cake_options')
       .update(payload)
       .eq('tenant_id', access.tenant.id)
       .eq('id', id)
+      .select('id')
     if (error) return { ok: false, message: humanizeSalonError(error.message) }
+    if (!data || (data as unknown[]).length === 0) {
+      return { ok: false, message: 'Esa torta ya no existe. Recargá la página.' }
+    }
   } else {
     const { data, error } = await supabase
       .from('cake_options')
@@ -1507,23 +1514,35 @@ export async function deleteCakeOption(slug: string, id: string): Promise<Action
  * orden del selector tiene que ser el que el dueño decidió — no el alfabeto ni
  * la fecha de carga.
  */
-export async function reorderCakeOptions(slug: string, ids: string[]): Promise<ActionState> {
+export async function reorderCakeOptions(
+  slug: string,
+  entries: Array<{ id: string; position: number }>,
+): Promise<ActionState> {
   const access = await authorize(slug, OWNER_ONLY)
   if (!access) return noAccess()
-  if (!Array.isArray(ids) || ids.length === 0) return badInput('Nada para ordenar')
-  if (ids.length > 50) return badInput('Demasiadas tortas')
-  for (const id of ids) {
-    if (!idOnlySchema.safeParse({ id }).success) return badInput('ID inválido')
+  if (!Array.isArray(entries) || entries.length === 0) return badInput('Nada para ordenar')
+  if (entries.length > 50) return badInput('Demasiadas tortas')
+  for (const e of entries) {
+    if (!idOnlySchema.safeParse({ id: e?.id }).success) return badInput('ID inválido')
+    if (!Number.isInteger(e.position) || e.position < 0 || e.position > 999) {
+      return badInput('Posición inválida')
+    }
   }
 
   const supabase = (await createClient()) as SBAny
+  // La posición llega explícita (y no 1..N sobre lo recibido) porque el editor
+  // puede tener borradores sin guardar en el medio: si el reorder renumerara
+  // solo las guardadas, la torta nueva terminaría empatada con otra y el orden
+  // al recargar no sería el que el dueño dejó — y el número es justo el nombre
+  // con el que el operador la canta por teléfono ("la 2").
+  //
   // Una por una y no un upsert masivo: el upsert necesitaría mandar la fila
   // entera (nombre, base, rellenos) y un reorder no tiene por qué poder pisar
   // el contenido de una torta.
-  for (const [index, id] of ids.entries()) {
+  for (const { id, position } of entries) {
     const { error } = await supabase
       .from('cake_options')
-      .update({ position: index + 1 })
+      .update({ position })
       .eq('tenant_id', access.tenant.id)
       .eq('id', id)
     if (error) return { ok: false, message: humanizeSalonError(error.message) }

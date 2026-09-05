@@ -260,6 +260,7 @@ export function ReservationsTable({
                               <CakeChip
                                 count={r.cake_count}
                                 option={r.cake_option}
+                                optionId={r.cake_option_id}
                                 className="mt-1 self-start"
                               />
                             ) : null}
