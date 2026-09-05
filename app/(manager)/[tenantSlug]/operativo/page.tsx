@@ -98,6 +98,8 @@ export default async function OperativoPage({
 
   return (
     <OperativoBoard
+      // Cambiar de día es empezar de cero: nada del día anterior sobrevive.
+      key={date}
       tenantSlug={tenantSlug}
       tenantId={tenantId}
       role={access.role}

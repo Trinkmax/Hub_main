@@ -5,6 +5,8 @@ import { createClient, realtimeAuthReady } from '@/lib/supabase/browser'
 
 type Filter = `${string}=eq.${string}`
 
+export type SubscribeStatus = 'SUBSCRIBED' | 'CHANNEL_ERROR' | 'TIMED_OUT' | 'CLOSED'
+
 export type SubscribeOptions = {
   channel: string
   events: Array<{
@@ -13,6 +15,12 @@ export type SubscribeOptions = {
     filter?: Filter
     onChange: (payload: unknown) => void
   }>
+  /**
+   * Estado real del canal (JOIN hecho, error, timeout, cerrado). Sirve para
+   * un indicador "en vivo" honesto y para re-sincronizar tras una reconexión:
+   * postgres_changes NO reproduce lo que pasó mientras el socket estuvo caído.
+   */
+  onStatus?: (status: SubscribeStatus, error?: Error) => void
 }
 
 /**
@@ -43,7 +51,10 @@ export function subscribeChanges(opts: SubscribeOptions): () => void {
         evt.onChange,
       )
     }
-    channel.subscribe()
+    channel.subscribe((status, error) => {
+      if (disposed) return
+      opts.onStatus?.(status as SubscribeStatus, error)
+    })
     ch = channel
   })
 

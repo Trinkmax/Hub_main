@@ -168,13 +168,7 @@ export function OperativoBoard({
   const clock = useBoardClock(date)
   const isDesktop = useIsDesktop()
 
-  // Cambiar de día limpia lo que era de ese día: filtro de evento y selección.
-  useEffect(() => {
-    setEventFilter(null)
-    setSelectedId(null)
-    setSheetOpen(false)
-    setPanelMode('detail')
-  }, [])
+  // (Cambiar de día remonta el tablero entero: page.tsx lo keyea por fecha.)
   const isToday = date === today
   const isFuture = date > today
 
@@ -263,6 +257,7 @@ export function OperativoBoard({
   // ── Realtime ─────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false
+    let joinedOnce = false
     // Con staleTimes la página puede venir del Client Router Cache: sincronizar YA.
     void refreshReservations()
     void refreshExtras()
@@ -295,12 +290,12 @@ export function OperativoBoard({
                 if (current?.updated_at && current.updated_at > next.updated_at) return prev
                 // Si cambió una FK, los joins que tenemos quedaron viejos.
                 if (
-                  current &&
-                  (current.customer_id !== next.customer_id ||
-                    current.cake_option_id !== next.cake_option_id ||
-                    current.primary_manager_id !== next.primary_manager_id ||
-                    current.assistant_manager_id !== next.assistant_manager_id ||
-                    current.scheduled_event_id !== next.scheduled_event_id)
+                  !current ||
+                  current.customer_id !== next.customer_id ||
+                  current.cake_option_id !== next.cake_option_id ||
+                  current.primary_manager_id !== next.primary_manager_id ||
+                  current.assistant_manager_id !== next.assistant_manager_id ||
+                  current.scheduled_event_id !== next.scheduled_event_id
                 ) {
                   fkChanged = true
                 }
@@ -338,11 +333,26 @@ export function OperativoBoard({
           onChange: () => debouncedExtras(),
         },
       ],
+      // El punto "en vivo" dice la verdad del canal. Tras una reconexión se
+      // re-sincroniza todo: lo que pasó en el hueco no vuelve a llegar.
+      onStatus: (status) => {
+        if (cancelled) return
+        if (status === 'SUBSCRIBED') {
+          setLive('live')
+          if (joinedOnce) {
+            void refreshReservations()
+            void refreshExtras()
+          }
+          joinedOnce = true
+        } else {
+          setLive('offline')
+        }
+      },
     })
-    setLive('live')
 
     const onOnline = () => {
-      setLive('live')
+      // Vuelve la red; el canal avisará SUBSCRIBED cuando re-joinee. Mientras,
+      // los datos se piden igual.
       void refreshReservations()
       void refreshExtras()
     }
