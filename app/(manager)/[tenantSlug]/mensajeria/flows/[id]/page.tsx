@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/ui/page-header'
 import { getFlowGraph } from '@/lib/flows/graph-queries'
 import { getFlow } from '@/lib/flows/queries'
 import type { FlowStepConfig, FlowTriggerConfig } from '@/lib/flows/schemas'
+import { visibleTemplates } from '@/lib/meta/template-visibility'
 import { createClient } from '@/lib/supabase/server'
 import {
   RoleRequiredError,
@@ -54,7 +55,7 @@ export default async function EditFlowPage({
   ])
 
   const channels = chRes.data ?? []
-  const templates = tplRes.data ?? []
+  const templates = visibleTemplates(tplRes.data ?? [])
   const tags = tagsRes.data ?? []
 
   if (!graphData) notFound()

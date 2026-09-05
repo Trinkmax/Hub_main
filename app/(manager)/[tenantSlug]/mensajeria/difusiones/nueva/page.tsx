@@ -2,6 +2,7 @@ import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { visibleTemplates } from '@/lib/meta/template-visibility'
 import { listScheduledEventsForDateRange } from '@/lib/salon/queries'
 import { createClient } from '@/lib/supabase/server'
 import {
@@ -95,7 +96,7 @@ export default async function NuevaDifusionPage({
       <BroadcastForm
         tenantSlug={tenantSlug}
         channels={channelsRes.data ?? []}
-        templates={templatesRes.data ?? []}
+        templates={visibleTemplates(templatesRes.data ?? [])}
         audiences={audiencesRes.data ?? []}
         events={events}
         initialName={prefillName}

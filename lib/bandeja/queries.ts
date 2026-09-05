@@ -1,5 +1,6 @@
 import 'server-only'
 import type { ConversationTag } from '@/lib/conversation-tags/queries'
+import { visibleTemplates } from '@/lib/meta/template-visibility'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { ChannelType, MessageDirection, MessageStatus } from '@/types/database'
@@ -315,5 +316,5 @@ export async function listApprovedTemplates(tenantId: string) {
     .eq('tenant_id', tenantId)
     .eq('status', 'approved')
     .order('name')
-  return data ?? []
+  return visibleTemplates(data ?? [])
 }

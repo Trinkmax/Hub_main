@@ -496,3 +496,15 @@ Meta de HUB (`(#132001) Template name does not exist`).
 Club → "Recuperá tu acceso" → el WhatsApp llega como plantilla con el botón
 "Copiar código"; en Mensajería → Plantillas figura `hub_codigo_recuperacion`
 aprobada.
+
+### Plantillas de muestra de Meta: ocultas en todo el panel (2026-09-05)
+
+Meta crea sola, en toda cuenta nueva, plantillas de muestra en inglés
+(`hello_world`, `jaspers_market_*`). Confundían en el listado, en el selector de
+difusiones y en los flows. Regla única en `lib/meta/template-visibility.ts`
+(`isHiddenTemplate`: todo lo que no está en español + nombres de muestra),
+aplicada en Plantillas, Difusiones → Nueva, Flows (nuevo y edición) y la bandeja
+(`listApprovedTemplates`, que alimenta "escribir primero"). Siguen existiendo en
+Meta y en la tabla; el botón **"Borrar de WhatsApp las de ejemplo (N)"** en
+Plantillas las elimina de verdad (solo nombres sin ninguna versión en español).
+Test: `tests/lib/template-visibility.test.ts`.

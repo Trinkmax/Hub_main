@@ -2,6 +2,7 @@ import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { visibleTemplates } from '@/lib/meta/template-visibility'
 import { createClient } from '@/lib/supabase/server'
 import {
   RoleRequiredError,
@@ -60,7 +61,7 @@ export default async function NewFlowPage({ params }: { params: Promise<{ tenant
       <FlowGraphEditorClient
         tenantSlug={tenantSlug}
         channels={chRes.data ?? []}
-        templates={tplRes.data ?? []}
+        templates={visibleTemplates(tplRes.data ?? [])}
         tags={tagsRes.data ?? []}
       />
     </div>

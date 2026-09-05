@@ -98,8 +98,3 @@ export function authenticationPreview(
         : `This code expires in ${codeExpirationMinutes} minutes.`
   return { body, footer }
 }
-
-/** Las plantillas de muestra que Meta crea sola en toda cuenta nueva, o cualquiera que no esté en español. */
-export function isForeignTemplate(t: { language: string }): boolean {
-  return !t.language.toLowerCase().startsWith('es')
-}

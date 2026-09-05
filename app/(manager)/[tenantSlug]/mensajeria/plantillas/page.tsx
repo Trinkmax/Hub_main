@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
 import { getClubOtpTemplateName } from '@/lib/club-auth/message'
+import { hiddenTemplates, visibleTemplates } from '@/lib/meta/template-visibility'
 import { createClient } from '@/lib/supabase/server'
 import {
   RoleRequiredError,
@@ -26,7 +27,6 @@ import {
   authenticationPreview,
   categoryLabel,
   humanizeTemplateName,
-  isForeignTemplate,
   languageLabel,
   STATUS_META,
 } from './_template-display'
@@ -153,7 +153,11 @@ export default async function TemplatesPage({
       .order('name', { ascending: true }),
   ])
 
-  const templates = (templatesRaw ?? []) as TemplateRow[]
+  // Las de muestra de Meta (en inglés) no se muestran en ningún lado: el
+  // botón de abajo las borra de WhatsApp si el dueño quiere limpiar.
+  const allTemplates = (templatesRaw ?? []) as TemplateRow[]
+  const templates = visibleTemplates(allTemplates)
+  const hidden = hiddenTemplates(allTemplates)
 
   return (
     <PageShell width="comfortable">
@@ -169,13 +173,11 @@ export default async function TemplatesPage({
               {templates.some((t) => t.name === getClubOtpTemplateName()) ? null : (
                 <ClubOtpTemplateButton channelId={channel.id} tenantSlug={tenantSlug} />
               )}
-              {templates.some(isForeignTemplate) ? (
+              {hidden.length > 0 ? (
                 <DeleteForeignTemplatesButton
                   channelId={channel.id}
                   tenantSlug={tenantSlug}
-                  names={Array.from(
-                    new Set(templates.filter(isForeignTemplate).map((t) => t.name)),
-                  )}
+                  names={Array.from(new Set(hidden.map((t) => t.name)))}
                 />
               ) : null}
               <CreateTemplateDialog tenantSlug={tenantSlug} channelId={channel.id} />

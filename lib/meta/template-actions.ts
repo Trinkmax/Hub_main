@@ -18,6 +18,7 @@ import {
 import type { MetaActionState } from './actions'
 import { humanizeTemplateError } from './errors'
 import { createTemplateSchema, deleteTemplateSchema } from './template-schemas'
+import { isHiddenTemplate } from './template-visibility'
 import { createOtpTemplate, createTemplate, deleteTemplate } from './templates'
 
 async function authorizeOwner(slug: string) {
@@ -285,7 +286,7 @@ export async function deleteForeignTemplatesAction(
   const byName = new Map<string, string[]>()
   for (const r of rows ?? []) byName.set(r.name, [...(byName.get(r.name) ?? []), r.language])
   const names = Array.from(byName.entries())
-    .filter(([, langs]) => langs.every((l) => !l.toLowerCase().startsWith('es')))
+    .filter(([name, langs]) => langs.every((language) => isHiddenTemplate({ name, language })))
     .map(([name]) => name)
   if (names.length === 0) return { ok: true, message: 'No había plantillas en inglés.' }
 

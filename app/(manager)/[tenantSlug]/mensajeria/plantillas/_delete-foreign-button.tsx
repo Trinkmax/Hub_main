@@ -49,15 +49,15 @@ export function DeleteForeignTemplatesButton({
       <AlertDialogTrigger asChild>
         <Button variant="outline" className="gap-2" disabled={pending}>
           <Languages className="size-4" aria-hidden />
-          {pending ? 'Borrando…' : `Borrar las de ejemplo en inglés (${names.length})`}
+          {pending ? 'Borrando…' : `Borrar de WhatsApp las de ejemplo (${names.length})`}
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>¿Borrar {names.length} plantillas en inglés?</AlertDialogTitle>
           <AlertDialogDescription>
-            Se borran de WhatsApp y de acá. Son las de muestra de Meta; ninguna difusión ni
-            automatización tuya las usa.
+            Ya están ocultas en todo el panel. Esto además las borra de tu cuenta de WhatsApp. Son
+            las de muestra de Meta, en inglés; ninguna difusión ni automatización tuya las usa.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <ul className="max-h-40 overflow-y-auto rounded-lg bg-secondary/60 px-3 py-2 font-mono text-xs">
