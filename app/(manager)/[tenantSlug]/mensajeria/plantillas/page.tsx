@@ -19,11 +19,14 @@ import {
 import type { TemplateStatus } from '@/types/database'
 import { ClubOtpTemplateButton } from './_club-otp-button'
 import { CreateTemplateDialog } from './_create-template-dialog'
+import { DeleteForeignTemplatesButton } from './_delete-foreign-button'
 import { DeleteTemplateButton } from './_delete-template-button'
 import { TemplateSyncButton } from './_sync-button'
 import {
+  authenticationPreview,
   categoryLabel,
   humanizeTemplateName,
+  isForeignTemplate,
   languageLabel,
   STATUS_META,
 } from './_template-display'
@@ -52,9 +55,13 @@ type ParsedTemplate = {
  * El JSON `components` viene en el formato de Meta (HEADER/BODY/FOOTER/BUTTONS).
  * Parseo defensivo: si algo no matchea, simplemente no se muestra esa parte.
  */
-function parseComponents(components: unknown): ParsedTemplate {
+function parseComponents(
+  components: unknown,
+  meta: { category: string; language: string },
+): ParsedTemplate {
   const parsed: ParsedTemplate = { header: null, body: '', footer: null, buttons: [] }
   if (!Array.isArray(components)) return parsed
+  let codeExpiration: number | null = null
   for (const item of components) {
     if (!item || typeof item !== 'object') continue
     const comp = item as Record<string, unknown>
@@ -65,6 +72,8 @@ function parseComponents(components: unknown): ParsedTemplate {
       parsed.body = comp.text
     } else if (type === 'FOOTER' && typeof comp.text === 'string') {
       parsed.footer = comp.text
+    } else if (type === 'FOOTER' && typeof comp.code_expiration_minutes === 'number') {
+      codeExpiration = comp.code_expiration_minutes
     } else if (type === 'BUTTONS' && Array.isArray(comp.buttons)) {
       for (const button of comp.buttons) {
         if (button && typeof button === 'object') {
@@ -73,6 +82,12 @@ function parseComponents(components: unknown): ParsedTemplate {
         }
       }
     }
+  }
+  // Verificación (códigos): el texto lo pone Meta, no viene en nuestro JSON.
+  if (!parsed.body && meta.category.toUpperCase() === 'AUTHENTICATION') {
+    const preset = authenticationPreview(meta.language, codeExpiration)
+    parsed.body = preset.body
+    parsed.footer = parsed.footer ?? preset.footer
   }
   return parsed
 }
@@ -154,6 +169,15 @@ export default async function TemplatesPage({
               {templates.some((t) => t.name === getClubOtpTemplateName()) ? null : (
                 <ClubOtpTemplateButton channelId={channel.id} tenantSlug={tenantSlug} />
               )}
+              {templates.some(isForeignTemplate) ? (
+                <DeleteForeignTemplatesButton
+                  channelId={channel.id}
+                  tenantSlug={tenantSlug}
+                  names={Array.from(
+                    new Set(templates.filter(isForeignTemplate).map((t) => t.name)),
+                  )}
+                />
+              ) : null}
               <CreateTemplateDialog tenantSlug={tenantSlug} channelId={channel.id} />
             </div>
           ) : null
@@ -201,7 +225,10 @@ function TemplateCard({
   channelId: string
 }) {
   const statusMeta = STATUS_META[template.status]
-  const content = parseComponents(template.components)
+  const content = parseComponents(template.components, {
+    category: template.category,
+    language: template.language,
+  })
 
   return (
     <article className="card-hairline flex flex-col overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-sm">

@@ -76,3 +76,30 @@ export function humanizeTemplateName(name: string): string {
   if (!words) return name
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
+
+/**
+ * El texto de una plantilla de VERIFICACIÓN lo escribe Meta (no el bar) y
+ * nuestra copia local puede no traerlo hasta el próximo sync. Es siempre el
+ * mismo por idioma, así que el preview lo muestra igual.
+ */
+export function authenticationPreview(
+  language: string,
+  codeExpirationMinutes: number | null,
+): { body: string; footer: string | null } {
+  const spanish = language.toLowerCase().startsWith('es')
+  const body = spanish
+    ? '*{{1}}* es tu código de verificación. Por tu seguridad, no lo compartas.'
+    : '*{{1}}* is your verification code. For your security, do not share this code.'
+  const footer =
+    codeExpirationMinutes === null
+      ? null
+      : spanish
+        ? `Este código caduca en ${codeExpirationMinutes} minutos.`
+        : `This code expires in ${codeExpirationMinutes} minutes.`
+  return { body, footer }
+}
+
+/** Las plantillas de muestra que Meta crea sola en toda cuenta nueva, o cualquiera que no esté en español. */
+export function isForeignTemplate(t: { language: string }): boolean {
+  return !t.language.toLowerCase().startsWith('es')
+}

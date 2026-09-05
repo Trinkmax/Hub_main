@@ -249,3 +249,75 @@ export async function createClubOtpTemplateAction(
     return { ok: false, message: humanizeTemplateError(e) }
   }
 }
+
+/**
+ * Borra todas las plantillas del canal que NO están en español: las de muestra
+ * de Meta ("hello_world", "jaspers_market_…"), que ensucian la lista. Va nombre
+ * por nombre y no aborta si una falla: devuelve cuántas salieron y cuáles no.
+ */
+export async function deleteForeignTemplatesAction(
+  slug: string,
+  _prev: MetaActionState,
+  formData: FormData,
+): Promise<MetaActionState> {
+  const access = await authorizeOwner(slug)
+  if (!access) return { ok: false, message: 'Sin permisos.' }
+
+  const channelId = formData.get('channel_id')
+  if (typeof channelId !== 'string') return { ok: false, message: 'channel_id requerido.' }
+
+  const service = createServiceClient()
+  const { data: channel, error } = await service
+    .from('channels')
+    .select('*')
+    .eq('id', channelId)
+    .eq('tenant_id', access.tenant.id)
+    .eq('type', 'whatsapp')
+    .maybeSingle()
+  if (error || !channel) return { ok: false, message: 'Canal WhatsApp no encontrado.' }
+
+  const { data: rows } = await service
+    .from('message_templates')
+    .select('name, language')
+    .eq('channel_id', channel.id)
+  // Meta borra por NOMBRE (todos los idiomas): sólo se tocan los nombres que no
+  // tienen ninguna versión en español, para no llevarse una plantilla del bar.
+  const byName = new Map<string, string[]>()
+  for (const r of rows ?? []) byName.set(r.name, [...(byName.get(r.name) ?? []), r.language])
+  const names = Array.from(byName.entries())
+    .filter(([, langs]) => langs.every((l) => !l.toLowerCase().startsWith('es')))
+    .map(([name]) => name)
+  if (names.length === 0) return { ok: true, message: 'No había plantillas en inglés.' }
+
+  const failed: string[] = []
+  for (const name of names) {
+    try {
+      await deleteTemplate(channel, name)
+    } catch (e) {
+      console.error('[templates.delete-foreign] falló', { name, error: (e as Error).message })
+      failed.push(name)
+    }
+  }
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  await logAudit({
+    tenantId: access.tenant.id,
+    userId: user?.id ?? null,
+    action: 'templates_foreign_deleted',
+    entity: 'message_templates',
+    payload: { channel_id: channelId, deleted: names.filter((n) => !failed.includes(n)), failed },
+  })
+
+  revalidatePath(`/${slug}/mensajeria/plantillas`)
+  const deleted = names.length - failed.length
+  if (failed.length > 0) {
+    return {
+      ok: false,
+      message: `Se borraron ${deleted}; no se pudieron borrar: ${failed.join(', ')}.`,
+    }
+  }
+  return { ok: true, message: `Listo: ${deleted} plantillas en inglés borradas.` }
+}

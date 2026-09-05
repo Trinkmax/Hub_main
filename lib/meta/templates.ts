@@ -230,7 +230,22 @@ export async function createOtpTemplate(
   )
 
   const metaTemplateId = res.id ?? ''
-  const metaStatus = res.status ?? 'PENDING'
+  let metaStatus = res.status ?? 'PENDING'
+  // El texto de estas plantillas lo escribe Meta: lo pedimos de vuelta para
+  // que el preview del bar lo muestre, en vez de guardar sólo la estructura.
+  let storedComponents: unknown = components
+  if (metaTemplateId) {
+    try {
+      const detail = await metaFetch<{ status?: string; components?: unknown }>(
+        graphUrl(`${metaTemplateId}?fields=status,components`),
+        { accessToken },
+      )
+      if (Array.isArray(detail.components)) storedComponents = detail.components
+      if (detail.status) metaStatus = detail.status
+    } catch {
+      // Sin detalle no pasa nada: el próximo sync lo trae.
+    }
+  }
   const service = createServiceClient()
   const { error } = await service.from('message_templates').upsert(
     {
@@ -240,7 +255,7 @@ export async function createOtpTemplate(
       name: input.name,
       language: input.language,
       category: 'AUTHENTICATION',
-      components: components as unknown as Json,
+      components: storedComponents as Json,
       variable_hints: {} as unknown as Json,
       status: mapStatus(metaStatus as MetaTemplateStatus),
       last_synced_at: new Date().toISOString(),
