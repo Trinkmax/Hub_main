@@ -283,7 +283,7 @@ export type Database = {
           active?: boolean
           base: string
           created_at?: string
-          fillings?: string[]
+          fillings: string[]
           id?: string
           name: string
           position?: number
@@ -1854,6 +1854,143 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "job_queue_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      landing_page_versions: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          html: string
+          id: string
+          label: string | null
+          page_id: string
+          size_chars: number | null
+          tenant_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          html: string
+          id?: string
+          label?: string | null
+          page_id: string
+          size_chars?: number | null
+          tenant_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          html?: string
+          id?: string
+          label?: string | null
+          page_id?: string
+          size_chars?: number | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "landing_page_versions_page_fk"
+            columns: ["page_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "landing_pages"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "landing_page_versions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      landing_page_views: {
+        Row: {
+          day: string
+          page_id: string
+          tenant_id: string
+          views: number
+        }
+        Insert: {
+          day: string
+          page_id: string
+          tenant_id: string
+          views?: number
+        }
+        Update: {
+          day?: string
+          page_id?: string
+          tenant_id?: string
+          views?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "landing_page_views_page_fk"
+            columns: ["page_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "landing_pages"
+            referencedColumns: ["id", "tenant_id"]
+          },
+          {
+            foreignKeyName: "landing_page_views_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      landing_pages: {
+        Row: {
+          created_at: string
+          html: string
+          id: string
+          indexable: boolean
+          last_viewed_at: string | null
+          published: boolean
+          published_at: string | null
+          slug: string
+          tenant_id: string
+          title: string
+          updated_at: string
+          views: number
+        }
+        Insert: {
+          created_at?: string
+          html?: string
+          id?: string
+          indexable?: boolean
+          last_viewed_at?: string | null
+          published?: boolean
+          published_at?: string | null
+          slug: string
+          tenant_id: string
+          title: string
+          updated_at?: string
+          views?: number
+        }
+        Update: {
+          created_at?: string
+          html?: string
+          id?: string
+          indexable?: boolean
+          last_viewed_at?: string | null
+          published?: boolean
+          published_at?: string | null
+          slug?: string
+          tenant_id?: string
+          title?: string
+          updated_at?: string
+          views?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "landing_pages_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -3438,6 +3575,7 @@ export type Database = {
           seated_by: string | null
           service_alerts: Database["public"]["Enums"]["service_alert"][]
           status: Database["public"]["Enums"]["salon_reservation_status"]
+          table_label: string | null
           tenant_id: string
           updated_at: string
           zone: Database["public"]["Enums"]["salon_zone"]
@@ -3477,6 +3615,7 @@ export type Database = {
           seated_by?: string | null
           service_alerts?: Database["public"]["Enums"]["service_alert"][]
           status?: Database["public"]["Enums"]["salon_reservation_status"]
+          table_label?: string | null
           tenant_id: string
           updated_at?: string
           zone: Database["public"]["Enums"]["salon_zone"]
@@ -3516,6 +3655,7 @@ export type Database = {
           seated_by?: string | null
           service_alerts?: Database["public"]["Enums"]["service_alert"][]
           status?: Database["public"]["Enums"]["salon_reservation_status"]
+          table_label?: string | null
           tenant_id?: string
           updated_at?: string
           zone?: Database["public"]["Enums"]["salon_zone"]
@@ -3530,10 +3670,10 @@ export type Database = {
           },
           {
             foreignKeyName: "salon_reservations_cake_option_id_fkey"
-            columns: ["cake_option_id"]
+            columns: ["cake_option_id", "tenant_id"]
             isOneToOne: false
             referencedRelation: "cake_options"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "tenant_id"]
           },
           {
             foreignKeyName: "salon_reservations_customer_id_fkey"
@@ -4884,6 +5024,7 @@ export type Database = {
         Args: { p_amount_cents: number; p_customer_id: string }
         Returns: Json
       }
+      bump_landing_view: { Args: { p_page: string }; Returns: undefined }
       calculate_visit_points: {
         Args: { p_visit_id: string }
         Returns: {
@@ -5423,6 +5564,7 @@ export type Database = {
           seated_by: string | null
           service_alerts: Database["public"]["Enums"]["service_alert"][]
           status: Database["public"]["Enums"]["salon_reservation_status"]
+          table_label: string | null
           tenant_id: string
           updated_at: string
           zone: Database["public"]["Enums"]["salon_zone"]
@@ -5481,6 +5623,7 @@ export type Database = {
           seated_by: string | null
           service_alerts: Database["public"]["Enums"]["service_alert"][]
           status: Database["public"]["Enums"]["salon_reservation_status"]
+          table_label: string | null
           tenant_id: string
           updated_at: string
           zone: Database["public"]["Enums"]["salon_zone"]
@@ -5882,6 +6025,7 @@ export const Constants = {
     },
   },
 } as const
+
 
 export type BroadcastStatus = Database["public"]["Enums"]["broadcast_status"]
 export type ChannelStatus = Database["public"]["Enums"]["channel_status"]

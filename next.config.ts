@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next'
+import { LANDING_SECURITY_HEADERS } from './lib/landings/security'
 
 const securityHeaders = [
   {
@@ -36,6 +37,14 @@ const nextConfig: NextConfig = {
       dynamic: 30,
       static: 180,
     },
+    serverActions: {
+      // El HTML de una landing viaja entero en el body de la Server Action que
+      // lo guarda. El techo de la feature son 512 K caracteres, que con acentos
+      // (2 bytes cada uno) pasan el 1 MB que Next trae por default y devolvería
+      // un error mudo al guardar. Las imágenes NO pasan por acá: van del
+      // browser directo a Supabase Storage.
+      bodySizeLimit: '2mb',
+    },
   },
   images: {
     // NUNCA usamos el optimizador de Vercel: la cuota Hobby (5K transformaciones/
@@ -65,6 +74,15 @@ const nextConfig: NextConfig = {
       {
         source: '/:path*',
         headers: securityHeaders,
+      },
+      {
+        // Las landings del bar (/p/[slug]) son HTML escrito por una persona y
+        // servido desde NUESTRO dominio: van con `CSP: sandbox` para que no
+        // puedan tocar la sesión del panel. Va DESPUÉS del catch-all a
+        // propósito — ante la misma key, en Next gana la última definición, y
+        // acá se pisa el `Referrer-Policy` general. Ver lib/landings/security.ts.
+        source: '/p/:slug*',
+        headers: LANDING_SECURITY_HEADERS,
       },
     ]
   },

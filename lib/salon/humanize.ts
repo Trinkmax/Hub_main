@@ -52,6 +52,8 @@ export function humanizeSalonError(message: string): string {
     return 'Ya hay un evento programado de ese tipo para ese día.'
   if (m.includes('exclusion violation') && m.includes('commission_rate_tiers_no_overlap'))
     return 'El rango de personas se solapa con otro tier activo.'
+  if (m.includes('salon_reservations_table_label_len'))
+    return 'La mesa es un texto corto (hasta 24 caracteres).'
   if (m.includes('check constraint') || m.includes('violates check'))
     return 'Algún campo tiene un valor fuera de rango.'
   if (m.includes('event_not_found')) return 'El evento no existe.'

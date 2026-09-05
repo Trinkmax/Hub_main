@@ -63,7 +63,14 @@ PWA con su propio service worker. Pensado para celular en turno.
 
 `/carta/[slug]` (la carta) · `/c/[token]` (billetera del socio) ·
 `/capture/[slug]` (alta del cliente) · `/r/[token]` (reseña) ·
-`/v/[token]` (QR de canje) · **`/l/[slug]` (link de la bio de Instagram)**.
+`/v/[token]` (QR de canje) · `/l/[slug]` (link de la bio de Instagram) ·
+**`/p/[slug]` (páginas HTML que sube el bar)**.
+
+`/p/[slug]` es la única que sirve HTML escrito por una persona y no por
+nosotros: va con `Content-Security-Policy: sandbox` (sin `allow-same-origin`)
+para que no pueda tocar la sesión del panel, que vive en el mismo dominio. El
+header está en `lib/landings/security.ts` y `tests/lib/landing-security.test.ts`
+es el candado. Ver `docs/features/paginas-html.md`.
 
 Una ruta pública nueva se declara en TRES lugares: `PUBLIC_PREFIXES`
 (`lib/supabase/middleware.ts`), `RESERVED_SLUGS` (`lib/tenant/types.ts`) y el

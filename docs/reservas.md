@@ -505,3 +505,128 @@ El diff pasó por un panel de revisores por dimensión + verificación adversari
    confirmar que quedó.
 6. Desde el popup del listado, mover la hora de esa reserva → la torta **sigue
    elegida** (regresión de "ausente ≠ vacío").
+
+## Addendum 2026-09 — El tablero operativo (`/[slug]/operativo`)
+
+Rediseño total de la pantalla que usan el dueño y la anfitriona durante el
+servicio, pensada como app de celular (acceso directo / PWA) y con
+master-detail en desktop. Lo que era una lista plana con botones pasó a ser
+un tablero que late con el salón.
+
+### Qué hace
+
+- **Pulso de la noche**: cubiertos adentro sobre reservados (ticker), barra
+  apilada en cubiertos (adentro · atrasados rayados · por llegar · no vinieron),
+  pico estimado con sparkline de 30′, hitos del día (eventos con cupo, tortas,
+  cumples). Las píldoras de la leyenda son alias de los filtros de la lista.
+- **Barra de trabajo sticky** (`top-14`, bajo el topbar del manager): búsqueda
+  instantánea client-side por nombre, apellido de la ficha, dígitos del
+  teléfono, mesa y gestor (sin tildes, palabras en cualquier orden; con
+  búsqueda activa el filtro de estado se ignora), chips Todas · Por llegar ·
+  Adentro · Terminadas con contadores, "N tarde" cuando hay atrasadas, y un
+  mini-rail de progreso cuando el pulso salió de la vista. En mobile suma los
+  botones "Escanear QR" y "Nueva reserva".
+- **Lista por servicio, en orden de hora y NUNCA por estado**: marcar "Llegó"
+  no mueve la tarjeta. La línea **AHORA · 21:42** se cuela donde corresponde y
+  al abrir el día de hoy la pantalla hace scroll hasta ella (una vez).
+- **Tarjeta**: el riel izquierdo es la HORA mientras espera (con "hace 25 min"
+  en ámbar si se atrasó más de 15′) y pasa a ser la MESA en serif grande una
+  vez adentro ("Mesa?" punteado si no se asignó). A la derecha, la acción del
+  momento: "Llegó" (success, 44 px), tilde cuando entró, "Apareció" si se la
+  había dado por no venida, "No vino" chico cuando ya está atrasada.
+- **Ficha** (sheet inferior en mobile, aside pegado en desktop; un solo nivel,
+  el contenido se reemplaza): acciones por estado, mesa y personas editables,
+  avisos/torta/champagne/comentario, panel del club, datos fríos, historia del
+  turno y link a la edición completa.
+- **Llegó = un gesto**: contador (arranca en lo reservado) + mesa (input libre
+  "12", "12+13", "Barra" con atajos de las mesas de la noche y aviso no
+  bloqueante si otra reserva ya la tiene) + botón con label vivo "Confirmar · 6
+  personas · Mesa 12". Una sola Server Action (`transitionStatus` acepta
+  `table_label`).
+- **Puntos del club desde la reserva**: si tiene socio, nivel + saldo + "ya
+  sumó +120 pts a las 22:41"; "Sumar puntos" pide el monto en pesos, muestra en
+  vivo cuántos suma y al confirmar el saldo cuenta hasta el nuevo. Si no tiene
+  socio pero sí teléfono: "Vincular al club" (busca por teléfono o crea la ficha
+  con `acquisition_channel = 'reservation'`). El anfitrión ve todo en lectura
+  ("los puntos los suma caja"): `REDEMPTION_STAFF_ROLES` lo excluye y la RPC
+  también.
+- **Optimista + Deshacer**: llegó, no vino, cerrar mesa y los reversos cambian
+  la fila al toque y dejan un toast de 6 s con "Deshacer". La única que confirma
+  es "me equivoqué, no llegó" desde adentro (recalcula comisión). Si la action
+  falla, se vuelve atrás y se explica.
+- **Realtime** (canal `operativo-<tenant>-<fecha>`): lo que marca el mozo desde
+  `/salon` aparece solo, con un tinte de 1,2 s en la fila. Guard de
+  `updated_at` para que un payload viejo no pise un cambio optimista; refetch
+  debounced tras un INSERT (llega sin joins); red de seguridad cada 60 s;
+  pill "Sin conexión" con `navigator.onLine`.
+- **Día de servicio**: hasta las **5 AM** "hoy" sigue siendo la noche anterior
+  (`serviceDayInCordoba`), y el reloj del tablero sigue contando desde 24:00
+  (`boardClockMinutes`) para que "hace 40 min" y la línea de AHORA sean verdad a
+  la 1:30. Una reserva a las 00:30 se lee al final de la noche
+  (`serviceMinutes`), no antes del desayuno. Solo aplica a `/operativo`; el
+  salón y `/reservas` siguen con el día calendario.
+- **Desktop**: `/` enfoca la búsqueda, `↑↓`/`j k` recorren, `Enter` abre,
+  `Esc` limpia/cierra. Sin reserva elegida, el aside muestra el "pulso
+  extendido" (ocupación por zona, eventos con cupo, tortas a preparar, salón
+  armado).
+
+### Modelo de datos y backend
+
+- `salon_reservations.table_label text` (check 1..24 tras trim) — migración
+  `20260905150000_reservation_table_label.sql`. Texto libre a propósito: se
+  juntan mesas para los grupos y el plano físico vive detrás de feature-flag.
+- `transition_reservation_status` admite `no_show → pending` y `no_show →
+  arrived` — migración `20260905150100_transition_no_show_revert.sql`. Cancelada
+  sigue siendo terminal.
+- `RESERVATION_JOIN_SELECT` trae además `customer.points_balance` y
+  `customer.tier(name, color)` (normalizado en `flattenReservation`).
+- Actions nuevas en `lib/salon/actions.ts`: `updateReservationTableLabel`
+  (STAFF, espeja `sr_staff_write`), `closeTable` (OPERATORS; encadena
+  `arrived → seated → closed`), `linkReservationCustomer` (STAFF; busca por
+  teléfono o crea, chequea el error del insert). `transitionStatus` acepta
+  `table_label` (UPDATE posterior a la RPC; si falla, la llegada queda y se
+  avisa). `updateSalonReservation` respeta "ausente ≠ vacío" para la mesa.
+- `lib/points/queries.ts#listRecentQrAwards` + `fetchOperativoExtras`
+  (capacidad + eventos + acreditaciones del día en una invocación).
+- Lógica pura en `lib/salon/operativo.ts` (búsqueda, ranking, orden, franjas,
+  pulso, mesas ocupadas, máquina de estados de la UI, día de servicio) y
+  `lib/salon/update-payload.ts`.
+
+### Tests
+
+- `tests/lib/salon-operativo.test.ts` — reloj del servicio, franjas,
+  búsqueda (tildes, orden, teléfono, mesa), orden estable, filtros, marcador de
+  ahora, pulso, mesas, máquina de estados.
+- `tests/lib/salon-schemas.test.ts` — `reservationTableLabelSchema`
+  (trim/normalización, '' → null, ausente → undefined, tope) y `table_label`
+  en la transición y en la edición completa.
+- `tests/lib/operativo-board-render.test.tsx` — SSR del tablero entero con una
+  noche realista (todos los estados, evento, torta, cancelada, trasnoche), día
+  vacío y día futuro.
+
+### Smoke manual (hacer en producción con el celular)
+
+1. `/hub/operativo` un día con reservas → pulso con "N / M cubiertos", barra
+   apilada, pico, hitos; barra de búsqueda pegada al scrollear; línea AHORA
+   entre las reservas y el mini-rail verde bajo la búsqueda al pasar el pulso.
+2. Escribir "gar" → solo García(s), resaltado, contador "2 coincidencias"; la
+   búsqueda ignora el chip activo. Borrar con la × o Esc.
+3. Tocar **Llegó** en una pendiente → sheet con contador (arranca en lo
+   reservado) y mesa; poner "12" (o tocar un atajo), confirmar → la tarjeta
+   pasa a verde, el riel muestra **12** grande, el toast ofrece Deshacer, el
+   pulso tickea. Ver en `/hub/salon/reservas-operativo` (otro dispositivo) que
+   aparece "Mesa 12" sin recargar.
+4. Marcar **No vino** en una atrasada (botón chico bajo Llegó) → toast con
+   Deshacer; tocar "Apareció" en la tarjeta → vuelve a pendiente.
+5. Abrir una reserva adentro → cambiar personas con el stepper (se guarda solo)
+   y la mesa desde el botón "Mesa" → "12+13". Dueño: "Cerrar mesa" → contador →
+   cerrada; "Reabrir mesa" la devuelve.
+6. Reserva con socio → "Sumar puntos" → $12.000 → "Suma 12 puntos" → confirmar
+   → animación +12 pts, saldo nuevo, chip "+12 pts" en la tarjeta, "Ya sumó…"
+   en la ficha. Entrar con un usuario `host` → el panel del club es solo
+   lectura.
+7. Reserva sin socio con teléfono → "Vincular al club" → aparece la ficha con
+   saldo 0 y ya se puede sumar.
+8. Flechas de fecha → mañana muestra el banner ámbar y no ofrece Llegó; ayer
+   sí. A la 1:30 de la madrugada, "Hoy" sigue siendo la noche anterior.
+9. Desktop ≥ 1024 px: la ficha se abre al costado; `/`, `↑↓`, `Enter`, `Esc`.

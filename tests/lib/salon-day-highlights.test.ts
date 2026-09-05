@@ -43,6 +43,7 @@ function reservation(over: Partial<ReservationWithJoins> = {}): ReservationWithJ
     comments: null,
     service_alerts: [],
     highlight_comment: false,
+    table_label: null,
     status: 'pending',
     arrived_at: null,
     seated_at: null,

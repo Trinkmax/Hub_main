@@ -35,6 +35,7 @@ const PUBLIC_PREFIXES = [
   '/r/', // página pública de reseña
   '/v/', // QR de canje del socio: lo abre sin sesión para mostrárselo al mozo
   '/l/', // link público del bar (bio de Instagram)
+  '/p/', // páginas HTML que sube el bar (landings)
   '/api/wallet/', // pulso de la billetera del socio (capability por qr_token, sin sesión)
   '/api/webhooks/',
   '/api/cron/', // jobs de fondo: se auto-protegen con Bearer CRON_SECRET en cada route handler
@@ -50,7 +51,17 @@ const PUBLIC_PREFIXES = [
  * (pg_cron, Meta, el pulso de la billetera). Para estos ni instanciamos el
  * cliente de Supabase — cero trabajo en el proxy.
  */
-const MACHINE_PREFIXES = ['/api/cron/', '/api/webhooks/', '/api/wallet/', '/_next/', '/icons/']
+const MACHINE_PREFIXES = [
+  '/api/cron/',
+  '/api/webhooks/',
+  '/api/wallet/',
+  // Las landings del bar son 100% anónimas: no hay sesión que refrescar y el
+  // Route Handler no lee cookies. Saltear el cliente de Supabase le saca un
+  // hop a cada visita que llega desde Instagram.
+  '/p/',
+  '/_next/',
+  '/icons/',
+]
 
 const STAFF_ROLES = new Set<string>(SALON_ROLES)
 

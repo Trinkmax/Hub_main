@@ -1,57 +1,63 @@
-import { ArrowRight, CalendarCheck, CalendarClock, PartyPopper, Users } from 'lucide-react'
-import Link from 'next/link'
+import type { Viewport } from 'next'
 import { notFound } from 'next/navigation'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { EmptyState } from '@/components/ui/empty-state'
-import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
+import { resolveEarnRate } from '@/lib/points/earn-rate'
+import { listRecentQrAwards, listRules } from '@/lib/points/queries'
+import { serviceDayEndIso, serviceDayInCordoba, serviceDayStartIso } from '@/lib/salon/operativo'
 import {
-  getTodaySalonOverview,
-  listScheduledEventsForDateRange,
+  getDayCapacitySnapshot,
+  listScheduledEventsForDate,
   listTimelineForDate,
 } from '@/lib/salon/queries'
-import { STATUS_LABELS } from '@/lib/salon/types'
 import {
+  RESERVATION_OPERATOR_ROLES,
   RESERVATION_STAFF_ROLES,
   RoleRequiredError,
   requireRole,
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
-import { cn } from '@/lib/utils'
-import { ReservationRow } from './_components/reservation-row'
+import { REDEMPTION_STAFF_ROLES } from '@/lib/tenant/roles'
+import { OperativoBoard } from './_components/operativo-board'
 
 export const metadata = { title: 'Operativo' }
 export const dynamic = 'force-dynamic'
 
-/** Fecha de hoy en la zona horaria del local (Córdoba). */
-function todayCordoba(): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Argentina/Cordoba',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date())
+// La pantalla se usa como app (acceso directo en el celular): con `cover` el
+// fondo llega hasta los bordes y `env(safe-area-inset-*)` deja de valer 0.
+export const viewport: Viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#f5edd7' },
+    { media: '(prefers-color-scheme: dark)', color: '#0f2a20' },
+  ],
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 }
 
-function formatLongDate(date: string): string {
-  // date = YYYY-MM-DD; lo interpretamos como fecha local sin desfase de TZ.
-  const [y, m, d] = date.split('-').map(Number)
-  const dt = new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1)
-  return new Intl.DateTimeFormat('es-AR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  }).format(dt)
+/** 'YYYY-MM-DD' que además exista en el calendario (2026-02-30 no). */
+function isRealDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const [y, m, d] = value.split('-').map(Number)
+  if (!y || !m || !d || y < 2000 || y > 2100) return false
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d
 }
 
+/**
+ * El tablero de la noche.
+ *
+ * Todo lo que el server hace es autorizar y traer el primer paint; de ahí en
+ * adelante el tablero vive en el cliente con Realtime (ver OperativoBoard).
+ * "Hoy" es el DÍA DE SERVICIO: hasta las 5 AM sigue siendo la noche anterior.
+ */
 export default async function OperativoPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantSlug: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  const { tenantSlug } = await params
+  const [{ tenantSlug }, sp] = await Promise.all([params, searchParams])
 
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
@@ -63,186 +69,49 @@ export default async function OperativoPage({
     throw e
   }
 
-  const date = todayCordoba()
+  const today = serviceDayInCordoba()
+  const date = typeof sp.date === 'string' && isRealDate(sp.date) ? sp.date : today
   const tenantId = access.tenant.id
 
-  const [reservations, overview, todayEvents] = await Promise.all([
+  const [reservations, capacity, events, rules] = await Promise.all([
     listTimelineForDate({ tenantId, date }),
-    getTodaySalonOverview({ tenantId, date }),
-    listScheduledEventsForDateRange({ tenantId, from: date, to: date }),
+    getDayCapacitySnapshot({ tenantId, date }),
+    listScheduledEventsForDate({ tenantId, date }),
+    listRules({ tenantId }),
   ])
 
-  // Reservas operables (no canceladas) ordenadas por hora — el query ya viene ordenado.
-  const activeReservations = reservations.filter((r) => r.status !== 'cancelled')
-
-  return (
-    <PageShell width="comfortable">
-      <PageHeader
-        eyebrow="Hoy"
-        title="Operativo"
-        description="Lo que pasa hoy en el salón: reservas en curso y eventos del día."
-      >
-        <p className="text-sm font-medium capitalize text-muted-foreground">
-          {formatLongDate(date)}
-        </p>
-      </PageHeader>
-
-      {/* Tira de resumen / capacidad */}
-      <section
-        aria-label="Resumen del día"
-        className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
-      >
-        <SummaryStat label="Reservas" value={overview.reservationsCount} accent="default" />
-        <SummaryStat label="Cubiertos" value={overview.estimatedGuests} accent="default" />
-        <SummaryStat label="Por llegar" value={overview.byStatus.pending} accent="muted" />
-        {/* "Adentro" suma los tres estados de servicio efectivo: el salón sólo
-            marca "Llegó", así que contar `seated`/`closed` por separado daría 0
-            casi siempre. Cerrar mesas quedó como acción opcional del dueño. */}
-        <SummaryStat
-          label="Adentro"
-          value={overview.byStatus.arrived + overview.byStatus.seated + overview.byStatus.closed}
-          accent="success"
-        />
-      </section>
-
-      {overview.peak ? (
-        <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-card/60 px-4 py-2.5 text-sm text-muted-foreground">
-          <Users className="size-4 shrink-0 text-primary" />
-          <span>
-            Pico estimado:{' '}
-            <strong className="text-foreground tabular-nums">
-              {overview.peak.startHHMM}–{overview.peak.endHHMM}
-            </strong>{' '}
-            con <strong className="text-foreground tabular-nums">{overview.peak.guests}</strong>{' '}
-            personas.
-          </span>
-        </div>
-      ) : null}
-
-      {/* Timeline de reservas */}
-      <section aria-label="Reservas de hoy" className="space-y-3">
-        <div className="flex items-center gap-2">
-          <CalendarClock className="size-4 text-muted-foreground" />
-          <h2 className="font-serif text-lg font-semibold tracking-tight">Reservas de hoy</h2>
-          <Badge variant="muted" className="tabular-nums">
-            {activeReservations.length}
-          </Badge>
-        </div>
-
-        {activeReservations.length === 0 ? (
-          <EmptyState
-            icon={CalendarCheck}
-            title="No hay reservas para hoy"
-            description="Cuando carguen reservas para la fecha de hoy van a aparecer acá en orden por horario."
-          />
-        ) : (
-          <ul className="card-hairline divide-y divide-border/60 overflow-hidden rounded-xl border bg-card">
-            {activeReservations.map((reservation) => (
-              <li key={reservation.id}>
-                <ReservationRow tenantSlug={tenantSlug} reservation={reservation} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/* Eventos de hoy */}
-      <section aria-label="Eventos de hoy" className="space-y-3">
-        <div className="flex items-center gap-2">
-          <PartyPopper className="size-4 text-muted-foreground" />
-          <h2 className="font-serif text-lg font-semibold tracking-tight">Eventos de hoy</h2>
-          <Badge variant="muted" className="tabular-nums">
-            {todayEvents.length}
-          </Badge>
-        </div>
-
-        {todayEvents.length === 0 ? (
-          <EmptyState
-            icon={PartyPopper}
-            title="No hay eventos programados para hoy"
-            description="Los eventos del calendario con fecha de hoy aparecen acá con su acceso a las reservas del día."
-          />
-        ) : (
-          <ul className="grid gap-3 sm:grid-cols-2">
-            {todayEvents.map((event) => {
-              const name = event.name_override ?? event.template?.name ?? 'Evento'
-              const color = event.template?.color_hex ?? null
-              return (
-                <li
-                  key={event.id}
-                  className="card-hairline flex flex-col gap-3 rounded-xl border border-border/70 bg-card p-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-2">
-                      {color ? (
-                        <span
-                          aria-hidden
-                          className="size-2.5 shrink-0 rounded-full"
-                          style={{ backgroundColor: color }}
-                        />
-                      ) : null}
-                      <div className="min-w-0">
-                        <p className="truncate font-medium leading-tight">{name}</p>
-                        <p className="mt-1 text-xs text-muted-foreground tabular-nums">
-                          {event.starts_at_local.slice(0, 5)} · cupo {event.capacity}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  <Button
-                    asChild
-                    size="sm"
-                    variant="outline"
-                    className="w-full gap-2 sm:w-auto sm:self-start"
-                  >
-                    <Link href={`/${tenantSlug}/eventos/programados/${event.id}`}>
-                      <CalendarCheck className="size-4" />
-                      Ver reservas
-                      <ArrowRight className="size-3.5" />
-                    </Link>
-                  </Button>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </section>
-
-      <p className="sr-only">Estados de reserva: {Object.values(STATUS_LABELS).join(', ')}.</p>
-    </PageShell>
+  // Acreditaciones de puntos de ESTA noche para los socios que tienen reserva:
+  // así la pantalla no ofrece "sumar puntos" como si nada a una mesa que ya
+  // pagó. Depende de las reservas, por eso va después del Promise.all.
+  const customerIds = Array.from(
+    new Set(reservations.map((r) => r.customer_id).filter((id): id is string => Boolean(id))),
   )
-}
+  const awards =
+    customerIds.length > 0
+      ? await listRecentQrAwards({
+          tenantId,
+          customerIds,
+          sinceIso: serviceDayStartIso(date),
+          untilIso: serviceDayEndIso(date),
+        })
+      : []
 
-function SummaryStat({
-  label,
-  value,
-  accent,
-}: {
-  label: string
-  value: number
-  accent: 'default' | 'muted' | 'info' | 'success'
-}) {
   return (
-    <div
-      className={cn(
-        'flex flex-col gap-1 rounded-xl border border-border/70 bg-card px-4 py-3',
-        accent === 'info' && 'border-info/40',
-        accent === 'success' && 'border-success/40',
-      )}
-    >
-      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </span>
-      <span
-        className={cn(
-          'font-serif text-2xl font-semibold tabular-nums leading-none',
-          accent === 'info' && 'text-info',
-          accent === 'success' && 'text-success',
-          accent === 'muted' && 'text-muted-foreground',
-        )}
-      >
-        {value}
-      </span>
-    </div>
+    <OperativoBoard
+      tenantSlug={tenantSlug}
+      tenantId={tenantId}
+      role={access.role}
+      date={date}
+      today={today}
+      initialReservations={reservations}
+      initialCapacity={capacity}
+      initialEvents={events}
+      initialAwards={awards}
+      earnRate={resolveEarnRate(rules)}
+      canOperate={(RESERVATION_OPERATOR_ROLES as ReadonlyArray<string>).includes(access.role)}
+      canAward={(REDEMPTION_STAFF_ROLES as ReadonlyArray<string>).includes(access.role)}
+      canLink={(RESERVATION_STAFF_ROLES as ReadonlyArray<string>).includes(access.role)}
+      isOwner={access.role === 'owner'}
+    />
   )
 }

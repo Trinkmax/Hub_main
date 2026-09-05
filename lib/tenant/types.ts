@@ -57,6 +57,7 @@ export const RESERVED_SLUGS = new Set([
   'r',
   'v', // QR de canje (/v/[redeem_token])
   'l', // link público del bar para la bio de Instagram (/l/[tenantSlug])
+  'p', // páginas HTML que publica el bar (/p/[slug])
   '_next',
   'static',
   'public',

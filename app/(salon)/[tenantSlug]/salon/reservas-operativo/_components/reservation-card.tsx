@@ -217,6 +217,13 @@ export function ReservationCard({
                   {STATUS_TEXT[reservation.status]}
                 </span>
               ) : null}
+              {/* La mesa la asigna la anfitriona desde el tablero del manager:
+                  el mozo la necesita para llevar a la gente. */}
+              {here && reservation.table_label ? (
+                <span className="font-semibold text-foreground">
+                  {' · '}Mesa {reservation.table_label}
+                </span>
+              ) : null}
               {reservation.primary_manager ? (
                 <>
                   {reservation.status !== 'pending' ? ' · ' : ''}

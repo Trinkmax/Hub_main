@@ -68,13 +68,15 @@ describe('resolveNavGroups — rol + feature + superadmin', () => {
     expect(all).not.toContain('Configuración')
   })
 
-  it('el grupo Marketing es owner-only y trae el tablero + el link de la bio', () => {
+  it('el grupo Marketing es owner-only y trae el tablero, el link de la bio y las páginas', () => {
     const owner = resolveNavGroups('owner', SLUG, allOff, false)
-    expect(itemLabels(owner, 'Marketing')).toEqual(['Tareas', 'Link de Instagram'])
+    expect(itemLabels(owner, 'Marketing')).toEqual(['Tareas', 'Link de Instagram', 'Páginas'])
     const tareas = group(owner, 'Marketing')?.items.find((i) => i.label === 'Tareas')
     expect(tareas?.href).toBe('/hub/tareas')
     const enlaces = group(owner, 'Marketing')?.items.find((i) => i.label === 'Link de Instagram')
     expect(enlaces?.href).toBe('/hub/enlaces')
+    const paginas = group(owner, 'Marketing')?.items.find((i) => i.label === 'Páginas')
+    expect(paginas?.href).toBe('/hub/paginas')
 
     // Ningún rol acotado lo ve: es la mesa de los socios.
     for (const role of ['waiter', 'cashier', 'kitchen', 'editor', 'host'] as const) {

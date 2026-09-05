@@ -34,7 +34,7 @@ const RESERVATION_JOIN_SELECT = `
     id, capacity, starts_at_local, meal_type,
     template:scheduled_event_templates(id, name, slug, color_hex, consume_special_reservations)
   ),
-  customer:customers(id, first_name, last_name, phone, service_alerts),
+  customer:customers(id, first_name, last_name, phone, service_alerts, points_balance, tier:loyalty_tiers!customers_current_tier_id_fkey(name, color)),
   cake_option:cake_options(id, name, base, fillings)
 `
 
@@ -45,6 +45,7 @@ function normalizeJoin<T>(value: T | T[] | null | undefined): T | null {
 
 type ScheduledEventJoin = NonNullable<ReservationWithJoins['scheduled_event']>
 type TemplateJoin = ScheduledEventJoin['template']
+type CustomerJoin = NonNullable<ReservationWithJoins['customer']>
 
 function flattenReservation(row: Record<string, unknown>): ReservationWithJoins {
   const base = { ...row } as ReservationWithJoins
@@ -73,7 +74,20 @@ function flattenReservation(row: Record<string, unknown>): ReservationWithJoins 
   } else {
     base.scheduled_event = null
   }
-  base.customer = normalizeJoin(row.customer as ReservationWithJoins['customer'])
+  // El nivel del socio viene como embed anidado y PostgREST puede devolverlo
+  // como array: se aplana igual que el template del evento.
+  const customer = normalizeJoin(
+    row.customer as
+      | (Omit<CustomerJoin, 'tier'> & { tier?: CustomerJoin['tier'] | CustomerJoin['tier'][] })
+      | null,
+  )
+  base.customer = customer
+    ? ({
+        ...customer,
+        points_balance: customer.points_balance ?? 0,
+        tier: normalizeJoin(customer.tier as CustomerJoin['tier'] | CustomerJoin['tier'][] | null),
+      } as CustomerJoin)
+    : null
   base.cake_option = normalizeJoin(row.cake_option as ReservationWithJoins['cake_option'])
   return base
 }

@@ -6,6 +6,8 @@
  * capa supabase al cliente.
  */
 
+import { z } from 'zod'
+import { listRecentQrAwards, type RecentQrAward } from '@/lib/points/queries'
 import {
   RoleRequiredError,
   requireRole,
@@ -14,6 +16,7 @@ import {
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
+import { serviceDayEndIso, serviceDayStartIso } from './operativo'
 import {
   getDayCapacitySnapshot,
   listScheduledEventsForDate,
@@ -21,6 +24,11 @@ import {
   type ScheduledEventWithTemplate,
 } from './queries'
 import type { DayCapacityBucket, ReservationWithJoins } from './types'
+
+const operativoExtrasInputSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  customerIds: z.array(z.string().uuid()).max(200),
+})
 
 async function authorizeRead(slug: string) {
   try {
@@ -100,6 +108,45 @@ export async function fetchDayExtras(
       listScheduledEventsForDate({ tenantId: access.tenant.id, date }),
     ])
     return { ok: true, buckets, events }
+  } catch {
+    return { ok: false, message: 'No pudimos leer el día.' }
+  }
+}
+
+/**
+ * Todo lo que el tablero operativo refresca junto a las reservas: capacidad,
+ * eventos y las acreditaciones de puntos del día de los socios con reserva.
+ * Una sola invocación por tick, como `fetchDayExtras`.
+ */
+export async function fetchOperativoExtras(
+  slug: string,
+  date: string,
+  customerIds: ReadonlyArray<string>,
+): Promise<
+  | {
+      ok: true
+      buckets: DayCapacityBucket[]
+      events: ScheduledEventWithTemplate[]
+      awards: RecentQrAward[]
+    }
+  | { ok: false; message: string }
+> {
+  const access = await authorizeRead(slug)
+  if (!access) return { ok: false, message: 'No tenés permiso.' }
+  const parsed = operativoExtrasInputSchema.safeParse({ date, customerIds })
+  if (!parsed.success) return { ok: false, message: 'Pedido inválido.' }
+  try {
+    const [buckets, events, awards] = await Promise.all([
+      getDayCapacitySnapshot({ tenantId: access.tenant.id, date: parsed.data.date }),
+      listScheduledEventsForDate({ tenantId: access.tenant.id, date: parsed.data.date }),
+      listRecentQrAwards({
+        tenantId: access.tenant.id,
+        customerIds: parsed.data.customerIds,
+        sinceIso: serviceDayStartIso(parsed.data.date),
+        untilIso: serviceDayEndIso(parsed.data.date),
+      }),
+    ])
+    return { ok: true, buckets, events, awards }
   } catch {
     return { ok: false, message: 'No pudimos leer el día.' }
   }

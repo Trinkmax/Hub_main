@@ -155,6 +155,68 @@ export async function listCustomerLedger(opts: {
   return (data ?? []) as unknown as LedgerEntry[]
 }
 
+/**
+ * Una acreditación por consumo ("qr_award") de un socio, tal como la muestra la
+ * pantalla operativa: "ya sumó 120 pts a las 22:41".
+ */
+export type RecentQrAward = {
+  customer_id: string
+  points: number
+  amount_cents: number
+  created_at: string
+}
+
+/**
+ * Las acreditaciones por consumo de HOY para un puñado de socios (los que
+ * tienen reserva en el día). Sirve para que la pantalla operativa no ofrezca
+ * "sumar puntos" como si nada a una mesa que ya pagó y sumó: la RPC no tiene
+ * clave de idempotencia y el guard anti-duplicado de la action es de 3 min.
+ *
+ * Solo `reason = 'qr_award'`: los puntos automáticos por asistencia a un evento
+ * (`event_attendance`) son otra cosa y no cuentan como "ya le cargaron el
+ * consumo". Se queda con la ÚLTIMA por socio.
+ */
+export async function listRecentQrAwards(opts: {
+  tenantId: string
+  customerIds: ReadonlyArray<string>
+  sinceIso: string
+  /** Tope superior (exclusivo): mirando un día pasado, no traer noches posteriores. */
+  untilIso?: string
+}): Promise<RecentQrAward[]> {
+  if (opts.customerIds.length === 0) return []
+  const supabase = await createClient()
+  let query = supabase
+    .from('points_transactions')
+    .select('customer_id, delta, payload, created_at')
+    .eq('tenant_id', opts.tenantId)
+    .eq('reason', 'qr_award')
+    .in('customer_id', [...opts.customerIds])
+    .gte('created_at', opts.sinceIso)
+  if (opts.untilIso) query = query.lt('created_at', opts.untilIso)
+  const { data, error } = await query.order('created_at', { ascending: false }).limit(200)
+  if (error) throw error
+
+  const seen = new Set<string>()
+  const out: RecentQrAward[] = []
+  for (const row of data ?? []) {
+    const r = row as {
+      customer_id: string
+      delta: number
+      payload: { amount_cents?: number } | null
+      created_at: string
+    }
+    if (seen.has(r.customer_id)) continue
+    seen.add(r.customer_id)
+    out.push({
+      customer_id: r.customer_id,
+      points: r.delta,
+      amount_cents: Number(r.payload?.amount_cents ?? 0),
+      created_at: r.created_at,
+    })
+  }
+  return out
+}
+
 export type VisitListEntry = {
   id: string
   visited_at: string

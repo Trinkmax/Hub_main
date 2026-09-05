@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
 import { logAudit } from '@/lib/audit'
+import { tryNormalizePhone } from '@/lib/phone'
 import { createClient } from '@/lib/supabase/server'
 import {
   RESERVATION_OPERATOR_ROLES,
@@ -36,6 +37,7 @@ import {
   moveScheduledEventSchema,
   quickTemplateSchema,
   rateTierSchema,
+  reservationTableLabelSchema,
   scheduledEventSchema,
   scheduledTemplateSchema,
   transitionStatusSchema,
@@ -307,8 +309,21 @@ export async function createSalonReservation(
 
   const supabase = (await createClient()) as SBAny
 
-  // Auto-link cliente existente si el phone matchea uno del tenant.
+  // Un customer_id que venga del form tiene que ser de ESTE bar (la FK no lo
+  // garantiza). Si no lo es, se ignora y se sigue por teléfono.
   let customerId = parsed.data.customer_id ?? null
+  if (customerId) {
+    const { data: owned } = await supabase
+      .from('customers')
+      .select('id')
+      .eq('tenant_id', access.tenant.id)
+      .eq('id', customerId)
+      .is('deleted_at', null)
+      .maybeSingle()
+    if (!owned) customerId = null
+  }
+
+  // Auto-link cliente existente si el phone matchea uno del tenant.
   if (!customerId && parsed.data.guest_phone) {
     const { data: existing } = await supabase
       .from('customers')
@@ -487,6 +502,20 @@ export async function updateSalonReservation(
     if (mismatch) return mismatch
   }
 
+  // El socio vinculado tiene que ser de ESTE bar: la FK no lo garantiza y un
+  // id ajeno enlazaría (y acreditaría puntos de evento a) un cliente de otro
+  // tenant.
+  if (patch.customer_id) {
+    const { data: owned } = await supabase
+      .from('customers')
+      .select('id')
+      .eq('tenant_id', access.tenant.id)
+      .eq('id', patch.customer_id)
+      .is('deleted_at', null)
+      .maybeSingle()
+    if (!owned) return badInput('El cliente no pertenece a este bar.', 'customer_id')
+  }
+
   const { error } = await supabase
     .from('salon_reservations')
     .update({
@@ -534,6 +563,9 @@ export async function updateSalonReservation(
       ...(patch.highlight_comment !== undefined
         ? { highlight_comment: patch.highlight_comment }
         : {}),
+      // Ausente ≠ vacío: la mesa se asigna en el servicio, desde la pantalla
+      // operativa. Editar la reserva desde el form no tiene por qué borrarla.
+      ...(patch.table_label !== undefined ? { table_label: patch.table_label } : {}),
     })
     .eq('tenant_id', access.tenant.id)
     .eq('id', id)
@@ -626,6 +658,11 @@ export async function transitionStatus(
     const first = parsed.error.issues[0]
     return badInput(first?.message ?? 'Datos inválidos', first?.path[0]?.toString())
   }
+  // Cancelar es decisión del cliente y tiene su propia action (STAFF, con
+  // motivo): la máquina de estados del pase de lista no cancela.
+  if (parsed.data.to === 'cancelled') {
+    return badInput('Para cancelar usá "Cancelar reserva".', 'to')
+  }
 
   const supabase = (await createClient()) as SBAny
   const { data, error } = await supabase.rpc('transition_reservation_status', {
@@ -635,20 +672,46 @@ export async function transitionStatus(
   })
   if (error) return { ok: false, message: humanizeSalonError(error.message), code: error.message }
 
+  let row = data as unknown as Record<string, unknown>
+  let warning: string | undefined
+
+  // La mesa viaja en el mismo gesto que "Llegó" (contar + ubicar es un solo
+  // momento con la gente adelante). Va DESPUÉS de la transición y por UPDATE
+  // directo: la RPC es la máquina de estados y no tiene por qué saber de mesas.
+  // Si este paso falla, la llegada ya quedó registrada — que es lo que importa
+  // para la comisión — y se avisa que la mesa no se guardó.
+  if (parsed.data.table_label !== undefined) {
+    const { data: updated, error: tableError } = await supabase
+      .from('salon_reservations')
+      .update({ table_label: parsed.data.table_label })
+      .eq('tenant_id', access.tenant.id)
+      .eq('id', parsed.data.id)
+      .select('table_label')
+      .maybeSingle()
+    if (tableError || !updated) {
+      warning = 'Se marcó la llegada, pero no pudimos guardar la mesa. Asignala de nuevo.'
+    } else {
+      row = { ...row, table_label: (updated as { table_label: string | null }).table_label }
+    }
+  }
+
   await logAudit({
     tenantId: access.tenant.id,
     userId: null,
     action: `salon_reservation.${parsed.data.to}`,
     entity: 'salon_reservation',
     entityId: parsed.data.id,
-    payload: { actual_guests: parsed.data.actual_guests ?? null },
+    payload: {
+      actual_guests: parsed.data.actual_guests ?? null,
+      ...(parsed.data.table_label !== undefined ? { table_label: parsed.data.table_label } : {}),
+    },
   })
 
   revalidatePath(`/${slug}/reservas`)
   revalidatePath(`/${slug}/reservas/${parsed.data.id}`)
   revalidatePath(`/${slug}/salon/reservas-operativo`)
   revalidatePath(`/${slug}/operativo`)
-  return { ok: true, data: { row: data as unknown as Record<string, unknown> } }
+  return { ok: true, message: warning, data: { row } }
 }
 
 // Wrappers cómodos para llamar desde botones
@@ -665,11 +728,13 @@ export async function markArrived(
   slug: string,
   id: string,
   actualGuests?: number,
+  tableLabel?: string | null,
 ): Promise<ActionState> {
   return transitionStatus(slug, {
     id,
     to: 'arrived' as SalonReservationStatus,
     ...(typeof actualGuests === 'number' ? { actual_guests: actualGuests } : {}),
+    ...(tableLabel !== undefined ? { table_label: tableLabel } : {}),
   })
 }
 export async function markSeated(slug: string, id: string): Promise<ActionState> {
@@ -730,6 +795,258 @@ export async function updateActualGuests(
   revalidatePath(`/${slug}/salon/reservas-operativo`)
   revalidatePath(`/${slug}/operativo`)
   return { ok: true }
+}
+
+/**
+ * "Cerrar mesa" desde el tablero: en un bar llegó ≈ sentado, así que el dueño
+ * ve UN botón. Como la RPC exige arrived → seated → closed, si la reserva está
+ * en `arrived` se encadenan las dos transiciones acá, en el server, en vez de
+ * pedirle al dueño que "siente" primero. La cantidad real viaja en el cierre
+ * (es cuando se sabe de verdad).
+ */
+export async function closeTable(
+  slug: string,
+  input: FormData | Record<string, unknown>,
+): Promise<ActionState> {
+  const access = await authorize(slug, OPERATORS)
+  if (!access) return noAccess()
+
+  const parsed = actualGuestsSchema.safeParse(asObject(input))
+  if (!parsed.success) {
+    const first = parsed.error.issues[0]
+    return badInput(first?.message ?? 'Datos inválidos', first?.path[0]?.toString())
+  }
+
+  const supabase = (await createClient()) as SBAny
+  const { data: current, error: loadError } = await supabase
+    .from('salon_reservations')
+    .select('status')
+    .eq('tenant_id', access.tenant.id)
+    .eq('id', parsed.data.id)
+    .maybeSingle()
+  if (loadError) return { ok: false, message: humanizeSalonError(loadError.message) }
+  if (!current) return { ok: false, message: 'La reserva no existe.' }
+
+  const status = (current as { status: SalonReservationStatus }).status
+  if (status === 'arrived') {
+    const seated = await transitionStatus(slug, { id: parsed.data.id, to: 'seated' })
+    if (!seated.ok) return seated
+  } else if (status !== 'seated') {
+    return { ok: false, message: 'Solo se cierra una mesa que ya llegó.' }
+  }
+
+  const closed = await transitionStatus(slug, {
+    id: parsed.data.id,
+    to: 'closed',
+    actual_guests: parsed.data.actual_guests,
+  })
+  if (!closed.ok) return closed
+  return { ok: true, message: 'Mesa cerrada.', data: closed.data }
+}
+
+/**
+ * Asigna, cambia o quita la mesa de una reserva sin tocar nada más.
+ *
+ * Es la única edición "chica" que se hace decenas de veces por noche, así que
+ * no pasa por `updateSalonReservation` (payload completo + recalc de comisión
+ * por un dato que no afecta comisiones). UPDATE directo: la RLS `sr_staff_write`
+ * (owner/cashier/host) es exactamente quien opera esta pantalla.
+ */
+export async function updateReservationTableLabel(
+  slug: string,
+  input: FormData | Record<string, unknown>,
+): Promise<ActionState> {
+  const access = await authorize(slug, STAFF)
+  if (!access) return noAccess()
+
+  const parsed = reservationTableLabelSchema.safeParse(asObject(input))
+  if (!parsed.success) {
+    const first = parsed.error.issues[0]
+    return badInput(first?.message ?? 'Datos inválidos', first?.path[0]?.toString())
+  }
+
+  const label = parsed.data.table_label ?? null
+  const supabase = (await createClient()) as SBAny
+  const { data, error } = await supabase
+    .from('salon_reservations')
+    .update({ table_label: label })
+    .eq('tenant_id', access.tenant.id)
+    .eq('id', parsed.data.id)
+    .select('id, table_label, updated_at')
+    .maybeSingle()
+  if (error) return { ok: false, message: humanizeSalonError(error.message) }
+  if (!data) return { ok: false, message: 'La reserva no existe.' }
+
+  await logAudit({
+    tenantId: access.tenant.id,
+    userId: null,
+    action: 'salon_reservation.table_assigned',
+    entity: 'salon_reservation',
+    entityId: parsed.data.id,
+    payload: { table_label: label },
+  })
+
+  revalidatePath(`/${slug}/operativo`)
+  revalidatePath(`/${slug}/reservas`)
+  revalidatePath(`/${slug}/reservas/${parsed.data.id}`)
+  revalidatePath(`/${slug}/salon/reservas-operativo`)
+  return {
+    ok: true,
+    message: label ? `Mesa ${label} asignada.` : 'Mesa quitada.',
+    data: { row: data as unknown as Record<string, unknown> },
+  }
+}
+
+/**
+ * Vincula la reserva a un socio del club, creándolo si hace falta.
+ *
+ * Es el paso previo a acreditar puntos desde la pantalla operativa cuando la
+ * reserva entró sin socio (cargada antes de que existiera el vínculo, o con un
+ * teléfono que no matcheaba). Misma lógica que el alta de reserva: busca por
+ * teléfono dentro del tenant y, si no existe, crea el cliente con
+ * `acquisition_channel = 'reservation'` — pero acá SÍ se chequea el error del
+ * insert, porque el usuario está esperando el resultado para seguir.
+ */
+export async function linkReservationCustomer(slug: string, id: string): Promise<ActionState> {
+  const access = await authorize(slug, STAFF)
+  if (!access) return noAccess()
+
+  const parsed = idOnlySchema.safeParse({ id })
+  if (!parsed.success) return badInput('Reserva inválida')
+
+  const supabase = (await createClient()) as SBAny
+  const { data: reservation, error: loadError } = await supabase
+    .from('salon_reservations')
+    .select('id, customer_id, guest_name, guest_phone, service_alerts')
+    .eq('tenant_id', access.tenant.id)
+    .eq('id', parsed.data.id)
+    .maybeSingle()
+  if (loadError) return { ok: false, message: humanizeSalonError(loadError.message) }
+  if (!reservation) return { ok: false, message: 'La reserva no existe.' }
+
+  const row = reservation as {
+    id: string
+    customer_id: string | null
+    guest_name: string
+    guest_phone: string | null
+    service_alerts: ServiceAlert[] | null
+  }
+
+  const loadCustomer = async (customerId: string) => {
+    // La pantalla necesita la ficha completa para seguir de una (saldo,
+    // nivel): mismo select que el join de las reservas, así el estado local
+    // queda igual que si hubiera venido del server.
+    const { data: customerRow } = await supabase
+      .from('customers')
+      .select(
+        'id, first_name, last_name, phone, service_alerts, points_balance, tier:loyalty_tiers!customers_current_tier_id_fkey(name, color)',
+      )
+      .eq('tenant_id', access.tenant.id)
+      .eq('id', customerId)
+      .maybeSingle()
+    const tierRaw = (customerRow as { tier?: unknown } | null)?.tier
+    return customerRow
+      ? {
+          ...(customerRow as Record<string, unknown>),
+          tier: Array.isArray(tierRaw) ? (tierRaw[0] ?? null) : (tierRaw ?? null),
+        }
+      : null
+  }
+
+  if (row.customer_id) {
+    return {
+      ok: true,
+      message: 'La reserva ya está vinculada.',
+      data: {
+        customer_id: row.customer_id,
+        created: false,
+        customer: await loadCustomer(row.customer_id),
+      },
+    }
+  }
+  if (!row.guest_phone) {
+    return {
+      ok: false,
+      message:
+        'La reserva no tiene teléfono. Cargalo desde la edición completa o escaneá el QR del socio.',
+      code: 'no_phone',
+    }
+  }
+
+  // Reservas viejas pueden tener el teléfono sin normalizar: el índice único
+  // de customers es sobre E.164, así que se compara y se guarda en E.164.
+  const phone = tryNormalizePhone(row.guest_phone) ?? row.guest_phone
+  let customerId: string | null = null
+  const { data: existing } = await supabase
+    .from('customers')
+    .select('id')
+    .eq('tenant_id', access.tenant.id)
+    .eq('phone', phone)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (existing) customerId = (existing as { id: string }).id
+
+  let created = false
+  if (!customerId) {
+    const parts = row.guest_name.trim().split(/\s+/)
+    const firstName = parts[0] ?? row.guest_name.trim()
+    const lastName = parts.slice(1).join(' ') || '—'
+    const { data: inserted, error: insertError } = await supabase
+      .from('customers')
+      .insert({
+        tenant_id: access.tenant.id,
+        phone,
+        first_name: firstName,
+        last_name: lastName,
+        source: 'manual',
+        acquisition_channel: 'reservation',
+      })
+      .select('id')
+      .maybeSingle()
+    if (insertError || !inserted) {
+      return {
+        ok: false,
+        message: insertError
+          ? humanizeSalonError(insertError.message)
+          : 'No pudimos crear el socio. Probá de nuevo.',
+      }
+    }
+    customerId = (inserted as { id: string }).id
+    created = true
+  }
+
+  const { error: linkError } = await supabase
+    .from('salon_reservations')
+    .update({ customer_id: customerId })
+    .eq('tenant_id', access.tenant.id)
+    .eq('id', row.id)
+  if (linkError) return { ok: false, message: humanizeSalonError(linkError.message) }
+
+  await markCustomerAcquiredByReservation(supabase, access.tenant.id, customerId)
+  await syncCustomerServiceAlerts(supabase, access.tenant.id, customerId, row.service_alerts ?? [])
+
+  await logAudit({
+    tenantId: access.tenant.id,
+    userId: null,
+    action: created ? 'customer.created' : 'salon_reservation.customer_linked',
+    entity: created ? 'customer' : 'salon_reservation',
+    entityId: created ? customerId : row.id,
+    payload: created
+      ? { source: 'reservation', reservation_id: row.id }
+      : { customer_id: customerId },
+  })
+
+  const customer = await loadCustomer(customerId)
+
+  revalidatePath(`/${slug}/operativo`)
+  revalidatePath(`/${slug}/reservas`)
+  revalidatePath(`/${slug}/reservas/${row.id}`)
+  revalidatePath(`/${slug}/clientes`)
+  return {
+    ok: true,
+    message: created ? 'Socio creado y vinculado.' : 'Reserva vinculada al socio.',
+    data: { customer_id: customerId, created, customer },
+  }
 }
 
 /**

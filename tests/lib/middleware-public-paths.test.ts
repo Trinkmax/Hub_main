@@ -20,6 +20,13 @@ describe('isPublicPath', () => {
     expect(isPublicPath('/lomas/clientes')).toBe(false)
   })
 
+  it('las páginas HTML del bar son públicas', () => {
+    // Sin esto, quien abre la landing desde Instagram cae en el login.
+    expect(isPublicPath('/p/halloween-2026')).toBe(true)
+    // Y 'p' está en RESERVED_SLUGS, así que no se la come el ruteo por tenant.
+    expect(isPublicPath('/parana/clientes')).toBe(false)
+  })
+
   it('las rutas de tenant NO son públicas', () => {
     expect(isPublicPath('/acme/clientes')).toBe(false)
     expect(isPublicPath('/acme/mensajeria/difusiones')).toBe(false)

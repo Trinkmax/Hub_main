@@ -4,6 +4,7 @@ import {
   cancelReservationSchema,
   createSalonReservationSchema,
   rateTierSchema,
+  reservationTableLabelSchema,
   scheduledEventSchema,
   transitionStatusSchema,
   updateSalonReservationSchema,
@@ -372,5 +373,47 @@ describe('rateTierSchema', () => {
     })
     expect(r.success).toBe(true)
     if (r.success) expect(r.data.max_guests).toBeNull()
+  })
+})
+
+describe('reservationTableLabelSchema — mesa asignada en el servicio', () => {
+  const id = '00000000-0000-4000-8000-00000000000a'
+
+  it('recorta y normaliza espacios: "  12 +  13 " → "12 + 13"', () => {
+    const r = reservationTableLabelSchema.safeParse({ id, table_label: '  12 +  13 ' })
+    expect(r.success).toBe(true)
+    if (r.success) expect(r.data.table_label).toBe('12 + 13')
+  })
+
+  it('vacío o null es "quitar la mesa" → null; ausente queda undefined (no se toca)', () => {
+    const empty = reservationTableLabelSchema.safeParse({ id, table_label: '' })
+    expect(empty.success && empty.data.table_label).toBeNull()
+    const nul = reservationTableLabelSchema.safeParse({ id, table_label: null })
+    expect(nul.success && nul.data.table_label).toBeNull()
+    const absent = reservationTableLabelSchema.safeParse({ id })
+    expect(absent.success).toBe(true)
+    if (absent.success) expect(absent.data.table_label).toBeUndefined()
+  })
+
+  it('más de 24 caracteres no entra', () => {
+    const r = reservationTableLabelSchema.safeParse({ id, table_label: 'x'.repeat(25) })
+    expect(r.success).toBe(false)
+  })
+
+  it('la transición acepta la mesa en el mismo gesto que "Llegó"', () => {
+    const r = transitionStatusSchema.safeParse({
+      id,
+      to: 'arrived',
+      actual_guests: 18,
+      table_label: '12+13',
+    })
+    expect(r.success).toBe(true)
+    if (r.success) expect(r.data.table_label).toBe('12+13')
+  })
+
+  it('la edición completa no borra la mesa si el payload no la trae', () => {
+    const r = updateSalonReservationSchema.safeParse({ ...baseValid, kind: 'normal', id })
+    expect(r.success).toBe(true)
+    if (r.success) expect(r.data.table_label).toBeUndefined()
   })
 })

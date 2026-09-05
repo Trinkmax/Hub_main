@@ -224,6 +224,13 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: 'Link2',
         roles: ['owner'],
       },
+      {
+        // Landings en HTML que arma marketing y se publican en /p/[slug].
+        label: 'Páginas',
+        href: (s) => `/${s}/paginas`,
+        icon: 'FileCode2',
+        roles: ['owner'],
+      },
     ],
   },
   {

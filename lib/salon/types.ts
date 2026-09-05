@@ -117,6 +117,9 @@ export type SalonZoneCapacityOverrideRow = {
   created_at: string
 }
 
+/** Largo máximo de la mesa asignada ("12+13+14" entra; un párrafo no). */
+export const TABLE_LABEL_MAX = 24
+
 export type SalonReservationRow = {
   id: string
   tenant_id: string
@@ -154,6 +157,11 @@ export type SalonReservationRow = {
   service_alerts: ServiceAlert[]
   /** El comentario libre es importante: se muestra abierto, no detrás del ícono. */
   highlight_comment: boolean
+  /**
+   * Mesa asignada en el servicio ("12", "12+13", "Barra"). Se carga cuando la
+   * gente llega; `null` hasta entonces. Informativa: no toca cupos ni comisiones.
+   */
+  table_label: string | null
   status: SalonReservationStatus
   arrived_at: string | null
   seated_at: string | null
@@ -253,6 +261,10 @@ export type ReservationWithJoins = SalonReservationRow & {
     phone: string
     /** Avisos permanentes de la persona: viajan a toda reserva suya. */
     service_alerts: ServiceAlert[]
+    /** Saldo del club: la pantalla operativa lo muestra y acredita desde ahí. */
+    points_balance: number
+    /** Nivel vigente del socio (Classic/Gold/…), para saludarlo como corresponde. */
+    tier: { name: string; color: string | null } | null
   } | null
   /** La torta elegida, resuelta. `null` si no eligieron (o si no lleva torta). */
   cake_option: CakeOptionSummary | null

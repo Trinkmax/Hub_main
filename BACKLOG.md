@@ -713,3 +713,63 @@ afuera a propósito:
   ("Evento HUB") cuando un día tiene alguna. No se puede sacar sin perder esos
   cubiertos; la salida limpia es migrar esas 17 filas a `dinner` y sacar el
   valor del enum.
+
+## Páginas HTML (`/p/[slug]`) — septiembre 2026
+
+- **Dominio aparte para las landings.** Hoy el HTML del bar se sirve desde
+  `hubbar.com.ar` con `CSP: sandbox`, que tapa el robo de sesión pero no dos
+  cosas: (a) `history.pushState` puede reescribir la barra de direcciones a
+  `hubbar.com.ar/login` desde adentro de la landing (phishing con URL legítima),
+  y (b) la reputación del dominio es compartida — una landing marcada por Safe
+  Browsing se llevaría puesto el login del panel. La salida industrial es servir
+  el contenido de usuarios en otro dominio (lo que hacen `vercel.app`,
+  `github.io`, `notion.site`, todos además en la Public Suffix List). Mientras la
+  sección sea owner-only y cada publicación quede en `audit_log`, el riesgo es
+  aceptable; revisar el día que se le dé acceso a un rol de marketing o a bares
+  que no conocemos.
+- **Sin QA en Safari iOS.** Todo el testeo empírico del sandbox se hizo en
+  Chrome. La spec dice lo mismo y MDN lo marca Baseline desde 2016, pero el
+  tráfico real de las landings entra por Instagram → Safari iOS. Falta abrir una
+  publicada desde un iPhone y confirmar que renderiza, que el JS corre, que un
+  `wa.me` con `target="_blank"` abre bien y que un embed de YouTube reproduce.
+- **El bucket `tenant-logos` NO existe en el proyecto remoto** aunque
+  `lib/tenant/logo-actions.ts` lo use y su migración
+  (`20260508090000_tenant_logos_bucket.sql`) esté en el repo: esa migración nunca
+  se aplicó allá (tampoco `20260504040001`, `20260511000000`, `20260615010200`,
+  `20260716120100`). Hallazgo lateral mientras se armaba `landing-media`. Subir
+  un logo hoy tiene que estar fallando en producción — verificar y aplicar.
+- **Las versiones se podan de a 20 por página, sin tope global.** Un bar con 50
+  landings puede acumular 1000 documentos de hasta 512 KB. A la escala actual no
+  molesta; si algún día pesa, un `pg_cron` que borre versiones de más de 90 días
+  lo resuelve.
+- **El contador de visitas no distingue personas.** Cuenta requests con
+  `Cache-Control: no-store`, así que un F5 suma. Alcanza para comparar dos
+  promos entre sí, no para reportar audiencia real. Si hiciera falta, lo próximo
+  es hashear IP+día (sin guardar la IP, por la regla de PII).
+
+## Tablero operativo (2026-09-05)
+
+- **El anfitrión (`host`) no puede sumar puntos.** `award_points_by_amount` y
+  `REDEMPTION_STAFF_ROLES` admiten owner/cashier/waiter a propósito; el tablero
+  le muestra el club en lectura. Si el dueño quiere que la anfitriona cargue
+  consumos, hay que ampliar la RPC (`20260511000100`), `add_punch_stamp`,
+  `authorizeAnyStaff` y el set de roles en una migración aparte (cambio de
+  seguridad, pedir autorización).
+- **Swipe en las tarjetas** (derecha = Llegó) quedó fuera de v1: choca con el
+  gesto de "volver" de Android y con el scroll; evaluar después del smoke con
+  el celular real.
+- **Día de servicio (5 AM) solo en `/operativo`.** `/salon/reservas-operativo`
+  y `/reservas` siguen con el día calendario: a la 1:00 el mozo ve el domingo
+  vacío. Llevar `serviceDayInCordoba` al salón cuando se valide en servicio.
+- **`table_label` es texto libre.** Cuando se active el plano de mesas
+  (feature-flag), sumar una FK opcional a `physical_tables` al lado y un
+  selector desde el plano, sin tocar la etiqueta.
+- **`arrived → pending` deja la entry impaga del ledger** (cabo suelto ya
+  anotado en `20260826150000`): el tablero ahora lo ofrece más seguido
+  (Deshacer del "Llegó"). Verificar con el reporte de comisiones que no infle
+  nada; si molesta, hacer que `recalc_reservation_commission` trate `pending`
+  como "sin servicio".
+- **Sin foto de smoke en este PR.** El navegador automatizado no estaba
+  conectado a una sesión: el smoke manual documentado en `docs/reservas.md`
+  (addendum del tablero) queda pendiente de correr en producción con el
+  celular.

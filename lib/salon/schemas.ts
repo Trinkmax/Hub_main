@@ -2,6 +2,7 @@ import { isValidPhoneNumber } from 'libphonenumber-js'
 import { z } from 'zod'
 import { tryNormalizePhone } from '@/lib/phone'
 import { SERVICE_ALERTS, type ServiceAlert } from './alerts'
+import { TABLE_LABEL_MAX } from './types'
 
 // ──────────────────────────────────────────────────────────
 // Field helpers (reusables)
@@ -114,6 +115,27 @@ const cakeOptionField = z
   .transform((v) => (v ? v : null))
   .optional()
 
+/**
+ * Mesa asignada en el servicio. Texto libre corto ("12", "12+13", "Barra"):
+ * se normalizan espacios internos y se recorta. Mismo tri-estado que la torta:
+ *   - `'12'` → `'12'` (asignada)
+ *   - `''` o `null` → `null` (la quitaron a propósito)
+ *   - ausente → `undefined` (la action no toca la columna)
+ */
+export const tableLabelField = z
+  .union([z.string().max(80), z.literal(''), z.null()])
+  .transform((v, ctx) => {
+    if (v === null || v === undefined) return null
+    const cleaned = v.trim().replace(/\s+/g, ' ')
+    if (cleaned === '') return null
+    if (cleaned.length > TABLE_LABEL_MAX) {
+      ctx.addIssue({ code: 'custom', message: `Máximo ${TABLE_LABEL_MAX} caracteres` })
+      return z.NEVER
+    }
+    return cleaned
+  })
+  .optional()
+
 export const reservationKindEnum = z.enum(['normal', 'birthday', 'special'])
 export const mealTypeEnum = z.enum(['breakfast', 'lunch', 'tea_time', 'dinner', 'hub_event'])
 export const reservationOriginEnum = z.enum([
@@ -220,6 +242,7 @@ export const updateSalonReservationSchema = z
     comments: optionalText(2000).optional(),
     service_alerts: serviceAlertsField,
     highlight_comment: checkboxField,
+    table_label: tableLabelField,
   })
   .superRefine((data, ctx) => {
     if (data.zone === 'event_floating' && !data.scheduled_event_id) {
@@ -242,7 +265,19 @@ export const transitionStatusSchema = z.object({
   id: z.string().uuid(),
   to: salonStatusEnum,
   actual_guests: z.union([z.coerce.number().int().min(1).max(99), z.null()]).optional(),
+  /**
+   * Mesa asignada en el mismo gesto que "Llegó": la anfitriona cuenta a la
+   * gente y decide dónde va en el mismo momento. Ausente = no se toca.
+   */
+  table_label: tableLabelField,
 })
+
+/** Asignar / cambiar / quitar la mesa sin tocar nada más de la reserva. */
+export const reservationTableLabelSchema = z.object({
+  id: z.string().uuid(),
+  table_label: tableLabelField,
+})
+export type ReservationTableLabelInput = z.infer<typeof reservationTableLabelSchema>
 
 /**
  * "Pasar lista": el barrido de fin de noche. Una fila por reserva con la

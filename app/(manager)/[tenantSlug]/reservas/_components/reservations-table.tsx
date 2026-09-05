@@ -243,7 +243,14 @@ export function ReservationsTable({
                       <DataTableCell>
                         <div className="flex items-center gap-2">
                           <div className="flex min-w-0 flex-col leading-tight">
-                            <span className="font-medium">{r.guest_name}</span>
+                            <span className="font-medium">
+                              {r.guest_name}
+                              {r.table_label ? (
+                                <span className="ml-1.5 rounded-md border border-border/70 bg-secondary/60 px-1.5 py-px font-mono text-[11px] font-semibold tabular-nums text-foreground">
+                                  M {r.table_label}
+                                </span>
+                              ) : null}
+                            </span>
                             {r.customer ? (
                               <span className="text-[11px] text-muted-foreground">
                                 CRM · {r.customer.phone}
