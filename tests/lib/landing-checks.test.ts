@@ -94,7 +94,7 @@ describe('analyzeLandingHtml', () => {
   })
 
   it('avisa cuando el HTML pesa demasiado', () => {
-    const html = OK_PAGE.replace('<h1>Fiesta</h1>', `<p>${'x'.repeat(310_000)}</p>`)
+    const html = OK_PAGE.replace('<h1>Fiesta</h1>', `<p>${'x'.repeat(520_000)}</p>`)
     const check = analyzeLandingHtml(html).find((c) => c.id === 'heavy')
     expect(check?.level).toBe('tip')
     expect(check?.title).toMatch(/KB/)
@@ -110,6 +110,52 @@ describe('analyzeLandingHtml', () => {
   it('no le importan las mayúsculas de las etiquetas', () => {
     const html = `<!DOCTYPE HTML><html><head><META CHARSET="utf-8"><META NAME="viewport" CONTENT="width=device-width"><TITLE>Hola</TITLE></head><body>x</body></html>`
     expect(analyzeLandingHtml(html)).toEqual([])
+  })
+})
+
+describe('modo aislado vs. host dedicado', () => {
+  const CON_VIDEO = OK_PAGE.replace(
+    '<h1>Fiesta</h1>',
+    '<iframe src="https://www.youtube-nocookie.com/embed/abc123" allowfullscreen></iframe>',
+  )
+
+  it('sandboxeado: avisa que el video no se va a ver (el iframe hereda el sandbox)', () => {
+    const check = analyzeLandingHtml(CON_VIDEO).find((c) => c.id === 'embeds-blocked')
+    expect(check?.level).toBe('error')
+    expect(check?.title).toContain('YouTube')
+  })
+
+  it('reconoce los servicios embebidos más comunes', () => {
+    for (const [src, label] of [
+      ['https://player.vimeo.com/video/1', 'Vimeo'],
+      ['https://open.spotify.com/embed/track/1', 'Spotify'],
+      ['https://www.google.com/maps/embed?pb=1', 'Google Maps'],
+    ] as const) {
+      const html = `${OK_PAGE}<iframe src="${src}"></iframe>`
+      const check = analyzeLandingHtml(html).find((c) => c.id === 'embeds-blocked')
+      expect(check?.title).toContain(label)
+    }
+  })
+
+  it('con host dedicado NO avisa: ahí el video anda igual que en cualquier web', () => {
+    const ids = analyzeLandingHtml(CON_VIDEO, { isolated: false }).map((c) => c.id)
+    expect(ids).not.toContain('embeds-blocked')
+  })
+
+  it('con host dedicado tampoco molesta con localStorage ni con Analytics', () => {
+    const html = `${OK_PAGE}<script>localStorage.getItem('x'); gtag('config','G-1')</script>`
+    const ids = analyzeLandingHtml(html, { isolated: false }).map((c) => c.id)
+    expect(ids).not.toContain('blocked-apis')
+    expect(ids).not.toContain('ga-blocked')
+    // Lo que no depende del aislamiento sigue avisando igual.
+    expect(
+      analyzeLandingHtml('<html><body>x</body></html>', { isolated: false }).map((c) => c.id),
+    ).toContain('no-viewport')
+  })
+
+  it('un <iframe> que no es de un servicio conocido no dispara el aviso', () => {
+    const html = `${OK_PAGE}<iframe src="https://formularios.example.com/x"></iframe>`
+    expect(analyzeLandingHtml(html).map((c) => c.id)).not.toContain('embeds-blocked')
   })
 })
 

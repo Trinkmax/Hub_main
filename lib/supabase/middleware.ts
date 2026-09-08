@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSupabaseClientEnv } from '@/lib/env'
+import { isLandingsHost } from '@/lib/landings/security'
 import {
   claimForTenantId,
   readActiveTenantId,
@@ -139,8 +140,66 @@ export function isSalonWorkspacePath(pathname: string): boolean {
   return SALON_PATH_RE.test(pathname)
 }
 
+/** El mismo formato de slug que valida el Route Handler de /p/[slug]. */
+const LANDING_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,39}$/
+
+/**
+ * El host dedicado a las landings (si está configurado) sirve SÓLO landings.
+ *
+ * Es la mitad de la protección del modo A: en ese origen el HTML del bar corre
+ * sin sandbox, así que lo que garantiza que no haya nada que robar es que ahí
+ * NUNCA se pueda iniciar sesión. Login, panel, API y salón no existen en ese
+ * host: se rebotan al dominio principal.
+ *
+ * Además la URL queda corta y linda — `paginas.tudominio/halloween` — porque
+ * `/[slug]` se reescribe internamente a `/p/[slug]`, que es donde vive el
+ * Route Handler.
+ */
+function serveLandingsHost(request: NextRequest): NextResponse | null {
+  const { pathname } = request.nextUrl
+  if (!isLandingsHost(request.headers.get('host'))) return null
+
+  // `/p/<slug>` → `/…` : una sola URL canónica por página.
+  if (pathname.startsWith('/p/')) {
+    const url = request.nextUrl.clone()
+    url.pathname = pathname.slice(2)
+    return NextResponse.redirect(url, 308)
+  }
+
+  const slug = pathname.slice(1)
+  if (LANDING_SLUG_RE.test(slug)) {
+    const url = request.nextUrl.clone()
+    url.pathname = `/p/${slug}`
+    return NextResponse.rewrite(url)
+  }
+
+  // Todo lo demás no vive acá. Si sabemos cuál es el dominio del panel, lo
+  // mandamos ahí; si no, 404 seco (mejor eso que servir el panel en un origen
+  // donde el HTML de terceros corre suelto).
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  if (appUrl) {
+    const target = new URL(pathname, appUrl)
+    // Guard anti-loop: si alguien configuró el host de landings igual al del
+    // panel, redirigir acá sería un rebote infinito. Mejor 404 seco.
+    // OJO AL PROBAR EN LOCAL: si usás `localhost` y `127.0.0.1` como los dos
+    // hosts, el dev server los toma como el MISMO origen y devuelve el
+    // `Location` relativo, con lo que parece un rebote infinito. Con dos hosts
+    // de verdad (que es el caso en producción) el redirect sale absoluto.
+    if (!isLandingsHost(target.host)) return NextResponse.redirect(target, 307)
+  }
+  return new NextResponse('No encontrado', {
+    status: 404,
+    headers: { 'content-type': 'text/plain; charset=utf-8' },
+  })
+}
+
 export async function updateSession(request: NextRequest) {
   const { pathname } = request.nextUrl
+
+  // ANTES que nada: si el request llegó al host de las landings, ni siquiera
+  // instanciamos el cliente de Supabase. Es tráfico anónimo por definición.
+  const landingsResponse = serveLandingsHost(request)
+  if (landingsResponse) return landingsResponse
 
   // El panel del salón se sirve SIEMPRE en modo claro (lo usa el mozo con el
   // celular a plena luz, y el dueño lo pidió explícito). Marcamos el request

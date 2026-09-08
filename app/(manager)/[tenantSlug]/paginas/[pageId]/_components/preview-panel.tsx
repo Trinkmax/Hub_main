@@ -43,6 +43,7 @@ type Device = 'movil' | 'escritorio'
 export function PreviewPanel({
   html,
   checks,
+  note,
   viewingLabel,
   onExitViewing,
   onRestoreViewing,
@@ -50,6 +51,8 @@ export function PreviewPanel({
 }: {
   html: string
   checks: LandingCheck[]
+  /** Aclaración fija sobre lo que esta previa no puede mostrar. */
+  note: string | null
   /** Si está, la previa muestra una versión vieja y no el código actual. */
   viewingLabel: string | null
   onExitViewing: () => void
@@ -122,6 +125,12 @@ export function PreviewPanel({
               <X className="size-4" aria-hidden />
             </Button>
           </div>
+        ) : null}
+
+        {note ? (
+          <p className="border-b border-border/60 bg-cream-tint px-3 py-2 text-xs text-muted-foreground">
+            {note}
+          </p>
         ) : null}
 
         <PreviewStage

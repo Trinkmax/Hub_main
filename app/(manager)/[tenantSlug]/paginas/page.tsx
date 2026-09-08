@@ -1,8 +1,8 @@
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
-import { getAppUrl } from '@/lib/app-url'
 import { listLandingPages } from '@/lib/landings/queries'
+import { getLandingsBase, landingsPrefix } from '@/lib/landings/urls'
 import {
   RoleRequiredError,
   requireRole,
@@ -30,8 +30,11 @@ export default async function PaginasPage({ params }: { params: Promise<{ tenant
     throw error
   }
 
-  const [pages, appUrl] = await Promise.all([listLandingPages(access.tenant.id), getAppUrl()])
-  const urlPrefix = `${appUrl.replace(/^https?:\/\//, '')}/p/`
+  const [pages, landingsBase] = await Promise.all([
+    listLandingPages(access.tenant.id),
+    getLandingsBase(),
+  ])
+  const urlPrefix = landingsPrefix(landingsBase)
 
   return (
     <PageShell width="comfortable">
@@ -42,7 +45,7 @@ export default async function PaginasPage({ params }: { params: Promise<{ tenant
         actions={<NewPageButton tenantSlug={tenantSlug} urlPrefix={urlPrefix} />}
       />
 
-      <PagesList tenantSlug={tenantSlug} pages={pages} appUrl={appUrl} />
+      <PagesList tenantSlug={tenantSlug} pages={pages} landingsBase={landingsBase} />
     </PageShell>
   )
 }

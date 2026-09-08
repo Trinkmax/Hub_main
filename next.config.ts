@@ -1,5 +1,10 @@
 import type { NextConfig } from 'next'
-import { LANDING_SECURITY_HEADERS } from './lib/landings/security'
+import {
+  HAS_LANDINGS_HOST,
+  LANDING_HOST_HEADERS,
+  LANDING_SECURITY_HEADERS,
+  LANDINGS_HOST,
+} from './lib/landings/security'
 
 const securityHeaders = [
   {
@@ -39,11 +44,12 @@ const nextConfig: NextConfig = {
     },
     serverActions: {
       // El HTML de una landing viaja entero en el body de la Server Action que
-      // lo guarda. El techo de la feature son 512 K caracteres, que con acentos
-      // (2 bytes cada uno) pasan el 1 MB que Next trae por default y devolvería
-      // un error mudo al guardar. Las imágenes NO pasan por acá: van del
-      // browser directo a Supabase Storage.
-      bodySizeLimit: '2mb',
+      // lo guarda. El techo de la feature son 2 M caracteres, que con acentos
+      // (2 bytes cada uno) pasarían el 1 MB que Next trae por default y
+      // devolverían un error mudo al guardar. 4 MB deja aire y queda debajo del
+      // techo duro de Vercel (4,5 MB por request). Las imágenes NO pasan por
+      // acá: van del browser directo a Supabase Storage.
+      bodySizeLimit: '4mb',
     },
   },
   images: {
@@ -76,14 +82,32 @@ const nextConfig: NextConfig = {
         headers: securityHeaders,
       },
       {
-        // Las landings del bar (/p/[slug]) son HTML escrito por una persona y
-        // servido desde NUESTRO dominio: van con `CSP: sandbox` para que no
-        // puedan tocar la sesión del panel. Va DESPUÉS del catch-all a
-        // propósito — ante la misma key, en Next gana la última definición, y
-        // acá se pisa el `Referrer-Policy` general. Ver lib/landings/security.ts.
+        // Las landings servidas desde el DOMINIO DEL PANEL son HTML escrito por
+        // una persona: van con `CSP: sandbox` para que no puedan tocar la
+        // sesión. Va DESPUÉS del catch-all a propósito — ante la misma key, en
+        // Next gana la última definición, y acá se pisa el `Referrer-Policy`
+        // general. Ver lib/landings/security.ts.
         source: '/p/:slug*',
+        // Con host dedicado, este bloque NO aplica ahí: en ese origen el
+        // sandbox es justamente lo que rompe los videos, y no hace falta porque
+        // no hay ninguna sesión que proteger.
+        ...(HAS_LANDINGS_HOST
+          ? { missing: [{ type: 'host' as const, value: LANDINGS_HOST }] }
+          : {}),
         headers: LANDING_SECURITY_HEADERS,
       },
+      ...(HAS_LANDINGS_HOST
+        ? [
+            {
+              // El host dedicado: sin sandbox y sin CSP propio. El
+              // `Referrer-Policy: strict-origin-when-cross-origin` del bloque
+              // general le manda a YouTube el origen que necesita.
+              source: '/:path*',
+              has: [{ type: 'host' as const, value: LANDINGS_HOST }],
+              headers: LANDING_HOST_HEADERS,
+            },
+          ]
+        : []),
     ]
   },
   async redirects() {

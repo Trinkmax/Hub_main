@@ -30,7 +30,7 @@ import {
 import { EmptyState } from '@/components/ui/empty-state'
 import { deleteLandingPage, duplicateLandingPage } from '@/lib/landings/actions'
 import type { LandingPageRow } from '@/lib/landings/queries'
-import { LANDING_HTML_MAX_CHARS } from '@/lib/landings/schemas'
+import { LANDING_HTML_MAX_CHARS, LANDING_HTML_MAX_LABEL } from '@/lib/landings/schemas'
 import { NewPageButton, NewPageDialog } from './new-page-dialog'
 
 /** "halloween-2026.html" → "Halloween 2026". */
@@ -47,11 +47,12 @@ const numberFormat = new Intl.NumberFormat('es-AR')
 export function PagesList({
   tenantSlug,
   pages,
-  appUrl,
+  landingsBase,
 }: {
   tenantSlug: string
   pages: LandingPageRow[]
-  appUrl: string
+  /** Base pública ya resuelta: `${landingsBase}/${slug}` es el link. */
+  landingsBase: string
 }) {
   const router = useRouter()
   const [deleting, setDeleting] = useState<LandingPageRow | null>(null)
@@ -60,7 +61,7 @@ export function PagesList({
   const [dropping, setDropping] = useState(false)
   const [dropped, setDropped] = useState<{ title: string; html: string } | null>(null)
 
-  const urlPrefix = `${appUrl.replace(/^https?:\/\//, '')}/p/`
+  const urlPrefix = `${landingsBase.replace(/^https?:\/\//, '')}/`
 
   async function takeFile(file: File) {
     if (!/\.html?$/i.test(file.name) && file.type !== 'text/html') {
@@ -69,7 +70,9 @@ export function PagesList({
     }
     const text = await file.text()
     if (text.length > LANDING_HTML_MAX_CHARS) {
-      toast.error('El archivo pasa los 512 KB. Subí las imágenes por separado.')
+      toast.error(
+        `Ese archivo pesa ${Math.round(text.length / 1024)} KB y el máximo es ${LANDING_HTML_MAX_LABEL}.`,
+      )
       return
     }
     setDropped({ title: titleFromFilename(file.name), html: text })
@@ -144,7 +147,7 @@ export function PagesList({
       ) : (
         <ul className="grid gap-3">
           {pages.map((page) => {
-            const publicUrl = `${appUrl}/p/${page.slug}`
+            const publicUrl = `${landingsBase}/${page.slug}`
             return (
               <li
                 key={page.id}

@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
-import { getAppUrl } from '@/lib/app-url'
 import { getLandingPage, getLandingViewSeries, listLandingVersions } from '@/lib/landings/queries'
+import { getLandingsBase } from '@/lib/landings/urls'
 import {
   RoleRequiredError,
   requireRole,
@@ -34,10 +34,10 @@ export default async function EditarPaginaPage({
   const page = await getLandingPage(access.tenant.id, pageId)
   if (!page) notFound()
 
-  const [versions, views, appUrl] = await Promise.all([
+  const [versions, views, landingsBase] = await Promise.all([
     listLandingVersions(access.tenant.id, page.id),
     getLandingViewSeries(access.tenant.id, page.id),
-    getAppUrl(),
+    getLandingsBase(),
   ])
 
   return (
@@ -47,7 +47,7 @@ export default async function EditarPaginaPage({
       page={page}
       versions={versions}
       views={views}
-      appUrl={appUrl}
+      landingsBase={landingsBase}
     />
   )
 }

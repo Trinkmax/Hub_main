@@ -16,6 +16,11 @@
  *
  * Es una función pura sobre el texto: no parsea el DOM, no toca el HTML y no
  * bloquea nada. Sólo avisa, con el mismo lenguaje que usaría un compañero.
+ *
+ * OJO CON `isolated`: la mitad de estos avisos existen SÓLO cuando la landing
+ * se sirve desde el dominio del panel y va sandboxeada. Con host dedicado
+ * (NEXT_PUBLIC_LANDINGS_HOST) el HTML corre como cualquier página de internet y
+ * avisar de esas cosas sería mentir al revés. Ver lib/landings/security.ts.
  */
 
 export type LandingCheckLevel = 'error' | 'aviso' | 'tip'
@@ -33,7 +38,34 @@ const MAX_EXAMPLES = 4
 const LEVEL_WEIGHT: Record<LandingCheckLevel, number> = { error: 0, aviso: 1, tip: 2 }
 
 /** Peso a partir del cual avisamos que la página va a tardar en abrir en 4G. */
-const HEAVY_CHARS = 300_000
+const HEAVY_CHARS = 500_000
+
+/**
+ * Servicios que se embeben con un <iframe>. Dentro del sandbox, el iframe hijo
+ * HEREDA los flags y queda en origen opaco: el reproductor de YouTube no puede
+ * tocar su propio storage y no arranca. Verificado en Chrome.
+ */
+const EMBED_PROVIDERS: ReadonlyArray<{ pattern: RegExp; label: string }> = [
+  { pattern: /youtube(-nocookie)?\.com|youtu\.be/i, label: 'YouTube' },
+  { pattern: /player\.vimeo\.com|vimeo\.com/i, label: 'Vimeo' },
+  { pattern: /open\.spotify\.com/i, label: 'Spotify' },
+  { pattern: /google\.com\/maps|maps\.google\./i, label: 'Google Maps' },
+  { pattern: /instagram\.com/i, label: 'Instagram' },
+  { pattern: /tiktok\.com/i, label: 'TikTok' },
+  { pattern: /soundcloud\.com/i, label: 'SoundCloud' },
+]
+
+/** Los servicios embebidos que aparecen en el HTML, sin repetir. */
+function findEmbeds(html: string): string[] {
+  const found = new Set<string>()
+  for (const match of html.matchAll(/<iframe[^>]*\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) {
+    const src = match[1] ?? match[2] ?? ''
+    for (const provider of EMBED_PROVIDERS) {
+      if (provider.pattern.test(src)) found.add(provider.label)
+    }
+  }
+  return [...found]
+}
 
 /**
  * Esquemas y prefijos que SÍ resuelven desde hubbar.com.ar. `/p/` entra porque
@@ -77,7 +109,18 @@ function listExamples(values: string[]): string {
 /**
  * Devuelve los avisos ordenados por gravedad. Array vacío = está todo bien.
  */
-export function analyzeLandingHtml(html: string): LandingCheck[] {
+export function analyzeLandingHtml(
+  html: string,
+  opts: {
+    /**
+     * true = la página se sirve sandboxeada desde el dominio del panel (y por
+     * eso se rompen los iframes, el storage y Analytics). false = hay host
+     * dedicado y corre como cualquier web. Default true: el modo prudente.
+     */
+    isolated?: boolean
+  } = {},
+): LandingCheck[] {
+  const isolated = opts.isolated !== false
   const checks: LandingCheck[] = []
   const code = html ?? ''
   const trimmed = code.trim()
@@ -157,9 +200,22 @@ export function analyzeLandingHtml(html: string): LandingCheck[] {
     })
   }
 
-  const storageApis = ['localStorage', 'sessionStorage', 'document.cookie', 'indexedDB'].filter(
-    (api) => code.includes(api),
-  )
+  const embeds = isolated ? findEmbeds(code) : []
+  if (embeds.length > 0) {
+    checks.push({
+      id: 'embeds-blocked',
+      level: 'error',
+      title: `${embeds.join(', ')} no se va a ver en la página publicada`,
+      detail:
+        'Mientras las páginas se sirvan desde el mismo dominio que el panel, van aisladas por seguridad y los reproductores embebidos no arrancan. Se arregla configurando un dominio propio para las páginas (NEXT_PUBLIC_LANDINGS_HOST); mientras tanto, poné un link al video en vez del reproductor.',
+    })
+  }
+
+  const storageApis = isolated
+    ? ['localStorage', 'sessionStorage', 'document.cookie', 'indexedDB'].filter((api) =>
+        code.includes(api),
+      )
+    : []
   if (storageApis.length > 0) {
     checks.push({
       id: 'blocked-apis',
@@ -170,7 +226,7 @@ export function analyzeLandingHtml(html: string): LandingCheck[] {
     })
   }
 
-  if (/gtag\s*\(|googletagmanager|google-analytics/i.test(code)) {
+  if (isolated && /gtag\s*\(|googletagmanager|google-analytics/i.test(code)) {
     checks.push({
       id: 'ga-blocked',
       level: 'aviso',
@@ -196,8 +252,7 @@ export function analyzeLandingHtml(html: string): LandingCheck[] {
       id: 'heavy',
       level: 'tip',
       title: `El código pesa ${kb} KB`,
-      detail:
-        'Suele ser por imágenes pegadas dentro del HTML (base64). Subilas en "Imágenes" y usá su link: la página abre mucho más rápido con datos móviles.',
+      detail: `Con datos móviles eso son unos ${Math.max(2, Math.round(kb / 150))} segundos de espera antes de ver nada, y mucha gente cierra antes. Suele ser por imágenes pegadas dentro del HTML (base64): subilas en "Imágenes" y usá su link.`,
     })
   }
 

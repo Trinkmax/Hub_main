@@ -10,12 +10,20 @@ import { slugify } from '@/lib/tenant/slugify'
  */
 
 /**
- * 512 KB. Es el mismo número que `landing_pages_html_size_check`, y está
- * contado en CARACTERES —no en bytes— porque `length()` de Postgres cuenta
- * caracteres. En JS, `.length` cuenta unidades UTF-16, que para los pares
- * subrogados (emojis) da MÁS que Postgres: si pasa acá, pasa allá.
+ * 2 MB. Es el mismo número que `landing_pages_html_size_check` (migración
+ * 20260908120000), y está contado en CARACTERES —no en bytes— porque `length()`
+ * de Postgres cuenta caracteres. En JS, `.length` cuenta unidades UTF-16, que
+ * para los pares subrogados (emojis) da MÁS que Postgres: si pasa acá, pasa allá.
+ *
+ * El techo no es caprichoso: el HTML viaja entero en el body de la Server
+ * Action que lo guarda, y Vercel corta los requests en 4,5 MB. 2 M caracteres
+ * en UTF-8 real (con acentos y emojis) quedan cómodos abajo de eso con el
+ * `bodySizeLimit: '4mb'` de next.config.
  */
-export const LANDING_HTML_MAX_CHARS = 524_288
+export const LANDING_HTML_MAX_CHARS = 2_097_152
+
+/** El mismo número en castellano, para que los mensajes no se desincronicen. */
+export const LANDING_HTML_MAX_LABEL = '2 MB'
 
 /** Lo que va después de /p/. Minúsculas, números y guiones, 2 a 40. */
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,39}$/
@@ -46,7 +54,7 @@ const htmlSchema = z
   .string()
   .max(
     LANDING_HTML_MAX_CHARS,
-    'El HTML pasa los 512 KB. Subí las imágenes desde el panel en vez de pegarlas dentro del código.',
+    `El HTML pasa los ${LANDING_HTML_MAX_LABEL}. Subí las imágenes desde el panel en vez de pegarlas dentro del código.`,
   )
 
 /** Alta: sólo nombre y link. El HTML se carga después, en el editor. */

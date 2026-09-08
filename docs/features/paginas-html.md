@@ -19,6 +19,38 @@ Entra por el grupo **Marketing** del sidebar (`Páginas`) y por el ⌘K
 
 ---
 
+## 0. Dos modos, una variable
+
+`NEXT_PUBLIC_LANDINGS_HOST` decide todo lo demás.
+
+| | **Con host dedicado** (recomendado) | **Sin host dedicado** |
+|---|---|---|
+| URL | `paginas.tudominio/halloween` | `tudominio/p/halloween` |
+| Sandbox | no hace falta | obligatorio |
+| Videos de YouTube y otros `<iframe>` | **andan** | **no andan** |
+| `localStorage`, Analytics | andan | no andan |
+| Riesgo para la sesión del panel | ninguno: ahí no vive el panel | tapado por el sandbox |
+
+El host dedicado tiene que ser un host donde **no se sirva el panel**. Eso lo
+garantiza el proxy (`serveLandingsHost` en `lib/supabase/middleware.ts`): ahí
+sólo existen las páginas y cualquier otra ruta se rebota al dominio principal,
+así que en ese origen nunca puede haber una sesión que robar.
+
+Sirve cualquier host: un subdominio propio (`paginas.hubbar.com.ar`) o un
+`*.vercel.app` distinto del que usa el panel. El segundo aísla todavía más
+—`vercel.app` está en la Public Suffix List, así que dos subdominios son
+cross-SITE y no sólo cross-origin, lo que además hace imposible el *cookie
+tossing* contra el dominio del panel— pero el primero se ve mejor en un link
+compartido. Cambiar de uno a otro es cambiar la variable y nada más.
+
+Los links viejos no se rompen: `tudominio/p/<slug>` responde 308 al host nuevo.
+
+**Al probar en local, no uses `localhost` y `127.0.0.1` como los dos hosts**: el
+dev server los toma como el mismo origen y normaliza el `Location` a una ruta
+relativa, con lo que parece un rebote infinito que en producción no existe.
+
+---
+
 ## 1. Lo importante: por qué el HTML va sandboxeado
 
 Esto no es un detalle de implementación, es **la razón por la que la feature es
@@ -53,6 +85,7 @@ externos, animaciones, `fetch` a APIs con CORS abierto.
 
 | Cosa | Qué pasa |
 |---|---|
+| **Todo `<iframe>` embebido** (YouTube, Vimeo, Spotify, Maps) | **No arranca.** Los iframes anidados HEREDAN los flags del sandbox, así que el reproductor queda con `origin: "null"` y sin storage. Medido en Chrome: adentro del iframe hijo, `localStorage → SecurityError`. Ésta es la razón por la que existe el host dedicado. |
 | `localStorage` / `sessionStorage` / `document.cookie` | **Tiran excepción** (no devuelven vacío): el script se corta ahí y la landing queda a medio armar. |
 | Google Analytics (`gtag`) | Falla en silencio: cero visitas, cero errores. Por eso el contador propio. |
 | `Referer` saliente | No se manda. Para atribuir clicks a partners, usar UTMs. |
@@ -76,7 +109,7 @@ candado: se pone en rojo si desaparece el sandbox o si alguien agrega
 Tres solapas a la izquierda y la previa a la derecha (arriba, en celular).
 
 - **Código** — un textarea monospace. `⌘S` / `Ctrl+S` guarda. Arriba a la
-  derecha, el peso contra el techo de 512 KB.
+  derecha, el peso contra el techo de 2 MB.
 
   El archivo `.html` entra por **tres puertas**, porque arrastrarlo es el gesto
   que la gente prueba primero:
@@ -226,7 +259,12 @@ bump_landing_view(uuid)-- suma total + día, atómico, sólo service_role
 - Las FK son **compuestas** `(page_id, tenant_id)`: RLS filtra filas al leer,
   no valida valores al escribir, así que sin esto una versión podría colgar de
   la página de otro bar.
-- El HTML tiene techo de 512 KB en el CHECK y en zod. En Postgres `length()`
+- El HTML tiene techo de 2 MB en el CHECK y en zod (subió de 512 KB en la
+  migración `20260908120000`: las landings reales traen tipografías y fotos
+  pegadas adentro). El número vive en TRES lugares que tienen que decir lo
+  mismo: los dos CHECK, `LANDING_HTML_MAX_CHARS` y el `bodySizeLimit` de
+  `next.config.ts` — el HTML viaja entero en el body de la Server Action y
+  Vercel corta en 4,5 MB. En Postgres `length()`
   cuenta caracteres y en JS `.length` cuenta unidades UTF-16 (más, para los
   emojis): si pasa zod, pasa el CHECK.
 

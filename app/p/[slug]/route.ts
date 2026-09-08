@@ -1,6 +1,11 @@
 import { getRequestIp } from '@/lib/ip'
 import { bumpLandingView, getPublishedLanding } from '@/lib/landings/queries'
-import { LANDING_CSP } from '@/lib/landings/security'
+import {
+  HAS_LANDINGS_HOST,
+  isLandingsHost,
+  LANDING_CSP,
+  landingsOrigin,
+} from '@/lib/landings/security'
 import { RateLimitedError, rateLimit } from '@/lib/rate-limit'
 
 /**
@@ -23,22 +28,30 @@ export const runtime = 'nodejs'
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,39}$/
 
-function html(body: string, status: number, extra: Record<string, string> = {}) {
+function html(
+  body: string,
+  status: number,
+  opts: { sandboxed: boolean; extra?: Record<string, string> },
+) {
   return new Response(body, {
     status,
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
-      // Duplicado a propósito con next.config.ts (ver lib/landings/security.ts).
-      'Content-Security-Policy': LANDING_CSP,
+      // El sandbox va SÓLO cuando la landing se sirve desde el dominio del
+      // panel. En el host dedicado el documento tiene que conservar su origen o
+      // el reproductor de YouTube (y cualquier iframe) queda con origen opaco y
+      // no arranca. Duplicado a propósito con next.config.ts — si uno se cae,
+      // el otro sigue de pie. Ver lib/landings/security.ts.
+      ...(opts.sandboxed ? { 'Content-Security-Policy': LANDING_CSP } : {}),
       'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'no-store',
-      ...extra,
+      ...opts.extra,
     },
   })
 }
 
 /** 404 propio: la página del bar no existe, pero el que llegó no tiene la culpa. */
-function notFoundPage() {
+function notFoundPage(sandboxed: boolean) {
   return html(
     `<!doctype html>
 <html lang="es-AR">
@@ -61,18 +74,30 @@ function notFoundPage() {
 </main></body>
 </html>`,
     404,
-    { 'X-Robots-Tag': 'noindex, nofollow' },
+    { sandboxed, extra: { 'X-Robots-Tag': 'noindex, nofollow' } },
   )
 }
 
-export async function GET(_request: Request, { params }: { params: Promise<{ slug: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
+  // En el host dedicado el documento conserva su origen (sin sandbox); en el
+  // dominio del panel, no.
+  const onLandingsHost = isLandingsHost(new Headers(request.headers).get('host'))
+  const sandboxed = !onLandingsHost
   // Sólo minúsculas y trim: alguien puede escribir el link con mayúsculas al
   // pasarlo de boca en boca. NO se vuelve a decodificar — Next ya entrega
   // `params` decodificado y un `%` suelto haría explotar decodeURIComponent
   // con un 500 en vez del 404 que corresponde.
   const normalized = (slug ?? '').trim().toLowerCase()
-  if (!SLUG_RE.test(normalized)) return notFoundPage()
+  if (!SLUG_RE.test(normalized)) return notFoundPage(sandboxed)
+
+  // Con host dedicado, ésta es la URL vieja: los links ya repartidos por
+  // WhatsApp e Instagram tienen que seguir funcionando, así que van al nuevo
+  // origen con un 308 (permanente y sin cambiar el método).
+  if (HAS_LANDINGS_HOST && !onLandingsHost) {
+    const origin = landingsOrigin()
+    if (origin) return Response.redirect(`${origin}/${normalized}`, 308)
+  }
 
   // Techo alto: detrás de una IP de red móvil (CGNAT) puede haber cientos de
   // personas abriendo la misma historia de Instagram al mismo tiempo.
@@ -84,19 +109,21 @@ export async function GET(_request: Request, { params }: { params: Promise<{ slu
       return html(
         '<!doctype html><meta charset="utf-8"><p>Demasiadas visitas. Probá en un minuto.</p>',
         429,
+        { sandboxed },
       )
     }
     throw error
   }
 
   const page = await getPublishedLanding(normalized)
-  if (!page) return notFoundPage()
+  if (!page) return notFoundPage(sandboxed)
 
   await bumpLandingView(page.id)
 
   return html(page.html, 200, {
+    sandboxed,
     // Mientras no esté marcada como indexable, fuera de Google: una landing a
-    // medio hacer no tiene por qué quedar pegada al dominio del panel.
-    ...(page.indexable ? {} : { 'X-Robots-Tag': 'noindex, nofollow' }),
+    // medio hacer no tiene por qué quedar pegada al dominio.
+    extra: page.indexable ? {} : { 'X-Robots-Tag': 'noindex, nofollow' },
   })
 }

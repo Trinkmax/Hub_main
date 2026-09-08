@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  HAS_LANDINGS_HOST,
+  isLandingsHost,
   LANDING_CSP,
+  LANDING_HOST_HEADERS,
   LANDING_PREVIEW_SANDBOX,
   LANDING_SECURITY_HEADERS,
+  landingsOrigin,
 } from '@/lib/landings/security'
 import nextConfig from '@/next.config'
 
@@ -58,6 +62,28 @@ describe('LANDING_CSP', () => {
       expect(publicFlags.has(flag)).toBe(true)
     }
     expect(previewFlags).not.toContain('allow-same-origin')
+  })
+})
+
+describe('host dedicado (NEXT_PUBLIC_LANDINGS_HOST)', () => {
+  it('sin la variable, todo sigue en el dominio del panel y con sandbox', () => {
+    // Los tests corren sin la variable: es el modo prudente por default.
+    expect(HAS_LANDINGS_HOST).toBe(false)
+    expect(landingsOrigin()).toBeNull()
+    expect(isLandingsHost('lo-que-sea.vercel.app')).toBe(false)
+  })
+
+  it('el host dedicado NO manda sandbox: es justo lo que rompe los videos', () => {
+    const keys = LANDING_HOST_HEADERS.map((header) => header.key)
+    expect(keys).not.toContain('Content-Security-Policy')
+    // Y tampoco no-referrer: YouTube necesita recibir el origen para autorizar
+    // el reproductor.
+    expect(keys).not.toContain('Referrer-Policy')
+  })
+
+  it('la previa del panel NUNCA recupera el origen, ni con host dedicado', () => {
+    // Usa srcdoc: con allow-same-origin heredaría el origen DEL PANEL.
+    expect(LANDING_PREVIEW_SANDBOX).not.toContain('allow-same-origin')
   })
 })
 

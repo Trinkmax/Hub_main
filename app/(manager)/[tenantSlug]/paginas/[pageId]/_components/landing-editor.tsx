@@ -42,7 +42,8 @@ import {
 } from '@/lib/landings/actions'
 import { analyzeLandingHtml, summarizeChecks } from '@/lib/landings/checks'
 import type { LandingPageDetail, LandingVersionRow, LandingViewPoint } from '@/lib/landings/queries'
-import { LANDING_HTML_MAX_CHARS } from '@/lib/landings/schemas'
+import { LANDING_HTML_MAX_CHARS, LANDING_HTML_MAX_LABEL } from '@/lib/landings/schemas'
+import { HAS_LANDINGS_HOST } from '@/lib/landings/security'
 import { cn } from '@/lib/utils'
 import { HistoryPanel } from './history-panel'
 import { MediaPanel } from './media-panel'
@@ -73,14 +74,15 @@ export function LandingEditor({
   page,
   versions,
   views,
-  appUrl,
+  landingsBase,
 }: {
   tenantSlug: string
   tenantId: string
   page: LandingPageDetail
   versions: LandingVersionRow[]
   views: LandingViewPoint[]
-  appUrl: string
+  /** Base pública ya resuelta: `${landingsBase}/${slug}` es el link. */
+  landingsBase: string
 }) {
   const router = useRouter()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -111,7 +113,7 @@ export function LandingEditor({
   const [settingsSession, setSettingsSession] = useState(0)
 
   const dirty = html !== saved
-  const publicUrl = `${appUrl}/p/${page.slug}`
+  const publicUrl = `${landingsBase}/${page.slug}`
 
   // La previa se recalcula con retraso: recargar el iframe en cada tecla hace
   // parpadear la pantalla y come CPU con landings pesadas.
@@ -121,10 +123,22 @@ export function LandingEditor({
     return () => clearTimeout(timer)
   }, [html])
 
-  const checks = useMemo(() => analyzeLandingHtml(debouncedHtml), [debouncedHtml])
+  // Con host dedicado la página publicada NO va sandboxeada: avisar de
+  // localStorage o de los videos sería mentir al revés.
+  const checks = useMemo(
+    () => analyzeLandingHtml(debouncedHtml, { isolated: !HAS_LANDINGS_HOST }),
+    [debouncedHtml],
+  )
   // Para el punto rojo de la solapa: estando en Imágenes o Historial, la
   // revisión queda fuera de la vista y hay que avisar igual.
   const checkCount = useMemo(() => summarizeChecks(checks), [checks])
+  // La previa usa `srcdoc`, y ahí NUNCA podemos dar allow-same-origin (heredaría
+  // el origen del panel, con la sesión adentro). O sea que los embebidos no se
+  // reproducen acá aunque sí lo hagan publicados: hay que decirlo.
+  const previewNote =
+    HAS_LANDINGS_HOST && /<iframe/i.test(debouncedHtml)
+      ? 'Los videos y mapas no se reproducen en esta previa (está aislada). En la página publicada sí.'
+      : null
   const chars = html.length
   const overflow = chars > LANDING_HTML_MAX_CHARS
 
@@ -132,7 +146,9 @@ export function LandingEditor({
     (options: { silent?: boolean } = {}) =>
       new Promise<boolean>((resolve) => {
         if (overflow) {
-          toast.error('El código pasa los 512 KB. Sacá las imágenes pegadas adentro del HTML.')
+          toast.error(
+            `El código pasa los ${LANDING_HTML_MAX_LABEL}. Sacá las imágenes pegadas adentro del HTML y subilas en la solapa Imágenes.`,
+          )
           resolve(false)
           return
         }
@@ -231,7 +247,9 @@ export function LandingEditor({
     }
     const text = await file.text()
     if (text.length > LANDING_HTML_MAX_CHARS) {
-      toast.error('El archivo pasa los 512 KB. Subí las imágenes por separado.')
+      toast.error(
+        `Ese archivo pesa ${Math.round(text.length / 1024)} KB y el máximo es ${LANDING_HTML_MAX_LABEL}. Casi siempre es por imágenes pegadas adentro del HTML: subilas en la solapa Imágenes.`,
+      )
       return
     }
     setTab('codigo')
@@ -464,6 +482,7 @@ export function LandingEditor({
           <PreviewPanel
             html={viewing ? viewing.html : debouncedHtml}
             checks={checks}
+            note={previewNote}
             viewingLabel={
               viewing
                 ? `Versión del ${format(new Date(viewing.version.createdAt), "d 'de' MMM HH:mm", { locale: es })}`
@@ -513,7 +532,7 @@ export function LandingEditor({
                       overflow ? 'text-destructive' : 'text-muted-foreground',
                     )}
                   >
-                    {Math.round(chars / 1024)} KB / 512 KB
+                    {Math.round(chars / 1024)} KB / {LANDING_HTML_MAX_LABEL}
                   </span>
                   <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
                     <Upload className="size-4" aria-hidden />
@@ -564,7 +583,7 @@ export function LandingEditor({
         key={settingsSession}
         tenantSlug={tenantSlug}
         page={page}
-        urlPrefix={`${appUrl.replace(/^https?:\/\//, '')}/p/`}
+        urlPrefix={`${landingsBase.replace(/^https?:\/\//, '')}/`}
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
       />
