@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  cordobaDayStartUtc,
   detectPreset,
+  eachIsoDayInclusive,
   formatDayLabel,
+  isoDayInCordoba,
+  isRealIsoDay,
+  MAX_DENSE_DAYS,
+  nextIsoDay,
   thisMonth,
   thisWeek,
   todayInCordoba,
@@ -123,5 +129,78 @@ describe('formatDayLabel', () => {
   it('devuelve el día de semana abreviado y capitalizado + dd/MM', () => {
     expect(formatDayLabel('2026-07-31')).toBe('Vie 31/07')
     expect(formatDayLabel('2026-08-02')).toBe('Dom 02/08')
+  })
+})
+
+describe('cordobaDayStartUtc', () => {
+  it('las 00:00 de Córdoba son las 03:00 UTC', () => {
+    expect(cordobaDayStartUtc('2026-09-08')).toBe('2026-09-08T03:00:00.000Z')
+  })
+
+  it('con nextIsoDay arma un rango medio abierto que no pierde el último milisegundo', () => {
+    // Filtrar `created_at` con `.lte('…T23:59:59.999')` se comería una carga
+    // hecha en el último instante del día.
+    const desde = cordobaDayStartUtc('2026-09-08')
+    const hasta = cordobaDayStartUtc(nextIsoDay('2026-09-08'))
+    const alFilo = new Date('2026-09-09T02:59:59.999Z').toISOString()
+    expect(alFilo >= desde && alFilo < hasta).toBe(true)
+  })
+})
+
+describe('isoDayInCordoba', () => {
+  it('las 21:00 de Córdoba pertenecen a ese día, no al siguiente en UTC', () => {
+    // El Postgres del proyecto corre en UTC: a esta hora —el pico del bar— ya
+    // pasó a ser el día siguiente allá.
+    expect(isoDayInCordoba('2026-09-09T00:30:00Z')).toBe('2026-09-08')
+    expect(isoDayInCordoba('2026-09-09T03:00:00Z')).toBe('2026-09-09')
+  })
+})
+
+describe('isRealIsoDay', () => {
+  it('acepta días que existen', () => {
+    expect(isRealIsoDay('2026-09-08')).toBe(true)
+    expect(isRealIsoDay('2028-02-29')).toBe(true)
+  })
+
+  it('rechaza los que tienen forma de fecha pero no existen', () => {
+    // Todos pasan un /^\d{4}-\d{2}-\d{2}$/ y todos rompen en Postgres (22008).
+    expect(isRealIsoDay('2026-02-30')).toBe(false)
+    expect(isRealIsoDay('2026-13-01')).toBe(false)
+    expect(isRealIsoDay('2026-00-10')).toBe(false)
+    expect(isRealIsoDay('0000-01-01')).toBe(false)
+    expect(isRealIsoDay('cualquiera')).toBe(false)
+  })
+})
+
+describe('eachIsoDayInclusive', () => {
+  it('devuelve el rango completo, inclusive en los dos bordes', () => {
+    expect(eachIsoDayInclusive('2026-06-10', '2026-06-12')).toEqual([
+      '2026-06-10',
+      '2026-06-11',
+      '2026-06-12',
+    ])
+  })
+
+  it('un solo día devuelve un solo elemento', () => {
+    expect(eachIsoDayInclusive('2026-09-05', '2026-09-05')).toEqual(['2026-09-05'])
+  })
+
+  it('cruza fin de mes y año bisiesto', () => {
+    expect(eachIsoDayInclusive('2028-02-28', '2028-03-01')).toEqual([
+      '2028-02-28',
+      '2028-02-29',
+      '2028-03-01',
+    ])
+  })
+
+  it('un rango al revés no devuelve nada (y no cuelga)', () => {
+    expect(eachIsoDayInclusive('2026-09-30', '2026-09-01')).toEqual([])
+  })
+
+  it('un rango absurdo se corta en el tope', () => {
+    // El tope es una red contra un render colgado, NO un filtro de datos: quien
+    // agregue sobre esta lista tiene que tolerar días fuera de ella (ver
+    // `aggregateDepositsByDay`, que crea el bucket que falte).
+    expect(eachIsoDayInclusive('2026-01-01', '2099-12-31')).toHaveLength(MAX_DENSE_DAYS)
   })
 })

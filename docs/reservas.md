@@ -15,7 +15,8 @@
 | UI manager | Lista, form, detalle, eventos programados, templates, config | `app/(manager)/[tenantSlug]/reservas/*`, `app/(manager)/[tenantSlug]/eventos/programados/*`, `app/(manager)/[tenantSlug]/configuracion/{comisiones,salon}/*` |
 | UI salón | Panel operativo full-screen con Realtime | `app/(salon)/[tenantSlug]/salon/reservas-operativo/*` |
 | Stats | Liquidación por gestor con drill-down | `app/(manager)/[tenantSlug]/estadisticas/comisiones/*` |
-| Nav | Items "Operativo", "Reservas", "Comisiones" | `components/shell/nav-config.ts` |
+| Stats | Señas por día (criterio reserva / carga, canceladas aparte) | `app/(manager)/[tenantSlug]/estadisticas/senas/*`, `lib/salon/deposits.ts` |
+| Nav | Items "Operativo", "Reservas", "Comisiones", "Señas" | `components/shell/nav-config.ts` |
 | Tests | Motor TS (24 cases), schemas zod (24), RLS isolation | `tests/lib/commissions-engine.test.ts`, `tests/lib/salon-schemas.test.ts`, `tests/rls/salon-reservations.test.ts` |
 
 ---
@@ -653,3 +654,102 @@ directo en Excel/Sheets: separador `;`, BOM UTF-8 (tildes bien), fechas
   `reservas-hub-2026-09-05.csv`; abrirlo en Excel → columnas separadas, "García"
   con tilde, filas en orden de hora y nombre; con "Esta semana" activo el
   archivo se llama `reservas-hub-<lunes>_<domingo>.csv` y trae toda la semana.
+
+---
+
+## Addendum 2026-09 — Reporte de señas (`/[slug]/estadisticas/senas`)
+
+Lo pidió el dueño así: *"un reporte del dinero que ingresa por señas, que me
+muestre cuánto ingresó por día, teniendo en cuenta todas las reservas"*.
+
+### Las dos decisiones que definen los números
+
+**1. Dos criterios de fecha, con interruptor.** No existe una fecha de cobro
+guardada: `salon_reservations.deposit_cents` es la única columna de plata de
+seña en todo el schema, y no hay tabla de pagos ni de devoluciones. Entonces el
+día se puede leer de dos maneras y ninguna es "la correcta":
+
+| Criterio | Columna | Qué contesta |
+|---|---|---|
+| **Día de la reserva** (default) | `reservation_date` | Cuánta seña respalda cada fecha de servicio. |
+| **Día de carga** | `created_at` en `America/Argentina/Cordoba` | Cuánta plata entró ese día. |
+
+No son intercambiables: septiembre 2026 daba **$3.347.304** por fecha de reserva
+y **$2.679.304** por fecha de carga (20% de diferencia), y los días más altos ni
+siquiera coinciden. Por eso el criterio activo está siempre rotulado y el
+subtítulo explica qué está midiendo.
+
+**2. Las canceladas y las no-show SUMAN, pero se muestran aparte.** La plata
+entró igual (el bar en general se la queda). Al revés que `covers.ts`,
+`month-capacity.ts` y `getRangeReservationTotals` —que descartan esos estados
+porque cuentan cubiertos—, acá contamos plata. La barra del día viene partida y
+hay una StatCard propia. **No copiar `.not('status', 'in', '(cancelled,no_show)')`
+en este agregador**: borra $79.004 reales de septiembre.
+
+### Piezas
+
+| Qué | Dónde |
+|---|---|
+| Agregador puro (buckets, totales, mediana, CSV) | `lib/salon/deposits.ts` |
+| Query + bordes del histórico | `getDepositsByDay` / `getDepositsBounds` en `lib/salon/queries.ts` |
+| Helpers de zona horaria | `cordobaDayStartUtc`, `nextIsoDay`, `isoDayInCordoba`, `eachIsoDayInclusive` en `lib/salon/date-presets.ts` |
+| Pantalla (owner-only) | `app/(manager)/[tenantSlug]/estadisticas/senas/*` |
+| Planilla | `GET /api/senas/export?slug&from&to&fecha` |
+| Tests | `tests/lib/salon-deposits.test.ts` (21 casos) |
+
+### Detalles que no son obvios
+
+- **El rango viene denso.** El agregador devuelve un bucket por día del rango,
+  con ceros. Entre la primera y la última reserva del HUB, el 74% de los días de
+  calendario no tiene ninguna: sin ceros el gráfico no tendría eje continuo.
+  Y un día con reservas y sin señas se pinta como una rayita, no como un hueco:
+  "nadie dejó seña" es información distinta de "no hubo nada".
+- **El relleno denso tiene tope (`MAX_DENSE_DAYS`, 800 días) y el agregador NO
+  se apoya en él para decidir qué cuenta.** Si una fila cae dentro de
+  `[from, to]` pero fuera de la lista rellenada, `aggregateDepositsByDay` crea
+  el bucket al vuelo y ordena. Al revés —confiando en la lista— un histórico más
+  largo que el tope descartaba plata en silencio: los totales se suman
+  recorriendo los días, no las filas, así que no habría quedado ningún rastro.
+- **Las fechas de la URL se validan de verdad.** `2026-13` o `2026-02-31` pasan
+  un regex de forma pero no existen: Postgres devuelve 22008 y `fromZonedTime`
+  un `Invalid Date`. El mes cae al actual (`YM_RE` exige 01-12 y un año
+  plausible) y el CSV devuelve 400 (`isRealIsoDay`), no un 500.
+- **Mediana y promedio, los dos.** En septiembre difieren ($106.502 vs
+  $138.887) porque una sola seña de $254.300 corre el promedio. La línea
+  punteada del gráfico es la mediana.
+- **`created_at` se filtra con instantes UTC** (`fromZonedTime`) en rango medio
+  abierto `[00:00 del from, 00:00 del to+1)`. El Postgres del proyecto corre en
+  UTC: una carga de las 21:00 de Córdoba —horario pico— cae al día siguiente si
+  se compara contra un `yyyy-MM-dd` pelado.
+- **`requireRole(['owner'])` explícito** en la página y en la route del CSV: la
+  RLS `sr_select_member` deja leer `deposit_cents` a cualquier miembro del
+  tenant, mozo y cocina incluidos.
+- **Techo de 1000 filas + flag `truncated`.** PostgREST corta sin error; un
+  reporte de plata truncado daría un total equivocado sin ningún síntoma.
+- **El CSV va en pesos enteros sin símbolo** y escribe `0` en los días sin seña
+  (al revés que `lib/salon/export.ts`, que deja la celda vacía): es una serie
+  temporal y un hueco rompe cualquier gráfico hecho en Excel.
+
+### Smoke manual
+
+> Las cifras de abajo son del 08/09/2026 y la base está viva: si no dan
+> exactas, contrastá contra el SQL del día, no contra este texto. Lo que tiene
+> que cerrar siempre es pantalla = CSV = `GROUP BY` en Postgres.
+
+1. `/hub/estadisticas/senas` como owner → abre en el mes actual con **Día de la
+   reserva** activo. Septiembre 2026: total **$3.347.304**, vigente
+   **$3.268.300**, canceladas/no vino **$79.004**, 195 de 213 reservas con seña.
+2. Cambiar a **Día de carga** → la URL pasa a `?fecha=carga`, aparece el aviso, y
+   los totales cambian a **$2.679.304** (vigente $2.608.300, caídas $71.004,
+   171 reservas). Día más alto: **08/09 $586.304**.
+3. ← Mes anterior hasta junio 2026 → mes casi vacío, con días que tienen
+   reservas y cero señas (11/06 y 21/06): en el gráfico se ven como rayita.
+4. **Todo el histórico** → ~162 días, el eje pasa a rotular meses en vez de días
+   y el total tiene que coincidir con `sum(deposit_cents)` de todo el tenant.
+5. Exportar en los dos criterios → bajan `senas-hub-…csv` y
+   `senas-hub-carga-…csv`, abren en columnas en Excel es-AR y la columna Total
+   suma lo mismo que la pantalla.
+6. Entrar como `cashier` → redirect a `/hub/salon`. Como `host` → redirect a
+   `/hub/reservas`. Ninguno ve la plata.
+7. `⌘K` → "senas" o "señas" trae la entrada; el sidebar marca activo solo el
+   hijo **Señas** (no Comisiones ni el padre Estadísticas).

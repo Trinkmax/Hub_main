@@ -1,4 +1,4 @@
-import { formatInTimeZone } from 'date-fns-tz'
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 
 /**
  * Presets de fecha para el listado de reservas ("Hoy", "Esta semana",
@@ -83,6 +83,65 @@ export function detectPreset(
   const month = thisMonth(now)
   if (from === month.from && to === month.to) return 'month'
   return 'range'
+}
+
+/**
+ * Instante UTC (ISO) de las 00:00 de `iso` en el calendario del bar.
+ *
+ * Hace falta para filtrar columnas `timestamptz` (p. ej. `created_at`): el
+ * Postgres del proyecto corre en UTC, así que una reserva cargada a las 21:30
+ * de Córdoba ya figura al día siguiente si se compara contra un `yyyy-MM-dd`
+ * pelado. Con este borde el filtro habla del día del bar, no del día del server.
+ */
+export function cordobaDayStartUtc(iso: string): string {
+  return fromZonedTime(`${iso}T00:00:00`, SALON_TZ).toISOString()
+}
+
+/** Día siguiente a `iso`, como `yyyy-MM-dd`. */
+export function nextIsoDay(iso: string): string {
+  return toIsoDay(shiftDays(parseIsoDay(iso), 1))
+}
+
+/** A qué día del calendario del bar pertenece un `timestamptz`. */
+export function isoDayInCordoba(timestamp: string): string {
+  return formatInTimeZone(new Date(timestamp), SALON_TZ, 'yyyy-MM-dd')
+}
+
+/**
+ * `2026-02-31` y `2026-13-01` matchean cualquier regex de forma `yyyy-MM-dd`
+ * pero no existen: Postgres los rechaza con un 22008 y `fromZonedTime` devuelve
+ * un `Invalid Date`. El round-trip por `Date` los caza (el 31 de febrero rola
+ * al 2 de marzo y deja de coincidir consigo mismo).
+ */
+export function isRealIsoDay(iso: string): boolean {
+  // El año va acotado además del round-trip: `0000-01-01` vuelve idéntico de un
+  // `Date` pero Postgres no tiene año 0 y lo rechaza igual que a un 32 de marzo.
+  if (!/^(19|20|21)\d{2}-\d{2}-\d{2}$/.test(iso)) return false
+  const d = new Date(`${iso}T00:00:00Z`)
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === iso
+}
+
+/**
+ * Todos los días del rango, inclusive y en orden.
+ *
+ * El tope es una red para que un `from`/`to` absurdo no cuelgue un render, no
+ * un filtro de datos: quien agregue sobre esta lista tiene que tolerar que un
+ * rango más largo se quede sin relleno de ceros (ver `aggregateDepositsByDay`,
+ * que crea el bucket que falte en vez de perder la fila). 800 ≈ dos años y
+ * pico, que cubre el histórico completo de un bar sin llegar a ser una lista
+ * que valga la pena dibujar día por día.
+ */
+export const MAX_DENSE_DAYS = 800
+
+export function eachIsoDayInclusive(from: string, to: string): string[] {
+  const days: string[] = []
+  const end = parseIsoDay(to).getTime()
+  let cursor = parseIsoDay(from)
+  while (cursor.getTime() <= end && days.length < MAX_DENSE_DAYS) {
+    days.push(toIsoDay(cursor))
+    cursor = shiftDays(cursor, 1)
+  }
+  return days
 }
 
 /** `2026-07-31` → `Vie 31/07` (para subheaders y barras de rango). */

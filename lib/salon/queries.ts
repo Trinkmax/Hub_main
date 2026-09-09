@@ -1,5 +1,12 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
+import { cordobaDayStartUtc, isoDayInCordoba, nextIsoDay } from './date-presets'
+import {
+  aggregateDepositsByDay,
+  type DepositBasis,
+  type DepositSourceRow,
+  type DepositsReport,
+} from './deposits'
 import { aggregateMonthCapacity, type MonthCapacity } from './month-capacity'
 import { computePeakWindow, type PeakWindow } from './peak'
 import type { ServiceRow } from './services'
@@ -1049,4 +1056,102 @@ export async function buildCommissionInputForReservation(opts: {
       assistantEligible: Boolean(assistant?.commission_eligible),
     },
   }
+}
+
+// ──────────────────────────────────────────────────────────
+// Señas por día (reporte de ingresos)
+// ──────────────────────────────────────────────────────────
+
+/**
+ * Techo de la lectura. PostgREST corta en 1000 filas SIN error: un reporte de
+ * plata truncado daría un total equivocado y ningún síntoma. Pedimos el tope y,
+ * si vuelve completo, marcamos `truncated` para que la pantalla avise.
+ * (Hoy el mes más cargado del HUB tiene ~250 reservas.)
+ */
+export const DEPOSITS_MAX_ROWS = 1000
+
+/**
+ * Todas las señas del rango, ya sumadas por día.
+ *
+ * `select` flaco de 4 columnas a propósito: para sumar plata no hacen falta los
+ * 5 joins de `RESERVATION_JOIN_SELECT`. Y sin `.not('status', 'in', ...)`: al
+ * revés que el resto de los agregadores de salón, acá las canceladas y las
+ * no-show SUMAN (decisión del dueño) — copiarles el filtro por inercia borraría
+ * $140.004 reales del HUB.
+ */
+export async function getDepositsByDay(opts: {
+  tenantId: string
+  basis: DepositBasis
+  /** `yyyy-MM-dd` inclusive, calendario del bar. */
+  from: string
+  /** `yyyy-MM-dd` inclusive, calendario del bar. */
+  to: string
+}): Promise<DepositsReport> {
+  const supabase = (await createClient()) as SBAny
+  let query = supabase
+    .from('salon_reservations')
+    .select('reservation_date, created_at, deposit_cents, status')
+    .eq('tenant_id', opts.tenantId)
+    .limit(DEPOSITS_MAX_ROWS)
+
+  if (opts.basis === 'reservation') {
+    // `reservation_date` es `date` puro: se compara con los mismos strings
+    // `yyyy-MM-dd` que viajan en la URL, sin conversión de zona.
+    query = query.gte('reservation_date', opts.from).lte('reservation_date', opts.to)
+  } else {
+    // `created_at` es timestamptz y el Postgres corre en UTC. El día del bar
+    // arranca a las 00:00 de Córdoba: convertimos los bordes a instantes y
+    // usamos un rango medio abierto [from, to+1) — un `.lte('…T23:59:59.999')`
+    // se comería una carga hecha en el último milisegundo del día.
+    query = query
+      .gte('created_at', cordobaDayStartUtc(opts.from))
+      .lt('created_at', cordobaDayStartUtc(nextIsoDay(opts.to)))
+  }
+
+  const { data, error } = await query
+  if (error) throw error
+
+  const rows = (data ?? []) as DepositSourceRow[]
+  return aggregateDepositsByDay({
+    basis: opts.basis,
+    from: opts.from,
+    to: opts.to,
+    rows,
+    truncated: rows.length >= DEPOSITS_MAX_ROWS,
+  })
+}
+
+/**
+ * Primer y último día con reservas, para el período "Todo".
+ *
+ * Dos lecturas de una fila (no hay `min()`/`max()` en PostgREST sin una RPC) y
+ * solo se llaman cuando el dueño pide el histórico completo. `null` cuando el
+ * bar todavía no cargó ninguna reserva.
+ */
+export async function getDepositsBounds(opts: {
+  tenantId: string
+  basis: DepositBasis
+}): Promise<{ from: string; to: string } | null> {
+  const supabase = (await createClient()) as SBAny
+  const column = opts.basis === 'created' ? 'created_at' : 'reservation_date'
+
+  const edge = async (ascending: boolean): Promise<string | null> => {
+    const { data, error } = await supabase
+      .from('salon_reservations')
+      .select(column)
+      .eq('tenant_id', opts.tenantId)
+      .order(column, { ascending })
+      .limit(1)
+    if (error) throw error
+    const row = ((data ?? []) as Array<Record<string, string>>)[0]
+    const value = row?.[column]
+    if (!value) return null
+    // El borde se guarda como día del bar: con `created_at`, una carga de las
+    // 21:30 de Córdoba es del día anterior al que dice el timestamp en UTC.
+    return opts.basis === 'created' ? isoDayInCordoba(value) : value.slice(0, 10)
+  }
+
+  const [from, to] = await Promise.all([edge(true), edge(false)])
+  if (!from || !to) return null
+  return { from, to }
 }

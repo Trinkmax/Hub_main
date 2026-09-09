@@ -1,4 +1,4 @@
-import { ArrowDownToLine, Banknote, Receipt, Sparkles, Users } from 'lucide-react'
+import { ArrowDownToLine, Banknote, Coins, Receipt, Sparkles, Users } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
@@ -90,6 +90,22 @@ export default async function EstadisticasPage({
         eyebrow="Insights"
         title="Estadísticas"
         description="Vista profunda de tu bar: clientes, visitas, eventos y comunicaciones."
+        actions={
+          <>
+            <Button asChild variant="outline" size="sm" className="gap-2">
+              <Link href={`/${tenantSlug}/estadisticas/senas`}>
+                <Banknote className="size-3.5" />
+                Señas
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="sm" className="gap-2">
+              <Link href={`/${tenantSlug}/estadisticas/comisiones`}>
+                <Coins className="size-3.5" />
+                Comisiones
+              </Link>
+            </Button>
+          </>
+        }
       />
 
       <Tabs defaultValue={activeTab} className="space-y-6">

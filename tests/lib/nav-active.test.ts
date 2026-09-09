@@ -28,7 +28,10 @@ const groups: ResolvedNavGroup[] = [
         label: 'Estadísticas',
         href: '/x/estadisticas',
         iconKey: 'BarChart3',
-        children: [{ label: 'Comisiones', href: '/x/estadisticas/comisiones', iconKey: 'Coins' }],
+        children: [
+          { label: 'Señas', href: '/x/estadisticas/senas', iconKey: 'Banknote' },
+          { label: 'Comisiones', href: '/x/estadisticas/comisiones', iconKey: 'Coins' },
+        ],
       },
       { label: 'Resumen', href: '/x', iconKey: 'LayoutDashboard', exact: true },
     ],
@@ -74,10 +77,18 @@ describe('computeActiveHrefs', () => {
     expect(active.has('/x/estadisticas')).toBe(false)
   })
 
-  it('en el padre exacto sólo el padre, sin el hijo más profundo', () => {
+  it('entre dos hijos hermanos activa sólo el de la ruta abierta', () => {
+    const active = computeActiveHrefs('/x/estadisticas/senas', '', groups)
+    expect(active.has('/x/estadisticas/senas')).toBe(true)
+    expect(active.has('/x/estadisticas/comisiones')).toBe(false)
+    expect(active.has('/x/estadisticas')).toBe(false)
+  })
+
+  it('en el padre exacto sólo el padre, sin los hijos más profundos', () => {
     const active = computeActiveHrefs('/x/estadisticas', '', groups)
     expect(active.has('/x/estadisticas')).toBe(true)
     expect(active.has('/x/estadisticas/comisiones')).toBe(false)
+    expect(active.has('/x/estadisticas/senas')).toBe(false)
   })
 
   it('item exacto (Resumen) sólo matchea su pathname exacto', () => {

@@ -1,10 +1,12 @@
 import {
+  Banknote,
   BarChart3,
   BookOpen,
   CalendarCheck,
   CalendarDays,
   ChefHat,
   ClipboardList,
+  Coins,
   FileCode2,
   Gift,
   Inbox,
@@ -394,6 +396,26 @@ export const commandEntries: CommandEntry[] = [
     type: 'navigate',
     href: (s) => `/${s}/estadisticas`,
     keywords: ['reportes', 'analytics'],
+  },
+  {
+    id: 'deposits',
+    label: 'Señas',
+    icon: Banknote,
+    group: 'Ir a',
+    type: 'navigate',
+    href: (s) => `/${s}/estadisticas/senas`,
+    // Con y sin tilde: el matching de cmdk es literal sobre label + keywords y
+    // nadie escribe "señas" con la eñe cuando está apurado.
+    keywords: ['senas', 'senias', 'sena', 'adelanto', 'anticipo', 'deposito', 'plata', 'ingresos'],
+  },
+  {
+    id: 'commissions',
+    label: 'Comisiones',
+    icon: Coins,
+    group: 'Ir a',
+    type: 'navigate',
+    href: (s) => `/${s}/estadisticas/comisiones`,
+    keywords: ['liquidacion', 'gestores', 'plata'],
   },
   {
     id: 'docs',

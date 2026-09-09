@@ -244,6 +244,13 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ['owner'],
         children: [
           {
+            // Plata que entra por señas, día por día.
+            label: 'Señas',
+            href: (s) => `/${s}/estadisticas/senas`,
+            icon: 'Banknote',
+            roles: ['owner'],
+          },
+          {
             label: 'Comisiones',
             href: (s) => `/${s}/estadisticas/comisiones`,
             icon: 'Coins',

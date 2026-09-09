@@ -1,5 +1,6 @@
 import {
   ArrowUpRight,
+  Banknote,
   BarChart3,
   BookOpen,
   CalendarCheck,
@@ -44,6 +45,7 @@ import {
  */
 export const NAV_ICONS = {
   ArrowUpRight,
+  Banknote,
   BarChart3,
   BookOpen,
   CalendarCheck,
