@@ -244,6 +244,13 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ['owner'],
         children: [
           {
+            // Cuánta gente entró una noche o un evento, en cuántas reservas.
+            label: 'Cómo nos fue',
+            href: (s) => `/${s}/estadisticas/como-nos-fue`,
+            icon: 'PartyPopper',
+            roles: ['owner'],
+          },
+          {
             // Plata que entra por señas, día por día.
             label: 'Señas',
             href: (s) => `/${s}/estadisticas/senas`,

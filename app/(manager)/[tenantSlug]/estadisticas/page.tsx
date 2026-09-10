@@ -1,4 +1,12 @@
-import { ArrowDownToLine, Banknote, Coins, Receipt, Sparkles, Users } from 'lucide-react'
+import {
+  ArrowDownToLine,
+  Banknote,
+  Coins,
+  PartyPopper,
+  Receipt,
+  Sparkles,
+  Users,
+} from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
@@ -92,6 +100,12 @@ export default async function EstadisticasPage({
         description="Vista profunda de tu bar: clientes, visitas, eventos y comunicaciones."
         actions={
           <>
+            <Button asChild variant="outline" size="sm" className="gap-2">
+              <Link href={`/${tenantSlug}/estadisticas/como-nos-fue`}>
+                <PartyPopper className="size-3.5" />
+                Cómo nos fue
+              </Link>
+            </Button>
             <Button asChild variant="outline" size="sm" className="gap-2">
               <Link href={`/${tenantSlug}/estadisticas/senas`}>
                 <Banknote className="size-3.5" />

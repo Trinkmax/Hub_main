@@ -773,3 +773,49 @@ afuera a propósito:
   conectado a una sesión: el smoke manual documentado en `docs/reservas.md`
   (addendum del tablero) queda pendiente de correr en producción con el
   celular.
+- **El tab "Eventos" de `/estadisticas` contradice a "Cómo nos fue".**
+  `getEventsRanking` (`lib/stats/queries.ts:144`) cuenta RESERVAS, no personas,
+  su columna "Reservas" incluye las no-show, y el denominador de `no_show_rate`
+  deja afuera las `pending` —que en el HUB son mayoría—. Del mismo Ramen del 7/9
+  dice "Reservas 24 · Asistieron 3", mientras la pantalla nueva dice
+  "53 personas · 21 reservas · 14 contadas en 3 mesas". Son dos verdades
+  distintas sobre el mismo evento conviviendo en la misma sección: evaluar con
+  el dueño si se borra ese tab o se renombran sus columnas.
+- **`salon_reservations.scheduled_event_id` es `ON DELETE SET NULL`.**
+  Borrar una edición desde el calendario no borra sus reservas: las convierte en
+  "Sin evento" en silencio. Con el reporte nuevo eso se ve —el Ramen del 7/9
+  pasaría a 0 y el bloque Sin evento saltaría de 12 a 65 personas— sin ningún
+  error ni log. Evaluar bloquear el borrado de eventos que tienen reservas.
+- **El ternario del nombre de evento sigue duplicado en 14 lugares.**
+  `lib/salon/events-report.ts` estrenó `eventTitle()`, que además normaliza los
+  espacios de más ("Tapeo  y Malbec"). Los otros 14 sitios
+  (`day-highlights.ts:118`, `stats/queries.ts:174`, `audiences/queries.ts:84`,
+  `wallet/queries.ts:757`, y 10 componentes) siguen con su copia a mano.
+- **HSTS se manda también en dev y rompe `localhost` en Chrome.**
+  `next.config.ts` agrega `Strict-Transport-Security: max-age=63072000;
+  includeSubDomains; preload` a todas las respuestas, sin distinguir entorno.
+  Chrome se lo guarda para `localhost` y a partir de ahí fuerza https en
+  `http://localhost:3000`, que no existe: el dev server queda inaccesible por
+  ese host (hay que entrar por `127.0.0.1` o limpiar la entrada en
+  `chrome://net-internals/#hsts`). Guardar el header detrás de
+  `process.env.NODE_ENV === 'production'`.
+- **Gráfico de señas por semana/mes en rangos largos.** `/estadisticas/senas` con
+  "Todo el histórico" dibuja una barra por día. Con los ~162 días del HUB se lee
+  como una franja de densidad y el hover da el día exacto, pero pasados dos años
+  cada barra queda en menos de un píxel. Cuando el histórico crezca, agrupar las
+  barras por semana (o por mes) y dejar el detalle diario en la tabla y el CSV,
+  que es donde el dueño lo busca igual.
+- **Índice por `created_at` en `salon_reservations`.** El reporte de señas
+  (`/estadisticas/senas`) con criterio "Día de carga" filtra por `created_at` y
+  no hay índice: hoy son 267 filas y da igual, pero si el corte por fecha de
+  carga se usa en serio conviene `(tenant_id, created_at desc)`.
+- **Filas de prueba con señas absurdas.** Quedaron cargadas el 2026-09-08 y
+  aparecen en el reporte de señas: `$4,00` (id `b4616c6a…`, cancelada — alguien
+  tipeó "4"), `$3.987` (`9adbb1cf…`) y `$7.975` (`119da21f…`). El zod de
+  `lib/salon/schemas.ts:182` valida `min(0)` sin tope: evaluar un máximo
+  razonable o una confirmación cuando la seña supera cierto monto.
+- **La seña no guarda cuándo se cobró ni si se devolvió.** `deposit_cents` es la
+  única columna de plata de seña del schema. El reporte tiene que elegir entre
+  fecha de reserva y fecha de carga, y no puede distinguir una seña de reserva
+  cancelada que se devolvió de una que el bar se quedó. Si el dueño lo necesita:
+  `deposit_paid_on date` + `deposit_refunded_at timestamptz`.

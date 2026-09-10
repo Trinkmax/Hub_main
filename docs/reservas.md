@@ -16,7 +16,8 @@
 | UI salón | Panel operativo full-screen con Realtime | `app/(salon)/[tenantSlug]/salon/reservas-operativo/*` |
 | Stats | Liquidación por gestor con drill-down | `app/(manager)/[tenantSlug]/estadisticas/comisiones/*` |
 | Stats | Señas por día (criterio reserva / carga, canceladas aparte) | `app/(manager)/[tenantSlug]/estadisticas/senas/*`, `lib/salon/deposits.ts` |
-| Nav | Items "Operativo", "Reservas", "Comisiones", "Señas" | `components/shell/nav-config.ts` |
+| Stats | Cómo nos fue: gente por noche y por evento | `app/(manager)/[tenantSlug]/estadisticas/como-nos-fue/*`, `lib/salon/events-report.ts` |
+| Nav | Items "Operativo", "Reservas", "Comisiones", "Señas", "Cómo nos fue" | `components/shell/nav-config.ts` |
 | Tests | Motor TS (24 cases), schemas zod (24), RLS isolation | `tests/lib/commissions-engine.test.ts`, `tests/lib/salon-schemas.test.ts`, `tests/rls/salon-reservations.test.ts` |
 
 ---
@@ -753,3 +754,160 @@ en este agregador**: borra $79.004 reales de septiembre.
    `/hub/reservas`. Ninguno ve la plata.
 7. `⌘K` → "senas" o "señas" trae la entrada; el sidebar marca activo solo el
    hijo **Señas** (no Comisiones ni el padre Estadísticas).
+
+---
+
+## Addendum 2026-09 — Cómo nos fue (`/[slug]/estadisticas/como-nos-fue`)
+
+Lo pidió el dueño así: *"un dashboard donde pueda seleccionar por evento o día y
+ver cómo nos fue. Que solo nos tire: personas totales, reservas totales,
+promedio de personas por reserva"*. El ejemplo que dio es el contrato: el Ramen
+del lunes 7 de septiembre, y abajo las reservas normales de esa misma noche.
+
+### Las tres decisiones que definen los números
+
+**1. Las canceladas y las no-show NO cuentan.** Decisión del dueño, y es la
+inversa de la del reporte de Señas: allá la seña de una reserva caída es plata
+que entró igual, acá contamos gente que se sentó y la que no vino no se sentó.
+Quedan como nota al costado del número de reservas: `3 canceladas (6 personas)`.
+El Ramen del 7/9 da **53 / 21 / 2,5**; con las canceladas daría 59 / 24 / 2,46.
+
+**2. El corte de bloque es `scheduled_event_id`, nunca la zona.** Hay reservas
+de evento sentadas en Planta Alta: filtrar por zona pierde gente. Es el mismo
+bug que ya se corrigió dos veces (`covers.ts`, `month-capacity.ts`).
+
+**3. "Asistieron" no va en el podio, y no es un porcentaje.** `actual_guests`
+está en NULL en la mayoría de las reservas — en el Ramen del 7/9, 20 de 24
+mesas—. Un `14` al lado del `53` se leería "vino un cuarto de la gente" y es
+falso. La pantalla dice lo que sabe: *"Contamos 14 personas en 3 de 21 mesas.
+Las otras 18 quedaron sin cerrar."* Y un NULL no es un campo que alguien olvidó:
+es una mesa que nunca se cerró, así que la copy usa esas palabras.
+Con cobertura completa recién ahí aparece el delta, y como diferencia absoluta:
+*"Vinieron 65 · 3 más de las reservadas"* (Pizza libre del 3/9).
+**Prohibido**: `%` de asistencia, dona, gauge o `Progress` con techo 100. El
+numerador está incompleto y el ratio real se pasa de 100.
+
+### El muro de mesas
+
+Es la pieza visual de la pantalla y no es decorativa. Un bloque por reserva,
+**el ancho es la cantidad de gente**, y la misma unidad (`--u`) en toda la
+pantalla: 4px en celular, 6px en desktop. Sin piso de ancho, a propósito — con
+un `min-width`, una mesa de 2 y una de 3 miden igual y el muro deja de valer la
+gente justo en el valor más frecuente del bar. El número exacto se lee arriba al
+pasar el mouse o tabular (mismo patrón que el gráfico de señas).
+
+Sirve para tres cosas que un gráfico no hace:
+
+- Explica el tercer número. "2,5 por reserva" no dice nada solo; un muro de
+  ladrillitos iguales dice *"vinieron todos de a dos"* y un muro con un bloque
+  enorme dice *"esto fue un cumpleaños con relleno"*. El 12/09 es el caso de
+  manual: Merienda y Arte 16 personas en 5 mesas, y Sin evento 125 en 5.
+- Transporta la cobertura de asistencia sin números: sólido = mesa cerrada y
+  contada, punteado = sin cerrar, contorno bajo y aparte = se cayó.
+- Compara bloques sin compartir eje: como la unidad es la misma, un evento de 16
+  al lado de uno de 125 se ve como lo que es.
+
+### Piezas
+
+| Qué | Dónde |
+|---|---|
+| Agregador puro + tipos + CSV + `eventTitle()` | `lib/salon/events-report.ts` |
+| Queries | `getDayReport`, `getTemplateReport`, `listRecentReservationDays`, `listEventTemplateOptions` en `lib/salon/queries.ts` |
+| Pantalla (owner-only) | `app/(manager)/[tenantSlug]/estadisticas/como-nos-fue/*` |
+| Planilla | `GET /api/como-nos-fue/export?slug&vista&dia|evento` |
+| Tests | `tests/lib/salon-events-report.test.ts` (32 casos) |
+
+`eventTitle()` es el primer helper para el ternario
+`name_override ?? template.name ?? 'Evento'`, que estaba copiado a mano en 14
+lugares del repo; además normaliza los espacios de más, que existen en los datos
+("Tapeo  y Malbec"). Los otros 14 sitios siguen con su copia: migrarlos es un
+barrido aparte.
+
+### Detalles que no son obvios
+
+- **La vista por día bucketea por `reservation_date`; la vista por evento, por
+  `scheduled_event_id`.** Hoy todas las reservas de evento caen en la fecha de
+  su evento, pero nada en el schema lo garantiza. Si alguien mueve una fecha,
+  cada vista sigue contando lo suyo sin contradecirse, y una reserva atada a un
+  evento de otro día cuenta como reserva normal del día que dice la reserva.
+- **El bloque "Sin evento" se devuelve siempre**, aunque esté en cero: que la
+  noche haya sido íntegramente del evento es información. Y cuando no hay
+  evento, ese bloque se promueve a protagonista — es todo lo que pasó.
+- **Las flechas ‹ › se mueven de a un día real.** Un martes sin nadie ES el
+  dato. El salto largo vive en el calendario, que además lista las últimas
+  noches con gente. El default sí abre en la última noche con movimiento.
+- **La edición de HOY no cuenta como concluida.** Una noche que arranca a las
+  21:00 todavía está vendiendo: no puede ser "la última fecha", ni "la mejor",
+  ni entrar en el promedio de referencia, ni tener flecha de comparación. Va con
+  `isTonight` aparte de `isFuture` y la tira la rotula *"es esta noche"*.
+- **Una fecha vendiendo ahora no puede ser el hero, pero se nombra.** Si ninguna
+  edición concluida tuvo reservas y la de hoy (o una futura) sí, el texto lo
+  dice: *"Todavía no terminó ninguna fecha de Sushi libre con reservas. La de
+  esta noche va 70 personas en 28 reservas."* Decir "ninguna tuvo reservas"
+  arriba de una fila que muestra 70 personas era contradecirse en el mismo
+  scroll — y la planilla la exportaba igual, marcada "es hoy".
+- **La leyenda del muro sale de las mesas que están DIBUJADAS.** `NightCard`
+  esconde el muro cuando el bloque no tiene reservas en pie, y en la vista por
+  evento solo dibuja muro el hero. Contar las caídas de una edición colapsada
+  prendía el ítem "se cayó" sin un solo chip caído en pantalla (pasa con Fernet
+  Libre + Lomo: sus 2 canceladas viven en el 28/08, que ni se lista).
+- **El selector de eventos ordena por gente que YA se sentó.** Cuenta solo
+  fechas concluidas: ordenar por lo anotado a futuro ponía primero a Ratatuille
+  —dos ediciones, las dos futuras, cero historia— por encima del Ramen, y el
+  default abría en un evento que nunca corrió. Lo que viene se cuenta aparte.
+- **El atajo "Últimas noches con gente" cuenta reservas EN PIE.** Sin eso
+  ofrecía el 27/08 con un "2" que en la ficha valía 0, porque sus dos únicas
+  reservas se habían cancelado. Y si la ventana de lectura se llena, el día más
+  viejo se descarta en vez de mostrar un conteo partido al medio.
+- **Una noche que se cayó entera no es una noche vacía.** El estado vacío exige
+  que tampoco haya caídas; si no, la nota *"Se cayó entera: 2 canceladas"* —que
+  es justo lo que el dueño viene a ver— quedaba tapada por un "no hubo ninguna
+  reserva".
+- **Sin línea de tendencia ni proyección.** Los eventos tienen entre 1 y 7
+  ediciones y varias son futuras: una recta sobre n=2 es adivinación con
+  estética de dato. El delta contra la edición anterior va en absoluto y con la
+  base nombrada (`+49 que el 06/08`), nunca en porcentaje — de 4 a 53 personas
+  es "+1225%" y la base eran dos reservas.
+- **El cupo no se compara entre ediciones.** `capacity` cambia por edición
+  (Merienda y Arte: 99 → 30 → 40 → 100), así que va como texto dentro de una
+  sola edición (`de 100 lugares`, o `52 de 50 lugares · se pasó`), sin barra.
+- **Un promedio de una sola mesa se pinta en gris** y dice `una sola mesa`: el
+  `12,0` del bloque Sin evento del 7/9 no es un promedio de nada.
+
+### Smoke manual
+
+> Las cifras son del 09/09/2026 y la base está viva: si no dan exactas,
+> contrastá contra el SQL del día. Lo que tiene que cerrar siempre es
+> pantalla = CSV = `GROUP BY` en Postgres.
+
+1. `/hub/estadisticas/como-nos-fue` como owner → abre en la última noche con
+   gente, vista **Por día**.
+2. Ir al **07/09** (calendario → "Últimas noches con gente"). Tiene que decir
+   **Ramen · 21:00 → 53 personas / 21 reservas / 2,5 por reserva**, hint
+   `de 100 lugares`, `3 canceladas (6 personas)`, `de 2 a 6 por mesa`, y abajo
+   *"Contamos 14 personas en 3 de 21 mesas. Las otras 18 quedaron sin cerrar."*
+   La franja **Sin evento** debajo: 12 personas · 1 reserva · 12,0 con `una sola
+   mesa` y *"Vinieron 13 · 1 más de la reservada."*
+   **Ojo**: el dueño escribió 57/22/2,5 en su ejemplo. Con su propia decisión de
+   no contar las caídas, la pantalla dice 53/21/2,5. No es un bug.
+3. **03/09** → dos fichas lado a lado (Pizza libre 62/17/3,6 con cobertura
+   completa y *"Vinieron 65 · 3 más de las reservadas"*, y Fernet Libre + Lomo
+   2/1/2,0).
+4. **12/09** → Merienda y Arte 16/5/3,2 arriba y Sin evento 125/5/25,0 abajo: el
+   muro de abajo tiene que verse muchísimo más largo y hecho de piezas enormes.
+5. **05/09** → no hay evento: la franja Sin evento se promueve a ficha
+   protagonista (135/6/22,5).
+6. **22/09** → 2x1 Burger Martes con `Nadie reservó para este evento` al lado de
+   Ratatuille 28/12/2,3, y el aviso de que la noche todavía no pasó.
+7. **Por evento → Ramen** → hero con la última fecha pasada (07/09) y la tira de
+   todas sus fechas; la del 28/09 marcada como *todavía no pasó*, la primera con
+   `primera fecha`, y las fechas sin reservas agrupadas al pie.
+8. Clic en una fecha de la tira → vuelve a **Por día** en esa noche. Clic en
+   *"Ver todas sus fechas"* desde el día → vuelve a **Por evento**. El ida y
+   vuelta no pierde la selección.
+9. Exportar en las dos vistas → `como-nos-fue-hub-2026-09-07.csv` y
+   `como-nos-fue-hub-ramen.csv`, en columnas en Excel es-AR.
+10. Entrar como `cashier` → redirect a `/hub/salon`. Como `host` → redirect a
+    `/hub/reservas`.
+11. `⌘K` → "como nos fue" / "gente" / "evento" trae la entrada; el sidebar marca
+    activo solo ese hijo.

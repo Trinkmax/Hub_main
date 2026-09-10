@@ -7,6 +7,14 @@ import {
   type DepositSourceRow,
   type DepositsReport,
 } from './deposits'
+import {
+  aggregateDayReport,
+  aggregateTemplateReport,
+  type DayReport,
+  type ReportEventRow,
+  type ReportReservationRow,
+  type TemplateReport,
+} from './events-report'
 import { aggregateMonthCapacity, type MonthCapacity } from './month-capacity'
 import { computePeakWindow, type PeakWindow } from './peak'
 import type { ServiceRow } from './services'
@@ -1154,4 +1162,270 @@ export async function getDepositsBounds(opts: {
   const [from, to] = await Promise.all([edge(true), edge(false)])
   if (!from || !to) return null
   return { from, to }
+}
+
+// ──────────────────────────────────────────────────────────
+// Cómo nos fue (reporte de gente por noche y por evento)
+// ──────────────────────────────────────────────────────────
+
+/**
+ * Techo de la lectura, igual que en el reporte de señas: PostgREST corta en
+ * 1000 filas SIN error y un reporte truncado mentiría sin ningún síntoma.
+ * Una noche del HUB tiene ~30 reservas y el evento más repetido ~31 en total.
+ */
+export const EVENTS_REPORT_MAX_ROWS = 1000
+
+const REPORT_ROW_SELECT =
+  'id, reservation_date, scheduled_event_id, estimated_guests, actual_guests, status'
+
+/**
+ * Una noche entera: sus eventos programados y todas sus reservas.
+ *
+ * Sin `.not('status', 'in', ...)`: las canceladas se traen y el agregador puro
+ * las separa, así el número grande y la nota al costado salen del mismo pase y
+ * no pueden contradecirse.
+ */
+export async function getDayReport(opts: { tenantId: string; day: string }): Promise<DayReport> {
+  const supabase = (await createClient()) as SBAny
+  const [events, res] = await Promise.all([
+    listScheduledEventsForDate({ tenantId: opts.tenantId, date: opts.day }),
+    supabase
+      .from('salon_reservations')
+      .select(REPORT_ROW_SELECT)
+      .eq('tenant_id', opts.tenantId)
+      .eq('reservation_date', opts.day)
+      .limit(EVENTS_REPORT_MAX_ROWS),
+  ])
+  if (res.error) throw res.error
+  const rows = (res.data ?? []) as ReportReservationRow[]
+  return aggregateDayReport({
+    day: opts.day,
+    events: events as unknown as ReportEventRow[],
+    rows,
+    truncated: rows.length >= EVENTS_REPORT_MAX_ROWS,
+  })
+}
+
+/**
+ * Todas las ediciones de un evento con sus números.
+ *
+ * Dos lecturas: las ediciones (para tener también las que no vendieron una sola
+ * reserva — un cero es información) y las reservas atadas a ellas.
+ */
+export async function getTemplateReport(opts: {
+  tenantId: string
+  templateId: string
+  /** Hoy en el calendario del bar: define qué edición ya pasó. */
+  today: string
+}): Promise<TemplateReport | null> {
+  const supabase = (await createClient()) as SBAny
+
+  const tplRes = await supabase
+    .from('scheduled_event_templates')
+    .select('id, name, color_hex')
+    .eq('tenant_id', opts.tenantId)
+    .eq('id', opts.templateId)
+    .maybeSingle()
+  if (tplRes.error) throw tplRes.error
+  const tpl = tplRes.data as { id: string; name: string; color_hex: string | null } | null
+  if (!tpl) return null
+
+  const evRes = await supabase
+    .from('scheduled_events')
+    .select(
+      'id, template_id, name_override, event_date, starts_at_local, capacity, template:scheduled_event_templates(id, name, color_hex)',
+    )
+    .eq('tenant_id', opts.tenantId)
+    .eq('template_id', opts.templateId)
+    .order('event_date', { ascending: false })
+    .limit(EVENTS_REPORT_MAX_ROWS)
+  if (evRes.error) throw evRes.error
+  const events = ((evRes.data ?? []) as Array<Record<string, unknown>>).map((r) => {
+    const t = r.template
+    return { ...r, template: Array.isArray(t) ? (t[0] ?? null) : (t ?? null) }
+  }) as unknown as ReportEventRow[]
+
+  let rows: ReportReservationRow[] = []
+  if (events.length > 0) {
+    const resRes = await supabase
+      .from('salon_reservations')
+      .select(REPORT_ROW_SELECT)
+      .eq('tenant_id', opts.tenantId)
+      .in(
+        'scheduled_event_id',
+        events.map((e) => e.id),
+      )
+      .limit(EVENTS_REPORT_MAX_ROWS)
+    if (resRes.error) throw resRes.error
+    rows = (resRes.data ?? []) as ReportReservationRow[]
+  }
+
+  return aggregateTemplateReport({
+    templateId: tpl.id,
+    templateName: tpl.name,
+    colorHex: tpl.color_hex,
+    today: opts.today,
+    events,
+    rows,
+    truncated: rows.length >= EVENTS_REPORT_MAX_ROWS,
+  })
+}
+
+/** Ventana de lectura del atajo del calendario. */
+const RECENT_DAYS_WINDOW = 400
+
+/**
+ * Las últimas noches con al menos una reserva EN PIE, de la más nueva a la más
+ * vieja.
+ *
+ * Alimenta el default de la pantalla (abrir un reporte retrospectivo en una
+ * noche vacía es una mala primera pantalla) y el atajo del calendario. Las
+ * flechas ‹ › se mueven de a un día real: un martes sin nadie ES el dato.
+ *
+ * Las canceladas y las no-show se descartan acá igual que en el agregador: sin
+ * eso, el popover ofrecía una noche con un "2" que en la ficha valía 0 porque
+ * sus dos únicas reservas se habían cancelado.
+ */
+export async function listRecentReservationDays(opts: {
+  tenantId: string
+  /** No mira más allá de este día (normalmente hoy en Córdoba). */
+  until: string
+  limit?: number
+}): Promise<Array<{ day: string; reservations: number }>> {
+  const supabase = (await createClient()) as SBAny
+  const take = opts.limit ?? 14
+  // Un `.limit()` por DÍAS no existe en PostgREST y uno por filas se lo comería
+  // un solo día cargado, así que se leen las últimas N filas y se agrupan acá.
+  const { data, error } = await supabase
+    .from('salon_reservations')
+    .select('reservation_date')
+    .eq('tenant_id', opts.tenantId)
+    .lte('reservation_date', opts.until)
+    .not('status', 'in', '(cancelled,no_show)')
+    .order('reservation_date', { ascending: false })
+    .limit(RECENT_DAYS_WINDOW)
+  if (error) throw error
+  const rows = (data ?? []) as Array<{ reservation_date: string }>
+  const counts = new Map<string, number>()
+  for (const row of rows) {
+    counts.set(row.reservation_date, (counts.get(row.reservation_date) ?? 0) + 1)
+  }
+  const days = Array.from(counts.entries())
+    .map(([day, reservations]) => ({ day, reservations }))
+    .sort((a, b) => (a.day < b.day ? 1 : -1))
+  // Si la ventana se llenó, el día MÁS VIEJO quedó cortado a la mitad y su
+  // conteo mentiría. Se descarta en vez de mostrar un número parcial sin aviso.
+  if (rows.length >= RECENT_DAYS_WINDOW && days.length > 1) days.pop()
+  return days.slice(0, take)
+}
+
+/**
+ * Los eventos que el selector ofrece, ordenados por la gente que YA se sentó.
+ *
+ * `guests` y `pastEditions` cuentan solo fechas concluidas (ni hoy ni futuras),
+ * porque el combo es el atajo a "cuál anda": ordenar por lo anotado a futuro
+ * ponía primero a un evento que nunca corrió. Lo que viene se muestra aparte.
+ */
+export type EventTemplateOption = {
+  id: string
+  name: string
+  colorHex: string | null
+  /** Fechas en el calendario, incluidas las que vienen. */
+  editions: number
+  /** Fechas que ya terminaron. */
+  pastEditions: number
+  /** Personas sentadas en las fechas que ya terminaron. */
+  guests: number
+  /** Fechas que todavía no pasaron (hoy incluido). */
+  upcoming: number
+}
+
+export async function listEventTemplateOptions(opts: {
+  tenantId: string
+  /** Hoy en el calendario del bar: define qué edición ya terminó. */
+  today: string
+}): Promise<{ options: EventTemplateOption[]; truncated: boolean }> {
+  const supabase = (await createClient()) as SBAny
+  // `onlyActive: false` a propósito: un formato dado de baja se lleva su
+  // historia, y el dueño va a querer mirar cómo le fue igual.
+  const [tplRes, evRes, resRes] = await Promise.all([
+    supabase
+      .from('scheduled_event_templates')
+      .select('id, name, color_hex')
+      .eq('tenant_id', opts.tenantId)
+      .order('name', { ascending: true }),
+    supabase
+      .from('scheduled_events')
+      .select('id, template_id, event_date')
+      .eq('tenant_id', opts.tenantId)
+      .limit(EVENTS_REPORT_MAX_ROWS),
+    supabase
+      .from('salon_reservations')
+      .select('scheduled_event_id, estimated_guests, status')
+      .eq('tenant_id', opts.tenantId)
+      .not('scheduled_event_id', 'is', null)
+      .limit(EVENTS_REPORT_MAX_ROWS),
+  ])
+  if (tplRes.error) throw tplRes.error
+  if (evRes.error) throw evRes.error
+  if (resRes.error) throw resRes.error
+
+  const eventTemplate = new Map<string, string>()
+  /** Eventos ya concluidos: sus reservas son las únicas que cuentan como historia. */
+  const concluded = new Set<string>()
+  const editions = new Map<string, number>()
+  const pastEditions = new Map<string, number>()
+  const upcoming = new Map<string, number>()
+  for (const e of (evRes.data ?? []) as Array<{
+    id: string
+    template_id: string
+    event_date: string
+  }>) {
+    eventTemplate.set(e.id, e.template_id)
+    editions.set(e.template_id, (editions.get(e.template_id) ?? 0) + 1)
+    // Las fechas son `date` puro: se comparan como strings. Hoy NO es pasado —
+    // una noche que arranca a las 21:00 todavía está vendiendo.
+    if (e.event_date < opts.today) {
+      concluded.add(e.id)
+      pastEditions.set(e.template_id, (pastEditions.get(e.template_id) ?? 0) + 1)
+    } else {
+      upcoming.set(e.template_id, (upcoming.get(e.template_id) ?? 0) + 1)
+    }
+  }
+  const guests = new Map<string, number>()
+  for (const r of (resRes.data ?? []) as Array<{
+    scheduled_event_id: string | null
+    estimated_guests: number | string
+    status: string
+  }>) {
+    if (r.status === 'cancelled' || r.status === 'no_show') continue
+    if (!r.scheduled_event_id || !concluded.has(r.scheduled_event_id)) continue
+    const tplId = eventTemplate.get(r.scheduled_event_id)
+    if (!tplId) continue
+    guests.set(tplId, (guests.get(tplId) ?? 0) + Number(r.estimated_guests ?? 0))
+  }
+
+  // Las dos lecturas crecen con la historia del bar y no tienen cota temporal:
+  // el día que toquen el techo, el orden y el default del combo saldrían mal sin
+  // ningún síntoma. Se avisa, igual que en el resto del reporte.
+  const truncated =
+    (evRes.data ?? []).length >= EVENTS_REPORT_MAX_ROWS ||
+    (resRes.data ?? []).length >= EVENTS_REPORT_MAX_ROWS
+
+  const options = (
+    (tplRes.data ?? []) as Array<{ id: string; name: string; color_hex: string | null }>
+  )
+    .map((t) => ({
+      id: t.id,
+      name: t.name.replace(/\s+/g, ' ').trim(),
+      colorHex: t.color_hex,
+      editions: editions.get(t.id) ?? 0,
+      pastEditions: pastEditions.get(t.id) ?? 0,
+      guests: guests.get(t.id) ?? 0,
+      upcoming: upcoming.get(t.id) ?? 0,
+    }))
+    // Por gente que ya se sentó, no alfabético: el dueño busca "el que anda".
+    .sort((a, b) => b.guests - a.guests || a.name.localeCompare(b.name, 'es'))
+
+  return { options, truncated }
 }
