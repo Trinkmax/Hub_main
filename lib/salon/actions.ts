@@ -1304,7 +1304,24 @@ export async function deleteScheduledEvent(slug: string, id: string): Promise<Ac
     .delete()
     .eq('tenant_id', access.tenant.id)
     .eq('id', id)
-  if (error) return { ok: false, message: humanizeSalonError(error.message) }
+  if (error) {
+    // La pauta de «Cómo nos fue» apunta a la fecha con una FK SIN cascade, a
+    // propósito: un anfitrión o un cajero pueden borrar fechas del calendario
+    // pero no ven `scheduled_event_marketing`, y un cascade les borraría datos
+    // de plata sin enterarse. Postgres frena el borrado con un 23503 (la FK se
+    // chequea sin RLS) y acá se dice quién lo destraba.
+    if (
+      error.code === '23503' &&
+      String(error.message ?? '').includes('scheduled_event_marketing')
+    ) {
+      return {
+        ok: false,
+        message:
+          'No se puede borrar: esta fecha tiene pauta cargada en «Cómo nos fue». Un dueño tiene que borrarla primero.',
+      }
+    }
+    return { ok: false, message: humanizeSalonError(error.message) }
+  }
 
   await logAudit({
     tenantId: access.tenant.id,

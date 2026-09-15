@@ -3764,6 +3764,69 @@ export type Database = {
           },
         ]
       }
+      scheduled_event_marketing: {
+        Row: {
+          ad_spend_usd_cents: number
+          created_at: string
+          created_by: string | null
+          id: string
+          messages: number | null
+          notes: string | null
+          reach: number | null
+          revenue_ars_cents: number | null
+          scheduled_event_id: string
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+          usd_ars_rate: number | null
+        }
+        Insert: {
+          ad_spend_usd_cents: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          messages?: number | null
+          notes?: string | null
+          reach?: number | null
+          revenue_ars_cents?: number | null
+          scheduled_event_id: string
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+          usd_ars_rate?: number | null
+        }
+        Update: {
+          ad_spend_usd_cents?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          messages?: number | null
+          notes?: string | null
+          reach?: number | null
+          revenue_ars_cents?: number | null
+          scheduled_event_id?: string
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+          usd_ars_rate?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_event_marketing_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sem_event_same_tenant"
+            columns: ["scheduled_event_id", "tenant_id"]
+            isOneToOne: false
+            referencedRelation: "scheduled_events"
+            referencedColumns: ["id", "tenant_id"]
+          },
+        ]
+      }
       scheduled_event_templates: {
         Row: {
           active: boolean
