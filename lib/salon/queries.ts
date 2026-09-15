@@ -8,7 +8,18 @@ import {
   type DepositsReport,
 } from './deposits'
 import {
+  buildMonthMarketingReport,
+  type EventMarketingRow,
+  type MonthMarketingReport,
+} from './event-marketing'
+import {
+  EVENT_MARKETING_DB_SELECT,
+  type EventMarketingDbRow,
+  toEventMarketingRow,
+} from './event-marketing-schemas'
+import {
   aggregateDayReport,
+  aggregateEditions,
   aggregateTemplateReport,
   type DayReport,
   type ReportEventRow,
@@ -1176,7 +1187,7 @@ export async function getDepositsBounds(opts: {
 export const EVENTS_REPORT_MAX_ROWS = 1000
 
 const REPORT_ROW_SELECT =
-  'id, reservation_date, scheduled_event_id, estimated_guests, actual_guests, status'
+  'id, reservation_date, scheduled_event_id, estimated_guests, actual_guests, status, table_label'
 
 /**
  * Una noche entera: sus eventos programados y todas sus reservas.
@@ -1185,25 +1196,134 @@ const REPORT_ROW_SELECT =
  * las separa, así el número grande y la nota al costado salen del mismo pase y
  * no pueden contradecirse.
  */
-export async function getDayReport(opts: { tenantId: string; day: string }): Promise<DayReport> {
+export type ReportMarketing = Record<string, EventMarketingRow>
+
+export type DayReportWithMarketing = DayReport & {
+  /** Pauta por `scheduled_event_id` de los eventos de la noche. Sin fila = «Sin cargar». */
+  marketing: ReportMarketing
+}
+
+export type TemplateReportWithMarketing = TemplateReport & {
+  /** Pauta por `scheduled_event_id` de las ediciones del evento. */
+  marketing: ReportMarketing
+}
+
+/**
+ * La pauta cargada de un set de ediciones, indexada por `scheduled_event_id`.
+ *
+ * Solo un dueño la lee (RLS `sem_owner_all`, SELECT incluido): con cualquier
+ * otra sesión vuelve vacía y todo diría «Sin cargar». No es un problema porque
+ * «Cómo nos fue» ya es owner-only en la page y en la exportación.
+ *
+ * Quién cargó sale de `reservation_managers` (se auto-provisiona desde
+ * memberships) en una segunda lectura por `user_id`, con el mismo criterio que
+ * `getManagerForUser`: si hay más de una fila, la más vieja. Si ESA lectura
+ * falla, la pauta se muestra igual y sin firma: el nombre es un adorno y no
+ * vale tumbar el reporte entero por él.
+ */
+export async function listEventMarketing(opts: {
+  tenantId: string
+  eventIds: ReadonlyArray<string>
+}): Promise<ReportMarketing> {
+  const ids = Array.from(new Set(opts.eventIds))
+  if (ids.length === 0) return {}
+
   const supabase = (await createClient()) as SBAny
-  const [events, res] = await Promise.all([
-    listScheduledEventsForDate({ tenantId: opts.tenantId, date: opts.day }),
+  const { data, error } = await supabase
+    .from('scheduled_event_marketing')
+    .select(EVENT_MARKETING_DB_SELECT)
+    .eq('tenant_id', opts.tenantId)
+    .in('scheduled_event_id', ids)
+  if (error) throw error
+  const rows = (data ?? []) as EventMarketingDbRow[]
+
+  const userIds = Array.from(
+    new Set(rows.map((r) => r.updated_by).filter((id): id is string => typeof id === 'string')),
+  )
+  const names = new Map<string, string>()
+  if (userIds.length > 0) {
+    const mgrRes = await supabase
+      .from('reservation_managers')
+      .select('user_id, display_name')
+      .eq('tenant_id', opts.tenantId)
+      .in('user_id', userIds)
+      .order('created_at', { ascending: true })
+    if (mgrRes.error) {
+      console.error('[salon.listEventMarketing.names]', mgrRes.error.message)
+    } else {
+      for (const m of (mgrRes.data ?? []) as Array<{
+        user_id: string | null
+        display_name: string
+      }>) {
+        if (m.user_id && !names.has(m.user_id)) names.set(m.user_id, m.display_name)
+      }
+    }
+  }
+
+  const out: ReportMarketing = {}
+  for (const row of rows) {
+    const name = row.updated_by ? (names.get(row.updated_by) ?? null) : null
+    out[row.scheduled_event_id] = toEventMarketingRow(row, name)
+  }
+  return out
+}
+
+/**
+ * El último dólar cargado en cualquier pauta del bar, para el chip «Usar
+ * $ 1.450 (último, 07/09)» del form. Nunca se precarga solo: un dólar viejo se
+ * guardaría sin que nadie lo note.
+ */
+export async function getLastUsdArsRate(opts: {
+  tenantId: string
+}): Promise<{ rate: number; loadedAt: string } | null> {
+  const supabase = (await createClient()) as SBAny
+  const { data, error } = await supabase
+    .from('scheduled_event_marketing')
+    .select('usd_ars_rate, updated_at')
+    .eq('tenant_id', opts.tenantId)
+    .not('usd_ars_rate', 'is', null)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  const row = data as { usd_ars_rate: number | string | null; updated_at: string } | null
+  if (!row) return null
+  const rate = Number(row.usd_ars_rate)
+  if (!Number.isFinite(rate) || rate <= 0) return null
+  return { rate, loadedAt: row.updated_at }
+}
+
+export async function getDayReport(opts: {
+  tenantId: string
+  day: string
+}): Promise<DayReportWithMarketing> {
+  const supabase = (await createClient()) as SBAny
+  // La pauta cuelga de los ids de los eventos, así que espera a ESA lectura y
+  // nada más: corre en paralelo con las reservas en el mismo `Promise.all`, sin
+  // sumar un hop en serie a la vista más usada.
+  const eventsP = listScheduledEventsForDate({ tenantId: opts.tenantId, date: opts.day })
+  const marketingP = eventsP.then((events) =>
+    listEventMarketing({ tenantId: opts.tenantId, eventIds: events.map((e) => e.id) }),
+  )
+  const [events, res, marketing] = await Promise.all([
+    eventsP,
     supabase
       .from('salon_reservations')
       .select(REPORT_ROW_SELECT)
       .eq('tenant_id', opts.tenantId)
       .eq('reservation_date', opts.day)
       .limit(EVENTS_REPORT_MAX_ROWS),
+    marketingP,
   ])
   if (res.error) throw res.error
   const rows = (res.data ?? []) as ReportReservationRow[]
-  return aggregateDayReport({
+  const report = aggregateDayReport({
     day: opts.day,
     events: events as unknown as ReportEventRow[],
     rows,
     truncated: rows.length >= EVENTS_REPORT_MAX_ROWS,
   })
+  return { ...report, marketing }
 }
 
 /**
@@ -1217,7 +1337,7 @@ export async function getTemplateReport(opts: {
   templateId: string
   /** Hoy en el calendario del bar: define qué edición ya pasó. */
   today: string
-}): Promise<TemplateReport | null> {
+}): Promise<TemplateReportWithMarketing | null> {
   const supabase = (await createClient()) as SBAny
 
   const tplRes = await supabase
@@ -1245,28 +1365,88 @@ export async function getTemplateReport(opts: {
     return { ...r, template: Array.isArray(t) ? (t[0] ?? null) : (t ?? null) }
   }) as unknown as ReportEventRow[]
 
-  let rows: ReportReservationRow[] = []
-  if (events.length > 0) {
-    const resRes = await supabase
-      .from('salon_reservations')
-      .select(REPORT_ROW_SELECT)
-      .eq('tenant_id', opts.tenantId)
-      .in(
-        'scheduled_event_id',
-        events.map((e) => e.id),
-      )
-      .limit(EVENTS_REPORT_MAX_ROWS)
-    if (resRes.error) throw resRes.error
-    rows = (resRes.data ?? []) as ReportReservationRow[]
-  }
+  const eventIds = events.map((e) => e.id)
+  // Reservas y pauta cuelgan de los mismos ids y no una de la otra: van juntas.
+  const [rows, marketing] = await Promise.all([
+    listReportRowsForEvents({ tenantId: opts.tenantId, eventIds }),
+    listEventMarketing({ tenantId: opts.tenantId, eventIds }),
+  ])
 
-  return aggregateTemplateReport({
+  const report = aggregateTemplateReport({
     templateId: tpl.id,
     templateName: tpl.name,
     colorHex: tpl.color_hex,
     today: opts.today,
     events,
     rows,
+    truncated: rows.length >= EVENTS_REPORT_MAX_ROWS,
+  })
+  return { ...report, marketing }
+}
+
+/** Las reservas (todas, caídas incluidas) atadas a un set de ediciones. */
+async function listReportRowsForEvents(opts: {
+  tenantId: string
+  eventIds: ReadonlyArray<string>
+}): Promise<ReportReservationRow[]> {
+  if (opts.eventIds.length === 0) return []
+  const supabase = (await createClient()) as SBAny
+  const { data, error } = await supabase
+    .from('salon_reservations')
+    .select(REPORT_ROW_SELECT)
+    .eq('tenant_id', opts.tenantId)
+    .in('scheduled_event_id', opts.eventIds)
+    .limit(EVENTS_REPORT_MAX_ROWS)
+  if (error) throw error
+  return (data ?? []) as ReportReservationRow[]
+}
+
+const YM_RE = /^(19|20|21)\d{2}-(0[1-9]|1[0-2])$/
+
+/**
+ * La pestaña «Pauta»: todas las ediciones de un mes con su gente y su pauta.
+ *
+ * Tres lecturas en dos tandas: las fechas del mes, y después reservas y pauta
+ * en paralelo (las dos cuelgan de los ids). El agrupado por edición es el MISMO
+ * `aggregateEditions` de la vista por evento: las "11 reservas" de una fecha
+ * tienen que ser las mismas en las tres vistas o la pauta dividiría por otro
+ * número.
+ *
+ * `ym` llega validado por la page; si no, se corta acá antes de armar un rango
+ * que Postgres rebotaría como 22008.
+ */
+export async function getMonthMarketingReport(opts: {
+  tenantId: string
+  /** `YYYY-MM`. */
+  ym: string
+  /** Hoy en el calendario del bar: define qué edición ya pasó. */
+  today: string
+}): Promise<MonthMarketingReport> {
+  if (!YM_RE.test(opts.ym)) throw new Error('invalid_ym')
+  const year = Number(opts.ym.slice(0, 4))
+  const month = Number(opts.ym.slice(5, 7))
+  // Día 0 del mes siguiente = último día de este (cubre bisiestos solo).
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const from = `${opts.ym}-01`
+  const to = `${opts.ym}-${String(lastDay).padStart(2, '0')}`
+
+  const events = await listScheduledEventsForDateRange({ tenantId: opts.tenantId, from, to })
+  const eventIds = events.map((e) => e.id)
+  const [rows, marketing] = await Promise.all([
+    listReportRowsForEvents({ tenantId: opts.tenantId, eventIds }),
+    listEventMarketing({ tenantId: opts.tenantId, eventIds }),
+  ])
+
+  const editions = aggregateEditions({
+    events: events as unknown as ReportEventRow[],
+    rows,
+    today: opts.today,
+  })
+  return buildMonthMarketingReport({
+    ym: opts.ym,
+    today: opts.today,
+    editions,
+    marketing,
     truncated: rows.length >= EVENTS_REPORT_MAX_ROWS,
   })
 }

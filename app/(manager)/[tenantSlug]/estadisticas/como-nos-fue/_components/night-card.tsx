@@ -2,10 +2,23 @@
 
 import { ArrowRight } from 'lucide-react'
 import Link from 'next/link'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
+import { eventInk } from '@/lib/salon/event-ink'
+import type { EventMarketingRow, MarketingPhase } from '@/lib/salon/event-marketing'
 import type { ReportBlock } from '@/lib/salon/events-report'
 import { cn } from '@/lib/utils'
+import { EventMarketingSection } from './event-marketing-section'
 import { TablesWall } from './tables-wall'
+
+/** Lo que la ficha necesita para dibujar «Pauta en Meta». Sin esto, no hay sección. */
+export type NightCardMarketing = {
+  tenantSlug: string
+  /** `YYYY-MM-DD` de la edición. */
+  eventDate: string
+  phase: MarketingPhase
+  row: EventMarketingRow | null
+  lastUsdArsRate: { rate: number; loadedAt: string } | null
+}
 
 /**
  * La ficha de un bloque de la noche: el evento, o las reservas normales.
@@ -122,6 +135,7 @@ export function NightCard({
   eventHref,
   linkLabel = 'Ver todas sus fechas',
   emptyText,
+  marketing,
   className,
 }: {
   block: ReportBlock
@@ -139,6 +153,11 @@ export function NightCard({
    * tampoco vendió nada.
    */
   emptyText?: string
+  /**
+   * «Pauta en Meta». Solo se dibuja en bloques de evento: "Sin evento" nunca
+   * tiene pauta, ni siquiera cuando se promueve a ficha protagonista.
+   */
+  marketing?: NightCardMarketing
   className?: string
 }) {
   const big = tone === 'event'
@@ -170,10 +189,16 @@ export function NightCard({
           ? `todas de ${block.minParty}`
           : undefined
 
+  // La tinta del evento: su tono, domado para que se lea sobre la ficha en los
+  // dos temas. Sin color (o "Sin evento") no hay variables y `.ev-ink` cae al
+  // verde de la casa.
+  const ink = eventInk(block.colorHex)
+
   return (
     <section
+      style={ink ? ({ '--ev-l': ink.light, '--ev-d': ink.dark } as CSSProperties) : undefined}
       className={cn(
-        'relative overflow-hidden rounded-xl border',
+        'ev-ink relative overflow-hidden rounded-xl border',
         big
           ? 'card-hairline border-primary/50 bg-primary/5 p-5 sm:p-6'
           : 'border-border/70 bg-card/60 p-4 sm:p-5',
@@ -251,11 +276,33 @@ export function NightCard({
           </div>
 
           <div className="mt-5 space-y-2 border-t border-border/50 pt-4">
-            <TablesWall tables={block.tables} />
+            <TablesWall
+              key={block.key}
+              tables={block.tables}
+              title={block.kind === 'plain' ? 'las reservas sin evento' : block.title}
+            />
             <AttendanceLine block={block} />
           </div>
         </>
       )}
+
+      {/* Después del muro, o del párrafo de "vacío" / "se cayó entera": una fecha
+          sin reservas en pie puede haber tenido pauta, y es justo la que más
+          importa ver. `key` por edición: el borrador del form no pasa de un
+          evento a otro. */}
+      {marketing && block.kind === 'event' && block.eventId ? (
+        <EventMarketingSection
+          key={block.eventId}
+          tenantSlug={marketing.tenantSlug}
+          scheduledEventId={block.eventId}
+          eventTitle={block.title}
+          eventDate={marketing.eventDate}
+          phase={marketing.phase}
+          block={{ reservations: block.reservations, guests: block.guests }}
+          row={marketing.row}
+          lastUsdArsRate={marketing.lastUsdArsRate}
+        />
+      ) : null}
     </section>
   )
 }

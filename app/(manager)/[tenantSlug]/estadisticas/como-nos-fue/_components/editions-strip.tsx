@@ -2,17 +2,37 @@
 
 import { TrendingDown, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
-import { type EditionSummary, editionDelta, type TemplateReport } from '@/lib/salon/events-report'
+import type { CSSProperties } from 'react'
+import { eventInk } from '@/lib/salon/event-ink'
+import {
+  type EventMarketingRow,
+  editionMarketingLine,
+  type MarketingPhase,
+  type PoolItem,
+  pooledStripSummary,
+} from '@/lib/salon/event-marketing'
+import {
+  type EditionSummary,
+  editionDelta,
+  type ReportMarketingByEvent,
+  type TemplateReport,
+} from '@/lib/salon/events-report'
 import { cn } from '@/lib/utils'
 
 /**
  * Todas las fechas de un evento, de la más nueva a la más vieja: la respuesta a
  * "¿este evento crece o se apaga?".
  *
- * La barra usa la MISMA unidad que el muro de mesas (`--u` = una persona), así
- * que un Ramen de 53 y otro de 4 se comparan de un vistazo y contra el muro de
- * la ficha de arriba. Sin línea de tendencia ni proyección: con dos a siete
- * ediciones, una recta es adivinación con estética de dato.
+ * La barra usa SU propia unidad (`--u` = una persona: 3px, 5px desde `sm`), no
+ * la del muro de mesas. Son dos gráficos distintos: con el asiento del muro
+ * (7px / 9px) las barras crecían un tercio y se salían de la fila en las fechas
+ * grandes. Dentro de la tira sí es una sola unidad, así que un Ramen de 53 y
+ * otro de 4 se comparan de un vistazo. Sin línea de tendencia ni proyección: con
+ * dos a siete ediciones, una recta es adivinación con estética de dato.
+ *
+ * La pauta va como segunda línea de cada fecha, y el resumen agrupado arriba a
+ * la derecha solo con 2 fechas o más con mensajes: con una sola, el "total" es
+ * esa fecha con otro nombre. Todo el texto sale de `lib/salon/event-marketing`.
  */
 
 const nf = new Intl.NumberFormat('es-AR')
@@ -31,16 +51,31 @@ function avgText(avg: number | null): string {
   return avg.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 }
 
+/**
+ * La fase de pauta de una edición sale de las MISMAS banderas que la tira ya
+ * usa para "es esta noche" / "todavía no pasó": las dos lecturas del mismo día
+ * no pueden contradecirse en la misma fila.
+ */
+function editionPhase(e: Pick<EditionSummary, 'isFuture' | 'isTonight'>): MarketingPhase {
+  return e.isTonight ? 'tonight' : e.isFuture ? 'future' : 'past'
+}
+
+function rowOf(e: EditionSummary, marketing: ReportMarketingByEvent): EventMarketingRow | null {
+  return marketing[e.eventId ?? e.key] ?? null
+}
+
 function Row({
   edition,
   delta,
   isBest,
   href,
+  marketingLine,
 }: {
   edition: EditionSummary
   delta: { diff: number; againstDate: string } | null
   isBest: boolean
   href: string
+  marketingLine: { text: string; tone: 'muted' | 'warning' } | null
 }) {
   const { guests, reservations, isFuture, isTonight } = edition
   // Hoy se dibuja como una fecha que todavía se está moviendo, no como historia.
@@ -71,7 +106,8 @@ function Row({
           {reservations} {reservations === 1 ? 'reserva' : 'reservas'} · {avgText(edition.avg)} c/u
         </span>
 
-        {/* Misma unidad que el muro: la barra es la gente, no un porcentaje. */}
+        {/* Una unidad por persona, en la tinta del evento: la barra es la gente,
+            no un porcentaje. */}
         <span className="flex min-w-0 flex-1 items-center gap-2">
           <span
             aria-hidden
@@ -79,8 +115,8 @@ function Row({
             className={cn(
               'h-3 shrink-0 rounded-sm border',
               enCurso
-                ? 'border-dashed border-primary/50 bg-primary/10'
-                : 'border-primary/40 bg-primary/30',
+                ? 'border-dashed border-(--ev)/50 bg-(--ev)/10'
+                : 'border-(--ev) bg-(--ev)/30',
             )}
           />
         </span>
@@ -111,6 +147,20 @@ function Row({
             </span>
           )}
         </span>
+
+        {/* Segunda línea: la pauta de esa fecha. Adentro del mismo Link, sin
+            controles anidados; `pl-28` = la columna de la fecha + su gap, así
+            arranca alineada con la gente. */}
+        {marketingLine ? (
+          <span
+            className={cn(
+              'basis-full pl-28 font-mono text-[11px]',
+              marketingLine.tone === 'warning' ? 'text-warning-text' : 'text-muted-foreground',
+            )}
+          >
+            {marketingLine.text}
+          </span>
+        ) : null}
       </Link>
     </li>
   )
@@ -118,20 +168,43 @@ function Row({
 
 export function EditionsStrip({
   report,
+  marketing,
   tenantSlug,
 }: {
   report: TemplateReport
+  /** Pauta por `scheduled_event_id`. Sin fila = «Sin cargar». */
+  marketing: ReportMarketingByEvent
   tenantSlug: string
 }) {
-  const conReservas = report.editions.filter((e) => e.reservations > 0)
-  const vacias = report.editions.filter((e) => e.reservations === 0)
+  const conPauta = (e: EditionSummary) => (rowOf(e, marketing)?.adSpendUsdCents ?? 0) > 0
+  // Una fecha colapsa al pie solo si no tuvo reservas NI plata gastada: la pauta
+  // de una fecha que nadie reservó es justamente la que el dueño tiene que ver.
+  const listables = report.editions.filter((e) => e.reservations > 0 || conPauta(e))
+  const vacias = report.editions.filter((e) => e.reservations === 0 && !conPauta(e))
   // Cuando TODAS están en cero no se colapsan: son todo lo que hay, y un cero
   // es información distinta de un hueco.
-  const listadas = conReservas.length > 0 ? conReservas : report.editions
-  const colapsadas = conReservas.length > 0 ? vacias : []
+  const listadas = listables.length > 0 ? listables : report.editions
+  const colapsadas = listables.length > 0 ? vacias : []
+
+  // La segunda línea aparece solo si el evento tiene al menos una fila de pauta:
+  // un evento que nunca se pautó no tiene por qué llenarse de "Pauta sin cargar".
+  const hayPauta = report.editions.some((e) => rowOf(e, marketing) !== null)
+  const items: PoolItem[] = report.editions.map((e) => ({
+    phase: editionPhase(e),
+    reservations: e.reservations,
+    guests: e.guests,
+    row: rowOf(e, marketing),
+  }))
+  const resumen = hayPauta ? pooledStripSummary(items) : null
+
+  // La tinta del template: el mismo tono que el muro de la ficha de arriba.
+  const ink = eventInk(report.colorHex)
 
   return (
-    <div className="card-hairline rounded-xl border bg-card [--u:3px] sm:[--u:5px]">
+    <div
+      style={ink ? ({ '--ev-l': ink.light, '--ev-d': ink.dark } as CSSProperties) : undefined}
+      className="ev-ink card-hairline rounded-xl border bg-card [--u:3px] sm:[--u:5px]"
+    >
       <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border/60 px-4 py-3">
         <h2 className="font-serif text-base font-semibold tracking-tight">
           Todas las fechas
@@ -139,14 +212,29 @@ export function EditionsStrip({
             {report.editions.length} en el calendario
           </span>
         </h2>
-        {report.best ? (
-          <p className="text-[11px] text-muted-foreground">
-            La mejor: {dayLabel(report.best.date).slice(0, 5)} con {nf.format(report.best.guests)}{' '}
-            personas
-            {report.reference
-              ? ` · promedio ${nf.format(report.reference.avgGuests)} en ${report.reference.editions} fechas`
-              : ''}
-          </p>
+        {report.best || resumen ? (
+          <div className="space-y-0.5 sm:text-right">
+            {report.best ? (
+              <p className="text-[11px] text-muted-foreground">
+                La mejor: {dayLabel(report.best.date).slice(0, 5)} con{' '}
+                {nf.format(report.best.guests)} personas
+                {report.reference
+                  ? ` · promedio ${nf.format(report.reference.avgGuests)} en ${report.reference.editions} fechas`
+                  : ''}
+              </p>
+            ) : null}
+            {resumen ? (
+              <p className="text-[11px] text-muted-foreground">
+                {resumen.text}
+                {resumen.pendingText ? (
+                  <>
+                    {' · '}
+                    <span className="text-warning-text">{resumen.pendingText}</span>
+                  </>
+                ) : null}
+              </p>
+            ) : null}
+          </div>
         ) : null}
       </header>
 
@@ -160,6 +248,9 @@ export function EditionsStrip({
               delta={editionDelta(report.editions, index)}
               isBest={report.best?.date === e.date}
               href={`/${tenantSlug}/estadisticas/como-nos-fue?vista=dia&dia=${e.date}`}
+              marketingLine={
+                hayPauta ? editionMarketingLine(e, rowOf(e, marketing), editionPhase(e)) : null
+              }
             />
           )
         })}

@@ -789,32 +789,56 @@ numerador está incompleto y el ratio real se pasa de 100.
 
 ### El muro de mesas
 
-Es la pieza visual de la pantalla y no es decorativa. Un bloque por reserva,
-**el ancho es la cantidad de gente**, y la misma unidad (`--u`) en toda la
-pantalla: 4px en celular, 6px en desktop. Sin piso de ancho, a propósito — con
-un `min-width`, una mesa de 2 y una de 3 miden igual y el muro deja de valer la
-gente justo en el valor más frecuente del bar. El número exacto se lee arriba al
-pasar el mouse o tabular (mismo patrón que el gráfico de señas).
+Es la pieza visual de la pantalla y no es decorativa. **Una mesa es un tablero
+con una silla por persona**, alternando arriba y abajo. El ancho sigue siendo
+exactamente `personas × --mw-seat` (7px en celular, 9px desde `sm`) y la unidad
+es la misma en toda la pantalla. Sin piso de ancho, a propósito — con un
+`min-width`, una mesa de 2 y una de 3 miden igual y el muro deja de valer la
+gente justo en el valor más frecuente del bar.
+
+Hay un `<span>` por persona: una mesa más larga que su fila se parte sola con
+`flex-wrap`, sin `ResizeObserver` y sin esconder gente (la de 48 del 05/09 se
+parte en dos renglones dentro de la ficha de 328px). El número exacto se lee
+arriba al pasar el mouse, **tocar** (en iPhone antes no aparecía nunca) o
+tabular: el muro es una sola parada de Tab y las flechas recorren las mesas.
 
 Sirve para tres cosas que un gráfico no hace:
 
 - Explica el tercer número. "2,5 por reserva" no dice nada solo; un muro de
-  ladrillitos iguales dice *"vinieron todos de a dos"* y un muro con un bloque
-  enorme dice *"esto fue un cumpleaños con relleno"*. El 12/09 es el caso de
-  manual: Merienda y Arte 16 personas en 5 mesas, y Sin evento 125 en 5.
-- Transporta la cobertura de asistencia sin números: sólido = mesa cerrada y
-  contada, punteado = sin cerrar, contorno bajo y aparte = se cayó.
+  mesitas de dos dice *"vinieron todos de a dos"* y un muro con una mesa
+  larguísima dice *"esto fue un cumpleaños con relleno"*. El 12/09 es el caso de
+  manual: Merienda y Arte 16 personas en 5 mesas, y Sin evento con más de 120
+  en 5.
+- Transporta la asistencia sin un porcentaje: silla llena = vino, silla hueca =
+  reservó y no vino, silla tenue sobre tablero rayado = la mesa nunca se cerró,
+  silla afuera del tablero sobre una línea punteada = se sumó alguien, rayita
+  gris en su propia fila = se cayó. La cuenta de qué silla es qué vive en
+  `lib/salon/tables-wall.ts` (`seatStates`, `tableReadout`, `legendFlags`).
 - Compara bloques sin compartir eje: como la unidad es la misma, un evento de 16
   al lado de uno de 125 se ve como lo que es.
+
+**La tinta es la del evento, domada.** `lib/salon/event-ink.ts` toma el tono
+del template y le recorta luz y croma (claro: L ≤ 0,50 y C ≤ 0,14; oscuro:
+L ≥ 0,78 y C ≤ 0,12) para que los 14 colores vivos se lean a más de 4,5:1 sobre
+la ficha en los dos temas (está testeado). La ficha la pasa inline como
+`--ev-l` / `--ev-d` y `.ev-ink` elige según el tema; sin color cae a
+`--primary`. Los tokens del muro llevan prefijo `--mw-` porque `--seat` y
+`--wall` ya son colores del plano de mesas.
+
+**La tira de "Por evento" NO comparte unidad con el muro.** Tiene su propio
+`--u` (3px / 5px): con el asiento del muro las barras crecían un tercio y se
+salían de la fila en las fechas grandes. Son dos gráficos distintos.
 
 ### Piezas
 
 | Qué | Dónde |
 |---|---|
-| Agregador puro + tipos + CSV + `eventTitle()` | `lib/salon/events-report.ts` |
+| Agregador puro + tipos + CSV + `eventTitle()` + `aggregateEditions()` | `lib/salon/events-report.ts` |
+| Muro: sillas por mesa, lectura, leyenda | `lib/salon/tables-wall.ts` |
+| Tinta del evento | `lib/salon/event-ink.ts` + `.ev-ink` / `.wall` en `app/globals.css` |
 | Queries | `getDayReport`, `getTemplateReport`, `listRecentReservationDays`, `listEventTemplateOptions` en `lib/salon/queries.ts` |
 | Pantalla (owner-only) | `app/(manager)/[tenantSlug]/estadisticas/como-nos-fue/*` |
-| Planilla | `GET /api/como-nos-fue/export?slug&vista&dia|evento` |
+| Planilla | `GET /api/como-nos-fue/export?slug&vista=dia|evento|pauta&dia|evento|mes` |
 | Tests | `tests/lib/salon-events-report.test.ts` (32 casos) |
 
 `eventTitle()` es el primer helper para el ternario
@@ -911,3 +935,110 @@ barrido aparte.
     `/hub/reservas`.
 11. `⌘K` → "como nos fue" / "gente" / "evento" trae la entrada; el sidebar marca
     activo solo ese hijo.
+
+---
+
+## Addendum 2026-09-15 — Pauta en Meta dentro de «Cómo nos fue»
+
+Nacho (marketing, entra como `owner`) carga lo que dice Ads Manager de cada
+fecha de evento, y los socios leen cuánto costó traer a la gente que ya cuenta
+la ficha. No hay integración con la API de Meta: son cuatro números a mano por
+edición.
+
+### Dónde vive
+
+- **Tabla** `scheduled_event_marketing` (migración
+  `20260915120000_scheduled_event_marketing.sql`): una fila por
+  `scheduled_event_id`, con `ad_spend_usd_cents` (0 = «No tuvo pauta»),
+  `messages`, `reach`, `revenue_ars_cents`, `usd_ars_rate` y `notes` (≤ 280).
+  Checks: una fila sin pauta va pelada, y facturación y dólar van juntos.
+- **RLS solo dueño, SELECT incluido** (`sem_owner_all`, como
+  `commission_ledger`). Se aparta a propósito de la regla general: host y cajero
+  leen `scheduled_events`, pero la plata de la pauta no.
+- **FK compuesta `(scheduled_event_id, tenant_id)` SIN cascade.** Un host puede
+  borrar fechas del calendario y no ve la pauta: un cascade le borraría plata
+  sin enterarse. `deleteScheduledEvent` traduce el 23503 a *"No se puede borrar:
+  esta fecha tiene pauta cargada en «Cómo nos fue». Un dueño tiene que borrarla
+  primero."* Borrar el tenant sí cascadea.
+
+### Las reglas (encabezado de `lib/salon/event-marketing.ts`)
+
+1. **Un solo denominador: el bloque en pantalla.** Reservas = reservas en pie, y
+   personas = su gente: los mismos tres números grandes de la ficha.
+2. **Faltante no es cero.** Sin fila = «Sin cargar»; gasto 0 = «No tuvo pauta»;
+   gasto sin mensajes = «Incompleta»; mensajes 0 = «No escribió nadie».
+3. **El cierre nunca pasa de 100 %.** Con más reservas que mensajes se dice en
+   palabras: *"parte llegó por otro lado"*.
+4. **El cierre es un techo y el costo por reserva un piso**: cuentan todas las
+   reservas en pie, también las que no vinieron por el anuncio.
+   `salon_reservations.origin` defaultea a `whatsapp` y no sirve para atribuir.
+5. **Los totales son cocientes de sumas sobre el mismo conjunto**, con la base
+   nombrada. Nunca promedio de cocientes.
+6. **Hoy y lo que viene es «Por ahora»**: fuera de los cocientes agrupados y de
+   los pendientes, pero su gasto sí suma en lo invertido del mes, rotulado aparte.
+7. **Facturación no es ganancia.** El verbo es «facturó», nunca «volvió».
+8. **Sin benchmarks ni semáforos.** La única alerta es aritmética: el evento
+   facturó menos de lo que costó la pauta.
+9. **Pantalla = CSV**: mismo redondeo, mismo formateador (hecho a mano, sin
+   `Intl` para `%`: Node y el browser no coinciden y rompía la hidratación).
+
+### Tres lugares
+
+- **La ficha del evento** (Por día y el hero de Por evento): sección «Pauta en
+  Meta» con oración, tres fichas (por mensaje, de cierre, por reserva), ficha
+  técnica, recuadro de retorno y «¿Cómo se calcula?». Se carga en línea; «No
+  tuvo pauta» es optimista con Deshacer 6 s. Guardar NO es optimista. "Sin
+  evento" nunca tiene sección.
+- **Por evento**: segunda línea por fecha en la tira y resumen agrupado arriba
+  (solo con 2 fechas o más con mensajes). Una fecha con pauta y cero reservas NO
+  colapsa al pie: esa es la que más hay que ver.
+- **Pestaña «Pauta»** (`?vista=pauta&mes=YYYY-MM`): recuadro de pendientes con
+  el mismo formulario en línea (Nacho se pone al día sin navegar), oración del
+  mes, fichas con su base, lista cronológica y notas al pie.
+
+**Concurrencia**: el guardado filtra por el `updated_at` que el dueño tenía
+delante; si otro dueño guardó en el medio, vuelve `stale`, se refresca y el form
+queda abierto con lo tipeado. Toda mutación va a `audit_log` sin la nota (texto
+libre).
+
+### Piezas
+
+| Qué | Dónde |
+|---|---|
+| Fórmulas, formateo, parser de números, oraciones, mes, CSV | `lib/salon/event-marketing.ts` |
+| Schemas zod y mapeo a la DB | `lib/salon/event-marketing-schemas.ts` |
+| Borrador del form (chequeo con el mismo schema del server, copy) | `lib/salon/event-marketing-draft.ts` |
+| Server Actions (`saveEventMarketing`, `markEventWithoutAds`, `deleteEventMarketing`) | `lib/salon/event-marketing-actions.ts` |
+| Queries (`listEventMarketing`, `getLastUsdArsRate`, `getMonthMarketingReport`) | `lib/salon/queries.ts` |
+| UI | `_components/event-marketing-section.tsx`, `marketing-report.tsx`, `marketing-form.tsx`, `money-field.tsx`, `marketing-month-view.tsx` |
+| Planillas | día y evento suman las columnas de pauta; `vista=pauta&mes=` baja el mes |
+| Tests | `tests/lib/salon-event-marketing*.test.ts`, `tests/rls/scheduled-event-marketing.test.ts` |
+
+### Smoke manual
+
+1. **09/09, Noche Astral** → 29 / 11 / 2,6; muro en rosa: 27 sillas llenas, 2
+   huecas y aparte `se cayeron · 2 (4 personas)`. Sección `Sin cargar` en ámbar.
+2. `Cargar pauta`, pegar `US$175,26`, Tab, `51` → la vista previa dice
+   `US$ 3,44 por mensaje`, `21,6 % de cierre`, `US$ 15,93 por reserva · US$ 6,04
+   por persona`. Enter guarda: oración, tres fichas, `Cargó … · dd/MM HH:mm` y
+   toast.
+3. Editar: alcance `8.420` → `US$ 20,81` y `0,6 % (6 de cada 1.000)`.
+   Facturación `2.480.000` sin dólar → error; chip o `1.450` → `Por cada US$ 1
+   de pauta, el evento facturó US$ 9,76.`, `$ 254.127`, `10,2 %`, `$ 85.517 por
+   persona`.
+4. `1,234.50` en Gastado → al salir queda `1.234,50`. `51,5` en Mensajes →
+   `Va sin decimales.` y `Corregí «Mensajes» para guardar.`
+5. Dos sesiones de dueño sobre la misma fecha → la segunda recibe el toast de
+   stale y ve los números nuevos.
+6. Fecha pasada sin reservas → `No tuvo pauta` y Deshacer vuelve a `Sin cargar`.
+7. Fecha futura con US$ 60 / 12 → `Por ahora: pusimos …`; no aparece en
+   pendientes, sí en Invertido con `(1 todavía no pasó)`.
+8. 05/09 y toda ficha "Sin evento" → sin sección de pauta.
+9. Pestaña **Pauta**, septiembre → cargar una pendiente en línea y que salga del
+   recuadro; a 400px la lista son tarjetas.
+10. Exportar las tres vistas → en Excel es-AR `175,26` y `21,6` en columnas.
+11. Como host: la página no se sirve, `select` sobre la tabla devuelve `[]` y
+    borrar del calendario una fecha con pauta muestra el mensaje del 23503.
+12. Antes de mergear: confirmar en el Ads Manager del bar los nombres «Importe
+    gastado», «Conversaciones con mensajes iniciadas», «Costo por resultado» y
+    «Alcance».

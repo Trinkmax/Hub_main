@@ -13,7 +13,8 @@ export default function Loading() {
         description={<Skeleton className="h-4 w-80" />}
       />
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Skeleton className="h-9 w-56" />
+        {/* Tres pestañas (Por día · Por evento · Pauta) en `size="sm"` miden ~250px. */}
+        <Skeleton className="h-9 w-64" />
         <Skeleton className="h-9 w-28" />
       </div>
       <Skeleton className="h-11 w-72" />

@@ -414,6 +414,10 @@ export const commandEntries: CommandEntry[] = [
       'noche',
       'promedio',
       'como nos fue',
+      'pauta',
+      'meta',
+      'anuncios',
+      'publicidad',
     ],
   },
   {

@@ -618,6 +618,147 @@
   to   { opacity: 1; transform: none; }
 }
 
+/* ── Cómo nos fue: tinta del evento + muro de mesas ────────────────────────
+   La tinta la calcula lib/salon/event-ink.ts (tono del template, luz y croma
+   recortados para que se lea) y la ficha la pasa inline como --ev-l / --ev-d.
+   Sin variables cae a --primary: verde en claro, dorado en oscuro. */
+@layer components {
+  .ev-ink { --ev: var(--ev-l, var(--primary)); }
+  .dark .ev-ink { --ev: var(--ev-d, var(--primary)); }
+
+  /* Una mesa es un tablero con una silla por persona, alternando arriba y
+     abajo. Un <span> por persona: una mesa más larga que su fila se parte sola
+     con flex-wrap, sin medir nada y sin esconder gente. Los tokens llevan
+     prefijo --mw- (muro) porque --seat y --wall ya son colores del plano. */
+  .wall {
+    --mw-seat: 7px;   /* una persona */
+    --mw-chair: 5px;  /* diámetro de la silla */
+    --mw-top: 10px;   /* alto del tablero */
+    --mw-gap: 2px;    /* aire entre silla y tablero */
+  }
+  @media (width >= 40rem) {
+    .wall {
+      --mw-seat: 9px;
+      --mw-chair: 6px;
+      --mw-top: 12px;
+    }
+  }
+
+  .wall-table {
+    touch-action: manipulation;
+    transition: opacity var(--duration-fast) var(--ease-out);
+    /* backwards y no both: cuando termina, el atenuado de las otras mesas
+       (opacity) tiene que poder ganar. */
+    animation: wall-table-in var(--duration-base) var(--ease-out) backwards;
+    animation-delay: min(calc(var(--i, 0) * 18ms), 360ms);
+  }
+  .wall-table[data-static] { animation: none; }
+  .wall[data-has-active] .wall-table:not([data-active]) { opacity: 0.45; }
+
+  .wall-seat {
+    position: relative;
+    flex: none;
+    width: var(--mw-seat);
+    height: calc(var(--mw-chair) * 2 + var(--mw-top) + var(--mw-gap) * 2);
+  }
+  .wall-seat::before,
+  .wall-seat::after {
+    content: '';
+    position: absolute;
+  }
+
+  /* Tablero: un tramo por persona, con borde arriba y abajo. Solo el primer y
+     el último tramo cierran los costados, así que una mesa que se parte en dos
+     filas se lee como que sigue. */
+  .wall-seat::before {
+    inset-inline: 0;
+    top: calc(var(--mw-chair) + var(--mw-gap));
+    height: var(--mw-top);
+    box-sizing: border-box;
+    border-block: 1px solid var(--ev);
+  }
+  .wall-seat[data-start]::before {
+    border-inline-start: 1px solid var(--ev);
+    border-start-start-radius: 3px;
+    border-end-start-radius: 3px;
+  }
+  .wall-seat[data-end]::before {
+    border-inline-end: 1px solid var(--ev);
+    border-start-end-radius: 3px;
+    border-end-end-radius: 3px;
+  }
+
+  /* Contada: relleno decorativo; lo que se lee es el borde de tinta. */
+  .wall-table[data-table='counted'] .wall-seat::before {
+    background: color-mix(in oklch, var(--ev) 20%, var(--card));
+  }
+  .wall-table[data-table='counted'][data-active] .wall-seat::before {
+    background: color-mix(in oklch, var(--ev) 32%, var(--card));
+  }
+  /* Sin cerrar: rayado. El mosaico mide lo mismo que una persona y las rayas
+     pasan por sus esquinas, así que los tramos empalman sin cortes. */
+  .wall-table[data-table='open'] .wall-seat::before {
+    background:
+      linear-gradient(
+        135deg,
+        color-mix(in oklch, var(--ev) 55%, transparent) 0 12.5%,
+        transparent 12.5% 50%,
+        color-mix(in oklch, var(--ev) 55%, transparent) 50% 62.5%,
+        transparent 62.5%
+      ) 0 0 / var(--mw-seat) var(--mw-seat),
+      var(--card);
+  }
+  /* Se cayó: sin sillas, una rayita fina y gris con las puntas redondas. */
+  .wall-table[data-table='fallen'] .wall-seat::before {
+    top: 50%;
+    height: 3px;
+    translate: 0 -50%;
+    border: 0;
+    background: var(--muted-foreground);
+  }
+
+  /* Silla */
+  .wall-seat::after {
+    left: 50%;
+    translate: -50% 0;
+    width: var(--mw-chair);
+    height: var(--mw-chair);
+    border-radius: 999px;
+    transition: translate var(--duration-fast) var(--ease-out);
+  }
+  .wall-seat[data-pos='top']::after { top: 0; }
+  .wall-seat[data-pos='bottom']::after { bottom: 0; }
+  .wall-seat[data-seat='sat']::after { background: var(--ev); }
+  .wall-seat[data-seat='empty']::after {
+    background: var(--card);
+    box-shadow: inset 0 0 0 1px var(--ev);
+  }
+  .wall-seat[data-seat='unknown']::after {
+    background: color-mix(in oklch, var(--ev) 35%, var(--card));
+  }
+  .wall-seat[data-seat='none']::after { content: none; }
+
+  /* Se sumó: va ÚLTIMO para ganarle al estado de la mesa. Fuera del tablero,
+     sobre una línea punteada a la altura de su centro, con la silla llena. */
+  .wall-table .wall-seat[data-seat='extra']::before {
+    top: calc(var(--mw-chair) + var(--mw-gap) + var(--mw-top) / 2);
+    height: 0;
+    border: 0;
+    border-top: 1px dotted var(--ev);
+    border-radius: 0;
+    background: none;
+  }
+  .wall-seat[data-seat='extra']::after { background: var(--ev); }
+
+  /* Mesa activa: las sillas se separan un pelo del tablero. */
+  .wall-table[data-active] .wall-seat[data-pos='top']::after { translate: -50% -1px; }
+  .wall-table[data-active] .wall-seat[data-pos='bottom']::after { translate: -50% 1px; }
+}
+
+@keyframes wall-table-in {
+  from { opacity: 0; transform: translateY(3px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .carnet-sheen::after { animation: none; display: none; }
   .tier-node-pulse { animation: none; }
@@ -637,6 +778,11 @@
   }
   .redeem-check { animation: none; stroke-dashoffset: 0; }
   .redeem-ring, .redeem-spark { display: none; }
+
+  /* Muro de mesas: aparece entero y quieto; la mesa activa se marca con el
+     atenuado de las otras, sin que las sillas se muevan. */
+  .wall-table { animation: none; transition: none; }
+  .wall-seat::after { transition: none; }
 }
 
 /* react-phone-number-input: match shadcn Input styling */

@@ -15,9 +15,12 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { SlidingTabs } from '@/components/ui/sliding-tabs'
-import type { DayReport, TemplateReport } from '@/lib/salon/events-report'
+import { type MonthMarketingReport, phaseOf } from '@/lib/salon/event-marketing'
+import type { DayReport, ReportMarketingByEvent, TemplateReport } from '@/lib/salon/events-report'
+import { legendFlags } from '@/lib/salon/tables-wall'
 import { cn } from '@/lib/utils'
 import { EditionsStrip } from './editions-strip'
+import { MarketingMonthView } from './marketing-month-view'
 import { NightCard } from './night-card'
 import { TablesWallLegend } from './tables-wall'
 
@@ -33,6 +36,15 @@ export type TemplateOption = {
   guests: number
   upcoming: number
 }
+
+export type ComoNosFueView = 'dia' | 'evento' | 'pauta'
+
+/** El último dólar cargado en cualquier pauta del bar: el chip del formulario. */
+export type LastUsdArsRate = { rate: number; loadedAt: string } | null
+
+/** Lo que manda la page: el reporte de siempre + la pauta por `scheduled_event_id`. */
+type DayReportWithMarketing = DayReport & { marketing: ReportMarketingByEvent }
+type TemplateReportWithMarketing = TemplateReport & { marketing: ReportMarketingByEvent }
 
 const nf = new Intl.NumberFormat('es-AR')
 
@@ -76,23 +88,31 @@ export function ComoNosFueDashboard({
   view,
   day,
   today,
+  ym,
   recentDays,
   dayReport,
   templates,
   templatesTruncated,
   templateId,
   templateReport,
+  monthReport,
+  lastUsdArsRate,
 }: {
   tenantSlug: string
-  view: 'dia' | 'evento'
+  view: ComoNosFueView
   day: string
   today: string
+  /** `YYYY-MM` de la pestaña «Pauta». Validado por la page. */
+  ym: string
   recentDays: Array<{ day: string; reservations: number }>
-  dayReport: DayReport | null
+  dayReport: DayReportWithMarketing | null
   templates: TemplateOption[]
   templatesTruncated: boolean
   templateId: string | null
-  templateReport: TemplateReport | null
+  templateReport: TemplateReportWithMarketing | null
+  /** Solo en la pestaña «Pauta». */
+  monthReport: MonthMarketingReport | null
+  lastUsdArsRate: LastUsdArsRate
 }) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -107,23 +127,34 @@ export function ComoNosFueDashboard({
     })
   }
 
+  // La planilla sale con el MISMO corte que está en pantalla: el día elegido, el
+  // evento elegido o el mes elegido. Nunca de los searchParams crudos, que
+  // pueden no traer el default que la page resolvió.
+  const exportBase = `/api/como-nos-fue/export?slug=${encodeURIComponent(tenantSlug)}`
   const exportHref =
     view === 'dia'
-      ? `/api/como-nos-fue/export?slug=${encodeURIComponent(tenantSlug)}&vista=dia&dia=${day}`
-      : `/api/como-nos-fue/export?slug=${encodeURIComponent(tenantSlug)}&vista=evento&evento=${templateId ?? ''}`
+      ? `${exportBase}&vista=dia&dia=${day}`
+      : view === 'pauta'
+        ? `${exportBase}&vista=pauta&mes=${monthReport?.ym ?? ym}`
+        : `${exportBase}&vista=evento&evento=${templateId ?? ''}`
 
   const relativo = relativeLabel(day, today)
-  // Las dos banderas de la leyenda salen de las MISMAS mesas que se dibujan.
+  // Las banderas de la leyenda salen de las MISMAS mesas que se dibujan.
   // `NightCard` esconde el muro cuando el bloque no tiene reservas en pie, y en
   // la vista por evento solo dibuja muro el hero: sin este acuerdo, la leyenda
   // llegaba a mostrar "se cayó" con las canceladas de una edición colapsada que
-  // no tiene un solo chip en pantalla.
-  const chipsEnPantalla = [
-    ...(dayReport?.blocks.filter((b) => b.reservations > 0).flatMap((b) => b.tables) ?? []),
-    ...(templateReport?.latest?.tables ?? []),
-  ]
-  const hayMuro = chipsEnPantalla.some((t) => t.state !== 'fallen')
-  const hayCaidas = chipsEnPantalla.some((t) => t.state === 'fallen')
+  // no tiene un solo chip en pantalla. Lo mismo vale para "silla vacía" y
+  // "se sumó alguien": solo si hay una en pantalla. La pestaña «Pauta» no
+  // dibuja ningún muro, así que tampoco lleva leyenda.
+  const chipsEnPantalla =
+    view === 'pauta'
+      ? []
+      : [
+          ...(dayReport?.blocks.filter((b) => b.reservations > 0).flatMap((b) => b.tables) ?? []),
+          ...(templateReport?.latest?.tables ?? []),
+        ]
+  const legend = legendFlags(chipsEnPantalla)
+  const hayMuro = legend.counted || legend.open
 
   return (
     <div className={cn('space-y-5', pending && 'opacity-60 transition-opacity')}>
@@ -136,6 +167,7 @@ export function ComoNosFueDashboard({
           tabs={[
             { value: 'dia', label: 'Por día' },
             { value: 'evento', label: 'Por evento' },
+            { value: 'pauta', label: 'Pauta' },
           ]}
         />
         <Button asChild variant="outline" size="sm" className="gap-2">
@@ -226,8 +258,25 @@ export function ComoNosFueDashboard({
             </Popover>
           </div>
 
-          {dayReport ? <DayView report={dayReport} tenantSlug={tenantSlug} today={today} /> : null}
+          {dayReport ? (
+            <DayView
+              report={dayReport}
+              tenantSlug={tenantSlug}
+              today={today}
+              lastUsdArsRate={lastUsdArsRate}
+            />
+          ) : null}
         </>
+      ) : view === 'pauta' ? (
+        monthReport ? (
+          <MarketingMonthView
+            tenantSlug={tenantSlug}
+            today={today}
+            report={monthReport}
+            lastUsdArsRate={lastUsdArsRate}
+            onNavigate={push}
+          />
+        ) : null
       ) : (
         <>
           <Select
@@ -261,7 +310,12 @@ export function ComoNosFueDashboard({
           </Select>
 
           {templateReport ? (
-            <EventView report={templateReport} tenantSlug={tenantSlug} />
+            <EventView
+              report={templateReport}
+              tenantSlug={tenantSlug}
+              today={today}
+              lastUsdArsRate={lastUsdArsRate}
+            />
           ) : (
             <EmptyState
               icon={PartyPopper}
@@ -272,9 +326,12 @@ export function ComoNosFueDashboard({
         </>
       )}
 
-      {hayMuro ? <TablesWallLegend hasFallen={hayCaidas} /> : null}
+      {hayMuro && view !== 'pauta' ? <TablesWallLegend flags={legend} /> : null}
 
-      {dayReport?.truncated || templateReport?.truncated || templatesTruncated ? (
+      {dayReport?.truncated ||
+      templateReport?.truncated ||
+      templatesTruncated ||
+      monthReport?.truncated ? (
         <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-text">
           Hay más reservas de las que entran en una sola lectura: los números pueden estar
           incompletos.
@@ -288,14 +345,19 @@ function DayView({
   report,
   tenantSlug,
   today,
+  lastUsdArsRate,
 }: {
-  report: DayReport
+  report: DayReportWithMarketing
   tenantSlug: string
   today: string
+  lastUsdArsRate: LastUsdArsRate
 }) {
   const eventos = report.blocks.filter((b) => b.kind === 'event')
   const plain = report.blocks.find((b) => b.kind === 'plain')
   const futura = report.day > today
+  // Todas las fichas de evento de la noche comparten fecha, así que comparten
+  // fase: "Por ahora" hoy y a futuro, historia de ayer para atrás.
+  const phase = phaseOf(report.day, today)
 
   // Una noche que se cayó entera NO es una noche vacía: que dos reservas se
   // hayan cancelado es justamente lo que el dueño viene a ver. Sin este chequeo,
@@ -341,11 +403,26 @@ function DayView({
                   ? `${b.guests} de las ${totalNoche} de la noche`
                   : undefined
               }
+              // La pauta cuelga de la edición: sin `eventId` no hay dónde
+              // guardarla, así que tampoco hay sección.
+              marketing={
+                b.eventId
+                  ? {
+                      tenantSlug,
+                      eventDate: report.day,
+                      phase,
+                      row: report.marketing[b.eventId] ?? null,
+                      lastUsdArsRate,
+                    }
+                  : undefined
+              }
             />
           ))}
         </div>
       ) : null}
 
+      {/* "Sin evento" nunca lleva pauta, ni siquiera cuando se promueve a
+          protagonista: no hay una fecha de evento a la que atarla. */}
       {plain ? (
         <NightCard
           block={plain}
@@ -369,7 +446,17 @@ function DayView({
   )
 }
 
-function EventView({ report, tenantSlug }: { report: TemplateReport; tenantSlug: string }) {
+function EventView({
+  report,
+  tenantSlug,
+  today,
+  lastUsdArsRate,
+}: {
+  report: TemplateReportWithMarketing
+  tenantSlug: string
+  today: string
+  lastUsdArsRate: LastUsdArsRate
+}) {
   if (report.editions.length === 0) {
     return (
       <EmptyState
@@ -393,10 +480,11 @@ function EventView({ report, tenantSlug }: { report: TemplateReport; tenantSlug:
   // se siguen moviendo), pero decir "ninguna tuvo reservas" con 53 personas
   // anotadas justo abajo es peor: se la nombra.
   const vendiendo = porVenir.find((e) => e.reservations > 0)
+  const heroEventId = hero ? (hero.eventId ?? hero.key) : null
 
   return (
     <div className="space-y-4">
-      {hero ? (
+      {hero && heroEventId ? (
         <NightCard
           block={hero}
           tone="event"
@@ -407,6 +495,16 @@ function EventView({ report, tenantSlug }: { report: TemplateReport; tenantSlug:
           }
           eventHref={`/${tenantSlug}/estadisticas/como-nos-fue?vista=dia&dia=${hero.date}`}
           linkLabel="Ver esa noche entera"
+          // El hero es la última edición concluida, así que hoy siempre es
+          // `past`; se calcula igual para no depender de esa regla de otro
+          // archivo.
+          marketing={{
+            tenantSlug,
+            eventDate: hero.date,
+            phase: phaseOf(hero.date, today),
+            row: report.marketing[heroEventId] ?? null,
+            lastUsdArsRate,
+          }}
         />
       ) : (
         <p className="text-sm text-muted-foreground">
@@ -428,7 +526,7 @@ function EventView({ report, tenantSlug }: { report: TemplateReport; tenantSlug:
         </p>
       )}
 
-      <EditionsStrip report={report} tenantSlug={tenantSlug} />
+      <EditionsStrip report={report} marketing={report.marketing} tenantSlug={tenantSlug} />
     </div>
   )
 }

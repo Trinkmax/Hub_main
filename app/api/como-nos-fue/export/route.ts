@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
 import { logAudit } from '@/lib/audit'
 import { isRealIsoDay, todayInCordoba } from '@/lib/salon/date-presets'
+import { monthMarketingToCsv } from '@/lib/salon/event-marketing'
 import {
   dayReportToCsv,
   reportExportFilename,
   templateReportToCsv,
 } from '@/lib/salon/events-report'
-import { getDayReport, getTemplateReport } from '@/lib/salon/queries'
+import { getDayReport, getMonthMarketingReport, getTemplateReport } from '@/lib/salon/queries'
 import {
   RoleRequiredError,
   requireRole,
@@ -19,14 +20,22 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/** Copiado de la page de Señas: un mes que Postgres no puede convertir en rango no pasa. */
+const YM_RE = /^(19|20|21)\d{2}-(0[1-9]|1[0-2])$/
 
 /**
  * Descarga "Cómo nos fue" como planilla, con el MISMO corte que la pantalla:
- * una noche partida en bloques, o todas las fechas de un evento.
+ * una noche partida en bloques, todas las fechas de un evento, o la pauta de un
+ * mes.
  *
- * No lleva PII (son conteos por bloque), pero es un tablero de dueño: guard de
- * rol explícito, porque la RLS de `salon_reservations` deja leer a cualquier
- * miembro del tenant.
+ * No lleva PII (son conteos por bloque y la plata de la pauta), pero es un
+ * tablero de dueño: guard de rol explícito, porque la RLS de
+ * `salon_reservations` deja leer a cualquier miembro del tenant. La pauta ya es
+ * solo de dueño en la RLS; el guard igual va primero.
+ *
+ * Las planillas del día y del evento llevan las columnas de pauta siempre: son
+ * las mismas que ve el dueño en la ficha, y una planilla que las omite según
+ * desde dónde se bajó sería otra planilla.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url)
@@ -38,7 +47,8 @@ export async function GET(request: Request) {
     requireRole(access.role, ['owner'])
 
     const tenantId = access.tenant.id
-    const vista = url.searchParams.get('vista') === 'evento' ? 'evento' : 'dia'
+    const vistaParam = url.searchParams.get('vista')
+    const vista = vistaParam === 'evento' ? 'evento' : vistaParam === 'pauta' ? 'pauta' : 'dia'
 
     if (vista === 'dia') {
       const dia = url.searchParams.get('dia')
@@ -60,7 +70,30 @@ export async function GET(request: Request) {
           truncated: report.truncated,
         },
       })
-      return csvResponse(dayReportToCsv(report), reportExportFilename(access.tenant.slug, dia))
+      return csvResponse(
+        dayReportToCsv(report, report.marketing),
+        reportExportFilename(access.tenant.slug, dia),
+      )
+    }
+
+    if (vista === 'pauta') {
+      const mes = url.searchParams.get('mes')
+      if (!mes || !YM_RE.test(mes)) {
+        return NextResponse.json({ error: 'invalid_month' }, { status: 400 })
+      }
+      const report = await getMonthMarketingReport({ tenantId, ym: mes, today: todayInCordoba() })
+      await logAudit({
+        tenantId,
+        userId: access.user.id,
+        action: 'salon_events_report.exported',
+        entity: 'scheduled_event',
+        payload: { vista, mes, fechas: report.editions.length },
+      })
+      // `como-nos-fue-hub-pauta-2026-09.csv`.
+      return csvResponse(
+        monthMarketingToCsv(report),
+        reportExportFilename(access.tenant.slug, `pauta-${mes}`),
+      )
     }
 
     const evento = url.searchParams.get('evento')
@@ -87,7 +120,7 @@ export async function GET(request: Request) {
       },
     })
     return csvResponse(
-      templateReportToCsv(report),
+      templateReportToCsv(report, report.marketing),
       reportExportFilename(access.tenant.slug, report.templateName),
     )
   } catch (error) {

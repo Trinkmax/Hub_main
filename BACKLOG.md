@@ -819,3 +819,42 @@ afuera a propósito:
   fecha de reserva y fecha de carga, y no puede distinguir una seña de reserva
   cancelada que se devolvió de una que el bar se quedó. Si el dueño lo necesita:
   `deposit_paid_on date` + `deposit_refunded_at timestamptz`.
+
+## Pauta en «Cómo nos fue» (2026-09-15)
+
+- **Qué dólar se carga.** El campo pide "el que usaste para pagar Meta (el de la
+  tarjeta)". Entre oficial, tarjeta y blue el retorno y el "% de lo facturado"
+  se mueven 30–60 %. Confirmar con los socios y, si cambia, decirlo en el hint
+  — nunca mezclar criterios entre fechas.
+- **«Mensajes» = «Conversaciones con mensajes iniciadas».** Si marketing copia
+  otra columna de Meta (clics al enlace, mensajes totales) las fechas dejan de
+  ser comparables. Confirmar con Nacho que siempre es esa columna.
+- **Campañas que cubren varias fechas y pauta general del bar.**
+  `scheduled_event_marketing` es una fila por edición: una campaña compartida
+  se reparte a mano y se explica en la nota, y la pauta que no es de un evento
+  (marca, happy hour) no entra en ningún lado. Si pesa, una tabla
+  `marketing_campaigns` con reparto por edición.
+- **Atribución real de reservas.** El % de cierre y el costo por reserva usan
+  TODAS las reservas en pie de la fecha (techo y piso, y la pantalla lo dice),
+  porque `salon_reservations.origin` defaultea a `whatsapp` (202 de 227 reservas
+  de evento). Para atribuir de verdad hace falta capturar el origen al cargar la
+  reserva ("vino por el anuncio") o el `referral` de click-to-WhatsApp.
+- **Guard de fórmulas en `csvEscape` para TODAS las planillas.** La nota de la
+  pauta ya se exporta con `'` delante de `= + - @`, pero el resto de los CSV
+  (reservas, señas, clientes) sigue sin guard y lleva texto libre.
+- **"Copiar resumen" para el grupo de WhatsApp de los socios** y **delta mes
+  contra mes** en la pestaña Pauta: quedaron afuera hasta tener el visto bueno
+  del texto y dos meses de datos.
+- **Rol acotado de marketing.** Nacho entra como `owner` y ve todo. Un rol
+  `marketing` necesita enum + RLS de esta tabla, tareas, páginas y enlaces +
+  prefijos en `MANAGER_SCOPED_PREFIXES`.
+- **Borrar una fecha con pauta cargada falla a propósito** (FK compuesta sin
+  cascade): también una marcada "No tuvo pauta". Si la anfitriona necesita
+  borrar fechas así, un dueño primero borra la pauta.
+- **`shiftYM`/`formatYM` ya van por la quinta copia** (calendario, comisiones,
+  señas, la pestaña Pauta y otra más). Extraer a `lib/salon/date-presets.ts` con
+  test.
+- **`RATIO_COLUMNS` está duplicado.** `lib/salon/event-marketing.ts` no lo
+  exporta y `events-report.ts` mantiene su copia `LIVE_EDITION_BLANK_HEADERS`
+  para dejar vacías las columnas de ratio de fechas que no pasaron. Exportarlo
+  y borrar la copia.

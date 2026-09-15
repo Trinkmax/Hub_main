@@ -6,6 +6,8 @@ import { PageShell } from '@/components/ui/page-shell'
 import { isRealIsoDay, todayInCordoba } from '@/lib/salon/date-presets'
 import {
   getDayReport,
+  getLastUsdArsRate,
+  getMonthMarketingReport,
   getTemplateReport,
   listEventTemplateOptions,
   listRecentReservationDays,
@@ -22,6 +24,8 @@ export const metadata = { title: 'Cómo nos fue' }
 export const dynamic = 'force-dynamic'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/** Copiado de la page de Señas: `?mes=2026-13` cae al mes actual en vez de romper. */
+const YM_RE = /^(19|20|21)\d{2}-(0[1-9]|1[0-2])$/
 
 export default async function ComoNosFuePage({
   params,
@@ -47,22 +51,39 @@ export default async function ComoNosFuePage({
 
   const tenantId = access.tenant.id
   const today = todayInCordoba()
-  const view = sp.vista === 'evento' ? 'evento' : 'dia'
+  const view = sp.vista === 'evento' ? 'evento' : sp.vista === 'pauta' ? 'pauta' : 'dia'
   // Cualquier valor raro cae al default en vez de romper la pantalla.
   const requestedDay = typeof sp.dia === 'string' && isRealIsoDay(sp.dia) ? sp.dia : undefined
   const requestedTemplate =
     typeof sp.evento === 'string' && UUID_RE.test(sp.evento) ? sp.evento : undefined
+  const ym = typeof sp.mes === 'string' && YM_RE.test(sp.mes) ? sp.mes : today.slice(0, 7)
+
+  // Arranca ya y se espera al final: no depende de nada de lo que sigue. El
+  // último dólar va en TODAS las vistas porque el formulario de pauta vive en la
+  // ficha del día, en el hero del evento y en los pendientes del mes. El
+  // `.catch` hace que nunca rechace, así que empezarla antes de esperarla no
+  // deja una promesa rechazada sin manejar.
+  const lastUsdArsRateP = getLastUsdArsRate({ tenantId }).catch((error: unknown) => {
+    // Es el atajo de un chip: si falla, el form pide el dólar a mano y listo.
+    // Tumbar el reporte entero por esto sería peor que no ofrecerlo.
+    console.error('[como-nos-fue.lastUsdArsRate]', {
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return null
+  })
 
   // Las últimas noches con gente sirven para dos cosas: el atajo del calendario
   // y el default. Abrir un reporte retrospectivo en una noche vacía es una mala
   // primera pantalla, aunque el vacío también sea un dato cuando se lo busca.
-  const recentDays = await listRecentReservationDays({ tenantId, until: today })
-  const day = requestedDay ?? recentDays[0]?.day ?? today
-
-  const templateOptions =
+  // El mes de pauta no depende del día ni del evento: va en esta misma tanda.
+  const [recentDays, templateOptions, monthReport] = await Promise.all([
+    listRecentReservationDays({ tenantId, until: today }),
     view === 'evento'
-      ? await listEventTemplateOptions({ tenantId, today })
-      : { options: [], truncated: false }
+      ? listEventTemplateOptions({ tenantId, today })
+      : Promise.resolve({ options: [], truncated: false }),
+    view === 'pauta' ? getMonthMarketingReport({ tenantId, ym, today }) : Promise.resolve(null),
+  ])
+  const day = requestedDay ?? recentDays[0]?.day ?? today
   const templates = templateOptions.options
   // El default abre en el evento con más historia, no en el primero de la lista:
   // sin esto, un formato que todavía no corrió pero tiene mucha gente anotada
@@ -70,11 +91,12 @@ export default async function ComoNosFuePage({
   const defaultTemplate = templates.find((t) => t.guests > 0) ?? templates[0]
   const templateId = requestedTemplate ?? (view === 'evento' ? (defaultTemplate?.id ?? null) : null)
 
-  const [dayReport, templateReport] = await Promise.all([
+  const [dayReport, templateReport, lastUsdArsRate] = await Promise.all([
     view === 'dia' ? getDayReport({ tenantId, day }) : Promise.resolve(null),
     view === 'evento' && templateId
       ? getTemplateReport({ tenantId, templateId, today })
       : Promise.resolve(null),
+    lastUsdArsRateP,
   ])
 
   return (
@@ -92,7 +114,7 @@ export default async function ComoNosFuePage({
         title="Cómo nos fue"
         description={
           <span className="hidden sm:inline">
-            Cuánta gente entró, en cuántas reservas y de a cuántos. Elegí una noche o un evento.
+            Cuánta gente entró, en cuántas reservas y cuánto costó traerla.
           </span>
         }
       />
@@ -101,12 +123,15 @@ export default async function ComoNosFuePage({
         view={view}
         day={day}
         today={today}
+        ym={ym}
         recentDays={recentDays}
         dayReport={dayReport}
         templates={templates}
         templatesTruncated={templateOptions.truncated}
         templateId={templateId}
         templateReport={templateReport}
+        monthReport={monthReport}
+        lastUsdArsRate={lastUsdArsRate}
       />
     </PageShell>
   )

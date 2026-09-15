@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest'
+import { type EventMarketingRow, MARKETING_EXPORT_HEADERS } from '@/lib/salon/event-marketing'
 import {
   aggregateDayReport,
+  aggregateEditions,
   aggregateTemplateReport,
+  DAY_EXPORT_HEADERS,
   dayReportToCsv,
   editionDelta,
   eventTitle,
   type ReportEventRow,
   type ReportReservationRow,
   reportExportFilename,
+  TEMPLATE_EXPORT_HEADERS,
   templateReportToCsv,
 } from '@/lib/salon/events-report'
 
@@ -505,6 +509,26 @@ describe('CSV', () => {
     expect(lines[2]?.endsWith(';')).toBe(true)
   })
 
+  it('el nombre del evento lleva apóstrofo si Excel lo leería como fórmula', () => {
+    // Lo escribe el staff (nombre especial de la fecha o del formato).
+    const day = aggregateDayReport({
+      day: '2026-09-07',
+      events: [ev({ name_override: '=1+1' })],
+      rows: [res({ scheduled_event_id: 'ev-ramen', estimated_guests: 2 })],
+    })
+    expect(dayReportToCsv(day).split('\r\n')[1]?.split(';')[1]).toBe("'=1+1")
+
+    const tpl = aggregateTemplateReport({
+      templateId: 't',
+      templateName: 'Ramen',
+      colorHex: null,
+      today: HOY,
+      events: [ev({ id: 'vieja', event_date: '2026-08-01', name_override: '-5 de descuento' })],
+      rows: [res({ scheduled_event_id: 'vieja', estimated_guests: 2 })],
+    })
+    expect(templateReportToCsv(tpl).split('\r\n')[1]?.split(';')[1]).toBe("'-5 de descuento")
+  })
+
   it('la planilla del evento marca las fechas que todavía no pasaron', () => {
     const tpl = aggregateTemplateReport({
       templateId: 't',
@@ -516,6 +540,122 @@ describe('CSV', () => {
     })
     const lines = templateReportToCsv(tpl).split('\r\n')
     expect(lines[1]?.endsWith(';sí')).toBe(true)
+  })
+})
+
+describe('CSV con pauta', () => {
+  function pauta(over: Partial<EventMarketingRow> = {}): EventMarketingRow {
+    return {
+      scheduledEventId: 'ev-ramen',
+      adSpendUsdCents: 10_000,
+      messages: 20,
+      reach: null,
+      revenueArsCents: null,
+      usdArsRate: null,
+      notes: null,
+      updatedAt: '2026-09-08T15:00:00Z',
+      updatedByName: 'Nacho B.',
+      ...over,
+    }
+  }
+
+  const day = aggregateDayReport({
+    day: '2026-09-07',
+    events: [ev()],
+    rows: [
+      res({ scheduled_event_id: 'ev-ramen', estimated_guests: 6, actual_guests: 6 }),
+      res({ scheduled_event_id: 'ev-ramen', estimated_guests: 4 }),
+      res({ scheduled_event_id: 'ev-ramen', estimated_guests: 2, status: 'cancelled' }),
+      res({ estimated_guests: 12, actual_guests: 13 }),
+    ],
+  })
+
+  it('sin pauta la planilla del día queda exactamente como antes', () => {
+    const lines = dayReportToCsv(day).split('\r\n')
+    expect(lines[0]?.split(';')).toHaveLength(DAY_EXPORT_HEADERS.length)
+    expect(lines[0]).not.toContain('Pauta USD')
+  })
+
+  it('con pauta suma las 12 columnas, con los mismos números que la pantalla', () => {
+    const lines = dayReportToCsv(day, { 'ev-ramen': pauta() }).split('\r\n')
+    expect(lines[0]?.replace('\uFEFF', '').split(';')).toEqual([
+      ...DAY_EXPORT_HEADERS,
+      ...MARKETING_EXPORT_HEADERS,
+    ])
+    // US$ 100 / 20 mensajes / 2 reservas en pie (10 personas).
+    expect(lines[1]).toBe(
+      '2026-09-07;Ramen;10;2;5,0;6;1 de 2;1;0;2;100,00;20;;5,00;10,0;50,00;10,00;;;;;',
+    )
+  })
+
+  it('"Sin evento" y un evento sin fila llevan las columnas de pauta vacías', () => {
+    const conFila = dayReportToCsv(day, { 'ev-ramen': pauta() }).split('\r\n')
+    expect(conFila[2]?.split(';').slice(DAY_EXPORT_HEADERS.length)).toEqual(
+      MARKETING_EXPORT_HEADERS.map(() => ''),
+    )
+    const sinFila = dayReportToCsv(day, {}).split('\r\n')
+    expect(sinFila[1]?.split(';').slice(DAY_EXPORT_HEADERS.length)).toEqual(
+      MARKETING_EXPORT_HEADERS.map(() => ''),
+    )
+  })
+
+  it('"No tuvo pauta" escribe 0,00 y la nota lleva la guarda de fórmulas', () => {
+    const sinPauta = dayReportToCsv(day, {
+      'ev-ramen': pauta({ adSpendUsdCents: 0, messages: null }),
+    }).split('\r\n')
+    expect(sinPauta[1]?.split(';')[DAY_EXPORT_HEADERS.length]).toBe('0,00')
+
+    const nota = dayReportToCsv(day, { 'ev-ramen': pauta({ notes: '=1+1' }) }).split('\r\n')
+    expect(nota[1]?.split(';').at(-1)).toBe("'=1+1")
+  })
+
+  it('en la planilla del evento, hoy y lo futuro llevan lo cargado pero no los cocientes', () => {
+    const tpl = aggregateTemplateReport({
+      templateId: 't',
+      templateName: 'Ramen',
+      colorHex: null,
+      today: HOY,
+      events: [
+        ev({ id: 'futura', event_date: '2026-09-28' }),
+        ev({ id: 'hoy', event_date: HOY }),
+        ev({ id: 'vieja', event_date: '2026-08-01' }),
+        ev({ id: 'sin-fila', event_date: '2026-07-01' }),
+      ],
+      rows: [
+        res({ scheduled_event_id: 'hoy', estimated_guests: 2 }),
+        res({ scheduled_event_id: 'vieja', estimated_guests: 2 }),
+      ],
+    })
+    const marketing = {
+      hoy: pauta({ scheduledEventId: 'hoy', adSpendUsdCents: 6_000, messages: 12 }),
+      vieja: pauta({ scheduledEventId: 'vieja', adSpendUsdCents: 1_000, messages: 5 }),
+    }
+    const lines = templateReportToCsv(tpl, marketing).split('\r\n')
+    const pautaDe = (i: number) => lines[i]?.split(';').slice(TEMPLATE_EXPORT_HEADERS.length)
+
+    expect(lines[0]?.replace('\uFEFF', '').split(';')).toEqual([
+      ...TEMPLATE_EXPORT_HEADERS,
+      ...MARKETING_EXPORT_HEADERS,
+    ])
+    expect(pautaDe(1)).toEqual(MARKETING_EXPORT_HEADERS.map(() => ''))
+    expect(pautaDe(2)).toEqual(['60,00', '12', '', '', '', '', '', '', '', '', '', ''])
+    expect(pautaDe(3)).toEqual([
+      '10,00',
+      '5',
+      '',
+      '2,00',
+      '20,0',
+      '10,00',
+      '5,00',
+      '',
+      '',
+      '',
+      '',
+      '',
+    ])
+    expect(pautaDe(4)).toEqual(MARKETING_EXPORT_HEADERS.map(() => ''))
+    // Las columnas de siempre no se mueven.
+    expect(lines[2]?.split(';')[TEMPLATE_EXPORT_HEADERS.length - 1]).toBe('es hoy')
   })
 })
 
@@ -535,5 +675,87 @@ describe('reportExportFilename', () => {
 
   it('nunca queda sin nombre', () => {
     expect(reportExportFilename('hub', '···')).toBe('como-nos-fue-hub-reporte.csv')
+  })
+})
+
+describe('aggregateEditions', () => {
+  const events = [
+    ev({ id: 'e3', event_date: '2026-09-28' }),
+    ev({ id: 'hoy', event_date: HOY }),
+    ev({ id: 'e1', event_date: '2026-08-06', template: null }),
+  ]
+  const rows = [
+    res({ scheduled_event_id: 'e3', estimated_guests: 2 }),
+    res({ scheduled_event_id: 'hoy', estimated_guests: 4, actual_guests: 5 }),
+    res({ scheduled_event_id: 'hoy', estimated_guests: 3, status: 'no_show' }),
+    res({ scheduled_event_id: 'e1', estimated_guests: 6, actual_guests: 6 }),
+    res({ scheduled_event_id: null, estimated_guests: 99 }),
+    res({ scheduled_event_id: 'de-otro-template', estimated_guests: 99 }),
+  ]
+
+  it('cuenta cada edición exactamente igual que el reporte del evento', () => {
+    const editions = aggregateEditions({ events, rows, today: HOY, colorHex: '#7c3aed' })
+    const tpl = aggregateTemplateReport({
+      templateId: 'tpl-ramen',
+      templateName: 'Ramen',
+      colorHex: '#7c3aed',
+      today: HOY,
+      events,
+      rows,
+    })
+    expect(editions).toEqual(tpl.editions)
+  })
+
+  it('ordena de la más nueva a la más vieja y marca hoy y futuras', () => {
+    const editions = aggregateEditions({ events, rows, today: HOY })
+    expect(editions.map((e) => [e.date, e.isFuture, e.isTonight])).toEqual([
+      ['2026-09-28', true, false],
+      [HOY, false, true],
+      ['2026-08-06', false, false],
+    ])
+    expect(editions[1]?.guests).toBe(4)
+    expect(editions[1]?.noShow).toBe(1)
+  })
+
+  it('el color de respaldo solo entra cuando el evento no trae el de su template', () => {
+    const conRespaldo = aggregateEditions({ events, rows, today: HOY, colorHex: '#000000' })
+    expect(conRespaldo.map((e) => e.colorHex)).toEqual(['#7c3aed', '#7c3aed', '#000000'])
+    const sinRespaldo = aggregateEditions({ events, rows, today: HOY })
+    expect(sinRespaldo[2]?.colorHex).toBeNull()
+  })
+})
+
+describe('mesas del muro: nombre y motivo de la caída', () => {
+  it('recorta el nombre de mesa y un nombre en blanco es null', () => {
+    const r = aggregateDayReport({
+      day: '2026-09-07',
+      events: [],
+      rows: [
+        res({ estimated_guests: 6, table_label: '  12 ' }),
+        res({ estimated_guests: 4, table_label: '   ' }),
+        res({ estimated_guests: 2 }),
+        res({ estimated_guests: 1, table_label: null }),
+      ],
+    })
+    expect(r.blocks[0]?.tables.map((t) => t.label)).toEqual(['12', null, null, null])
+  })
+
+  it('una caída dice si la cancelaron o no vino; una mesa en pie no tiene motivo', () => {
+    const r = aggregateDayReport({
+      day: '2026-09-07',
+      events: [],
+      rows: [
+        res({ estimated_guests: 5, actual_guests: 5 }),
+        res({ estimated_guests: 4 }),
+        res({ estimated_guests: 3, status: 'cancelled', table_label: '7' }),
+        res({ estimated_guests: 2, status: 'no_show' }),
+      ],
+    })
+    expect(r.blocks[0]?.tables.map((t) => [t.guests, t.state, t.fallenReason, t.label])).toEqual([
+      [5, 'counted', null, null],
+      [4, 'open', null, null],
+      [3, 'fallen', 'cancelled', '7'],
+      [2, 'fallen', 'no_show', null],
+    ])
   })
 })

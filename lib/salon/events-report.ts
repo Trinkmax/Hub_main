@@ -30,6 +30,12 @@
  */
 
 import { rowsToCsv } from '@/lib/stats/csv'
+import {
+  csvFormulaGuard,
+  type EventMarketingRow,
+  MARKETING_EXPORT_HEADERS,
+  marketingCsvCells,
+} from './event-marketing'
 import type { SalonReservationStatus } from './types'
 
 /** Estados que NO cuentan: la reserva se cayó, esa gente no se sentó. */
@@ -63,6 +69,8 @@ export type ReportReservationRow = {
   actual_guests: number | string | null
   status: SalonReservationStatus
   guest_name?: string | null
+  /** El nombre de mesa que cargó el salón ("2"). Libre: puede venir con espacios o vacío. */
+  table_label?: string | null
 }
 
 /** Un evento programado, tal como lo devuelve `listScheduledEventsForDateRange`. */
@@ -85,6 +93,13 @@ export type TableChip = {
   guests: number
   attended: number | null
   state: 'counted' | 'open' | 'fallen'
+  /** Nombre de mesa, recortado. Un nombre en blanco es `null`, no "Mesa ". */
+  label: string | null
+  /**
+   * Por qué se cayó: el muro dice "la cancelaron" o "no vino", que no son lo
+   * mismo para el dueño. `null` en toda mesa en pie.
+   */
+  fallenReason: 'cancelled' | 'no_show' | null
 }
 
 /** Los números de un bloque: un evento de la noche, o las reservas normales. */
@@ -209,11 +224,19 @@ function newAcc(base: Pick<ReportBlock, 'key' | 'kind' | 'title'> & Partial<Repo
 /** Mete una reserva en su bloque. Compartido por las dos vistas. */
 function absorb(acc: Acc, row: ReportReservationRow): void {
   const guests = toInt(row.estimated_guests)
+  const label = row.table_label?.trim() || null
   if (isFallen(row.status)) {
     acc.fallenGuests += guests
     if (row.status === 'cancelled') acc.cancelled += 1
     else acc.noShow += 1
-    acc.tables.push({ id: row.id, guests, attended: null, state: 'fallen' })
+    acc.tables.push({
+      id: row.id,
+      guests,
+      attended: null,
+      state: 'fallen',
+      label,
+      fallenReason: row.status === 'cancelled' ? 'cancelled' : 'no_show',
+    })
     return
   }
   const attended = row.actual_guests === null ? null : toInt(row.actual_guests)
@@ -229,6 +252,8 @@ function absorb(acc: Acc, row: ReportReservationRow): void {
     guests,
     attended,
     state: attended === null ? 'open' : 'counted',
+    label,
+    fallenReason: null,
   })
 }
 
@@ -305,23 +330,26 @@ export function aggregateDayReport(input: {
 }
 
 /**
- * Todas las ediciones de un evento, de la más nueva a la más vieja.
+ * Las ediciones que se le pasen, de la más nueva a la más vieja: una por evento
+ * programado, aunque no tenga una sola reserva.
  *
  * Acá el bucket es `scheduled_event_id`, NO `reservation_date`: hoy todas las
  * reservas de evento caen en la fecha de su evento, pero nada en el schema lo
  * garantiza, y el día que alguien mueva una fecha las dos vistas tienen que
  * seguir contando lo suyo sin contradecirse.
+ *
+ * Vive aparte de `aggregateTemplateReport` porque no le importa de qué template
+ * son los eventos: la pestaña de pauta del mes junta ediciones de todos, y tiene
+ * que contar la gente con exactamente la misma cuenta que la vista por evento.
  */
-export function aggregateTemplateReport(input: {
-  templateId: string
-  templateName: string
-  colorHex: string | null
-  /** Hoy en el calendario del bar: define qué edición ya pasó. */
-  today: string
+export function aggregateEditions(input: {
   events: ReadonlyArray<ReportEventRow>
   rows: ReadonlyArray<ReportReservationRow>
-  truncated?: boolean
-}): TemplateReport {
+  /** Hoy en el calendario del bar: define qué edición ya pasó. */
+  today: string
+  /** Color de respaldo cuando el evento no trae el de su template. */
+  colorHex?: string | null
+}): EditionSummary[] {
   const byEvent = new Map<string, Acc>()
   for (const ev of input.events) {
     byEvent.set(
@@ -330,7 +358,7 @@ export function aggregateTemplateReport(input: {
         key: ev.id,
         kind: 'event',
         title: eventTitle(ev),
-        colorHex: ev.template?.color_hex ?? input.colorHex,
+        colorHex: ev.template?.color_hex ?? input.colorHex ?? null,
         startsAtLocal: ev.starts_at_local,
         capacity: toInt(ev.capacity) || null,
         eventId: ev.id,
@@ -346,7 +374,7 @@ export function aggregateTemplateReport(input: {
   }
 
   const byId = new Map(input.events.map((e) => [e.id, e]))
-  const editions: EditionSummary[] = Array.from(byEvent.values())
+  return Array.from(byEvent.values())
     .map(seal)
     .map((b) => {
       const date = byId.get(b.key)?.event_date ?? ''
@@ -354,6 +382,29 @@ export function aggregateTemplateReport(input: {
       return { ...b, date, isFuture: date > input.today, isTonight: date === input.today }
     })
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+}
+
+/**
+ * Todas las ediciones de un evento, de la más nueva a la más vieja, con lo
+ * comparativo encima (la última, la mejor, el promedio de referencia). El
+ * conteo por edición es `aggregateEditions`.
+ */
+export function aggregateTemplateReport(input: {
+  templateId: string
+  templateName: string
+  colorHex: string | null
+  /** Hoy en el calendario del bar: define qué edición ya pasó. */
+  today: string
+  events: ReadonlyArray<ReportEventRow>
+  rows: ReadonlyArray<ReportReservationRow>
+  truncated?: boolean
+}): TemplateReport {
+  const editions = aggregateEditions({
+    events: input.events,
+    rows: input.rows,
+    today: input.today,
+    colorHex: input.colorHex,
+  })
 
   // Concluidas: ni hoy ni futuras. Todo lo comparativo sale de acá.
   const concluidas = editions.filter((e) => !e.isFuture && !e.isTonight)
@@ -430,22 +481,41 @@ export const DAY_EXPORT_HEADERS = [
   'Personas caídas',
 ] as const
 
-/** `;` + BOM: es lo que abre en columnas en Excel en español. */
-export function dayReportToCsv(report: DayReport): string {
+/** La pauta cargada de un reporte, por `scheduled_event_id`. Sin fila = «Sin cargar». */
+export type ReportMarketingByEvent = Readonly<Record<string, EventMarketingRow>>
+
+/**
+ * `;` + BOM: es lo que abre en columnas en Excel en español.
+ *
+ * Con `marketing`, cada bloque suma las 12 columnas de pauta. "Sin evento" las
+ * lleva vacías: la pauta es de una fecha de evento y la ficha de las reservas
+ * normales no tiene sección de pauta. Sin `marketing` la planilla queda byte a
+ * byte como antes.
+ */
+export function dayReportToCsv(report: DayReport, marketing?: ReportMarketingByEvent): string {
+  const headers: string[] = [...DAY_EXPORT_HEADERS]
+  if (marketing) headers.push(...MARKETING_EXPORT_HEADERS)
   return rowsToCsv(
-    [...DAY_EXPORT_HEADERS],
-    report.blocks.map((b) => [
-      report.day,
-      b.title,
-      String(b.guests),
-      String(b.reservations),
-      avgCell(b.avg),
-      String(b.attendedGuests),
-      `${b.countedTables} de ${b.reservations}`,
-      String(b.cancelled),
-      String(b.noShow),
-      String(b.fallenGuests),
-    ]),
+    headers,
+    report.blocks.map((b) => {
+      const cells = [
+        report.day,
+        // El nombre lo escribe el staff: con `=` adelante Excel lo correría como
+        // fórmula. Misma guarda que la planilla del mes.
+        csvFormulaGuard(b.title),
+        String(b.guests),
+        String(b.reservations),
+        avgCell(b.avg),
+        String(b.attendedGuests),
+        `${b.countedTables} de ${b.reservations}`,
+        String(b.cancelled),
+        String(b.noShow),
+        String(b.fallenGuests),
+      ]
+      if (!marketing) return cells
+      const row = b.kind === 'event' && b.eventId ? (marketing[b.eventId] ?? null) : null
+      return [...cells, ...marketingCsvCells(b.kind === 'event' ? b : null, row)]
+    }),
     { separator: ';', bom: true },
   )
 }
@@ -470,21 +540,56 @@ function editionWhen(e: { isFuture: boolean; isTonight: boolean }): string {
   return ''
 }
 
-export function templateReportToCsv(report: TemplateReport): string {
+/**
+ * Las columnas de pauta que son cocientes. Una fecha de hoy o futura no los
+ * lleva: en la tira de ediciones y en la planilla del mes esa fecha dice solo lo
+ * cargado ("Por ahora: pauta US$ 60,00 · 12 mensajes"), y la misma edición no
+ * puede leerse distinto en dos planillas. Es la misma lista que usa
+ * `monthMarketingToCsv`.
+ */
+const LIVE_EDITION_BLANK_HEADERS = new Set([
+  'Costo por mensaje USD',
+  '% de cierre',
+  'Costo por reserva USD',
+  'Costo por persona USD',
+  'Retorno (USD facturados por USD de pauta)',
+  'Pauta sobre facturación %',
+])
+
+/** Con `marketing`, cada edición suma las 12 columnas de pauta (vacías si no tiene fila). */
+export function templateReportToCsv(
+  report: TemplateReport,
+  marketing?: ReportMarketingByEvent,
+): string {
+  const headers: string[] = [...TEMPLATE_EXPORT_HEADERS]
+  if (marketing) headers.push(...MARKETING_EXPORT_HEADERS)
   return rowsToCsv(
-    [...TEMPLATE_EXPORT_HEADERS],
-    report.editions.map((e) => [
-      e.date,
-      e.title,
-      String(e.guests),
-      String(e.reservations),
-      avgCell(e.avg),
-      String(e.attendedGuests),
-      `${e.countedTables} de ${e.reservations}`,
-      String(e.cancelled),
-      String(e.noShow),
-      editionWhen(e),
-    ]),
+    headers,
+    report.editions.map((e) => {
+      const cells = [
+        e.date,
+        csvFormulaGuard(e.title),
+        String(e.guests),
+        String(e.reservations),
+        avgCell(e.avg),
+        String(e.attendedGuests),
+        `${e.countedTables} de ${e.reservations}`,
+        String(e.cancelled),
+        String(e.noShow),
+        editionWhen(e),
+      ]
+      if (!marketing) return cells
+      const pauta = marketingCsvCells(e, e.eventId ? (marketing[e.eventId] ?? null) : null)
+      const live = e.isFuture || e.isTonight
+      return [
+        ...cells,
+        ...(live
+          ? pauta.map((c, i) =>
+              LIVE_EDITION_BLANK_HEADERS.has(MARKETING_EXPORT_HEADERS[i] ?? '') ? '' : c,
+            )
+          : pauta),
+      ]
+    }),
     { separator: ';', bom: true },
   )
 }
