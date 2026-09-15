@@ -994,7 +994,12 @@ edición.
   colapsa al pie: esa es la que más hay que ver.
 - **Pestaña «Pauta»** (`?vista=pauta&mes=YYYY-MM`): recuadro de pendientes con
   el mismo formulario en línea (Nacho se pone al día sin navegar), oración del
-  mes, fichas con su base, lista cronológica y notas al pie.
+  mes, fichas con su base, lista cronológica y notas al pie. Cada fila de
+  «Fechas con pauta» y cada fecha de «Sin pauta» tiene **Editar** (pedido del
+  dueño, 15/09: corregir un número mal cargado sin ir a buscar la noche): abre
+  el mismo formulario debajo de la fila, con Borrar pauta incluido. Un solo form
+  abierto a la vez en toda la pestaña; se monta en la tabla (≥ `md`) o en la
+  tarjeta, nunca en las dos.
 
 **Concurrencia**: el guardado filtra por el `updated_at` que el dueño tenía
 delante; si otro dueño guardó en el medio, vuelve `stale`, se refresca y el form
@@ -1036,6 +1041,11 @@ libre).
 8. 05/09 y toda ficha "Sin evento" → sin sección de pauta.
 9. Pestaña **Pauta**, septiembre → cargar una pendiente en línea y que salga del
    recuadro; a 400px la lista son tarjetas.
+9b. En «Fechas con pauta», **Editar** en una fila → el form abre debajo con los
+   números guardados; cambiar Mensajes y guardar actualiza la fila, las fichas y
+   la oración del mes, y el foco vuelve a Editar. Tocar una fecha de «Sin pauta»
+   abre el mismo form vacío. Abrir otro Editar (o un «Cargar» del recuadro)
+   cierra el anterior. A 400px pasa lo mismo en las tarjetas.
 10. Exportar las tres vistas → en Excel es-AR `175,26` y `21,6` en columnas.
 11. Como host: la página no se sirve, `select` sobre la tabla devuelve `[]` y
     borrar del calendario una fecha con pauta muestra el mensaje del 23503.

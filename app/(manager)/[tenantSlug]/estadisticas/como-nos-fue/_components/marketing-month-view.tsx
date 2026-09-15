@@ -1,9 +1,19 @@
 'use client'
 
-import { ArrowRight, ChevronLeft, ChevronRight, Megaphone } from 'lucide-react'
+import { ArrowRight, ChevronLeft, ChevronRight, Megaphone, Pencil } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { type CSSProperties, useEffect, useId, useMemo, useRef, useState } from 'react'
+import {
+  type CSSProperties,
+  Fragment,
+  type ReactNode,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -14,6 +24,7 @@ import {
   formatDayMonth,
   type MarketingActionState,
   type MonthCell,
+  type MonthEdition,
   type MonthMarketingListRow,
   type MonthMarketingReport,
   type MonthMarketingTile,
@@ -23,7 +34,9 @@ import { deleteEventMarketing, markEventWithoutAds } from '@/lib/salon/event-mar
 import {
   type KeptMarketingDraft,
   MARKETING_UNREACHABLE,
+  marketingCopy,
   pinOpenPendingRow,
+  restoreMarkAfterFailedUndo,
 } from '@/lib/salon/event-marketing-draft'
 import { cn } from '@/lib/utils'
 import { MarketingForm } from './marketing-form'
@@ -37,6 +50,10 @@ import { MarketingForm } from './marketing-form'
  * sin navegar noche por noche. Después, leer el mes: una oración, cuatro números
  * con su base nombrada y la lista cronológica. Sin ranking ni barras: con una a
  * tres ediciones por evento, un ranking invita a sobreleer.
+ *
+ * Cada fecha de la lista (y cada «Sin pauta») se corrige ahí mismo con
+ * «Editar»: pidió el dueño poder arreglar un número mal cargado sin ir a buscar
+ * la noche en «Por día». Abre el mismo formulario, debajo de la fila.
  *
  * Todo lo que se lee sale armado de `buildMonthMarketingReport`; acá solo se
  * dibuja. Lo único propio es el estado optimista de «No tuvo pauta» y de lo
@@ -54,9 +71,32 @@ function shiftYM(ym: string, months: number): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
 }
 
-const NBSP = '\u00A0'
+const NBSP = String.fromCharCode(0xa0)
 /** Mismo tiempo que el «Deshacer» del operativo. */
 const UNDO_MS = 6000
+
+/**
+ * El `md` de Tailwind. La lista es tabla desde acá y tarjetas debajo, y las dos
+ * están en el DOM (una escondida por CSS): el formulario de «Editar» se monta en
+ * UNA sola, o habría dos forms con el mismo estado peleándose el foco. En el
+ * server y en el primer render vale `false`, y no hay desajuste de hidratación
+ * porque el form solo existe después de un click.
+ */
+const MD_QUERY = '(min-width: 48rem)'
+
+function subscribeMd(onChange: () => void): () => void {
+  const mql = window.matchMedia(MD_QUERY)
+  mql.addEventListener('change', onChange)
+  return () => mql.removeEventListener('change', onChange)
+}
+
+function useIsMd(): boolean {
+  return useSyncExternalStore(
+    subscribeMd,
+    () => window.matchMedia(MD_QUERY).matches,
+    () => false,
+  )
+}
 
 /**
  * Lo optimista, por `scheduled_event_id`: una fila nueva (guardada o «No tuvo
@@ -147,6 +187,15 @@ function CellText({ cell }: { cell: MonthCell }) {
   return <span title={cell.srText ?? undefined}>{cell.text}</span>
 }
 
+/** Lo que la lista necesita para ofrecer «Editar» sin saber de estado. */
+type EditControls = {
+  editingId: string | null
+  onEdit: (eventId: string) => void
+  /** Registra el botón para devolverle el foco al cerrar el form. */
+  buttonRef: (key: string) => (el: HTMLButtonElement | null) => void
+  renderEditor: (eventId: string) => ReactNode
+}
+
 export function MarketingMonthView({
   tenantSlug,
   today,
@@ -163,6 +212,7 @@ export function MarketingMonthView({
   onNavigate: (next: Record<string, string>) => void
 }) {
   const router = useRouter()
+  const isMd = useIsMd()
   const headingId = useId()
   const calloutTitleId = useId()
   const listTitleId = useId()
@@ -171,6 +221,10 @@ export function MarketingMonthView({
   // La fila tal como estaba al tocar «Cargar»: si un refresh la saca de
   // pendientes (otro dueño la completó), el form sigue abierto con lo tipeado.
   const [openRow, setOpenRow] = useState<MonthPendingRow | null>(null)
+  // La edición que se está corrigiendo desde la lista o desde «Sin pauta». Es
+  // una foto al tocar «Editar»: si un refresh la mueve de lugar (otro dueño la
+  // borró), el form no desaparece con lo escrito.
+  const [editing, setEditing] = useState<MonthEdition | null>(null)
   // Lo tipeado antes de un Esc, por edición, como en la ficha.
   const [drafts, setDrafts] = useState<Readonly<Record<string, KeptMarketingDraft>>>({})
   const [focusTarget, setFocusTarget] = useState<string | null>(null)
@@ -183,6 +237,7 @@ export function MarketingMonthView({
   if (seenReport !== serverReport) {
     if (seenReport.ym !== serverReport.ym) {
       setOpenRow(null)
+      setEditing(null)
       setDrafts({})
     }
     setSeenReport(serverReport)
@@ -195,17 +250,37 @@ export function MarketingMonthView({
   )
   const ym = report.ym
 
+  // Lo último que se sabe, para lo que se resuelve DESPUÉS de un await o desde
+  // un toast (sus closures ven el mes de cuando se crearon): `effective` con lo
+  // optimista, `server` tal como lo mandó la page.
+  const latestReports = useRef({ effective: report, server: serverReport })
+  useEffect(() => {
+    latestReports.current = { effective: report, server: serverReport }
+  }, [report, serverReport])
+  const rowAt = (source: MonthMarketingReport, eventId: string): string | null =>
+    source.editions.find((e) => e.eventId === eventId)?.row?.updatedAt ?? null
+
   const headingRef = useRef<HTMLHeadingElement>(null)
   const calloutTitleRef = useRef<HTMLHeadingElement>(null)
   const cargarRefs = useRef(new Map<string, HTMLButtonElement>())
+  // `table:<id>`, `card:<id>` y `sin-pauta:<id>`: la tabla y las tarjetas están
+  // las dos en el DOM, así que el foco va al botón que se VE.
+  const editRefs = useRef(new Map<string, HTMLButtonElement>())
 
-  // El foco vuelve a donde tiene sentido DESPUÉS de que se pinta: el botón
-  // «Cargar» de la fila si sigue pendiente, el recuadro si la fila se fue, o el
-  // mes si ya no queda nada pendiente.
+  // El foco vuelve a donde tiene sentido DESPUÉS de que se pinta: el «Editar»
+  // de la fila, el «Cargar» si la fecha quedó pendiente, el recuadro si la fila
+  // se fue, o el mes si ya no queda nada.
   useEffect(() => {
     if (focusTarget === null) return
+    const visibleEdit = ['table', 'card', 'sin-pauta']
+      .map((where) => editRefs.current.get(`${where}:${focusTarget}`))
+      // Apagado no toma foco (una «Sin pauta» que espera al server): se sigue de largo.
+      .find((el) => el !== undefined && !el.disabled && el.getClientRects().length > 0)
     const target =
-      cargarRefs.current.get(focusTarget) ?? calloutTitleRef.current ?? headingRef.current
+      visibleEdit ??
+      cargarRefs.current.get(focusTarget) ??
+      calloutTitleRef.current ??
+      headingRef.current
     target?.focus()
     setFocusTarget(null)
   }, [focusTarget])
@@ -234,23 +309,36 @@ export function MarketingMonthView({
   // El aviso de «guardada» / «borrada» lo da el formulario, con las mismas
   // palabras que en la ficha. Repetirlo acá apilaba dos toasts iguales (uno con
   // id y otro sin), así que el recuadro solo mueve la fila y el foco.
-  function handleSaved(p: MonthPendingRow, row: EventMarketingRow) {
-    setOverride(p.eventId, row)
-    keepDraft(p.eventId, null)
+  function handleSaved(eventId: string, row: EventMarketingRow) {
+    setOverride(eventId, row)
+    keepDraft(eventId, null)
     setOpenRow(null)
-    setFocusTarget(p.eventId)
+    setEditing(null)
+    setFocusTarget(eventId)
   }
 
-  function handleDeleted(p: MonthPendingRow) {
-    setOverride(p.eventId, null)
-    keepDraft(p.eventId, null)
+  function handleDeleted(eventId: string) {
+    setOverride(eventId, null)
+    keepDraft(eventId, null)
     setOpenRow(null)
-    setFocusTarget(p.eventId)
+    setEditing(null)
+    setFocusTarget(eventId)
   }
 
-  function handleCancel(p: MonthPendingRow) {
+  function handleCancel(eventId: string) {
     setOpenRow(null)
-    setFocusTarget(p.eventId)
+    setEditing(null)
+    setFocusTarget(eventId)
+  }
+
+  /** Un solo formulario abierto a la vez en toda la pestaña. */
+  function toggleEdit(eventId: string) {
+    const edition = report.editions.find((e) => e.eventId === eventId) ?? null
+    // «No tuvo pauta» todavía sin respuesta del server: sin versión no hay contra
+    // qué guardar (el botón ya está apagado; esto cubre el teclado rápido).
+    if (edition?.row?.updatedAt === '') return
+    setOpenRow(null)
+    setEditing((current) => (current?.eventId === eventId ? null : edition))
   }
 
   /**
@@ -311,6 +399,15 @@ export function MarketingMonthView({
   }
 
   async function undoNoAds(p: MonthPendingRow, saved: EventMarketingRow) {
+    // Si en los 6 s del toast se cargó pauta encima (desde «Sin pauta»), la marca
+    // ya no es lo guardado: deshacerla borraría esos números o, al rebotar,
+    // volvería a pintar «Sin pauta» sobre ellos.
+    if (rowAt(latestReports.current.effective, p.eventId) !== saved.updatedAt) {
+      toast.error('Esa fecha ya tiene otra pauta cargada: no hay nada que deshacer.', {
+        id: `pauta-${p.eventId}`,
+      })
+      return
+    }
     setOverride(p.eventId, null)
     let res: MarketingActionState
     try {
@@ -323,9 +420,21 @@ export function MarketingMonthView({
       res = { ok: false, code: 'error', message: MARKETING_UNREACHABLE.delete }
     }
     if (!res.ok) {
-      setOverride(p.eventId, saved)
       toast.error(res.message, { id: `pauta-${p.eventId}` })
-      if (res.code === 'stale') router.refresh()
+      // Mismo criterio que la ficha: la marca vuelve solo si sigue siendo la
+      // verdad; si no, gana lo que diga el server.
+      if (
+        restoreMarkAfterFailedUndo(
+          res.code,
+          rowAt(latestReports.current.server, p.eventId),
+          saved.updatedAt,
+        )
+      ) {
+        setOverride(p.eventId, saved)
+      } else {
+        clearOverride(p.eventId)
+        if (res.code === 'stale') router.refresh()
+      }
       return
     }
     toast.success('Listo: volvió a «Sin cargar».', { id: `pauta-${p.eventId}` })
@@ -378,6 +487,97 @@ export function MarketingMonthView({
   const dayHref = (date: string) => `/${tenantSlug}/estadisticas/como-nos-fue?vista=dia&dia=${date}`
 
   const calloutRows = pinOpenPendingRow(report.pending?.rows ?? [], openRow, report.editions)
+
+  // La edición abierta, con la fila de AHORA (un refresh trae lo que guardó otro
+  // dueño y el form lo muestra); la foto solo si ya no está en el mes.
+  const editingEdition = editing
+    ? (report.editions.find((e) => e.eventId === editing.eventId) ?? editing)
+    : null
+  const noAdsEditions = report.editions.filter((e) => e.status === 'sin-pauta')
+  // Dónde se dibuja el form: en su fila, en «Sin pauta», o aparte si la fecha
+  // salió de las dos listas mientras se editaba (otro dueño la borró).
+  const editingPlace: 'rows' | 'sin-pauta' | 'aparte' | null = editingEdition
+    ? report.rows.some((r) => r.eventId === editingEdition.eventId)
+      ? 'rows'
+      : noAdsEditions.some((e) => e.eventId === editingEdition.eventId)
+        ? 'sin-pauta'
+        : 'aparte'
+    : null
+
+  function renderEditor(eventId: string, className?: string): ReactNode {
+    const e = editingEdition
+    if (!e || e.eventId !== eventId) return null
+    return (
+      <MarketingForm
+        key={e.eventId}
+        tenantSlug={tenantSlug}
+        scheduledEventId={e.eventId}
+        eventTitle={e.title}
+        eventDate={e.date}
+        phase={e.phase}
+        block={{ reservations: e.reservations, guests: e.guests }}
+        row={e.row}
+        lastUsdArsRate={lastUsdArsRate}
+        initialDraft={drafts[e.eventId] ?? null}
+        onKeepDraft={(kept) => keepDraft(e.eventId, kept)}
+        onSaved={(row: EventMarketingRow) => handleSaved(e.eventId, row)}
+        onCancel={() => handleCancel(e.eventId)}
+        onDeleted={() => handleDeleted(e.eventId)}
+        className={cn('rounded-lg border border-border/60 bg-card p-4 text-left', className)}
+      />
+    )
+  }
+
+  const buttonRef = (key: string) => (el: HTMLButtonElement | null) => {
+    if (el) editRefs.current.set(key, el)
+    else editRefs.current.delete(key)
+  }
+
+  const listControls: EditControls = {
+    editingId: editingPlace === 'rows' ? (editingEdition?.eventId ?? null) : null,
+    onEdit: toggleEdit,
+    buttonRef,
+    renderEditor: (eventId) => renderEditor(eventId),
+  }
+
+  const noAdsBlock =
+    noAdsEditions.length > 0 ? (
+      <div className="space-y-2">
+        <p className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] text-muted-foreground">
+          <span>Sin pauta:</span>
+          {noAdsEditions.map((e, i) => {
+            const open = editingPlace === 'sin-pauta' && editingEdition?.eventId === e.eventId
+            return (
+              <span key={e.eventId} className="inline-flex items-center">
+                {i > 0 ? (
+                  <span aria-hidden className="mr-1">
+                    ·
+                  </span>
+                ) : null}
+                {/* El nombre accesible contiene lo que se ve («Pizza libre 10/09»). */}
+                <button
+                  ref={buttonRef(`sin-pauta:${e.eventId}`)}
+                  type="button"
+                  // Recién marcada, sin respuesta del server todavía: igual que
+                  // «Cambiar» en la ficha, se habilita cuando hay versión.
+                  disabled={e.row?.updatedAt === ''}
+                  aria-expanded={open}
+                  onClick={() => toggleEdit(e.eventId)}
+                  className="inline-flex min-h-8 items-center gap-1 rounded-sm underline decoration-dotted underline-offset-4 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60"
+                >
+                  <span className="sr-only">Editar la pauta de </span>
+                  {e.title} {formatDayMonth(e.date)}
+                  <Pencil className="size-3" aria-hidden />
+                </button>
+              </span>
+            )
+          })}
+        </p>
+        {editingPlace === 'sin-pauta' && editingEdition
+          ? renderEditor(editingEdition.eventId)
+          : null}
+      </div>
+    ) : null
 
   return (
     <div className="space-y-5">
@@ -437,7 +637,10 @@ export function MarketingMonthView({
                         className={cn('h-10 gap-1.5 sm:h-8', !canMarkNoAds && 'col-span-2')}
                         aria-label={p.cargarAriaLabel}
                         aria-expanded={open}
-                        onClick={() => setOpenRow(open ? null : p)}
+                        onClick={() => {
+                          setEditing(null)
+                          setOpenRow(open ? null : p)
+                        }}
                       >
                         <Megaphone className="size-3.5" aria-hidden />
                         Cargar
@@ -472,9 +675,9 @@ export function MarketingMonthView({
                       lastUsdArsRate={lastUsdArsRate}
                       initialDraft={drafts[p.eventId] ?? null}
                       onKeepDraft={(kept) => keepDraft(p.eventId, kept)}
-                      onSaved={(row: EventMarketingRow) => handleSaved(p, row)}
-                      onCancel={() => handleCancel(p)}
-                      onDeleted={() => handleDeleted(p)}
+                      onSaved={(row: EventMarketingRow) => handleSaved(p.eventId, row)}
+                      onCancel={() => handleCancel(p.eventId)}
+                      onDeleted={() => handleDeleted(p.eventId)}
                       className="mt-2 rounded-lg bg-card p-4"
                     />
                   ) : null}
@@ -482,6 +685,18 @@ export function MarketingMonthView({
               )
             })}
           </ul>
+        </section>
+      ) : null}
+
+      {/* La fecha que se estaba editando salió de la lista (otro dueño la
+          borró): el form sigue acá, con lo escrito, hasta guardar o cancelar. */}
+      {editingPlace === 'aparte' && editingEdition ? (
+        <section className="ev-ink space-y-2" style={inkStyle(editingEdition.colorHex)}>
+          <p className="text-xs text-muted-foreground">
+            {editingEdition.title} {formatDayMonth(editingEdition.date)} ya no tiene pauta cargada.
+            Si guardás, se carga de nuevo.
+          </p>
+          {renderEditor(editingEdition.eventId)}
         </section>
       ) : null}
 
@@ -509,24 +724,28 @@ export function MarketingMonthView({
               rows={report.rows}
               showReturnColumn={report.showReturnColumn}
               dayHref={dayHref}
+              edit={isMd ? listControls : { ...listControls, editingId: null }}
             />
           </div>
 
           <ul className="divide-y divide-border/60 md:hidden">
             {report.rows.map((r) => (
-              <MonthCard key={r.eventId} row={r} href={dayHref(r.date)} />
+              <MonthCard
+                key={r.eventId}
+                row={r}
+                href={dayHref(r.date)}
+                edit={isMd ? { ...listControls, editingId: null } : listControls}
+              />
             ))}
           </ul>
 
-          {report.noAdsText ? (
-            <p className="border-t border-border/60 px-4 py-2.5 text-[11px] text-muted-foreground">
-              {report.noAdsText}
-            </p>
+          {noAdsBlock ? (
+            <div className="border-t border-border/60 px-4 py-2.5">{noAdsBlock}</div>
           ) : null}
         </section>
-      ) : report.noAdsText ? (
-        <p className="text-[11px] text-muted-foreground">{report.noAdsText}</p>
-      ) : null}
+      ) : (
+        noAdsBlock
+      )}
 
       <ul className="space-y-0.5 text-[11px] text-muted-foreground">
         {report.footnotes.map((f) => (
@@ -586,13 +805,17 @@ function MonthTable({
   rows,
   showReturnColumn,
   dayHref,
+  edit,
 }: {
   rows: ReadonlyArray<MonthMarketingListRow>
   showReturnColumn: boolean
   dayHref: (date: string) => string
+  edit: EditControls
 }) {
   const th = 'px-3 py-2 font-medium'
   const num = 'px-3 py-2.5 text-right align-top tabular-nums'
+  // Fecha, Evento, Pauta, Mensajes, Cierre, Por reserva, Personas (+ Retorno) + Editar.
+  const columns = showReturnColumn ? 9 : 8
   return (
     <table className="w-full text-sm">
       <thead>
@@ -615,68 +838,110 @@ function MonthTable({
           <th scope="col" className={cn(th, 'text-right')}>
             Por reserva
           </th>
-          <th scope="col" className={cn(th, 'text-right', !showReturnColumn && 'pr-4')}>
+          <th scope="col" className={cn(th, 'text-right')}>
             Personas
           </th>
           {showReturnColumn ? (
-            <th scope="col" className={cn(th, 'pr-4 text-right')}>
+            <th scope="col" className={cn(th, 'text-right')}>
               Retorno
             </th>
           ) : null}
+          <th scope="col" className={cn(th, 'pr-4')}>
+            <span className="sr-only">Editar</span>
+          </th>
         </tr>
       </thead>
       <tbody className="divide-y divide-border/60">
-        {rows.map((r) => (
-          <tr key={r.eventId} className="ev-ink" style={inkStyle(r.colorHex)}>
-            <td className="px-3 py-2.5 pl-4 align-top">
-              <Link
-                href={dayHref(r.date)}
-                title="Ver la noche"
-                className="whitespace-nowrap font-mono text-xs tabular-nums underline-offset-4 hover:underline"
+        {rows.map((r) => {
+          const open = edit.editingId === r.eventId
+          return (
+            <Fragment key={r.eventId}>
+              <tr
+                className={cn('ev-ink transition-colors', open && 'bg-secondary/40')}
+                style={inkStyle(r.colorHex)}
               >
-                {r.weekdayLabel}
-              </Link>
-              {r.phaseLabel ? (
-                <div className="text-[11px] text-muted-foreground">{r.phaseLabel}</div>
+                <td className="px-3 py-2.5 pl-4 align-top">
+                  <Link
+                    href={dayHref(r.date)}
+                    title="Ver la noche"
+                    className="whitespace-nowrap font-mono text-xs tabular-nums underline-offset-4 hover:underline"
+                  >
+                    {r.weekdayLabel}
+                  </Link>
+                  {r.phaseLabel ? (
+                    <div className="text-[11px] text-muted-foreground">{r.phaseLabel}</div>
+                  ) : null}
+                </td>
+                <td className="px-3 py-2.5 align-top">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <InkDot />
+                    <span className="truncate">{r.title}</span>
+                  </span>
+                </td>
+                <td className={cn(num, toneClass(r.cells.spend.tone))}>
+                  <CellText cell={r.cells.spend} />
+                </td>
+                <td className={cn(num, toneClass(r.cells.messages.tone))}>
+                  <CellText cell={r.cells.messages} />
+                </td>
+                <td className={cn(num, toneClass(r.cells.closingRate.tone))}>
+                  <CellText cell={r.cells.closingRate} />
+                </td>
+                <td className={cn(num, toneClass(r.cells.costPerReservation.tone))}>
+                  <CellText cell={r.cells.costPerReservation} />
+                </td>
+                <td className={cn(num, toneClass(r.cells.guests.tone))}>
+                  <CellText cell={r.cells.guests} />
+                </td>
+                {showReturnColumn ? (
+                  <td className={cn(num, toneClass(r.cells.returnPerDollar.tone))}>
+                    <CellText cell={r.cells.returnPerDollar} />
+                  </td>
+                ) : null}
+                <td className="py-1.5 pr-3 pl-1 text-right align-top">
+                  <Button
+                    ref={edit.buttonRef(`table:${r.eventId}`)}
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1.5 text-muted-foreground hover:text-foreground aria-expanded:text-foreground"
+                    aria-label={marketingCopy(r.title, r.date).editAria}
+                    aria-expanded={open}
+                    onClick={() => edit.onEdit(r.eventId)}
+                  >
+                    <Pencil className="size-3.5" aria-hidden />
+                    Editar
+                  </Button>
+                </td>
+              </tr>
+              {open ? (
+                <tr className="bg-secondary/40">
+                  <td colSpan={columns} className="px-4 pt-1 pb-4">
+                    {edit.renderEditor(r.eventId)}
+                  </td>
+                </tr>
               ) : null}
-            </td>
-            <td className="px-3 py-2.5 align-top">
-              <span className="flex min-w-0 items-center gap-2">
-                <InkDot />
-                <span className="truncate">{r.title}</span>
-              </span>
-            </td>
-            <td className={cn(num, toneClass(r.cells.spend.tone))}>
-              <CellText cell={r.cells.spend} />
-            </td>
-            <td className={cn(num, toneClass(r.cells.messages.tone))}>
-              <CellText cell={r.cells.messages} />
-            </td>
-            <td className={cn(num, toneClass(r.cells.closingRate.tone))}>
-              <CellText cell={r.cells.closingRate} />
-            </td>
-            <td className={cn(num, toneClass(r.cells.costPerReservation.tone))}>
-              <CellText cell={r.cells.costPerReservation} />
-            </td>
-            <td className={cn(num, toneClass(r.cells.guests.tone), !showReturnColumn && 'pr-4')}>
-              <CellText cell={r.cells.guests} />
-            </td>
-            {showReturnColumn ? (
-              <td className={cn(num, 'pr-4', toneClass(r.cells.returnPerDollar.tone))}>
-                <CellText cell={r.cells.returnPerDollar} />
-              </td>
-            ) : null}
-          </tr>
-        ))}
+            </Fragment>
+          )
+        })}
       </tbody>
     </table>
   )
 }
 
 /** Debajo de `md`: una tarjeta por fecha en vez de una tabla que no entra en 328px. */
-function MonthCard({ row: r, href }: { row: MonthMarketingListRow; href: string }) {
+function MonthCard({
+  row: r,
+  href,
+  edit,
+}: {
+  row: MonthMarketingListRow
+  href: string
+  edit: EditControls
+}) {
+  const open = edit.editingId === r.eventId
   return (
-    <li className="ev-ink px-4 py-3" style={inkStyle(r.colorHex)}>
+    <li className={cn('ev-ink px-4 py-3', open && 'bg-secondary/40')} style={inkStyle(r.colorHex)}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
           <InkDot />
@@ -700,14 +965,30 @@ function MonthCard({ row: r, href }: { row: MonthMarketingListRow; href: string 
         ) : null}
       </div>
       <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{r.cardLine}</p>
-      <Link
-        href={href}
-        aria-label={`Ver la noche del ${r.dayMonth}`}
-        className="mt-1 inline-flex min-h-10 items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-      >
-        Ver la noche
-        <ArrowRight className="size-3.5" aria-hidden />
-      </Link>
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <Link
+          href={href}
+          aria-label={`Ver la noche del ${r.dayMonth}`}
+          className="inline-flex min-h-10 items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+        >
+          Ver la noche
+          <ArrowRight className="size-3.5" aria-hidden />
+        </Link>
+        <Button
+          ref={edit.buttonRef(`card:${r.eventId}`)}
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-10 gap-1.5 text-muted-foreground hover:text-foreground aria-expanded:text-foreground"
+          aria-label={marketingCopy(r.title, r.date).editAria}
+          aria-expanded={open}
+          onClick={() => edit.onEdit(r.eventId)}
+        >
+          <Pencil className="size-3.5" aria-hidden />
+          Editar
+        </Button>
+      </div>
+      {open ? <div className="mt-2">{edit.renderEditor(r.eventId)}</div> : null}
     </li>
   )
 }

@@ -179,6 +179,25 @@ export function MarketingForm({
   // acá y se cumple cuando termina (si falló; si salió bien, el form ya no está).
   const refocusDelete = useRef(false)
 
+  // Si el form se desmonta SIN cerrarse (rotar el teléfono y pasar de tarjeta a
+  // tabla, la fila que cambia de lugar después de un refresh, abrir otro
+  // «Editar»), lo escrito se entrega igual que en «Cancelar», con su versión:
+  // al volver a montarse retoma y, si la fila cambió, muestra lo que quedó
+  // guardado. `closed` lo apagan Cancelar, Guardar y Borrar, que ya resolvieron.
+  const closed = useRef(false)
+  const latest = useRef({ draft, saved, baselineAt, onKeepDraft })
+  useEffect(() => {
+    latest.current = { draft, saved, baselineAt, onKeepDraft }
+  })
+  useEffect(
+    () => () => {
+      if (closed.current) return
+      const l = latest.current
+      l.onKeepDraft?.(keepMarketingDraft(l.draft, l.saved, l.baselineAt))
+    },
+    [],
+  )
+
   const register =
     (field: MarketingField) => (el: HTMLInputElement | HTMLTextAreaElement | null) => {
       if (el) {
@@ -298,6 +317,7 @@ export function MarketingForm({
 
   const cancel = () => {
     if (pending) return
+    closed.current = true
     onKeepDraft?.(keepMarketingDraft(draft, saved, baselineAt))
     onCancel()
   }
@@ -335,6 +355,7 @@ export function MarketingForm({
           return
         }
         toast.success(copy.savedToast)
+        closed.current = true
         onSaved(res.row)
         return
       }
@@ -376,6 +397,7 @@ export function MarketingForm({
       }
       if (res.ok) {
         toast.success(copy.deletedToast)
+        closed.current = true
         onDeleted?.()
         return
       }
