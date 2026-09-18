@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
 import { logAudit } from '@/lib/audit'
 import { formatARS } from '@/lib/commissions/calculate'
-import { resolveCommissionPeriod } from '@/lib/commissions/period'
+import { payableUpperBound, resolveCommissionPeriod } from '@/lib/commissions/period'
 import { tryNormalizePhone } from '@/lib/phone'
 import { createClient } from '@/lib/supabase/server'
 import {
@@ -17,6 +17,7 @@ import {
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
+import type { CurrentUser } from '@/lib/tenant/current'
 import type { Tenant, TenantRole } from '@/lib/tenant/types'
 import {
   mergeProfileAlerts,
@@ -68,10 +69,14 @@ type SBAny = any
 // Authorize helpers
 // ──────────────────────────────────────────────────────────
 
+// `user` viaja además de tenant/role porque hay mutaciones que tienen que
+// asentar QUIÉN las hizo (la liquidación de comisiones es plata). Es un
+// ensanchamiento del tipo: los consumidores que solo destructuran tenant/role
+// siguen igual.
 async function authorize(
   slug: string,
   allowed: ReadonlyArray<TenantRole>,
-): Promise<{ tenant: Tenant; role: TenantRole } | null> {
+): Promise<{ tenant: Tenant; role: TenantRole; user: CurrentUser } | null> {
   try {
     const access = await requireTenantAccess(slug)
     requireRole(access.role, allowed)
@@ -1703,16 +1708,18 @@ export async function markCommissionRangePaid(
   }
   // Mismo resolvedor que la pantalla: ordena el rango si vino al revés y aplica
   // el tope de días, para que el botón nunca abarque más de lo que se ve.
-  const period = resolveCommissionPeriod(
-    { from: parsed.data.from, to: parsed.data.to },
-    todayInCordoba(),
-  )
+  const today = todayInCordoba()
+  const period = resolveCommissionPeriod({ from: parsed.data.from, to: parsed.data.to }, today)
+  // El tope contra hoy se decide ACÁ, en el server: la pantalla ya no ofrece
+  // pagar el futuro, pero un `?to=2062-09-15` (typo de 2026) o un POST armado a
+  // mano llegarían igual hasta esta línea.
+  const payableTo = payableUpperBound(period.to, today)
 
   const pending = await listUnpaidCommissionLedgerIds({
     tenantId: access.tenant.id,
     managerId,
     from: period.from,
-    to: period.to,
+    to: payableTo,
   })
   if (pending.ids.length === 0) {
     return { ok: true, message: 'No había nada pendiente en ese período.' }
@@ -1740,15 +1747,23 @@ export async function markCommissionRangePaid(
 
   await logAudit({
     tenantId: access.tenant.id,
-    userId: null,
+    // Es plata: tiene que quedar QUIÉN liquidó, no solo cuánto.
+    userId: access.user.id,
     action: 'commission.paid_range',
     entity: 'commission_ledger',
+    // Cada campo dice lo que es: `count_marked` sale de la RPC y `count_read` /
+    // `cents_read` de la lectura previa, que pueden diferir si el ledger se
+    // movió en el medio. Un solo `cents` hacía pasar lo leído por lo pagado.
     payload: {
       manager_id: managerId,
       from: period.from,
       to: period.to,
-      count: marked,
-      cents: pending.totalCents,
+      // Solo cuando el borde de arriba se topeó contra hoy: así se lee de una
+      // hasta dónde se pagó de verdad, sin tener que deducirlo de la fecha.
+      ...(payableTo !== period.to ? { to_effective: payableTo } : {}),
+      count_marked: marked,
+      count_read: pending.ids.length,
+      cents_read: pending.totalCents,
     },
   })
 
@@ -1756,17 +1771,50 @@ export async function markCommissionRangePaid(
   revalidatePath(`/${slug}/estadisticas/comisiones/${managerId}`)
   revalidatePath(`/${slug}/mis-numeros`)
 
-  const plural = marked === 1 ? 'reserva' : 'reservas'
-  // Si el conteo de la RPC no coincide con lo que leímos, alguien pagó en
-  // paralelo: mostramos el número real y no el monto, que ya no le corresponde.
-  const amount =
+  // Si la RPC marcó menos de lo que leímos, NO inferimos la causa: además del
+  // pago en paralelo, un recalc de la reserva borra la entry impaga y la
+  // reinserta con otro id, y entonces "el resto ya figuraba pagado" sería
+  // mentira sobre plata que sigue sin cobrar. Volvemos a preguntar qué quedó.
+  const after =
     marked === pending.ids.length
-      ? ` por ${formatARS(pending.totalCents)}`
-      : ` (de ${pending.ids.length}; el resto ya figuraba pagado)`
+      ? null
+      : await listUnpaidCommissionLedgerIds({
+          tenantId: access.tenant.id,
+          managerId,
+          from: period.from,
+          to: payableTo,
+        })
+
   const truncated = pending.truncated
     ? ' Quedaron más comisiones pendientes en ese período: repetí la acción para terminar.'
     : ''
-  return { ok: true, message: `Marqué ${marked} ${plural} como pagadas${amount}.${truncated}` }
+  const leftover =
+    after && after.ids.length > 0
+      ? ` Quedan ${after.ids.length} sin pagar por ${formatARS(after.totalCents)}: revisá la lista.`
+      : ''
+  if (marked === 0) {
+    // "Marqué 0 reservas como pagadas" se lee como si el botón no hubiera
+    // hecho nada mal; decimos qué pasó de verdad.
+    return {
+      ok: true,
+      message: leftover
+        ? `No marqué ninguna: la lista cambió mientras liquidaba.${leftover}${truncated}`
+        : `Ya figuraban pagadas las ${pending.ids.length} comisiones de ese período.${truncated}`,
+    }
+  }
+  const noun = marked === 1 ? 'reserva' : 'reservas'
+  const part = marked === 1 ? 'pagada' : 'pagadas'
+  // El monto solo se muestra cuando se marcó exactamente lo que se leyó: si el
+  // conjunto se movió, `pending.totalCents` ya no es lo que se acaba de pagar.
+  // Y "el resto ya figuraba pagado" solo se afirma si el re-chequeo lo confirma.
+  let amount = ` por ${formatARS(pending.totalCents)}`
+  if (marked !== pending.ids.length) {
+    amount = leftover
+      ? ` (de ${pending.ids.length})`
+      : ` (de ${pending.ids.length}; el resto ya figuraba pagado)`
+  }
+  const message = `Marqué ${marked} ${noun} como ${part}${amount}.${leftover}${truncated}`
+  return { ok: true, message }
 }
 
 // ──────────────────────────────────────────────────────────

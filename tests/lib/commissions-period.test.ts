@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   type CommissionPeriod,
   MAX_COMMISSION_PERIOD_DAYS,
+  payableUpperBound,
   periodLabel,
   resolveCommissionPeriod,
   shiftPeriod,
@@ -116,6 +117,34 @@ describe('resolveCommissionPeriod', () => {
     expect(period.days).toBe(MAX_COMMISSION_PERIOD_DAYS)
     expect(period.to).toBe('2027-02-04')
     expect(period.label).not.toContain('recortado')
+  })
+})
+
+describe('payableUpperBound', () => {
+  it('el período por defecto (mes completo) se topea en hoy', () => {
+    // Es el caso que estrena el botón: entrar el 18/09 muestra hasta el 30/09,
+    // pero del 19 al 30 todavía no ocurrió nada.
+    expect(payableUpperBound(resolve({}).to, TODAY)).toBe(TODAY)
+  })
+
+  it('un período ya cerrado se paga entero', () => {
+    expect(payableUpperBound('2026-08-31', TODAY)).toBe('2026-08-31')
+  })
+
+  it('hoy mismo entra: la reserva de esta noche ya se puede liquidar', () => {
+    expect(payableUpperBound(TODAY, TODAY)).toBe(TODAY)
+  })
+
+  it('un ?to tipeado con el año mal no puede pagar el futuro', () => {
+    // `2062-09-15` es un typo de 2026 y pasa cualquier validación de forma.
+    expect(payableUpperBound('2062-09-15', TODAY)).toBe(TODAY)
+  })
+
+  it('un período enteramente futuro queda vacío (from > to), no paga nada', () => {
+    const period = resolve({ from: '2026-10-01', to: '2026-10-31' })
+    const to = payableUpperBound(period.to, TODAY)
+    expect(to).toBe(TODAY)
+    expect(period.from > to).toBe(true)
   })
 })
 

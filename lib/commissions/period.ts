@@ -207,6 +207,21 @@ export function resolveCommissionPeriod(
 }
 
 /**
+ * Hasta qué día del período se puede LIQUIDAR (no hasta dónde se muestra).
+ *
+ * El período por defecto llega a fin de mes y el rango es libre, así que tanto
+ * el camino normal (entrar en septiembre y ver el mes completo) como un `?to=`
+ * futuro tipeado mal abarcan reservas que todavía no ocurrieron. Pagarlas es
+ * irreversible: si después se cancela o vienen menos personas, la fila ya
+ * pagada no se corrige (el recalc de comisiones solo toca las impagas). Por eso
+ * el borde de arriba se topea contra hoy —el calendario del bar, no el del
+ * server— antes de tocar plata.
+ */
+export function payableUpperBound(to: string, today: string): string {
+  return to < today ? to : today
+}
+
+/**
  * Corre el rango su propio largo, hacia atrás (`-1`) o hacia adelante (`+1`),
  * sin huecos ni solapes: del 1–15 se pasa al 16–30, y del 15/08–15/09 al
  * 16/09–16/10. Es lo que necesita un "período anterior" cuando el ciclo no es

@@ -38,10 +38,17 @@ export function CommissionPeriodFilter({
   // el rango si vino al revés, lo recorta a 400 días y traduce los links viejos
   // `?month=`. Si lo que devolvió no es lo que hay tipeado, los campos se
   // sincronizan — si no, quedarían mostrando un rango que nadie está viendo.
+  //
+  // La URL navegada entra en las deps a propósito: los dos casos en que el
+  // server MÁS corrige (rango dado vuelta, rango recortado al tope) devuelven
+  // el MISMO `period` que ya había, así que mirando solo `period` el efecto no
+  // corría justo cuando hacía falta y los inputs quedaban con lo tipeado.
+  const urlKey = searchParams.toString()
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `urlKey` no se lee adentro del efecto, es la señal de "se navegó" — sin ella la sincronización no corre en los dos casos para los que fue escrita.
   useEffect(() => {
     setFrom(period.from)
     setTo(period.to)
-  }, [period.from, period.to])
+  }, [period.from, period.to, urlKey])
 
   const incomplete = from === '' || to === ''
 

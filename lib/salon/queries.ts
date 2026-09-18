@@ -832,8 +832,29 @@ export type CommissionSummaryRow = {
  * rango es libre (hasta `MAX_COMMISSION_PERIOD_DAYS`, ~13 meses) sí se llega, así
  * que pedimos el tope explícito y devolvemos `truncated` para que la pantalla
  * avise en vez de mentir. (El mes más cargado del HUB ronda las 250 reservas.)
+ *
+ * Las tres lecturas piden además el conteo exacto: ver `isTruncated`.
  */
 export const COMMISSION_MAX_ROWS = 1000
+
+/**
+ * ¿De verdad quedó algo afuera?
+ *
+ * `rows.length >= COMMISSION_MAX_ROWS` no alcanza: con exactamente 1000 filas
+ * prende el aviso sin faltar ninguna, y en el pago por rango eso manda al dueño
+ * a repetir una liquidación que ya estaba completa. Pedir una fila sonda
+ * (`limit + 1`) tampoco sirve acá: PostgREST tiene su propio tope
+ * (`max_rows = 1000` en `supabase/config.toml`) y se comería la sonda, con lo
+ * que el aviso nunca volvería a prenderse — un corte silencioso es exactamente
+ * lo que esta función existe para evitar. El `count=exact` viene en la MISMA
+ * respuesta (header `Content-Range`, sin round-trip extra) y es el único que
+ * distingue "vinieron justo 1000" de "hay más".
+ */
+function isTruncated(count: number | null | undefined, rows: unknown[]): boolean {
+  // Sin conteo (no debería pasar) volvemos al criterio conservador: mejor un
+  // cartel de más que un total parcial que se ve igual de prolijo.
+  return count == null ? rows.length >= COMMISSION_MAX_ROWS : count > rows.length
+}
 
 export async function listCommissionSummary(opts: {
   tenantId: string
@@ -841,12 +862,13 @@ export async function listCommissionSummary(opts: {
   to: string
 }): Promise<{ rows: CommissionSummaryRow[]; truncated: boolean }> {
   const supabase = (await createClient()) as SBAny
-  const { data, error } = await supabase
+  const { data, error, count } = await supabase
     .from('commission_ledger')
     .select(
       `manager_id, guests_billed, base_total_cents, bonus_total_cents, payable_cents, paid_at,
        manager:reservation_managers(id, display_name),
        reservation:salon_reservations!inner(reservation_date, estimated_guests, actual_guests)`,
+      { count: 'exact' },
     )
     .eq('tenant_id', opts.tenantId)
     .gte('reservation.reservation_date', opts.from)
@@ -856,6 +878,7 @@ export async function listCommissionSummary(opts: {
   if (error) throw error
 
   const source = (data ?? []) as Array<Record<string, unknown>>
+  const truncated = isTruncated(count, source)
   const grouped = new Map<string, CommissionSummaryRow>()
   for (const row of source) {
     const mgrRaw = row.manager
@@ -899,7 +922,7 @@ export async function listCommissionSummary(opts: {
   }
   return {
     rows: Array.from(grouped.values()).sort((a, b) => b.payable_cents - a.payable_cents),
-    truncated: source.length >= COMMISSION_MAX_ROWS,
+    truncated,
   }
 }
 
@@ -922,7 +945,7 @@ export async function listCommissionBreakdown(opts: {
   to: string
 }): Promise<{ entries: CommissionBreakdownEntry[]; truncated: boolean }> {
   const supabase = (await createClient()) as SBAny
-  const { data, error } = await supabase
+  const { data, error, count } = await supabase
     .from('commission_ledger')
     .select(
       `*,
@@ -930,6 +953,7 @@ export async function listCommissionBreakdown(opts: {
          id, guest_name, reservation_date, reservation_time_local,
          estimated_guests, actual_guests
        )`,
+      { count: 'exact' },
     )
     .eq('tenant_id', opts.tenantId)
     .eq('manager_id', opts.managerId)
@@ -939,13 +963,14 @@ export async function listCommissionBreakdown(opts: {
     .limit(COMMISSION_MAX_ROWS)
   if (error) throw error
   const rows = (data ?? []) as Array<Record<string, unknown>>
+  const truncated = isTruncated(count, rows)
   return {
     entries: rows.map((r) => {
       const resRaw = r.reservation
       const reservation = Array.isArray(resRaw) ? resRaw[0] : resRaw
       return { ...(r as object), reservation } as CommissionBreakdownEntry
     }),
-    truncated: rows.length >= COMMISSION_MAX_ROWS,
+    truncated,
   }
 }
 
@@ -971,9 +996,11 @@ export async function listUnpaidCommissionLedgerIds(opts: {
   to: string
 }): Promise<{ ids: string[]; totalCents: number; truncated: boolean }> {
   const supabase = (await createClient()) as SBAny
-  const { data, error } = await supabase
+  const { data, error, count } = await supabase
     .from('commission_ledger')
-    .select('id, payable_cents, reservation:salon_reservations!inner(reservation_date)')
+    .select('id, payable_cents, reservation:salon_reservations!inner(reservation_date)', {
+      count: 'exact',
+    })
     .eq('tenant_id', opts.tenantId)
     .eq('manager_id', opts.managerId)
     .is('paid_at', null)
@@ -981,17 +1008,21 @@ export async function listUnpaidCommissionLedgerIds(opts: {
     // `yyyy-MM-dd` de la URL, sin conversión de zona.
     .gte('reservation.reservation_date', opts.from)
     .lte('reservation.reservation_date', opts.to)
-    // Las más viejas primero: si el rango se trunca, la tanda que se marca es
-    // la que hace más tiempo que espera.
-    .order('calculated_at', { ascending: true })
+    // MISMO orden que `listCommissionBreakdown`, a propósito: si las dos
+    // lecturas se truncan, tienen que cortar por el mismo lado. Con órdenes
+    // opuestos la pantalla prometía las 1000 más nuevas y la acción marcaba las
+    // 1000 más viejas — otro conjunto y otro monto que el que se confirmó.
+    .order('calculated_at', { ascending: false })
     .limit(COMMISSION_MAX_ROWS)
   if (error) throw error
 
+  // `ids` y `totalCents` salen SIEMPRE de las filas que volvieron, nunca del
+  // conteo: el monto del toast tiene que ser el de lo que se va a marcar.
   const rows = (data ?? []) as Array<Record<string, unknown>>
   return {
     ids: rows.map((r) => String(r.id)),
     totalCents: rows.reduce((acc, r) => acc + Number(r.payable_cents ?? 0), 0),
-    truncated: rows.length >= COMMISSION_MAX_ROWS,
+    truncated: isTruncated(count, rows),
   }
 }
 

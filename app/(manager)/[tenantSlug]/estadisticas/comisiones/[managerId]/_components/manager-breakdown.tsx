@@ -28,6 +28,7 @@ export function ManagerCommissionsBreakdown({
   period,
   entries,
   truncated,
+  today,
 }: {
   tenantSlug: string
   managerId: string
@@ -35,22 +36,44 @@ export function ManagerCommissionsBreakdown({
   entries: CommissionBreakdownEntry[]
   /** La lectura tocó el techo de filas: faltan reservas en la tabla y en los totales. */
   truncated: boolean
+  /**
+   * Hoy según el calendario del bar (`todayInCordoba()`), bajado desde la page.
+   * No se calcula acá: el TZ del browser puede estar en otro día y encima
+   * rompería la hidratación.
+   */
+  today: string
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [confirmPayAll, setConfirmPayAll] = useState(false)
   const [pending, startTransition] = useTransition()
 
+  // Impagas del período: es lo que la gestora tiene por cobrar, futuro incluido.
   const unpaid = useMemo(() => entries.filter((e) => !e.paid_at), [entries])
 
-  // `pending` se deriva de `unpaid`, no de un segundo recorrido con otro
-  // criterio: el diálogo de liquidar todo dice "N reservas por $X" y las dos
-  // cifras tienen que salir de la MISMA lista, o algún día va a decir
-  // "3 reservas por $0".
+  // Liquidable HOY = impaga y ya ocurrida. El período por defecto llega a fin
+  // de mes, así que sin este corte el recuadro y el diálogo contarían reservas
+  // que todavía no pasaron y que el server (que topea el borde contra hoy) no
+  // va a marcar. Se siguen viendo en la tabla, con su badge de "futura": no
+  // desaparecen, solo no se pagan por adelantado.
+  const payableNow = useMemo(
+    () => unpaid.filter((e) => e.reservation.reservation_date <= today),
+    [unpaid, today],
+  )
+  const futureCount = unpaid.length - payableNow.length
+  const allPayableSelected = useMemo(
+    () => payableNow.length > 0 && payableNow.every((e) => selected.has(e.id)),
+    [payableNow, selected],
+  )
+
+  // Cada cifra sale de la MISMA lista que la acompaña: el diálogo de liquidar
+  // todo dice "N reservas por $X" y las dos salen de `payableNow`, o algún día
+  // va a decir "3 reservas por $0".
   const totals = useMemo(() => {
     const payable = entries.reduce((acc, e) => acc + e.payable_cents, 0)
     const pending = unpaid.reduce((acc, e) => acc + e.payable_cents, 0)
-    return { payable, paid: payable - pending, pending }
-  }, [entries, unpaid])
+    const payableNowCents = payableNow.reduce((acc, e) => acc + e.payable_cents, 0)
+    return { payable, paid: payable - pending, pending, payableNow: payableNowCents }
+  }, [entries, unpaid, payableNow])
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -62,8 +85,8 @@ export function ManagerCommissionsBreakdown({
   }
 
   function selectAll() {
-    if (selected.size === unpaid.length) setSelected(new Set())
-    else setSelected(new Set(unpaid.map((e) => e.id)))
+    if (allPayableSelected) setSelected(new Set())
+    else setSelected(new Set(payableNow.map((e) => e.id)))
   }
 
   function payNow() {
@@ -120,26 +143,40 @@ export function ManagerCommissionsBreakdown({
       {truncated ? (
         <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-text">
           Hay más comisiones de las que entran en una sola lectura: faltan reservas en la tabla y en
-          los totales. Elegí un rango más corto antes de liquidar.
+          los totales. Por eso no está el botón de liquidar todo el período: diría un total que no
+          es el que se marcaría. Elegí un rango más corto y volvé a intentar.
         </p>
       ) : null}
 
       {/* Liquidar todo el período. Se esconde mientras hay entries tildadas:
           dos botones de pagar juntos, uno "las 3 que elegí" y otro "las 47 del
           período", es exactamente la confusión que no se puede permitir con
-          plata. Primero se resuelve la selección; si no hay, aparece este. */}
-      {unpaid.length > 0 && selected.size === 0 ? (
+          plata. Primero se resuelve la selección; si no hay, aparece este.
+
+          Y se esconde si la lectura truncó: la pantalla cuenta las 1000 filas
+          que entraron y el server resuelve el rango de nuevo, así que el número
+          del diálogo —el último cartel antes de tocar plata— prometería un
+          conjunto distinto del que se va a marcar. Tildar de a una sigue
+          andando: ahí se pagan ids que el dueño vio en la tabla. */}
+      {payableNow.length > 0 && selected.size === 0 && !truncated ? (
         <div className="card-hairline flex flex-col gap-3 rounded-xl border bg-card/60 p-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-muted-foreground">
             Quedan{' '}
             <span className="font-medium text-foreground">
-              {unpaid.length} {unpaid.length === 1 ? 'reserva' : 'reservas'}
+              {payableNow.length} {payableNow.length === 1 ? 'reserva' : 'reservas'}
             </span>{' '}
             sin pagar en este período, por{' '}
             <span className="font-mono font-medium tabular-nums text-foreground">
-              {formatARS(totals.pending)}
+              {formatARS(totals.payableNow)}
             </span>
             .
+            {futureCount > 0 ? (
+              <>
+                {' '}
+                {futureCount === 1 ? 'Hay 1 reserva' : `Hay ${futureCount} reservas`} más adelante
+                en el calendario: no entran en la liquidación hasta que ocurran.
+              </>
+            ) : null}
           </p>
           <Button
             onClick={() => setConfirmPayAll(true)}
@@ -161,12 +198,14 @@ export function ManagerCommissionsBreakdown({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              ¿Marcar {unpaid.length} {unpaid.length === 1 ? 'reserva' : 'reservas'} como pagadas?
+              ¿Marcar {payableNow.length} {payableNow.length === 1 ? 'reserva' : 'reservas'} como
+              pagadas?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Se van a marcar como pagadas todas las comisiones pendientes de {period.label}:{' '}
-              {unpaid.length} {unpaid.length === 1 ? 'reserva' : 'reservas'} por{' '}
-              {formatARS(totals.pending)}. Las que ya figuran cobradas no se tocan.
+              Se van a marcar como pagadas todas las comisiones pendientes de {period.label} que ya
+              ocurrieron: {payableNow.length} {payableNow.length === 1 ? 'reserva' : 'reservas'} por{' '}
+              {formatARS(totals.payableNow)}. Las que ya figuran cobradas no se tocan
+              {futureCount > 0 ? ', y las del futuro tampoco' : ''}.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -208,7 +247,7 @@ export function ManagerCommissionsBreakdown({
             <tr>
               <th className="w-10 px-3 py-2">
                 <Checkbox
-                  checked={selected.size > 0 && selected.size === unpaid.length}
+                  checked={allPayableSelected}
                   onCheckedChange={selectAll}
                   aria-label="Seleccionar todas"
                 />
@@ -228,6 +267,10 @@ export function ManagerCommissionsBreakdown({
             {entries.map((e) => {
               const isPaid = !!e.paid_at
               const noActual = e.reservation.actual_guests === null
+              // Todavía no ocurrió: está en la tabla porque el período la
+              // abarca, pero no se liquida (el monto puede cambiar o la reserva
+              // caerse, y una comisión pagada ya no se corrige).
+              const isFuture = !isPaid && e.reservation.reservation_date > today
               return (
                 <tr key={e.id} className={isPaid ? 'opacity-70' : ''}>
                   <td className="px-3 py-2 align-middle">
@@ -237,6 +280,14 @@ export function ManagerCommissionsBreakdown({
                   </td>
                   <td className="px-3 py-2 font-mono tabular-nums">
                     {e.reservation.reservation_date}
+                    {isFuture ? (
+                      <span
+                        className="ml-1.5 rounded bg-secondary px-1 font-sans text-[10px] uppercase tracking-wide text-muted-foreground"
+                        title="Todavía no ocurrió: no entra en la liquidación del período"
+                      >
+                        futura
+                      </span>
+                    ) : null}
                   </td>
                   <td className="px-3 py-2">
                     <Link

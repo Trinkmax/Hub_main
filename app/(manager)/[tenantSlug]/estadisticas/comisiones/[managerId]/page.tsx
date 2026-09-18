@@ -25,6 +25,10 @@ export default async function ManagerCommissionsPage({
 }) {
   const { tenantSlug, managerId } = await params
   const sp = await searchParams
+  // El calendario del bar, resuelto una sola vez y compartido con el breakdown:
+  // es el mismo "hoy" con el que el server topea qué se puede liquidar, así que
+  // la pantalla no puede quedar contando un día distinto.
+  const today = todayInCordoba()
   // Mismo resolvedor que la liquidación: el detalle tiene que abarcar
   // exactamente el rango del que se viene, porque desde acá se marca el pago.
   const period = resolveCommissionPeriod(
@@ -33,7 +37,7 @@ export default async function ManagerCommissionsPage({
       to: typeof sp.to === 'string' ? sp.to : undefined,
       month: typeof sp.month === 'string' ? sp.month : undefined,
     },
-    todayInCordoba(),
+    today,
   )
 
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
@@ -79,6 +83,7 @@ export default async function ManagerCommissionsPage({
         period={period}
         entries={breakdown.entries}
         truncated={breakdown.truncated}
+        today={today}
       />
     </div>
   )

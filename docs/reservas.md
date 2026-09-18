@@ -1141,16 +1141,34 @@ tildadas**: dos botones de pagar juntos, uno por «las 3 que elegí» y otro por
 - Valida con `isRealIsoDay` **antes** de pasar por `resolveCommissionPeriod`, y
   no cae al default: con el fallback puesto, un `from` basura habría marcado como
   pagado el mes en curso entero.
+- **Nunca paga una reserva que todavía no ocurrió.** El período por defecto es el
+  mes calendario completo, así que el 18/09 el rango llega al 30/09 y el ledger
+  ya tiene entries de esas reservas (el recalc las crea con el estimado). El
+  borde de arriba se topea contra hoy con `payableUpperBound(period.to, today)`
+  (`lib/commissions/period.ts`, testeada) **en el server**: ni un `?to=2062-09-15`
+  ni un POST armado a mano pasan. Es irreversible en la otra dirección — si
+  después se cancela o vienen menos, la fila ya pagada no se corrige, porque el
+  recalc sólo toca las impagas. La pantalla cuenta lo mismo: `payableNow` filtra
+  por `reservation_date <= today` (el `today` baja como prop desde la page, no se
+  calcula en el browser) y alimenta el recuadro, el «Seleccionar todas» y el
+  diálogo. Las futuras se siguen viendo en la tabla, con badge **futura**.
 - Reusa la RPC `mark_commission_paid` (SECURITY DEFINER, exige `owner`, sólo toca
   `paid_at is null`) de a **500 ids** por tanda — el tope que ya estaba probado.
   Un doble click no paga dos veces. Si una tanda falla a mitad de camino el
   mensaje dice cuántas quedaron marcadas: las anteriores ya commitearon.
 - Un solo `paid_at` para toda la liquidación: es un pago, no N pagos.
-- Auditoría: `commission.paid_range` con `{manager_id, from, to, count, cents}`,
-  sin PII. El tildado de a una sigue escribiendo `commission.paid`.
-- Si el conteo de la RPC no coincide con lo leído (alguien pagó en paralelo), el
-  toast **no muestra el monto**: dice `Marqué N reservas como pagadas (de M; el
-  resto ya figuraba pagado).`
+- Auditoría: `commission.paid_range` con `{manager_id, from, to, count_marked,
+  count_read, cents_read}` + `to_effective` si el borde se topeó contra hoy, y el
+  `user_id` de quien liquidó. Sin PII. Los campos se llaman por lo que son:
+  `count_marked` sale de la RPC y `count_read`/`cents_read` de la lectura previa,
+  que pueden diferir. El tildado de a una sigue escribiendo `commission.paid`.
+- Si el conteo de la RPC no coincide con lo leído, el toast **no muestra el
+  monto** y **no infiere la causa**: vuelve a leer los impagos del rango y dice el
+  número real. No alcanza con «el resto ya figuraba pagado», porque un recalc de
+  la reserva (tocar «Llegó», corregir cubiertos, cancelar) borra la entry impaga
+  y la reinserta con **otro id**: ese id desaparecido cuenta igual que uno ya
+  pagado, y esa plata sigue sin cobrar. Esa frase se dice sólo cuando el
+  re-chequeo la confirma.
 
 ### El techo de 1000 filas
 
@@ -1161,10 +1179,28 @@ menos plata. Mientras el período fue siempre un mes calendario no se llegaba ni
 cerca (el mes más cargado del HUB ronda las 250 reservas); con el rango libre de
 hasta ~13 meses sí se llega. Las tres lecturas
 (`listCommissionSummary`, `listCommissionBreakdown`,
-`listUnpaidCommissionLedgerIds`) piden el tope explícito y devuelven
-`truncated`, y las tres pantallas muestran el recuadro ámbar. En el pago por
-rango el toast pide **repetir la acción**, porque ahí el corte silencioso sería
-peor: dejaría comisiones sin marcar creyendo que se pagó todo.
+`listUnpaidCommissionLedgerIds`) piden el tope y devuelven `truncated`, y las
+tres pantallas muestran el recuadro ámbar. En el pago por rango el toast pide
+**repetir la acción**, porque ahí el corte silencioso sería peor: dejaría
+comisiones sin marcar creyendo que se pagó todo.
+
+Tres detalles que no son cosméticos:
+
+- `truncated` sale de `isTruncated(count, rows)`, con el **conteo exacto**
+  (`{ count: 'exact' }`, que viaja en el `Content-Range` de la misma respuesta,
+  sin round-trip extra). `rows.length >= 1000` prendía el aviso con exactamente
+  1000 filas sin faltar ninguna, y en el pago por rango eso mandaba a repetir una
+  liquidación ya completa. Una fila **sonda** (`limit + 1`) tampoco alcanza acá:
+  PostgREST tiene su propio `max_rows = 1000` (`supabase/config.toml`) y se la
+  comería, y entonces el aviso no volvería a prenderse nunca. Los ids y los
+  totales salen siempre de las filas que volvieron, nunca del conteo.
+- `listUnpaidCommissionLedgerIds` ordena por `calculated_at` **descendente, igual
+  que `listCommissionBreakdown`**. Con órdenes opuestos la pantalla prometía las
+  1000 más nuevas y la acción marcaba las 1000 más viejas: otro conjunto y otro
+  monto que el que se confirmó en el diálogo.
+- Con `truncated`, el botón de liquidar todo el período **no aparece** (el
+  recuadro ámbar explica por qué). Tildar de a una sigue andando: ahí se pagan
+  ids concretos que el dueño vio en la tabla, sin divergencia posible.
 
 ### Piezas
 
@@ -1175,7 +1211,7 @@ peor: dejaría comisiones sin marcar creyendo que se pagó todo.
 | `markPaidRangeSchema` | `lib/salon/schemas.ts` |
 | `markCommissionRangePaid` | `lib/salon/actions.ts` |
 | `listUnpaidCommissionLedgerIds`, `COMMISSION_MAX_ROWS` | `lib/salon/queries.ts` |
-| Tests (22 casos: legacy `month`, rango dado vuelta, bisiesto, tope, label) | `tests/lib/commissions-period.test.ts` |
+| Tests (27 casos: legacy `month`, rango dado vuelta, bisiesto, tope, label, tope contra hoy) | `tests/lib/commissions-period.test.ts` |
 
 ### Smoke manual
 
@@ -1192,21 +1228,32 @@ peor: dejaría comisiones sin marcar creyendo que se pagó todo.
    agosto. Aplicar cualquier rango → el `month` desaparece de la URL. Probar lo
    mismo en `/mis-numeros?month=2026-08`.
 5. **Rango dado vuelta**: `?from=2026-09-15&to=2026-08-15` → se da vuelta solo y
-   muestra 32 días, no una pantalla vacía.
+   muestra 32 días, no una pantalla vacía. Después, **tipear** Desde 30/09 /
+   Hasta 01/09 y Aplicar → el server devuelve el mismo período y **los dos inputs
+   vuelven a mostrarlo** (01/09 y 30/09), no lo tipeado. Mismo chequeo con el
+   tope: desde `01/01/2026 → 04/02/2027`, poner Hasta `31/12/2027` → el input
+   vuelve a `04/02/2027` y el label dice `(recortado a 400 días)`.
 6. **Liquidar todo**: en el detalle de Luz del 01→15/09, sin nada tildado, el
    recuadro dice `Quedan N reservas sin pagar … por $X`. Tocar el botón → el
    diálogo repite N y $X. Confirmar → toast `Marqué N reservas como pagadas por
-   $X.`, las filas quedan «Cobrada», Pendiente en `$ 0` y **el recuadro y el
-   botón desaparecen**. Tocarlo de nuevo (recargando antes) → `No había nada
-   pendiente en ese período.`
-7. **No conviven los dos botones**: tildar 2 reservas → el recuadro de liquidar
+   $X.`, las filas quedan «Cobrada» y **el recuadro y el botón desaparecen**.
+   Tocarlo de nuevo (recargando antes) → `No había nada pendiente en ese
+   período.`
+7. **No se paga el futuro**: entrar al detalle de Luz **sin query** (período =
+   mes completo, que llega a fin de mes). Las reservas posteriores a hoy se ven
+   en la tabla con el badge **futura** y su fecha, pero el recuadro dice
+   `Quedan N …` contando sólo hasta hoy, avisa `Hay K reservas más adelante en el
+   calendario`, y «Seleccionar todas» tilda sólo las de hasta hoy. Confirmar →
+   las futuras siguen en `Pendiente`. Probar también `?to=2062-09-15` a mano: el
+   botón liquida sólo hasta hoy (y el `audit_log` guarda `to_effective`).
+8. **No conviven los dos botones**: tildar 2 reservas → el recuadro de liquidar
    todo se esconde y sólo queda la barra flotante («2 reservas seleccionadas»).
    Destildar → vuelve el recuadro.
-8. **Vista de Luz (host), en celular**: entrar a `/[slug]/mis-numeros` con la
+9. **Vista de Luz (host), en celular**: entrar a `/[slug]/mis-numeros` con la
    cuenta de Luz → el filtro de rango está, los KPIs responden al período y **no
    aparece** el picker «Ver los números de otro gestor». Probar
    `?as=<id de otro gestor>` a mano → sigue mostrando los números de Luz.
    Verificar que los dos `<input type="date">` entran a lo ancho a 400px
    (iOS Safari a veces se niega a achicarlos).
-9. **Tope**: `?from=2020-01-01&to=2026-01-01` → el label termina en
+10. **Tope**: `?from=2020-01-01&to=2026-01-01` → el label termina en
    `(recortado a 400 días)` y el `to` real es `2021-02-03`.
