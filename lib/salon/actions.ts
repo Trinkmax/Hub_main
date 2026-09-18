@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
 import { logAudit } from '@/lib/audit'
+import { formatARS } from '@/lib/commissions/calculate'
+import { resolveCommissionPeriod } from '@/lib/commissions/period'
 import { tryNormalizePhone } from '@/lib/phone'
 import { createClient } from '@/lib/supabase/server'
 import {
@@ -22,8 +24,10 @@ import {
   personScopedAlerts,
   type ServiceAlert,
 } from './alerts'
+import { isRealIsoDay, todayInCordoba } from './date-presets'
 import { eventDateMismatchCode, humanizeSalonError } from './humanize'
 import { LAST_MANAGER_COOKIE_MAX_AGE, lastManagerCookieName } from './managers'
+import { listUnpaidCommissionLedgerIds } from './queries'
 import {
   actualGuestsSchema,
   bonusRuleSchema,
@@ -33,6 +37,7 @@ import {
   createSalonReservationSchema,
   idOnlySchema,
   managerSchema,
+  markPaidRangeSchema,
   markPaidSchema,
   moveScheduledEventSchema,
   quickTemplateSchema,
@@ -1648,7 +1653,120 @@ export async function markCommissionPaid(
   })
 
   revalidatePath(`/${slug}/estadisticas/comisiones`)
-  return { ok: true, message: `${data ?? 0} entries marcadas como pagadas.` }
+  // "Mis números" es donde la gestora ve si ya le pagaron: también tiene que
+  // quedar al día. (El detalle del gestor se re-renderiza solo: es la pantalla
+  // desde la que se tilda y la Server Action devuelve su árbol actualizado.)
+  revalidatePath(`/${slug}/mis-numeros`)
+  const count = Number(data ?? 0)
+  return {
+    ok: true,
+    message: `${count} ${count === 1 ? 'reserva marcada' : 'reservas marcadas'} como ${count === 1 ? 'pagada' : 'pagadas'}.`,
+  }
+}
+
+/**
+ * La RPC `mark_commission_paid` recibe un array de ids y `markPaidSchema` topea
+ * en 500: mandamos de a 500 para no armar un statement gigante ni pasarnos del
+ * límite que ya está probado.
+ */
+const MARK_PAID_BATCH = 500
+
+/**
+ * Marca como pagado TODO lo pendiente de un gestor en un rango de fechas.
+ *
+ * Es el botón de la liquidación ("del 15 al 15", o del 1 al 15 cuando el ciclo
+ * se corrió). No recibe ids del cliente a propósito: con el rango vuelve a
+ * preguntarle a la DB quién está impago, así el browser no puede colar la entry
+ * de otro gestor ni una de un mes que el dueño no está mirando. La RPC ya es
+ * idempotente (solo toca `paid_at is null`), así que un doble click no paga dos
+ * veces.
+ */
+export async function markCommissionRangePaid(
+  slug: string,
+  input: FormData | Record<string, unknown>,
+): Promise<ActionState> {
+  const access = await authorize(slug, OWNER_ONLY)
+  if (!access) return noAccess()
+
+  const parsed = markPaidRangeSchema.safeParse(asObject(input))
+  if (!parsed.success) {
+    const first = parsed.error.issues[0]
+    return badInput(first?.message ?? 'Datos inválidos', first?.path[0]?.toString())
+  }
+
+  // `dateField` solo mira la forma: `2026-02-31` la pasa y Postgres lo rechaza
+  // con un 22008. Acá cortamos antes — y NO caemos a un default: si la fecha es
+  // basura, marcar "el mes en curso" sería pagar un período que nadie pidió.
+  const { manager_id: managerId } = parsed.data
+  if (!isRealIsoDay(parsed.data.from) || !isRealIsoDay(parsed.data.to)) {
+    return badInput('Fechas inválidas.', 'from')
+  }
+  // Mismo resolvedor que la pantalla: ordena el rango si vino al revés y aplica
+  // el tope de días, para que el botón nunca abarque más de lo que se ve.
+  const period = resolveCommissionPeriod(
+    { from: parsed.data.from, to: parsed.data.to },
+    todayInCordoba(),
+  )
+
+  const pending = await listUnpaidCommissionLedgerIds({
+    tenantId: access.tenant.id,
+    managerId,
+    from: period.from,
+    to: period.to,
+  })
+  if (pending.ids.length === 0) {
+    return { ok: true, message: 'No había nada pendiente en ese período.' }
+  }
+
+  const supabase = (await createClient()) as SBAny
+  // Un solo `paid_at` para toda la liquidación: es un pago, no N pagos.
+  const paidAt = new Date().toISOString()
+  let marked = 0
+  for (let i = 0; i < pending.ids.length; i += MARK_PAID_BATCH) {
+    const batch = pending.ids.slice(i, i + MARK_PAID_BATCH)
+    const { data, error } = await supabase.rpc('mark_commission_paid', {
+      p_ledger_ids: batch,
+      p_paid_at: paidAt,
+    })
+    if (error) {
+      // Las tandas anteriores ya quedaron pagadas: no se puede volver atrás
+      // solo, así que lo decimos en vez de mostrar un error limpio que haría
+      // pensar que no se tocó nada.
+      const partial = marked > 0 ? ` Quedaron ${marked} marcadas antes del error.` : ''
+      return { ok: false, message: `${humanizeSalonError(error.message)}${partial}` }
+    }
+    marked += Number(data ?? 0)
+  }
+
+  await logAudit({
+    tenantId: access.tenant.id,
+    userId: null,
+    action: 'commission.paid_range',
+    entity: 'commission_ledger',
+    payload: {
+      manager_id: managerId,
+      from: period.from,
+      to: period.to,
+      count: marked,
+      cents: pending.totalCents,
+    },
+  })
+
+  revalidatePath(`/${slug}/estadisticas/comisiones`)
+  revalidatePath(`/${slug}/estadisticas/comisiones/${managerId}`)
+  revalidatePath(`/${slug}/mis-numeros`)
+
+  const plural = marked === 1 ? 'reserva' : 'reservas'
+  // Si el conteo de la RPC no coincide con lo que leímos, alguien pagó en
+  // paralelo: mostramos el número real y no el monto, que ya no le corresponde.
+  const amount =
+    marked === pending.ids.length
+      ? ` por ${formatARS(pending.totalCents)}`
+      : ` (de ${pending.ids.length}; el resto ya figuraba pagado)`
+  const truncated = pending.truncated
+    ? ' Quedaron más comisiones pendientes en ese período: repetí la acción para terminar.'
+    : ''
+  return { ok: true, message: `Marqué ${marked} ${plural} como pagadas${amount}.${truncated}` }
 }
 
 // ──────────────────────────────────────────────────────────

@@ -851,10 +851,26 @@ afuera a propósito:
 - **Borrar una fecha con pauta cargada falla a propósito** (FK compuesta sin
   cascade): también una marcada "No tuvo pauta". Si la anfitriona necesita
   borrar fechas así, un dueño primero borra la pauta.
-- **`shiftYM`/`formatYM` ya van por la quinta copia** (calendario, comisiones,
-  señas, la pestaña Pauta y otra más). Extraer a `lib/salon/date-presets.ts` con
-  test.
+- **`shiftYM`/`formatYM` siguen duplicados** (calendario de eventos
+  programados, señas y la pestaña Pauta), más el `monthRange` local de
+  `estadisticas/senas/page.tsx`. Comisiones ya no cuenta: pasó al rango libre de
+  `lib/commissions/period.ts` (2026-09-18). Extraer los que quedan a
+  `lib/salon/date-presets.ts` con test.
 - **`RATIO_COLUMNS` está duplicado.** `lib/salon/event-marketing.ts` no lo
   exporta y `events-report.ts` mantiene su copia `LIVE_EDITION_BLANK_HEADERS`
   para dejar vacías las columnas de ratio de fechas que no pasaron. Exportarlo
   y borrar la copia.
+- **Las comisiones se leen de a 1000 filas y avisan, pero no paginan.** Con el
+  rango libre (hasta 400 días) un período largo toca `COMMISSION_MAX_ROWS` y las
+  tres pantallas muestran "elegí un rango más corto". Alcanza para el HUB (~250
+  reservas/mes), pero la solución real es agregar en SQL (una RPC que sume por
+  gestor) en vez de traer el ledger entero al server. Lo mismo vale para
+  `DEPOSITS_MAX_ROWS` y el reporte de "Cómo nos fue".
+- **El detalle del gestor (`/estadisticas/comisiones/[managerId]`) no tiene
+  filtro de rango propio**: el período le llega por URL desde la liquidación. Si
+  el dueño se guarda ese link y después quiere otro rango, tiene que volver
+  atrás o editar la URL. Se arregla poniendo el mismo `<CommissionPeriodFilter/>`.
+- **`shiftPeriod` (`lib/commissions/period.ts`) está testeada y sin consumidor.**
+  Corre el rango su propio largo sin huecos; quedó para cuando alguien pida
+  "período anterior / siguiente" en la liquidación. Si en un mes nadie lo pide,
+  borrarla con su test.

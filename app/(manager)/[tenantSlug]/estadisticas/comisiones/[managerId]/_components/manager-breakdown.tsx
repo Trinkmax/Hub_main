@@ -1,39 +1,56 @@
 'use client'
 
-import { Check } from 'lucide-react'
+import { Check, Wallet } from 'lucide-react'
 import Link from 'next/link'
 import { useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { formatARS } from '@/lib/commissions/calculate'
-import { markCommissionPaid } from '@/lib/salon/actions'
+import type { CommissionPeriod } from '@/lib/commissions/period'
+import { markCommissionPaid, markCommissionRangePaid } from '@/lib/salon/actions'
 import type { CommissionBreakdownEntry } from '@/lib/salon/queries'
 import { cn } from '@/lib/utils'
 
 export function ManagerCommissionsBreakdown({
   tenantSlug,
+  managerId,
+  period,
   entries,
+  truncated,
 }: {
   tenantSlug: string
+  managerId: string
+  period: CommissionPeriod
   entries: CommissionBreakdownEntry[]
+  /** La lectura tocó el techo de filas: faltan reservas en la tabla y en los totales. */
+  truncated: boolean
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [confirmPayAll, setConfirmPayAll] = useState(false)
   const [pending, startTransition] = useTransition()
 
-  const unpaid = useMemo(() => entries.filter((e) => e.paid_at === null), [entries])
+  const unpaid = useMemo(() => entries.filter((e) => !e.paid_at), [entries])
 
+  // `pending` se deriva de `unpaid`, no de un segundo recorrido con otro
+  // criterio: el diálogo de liquidar todo dice "N reservas por $X" y las dos
+  // cifras tienen que salir de la MISMA lista, o algún día va a decir
+  // "3 reservas por $0".
   const totals = useMemo(() => {
-    let payable = 0
-    let paid = 0
-    let pending = 0
-    for (const e of entries) {
-      payable += e.payable_cents
-      if (e.paid_at) paid += e.payable_cents
-      else pending += e.payable_cents
-    }
-    return { payable, paid, pending }
-  }, [entries])
+    const payable = entries.reduce((acc, e) => acc + e.payable_cents, 0)
+    const pending = unpaid.reduce((acc, e) => acc + e.payable_cents, 0)
+    return { payable, paid: payable - pending, pending }
+  }, [entries, unpaid])
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -64,6 +81,30 @@ export function ManagerCommissionsBreakdown({
     })
   }
 
+  /**
+   * Liquidación completa del período. No manda ids: el servidor vuelve a
+   * preguntar quién está impago en ese rango (ver `markCommissionRangePaid`),
+   * así que el número del diálogo es informativo y el pago sale de la DB.
+   */
+  function payAllPending() {
+    startTransition(async () => {
+      const r = await markCommissionRangePaid(tenantSlug, {
+        manager_id: managerId,
+        from: period.from,
+        to: period.to,
+      } as Record<string, unknown>)
+      if (r.ok) {
+        // El mensaje puede avisar que quedaron pendientes: duración larga para
+        // que no se lo lleve el toast antes de leerlo.
+        toast.success(r.message ?? 'Listo.', { duration: 8000 })
+        setConfirmPayAll(false)
+        setSelected(new Set())
+      } else {
+        toast.error(r.message, { duration: 8000 })
+      }
+    })
+  }
+
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-3">
@@ -72,10 +113,87 @@ export function ManagerCommissionsBreakdown({
         <Stat label="Pendiente" value={formatARS(totals.pending)} tone="amber" />
       </div>
 
+      {/* Con el rango libre se puede pedir más de un año de una: si la lectura
+          tocó el techo, los totales y el botón de liquidar de abajo están
+          contando de menos. Avisarlo importa más acá que en cualquier otra
+          pantalla, porque desde acá se paga. */}
+      {truncated ? (
+        <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-text">
+          Hay más comisiones de las que entran en una sola lectura: faltan reservas en la tabla y en
+          los totales. Elegí un rango más corto antes de liquidar.
+        </p>
+      ) : null}
+
+      {/* Liquidar todo el período. Se esconde mientras hay entries tildadas:
+          dos botones de pagar juntos, uno "las 3 que elegí" y otro "las 47 del
+          período", es exactamente la confusión que no se puede permitir con
+          plata. Primero se resuelve la selección; si no hay, aparece este. */}
+      {unpaid.length > 0 && selected.size === 0 ? (
+        <div className="card-hairline flex flex-col gap-3 rounded-xl border bg-card/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            Quedan{' '}
+            <span className="font-medium text-foreground">
+              {unpaid.length} {unpaid.length === 1 ? 'reserva' : 'reservas'}
+            </span>{' '}
+            sin pagar en este período, por{' '}
+            <span className="font-mono font-medium tabular-nums text-foreground">
+              {formatARS(totals.pending)}
+            </span>
+            .
+          </p>
+          <Button
+            onClick={() => setConfirmPayAll(true)}
+            disabled={pending}
+            className="h-10 w-full gap-2 sm:w-auto"
+          >
+            <Wallet className="size-4" aria-hidden />
+            Marcar todo lo pendiente como pagado
+          </Button>
+        </div>
+      ) : null}
+
+      <AlertDialog
+        open={confirmPayAll}
+        onOpenChange={(next) => {
+          if (!next && !pending) setConfirmPayAll(false)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              ¿Marcar {unpaid.length} {unpaid.length === 1 ? 'reserva' : 'reservas'} como pagadas?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Se van a marcar como pagadas todas las comisiones pendientes de {period.label}:{' '}
+              {unpaid.length} {unpaid.length === 1 ? 'reserva' : 'reservas'} por{' '}
+              {formatARS(totals.pending)}. Las que ya figuran cobradas no se tocan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                // Sin esto Radix cierra el diálogo antes de que termine la
+                // acción y el dueño no ve si salió bien.
+                e.preventDefault()
+                payAllPending()
+              }}
+              disabled={pending}
+            >
+              {pending ? 'Marcando…' : 'Sí, marcar como pagadas'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {selected.size > 0 ? (
         <div className="sticky top-2 z-10 flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-amber-50/80 px-3 py-2 text-sm backdrop-blur dark:bg-amber-950/30">
+          {/* "reservas", no "entries": en este período hay una entry de ledger
+              por reserva del gestor, y es el idioma del dueño — el diálogo de
+              liquidar todo y el toast dicen lo mismo. */}
           <span>
-            {selected.size} {selected.size === 1 ? 'entry seleccionada' : 'entries seleccionadas'}
+            {selected.size}{' '}
+            {selected.size === 1 ? 'reserva seleccionada' : 'reservas seleccionadas'}
           </span>
           <Button size="sm" onClick={payNow} disabled={pending} className="gap-2">
             <Check className="size-4" />

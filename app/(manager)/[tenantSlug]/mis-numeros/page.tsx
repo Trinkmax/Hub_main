@@ -1,10 +1,7 @@
-import { formatInTimeZone } from 'date-fns-tz'
 import {
   CalendarCheck,
   Check,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   CircleHelp,
   Coins,
   Link2Off,
@@ -14,11 +11,14 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { CommissionPeriodFilter } from '@/components/commissions/period-filter'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
 import { StatCard } from '@/components/ui/stat-card'
 import { formatARS } from '@/lib/commissions/calculate'
+import { resolveCommissionPeriod } from '@/lib/commissions/period'
+import { todayInCordoba } from '@/lib/salon/date-presets'
 import {
   type CommissionBreakdownEntry,
   getManagerForUser,
@@ -37,36 +37,19 @@ import {
 export const metadata = { title: 'Mis números' }
 export const dynamic = 'force-dynamic'
 
-const TZ = 'America/Argentina/Cordoba'
-
-function monthRange(ym: string): { from: string; to: string; label: string } {
-  const [y, m] = ym.split('-').map(Number)
-  if (!y || !m) throw new Error(`mes inválido: ${ym}`)
-  const from = `${y}-${String(m).padStart(2, '0')}-01`
-  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate()
-  const to = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
-  const label = new Intl.DateTimeFormat('es-AR', {
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(new Date(Date.UTC(y, m - 1, 1)))
-  return { from, to, label }
-}
-
-function shiftYM(ym: string, months: number): string {
-  const [y, m] = ym.split('-').map(Number)
-  if (!y || !m) return ym
-  const d = new Date(Date.UTC(y, m - 1 + months, 1))
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
-}
-
 /** `yyyy-MM-dd` → `dd/MM` sin pasar por Date (evita corrimientos de TZ). */
 function formatDayMonth(isoDate: string): string {
   return `${isoDate.slice(8, 10)}/${isoDate.slice(5, 7)}`
 }
 
-function monthHref(slug: string, ym: string, as?: string): string {
-  const params = new URLSearchParams({ month: ym })
+/**
+ * Links internos de la pantalla (cambiar de gestor). Antes escribían
+ * `?month=YYYY-MM` y pisaban el rango elegido: ahora arrastran el mismo
+ * `?from=&to=` que se está mirando, así el dueño puede comparar dos gestores
+ * sobre el MISMO período sin volver a tipear las fechas.
+ */
+function periodHref(slug: string, period: { from: string; to: string }, as?: string): string {
+  const params = new URLSearchParams({ from: period.from, to: period.to })
   if (as) params.set('as', as)
   return `/${slug}/mis-numeros?${params.toString()}`
 }
@@ -80,6 +63,19 @@ export default async function MisNumerosPage({
 }) {
   const { tenantSlug } = await params
   const sp = await searchParams
+
+  // Mismo período que la liquidación del dueño (rango libre `?from=&to=`), y el
+  // mismo resolvedor: si Luz mira "del 1 al 15" tiene que ver exactamente las
+  // reservas que el dueño le está por pagar. Los `?month=` viejos siguen
+  // abriendo — el resolvedor los traduce a mes completo.
+  const period = resolveCommissionPeriod(
+    {
+      from: typeof sp.from === 'string' ? sp.from : undefined,
+      to: typeof sp.to === 'string' ? sp.to : undefined,
+      month: typeof sp.month === 'string' ? sp.month : undefined,
+    },
+    todayInCordoba(),
+  )
 
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
@@ -136,13 +132,7 @@ export default async function MisNumerosPage({
               <div className="flex flex-wrap items-center justify-center gap-2">
                 {activeManagers.map((m) => (
                   <Button key={m.id} asChild variant="outline" size="sm">
-                    <Link
-                      href={monthHref(
-                        tenantSlug,
-                        formatInTimeZone(new Date(), TZ, 'yyyy-MM'),
-                        m.id,
-                      )}
-                    >
+                    <Link href={periodHref(tenantSlug, period, m.id)}>
                       Ver como {m.display_name}
                     </Link>
                   </Button>
@@ -164,23 +154,11 @@ export default async function MisNumerosPage({
     )
   }
 
-  // ── Mes seleccionado (?month=YYYY-MM, reloj del bar) ──
-  // Además del formato validamos el rango 01-12: "2026-00"/"2026-13" pasan la
-  // regex pero romperían monthRange/el filtro de fechas — caen al mes actual.
-  const monthParam = typeof sp.month === 'string' ? sp.month : undefined
-  const monthOk =
-    monthParam !== undefined &&
-    /^\d{4}-\d{2}$/.test(monthParam) &&
-    Number(monthParam.slice(5)) >= 1 &&
-    Number(monthParam.slice(5)) <= 12
-  const ym = monthOk && monthParam ? monthParam : formatInTimeZone(new Date(), TZ, 'yyyy-MM')
-  const { from, to, label } = monthRange(ym)
-
-  const entries = await listMyCommissionEntries({
+  const { entries, truncated } = await listMyCommissionEntries({
     tenantId: access.tenant.id,
     managerId: manager.id,
-    monthStart: from,
-    monthEnd: to,
+    from: period.from,
+    to: period.to,
   })
 
   let pendingCents = 0
@@ -192,8 +170,6 @@ export default async function MisNumerosPage({
     guestsTotal += e.guests_billed
   }
 
-  const spyQuery = spying ? manager.id : undefined
-
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <PageHeader
@@ -201,7 +177,7 @@ export default async function MisNumerosPage({
         title="Mis números"
         description={
           <>
-            {manager.display_name} · <span className="capitalize">{label}</span>
+            {manager.display_name} · {period.label}
             {spying ? ' — vista del dueño' : null}
           </>
         }
@@ -230,7 +206,7 @@ export default async function MisNumerosPage({
                 size="sm"
                 variant={m.id === manager.id ? 'default' : 'outline'}
               >
-                <Link href={monthHref(tenantSlug, ym, m.id)}>
+                <Link href={periodHref(tenantSlug, period, m.id)}>
                   {m.display_name}
                   {m.id === ownManager?.id ? ' (vos)' : ''}
                 </Link>
@@ -262,22 +238,23 @@ export default async function MisNumerosPage({
         </ul>
       </details>
 
-      {/* Navegación mensual */}
-      <div className="flex items-center justify-between gap-2">
-        <Button asChild variant="outline" size="sm">
-          <Link href={monthHref(tenantSlug, shiftYM(ym, -1), spyQuery)}>
-            <ChevronLeft className="size-4" /> Mes anterior
-          </Link>
-        </Button>
-        <h2 className="font-serif text-lg font-semibold capitalize">{label}</h2>
-        <Button asChild variant="outline" size="sm">
-          <Link href={monthHref(tenantSlug, shiftYM(ym, 1), spyQuery)}>
-            Mes siguiente <ChevronRight className="size-4" />
-          </Link>
-        </Button>
-      </div>
+      {/* Período. El mismo filtro que la liquidación del dueño: la gestora
+          cobra "del 15 al 15", no por mes calendario, y necesita ver el mismo
+          corte que le van a pagar. El `?as=` de la vista del dueño se conserva
+          solo (el filtro mergea los parámetros que ya están en la URL). */}
+      <CommissionPeriodFilter period={period} />
 
-      {/* KPIs del mes */}
+      {/* Si la lectura tocó el techo de filas, "A cobrar" está contando de
+          menos. Acá importa tanto como en la liquidación: es el número con el
+          que la gestora controla lo que le pagan. */}
+      {truncated ? (
+        <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-text">
+          Hay más reservas de las que entran en una sola lectura: los números de este período pueden
+          estar incompletos. Elegí un rango más corto.
+        </p>
+      ) : null}
+
+      {/* KPIs del período */}
       <div data-tour="mis-numeros-kpis" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
           label="A cobrar"
@@ -291,12 +268,12 @@ export default async function MisNumerosPage({
         <StatCard label="Cubiertos" value={guestsTotal} icon={Users} />
       </div>
 
-      {/* Detalle del mes */}
+      {/* Detalle del período */}
       {entries.length === 0 ? (
         <div data-tour="mis-numeros-lista">
           <EmptyState
             icon={Coins}
-            title="Sin reservas liquidadas este mes"
+            title="Sin reservas liquidadas en este período"
             description="Cuando tus reservas se cierren con la cantidad real de personas, van a aparecer acá con lo que te corresponde."
           />
         </div>

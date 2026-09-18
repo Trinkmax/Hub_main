@@ -2,6 +2,8 @@ import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { resolveCommissionPeriod } from '@/lib/commissions/period'
+import { todayInCordoba } from '@/lib/salon/date-presets'
 import { listCommissionBreakdown, listManagers } from '@/lib/salon/queries'
 import {
   RoleRequiredError,
@@ -23,8 +25,16 @@ export default async function ManagerCommissionsPage({
 }) {
   const { tenantSlug, managerId } = await params
   const sp = await searchParams
-  const from = typeof sp.from === 'string' ? sp.from : `${new Date().toISOString().slice(0, 7)}-01`
-  const to = typeof sp.to === 'string' ? sp.to : new Date().toISOString().slice(0, 10)
+  // Mismo resolvedor que la liquidación: el detalle tiene que abarcar
+  // exactamente el rango del que se viene, porque desde acá se marca el pago.
+  const period = resolveCommissionPeriod(
+    {
+      from: typeof sp.from === 'string' ? sp.from : undefined,
+      to: typeof sp.to === 'string' ? sp.to : undefined,
+      month: typeof sp.month === 'string' ? sp.month : undefined,
+    },
+    todayInCordoba(),
+  )
 
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
@@ -36,12 +46,12 @@ export default async function ManagerCommissionsPage({
     throw e
   }
 
-  const [entries, managers] = await Promise.all([
+  const [breakdown, managers] = await Promise.all([
     listCommissionBreakdown({
       tenantId: access.tenant.id,
       managerId,
-      from,
-      to,
+      from: period.from,
+      to: period.to,
     }),
     listManagers({ tenantId: access.tenant.id, onlyActive: false }),
   ])
@@ -53,7 +63,7 @@ export default async function ManagerCommissionsPage({
       <PageHeader
         eyebrow={
           <Link
-            href={`/${tenantSlug}/estadisticas/comisiones`}
+            href={`/${tenantSlug}/estadisticas/comisiones?from=${period.from}&to=${period.to}`}
             className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="size-3.5" />
@@ -61,9 +71,15 @@ export default async function ManagerCommissionsPage({
           </Link>
         }
         title={manager.display_name}
-        description={`Detalle de comisiones del período ${from} → ${to}`}
+        description={`Comisiones de ${period.label}`}
       />
-      <ManagerCommissionsBreakdown tenantSlug={tenantSlug} entries={entries} />
+      <ManagerCommissionsBreakdown
+        tenantSlug={tenantSlug}
+        managerId={managerId}
+        period={period}
+        entries={breakdown.entries}
+        truncated={breakdown.truncated}
+      />
     </div>
   )
 }

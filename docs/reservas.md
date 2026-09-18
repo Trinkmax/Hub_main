@@ -276,7 +276,7 @@ Antes de mergear, verificar localmente:
 - [ ] Crear evento programado en `/eventos/programados/nuevo` para mañana
 - [ ] Abrir panel operativo en `/salon/reservas-operativo`, ver las barras de capacidad y la reserva creada
 - [ ] Hacer transición `Llegó → Sentar → Cerrar mesa` con cantidad real, ver que se anima
-- [ ] Como owner, abrir `/estadisticas/comisiones` y ver la entry generada en el mes actual
+- [ ] Como owner, abrir `/estadisticas/comisiones` y ver la entry generada en el período por defecto (mes en curso); ver también el addendum 2026-09-18 para el filtro de rango
 - [ ] Login con otro tenant (o usuario sin membership) y verificar que `/reservas` devuelve `notFound`
 
 ---
@@ -287,7 +287,8 @@ Antes de mergear, verificar localmente:
 - Tabla materializada `daily_capacity_snapshot` con `pg_cron` si escalamos a cadenas con >1000 reservas/día.
 - Asignación opcional de `physical_table_id` a la reserva.
 - Hard-capacity lock (flag tenant) — hoy permite overbooking voluntario.
-- Vista "mi liquidación" para que cada gestor vea sus propias comisiones.
+- ~~Vista "mi liquidación" para que cada gestor vea sus propias comisiones.~~
+  Hecho: `/[slug]/mis-numeros` (ver addendum 2026-09-18).
 - Recibo PDF de comisión por gestor/período.
 
 ---
@@ -1052,3 +1053,160 @@ libre).
 12. Antes de mergear: confirmar en el Ads Manager del bar los nombres «Importe
     gastado», «Conversaciones con mensajes iniciadas», «Costo por resultado» y
     «Alcance».
+
+---
+
+## Addendum 2026-09-18 — Liquidar por rango de fechas
+
+Pedido del dueño, textual: *«A Luz le pagamos del 15 al 15 normalmente, puede
+cambiar, pero qué pasa, nosotros tenemos del 15 de agosto al 15 de septiembre,
+yo lo que necesito es que el filtro me permita mostrar del 1 de septiembre al
+15 de septiembre.»*
+
+El período dejó de ser un mes calendario. Antes las tres pantallas navegaban con
+`?month=YYYY-MM` y botones «Mes anterior / Mes siguiente»; ahora son **dos
+fechas libres, `?from=&to=`**, sin chips de atajos ni ciclo configurable en
+Ajustes (decisión del dueño: no queremos una pantalla de configuración para
+esto).
+
+### Un solo lugar decide el rango
+
+`lib/commissions/period.ts` — `resolveCommissionPeriod({from, to, month}, today)`
+es el **único** lugar donde se resuelve qué período se está mirando. Lo llaman
+las tres páginas y también la Server Action del pago por rango, así que los
+bordes no pueden divergir. Orden de decisión (gana el primero que aplica):
+
+1. `from` **y** `to` válidos → mandan. **Si vienen al revés se dan vuelta**: el
+   dueño va a tipear mal alguna vez y una pantalla en cero se lee como «no hay
+   comisiones», que es mentira.
+2. Uno solo de los dos → el otro completa **el mes de ese día**.
+3. `?month=YYYY-MM` → mes completo. **Los links viejos siguen abriendo** (hay
+   bookmarks dando vuelta); el filtro borra el `month` de la URL apenas se
+   aplica un rango.
+4. Nada → mes en curso según `todayInCordoba()` (el calendario del bar, no el
+   `new Date()` del server, que en UTC ya cambió de día mientras en Córdoba son
+   las 21:30).
+
+Y siempre, al final, el tope de `MAX_COMMISSION_PERIOD_DAYS = 400`. **Cuando
+recorta lo dice en el label** (`… (recortado a 400 días)`): un total
+silenciosamente parcial sería plata mal contada.
+
+Todo viaja como `yyyy-MM-dd` y se compara como string —
+`salon_reservations.reservation_date` es `date` puro, sin hora. La aritmética va
+sobre `Date.UTC` porque las funciones locales de `Date` usan el TZ del runtime y
+un rango calculado en Vercel (UTC) se corría un día respecto del navegador. Los
+nombres de mes y día están a mano y no con `Intl`: el label se renderiza en el
+server y se re-hidrata en el browser, y las diferencias de ICU («septiembre» vs
+«sept.») disparaban un mismatch de hidratación.
+
+`shiftPeriod(period, ±1)` corre el rango su propio largo sin huecos ni solapes
+(del 1–15 al 16–30). **Está testeada pero hoy no tiene consumidor**: quedó para
+cuando alguien pida «período anterior», y no se cableó ningún botón porque
+convivir con el rango libre lo pisaba.
+
+### El filtro es uno solo, compartido
+
+`components/commissions/period-filter.tsx` (no en un `_components/` de una ruta:
+lo usan dos rutas distintas y dos copias divergen justo en el borde que importa).
+No calcula fechas — sólo empuja `?from=&to=` a la URL, mergeando lo que ya está
+ahí para no perder el `?as=` con el que el dueño espía a otro gestor. El rango
+que se muestra siempre es el que resolvió el server.
+
+Está en las **tres** pantallas:
+
+| Pantalla | Rol | Qué muestra |
+|---|---|---|
+| `/estadisticas/comisiones` | owner | Totales del período, torta y tabla por gestor. Cada «Detalle» lleva el **mismo** `?from=&to=` que hay en pantalla. |
+| `/estadisticas/comisiones/[managerId]` | owner | Entries del gestor en el rango + el botón de liquidar. El link «Liquidación» vuelve con el rango puesto. |
+| `/mis-numeros` | host (Luz) y owner | Lo mismo que ve el dueño, para el gestor propio. |
+
+`/mis-numeros` **no filtra por rol en el cliente**: el host sólo resuelve su
+propio gestor con `getManagerForUser`, y el `?as=<managerId>` que permite mirar
+a otro se ignora salvo que el rol sea `owner`. Encima manda la RLS
+(`cl_manager_self_select`).
+
+### Marcar pagado todo el período
+
+Botón en el detalle del gestor, con `AlertDialog` que dice **cuántas reservas y
+cuánta plata** antes de tocar nada. Se mantiene el tildado de a una; lo que
+cambia es que el botón de liquidar todo **se esconde mientras hay entries
+tildadas**: dos botones de pagar juntos, uno por «las 3 que elegí» y otro por
+«las 47 del período», es un error caro.
+
+- `markCommissionRangePaid(slug, {manager_id, from, to})` (`lib/salon/actions.ts`)
+  **no recibe ids del browser**. Con el rango vuelve a preguntarle a la DB quién
+  está impago (`listUnpaidCommissionLedgerIds`), así el cliente no puede colar la
+  entry de otro gestor ni de un período que el dueño no está mirando. El número
+  del diálogo es informativo; el que paga es el del servidor.
+- Valida con `isRealIsoDay` **antes** de pasar por `resolveCommissionPeriod`, y
+  no cae al default: con el fallback puesto, un `from` basura habría marcado como
+  pagado el mes en curso entero.
+- Reusa la RPC `mark_commission_paid` (SECURITY DEFINER, exige `owner`, sólo toca
+  `paid_at is null`) de a **500 ids** por tanda — el tope que ya estaba probado.
+  Un doble click no paga dos veces. Si una tanda falla a mitad de camino el
+  mensaje dice cuántas quedaron marcadas: las anteriores ya commitearon.
+- Un solo `paid_at` para toda la liquidación: es un pago, no N pagos.
+- Auditoría: `commission.paid_range` con `{manager_id, from, to, count, cents}`,
+  sin PII. El tildado de a una sigue escribiendo `commission.paid`.
+- Si el conteo de la RPC no coincide con lo leído (alguien pagó en paralelo), el
+  toast **no muestra el monto**: dice `Marqué N reservas como pagadas (de M; el
+  resto ya figuraba pagado).`
+
+### El techo de 1000 filas
+
+`COMMISSION_MAX_ROWS = 1000` en `lib/salon/queries.ts`, igual que
+`DEPOSITS_MAX_ROWS`. **PostgREST corta en 1000 filas sin error**, y un total de
+plata truncado no tiene ningún síntoma: se ve igual de prolijo, sólo que con
+menos plata. Mientras el período fue siempre un mes calendario no se llegaba ni
+cerca (el mes más cargado del HUB ronda las 250 reservas); con el rango libre de
+hasta ~13 meses sí se llega. Las tres lecturas
+(`listCommissionSummary`, `listCommissionBreakdown`,
+`listUnpaidCommissionLedgerIds`) piden el tope explícito y devuelven
+`truncated`, y las tres pantallas muestran el recuadro ámbar. En el pago por
+rango el toast pide **repetir la acción**, porque ahí el corte silencioso sería
+peor: dejaría comisiones sin marcar creyendo que se pagó todo.
+
+### Piezas
+
+| Qué | Dónde |
+|---|---|
+| Resolución del período, label es-AR, tope, `shiftPeriod` | `lib/commissions/period.ts` |
+| Filtro compartido (dos fechas + Aplicar) | `components/commissions/period-filter.tsx` |
+| `markPaidRangeSchema` | `lib/salon/schemas.ts` |
+| `markCommissionRangePaid` | `lib/salon/actions.ts` |
+| `listUnpaidCommissionLedgerIds`, `COMMISSION_MAX_ROWS` | `lib/salon/queries.ts` |
+| Tests (22 casos: legacy `month`, rango dado vuelta, bisiesto, tope, label) | `tests/lib/commissions-period.test.ts` |
+
+### Smoke manual
+
+1. **El caso del dueño.** Entrar a `/[slug]/estadisticas/comisiones` sin
+   parámetros → mes en curso. Poner **Desde 15/08/2026 / Hasta 15/09/2026** y
+   Aplicar → el header dice `Liquidación de 15/08/2026 → 15/09/2026` y el filtro
+   `Mostrando 15/08/2026 → 15/09/2026 · 32 días`. Anotar el total.
+2. Cambiar a **01/09/2026 → 15/09/2026** → el label pasa a `1 al 15 de
+   septiembre de 2026 · 15 días` y el total baja. Es el pedido textual.
+3. **El link «Detalle» lleva el rango**: tocar Detalle en la fila de Luz → la URL
+   trae `?from=2026-09-01&to=2026-09-15` y el header repite el mismo período.
+   Volver por «Liquidación» → el rango sigue puesto (no vuelve al mes en curso).
+4. **Legacy**: abrir a mano `…/comisiones?month=2026-08` → mes completo de
+   agosto. Aplicar cualquier rango → el `month` desaparece de la URL. Probar lo
+   mismo en `/mis-numeros?month=2026-08`.
+5. **Rango dado vuelta**: `?from=2026-09-15&to=2026-08-15` → se da vuelta solo y
+   muestra 32 días, no una pantalla vacía.
+6. **Liquidar todo**: en el detalle de Luz del 01→15/09, sin nada tildado, el
+   recuadro dice `Quedan N reservas sin pagar … por $X`. Tocar el botón → el
+   diálogo repite N y $X. Confirmar → toast `Marqué N reservas como pagadas por
+   $X.`, las filas quedan «Cobrada», Pendiente en `$ 0` y **el recuadro y el
+   botón desaparecen**. Tocarlo de nuevo (recargando antes) → `No había nada
+   pendiente en ese período.`
+7. **No conviven los dos botones**: tildar 2 reservas → el recuadro de liquidar
+   todo se esconde y sólo queda la barra flotante («2 reservas seleccionadas»).
+   Destildar → vuelve el recuadro.
+8. **Vista de Luz (host), en celular**: entrar a `/[slug]/mis-numeros` con la
+   cuenta de Luz → el filtro de rango está, los KPIs responden al período y **no
+   aparece** el picker «Ver los números de otro gestor». Probar
+   `?as=<id de otro gestor>` a mano → sigue mostrando los números de Luz.
+   Verificar que los dos `<input type="date">` entran a lo ancho a 400px
+   (iOS Safari a veces se niega a achicarlos).
+9. **Tope**: `?from=2020-01-01&to=2026-01-01` → el label termina en
+   `(recortado a 400 días)` y el `to` real es `2021-02-03`.

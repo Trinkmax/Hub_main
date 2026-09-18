@@ -824,11 +824,22 @@ export type CommissionSummaryRow = {
   pending_cents: number
 }
 
+/**
+ * Techo de TODA lectura de comisiones. Igual que en el reporte de señas:
+ * PostgREST corta en 1000 filas SIN error, y un total de plata truncado no tiene
+ * ningún síntoma — se ve igual de prolijo, solo que con menos plata. Mientras el
+ * período fue siempre un mes calendario no se llegaba ni cerca; desde que el
+ * rango es libre (hasta `MAX_COMMISSION_PERIOD_DAYS`, ~13 meses) sí se llega, así
+ * que pedimos el tope explícito y devolvemos `truncated` para que la pantalla
+ * avise en vez de mentir. (El mes más cargado del HUB ronda las 250 reservas.)
+ */
+export const COMMISSION_MAX_ROWS = 1000
+
 export async function listCommissionSummary(opts: {
   tenantId: string
   from: string
   to: string
-}): Promise<CommissionSummaryRow[]> {
+}): Promise<{ rows: CommissionSummaryRow[]; truncated: boolean }> {
   const supabase = (await createClient()) as SBAny
   const { data, error } = await supabase
     .from('commission_ledger')
@@ -840,11 +851,13 @@ export async function listCommissionSummary(opts: {
     .eq('tenant_id', opts.tenantId)
     .gte('reservation.reservation_date', opts.from)
     .lte('reservation.reservation_date', opts.to)
+    .limit(COMMISSION_MAX_ROWS)
 
   if (error) throw error
 
+  const source = (data ?? []) as Array<Record<string, unknown>>
   const grouped = new Map<string, CommissionSummaryRow>()
-  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+  for (const row of source) {
     const mgrRaw = row.manager
     const mgr = (Array.isArray(mgrRaw) ? mgrRaw[0] : mgrRaw) as {
       id: string
@@ -884,7 +897,10 @@ export async function listCommissionSummary(opts: {
     else cur.pending_cents += Number(row.payable_cents ?? 0)
     grouped.set(mgr.id, cur)
   }
-  return Array.from(grouped.values()).sort((a, b) => b.payable_cents - a.payable_cents)
+  return {
+    rows: Array.from(grouped.values()).sort((a, b) => b.payable_cents - a.payable_cents),
+    truncated: source.length >= COMMISSION_MAX_ROWS,
+  }
 }
 
 export type CommissionBreakdownEntry = CommissionLedgerRow & {
@@ -904,7 +920,7 @@ export async function listCommissionBreakdown(opts: {
   managerId: string
   from: string
   to: string
-}): Promise<CommissionBreakdownEntry[]> {
+}): Promise<{ entries: CommissionBreakdownEntry[]; truncated: boolean }> {
   const supabase = (await createClient()) as SBAny
   const { data, error } = await supabase
     .from('commission_ledger')
@@ -920,12 +936,63 @@ export async function listCommissionBreakdown(opts: {
     .gte('reservation.reservation_date', opts.from)
     .lte('reservation.reservation_date', opts.to)
     .order('calculated_at', { ascending: false })
+    .limit(COMMISSION_MAX_ROWS)
   if (error) throw error
-  return (data ?? []).map((r: Record<string, unknown>) => {
-    const resRaw = r.reservation
-    const reservation = Array.isArray(resRaw) ? resRaw[0] : resRaw
-    return { ...(r as object), reservation } as CommissionBreakdownEntry
-  })
+  const rows = (data ?? []) as Array<Record<string, unknown>>
+  return {
+    entries: rows.map((r) => {
+      const resRaw = r.reservation
+      const reservation = Array.isArray(resRaw) ? resRaw[0] : resRaw
+      return { ...(r as object), reservation } as CommissionBreakdownEntry
+    }),
+    truncated: rows.length >= COMMISSION_MAX_ROWS,
+  }
+}
+
+/**
+ * IDs del ledger IMPAGOS de un gestor en un rango, para el botón "marcar todo
+ * lo pendiente como pagado".
+ *
+ * Existe para que la Server Action nunca confíe en ids que manda el browser: la
+ * pantalla dice "23 reservas, $184.500" y el servidor vuelve a preguntar quién
+ * está pendiente antes de tocar nada. `select` flaco (id + plata) porque no hay
+ * nada que dibujar con esto.
+ *
+ * El corte en `COMMISSION_MAX_ROWS` acá es peor que en un reporte: dejaría
+ * comisiones sin marcar creyendo que se pagó todo, así que `truncated` viaja
+ * hasta el mensaje de la acción para que el dueño sepa que tiene que repetir.
+ */
+export async function listUnpaidCommissionLedgerIds(opts: {
+  tenantId: string
+  managerId: string
+  /** `yyyy-MM-dd` inclusive, por fecha de reserva. */
+  from: string
+  /** `yyyy-MM-dd` inclusive, por fecha de reserva. */
+  to: string
+}): Promise<{ ids: string[]; totalCents: number; truncated: boolean }> {
+  const supabase = (await createClient()) as SBAny
+  const { data, error } = await supabase
+    .from('commission_ledger')
+    .select('id, payable_cents, reservation:salon_reservations!inner(reservation_date)')
+    .eq('tenant_id', opts.tenantId)
+    .eq('manager_id', opts.managerId)
+    .is('paid_at', null)
+    // `reservation_date` es `date` puro: se compara con los mismos strings
+    // `yyyy-MM-dd` de la URL, sin conversión de zona.
+    .gte('reservation.reservation_date', opts.from)
+    .lte('reservation.reservation_date', opts.to)
+    // Las más viejas primero: si el rango se trunca, la tanda que se marca es
+    // la que hace más tiempo que espera.
+    .order('calculated_at', { ascending: true })
+    .limit(COMMISSION_MAX_ROWS)
+  if (error) throw error
+
+  const rows = (data ?? []) as Array<Record<string, unknown>>
+  return {
+    ids: rows.map((r) => String(r.id)),
+    totalCents: rows.reduce((acc, r) => acc + Number(r.payable_cents ?? 0), 0),
+    truncated: rows.length >= COMMISSION_MAX_ROWS,
+  }
 }
 
 /**
@@ -951,29 +1018,36 @@ export async function getManagerForUser(opts: {
 }
 
 /**
- * Entradas del ledger de UN gestor para "Mis números" (mes calendario).
+ * Entradas del ledger de UN gestor para "Mis números", en el mismo rango libre
+ * que usa la liquidación del dueño: la gestora cobra "del 15 al 15", no por mes
+ * calendario, y tiene que poder ver exactamente el corte que le van a pagar.
  * Client anon + RLS: el owner ve todo (`cl_owner_select`) y el gestor
  * vinculado ve solo lo suyo (`cl_manager_self_select`). Nunca service role.
  */
 export async function listMyCommissionEntries(opts: {
   tenantId: string
   managerId: string
-  monthStart: string // yyyy-MM-dd (inclusive)
-  monthEnd: string // yyyy-MM-dd (inclusive)
-}): Promise<CommissionBreakdownEntry[]> {
-  const entries = await listCommissionBreakdown({
+  /** `yyyy-MM-dd` inclusive. El período ya no es un mes: es el rango libre de la liquidación. */
+  from: string
+  /** `yyyy-MM-dd` inclusive. */
+  to: string
+}): Promise<{ entries: CommissionBreakdownEntry[]; truncated: boolean }> {
+  const { entries, truncated } = await listCommissionBreakdown({
     tenantId: opts.tenantId,
     managerId: opts.managerId,
-    from: opts.monthStart,
-    to: opts.monthEnd,
+    from: opts.from,
+    to: opts.to,
   })
   // El breakdown ordena por calculated_at; acá queremos fecha de reserva desc.
-  return entries.sort((a, b) => {
-    if (a.reservation.reservation_date !== b.reservation.reservation_date) {
-      return a.reservation.reservation_date < b.reservation.reservation_date ? 1 : -1
-    }
-    return a.calculated_at < b.calculated_at ? 1 : -1
-  })
+  return {
+    entries: entries.sort((a, b) => {
+      if (a.reservation.reservation_date !== b.reservation.reservation_date) {
+        return a.reservation.reservation_date < b.reservation.reservation_date ? 1 : -1
+      }
+      return a.calculated_at < b.calculated_at ? 1 : -1
+    }),
+    truncated,
+  }
 }
 
 // Inputs requeridos por el motor TS (paridad con SQL).

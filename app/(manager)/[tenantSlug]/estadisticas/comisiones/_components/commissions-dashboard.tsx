@@ -1,32 +1,16 @@
 'use client'
 
-import { ChevronRight as ArrowRight, ChevronLeft, ChevronRight, Coins } from 'lucide-react'
+import { ChevronRight as ArrowRight, Coins } from 'lucide-react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { useMemo } from 'react'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
+import { CommissionPeriodFilter } from '@/components/commissions/period-filter'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { StatCard } from '@/components/ui/stat-card'
 import { formatARS } from '@/lib/commissions/calculate'
+import type { CommissionPeriod } from '@/lib/commissions/period'
 import type { CommissionSummaryRow } from '@/lib/salon/queries'
-
-function shiftYM(ym: string, months: number): string {
-  const [y, m] = ym.split('-').map(Number)
-  if (!y || !m) return ym
-  const d = new Date(Date.UTC(y, m - 1 + months, 1))
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
-}
-
-function formatYM(ym: string): string {
-  const [y, m] = ym.split('-').map(Number)
-  if (!y || !m) return ym
-  return new Intl.DateTimeFormat('es-AR', {
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(new Date(Date.UTC(y, m - 1, 1)))
-}
 
 const COLORS = [
   'var(--chart-1)',
@@ -38,18 +22,16 @@ const COLORS = [
 
 export function CommissionsDashboard({
   tenantSlug,
-  currentYM,
-  from,
-  to,
+  period,
   summary,
+  truncated,
 }: {
   tenantSlug: string
-  currentYM: string
-  from: string
-  to: string
+  period: CommissionPeriod
   summary: CommissionSummaryRow[]
+  /** La lectura tocó el techo de filas: los totales de abajo están incompletos. */
+  truncated: boolean
 }) {
-  const router = useRouter()
   const totals = useMemo(
     () =>
       summary.reduce(
@@ -74,22 +56,21 @@ export function CommissionsDashboard({
       color: COLORS[i % COLORS.length],
     }))
 
-  function gotoMonth(next: string) {
-    router.push(`/${tenantSlug}/estadisticas/comisiones?month=${next}`)
-  }
-
   return (
     <div className="space-y-6">
-      {/* Selector de mes */}
-      <div className="flex items-center justify-between gap-2">
-        <Button variant="outline" size="sm" onClick={() => gotoMonth(shiftYM(currentYM, -1))}>
-          <ChevronLeft className="size-4" /> Mes anterior
-        </Button>
-        <h2 className="font-serif text-lg font-semibold capitalize">{formatYM(currentYM)}</h2>
-        <Button variant="outline" size="sm" onClick={() => gotoMonth(shiftYM(currentYM, 1))}>
-          Mes siguiente <ChevronRight className="size-4" />
-        </Button>
-      </div>
+      {/* Período a liquidar. Reemplaza al viejo "mes anterior / mes siguiente":
+          el ciclo de pago no es un mes calendario y se corre. */}
+      <CommissionPeriodFilter period={period} />
+
+      {/* Un total de plata truncado no tiene ningún síntoma: se ve igual de
+          prolijo, solo que con menos plata. Antes no se llegaba (el período era
+          un mes); con el rango libre sí, así que lo decimos. */}
+      {truncated ? (
+        <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-text">
+          Hay más comisiones de las que entran en una sola lectura: los totales de este período
+          pueden estar incompletos. Elegí un rango más corto.
+        </p>
+      ) : null}
 
       {summary.length === 0 ? (
         <EmptyState
@@ -226,8 +207,11 @@ export function CommissionsDashboard({
                       </td>
                       <td className="px-3 py-2 text-right">
                         <Button asChild variant="ghost" size="sm" className="gap-1">
+                          {/* El detalle abre con el MISMO rango que está en
+                              pantalla: si el link llevara al mes calendario, el
+                              botón de marcar todo pagaría otra cosa. */}
                           <Link
-                            href={`/${tenantSlug}/estadisticas/comisiones/${s.manager.id}?from=${from}&to=${to}`}
+                            href={`/${tenantSlug}/estadisticas/comisiones/${s.manager.id}?from=${period.from}&to=${period.to}`}
                           >
                             Detalle
                             <ArrowRight className="size-3.5" />

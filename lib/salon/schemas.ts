@@ -452,6 +452,18 @@ export const markPaidSchema = z.object({
   paid_at: z.string().datetime().optional(),
 })
 
+/**
+ * "Marcar como pagado todo lo pendiente del período". No recibe ids: el
+ * servidor los resuelve solo a partir del rango (ver `markCommissionRangePaid`)
+ * para que el browser no pueda pedir que se marque una entry de otro rango —
+ * ni de otro gestor.
+ */
+export const markPaidRangeSchema = z.object({
+  manager_id: z.string().uuid(),
+  from: dateField,
+  to: dateField,
+})
+
 // ──────────────────────────────────────────────────────────
 // Inferred input types
 // ──────────────────────────────────────────────────────────
@@ -471,4 +483,5 @@ export type BonusRuleInput = z.infer<typeof bonusRuleSchema>
 export type ZoneCapacityOverrideInput = z.infer<typeof zoneCapacityOverrideSchema>
 export type ZoneCapacityDefaultsInput = z.infer<typeof zoneCapacityDefaultsSchema>
 export type MarkPaidInput = z.infer<typeof markPaidSchema>
+export type MarkPaidRangeInput = z.infer<typeof markPaidRangeSchema>
 export type CakeOptionInput = z.infer<typeof cakeOptionSchema>
