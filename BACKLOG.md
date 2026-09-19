@@ -874,3 +874,20 @@ afuera a propósito:
   Corre el rango su propio largo sin huecos; quedó para cuando alguien pida
   "período anterior / siguiente" en la liquidación. Si en un mes nadie lo pide,
   borrarla con su test.
+- **No hay precarga de los valores por persona de la fecha anterior.** El dólar
+  tiene su chip `Usar $ 1.450 (último, 07/09)` (`getLastUsdArsRate`), pero el
+  ingreso y el costo por persona hay que volver a tipearlos en cada noche de
+  ramen, aunque sean siempre los mismos 27.000 y 15.000. Un
+  `getLastPerGuestValues` calcado del del dólar lo resuelve — **nunca
+  precargando solo**: un cubierto viejo guardado sin que nadie lo mire es un
+  resultado de la noche inventado. Esperar a que el dueño lo pida.
+- **Los tests de RLS de `scheduled_event_marketing` no cubren las columnas
+  nuevas.** `tests/rls/scheduled-event-marketing.test.ts` (no corre en CI, pide
+  Supabase local) no prueba el `sem_no_ads_is_bare` rehecho: una fila con gasto
+  0 y plata por persona colgada tiene que rebotar, y hoy eso solo lo garantiza
+  el CHECK sin test que lo vigile.
+- **La gente del cálculo no se puede auditar desde la pantalla.** El resultado
+  de la noche multiplica por `billableGuests` y la ficha lo explica en una
+  línea, pero no hay manera de ver QUÉ mesas quedaron sin cerrar sin ir al
+  muro. Si el dueño desconfía de un resultado, hoy la respuesta es "mirá el
+  muro y contá".

@@ -10,6 +10,8 @@ import {
   type MarketingBlock,
   type MarketingPhase,
   marketingSentence,
+  type NightMathStep,
+  nightResultReport,
   RETURN_DISCLAIMER,
   returnDetails,
   returnSentence,
@@ -74,6 +76,21 @@ function KpiNumber({ value }: { value: string }) {
   return <>{value}</>
 }
 
+/**
+ * Un pedazo de la cuenta con el número resaltado. El texto viene partido de
+ * `lib/salon/event-marketing.ts` justamente para esto: acá no se corta ni se
+ * arma ninguna frase.
+ */
+function MathStep({ step }: { step: NightMathStep }) {
+  return (
+    <>
+      {step.before}
+      <span className="font-medium tabular-nums text-foreground">{step.value}</span>
+      {step.after}
+    </>
+  )
+}
+
 /** Un `<details>` de la casa: chevron que gira, sin el triángulo nativo. */
 export function Disclosure({
   summary,
@@ -120,6 +137,9 @@ export function MarketingReport({
   const ret = returnSentence(computeMarketingKpis(block, row))
   const details = returnDetails(block, row)
   const bullets = howItsCalculated(row)
+  // `null` = no hay un solo número de plata cargado: la sección entera no se
+  // dibuja, en vez de dibujar una cuenta llena de guiones.
+  const night = nightResultReport(block, row, phase)
 
   return (
     <div className={className}>
@@ -173,6 +193,76 @@ export function MarketingReport({
             </div>
           ))}
         </dl>
+      ) : null}
+
+      {/* La cuenta de la noche va ANTES del retorno: es lo que el dueño pidió
+          («ahí podés calcular la ganancia»), y el retorno es un número de la
+          pauta, no de la noche. Cuando la facturación real está cargada, las dos
+          hablan de la misma plata: `revenueNote` dice cuál mandó, así ninguna
+          contradice a la otra. */}
+      {night ? (
+        <section className="mt-4 rounded-lg border border-border/60 bg-secondary/30 p-3 @md:p-4">
+          <h5 className={EYEBROW}>La cuenta de la noche</h5>
+          {night.headline ? (
+            <p
+              className={cn(
+                'mt-1.5 font-serif text-base leading-snug tracking-tight @md:text-lg',
+                // En negativo el número NUNCA va solo: la frase ya dice «quedó
+                // $ X abajo», y el ámbar se apoya en esas palabras.
+                night.negative && 'text-warning-text',
+              )}
+            >
+              {night.headline}
+            </p>
+          ) : null}
+
+          {night.steps.length > 0 ? (
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              {night.steps.map((step, i) => (
+                <span key={`${step.before}|${step.after}`}>
+                  {i > 0 ? ' · ' : null}
+                  <MathStep step={step} />
+                </span>
+              ))}
+              {night.result ? (
+                <>
+                  {' → '}
+                  <MathStep step={night.result} />
+                </>
+              ) : null}
+            </p>
+          ) : null}
+
+          {night.missing ? (
+            <p className="mt-1.5 text-xs leading-snug text-warning-text">{night.missing}</p>
+          ) : null}
+
+          {night.perGuest || night.perGuestAfterAds ? (
+            <p className="mt-2 text-xs leading-relaxed">
+              {night.perGuest}
+              {night.perGuest && night.perGuestAfterAds ? ' ' : null}
+              {night.perGuestAfterAds ? (
+                <span className="text-muted-foreground">{night.perGuestAfterAds}</span>
+              ) : null}
+            </p>
+          ) : null}
+
+          {night.basis || night.revenueNote ? (
+            <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+              {night.basis}
+              {night.basis && night.revenueNote ? ' ' : null}
+              {night.revenueNote}
+            </p>
+          ) : null}
+
+          {/* La aclaración acompaña a un número: si no se pudo calcular ni uno
+              (una fecha sin nadie sentado), no hay nada que aclarar. */}
+          {night.headline ? (
+            <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+              {night.disclaimer}
+            </p>
+          ) : null}
+        </section>
       ) : null}
 
       {ret ? (

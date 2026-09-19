@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import {
   type EventMarketingRow,
+  formatArs,
   formatPesosRate,
   type MarketingField,
   shortName,
@@ -18,9 +19,10 @@ import {
  * Los mensajes son los del form (§8.6 del spec) para que el error del server
  * caiga en el mismo campo y con las mismas palabras que el del cliente.
  *
- * Los topes copian los CHECK de la migración `20260915120000` (en unidades):
- * si el schema dejara pasar algo que la DB rechaza, el dueño vería "No se pudo
- * guardar" en vez de saber qué número revisar.
+ * Los topes copian los CHECK de las migraciones `20260915120000` y
+ * `20260919120000` (en unidades): si el schema dejara pasar algo que la DB
+ * rechaza, el dueño vería "No se pudo guardar" en vez de saber qué número
+ * revisar.
  */
 
 export const EVENT_MARKETING_LIMITS = {
@@ -33,6 +35,12 @@ export const EVENT_MARKETING_LIMITS = {
   revenueArsMax: 1_000_000_000,
   usdArsRateMin: 100,
   usdArsRateMax: 100_000,
+  /**
+   * $ 1.000.000 = 100.000.000 centavos, el CHECK de `revenue_per_guest_ars_cents`
+   * y de `cost_per_guest_ars_cents` (migración `20260919120000`). Un cubierto más
+   * caro que eso es alguien que tipeó los centavos o le sobró un cero.
+   */
+  perGuestArsMax: 1_000_000,
   notesMax: 280,
   expectedUpdatedAtMax: 40,
 } as const
@@ -44,10 +52,19 @@ export const MARKETING_FIELD_MESSAGES = {
   withDecimals: 'Va sin decimales.',
   spendTooHigh: 'Revisá el monto: más de US$ 100.000 no parece la pauta de una fecha.',
   countOutOfRange: 'Revisá el número.',
+  /**
+   * Desde que se borró el CHECK `sem_revenue_needs_rate`, estos dos NO son
+   * errores del server: la carga entra igual. Quedan como aviso de la UI —
+   * sin el dólar la pauta no se puede pasar a pesos y la cuenta llega hasta el
+   * margen bruto, que es peor que guardar el dato pero mucho mejor que
+   * rebotarlo.
+   */
   rateMissing: 'Para calcular el retorno falta el dólar del día.',
   revenueMissing: 'Cargaste el dólar pero no la facturación.',
   revenueOutOfRange: 'Revisá la facturación.',
   revenueInFuture: 'La facturación se carga cuando pasa la fecha.',
+  revenuePerGuestOutOfRange: `Revisá el ingreso por persona: el tope es ${formatArs(EVENT_MARKETING_LIMITS.perGuestArsMax)}.`,
+  costPerGuestOutOfRange: `Revisá el costo por persona: el tope es ${formatArs(EVENT_MARKETING_LIMITS.perGuestArsMax)}.`,
   notesTooLong: 'La nota puede tener hasta 280 caracteres.',
 } as const
 
@@ -88,6 +105,19 @@ function countField(max: number) {
 }
 
 /**
+ * Plata POR PERSONA, en pesos: el cubierto ($ 27.000) y lo que cuesta servirlo
+ * ($ 15.000). Con decimales, como la facturación — se guardan en centavos.
+ *
+ * El 0 entra a propósito: la DB lo acepta (`between 0 and 100000000`) y es un
+ * número que el dueño puede haber tipeado en serio ("esa noche no me costó
+ * nada"). Distinto del gasto en pauta, donde el 0 tiene su propia acción
+ * («No tuvo pauta») y por eso sí es un error.
+ */
+function perGuestField(tooHigh: string) {
+  return z.number(M.unreadable).nonnegative(M.negative).max(L.perGuestArsMax, tooHigh).nullish()
+}
+
+/**
  * Los opcionales son `.nullish()` campo por campo y los `null` se completan en
  * UN transform al final del objeto. Dos trampas de zod v4 que esto esquiva:
  * una `z.union([schema, z.null(), …])` que falla se resume en un genérico
@@ -109,6 +139,12 @@ export const saveEventMarketingSchema = z
       .refine((v) => Math.round(v * 100) >= 1, M.spendMissing),
     messages: countField(L.messagesMax).nullish(),
     reach: countField(L.reachMax).nullish(),
+    // Facturación y dólar YA NO van de a pares: la migración `20260919120000`
+    // borró el CHECK `sem_revenue_needs_rate` porque el dólar dejó de ser "lo
+    // que acompaña a la facturación" y pasó a ser lo que convierte la PAUTA a
+    // pesos. Cada uno entra solo; si falta el dólar, la pantalla muestra el
+    // margen bruto y lo avisa (ver `rateMissing`), pero nunca se rebota un
+    // número que el dueño se tomó el trabajo de cargar.
     revenueArs: z
       .number(M.unreadable)
       .nonnegative(M.negative)
@@ -126,6 +162,13 @@ export const saveEventMarketingSchema = z
         }
       })
       .nullish(),
+    // El CHECK `sem_no_ads_is_bare` ahora también los mira: con gasto 0 los dos
+    // tienen que ir en null. Este schema no puede violarlo — `adSpendUsd` exige
+    // al menos 1 centavo y corta antes con «Poné cuánto se gastó…», que es el
+    // mensaje humano del caso — y la única fila con gasto 0 la escribe
+    // `markEventWithoutAds`, que inserta la fila pelada.
+    revenuePerGuestArs: perGuestField(M.revenuePerGuestOutOfRange),
+    costPerGuestArs: perGuestField(M.costPerGuestOutOfRange),
     // `.trim()` corre antes que `.max()`: el tope es sobre lo que se guarda.
     // `.length` cuenta como el `maxLength` del textarea (unidades UTF-16), más
     // estricto que el `char_length` de Postgres: nunca pasa algo que la DB rebote.
@@ -144,20 +187,11 @@ export const saveEventMarketingSchema = z
     reach: v.reach ?? null,
     revenueArs: v.revenueArs ?? null,
     usdArsRate: v.usdArsRate ?? null,
+    revenuePerGuestArs: v.revenuePerGuestArs ?? null,
+    costPerGuestArs: v.costPerGuestArs ?? null,
     notes: v.notes ? v.notes : null,
     expectedUpdatedAt: v.expectedUpdatedAt ?? null,
   }))
-  // Facturación y dólar van juntos (CHECK `sem_revenue_needs_rate`). El error
-  // cae en el campo que FALTA, que es el que el dueño tiene que completar. Corre
-  // sobre la salida normalizada: acá "no cargado" ya es `null`, nunca `undefined`.
-  .superRefine((v, ctx) => {
-    if (v.revenueArs !== null && v.usdArsRate === null) {
-      ctx.addIssue({ code: 'custom', path: ['usdArsRate'], message: M.rateMissing })
-    }
-    if (v.usdArsRate !== null && v.revenueArs === null) {
-      ctx.addIssue({ code: 'custom', path: ['revenueArs'], message: M.revenueMissing })
-    }
-  })
 
 /** Lo que manda el form. Números en unidades, nunca centavos. */
 export type SaveEventMarketingInput = {
@@ -167,6 +201,10 @@ export type SaveEventMarketingInput = {
   reach: number | null
   revenueArs: number | null
   usdArsRate: number | null
+  /** El cubierto, en PESOS (los $ 27.000 del ejemplo del dueño). */
+  revenuePerGuestArs: number | null
+  /** Lo que cuesta servir a una persona, en PESOS (los $ 15.000 del ejemplo). */
+  costPerGuestArs: number | null
   notes: string | null
   expectedUpdatedAt: string | null
 }
@@ -188,6 +226,8 @@ const MARKETING_FIELDS: ReadonlySet<string> = new Set<MarketingField>([
   'reach',
   'revenueArs',
   'usdArsRate',
+  'revenuePerGuestArs',
+  'costPerGuestArs',
   'notes',
 ])
 
@@ -224,6 +264,10 @@ export function toMarketingDbFields(values: SaveEventMarketingValues) {
     reach: values.reach,
     revenue_ars_cents: values.revenueArs === null ? null : Math.round(values.revenueArs * 100),
     usd_ars_rate: values.usdArsRate === null ? null : Math.round(values.usdArsRate * 100) / 100,
+    revenue_per_guest_ars_cents:
+      values.revenuePerGuestArs === null ? null : Math.round(values.revenuePerGuestArs * 100),
+    cost_per_guest_ars_cents:
+      values.costPerGuestArs === null ? null : Math.round(values.costPerGuestArs * 100),
     notes: values.notes,
   }
 }
@@ -234,26 +278,28 @@ export function toMarketingDbFields(values: SaveEventMarketingValues) {
  * edición que se movió a una fecha futura y ya la tenía la manda tal cual (el
  * form la muestra), y rechazarla obligaba a borrarla para corregir una nota.
  *
- * Se compara en lo que guarda la DB (centavos, dólar a 2 decimales): el ida y
- * vuelta por el input no cuenta como cambio por coma flotante.
+ * Mira SOLO la facturación. Antes también exigía que el dólar fuera el mismo,
+ * porque la DB los guardaba de a pares; desde que se borró ese CHECK, el dólar
+ * es de la pauta y no de la caja, y una fecha futura tiene todo el derecho a
+ * cambiarlo (la pauta se gasta ANTES del evento). Compararlo hacía rebotar esa
+ * edición con «La facturación se carga cuando pasa la fecha», que además es
+ * mentira: nadie tocó la facturación.
+ *
+ * Se compara en centavos, lo que guarda la DB: el ida y vuelta por el input no
+ * cuenta como cambio por coma flotante.
  */
 export function sameStoredRevenue(
-  fields: Pick<ReturnType<typeof toMarketingDbFields>, 'revenue_ars_cents' | 'usd_ars_rate'>,
-  stored: Pick<EventMarketingDbRow, 'revenue_ars_cents' | 'usd_ars_rate'>,
+  fields: Pick<ReturnType<typeof toMarketingDbFields>, 'revenue_ars_cents'>,
+  stored: Pick<EventMarketingDbRow, 'revenue_ars_cents'>,
 ): boolean {
   const storedRevenue = toNumberOrNull(stored.revenue_ars_cents)
-  const storedRate = toNumberOrNull(stored.usd_ars_rate)
   if (fields.revenue_ars_cents === null || storedRevenue === null) return false
-  if (fields.usd_ars_rate === null || storedRate === null) return false
-  return (
-    fields.revenue_ars_cents === storedRevenue &&
-    Math.round(fields.usd_ars_rate * 100) === Math.round(storedRate * 100)
-  )
+  return fields.revenue_ars_cents === storedRevenue
 }
 
 /** Las columnas que alimentan `EventMarketingRow`. Queries y actions leen lo mismo. */
 export const EVENT_MARKETING_DB_SELECT =
-  'scheduled_event_id, ad_spend_usd_cents, messages, reach, revenue_ars_cents, usd_ars_rate, notes, updated_at, updated_by'
+  'scheduled_event_id, ad_spend_usd_cents, messages, reach, revenue_ars_cents, usd_ars_rate, revenue_per_guest_ars_cents, cost_per_guest_ars_cents, notes, updated_at, updated_by'
 
 /**
  * Una fila como llega de PostgREST. `numeric` y `bigint` pueden venir como
@@ -267,6 +313,8 @@ export type EventMarketingDbRow = {
   reach: number | string | null
   revenue_ars_cents: number | string | null
   usd_ars_rate: number | string | null
+  revenue_per_guest_ars_cents: number | string | null
+  cost_per_guest_ars_cents: number | string | null
   notes: string | null
   updated_at: string
   updated_by: string | null
@@ -295,6 +343,8 @@ export function toEventMarketingRow(
     reach: toNumberOrNull(raw.reach),
     revenueArsCents: toNumberOrNull(raw.revenue_ars_cents),
     usdArsRate: toNumberOrNull(raw.usd_ars_rate),
+    revenuePerGuestArsCents: toNumberOrNull(raw.revenue_per_guest_ars_cents),
+    costPerGuestArsCents: toNumberOrNull(raw.cost_per_guest_ars_cents),
     notes: raw.notes,
     updatedAt: raw.updated_at,
     updatedByName: shortName(displayName),

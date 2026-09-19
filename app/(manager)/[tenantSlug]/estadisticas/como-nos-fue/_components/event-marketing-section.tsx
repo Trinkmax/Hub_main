@@ -10,6 +10,7 @@ import {
   loadedBeforeEventLine,
   loadedByLabel,
   type MarketingActionState,
+  type MarketingBlock,
   type MarketingPhase,
   marketingStatusChip,
 } from '@/lib/salon/event-marketing'
@@ -59,7 +60,8 @@ export type EventMarketingSectionProps = {
   /** `YYYY-MM-DD`. */
   eventDate: string
   phase: MarketingPhase
-  block: { reservations: number; guests: number }
+  /** La gente de la fecha. `billableGuests` es la que multiplica la plata. */
+  block: MarketingBlock
   row: EventMarketingRow | null
   lastUsdArsRate: { rate: number; loadedAt: string } | null
   className?: string
@@ -176,6 +178,8 @@ export function EventMarketingSection({
         reach: null,
         revenueArsCents: null,
         usdArsRate: null,
+        revenuePerGuestArsCents: null,
+        costPerGuestArsCents: null,
         notes: null,
         updatedAt: '',
         updatedByName: null,

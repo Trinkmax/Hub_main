@@ -298,7 +298,16 @@ export function NightCard({
           eventTitle={block.title}
           eventDate={marketing.eventDate}
           phase={marketing.phase}
-          block={{ reservations: block.reservations, guests: block.guests }}
+          // `billableGuests` y `attendedGuests` son con lo que se multiplica la
+          // plata de la noche (lo contado al cerrar cada mesa, y lo reservado en
+          // las que quedaron sin cerrar): viajan desde el mismo agregador que
+          // los tres números de arriba, no se recalculan acá.
+          block={{
+            reservations: block.reservations,
+            guests: block.guests,
+            billableGuests: block.billableGuests,
+            attendedGuests: block.attendedGuests,
+          }}
           row={marketing.row}
           lastUsdArsRate={marketing.lastUsdArsRate}
         />

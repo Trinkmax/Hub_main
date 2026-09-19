@@ -1519,6 +1519,13 @@ const YM_RE = /^(19|20|21)\d{2}-(0[1-9]|1[0-2])$/
  *
  * `ym` llega validado por la page; si no, se corta acá antes de armar un rango
  * que Postgres rebotaría como 22008.
+ *
+ * Las ediciones viajan enteras a `buildMonthMarketingReport` (son
+ * `EditionSummary`, que cumple `MonthEditionInput`), así que la pestaña del mes
+ * recibe también `billableGuests` y `attendedGuests`: la gente con la que se
+ * multiplica el ingreso y el costo por persona sale del MISMO agregador que la
+ * ficha de la noche. Armar acá un objeto más chico sería la manera de que las
+ * dos pantallas dijeran números distintos para la misma fecha.
  */
 export async function getMonthMarketingReport(opts: {
   tenantId: string

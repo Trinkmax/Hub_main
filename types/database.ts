@@ -3767,6 +3767,7 @@ export type Database = {
       scheduled_event_marketing: {
         Row: {
           ad_spend_usd_cents: number
+          cost_per_guest_ars_cents: number | null
           created_at: string
           created_by: string | null
           id: string
@@ -3774,6 +3775,7 @@ export type Database = {
           notes: string | null
           reach: number | null
           revenue_ars_cents: number | null
+          revenue_per_guest_ars_cents: number | null
           scheduled_event_id: string
           tenant_id: string
           updated_at: string
@@ -3782,6 +3784,7 @@ export type Database = {
         }
         Insert: {
           ad_spend_usd_cents: number
+          cost_per_guest_ars_cents?: number | null
           created_at?: string
           created_by?: string | null
           id?: string
@@ -3789,6 +3792,7 @@ export type Database = {
           notes?: string | null
           reach?: number | null
           revenue_ars_cents?: number | null
+          revenue_per_guest_ars_cents?: number | null
           scheduled_event_id: string
           tenant_id: string
           updated_at?: string
@@ -3797,6 +3801,7 @@ export type Database = {
         }
         Update: {
           ad_spend_usd_cents?: number
+          cost_per_guest_ars_cents?: number | null
           created_at?: string
           created_by?: string | null
           id?: string
@@ -3804,6 +3809,7 @@ export type Database = {
           notes?: string | null
           reach?: number | null
           revenue_ars_cents?: number | null
+          revenue_per_guest_ars_cents?: number | null
           scheduled_event_id?: string
           tenant_id?: string
           updated_at?: string

@@ -9,11 +9,14 @@ import {
   keepMarketingDraft,
   lastRateChipLabel,
   lastValidFromDraft,
+  MARKETING_FIELD_LABELS,
   type MarketingDraft,
   MESSAGES_OVER_REACH_WARNING,
   marketingBaseline,
   marketingCopy,
+  marketingFieldEnabled,
   marketingRevenueVisible,
+  missingRateNotice,
   nextLastValid,
   pinOpenPendingRow,
   restoreMarkAfterFailedUndo,
@@ -33,10 +36,19 @@ const ASTRAL: EventMarketingRow = {
   reach: 8420,
   revenueArsCents: 248_000_000,
   usdArsRate: 1450,
+  revenuePerGuestArsCents: null,
+  costPerGuestArsCents: null,
   notes: 'Campaña de reels del 1/9 al 9/9',
   updatedAt: '2026-09-10T17:32:00+00:00',
   updatedByName: 'Nacho B.',
 }
+
+/**
+ * El otro ejemplo del dueño: la noche de ramen, con el cubierto a $ 27.000 y
+ * $ 15.000 de costo, sin facturación real cargada.
+ */
+const perGuest = { revenuePerGuestArsCents: 27_000_00, costPerGuestArsCents: 15_000_00 }
+const RAMEN: EventMarketingRow = { ...ASTRAL, ...perGuest, revenueArsCents: null }
 
 function draft(patch: Partial<MarketingDraft>): MarketingDraft {
   return { ...EMPTY_MARKETING_DRAFT, ...patch }
@@ -44,14 +56,16 @@ function draft(patch: Partial<MarketingDraft>): MarketingDraft {
 
 describe('draftFromRow', () => {
   it('escribe lo guardado como queda el input después del blur', () => {
-    expect(draftFromRow(ASTRAL)).toEqual({
+    expect(draftFromRow(RAMEN)).toEqual({
       adSpendUsd: '175,26',
       messages: '51',
       reach: '8.420',
-      revenueArs: '2.480.000',
+      revenuePerGuestArs: '27.000',
+      costPerGuestArs: '15.000',
+      revenueArs: '',
       usdArsRate: '1.450',
       notes: 'Campaña de reels del 1/9 al 9/9',
-      revenueOpen: true,
+      moneyOpen: true,
     })
   })
 
@@ -70,17 +84,37 @@ describe('draftFromRow', () => {
     ).toEqual(EMPTY_MARKETING_DRAFT)
   })
 
-  it('sin facturación deja la sección cerrada', () => {
+  it('sin ningún número de plata deja la sección cerrada', () => {
     const d = draftFromRow({ ...ASTRAL, revenueArsCents: null, usdArsRate: null, reach: null })
-    expect(d.revenueOpen).toBe(false)
+    expect(d.moneyOpen).toBe(false)
     expect(d.revenueArs).toBe('')
     expect(d.reach).toBe('')
   })
 
+  it('la sección abre con cualquiera de los cuatro: un ingreso por persona guardado se ve', () => {
+    // Si abriera solo con la facturación, el ingreso por persona quedaba
+    // escondido y el guardado siguiente lo borraba sin que nadie lo viera.
+    const soloIngreso = draftFromRow({
+      ...ASTRAL,
+      revenueArsCents: null,
+      usdArsRate: null,
+      revenuePerGuestArsCents: 27_000_00,
+    })
+    expect(soloIngreso.moneyOpen).toBe(true)
+    expect(soloIngreso.revenuePerGuestArs).toBe('27.000')
+    expect(draftFromRow({ ...ASTRAL, revenueArsCents: null }).moneyOpen).toBe(true)
+  })
+
+  it('el ingreso por persona en 0 es un valor cargado, no un vacío', () => {
+    const d = draftFromRow({ ...ASTRAL, costPerGuestArsCents: 0 })
+    expect(d.costPerGuestArs).toBe('0')
+    expect(d.moneyOpen).toBe(true)
+  })
+
   it('vuelve a leerse igual: el borrador de una fila guardada pasa el chequeo tal cual', () => {
-    const check = checkMarketingDraft(draftFromRow(ASTRAL), {
+    const check = checkMarketingDraft(draftFromRow(RAMEN), {
       ...CTX,
-      expectedUpdatedAt: ASTRAL.updatedAt,
+      expectedUpdatedAt: RAMEN.updatedAt,
     })
     expect(check.fieldErrors).toEqual({})
     expect(check.input).toEqual({
@@ -88,17 +122,19 @@ describe('draftFromRow', () => {
       adSpendUsd: 175.26,
       messages: 51,
       reach: 8420,
-      revenueArs: 2_480_000,
+      revenuePerGuestArs: 27_000,
+      costPerGuestArs: 15_000,
+      revenueArs: null,
       usdArsRate: 1450,
       notes: 'Campaña de reels del 1/9 al 9/9',
-      expectedUpdatedAt: ASTRAL.updatedAt,
+      expectedUpdatedAt: RAMEN.updatedAt,
     })
   })
 })
 
 describe('sameDraft', () => {
-  it('abrir la facturación sin escribir no es un cambio', () => {
-    expect(sameDraft(EMPTY_MARKETING_DRAFT, draft({ revenueOpen: true }))).toBe(true)
+  it('abrir la sección de plata sin escribir no es un cambio', () => {
+    expect(sameDraft(EMPTY_MARKETING_DRAFT, draft({ moneyOpen: true }))).toBe(true)
   })
 
   it('los espacios de más no son un cambio; un número sí', () => {
@@ -106,11 +142,14 @@ describe('sameDraft', () => {
     expect(sameDraft(saved, { ...saved, messages: ' 51 ' })).toBe(true)
     expect(sameDraft(saved, { ...saved, messages: '52' })).toBe(false)
     expect(sameDraft(saved, { ...saved, notes: 'otra' })).toBe(false)
+    expect(sameDraft(saved, { ...saved, revenuePerGuestArs: '27.000' })).toBe(false)
   })
 
-  it('cerrar la facturación la borra aunque los campos hayan quedado escritos', () => {
+  it('cerrar la sección borra su plata aunque los campos hayan quedado escritos', () => {
     const saved = draftFromRow({ ...ASTRAL, revenueArsCents: null, usdArsRate: null })
-    expect(sameDraft(saved, { ...saved, revenueArs: '10', revenueOpen: false })).toBe(true)
+    expect(sameDraft(saved, { ...saved, revenueArs: '10', revenuePerGuestArs: '27.000' })).toBe(
+      true,
+    )
   })
 })
 
@@ -188,6 +227,8 @@ describe('pinOpenPendingRow', () => {
       weekdayLabel: date,
       reservations: 11,
       guests: 29,
+      billableGuests: 29,
+      attendedGuests: 27,
       reservationsLabel: '11 reservas en pie',
       incomplete: false,
       row,
@@ -241,10 +282,12 @@ describe('nextLastValid', () => {
   })
 
   it('lastValidFromDraft lee cada campo de un borrador recién abierto', () => {
-    expect(lastValidFromDraft(draftFromRow(ASTRAL))).toEqual({
+    expect(lastValidFromDraft(draftFromRow({ ...ASTRAL, ...perGuest }))).toEqual({
       adSpendUsd: 175.26,
       messages: 51,
       reach: 8420,
+      revenuePerGuestArs: 27_000,
+      costPerGuestArs: 15_000,
       revenueArs: 2_480_000,
       usdArsRate: 1450,
     })
@@ -289,23 +332,28 @@ describe('checkMarketingDraft', () => {
     ).toEqual({ messages: M.countOutOfRange })
   })
 
-  it('facturación y dólar van juntos: el error cae en el que falta', () => {
+  it('facturación y dólar ya NO van de a pares: cada uno entra solo', () => {
+    // Desde que se borró el CHECK `sem_revenue_needs_rate`, el dólar es de la
+    // PAUTA y no de la caja: reclamarle el par a cualquiera de los dos rebotaba
+    // un número que el dueño se tomó el trabajo de cargar.
     const sinDolar = checkMarketingDraft(
-      draft({ adSpendUsd: '175,26', revenueOpen: true, revenueArs: '2.480.000' }),
+      draft({ adSpendUsd: '175,26', moneyOpen: true, revenueArs: '2.480.000' }),
       CTX,
     )
-    expect(sinDolar.fieldErrors).toEqual({ usdArsRate: M.rateMissing })
+    expect(sinDolar.fieldErrors).toEqual({})
+    expect(sinDolar.input).toMatchObject({ revenueArs: 2_480_000, usdArsRate: null })
 
     const sinFacturacion = checkMarketingDraft(
-      draft({ adSpendUsd: '175,26', revenueOpen: true, usdArsRate: '1.450' }),
+      draft({ adSpendUsd: '175,26', moneyOpen: true, usdArsRate: '1.450' }),
       CTX,
     )
-    expect(sinFacturacion.fieldErrors).toEqual({ revenueArs: M.revenueMissing })
+    expect(sinFacturacion.fieldErrors).toEqual({})
+    expect(sinFacturacion.input).toMatchObject({ revenueArs: null, usdArsRate: 1450 })
   })
 
-  it('una facturación ilegible no le reclama el dólar a nadie: ya tiene su error', () => {
+  it('una facturación ilegible solo tiene su propio error', () => {
     const check = checkMarketingDraft(
-      draft({ adSpendUsd: '175,26', revenueOpen: true, revenueArs: 'mucho' }),
+      draft({ adSpendUsd: '175,26', moneyOpen: true, revenueArs: 'mucho' }),
       CTX,
     )
     expect(check.fieldErrors).toEqual({ revenueArs: M.unreadable })
@@ -315,7 +363,7 @@ describe('checkMarketingDraft', () => {
     const check = checkMarketingDraft(
       draft({
         adSpendUsd: '175,26',
-        revenueOpen: true,
+        moneyOpen: true,
         revenueArs: '2.480.000',
         usdArsRate: '14,50',
       }),
@@ -326,35 +374,86 @@ describe('checkMarketingDraft', () => {
 
   it('una facturación en 0 no es una facturación', () => {
     const check = checkMarketingDraft(
-      draft({ adSpendUsd: '175,26', revenueOpen: true, revenueArs: '0', usdArsRate: '1.450' }),
+      draft({ adSpendUsd: '175,26', moneyOpen: true, revenueArs: '0', usdArsRate: '1.450' }),
       CTX,
     )
     expect(check.fieldErrors).toEqual({ revenueArs: M.revenueOutOfRange })
   })
 
-  it('con la sección cerrada, lo escrito en facturación no viaja', () => {
+  it('el ingreso y el costo por persona viajan en pesos, y el 0 es un número cargado', () => {
     const check = checkMarketingDraft(
-      draft({ adSpendUsd: '45', revenueOpen: false, revenueArs: 'abc', usdArsRate: '14' }),
+      draft({
+        adSpendUsd: '175,26',
+        moneyOpen: true,
+        revenuePerGuestArs: '27.000',
+        costPerGuestArs: '0',
+      }),
       CTX,
     )
     expect(check.fieldErrors).toEqual({})
-    expect(check.input?.revenueArs).toBeNull()
-    expect(check.input?.usdArsRate).toBeNull()
+    expect(check.input).toMatchObject({ revenuePerGuestArs: 27_000, costPerGuestArs: 0 })
   })
 
-  it('con la facturación fuera de la vista (fecha futura sin facturación guardada) no viaja', () => {
+  it('el tope por persona sale del schema del server, con sus palabras', () => {
+    const check = checkMarketingDraft(
+      draft({
+        adSpendUsd: '175,26',
+        moneyOpen: true,
+        revenuePerGuestArs: '1.000.001',
+        costPerGuestArs: '-5',
+      }),
+      CTX,
+    )
+    expect(check.fieldErrors).toEqual({
+      revenuePerGuestArs: M.revenuePerGuestOutOfRange,
+      costPerGuestArs: M.negative,
+    })
+    expect(check.input).toBeNull()
+  })
+
+  it('con la sección cerrada, ninguno de los cuatro viaja', () => {
+    const check = checkMarketingDraft(
+      draft({
+        adSpendUsd: '45',
+        moneyOpen: false,
+        revenuePerGuestArs: 'abc',
+        costPerGuestArs: '15.000',
+        revenueArs: 'abc',
+        usdArsRate: '14',
+      }),
+      CTX,
+    )
+    expect(check.fieldErrors).toEqual({})
+    expect(check.input).toMatchObject({
+      revenuePerGuestArs: null,
+      costPerGuestArs: null,
+      revenueArs: null,
+      usdArsRate: null,
+    })
+  })
+
+  it('con la facturación fuera de la vista (fecha futura) no viaja, pero el resto sí', () => {
+    // El cubierto y el dólar SÍ se cargan antes del evento: el precio se sabe
+    // de antemano y la pauta se paga antes.
     const check = checkMarketingDraft(
       draft({
         adSpendUsd: '60',
         messages: '12',
-        revenueOpen: true,
+        moneyOpen: true,
+        revenuePerGuestArs: '27.000',
         revenueArs: '100.000',
         usdArsRate: '1.450',
       }),
       { ...CTX, revenueVisible: marketingRevenueVisible('future', null) },
     )
     expect(check.fieldErrors).toEqual({})
-    expect(check.input).toMatchObject({ adSpendUsd: 60, messages: 12, revenueArs: null })
+    expect(check.input).toMatchObject({
+      adSpendUsd: 60,
+      messages: 12,
+      revenuePerGuestArs: 27_000,
+      usdArsRate: 1450,
+      revenueArs: null,
+    })
   })
 
   it('una edición movida a una fecha futura NO borra en silencio la facturación guardada', () => {
@@ -365,6 +464,40 @@ describe('checkMarketingDraft', () => {
       revenueVisible: marketingRevenueVisible('future', ASTRAL),
     })
     expect(check.input).toMatchObject({ revenueArs: 2_480_000, usdArsRate: 1450 })
+  })
+
+  it('el aviso del dólar no bloquea: se guarda igual', () => {
+    const d = draft({ adSpendUsd: '175,26', moneyOpen: true, revenueArs: '2.480.000' })
+    expect(checkMarketingDraft(d, CTX).input).not.toBeNull()
+    expect(missingRateNotice({ revenueArs: 2_480_000, usdArsRate: null })).toBe(M.rateMissing)
+    expect(missingRateNotice({ revenueArs: 2_480_000, usdArsRate: 1450 })).toBeNull()
+    // Sin facturación no hay retorno que calcular: no hay nada que avisar.
+    expect(missingRateNotice({ revenueArs: null, usdArsRate: null })).toBeNull()
+  })
+
+  it('el dólar SOLO, sin facturación, se guarda: es lo que pasa la pauta a pesos', () => {
+    // Era un rebote real mientras los dos iban de a pares: el form frenaba con
+    // «Cargaste el dólar pero no la facturación» justo el caso que ahora hace
+    // falta para cerrar la cuenta de la noche (ingreso y costo por persona,
+    // sin caja cargada). El server lo acepta desde que se borró el CHECK
+    // `sem_revenue_needs_rate`; el form también.
+    const d = draft({
+      adSpendUsd: '175,26',
+      moneyOpen: true,
+      revenuePerGuestArs: '27.000',
+      costPerGuestArs: '15.000',
+      usdArsRate: '1.450',
+    })
+    const check = checkMarketingDraft(d, CTX)
+    expect(check.fieldErrors).toEqual({})
+    expect(check.input).toMatchObject({
+      revenuePerGuestArs: 27_000,
+      costPerGuestArs: 15_000,
+      usdArsRate: 1450,
+      revenueArs: null,
+    })
+    // Y nada que avisar: el aviso del dólar es para la facturación sin dólar.
+    expect(missingRateNotice({ revenueArs: null, usdArsRate: 1450 })).toBeNull()
   })
 
   it('la nota viaja recortada, y vacía es null', () => {
@@ -395,6 +528,21 @@ describe('checkMarketingDraft', () => {
   })
 })
 
+describe('marketingFieldEnabled', () => {
+  it('la pauta siempre; la plata solo con la sección abierta', () => {
+    const cerrada = EMPTY_MARKETING_DRAFT
+    const abierta = draft({ moneyOpen: true })
+    expect(marketingFieldEnabled('adSpendUsd', cerrada, true)).toBe(true)
+    expect(marketingFieldEnabled('revenuePerGuestArs', cerrada, true)).toBe(false)
+    expect(marketingFieldEnabled('revenuePerGuestArs', abierta, true)).toBe(true)
+    // El dólar y el cubierto se cargan también en una fecha futura.
+    expect(marketingFieldEnabled('usdArsRate', abierta, false)).toBe(true)
+    expect(marketingFieldEnabled('costPerGuestArs', abierta, false)).toBe(true)
+    // La facturación no: esa fecha todavía no facturó nada.
+    expect(marketingFieldEnabled('revenueArs', abierta, false)).toBe(false)
+  })
+})
+
 describe('blockedSaveMessage', () => {
   it('nombra los campos en el orden de la pantalla', () => {
     expect(blockedSaveMessage({})).toBeNull()
@@ -405,6 +553,14 @@ describe('blockedSaveMessage', () => {
     expect(blockedSaveMessage({ reach: 'x', adSpendUsd: 'y', usdArsRate: 'z' })).toBe(
       'Corregí «Gastado», «Alcance» y «Dólar del día» para guardar.',
     )
+    expect(blockedSaveMessage({ costPerGuestArs: 'x', revenuePerGuestArs: 'y' })).toBe(
+      'Corregí «Ingreso por persona» y «Costo por persona» para guardar.',
+    )
+  })
+
+  it('los dos campos nuevos tienen la etiqueta que se ve en pantalla', () => {
+    expect(MARKETING_FIELD_LABELS.revenuePerGuestArs).toBe('Ingreso por persona')
+    expect(MARKETING_FIELD_LABELS.costPerGuestArs).toBe('Costo por persona')
   })
 })
 
@@ -415,11 +571,24 @@ describe('firstEmptyField', () => {
     expect(firstEmptyField(draft({ adSpendUsd: '175,26', messages: '51' }), true)).toBe('reach')
   })
 
-  it('con todo cargado vuelve a Gastado; la facturación cuenta solo si está a la vista', () => {
+  it('con todo cargado vuelve a Gastado; la plata cuenta solo con la sección abierta', () => {
     const full = draft({ adSpendUsd: '1', messages: '2', reach: '3' })
     expect(firstEmptyField(full, true)).toBe('adSpendUsd')
-    expect(firstEmptyField({ ...full, revenueOpen: true }, true)).toBe('revenueArs')
-    expect(firstEmptyField({ ...full, revenueOpen: true }, false)).toBe('adSpendUsd')
+    expect(firstEmptyField({ ...full, moneyOpen: true }, true)).toBe('revenuePerGuestArs')
+    expect(firstEmptyField({ ...full, moneyOpen: false }, true)).toBe('adSpendUsd')
+  })
+
+  it('en una fecha futura el foco saltea la facturación, que no está a la vista', () => {
+    const full = draft({
+      adSpendUsd: '1',
+      messages: '2',
+      reach: '3',
+      moneyOpen: true,
+      revenuePerGuestArs: '27.000',
+      costPerGuestArs: '15.000',
+    })
+    expect(firstEmptyField(full, true)).toBe('revenueArs')
+    expect(firstEmptyField(full, false)).toBe('usdArsRate')
   })
 })
 

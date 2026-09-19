@@ -31,6 +31,7 @@ import {
   canonicalInput,
   type EventMarketingRow,
   type MarketingActionState,
+  type MarketingBlock,
   type MarketingField,
   type MarketingPhase,
   marketingSentence,
@@ -47,12 +48,16 @@ import {
   lastRateChipLabel,
   lastValidFromDraft,
   MARKETING_FIELD_ORDER,
+  MARKETING_MONEY_FIELDS,
+  MARKETING_MONEY_HINTS,
   MARKETING_NUMBER_KINDS,
   MARKETING_UNREACHABLE,
   type MarketingDraft,
   marketingBaseline,
   marketingCopy,
+  marketingFieldEnabled,
   marketingRevenueVisible,
+  missingRateNotice,
   type NumericMarketingField,
   nextLastValid,
   sameDraft,
@@ -95,7 +100,8 @@ export type MarketingFormProps = {
   /** `YYYY-MM-DD`. */
   eventDate: string
   phase: MarketingPhase
-  block: { reservations: number; guests: number }
+  /** La gente de la fecha, incluida `billableGuests`: la que multiplica la plata. */
+  block: MarketingBlock
   row: EventMarketingRow | null
   lastUsdArsRate: { rate: number; loadedAt: string } | null
   onSaved: (row: EventMarketingRow) => void
@@ -173,7 +179,9 @@ export function MarketingForm({
   const formRef = useRef<HTMLFormElement>(null)
   const deleteButtonRef = useRef<HTMLButtonElement>(null)
   const inputs = useRef<Partial<Record<MarketingField, HTMLInputElement | HTMLTextAreaElement>>>({})
-  const focusRevenueOnMount = useRef(false)
+  // Al abrir la sección de plata el foco va a su primer campo, que se monta en
+  // el mismo render: se pide acá y lo cumple el `ref` cuando aparece.
+  const focusMoneyOnMount = useRef(false)
   // Al confirmar el borrado el diálogo cierra en el mismo click que prende
   // `deleting`: «Borrar pauta» está apagado y `focus()` no hace nada. Se pide
   // acá y se cumple cuando termina (si falló; si salió bien, el form ya no está).
@@ -202,8 +210,8 @@ export function MarketingForm({
     (field: MarketingField) => (el: HTMLInputElement | HTMLTextAreaElement | null) => {
       if (el) {
         inputs.current[field] = el
-        if (field === 'revenueArs' && focusRevenueOnMount.current) {
-          focusRevenueOnMount.current = false
+        if (field === 'revenuePerGuestArs' && focusMoneyOnMount.current) {
+          focusMoneyOnMount.current = false
           el.focus()
         }
       } else {
@@ -239,15 +247,31 @@ export function MarketingForm({
   }
   const blocked = blockedSaveMessage(visibleErrors)
 
-  const revenueOn = revenueVisible && draft.revenueOpen
-  const lines = previewLines(block, {
-    adSpendUsd: lastValid.adSpendUsd,
-    messages: lastValid.messages,
-    reach: lastValid.reach,
-    revenueArs: revenueOn ? lastValid.revenueArs : null,
-    usdArsRate: revenueOn ? lastValid.usdArsRate : null,
-  })
+  // Solo los campos que están A LA VISTA entran en la vista previa: si no, la
+  // cuenta mostraría plata de una sección cerrada que además no se va a guardar.
+  const onScreen = (field: NumericMarketingField) =>
+    marketingFieldEnabled(field, draft, revenueVisible) ? lastValid[field] : null
+  // La fase va también acá: la previa de una fecha que todavía no pasó tiene
+  // que hablar como la ficha después de guardar («Por ahora …»).
+  const lines = previewLines(
+    block,
+    {
+      adSpendUsd: lastValid.adSpendUsd,
+      messages: lastValid.messages,
+      reach: lastValid.reach,
+      revenuePerGuestArs: onScreen('revenuePerGuestArs'),
+      costPerGuestArs: onScreen('costPerGuestArs'),
+      revenueArs: onScreen('revenueArs'),
+      usdArsRate: onScreen('usdArsRate'),
+    },
+    phase,
+  )
   const previewText = lines.map((l) => l.text).join(' ')
+  // No bloquea: el dólar falta para el retorno, pero la carga entra igual.
+  const rateNotice = missingRateNotice({
+    revenueArs: onScreen('revenueArs'),
+    usdArsRate: onScreen('usdArsRate'),
+  })
 
   const changedUnderneath = (row?.updatedAt ?? null) !== baselineAt
 
@@ -259,11 +283,9 @@ export function MarketingForm({
       ...prev,
       [field]: nextLastValid(prev[field], value, MARKETING_NUMBER_KINDS[field]),
     }))
-    // Facturación y dólar se reclaman uno al otro: tocar cualquiera de los dos
-    // invalida lo que el server dijo del par.
-    const pair: MarketingField[] =
-      field === 'revenueArs' || field === 'usdArsRate' ? ['revenueArs', 'usdArsRate'] : [field]
-    setServerErrors((e) => withoutFields(e, pair))
+    // Cada campo entra solo (ya no hay pares): tocar uno borra lo que el server
+    // dijo de ESE campo y nada más.
+    setServerErrors((e) => withoutFields(e, [field]))
   }
 
   const markTouched = (field: MarketingField) => {
@@ -284,17 +306,33 @@ export function MarketingForm({
     disabled: pending,
   })
 
-  const toggleRevenue = () => {
-    if (draft.revenueOpen) {
-      const pair: MarketingField[] = ['revenueArs', 'usdArsRate']
-      setDraft((d) => ({ ...d, revenueOpen: false, revenueArs: '', usdArsRate: '' }))
-      setLastValid((prev) => ({ ...prev, revenueArs: null, usdArsRate: null }))
-      setServerErrors((e) => withoutFields(e, pair))
-      setTouched((t) => new Set([...t].filter((f) => !pair.includes(f))))
+  const toggleMoney = () => {
+    if (draft.moneyOpen) {
+      // Cerrar la sección es borrar sus cuatro números: lo que no se ve no se
+      // guarda, y dejarlos escritos por detrás terminaba guardando plata que el
+      // dueño creía haber sacado.
+      const money = [...MARKETING_MONEY_FIELDS]
+      setDraft((d) => ({
+        ...d,
+        moneyOpen: false,
+        revenuePerGuestArs: '',
+        costPerGuestArs: '',
+        revenueArs: '',
+        usdArsRate: '',
+      }))
+      setLastValid((prev) => ({
+        ...prev,
+        revenuePerGuestArs: null,
+        costPerGuestArs: null,
+        revenueArs: null,
+        usdArsRate: null,
+      }))
+      setServerErrors((e) => withoutFields(e, money))
+      setTouched((t) => new Set([...t].filter((f) => !money.some((m) => m === f))))
       return
     }
-    focusRevenueOnMount.current = true
-    setDraft((d) => ({ ...d, revenueOpen: true }))
+    focusMoneyOnMount.current = true
+    setDraft((d) => ({ ...d, moneyOpen: true }))
   }
 
   const applyLastRate = () => {
@@ -370,8 +408,14 @@ export function MarketingForm({
       if (res.code === 'invalid' && Object.keys(fieldErrors).length > 0) {
         setServerErrors(fieldErrors)
         // Un error en un campo que no está a la vista (la facturación de una
-        // fecha que el server ya considera futura) tiene que decirse igual.
-        const hidden = (fieldErrors.revenueArs || fieldErrors.usdArsRate) && !revenueOn
+        // fecha que el server ya considera futura) tiene que decirse igual: si
+        // no, el guardado falla y no hay nada rojo en ningún lado.
+        const hidden = MARKETING_FIELD_ORDER.some(
+          (f) =>
+            fieldErrors[f] !== undefined &&
+            f !== 'notes' &&
+            !marketingFieldEnabled(f, draft, revenueVisible),
+        )
         if (hidden) toast.error(res.message)
         return
       }
@@ -507,6 +551,93 @@ export function MarketingForm({
           <p className="mt-2 text-xs text-warning-text">{check.softWarning}</p>
         ) : null}
 
+        {/* La plata de la noche, en un desplegable: son cuatro números que no
+            se cargan todas las veces, y abiertos de entrada empujaban la pauta
+            —que es lo que casi siempre se viene a cargar— fuera de la pantalla. */}
+        <div className="mt-4">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="-ml-2 h-10 px-2 text-xs @sm:h-8"
+            aria-expanded={draft.moneyOpen}
+            aria-controls={`${uid}-money`}
+            onClick={toggleMoney}
+            disabled={pending}
+          >
+            {draft.moneyOpen ? (
+              <>
+                <X aria-hidden className="size-3.5" />
+                Quitar la plata
+              </>
+            ) : (
+              <>
+                <Plus aria-hidden className="size-3.5" />
+                Sumar la plata de la noche (opcional)
+              </>
+            )}
+          </Button>
+          {draft.moneyOpen ? (
+            <div
+              id={`${uid}-money`}
+              className="mt-2 grid gap-x-4 gap-y-3 border-l border-border/60 pl-3 @md:grid-cols-2 @md:pl-4"
+            >
+              {/* Ninguno lleva «(opcional)»: opcional es la sección entera, y
+                  cuatro veces la misma aclaración tapa las ayudas, que son las
+                  que de verdad dicen qué va en cada campo. */}
+              <MoneyField
+                {...numberField('revenuePerGuestArs')}
+                label="Ingreso por persona"
+                currency="ars"
+                placeholder="0"
+                hint={MARKETING_MONEY_HINTS.revenuePerGuestArs}
+              />
+              <MoneyField
+                {...numberField('costPerGuestArs')}
+                label="Costo por persona"
+                currency="ars"
+                placeholder="0"
+                hint={MARKETING_MONEY_HINTS.costPerGuestArs}
+              />
+              {revenueVisible ? (
+                <MoneyField
+                  {...numberField('revenueArs')}
+                  label="Facturación del evento"
+                  currency="ars"
+                  placeholder="0"
+                  hint={MARKETING_MONEY_HINTS.revenueArs}
+                />
+              ) : null}
+              <MoneyField
+                {...numberField('usdArsRate')}
+                label="Dólar del día"
+                currency="ars"
+                placeholder="0"
+                hint={MARKETING_MONEY_HINTS.usdArsRate}
+              >
+                {lastUsdArsRate && draft.usdArsRate.trim() === '' ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="-ml-2 h-7 justify-self-start px-2 text-xs tabular-nums pointer-coarse:h-10"
+                    onClick={applyLastRate}
+                    disabled={pending}
+                  >
+                    {lastRateChipLabel(lastUsdArsRate)}
+                  </Button>
+                ) : null}
+                {/* Aviso, no error: sin el dólar no hay retorno, pero se guarda igual. */}
+                {rateNotice ? (
+                  <p className="text-[11px] leading-snug text-warning-text">{rateNotice}</p>
+                ) : null}
+              </MoneyField>
+            </div>
+          ) : null}
+        </div>
+
+        {/* La vista previa va ÚLTIMA de los números: es el resumen de todo lo
+            que se acaba de tipear, incluida la cuenta de la noche. */}
         <div className="mt-4 border-t border-border/50 pt-3">
           <p aria-hidden className={EYEBROW}>
             Con estos números
@@ -532,67 +663,6 @@ export function MarketingForm({
             {srPreview}
           </p>
         </div>
-
-        {revenueVisible ? (
-          <div className="mt-4">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="-ml-2 h-10 px-2 text-xs @sm:h-8"
-              aria-expanded={draft.revenueOpen}
-              aria-controls={`${uid}-revenue`}
-              onClick={toggleRevenue}
-              disabled={pending}
-            >
-              {draft.revenueOpen ? (
-                <>
-                  <X aria-hidden className="size-3.5" />
-                  Quitar la facturación
-                </>
-              ) : (
-                <>
-                  <Plus aria-hidden className="size-3.5" />
-                  Sumar la facturación del evento (opcional)
-                </>
-              )}
-            </Button>
-            {draft.revenueOpen ? (
-              <div
-                id={`${uid}-revenue`}
-                className="mt-2 grid gap-x-4 gap-y-3 border-l border-border/60 pl-3 @md:grid-cols-2 @md:pl-4"
-              >
-                <MoneyField
-                  {...numberField('revenueArs')}
-                  label="Facturación del evento"
-                  currency="ars"
-                  placeholder="0"
-                  hint="Solo lo del evento, sin las mesas normales de esa noche."
-                />
-                <MoneyField
-                  {...numberField('usdArsRate')}
-                  label="Dólar del día"
-                  currency="ars"
-                  placeholder="0"
-                  hint="El que usaste para pagar Meta (el de la tarjeta)."
-                >
-                  {lastUsdArsRate && draft.usdArsRate.trim() === '' ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="-ml-2 h-7 justify-self-start px-2 text-xs tabular-nums pointer-coarse:h-10"
-                      onClick={applyLastRate}
-                      disabled={pending}
-                    >
-                      {lastRateChipLabel(lastUsdArsRate)}
-                    </Button>
-                  ) : null}
-                </MoneyField>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
 
         <div className="mt-4 grid gap-1.5">
           <div className="flex items-baseline justify-between gap-3">

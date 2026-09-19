@@ -29,6 +29,8 @@ function input(overrides: Record<string, unknown> = {}) {
     reach: null,
     revenueArs: null,
     usdArsRate: null,
+    revenuePerGuestArs: null,
+    costPerGuestArs: null,
     notes: null,
     expectedUpdatedAt: null,
     ...overrides,
@@ -53,6 +55,8 @@ describe('saveEventMarketingSchema — lo que el form manda bien', () => {
         reach: 8420,
         revenueArs: 2_480_000,
         usdArsRate: 1450,
+        revenuePerGuestArs: 27_000,
+        costPerGuestArs: 15_000,
         notes: '  campaña de reels del 1/9 al 9/9  ',
         expectedUpdatedAt: BASELINE,
       }),
@@ -60,6 +64,8 @@ describe('saveEventMarketingSchema — lo que el form manda bien', () => {
     expect(parsed.success).toBe(true)
     expect(parsed.data?.notes).toBe('campaña de reels del 1/9 al 9/9')
     expect(parsed.data?.expectedUpdatedAt).toBe(BASELINE)
+    expect(parsed.data?.revenuePerGuestArs).toBe(27_000)
+    expect(parsed.data?.costPerGuestArs).toBe(15_000)
   })
 
   it('un campo que no viaja es "no cargado", no un error', () => {
@@ -75,6 +81,8 @@ describe('saveEventMarketingSchema — lo que el form manda bien', () => {
       reach: null,
       revenueArs: null,
       usdArsRate: null,
+      revenuePerGuestArs: null,
+      costPerGuestArs: null,
       notes: null,
       expectedUpdatedAt: null,
     })
@@ -166,9 +174,13 @@ describe('saveEventMarketingSchema — Mensajes y Alcance', () => {
 })
 
 describe('saveEventMarketingSchema — Facturación y dólar', () => {
-  it('van juntos: el error cae en el campo que falta', () => {
-    expect(fieldErrors({ revenueArs: 2_480_000 })).toEqual({ usdArsRate: M.rateMissing })
-    expect(fieldErrors({ usdArsRate: 1450 })).toEqual({ revenueArs: M.revenueMissing })
+  it('ya NO van de a pares: cada uno entra solo', () => {
+    // El CHECK `sem_revenue_needs_rate` se borró (migración 20260919120000): el
+    // dólar es lo que pasa la PAUTA a pesos, no el acompañante obligado de la
+    // caja. Sin él la pantalla muestra el margen bruto y lo avisa; rebotar la
+    // carga era perder el número que el dueño ya tenía a mano.
+    expect(fieldErrors({ revenueArs: 2_480_000 })).toEqual({})
+    expect(fieldErrors({ usdArsRate: 1450 })).toEqual({})
     expect(fieldErrors({ revenueArs: 2_480_000, usdArsRate: 1450 })).toEqual({})
   })
 
@@ -204,6 +216,64 @@ describe('saveEventMarketingSchema — Facturación y dólar', () => {
       revenueArs: M.revenueOutOfRange,
     })
     expect(fieldErrors({ revenueArs: -5, usdArsRate: 1450 })).toEqual({ revenueArs: M.negative })
+  })
+})
+
+describe('saveEventMarketingSchema — Ingreso y costo por persona', () => {
+  it('el ejemplo del dueño entra tal cual: $ 27.000 y $ 15.000', () => {
+    expect(fieldErrors({ revenuePerGuestArs: 27_000, costPerGuestArs: 15_000 })).toEqual({})
+  })
+
+  it('no necesitan ni facturación ni dólar para entrar', () => {
+    // Son un estimado del dueño, no un número de la caja: se cargan solos.
+    expect(fieldErrors({ revenuePerGuestArs: 27_000 })).toEqual({})
+    expect(fieldErrors({ costPerGuestArs: 15_000 })).toEqual({})
+  })
+
+  it('van con centavos si el dueño los tipea', () => {
+    expect(fieldErrors({ revenuePerGuestArs: 27_500.5, costPerGuestArs: 15_200.25 })).toEqual({})
+  })
+
+  it('0 es un número cargado a propósito, no un vacío', () => {
+    const parsed = saveEventMarketingSchema.parse(
+      input({ revenuePerGuestArs: 0, costPerGuestArs: 0 }),
+    )
+    expect(parsed.revenuePerGuestArs).toBe(0)
+    expect(parsed.costPerGuestArs).toBe(0)
+  })
+
+  it('negativo dice negativo, en el campo que lo tiene', () => {
+    expect(fieldErrors({ revenuePerGuestArs: -27_000 })).toEqual({
+      revenuePerGuestArs: M.negative,
+    })
+    expect(fieldErrors({ costPerGuestArs: -1 })).toEqual({ costPerGuestArs: M.negative })
+  })
+
+  it('tope en $ 1.000.000, el CHECK de la DB, y el mensaje lo dice', () => {
+    expect(fieldErrors({ revenuePerGuestArs: EVENT_MARKETING_LIMITS.perGuestArsMax })).toEqual({})
+    expect(fieldErrors({ costPerGuestArs: EVENT_MARKETING_LIMITS.perGuestArsMax })).toEqual({})
+    // Un cubierto de dos millones es el precio tipeado en centavos.
+    expect(fieldErrors({ revenuePerGuestArs: 2_700_000 })).toEqual({
+      revenuePerGuestArs: `Revisá el ingreso por persona: el tope es $${NBSP}1.000.000.`,
+    })
+    expect(fieldErrors({ costPerGuestArs: 1_500_000 })).toEqual({
+      costPerGuestArs: `Revisá el costo por persona: el tope es $${NBSP}1.000.000.`,
+    })
+  })
+
+  it('un string o un NaN no se entienden', () => {
+    for (const value of ['27000', Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(fieldErrors({ revenuePerGuestArs: value })).toEqual({
+        revenuePerGuestArs: M.unreadable,
+      })
+      expect(fieldErrors({ costPerGuestArs: value })).toEqual({ costPerGuestArs: M.unreadable })
+    }
+  })
+
+  it('que no viajen en el payload es "no cargados"', () => {
+    const parsed = saveEventMarketingSchema.parse({ scheduledEventId: EVENT_ID, adSpendUsd: 45 })
+    expect(parsed.revenuePerGuestArs).toBeNull()
+    expect(parsed.costPerGuestArs).toBeNull()
   })
 })
 
@@ -260,7 +330,14 @@ describe('markEventWithoutAdsSchema / deleteEventMarketingSchema', () => {
 describe('toMarketingDbFields', () => {
   it('pasa a centavos redondeando, no truncando (175,26 * 100 en float es 17525,999…)', () => {
     const values = saveEventMarketingSchema.parse(
-      input({ reach: 8420, revenueArs: 2_480_000.5, usdArsRate: 1450.5, notes: 'reels' }),
+      input({
+        reach: 8420,
+        revenueArs: 2_480_000.5,
+        usdArsRate: 1450.5,
+        revenuePerGuestArs: 27_000.35,
+        costPerGuestArs: 15_000,
+        notes: 'reels',
+      }),
     )
     expect(toMarketingDbFields(values)).toEqual({
       ad_spend_usd_cents: 17526,
@@ -268,6 +345,8 @@ describe('toMarketingDbFields', () => {
       reach: 8420,
       revenue_ars_cents: 248_000_050,
       usd_ars_rate: 1450.5,
+      revenue_per_guest_ars_cents: 2_700_035,
+      cost_per_guest_ars_cents: 1_500_000,
       notes: 'reels',
     })
   })
@@ -280,50 +359,64 @@ describe('toMarketingDbFields', () => {
       reach: null,
       revenue_ars_cents: null,
       usd_ars_rate: null,
+      revenue_per_guest_ars_cents: null,
+      cost_per_guest_ars_cents: null,
       notes: null,
     })
   })
 
+  it('un 0 por persona llega a la DB como 0, no como null', () => {
+    const fields = toMarketingDbFields(
+      saveEventMarketingSchema.parse(input({ revenuePerGuestArs: 0, costPerGuestArs: 0 })),
+    )
+    expect(fields.revenue_per_guest_ars_cents).toBe(0)
+    expect(fields.cost_per_guest_ars_cents).toBe(0)
+  })
+
   it('el techo en unidades cae justo en el CHECK en centavos', () => {
     const values = saveEventMarketingSchema.parse(
-      input({ adSpendUsd: 100_000, revenueArs: 1_000_000_000, usdArsRate: 100_000 }),
+      input({
+        adSpendUsd: 100_000,
+        revenueArs: 1_000_000_000,
+        usdArsRate: 100_000,
+        revenuePerGuestArs: EVENT_MARKETING_LIMITS.perGuestArsMax,
+        costPerGuestArs: EVENT_MARKETING_LIMITS.perGuestArsMax,
+      }),
     )
     const fields = toMarketingDbFields(values)
     expect(fields.ad_spend_usd_cents).toBe(10_000_000)
     expect(fields.revenue_ars_cents).toBe(100_000_000_000)
+    // `between 0 and 100000000` en las dos columnas nuevas.
+    expect(fields.revenue_per_guest_ars_cents).toBe(100_000_000)
+    expect(fields.cost_per_guest_ars_cents).toBe(100_000_000)
   })
 })
 
 describe('sameStoredRevenue', () => {
-  const fields = (revenueArs: number, usdArsRate: number) =>
+  const fields = (revenueArs: number, usdArsRate: number | null = 1450) =>
     toMarketingDbFields(saveEventMarketingSchema.parse(input({ revenueArs, usdArsRate })))
 
   it('lo guardado que vuelve por el input es igual, aunque PostgREST lo mande como string', () => {
-    expect(
-      sameStoredRevenue(fields(2_480_000, 1450), {
-        revenue_ars_cents: '248000000',
-        usd_ars_rate: '1450.00',
-      }),
-    ).toBe(true)
-    // Con centavos y dólar con decimales: el ida y vuelta en float no es un cambio.
-    expect(
-      sameStoredRevenue(fields(2_480_000.5, 1450.55), {
-        revenue_ars_cents: 248_000_050,
-        usd_ars_rate: 1450.55,
-      }),
-    ).toBe(true)
+    expect(sameStoredRevenue(fields(2_480_000), { revenue_ars_cents: '248000000' })).toBe(true)
+    // Con centavos: el ida y vuelta en float no es un cambio.
+    expect(sameStoredRevenue(fields(2_480_000.5), { revenue_ars_cents: 248_000_050 })).toBe(true)
   })
 
-  it('otra facturación u otro dólar es un cambio', () => {
-    const stored = { revenue_ars_cents: 248_000_000, usd_ars_rate: 1450 }
-    expect(sameStoredRevenue(fields(2_480_001, 1450), stored)).toBe(false)
-    expect(sameStoredRevenue(fields(2_480_000, 1451), stored)).toBe(false)
+  it('otra facturación es un cambio', () => {
+    expect(sameStoredRevenue(fields(2_480_001), { revenue_ars_cents: 248_000_000 })).toBe(false)
+  })
+
+  it('cambiar SOLO el dólar no toca la facturación', () => {
+    // La pauta se gasta antes del evento: en una fecha futura el dólar se puede
+    // corregir. Mirarlo acá hacía rebotar esa edición diciendo «La facturación
+    // se carga cuando pasa la fecha», que además era mentira.
+    expect(sameStoredRevenue(fields(2_480_000, 1451), { revenue_ars_cents: 248_000_000 })).toBe(
+      true,
+    )
   })
 
   it('sin facturación guardada, cualquier facturación es nueva', () => {
-    expect(
-      sameStoredRevenue(fields(2_480_000, 1450), { revenue_ars_cents: null, usd_ars_rate: null }),
-    ).toBe(false)
+    expect(sameStoredRevenue(fields(2_480_000), { revenue_ars_cents: null })).toBe(false)
   })
 })
 
@@ -335,6 +428,8 @@ describe('toEventMarketingRow', () => {
     reach: null,
     revenue_ars_cents: '248000000',
     usd_ars_rate: '1450.50',
+    revenue_per_guest_ars_cents: '2700000',
+    cost_per_guest_ars_cents: 1_500_000,
     notes: 'reels',
     updated_at: BASELINE,
     updated_by: 'u1',
@@ -348,10 +443,21 @@ describe('toEventMarketingRow', () => {
       reach: null,
       revenueArsCents: 248_000_000,
       usdArsRate: 1450.5,
+      revenuePerGuestArsCents: 2_700_000,
+      costPerGuestArsCents: 1_500_000,
       notes: 'reels',
       updatedAt: BASELINE,
       updatedByName: 'Nacho B.',
     })
+  })
+
+  it('un 0 por persona sobrevive: no se confunde con "sin cargar"', () => {
+    const row = toEventMarketingRow(
+      { ...raw, revenue_per_guest_ars_cents: '0', cost_per_guest_ars_cents: 0 },
+      null,
+    )
+    expect(row.revenuePerGuestArsCents).toBe(0)
+    expect(row.costPerGuestArsCents).toBe(0)
   })
 
   it('sin gestor vinculado, sin firma', () => {
@@ -366,6 +472,8 @@ describe('toEventMarketingRow', () => {
         messages: null,
         revenue_ars_cents: null,
         usd_ars_rate: null,
+        revenue_per_guest_ars_cents: null,
+        cost_per_guest_ars_cents: null,
         notes: null,
       },
       'Luz',
@@ -373,6 +481,9 @@ describe('toEventMarketingRow', () => {
     expect(row.adSpendUsdCents).toBe(0)
     expect(row.messages).toBeNull()
     expect(row.usdArsRate).toBeNull()
+    // El CHECK `sem_no_ads_is_bare` ahora también alcanza a la plata por persona.
+    expect(row.revenuePerGuestArsCents).toBeNull()
+    expect(row.costPerGuestArsCents).toBeNull()
     expect(row.updatedByName).toBe('Luz')
   })
 })
@@ -466,6 +577,8 @@ const NO_ADS_DB_ROW: EventMarketingDbRow = {
   reach: null,
   revenue_ars_cents: null,
   usd_ars_rate: null,
+  revenue_per_guest_ars_cents: null,
+  cost_per_guest_ars_cents: null,
   notes: null,
   updated_at: BASELINE,
   updated_by: USER_ID,
@@ -573,6 +686,8 @@ describe('saveEventMarketing — facturación en una fecha que todavía no pasó
     reach: null,
     revenue_ars_cents: '248000000',
     usd_ars_rate: '1450.00',
+    revenue_per_guest_ars_cents: null,
+    cost_per_guest_ars_cents: null,
     notes: 'nota corregida',
     updated_at: '2026-09-15T12:00:00+00:00',
     updated_by: USER_ID,
@@ -591,7 +706,7 @@ describe('saveEventMarketing — facturación en una fecha que todavía no pasó
     // El form la muestra y la manda tal cual para corregir, por ejemplo, la nota.
     const db = fakeSupabase({
       event: { data: FUTURE_EVENT, error: null },
-      stored: { data: { revenue_ars_cents: '248000000', usd_ars_rate: '1450.00' }, error: null },
+      stored: { data: { revenue_ars_cents: '248000000' }, error: null },
       update: { data: SAVED_ROW, error: null },
     })
     const state = await saveEventMarketing(
@@ -614,7 +729,7 @@ describe('saveEventMarketing — facturación en una fecha que todavía no pasó
   it('cambiar la facturación de una fecha futura sigue rebotando, sin update', async () => {
     const db = fakeSupabase({
       event: { data: FUTURE_EVENT, error: null },
-      stored: { data: { revenue_ars_cents: 200_000_000, usd_ars_rate: 1450 }, error: null },
+      stored: { data: { revenue_ars_cents: 200_000_000 }, error: null },
       update: { data: SAVED_ROW, error: null },
     })
     expect(await saveEventMarketing('bar-a', input(WITH_REVENUE))).toEqual(IN_FUTURE)
@@ -668,5 +783,108 @@ describe('saveEventMarketing — facturación en una fecha que todavía no pasó
     expect(state.ok).toBe(true)
     expect(db.tables).toEqual(['scheduled_events', 'scheduled_event_marketing'])
     expect(db.updates).toHaveLength(1)
+  })
+})
+
+// ─── saveEventMarketing: la plata por persona, de punta a punta ──────────────
+
+describe('saveEventMarketing — ingreso y costo por persona', () => {
+  const PAST_EVENT = { id: EVENT_ID, event_date: '2020-09-09' }
+  const FUTURE_EVENT = { id: EVENT_ID, event_date: '2999-09-09' }
+  /** La noche de ramen del ejemplo: $ 27.000 el cubierto, $ 15.000 de costo. */
+  const RAMEN = { revenuePerGuestArs: 27_000, costPerGuestArs: 15_000 }
+  const RAMEN_ROW: EventMarketingDbRow = {
+    scheduled_event_id: EVENT_ID,
+    ad_spend_usd_cents: 17526,
+    messages: 51,
+    reach: null,
+    revenue_ars_cents: null,
+    usd_ars_rate: null,
+    revenue_per_guest_ars_cents: '2700000',
+    cost_per_guest_ars_cents: '1500000',
+    notes: null,
+    updated_at: '2026-09-19T12:00:00+00:00',
+    updated_by: USER_ID,
+  }
+
+  beforeEach(() => {
+    vi.mocked(logAudit).mockClear()
+    vi.mocked(requireTenantAccess).mockResolvedValue({
+      tenant: { id: TENANT_A },
+      role: 'owner',
+      user: { id: USER_ID },
+    } as unknown as Awaited<ReturnType<typeof requireTenantAccess>>)
+  })
+
+  it('el alta las manda en centavos, las devuelve y las deja en el audit', async () => {
+    const db = fakeSupabase({
+      event: { data: PAST_EVENT, error: null },
+      insert: { data: RAMEN_ROW, error: null },
+    })
+    const state = await saveEventMarketing('bar-a', input(RAMEN))
+    expect(state.ok).toBe(true)
+    expect(db.inserts).toEqual([
+      expect.objectContaining({
+        revenue_per_guest_ars_cents: 2_700_000,
+        cost_per_guest_ars_cents: 1_500_000,
+      }),
+    ])
+    expect(state.ok && state.row).toMatchObject({
+      revenuePerGuestArsCents: 2_700_000,
+      costPerGuestArsCents: 1_500_000,
+    })
+    // La historia guarda con qué números se hizo la cuenta de esa noche.
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          revenue_per_guest_ars_cents: 2_700_000,
+          cost_per_guest_ars_cents: 1_500_000,
+        }),
+      }),
+    )
+  })
+
+  it('una fecha que todavía no pasó las puede cargar: son un estimado, no la caja', async () => {
+    const db = fakeSupabase({
+      event: { data: FUTURE_EVENT, error: null },
+      insert: { data: RAMEN_ROW, error: null },
+    })
+    const state = await saveEventMarketing('bar-a', input(RAMEN))
+    expect(state.ok).toBe(true)
+    // Sin facturación no se lee nada más: derecho al insert.
+    expect(db.tables).toEqual(['scheduled_events', 'scheduled_event_marketing'])
+    expect(db.inserts).toHaveLength(1)
+  })
+
+  it('vaciar los campos las manda en null, no las deja pegadas', async () => {
+    const db = fakeSupabase({
+      event: { data: PAST_EVENT, error: null },
+      update: {
+        data: { ...RAMEN_ROW, revenue_per_guest_ars_cents: null, cost_per_guest_ars_cents: null },
+        error: null,
+      },
+    })
+    const state = await saveEventMarketing('bar-a', input({ expectedUpdatedAt: BASELINE }))
+    expect(state.ok).toBe(true)
+    expect(db.updates).toEqual([
+      expect.objectContaining({
+        revenue_per_guest_ars_cents: null,
+        cost_per_guest_ars_cents: null,
+      }),
+    ])
+  })
+
+  it('un número imposible no llega a la DB: rebota con el campo y el tope', async () => {
+    const db = fakeSupabase({
+      event: { data: PAST_EVENT, error: null },
+      insert: { data: RAMEN_ROW, error: null },
+    })
+    const state = await saveEventMarketing('bar-a', input({ revenuePerGuestArs: 27_000_000 }))
+    expect(state).toMatchObject({
+      ok: false,
+      code: 'invalid',
+      fieldErrors: { revenuePerGuestArs: M.revenuePerGuestOutOfRange },
+    })
+    expect(db.tables).toEqual([])
   })
 })

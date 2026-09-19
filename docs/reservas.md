@@ -952,7 +952,9 @@ edición.
   `20260915120000_scheduled_event_marketing.sql`): una fila por
   `scheduled_event_id`, con `ad_spend_usd_cents` (0 = «No tuvo pauta»),
   `messages`, `reach`, `revenue_ars_cents`, `usd_ars_rate` y `notes` (≤ 280).
-  Checks: una fila sin pauta va pelada, y facturación y dólar van juntos.
+  Check: una fila sin pauta va pelada. El 19/09 se le agregaron dos columnas
+  (ingreso y costo por persona) y se **borró** el check que ataba facturación y
+  dólar — ver el addendum 2026-09-19.
 - **RLS solo dueño, SELECT incluido** (`sem_owner_all`, como
   `commission_ledger`). Se aparta a propósito de la regla general: host y cajero
   leen `scheduled_events`, pero la plata de la pauta no.
@@ -977,7 +979,9 @@ edición.
    nombrada. Nunca promedio de cocientes.
 6. **Hoy y lo que viene es «Por ahora»**: fuera de los cocientes agrupados y de
    los pendientes, pero su gasto sí suma en lo invertido del mes, rotulado aparte.
-7. **Facturación no es ganancia.** El verbo es «facturó», nunca «volvió».
+7. **Facturación no es ganancia.** El verbo es «facturó», nunca «volvió». Desde
+   el 19/09 convive con el **resultado de la noche**, que sí resta costos — pero
+   tampoco es «la ganancia del bar»: ver el addendum 2026-09-19.
 8. **Sin benchmarks ni semáforos.** La única alerta es aritmética: el evento
    facturó menos de lo que costó la pauta.
 9. **Pantalla = CSV**: mismo redondeo, mismo formateador (hecho a mano, sin
@@ -1029,9 +1033,14 @@ libre).
    por persona`. Enter guarda: oración, tres fichas, `Cargó … · dd/MM HH:mm` y
    toast.
 3. Editar: alcance `8.420` → `US$ 20,81` y `0,6 % (6 de cada 1.000)`.
-   Facturación `2.480.000` sin dólar → error; chip o `1.450` → `Por cada US$ 1
-   de pauta, el evento facturó US$ 9,76.`, `$ 254.127`, `10,2 %`, `$ 85.517 por
-   persona`.
+   Facturación `2.480.000` sin dólar → **se guarda igual** (desde el 19/09; un
+   aviso debajo del campo dice que falta el dólar para el retorno, pero no
+   bloquea). Con el chip o `1.450` →
+   `Por cada US$ 1 de pauta, el evento facturó US$ 9,76.`, `$ 254.127`,
+   `10,2 %` y el por persona **repartido entre la gente que consumió**, no
+   entre la reservada: con las 27 contadas al cerrar las once mesas,
+   `$ 91.852 por cada una de las 27 personas que consumieron` (si quedan mesas
+   sin cerrar, el divisor y el número cambian).
 4. `1,234.50` en Gastado → al salir queda `1.234,50`. `51,5` en Mensajes →
    `Va sin decimales.` y `Corregí «Mensajes» para guardar.`
 5. Dos sesiones de dueño sobre la misma fecha → la segunda recibe el toast de
@@ -1257,3 +1266,161 @@ Tres detalles que no son cosméticos:
    (iOS Safari a veces se niega a achicarlos).
 10. **Tope**: `?from=2020-01-01&to=2026-01-01` → el label termina en
    `(recortado a 400 días)` y el `to` real es `2021-02-03`.
+
+---
+
+## Addendum 2026-09-19 — La cuenta de la noche (ingreso y costo por persona)
+
+Pedido del dueño, textual: *«hace falta en el panel que hiciste de marketing y
+demás para las métricas, poder cargar el costo por persona del evento y el
+ingreso por persona del evento. El 2x1 no se sabe exactamente, pero por ejemplo,
+una noche de ramen que ponele sale 27 mil pesos por persona y capaz el costo por
+persona es de 15 mil pesos, ahí podés calcular la ganancia teniendo en cuenta
+esto y restándole la pauta, para poder sacar la ganancia.»*
+
+Con la pauta sola se sabía cuánto costó traer gente, no si la noche dejó plata.
+Ahora cada fecha puede llevar **cuánto deja una persona** y **cuánto cuesta
+servirla**, y el sistema cierra la cuenta.
+
+### La cuenta, en orden
+
+```
+personas      = billableGuests  (por mesa: lo contado al cerrarla; si quedó sin
+                                 cerrar, lo reservado)
+ingreso       = facturación real si está cargada,  si no  personas × ingreso por persona
+costo         = personas × costo por persona
+margen bruto  = ingreso − costo
+pauta en $    = gastado USD × dólar del día
+RESULTADO     = margen bruto − pauta en $
+```
+
+Con el ejemplo del dueño (29 personas, $ 27.000 y $ 15.000, US$ 175,26 a
+$ 1.450): `29 × $ 27.000 = $ 783.000 · costo $ 435.000 · margen $ 348.000 ·
+pauta $ 254.127 → quedan $ 93.873`.
+
+**Nunca se llama «la ganancia del bar».** No descuenta sueldos, alquiler ni
+impuestos, y la pantalla lo dice con esas palabras (`NIGHT_RESULT_DISCLAIMER`)
+cada vez que muestra el número. Si da negativo se dice **en palabras** («la
+noche quedó $ 341.127 abajo»), nunca un `-$` suelto: un número rojo pelado se
+lee como un monto a cobrar.
+
+### Cuatro decisiones del dueño (no reabrir)
+
+1. **Los dos números se cargan en CADA FECHA**, junto al resto de la pauta, no
+   por formato. Dos fechas del mismo evento pueden tener valores distintos y el
+   resultado del mes suma cada una con los suyos.
+2. **«Facturación del evento» se queda**, opcional, y **manda** sobre el
+   estimado por persona cuando está cargada: si la caja ya dijo cuánto entró, no
+   hay por qué estimarlo. La pantalla avisa cuál de los dos mandó y cuánto daba
+   el otro.
+3. **La gente tiene que ser lo más precisa posible**: `billableGuests`, el mismo
+   criterio que el motor de comisiones (`coalesce(actual_guests,
+   estimated_guests)` mesa por mesa). **No** es lo reservado, que es lo que
+   divide la pauta. Cada texto nombra su base, y cuando no coinciden la ficha lo
+   explica sola: *«Se calculó con 29 personas: 27 contadas y 2 de mesas sin
+   cerrar.»*
+4. **El dólar dejó de ir de a pares con la facturación.** Ahora hace falta para
+   pasar la **pauta** a pesos, así que entra solo. Si falta, la pantalla muestra
+   el margen bruto y lo avisa en vez de rebotar la carga.
+
+### Migración `20260919120000_event_marketing_unit_economics.sql`
+
+- `+ revenue_per_guest_ars_cents bigint` y `+ cost_per_guest_ars_cents bigint`,
+  en centavos de **peso**, `between 0 and 100000000`. El 0 entra a propósito: es
+  un número que el dueño puede haber tipeado en serio.
+- `sem_no_ads_is_bare` **rehecho** para incluirlas: una fecha «No tuvo pauta»
+  sigue sin admitir un solo número de plata colgado.
+- `sem_revenue_needs_rate` **borrado** (decisión 4).
+
+### Regla 13: cuándo existe la cuenta
+
+La decide **un solo dato** — que esté cargado el ingreso **o** el costo por
+persona (`hasNightAccount` en `event-marketing.ts`) — y la preguntan los tres
+lados: la ficha, la vista previa del formulario y las ocho columnas nuevas del
+CSV, que salen juntas o no sale ninguna. «Juntas» es de `marketingCsvCells`:
+encima corre el blanqueo por fase (`MARKETING_LIVE_BLANK_HEADERS`), que en una
+fecha que todavía no pasó deja solo los dos por persona.
+
+**La facturación sola no alcanza**, aunque sea plata. Las fechas que ya estaban
+cargadas cuando llegó esta pantalla tienen facturación y dólar y nada más: si
+contaran, a todas les aparecería de un día para el otro una sección que repite
+la facturación que «Retorno» ya muestra y que encima reclama en ámbar un dato
+que nadie les pidió. **Una fecha vieja se sigue viendo exactamente como se
+veía**; la cuenta aparece cuando el dueño la empieza a cargar.
+
+### Dónde se ve
+
+- **Ficha del evento** → bloque «La cuenta de la noche», entre la ficha técnica
+  y «Retorno» (va antes porque es lo que el dueño pidió; «Retorno» es un número
+  de la pauta, no de la noche). Titular, la cuenta paso a paso con los números
+  resaltados, qué falta si falta algo, lo que dejó cada persona, con cuánta
+  gente se calculó y el disclaimer.
+- **Recuadro «Retorno»** → su `$ X por persona` reparte la facturación entre la
+  misma gente del cálculo, para no decir dos «por persona» distintos en la
+  misma ficha. Como la oración de arriba muestra la **reservada**, el texto
+  nombra su base cuando no coinciden: `$ 91.852 por cada una de las 27 personas
+  que consumieron`. Hace falta porque la línea que lo explica (`guestBasisLine`)
+  vive dentro de «La cuenta de la noche», y una fecha con facturación sola no la
+  tiene.
+- **Formulario** → los dos campos arriba de «Facturación del evento» dentro del
+  desplegable «Sumar la plata de la noche». Se cargan en cualquier fecha
+  (también futuras: el cubierto se sabe de antemano); la facturación real no.
+  La vista previa recibe la **fase**, así que en una fecha que todavía no pasó
+  dice lo mismo que va a decir la ficha al guardar («por ahora quedan …»). Un
+  `0` en «Gastado» cuenta como pauta sin cargar: cierra con «falta la pauta para
+  cerrar la cuenta» en vez de mostrar el margen bruto como resultado.
+- **Pestaña «Pauta»** → columna **Resultado** por fecha (aparece solo si alguna
+  fecha del mes tiene la cuenta completa), ficha «Resultado» del mes, la cuenta
+  del mes paso a paso y dos notas al pie. El resultado del mes suma **solo** las
+  fechas con ingreso, costo y dólar: a una fecha a la que le falta el dólar se
+  le vería el margen en su fila, pero sumarlo sin poder restarle su pauta
+  inflaría el mes.
+- **Planillas** → `Personas del cálculo`, `Ingreso por persona ARS`, `Costo por
+  persona ARS`, `Ingreso ARS`, `Costo ARS`, `Margen ARS`, `Pauta ARS`,
+  `Resultado ARS`, antes de `Nota`. En el CSV el resultado negativo va **con
+  signo** (Excel lo lee como número); en pantalla, el mismo caso se dice
+  «abajo». Los dos por persona se escriben con sus centavos si los tienen
+  (`27500,50`): son los únicos que en Excel se multiplican por la gente de al
+  lado. `Pauta ARS` sale solo si hay `Margen ARS`, igual que en la ficha: sola,
+  al lado de un margen vacío, invita a una resta que no es la cuenta. Una fecha
+  que todavía no pasó no lleva las seis calculadas —`Personas del cálculo`
+  incluida, que sin la noche cerrada todavía puede cambiar—; `Ingreso por
+  persona ARS` y `Costo por persona ARS` viajan tal cual se cargaron, igual que
+  `Pauta USD` y `Dólar`.
+
+### Smoke manual
+
+1. **09/09, Noche Astral** (ya cargada, con facturación y dólar) → la ficha se
+   ve **igual que antes**: oración, tres fichas, ficha técnica y «Retorno».
+   **No** aparece «La cuenta de la noche». La pestaña Pauta no muestra columna
+   «Resultado».
+2. Una fecha de ramen → `Pauta en Meta` → `Editar` → `Sumar la plata de la
+   noche` → Ingreso `27.000`, Costo `15.000`. La vista previa cierra con
+   `29 personas × $ 27.000 = $ 783.000 · costo $ 435.000 · margen $ 348.000 ·
+   pauta $ 254.127 → quedan $ 93.873`.
+3. Guardar → aparece «La cuenta de la noche» con `La noche dejó $ 93.873.`,
+   `Cada persona dejó $ 12.000 y la pauta se cubrió con 22 personas.`,
+   `Se calculó con 29 personas: 27 contadas y 2 de mesas sin cerrar.` y la
+   aclaración de que no es la ganancia del bar.
+4. Borrar el dólar y guardar → **se guarda** (no rebota): titular
+   `El margen de la noche fue $ 348.000.` y, en ámbar, `Falta el dólar del día
+   para pasar la pauta a pesos: por ahora, esto es el margen bruto.`
+5. Poner Ingreso `12.000` → `La noche quedó $ 341.127 abajo.` en ámbar, y ni un
+   solo `-$` en toda la sección.
+6. Cargar Facturación `900.000` → el primer paso pasa a decir `facturación
+   $ 900.000` y abajo aparece `El ingreso es la facturación real de la caja:
+   manda sobre los $ 27.000 por persona, que daban $ 783.000.` El recuadro
+   «Retorno» sigue abajo sin contradecirlo.
+7. Fecha futura → el desplegable de plata abre, con ingreso, costo y dólar, pero
+   **sin** «Facturación del evento». Los textos hablan en presente («Por ahora
+   la noche va dejando …»), **también la vista previa** «Con estos números»
+   (`→ por ahora quedan $ 93.873`, nunca `la noche quedó …`).
+8. «No tuvo pauta» sobre una fecha sin cargar → queda pelada; `Cambiar` abre el
+   form **vacío**, sin arrastrar plata por persona.
+9. Pestaña **Pauta** del mes con dos fechas cargadas → columna `Resultado`, la
+   línea de la cuenta del mes, la ficha `Resultado` con su base y las dos notas
+   al pie (la segunda avisa que la gente del cálculo puede no coincidir con la
+   columna «Personas»). Una fecha sin dólar muestra `—` con el motivo.
+10. Exportar el mes → las ocho columnas nuevas llenas en las fechas con cuenta y
+    **todas vacías** en las que no la tienen; la fila de total
+    `… con ingreso y costo cargados (N fechas)` cuadra con la pantalla.

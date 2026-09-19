@@ -127,6 +127,13 @@ function auditNumbers(row: EventMarketingDbRow) {
     reach: row.reach === null ? null : Number(row.reach),
     revenue_ars_cents: row.revenue_ars_cents === null ? null : Number(row.revenue_ars_cents),
     usd_ars_rate: row.usd_ars_rate === null ? null : Number(row.usd_ars_rate),
+    // La plata por persona también queda en la historia: es con la que se
+    // calcula el resultado de la noche, y si mañana cambia hay que poder decir
+    // con qué números estaba hecha la cuenta de ayer.
+    revenue_per_guest_ars_cents:
+      row.revenue_per_guest_ars_cents === null ? null : Number(row.revenue_per_guest_ars_cents),
+    cost_per_guest_ars_cents:
+      row.cost_per_guest_ars_cents === null ? null : Number(row.cost_per_guest_ars_cents),
   }
 }
 
@@ -178,6 +185,11 @@ export async function saveEventMarketing(
   // facturación. La única excepción es la que YA estaba guardada (la edición se
   // movió a una fecha futura): viaja tal cual y se deja, si no corregir una nota
   // obligaba a borrarla.
+  //
+  // El ingreso y el costo POR PERSONA no entran en esta regla: son lo que el
+  // dueño estima de antemano («el ramen sale 27 mil y me cuesta 15 mil»), no un
+  // número de la caja. Cargarlos antes de la fecha es exactamente para lo que
+  // sirven.
   if (values.revenueArs !== null && event.event_date > todayInCordoba()) {
     let unchanged = false
     if (values.expectedUpdatedAt !== null) {
@@ -185,7 +197,7 @@ export async function saveEventMarketing(
       // después de esta lectura, el update de abajo (mismo filtro) rebota igual.
       const storedRes = await supabase
         .from('scheduled_event_marketing')
-        .select('revenue_ars_cents, usd_ars_rate')
+        .select('revenue_ars_cents')
         .eq('tenant_id', auth.tenantId)
         .eq('scheduled_event_id', values.scheduledEventId)
         .eq('updated_at', values.expectedUpdatedAt)
@@ -201,7 +213,7 @@ export async function saveEventMarketing(
       if (!storedRes.data) return fail('stale', SAVE_STALE)
       unchanged = sameStoredRevenue(
         fields,
-        storedRes.data as Pick<EventMarketingDbRow, 'revenue_ars_cents' | 'usd_ars_rate'>,
+        storedRes.data as Pick<EventMarketingDbRow, 'revenue_ars_cents'>,
       )
     }
     if (!unchanged) {

@@ -20,6 +20,11 @@
  *   número dejaría de significar "gente que contamos" y no habría manera de
  *   notarlo. Un `actual_guests` en NULL no es un olvido: es una mesa que quedó
  *   sin cerrar, y el reporte lo dice con esas palabras.
+ * - **Para la plata hay un cuarto número: `billableGuests`.** Ahí sí se
+ *   completa con lo reservado, mesa por mesa (`attended ?? guests`), porque la
+ *   cuenta del ingreso y el costo por persona necesita un total de gente y no
+ *   puede quedarse corta por las mesas que el salón no cerró. Va aparte y con
+ *   su nombre justamente para que "asistieron" no cambie de significado.
  * - **Nunca un porcentaje de asistencia.** Miente por los dos lados: el
  *   numerador está casi siempre incompleto (en el HUB, 20 de 24 mesas del Ramen
  *   del 7/9 quedaron sin cerrar) y el ratio real pasa de 100 (el 3/9 Pizza
@@ -34,6 +39,7 @@ import {
   csvFormulaGuard,
   type EventMarketingRow,
   MARKETING_EXPORT_HEADERS,
+  MARKETING_LIVE_BLANK_HEADERS,
   marketingCsvCells,
 } from './event-marketing'
 import type { SalonReservationStatus } from './types'
@@ -125,6 +131,21 @@ export type ReportBlock = {
   maxParty: number | null
   /** Gente contada al cerrar mesas, solo de reservas en pie. */
   attendedGuests: number
+  /**
+   * La gente con la que se hace plata: por cada mesa EN PIE, lo contado al
+   * cerrarla y, si quedó sin cerrar, lo reservado (`attended ?? guests`).
+   *
+   * Convive con los otros dos a propósito, no reemplaza a ninguno:
+   * - `guests` es lo RESERVADO. Es uno de los tres números grandes que pidió el
+   *   dueño y no se toca.
+   * - `attendedGuests` es lo que se CONTÓ, y queda corto cuando el salón no
+   *   cerró las mesas (20 de 24 del Ramen del 7/9 quedaron sin cerrar).
+   * - Este es el mejor estimador de cuánta gente realmente consumió, que es la
+   *   que multiplica el ingreso y el costo por persona de la pauta. Mismo
+   *   criterio que el motor de comisiones: `coalesce(actual_guests,
+   *   estimated_guests)`.
+   */
+  billableGuests: number
   /** Cuántas de las mesas en pie se cerraron con conteo. */
   countedTables: number
   cancelled: number
@@ -185,6 +206,7 @@ const EMPTY_BLOCK = {
   guests: 0,
   reservations: 0,
   attendedGuests: 0,
+  billableGuests: 0,
   countedTables: 0,
   cancelled: 0,
   noShow: 0,
@@ -243,6 +265,10 @@ function absorb(acc: Acc, row: ReportReservationRow): void {
   acc.guests += guests
   acc.reservations += 1
   acc._parties.push(guests)
+  // Lo contado si la mesa se cerró; lo reservado si no. Mesa por mesa: sumar
+  // los dos totales por separado y elegir uno perdería las mesas cerradas de
+  // una noche a medio cerrar, que es el caso normal.
+  acc.billableGuests += attended ?? guests
   if (attended !== null) {
     acc.attendedGuests += attended
     acc.countedTables += 1
@@ -487,7 +513,7 @@ export type ReportMarketingByEvent = Readonly<Record<string, EventMarketingRow>>
 /**
  * `;` + BOM: es lo que abre en columnas en Excel en español.
  *
- * Con `marketing`, cada bloque suma las 12 columnas de pauta. "Sin evento" las
+ * Con `marketing`, cada bloque suma las columnas de pauta. "Sin evento" las
  * lleva vacías: la pauta es de una fecha de evento y la ficha de las reservas
  * normales no tiene sección de pauta. Sin `marketing` la planilla queda byte a
  * byte como antes.
@@ -540,23 +566,7 @@ function editionWhen(e: { isFuture: boolean; isTonight: boolean }): string {
   return ''
 }
 
-/**
- * Las columnas de pauta que son cocientes. Una fecha de hoy o futura no los
- * lleva: en la tira de ediciones y en la planilla del mes esa fecha dice solo lo
- * cargado ("Por ahora: pauta US$ 60,00 · 12 mensajes"), y la misma edición no
- * puede leerse distinto en dos planillas. Es la misma lista que usa
- * `monthMarketingToCsv`.
- */
-const LIVE_EDITION_BLANK_HEADERS = new Set([
-  'Costo por mensaje USD',
-  '% de cierre',
-  'Costo por reserva USD',
-  'Costo por persona USD',
-  'Retorno (USD facturados por USD de pauta)',
-  'Pauta sobre facturación %',
-])
-
-/** Con `marketing`, cada edición suma las 12 columnas de pauta (vacías si no tiene fila). */
+/** Con `marketing`, cada edición suma las columnas de pauta (vacías si no tiene fila). */
 export function templateReportToCsv(
   report: TemplateReport,
   marketing?: ReportMarketingByEvent,
@@ -585,7 +595,7 @@ export function templateReportToCsv(
         ...cells,
         ...(live
           ? pauta.map((c, i) =>
-              LIVE_EDITION_BLANK_HEADERS.has(MARKETING_EXPORT_HEADERS[i] ?? '') ? '' : c,
+              MARKETING_LIVE_BLANK_HEADERS.has(MARKETING_EXPORT_HEADERS[i] ?? '') ? '' : c,
             )
           : pauta),
       ]

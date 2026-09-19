@@ -137,6 +137,11 @@ function withOverrides(
       colorHex: e.colorHex,
       reservations: e.reservations,
       guests: e.guests,
+      // La gente de la plata viaja igual que la reservada: sin esto, el
+      // instante optimista recalcularía el resultado de la noche con cero
+      // personas y la cuenta parpadearía a «—».
+      billableGuests: e.billableGuests,
+      attendedGuests: e.attendedGuests,
       startsAtLocal: String(i).padStart(5, '0'),
     })),
   })
@@ -355,6 +360,8 @@ export function MarketingMonthView({
       reach: null,
       revenueArsCents: null,
       usdArsRate: null,
+      revenuePerGuestArsCents: null,
+      costPerGuestArsCents: null,
       notes: null,
       updatedAt: '',
       updatedByName: null,
@@ -515,7 +522,12 @@ export function MarketingMonthView({
         eventTitle={e.title}
         eventDate={e.date}
         phase={e.phase}
-        block={{ reservations: e.reservations, guests: e.guests }}
+        block={{
+          reservations: e.reservations,
+          guests: e.guests,
+          billableGuests: e.billableGuests,
+          attendedGuests: e.attendedGuests,
+        }}
         row={e.row}
         lastUsdArsRate={lastUsdArsRate}
         initialDraft={drafts[e.eventId] ?? null}
@@ -670,7 +682,12 @@ export function MarketingMonthView({
                       eventDate={p.date}
                       // Solo entran al recuadro fechas que ya pasaron.
                       phase="past"
-                      block={{ reservations: p.reservations, guests: p.guests }}
+                      block={{
+                        reservations: p.reservations,
+                        guests: p.guests,
+                        billableGuests: p.billableGuests,
+                        attendedGuests: p.attendedGuests,
+                      }}
                       row={p.row}
                       lastUsdArsRate={lastUsdArsRate}
                       initialDraft={drafts[p.eventId] ?? null}
@@ -706,6 +723,24 @@ export function MarketingMonthView({
         <p className="max-w-prose text-sm leading-relaxed">{report.summary.join(' ')}</p>
       ) : null}
 
+      {/* La cuenta del mes, paso a paso, debajo de su propia oración (que ya
+          viene en `summary`). La aclaración de que no es la ganancia del bar
+          está en la pista de la ficha «Resultado» y en las notas al pie: acá
+          sería la tercera vez en la misma pantalla. */}
+      {report.result ? (
+        <p className="max-w-prose text-xs leading-relaxed text-muted-foreground tabular-nums">
+          <span
+            className={cn(
+              'font-medium',
+              report.result.negative ? 'text-warning-text' : 'text-foreground',
+            )}
+          >
+            {report.result.math}
+          </span>{' '}
+          · {report.result.base}.
+        </p>
+      ) : null}
+
       {report.tiles.length > 0 ? <MonthTiles tiles={report.tiles} /> : null}
 
       {report.rows.length > 0 ? (
@@ -723,6 +758,7 @@ export function MarketingMonthView({
             <MonthTable
               rows={report.rows}
               showReturnColumn={report.showReturnColumn}
+              showResultColumn={report.showResultColumn}
               dayHref={dayHref}
               edit={isMd ? listControls : { ...listControls, editingId: null }}
             />
@@ -767,7 +803,13 @@ function MonthTiles({ tiles }: { tiles: ReadonlyArray<MonthMarketingTile> }) {
     <dl
       className={cn(
         'grid grid-cols-2 gap-3',
-        tiles.length >= 4 ? 'md:grid-cols-4' : 'md:grid-cols-3',
+        // Con las cinco (se sumó «Resultado») en md entran de a tres y las dos
+        // que sobran quedan abajo: cinco columnas en 768px parten los números.
+        tiles.length >= 5
+          ? 'md:grid-cols-3 xl:grid-cols-5'
+          : tiles.length === 4
+            ? 'md:grid-cols-4'
+            : 'md:grid-cols-3',
       )}
     >
       {tiles.map((t) => (
@@ -804,18 +846,21 @@ function MonthTiles({ tiles }: { tiles: ReadonlyArray<MonthMarketingTile> }) {
 function MonthTable({
   rows,
   showReturnColumn,
+  showResultColumn,
   dayHref,
   edit,
 }: {
   rows: ReadonlyArray<MonthMarketingListRow>
   showReturnColumn: boolean
+  showResultColumn: boolean
   dayHref: (date: string) => string
   edit: EditControls
 }) {
   const th = 'px-3 py-2 font-medium'
   const num = 'px-3 py-2.5 text-right align-top tabular-nums'
-  // Fecha, Evento, Pauta, Mensajes, Cierre, Por reserva, Personas (+ Retorno) + Editar.
-  const columns = showReturnColumn ? 9 : 8
+  // Fecha, Evento, Pauta, Mensajes, Cierre, Por reserva, Personas (+ Retorno,
+  // + Resultado) + Editar.
+  const columns = 8 + (showReturnColumn ? 1 : 0) + (showResultColumn ? 1 : 0)
   return (
     <table className="w-full text-sm">
       <thead>
@@ -844,6 +889,11 @@ function MonthTable({
           {showReturnColumn ? (
             <th scope="col" className={cn(th, 'text-right')}>
               Retorno
+            </th>
+          ) : null}
+          {showResultColumn ? (
+            <th scope="col" className={cn(th, 'text-right')}>
+              Resultado
             </th>
           ) : null}
           <th scope="col" className={cn(th, 'pr-4')}>
@@ -896,6 +946,13 @@ function MonthTable({
                 {showReturnColumn ? (
                   <td className={cn(num, toneClass(r.cells.returnPerDollar.tone))}>
                     <CellText cell={r.cells.returnPerDollar} />
+                  </td>
+                ) : null}
+                {/* En negativo la celda dice «$ X abajo», nunca un número
+                    suelto en ámbar: lo arma `buildMonthMarketingReport`. */}
+                {showResultColumn ? (
+                  <td className={cn(num, 'whitespace-nowrap', toneClass(r.cells.nightResult.tone))}>
+                    <CellText cell={r.cells.nightResult} />
                   </td>
                 ) : null}
                 <td className="py-1.5 pr-3 pl-1 text-right align-top">

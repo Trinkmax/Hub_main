@@ -250,6 +250,98 @@ describe('aggregateDayReport', () => {
   })
 })
 
+describe('billableGuests: la gente con la que se hace plata', () => {
+  it('mesa cerrada cuenta lo contado y mesa sin cerrar cuenta lo reservado', () => {
+    // El caso del Ramen del 7/9: la mayoría de las mesas quedó sin cerrar, así
+    // que "asistieron" queda corto y no sirve para multiplicar plata.
+    const r = aggregateDayReport({
+      day: '2026-09-07',
+      events: [],
+      rows: [
+        res({ estimated_guests: 6, actual_guests: 6 }),
+        res({ estimated_guests: 5, actual_guests: 4 }),
+        res({ estimated_guests: 2 }),
+        res({ estimated_guests: 2 }),
+      ],
+    })
+    const b = r.blocks[0]
+    // Reservado 15, contado 10, y la cuenta de la plata: 6 + 4 + 2 + 2 = 14.
+    expect(b?.guests).toBe(15)
+    expect(b?.attendedGuests).toBe(10)
+    expect(b?.billableGuests).toBe(14)
+  })
+
+  it('con todas las mesas cerradas es exactamente lo contado', () => {
+    const r = aggregateDayReport({
+      day: '2026-09-07',
+      events: [],
+      rows: [
+        res({ estimated_guests: 4, actual_guests: 5 }),
+        res({ estimated_guests: 6, actual_guests: 6 }),
+      ],
+    })
+    expect(r.blocks[0]?.billableGuests).toBe(11)
+    expect(r.blocks[0]?.attendedGuests).toBe(11)
+  })
+
+  it('sin ninguna mesa cerrada es exactamente lo reservado', () => {
+    const r = aggregateDayReport({
+      day: '2026-09-07',
+      events: [],
+      rows: [res({ estimated_guests: 4 }), res({ estimated_guests: 6 })],
+    })
+    expect(r.blocks[0]?.billableGuests).toBe(10)
+    expect(r.blocks[0]?.attendedGuests).toBe(0)
+  })
+
+  it('las caídas no suman, ni siquiera con asistencia cargada', () => {
+    // Esa gente no se sentó: no consumió, no multiplica plata.
+    const r = aggregateDayReport({
+      day: '2026-09-07',
+      events: [],
+      rows: [
+        res({ estimated_guests: 4, actual_guests: 4 }),
+        res({ estimated_guests: 6, status: 'cancelled' }),
+        res({ estimated_guests: 3, actual_guests: 3, status: 'no_show' }),
+      ],
+    })
+    expect(r.blocks[0]?.billableGuests).toBe(4)
+    expect(r.blocks[0]?.fallenGuests).toBe(9)
+  })
+
+  it('se sentaron más de los que habían reservado: manda lo contado', () => {
+    // Pizza libre del 3/9: reservaron 62 y se sentaron 65.
+    const r = aggregateDayReport({
+      day: '2026-09-07',
+      events: [],
+      rows: [res({ estimated_guests: 2, actual_guests: 5 }), res({ estimated_guests: 4 })],
+    })
+    expect(r.blocks[0]?.guests).toBe(6)
+    expect(r.blocks[0]?.billableGuests).toBe(9)
+  })
+
+  it('cero cuando no quedó ninguna reserva en pie', () => {
+    const r = aggregateDayReport({
+      day: '2026-09-07',
+      events: [],
+      rows: [res({ estimated_guests: 4, status: 'cancelled' })],
+    })
+    expect(r.blocks[0]?.billableGuests).toBe(0)
+  })
+
+  it('las ediciones lo cuentan igual que la vista por día', () => {
+    const rows = [
+      res({ scheduled_event_id: 'ev-ramen', estimated_guests: 6, actual_guests: 6 }),
+      res({ scheduled_event_id: 'ev-ramen', estimated_guests: 5 }),
+      res({ scheduled_event_id: 'ev-ramen', estimated_guests: 2, status: 'no_show' }),
+    ]
+    const dia = aggregateDayReport({ day: '2026-09-07', events: [ev()], rows })
+    const ediciones = aggregateEditions({ events: [ev()], rows, today: HOY })
+    expect(ediciones[0]?.billableGuests).toBe(11)
+    expect(ediciones[0]?.billableGuests).toBe(dia.blocks[0]?.billableGuests)
+  })
+})
+
 describe('aggregateTemplateReport', () => {
   const events = [
     ev({ id: 'e3', event_date: '2026-09-28' }),
@@ -552,6 +644,8 @@ describe('CSV con pauta', () => {
       reach: null,
       revenueArsCents: null,
       usdArsRate: null,
+      revenuePerGuestArsCents: null,
+      costPerGuestArsCents: null,
       notes: null,
       updatedAt: '2026-09-08T15:00:00Z',
       updatedByName: 'Nacho B.',
@@ -576,15 +670,17 @@ describe('CSV con pauta', () => {
     expect(lines[0]).not.toContain('Pauta USD')
   })
 
-  it('con pauta suma las 12 columnas, con los mismos números que la pantalla', () => {
+  it('con pauta suma las columnas de pauta, con los mismos números que la pantalla', () => {
     const lines = dayReportToCsv(day, { 'ev-ramen': pauta() }).split('\r\n')
     expect(lines[0]?.replace('\uFEFF', '').split(';')).toEqual([
       ...DAY_EXPORT_HEADERS,
       ...MARKETING_EXPORT_HEADERS,
     ])
-    // US$ 100 / 20 mensajes / 2 reservas en pie (10 personas).
+    // US$ 100 / 20 mensajes / 2 reservas en pie (10 personas). Las ocho últimas
+    // son la cuenta de la noche: esta fila no tiene ingreso ni costo por
+    // persona, así que van vacías (incluida «Personas del cálculo»).
     expect(lines[1]).toBe(
-      '2026-09-07;Ramen;10;2;5,0;6;1 de 2;1;0;2;100,00;20;;5,00;10,0;50,00;10,00;;;;;',
+      '2026-09-07;Ramen;10;2;5,0;6;1 de 2;1;0;2;100,00;20;;5,00;10,0;50,00;10,00;;;;;;;;;;;;;',
     )
   })
 
@@ -638,7 +734,11 @@ describe('CSV con pauta', () => {
       ...MARKETING_EXPORT_HEADERS,
     ])
     expect(pautaDe(1)).toEqual(MARKETING_EXPORT_HEADERS.map(() => ''))
-    expect(pautaDe(2)).toEqual(['60,00', '12', '', '', '', '', '', '', '', '', '', ''])
+    expect(pautaDe(2)).toEqual([
+      '60,00',
+      '12',
+      ...Array(MARKETING_EXPORT_HEADERS.length - 2).fill(''),
+    ])
     expect(pautaDe(3)).toEqual([
       '10,00',
       '5',
@@ -647,11 +747,10 @@ describe('CSV con pauta', () => {
       '20,0',
       '10,00',
       '5,00',
-      '',
-      '',
-      '',
-      '',
-      '',
+      // La cuenta de la noche sale entera o no sale: esta fila no tiene ingreso
+      // ni costo por persona, así que sus ocho columnas van vacías —también
+      // «Personas del cálculo», que sin cuenta es un número colgado.
+      ...Array(MARKETING_EXPORT_HEADERS.length - 7).fill(''),
     ])
     expect(pautaDe(4)).toEqual(MARKETING_EXPORT_HEADERS.map(() => ''))
     // Las columnas de siempre no se mueven.

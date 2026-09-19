@@ -40,15 +40,21 @@ import {
 
 // ─── Forma del borrador ──────────────────────────────────────────────────────
 
-/** Lo que hay escrito en cada campo, tal cual. `revenueOpen` es el «+ Sumar la facturación». */
+/**
+ * Lo que hay escrito en cada campo, tal cual. `moneyOpen` es el desplegable
+ * «Sumar la plata de la noche», que hoy guarda los cuatro números de plata:
+ * ingreso y costo por persona, la facturación real y el dólar del día.
+ */
 export type MarketingDraft = {
   adSpendUsd: string
   messages: string
   reach: string
+  revenuePerGuestArs: string
+  costPerGuestArs: string
   revenueArs: string
   usdArsRate: string
   notes: string
-  revenueOpen: boolean
+  moneyOpen: boolean
 }
 
 export type NumericMarketingField = Exclude<MarketingField, 'notes'>
@@ -57,15 +63,30 @@ export const MARKETING_NUMBER_KINDS: Readonly<Record<NumericMarketingField, Numb
   adSpendUsd: 'money',
   messages: 'count',
   reach: 'count',
+  revenuePerGuestArs: 'money',
+  costPerGuestArs: 'money',
   revenueArs: 'money',
   usdArsRate: 'rate',
 }
+
+/**
+ * Los que viven dentro del desplegable de plata. Cerrado, ninguno viaja: lo que
+ * no se ve no se guarda.
+ */
+export const MARKETING_MONEY_FIELDS: readonly NumericMarketingField[] = [
+  'revenuePerGuestArs',
+  'costPerGuestArs',
+  'revenueArs',
+  'usdArsRate',
+]
 
 /** Orden de los campos en pantalla: manda el foco inicial y el «Corregí …». */
 export const MARKETING_FIELD_ORDER: readonly MarketingField[] = [
   'adSpendUsd',
   'messages',
   'reach',
+  'revenuePerGuestArs',
+  'costPerGuestArs',
   'revenueArs',
   'usdArsRate',
   'notes',
@@ -76,59 +97,74 @@ export const MARKETING_FIELD_LABELS: Readonly<Record<MarketingField, string>> = 
   adSpendUsd: 'Gastado',
   messages: 'Mensajes',
   reach: 'Alcance',
+  revenuePerGuestArs: 'Ingreso por persona',
+  costPerGuestArs: 'Costo por persona',
   revenueArs: 'Facturación del evento',
   usdArsRate: 'Dólar del día',
   notes: 'Nota',
 }
 
+/** La ayuda de una línea que va debajo de cada campo de plata. */
+export const MARKETING_MONEY_HINTS = {
+  revenuePerGuestArs: 'Lo que deja cada persona.',
+  costPerGuestArs: 'Lo que cuesta servirla: comida y bebida, sin sueldos.',
+  revenueArs: 'Solo lo del evento, sin las mesas normales. Si la cargás, manda sobre el estimado.',
+  usdArsRate: 'El que usaste para pagar Meta (el de la tarjeta). Pasa la pauta a pesos.',
+} as const
+
 export const EMPTY_MARKETING_DRAFT: MarketingDraft = {
   adSpendUsd: '',
   messages: '',
   reach: '',
+  revenuePerGuestArs: '',
+  costPerGuestArs: '',
   revenueArs: '',
   usdArsRate: '',
   notes: '',
-  revenueOpen: false,
+  moneyOpen: false,
 }
 
 /**
  * Lo guardado, escrito como quedaría en el input después del blur. «No tuvo
  * pauta» (gasto 0) abre VACÍO: un `0,00` en «Gastado» sería un número que el
  * formulario mismo rechaza.
+ *
+ * El desplegable de plata abre si hay CUALQUIERA de los cuatro números: si se
+ * abriera solo con la facturación, un ingreso por persona ya guardado quedaría
+ * escondido y el guardado siguiente lo borraría sin que nadie lo vea.
  */
 export function draftFromRow(row: EventMarketingRow | null): MarketingDraft {
   if (row === null || row.adSpendUsdCents <= 0) return { ...EMPTY_MARKETING_DRAFT }
-  const hasRevenue = row.revenueArsCents !== null && row.usdArsRate !== null
-  return {
+  const pesos = (cents: number | null) =>
+    cents === null ? '' : canonicalInput(cents / 100, 'money')
+  const draft: MarketingDraft = {
     adSpendUsd: canonicalInput(row.adSpendUsdCents / 100, 'money'),
     messages: row.messages === null ? '' : canonicalInput(row.messages, 'count'),
     reach: row.reach === null ? '' : canonicalInput(row.reach, 'count'),
-    revenueArs:
-      row.revenueArsCents === null ? '' : canonicalInput(row.revenueArsCents / 100, 'money'),
+    revenuePerGuestArs: pesos(row.revenuePerGuestArsCents),
+    costPerGuestArs: pesos(row.costPerGuestArsCents),
+    revenueArs: pesos(row.revenueArsCents),
     usdArsRate: row.usdArsRate === null ? '' : canonicalInput(row.usdArsRate, 'rate'),
     notes: row.notes ?? '',
-    revenueOpen: hasRevenue,
+    moneyOpen: false,
   }
+  draft.moneyOpen = MARKETING_MONEY_FIELDS.some((field) => draft[field] !== '')
+  return draft
 }
 
 /**
  * ¿Hay algo distinto de lo guardado? Decide si al reabrir se dice «Seguís con
- * lo que habías escrito». La facturación abierta pero vacía no cuenta como
+ * lo que habías escrito». La sección de plata abierta pero vacía no cuenta como
  * cambio: tocar el botón no es escribir un número.
  */
 export function sameDraft(a: MarketingDraft, b: MarketingDraft): boolean {
-  const norm = (d: MarketingDraft) => {
-    const revenueArs = d.revenueArs.trim()
-    const usdArsRate = d.usdArsRate.trim()
-    return [
-      d.adSpendUsd.trim(),
-      d.messages.trim(),
-      d.reach.trim(),
-      d.revenueOpen ? revenueArs : '',
-      d.revenueOpen ? usdArsRate : '',
-      d.notes.trim(),
-    ]
-  }
+  const norm = (d: MarketingDraft) => [
+    d.adSpendUsd.trim(),
+    d.messages.trim(),
+    d.reach.trim(),
+    ...MARKETING_MONEY_FIELDS.map((field) => (d.moneyOpen ? d[field].trim() : '')),
+    d.notes.trim(),
+  ]
   const x = norm(a)
   const y = norm(b)
   return x.every((value, i) => value === y[i])
@@ -167,7 +203,11 @@ export function marketingBaseline(
  * ¿Se muestra la facturación? Una fecha que todavía no pasó no facturó nada, así
  * que en principio no. Pero si la fila YA tiene facturación (la edición se movió
  * a una fecha futura), se muestra igual: esconderla y mandarla vacía la borraba
- * sin avisar. Queda a la vista y solo se va con «Quitar la facturación».
+ * sin avisar. Queda a la vista y solo se va con «Quitar la plata».
+ *
+ * Es SOLO sobre la facturación real. El ingreso y el costo por persona, y el
+ * dólar, se cargan en cualquier fecha: el cubierto de la noche de ramen se sabe
+ * antes, y la pauta se paga antes del evento.
  */
 export function marketingRevenueVisible(
   phase: MarketingPhase,
@@ -199,9 +239,27 @@ export function lastValidFromDraft(
     adSpendUsd: read('adSpendUsd'),
     messages: read('messages'),
     reach: read('reach'),
+    revenuePerGuestArs: read('revenuePerGuestArs'),
+    costPerGuestArs: read('costPerGuestArs'),
     revenueArs: read('revenueArs'),
     usdArsRate: read('usdArsRate'),
   }
+}
+
+/**
+ * ¿Ese campo está a la vista, y entonces viaja? Los de plata solo con la
+ * sección abierta, y la facturación además solo cuando la fecha la admite
+ * (`marketingRevenueVisible`). Lo mira el chequeo y también el formulario, para
+ * que lo que se dibuja y lo que se manda no puedan separarse.
+ */
+export function marketingFieldEnabled(
+  field: NumericMarketingField,
+  draft: MarketingDraft,
+  revenueVisible: boolean,
+): boolean {
+  if (!MARKETING_MONEY_FIELDS.includes(field)) return true
+  if (!draft.moneyOpen) return false
+  return field !== 'revenueArs' || revenueVisible
 }
 
 function parseMessage(
@@ -210,8 +268,10 @@ function parseMessage(
 ): string | null {
   const M = MARKETING_FIELD_MESSAGES
   switch (reason) {
-    // Vacío solo es error en «Gastado»: todo lo demás es opcional o va de a
-    // pares (y el par lo resuelve el chequeo de abajo, en el campo que falta).
+    // Vacío solo es error en «Gastado»: todo lo demás es opcional. Desde que se
+    // borró el CHECK `sem_revenue_needs_rate`, tampoco hay campos que vayan de a
+    // pares — cada número entra solo y la pantalla avisa qué falta para cerrar
+    // la cuenta (ver `missingRateNotice` y la vista previa).
     case 'vacio':
       return field === 'adSpendUsd' ? M.spendMissing : null
     case 'ilegible':
@@ -236,52 +296,46 @@ export type DraftCheck = {
 }
 
 /**
- * Todo lo que se sabe del borrador antes de mandarlo, en tres capas:
+ * Todo lo que se sabe del borrador antes de mandarlo, en dos capas:
  *
  * 1. Lo que no se puede leer (`parseLocaleNumber`): ilegible, negativo, con
  *    decimales, o «Gastado» vacío.
- * 2. Facturación y dólar van juntos: el error cae en el que FALTA (vacío), no
- *    en el que está mal escrito, que ya tiene su propio error.
- * 3. El schema del server, para rangos y topes con sus mismas palabras.
+ * 2. El schema del server, para rangos y topes con sus mismas palabras.
  *
- * La facturación solo cuenta con la sección abierta y a la vista
- * (`marketingRevenueVisible`): lo que no se ve no viaja.
+ * Ya no hay campos que vayan de a pares. Antes, facturación sin dólar (o al
+ * revés) era un error que bloqueaba el guardado, porque la DB los guardaba
+ * juntos; desde que se borró ese CHECK el dólar es de la PAUTA y no de la caja,
+ * así que cada número entra solo. Lo que falte para cerrar la cuenta lo dice la
+ * vista previa, sin rebotar nada que el dueño se tomó el trabajo de cargar.
+ *
+ * Los campos de plata cuentan solo con la sección abierta, y la facturación
+ * además solo si la fecha la admite: lo que no se ve no viaja.
  */
 export function checkMarketingDraft(
   draft: MarketingDraft,
   ctx: { scheduledEventId: string; expectedUpdatedAt: string | null; revenueVisible: boolean },
 ): DraftCheck {
   const fieldErrors: Partial<Record<MarketingField, string>> = {}
-  const revenueEnabled = draft.revenueOpen && ctx.revenueVisible
 
   const numbers: Record<NumericMarketingField, number | null> = {
     adSpendUsd: null,
     messages: null,
     reach: null,
+    revenuePerGuestArs: null,
+    costPerGuestArs: null,
     revenueArs: null,
     usdArsRate: null,
   }
-  const empty = new Set<NumericMarketingField>()
 
   for (const field of Object.keys(MARKETING_NUMBER_KINDS) as NumericMarketingField[]) {
-    if (!revenueEnabled && (field === 'revenueArs' || field === 'usdArsRate')) continue
+    if (!marketingFieldEnabled(field, draft, ctx.revenueVisible)) continue
     const parsed = parseLocaleNumber(draft[field], MARKETING_NUMBER_KINDS[field])
     if (parsed.ok) {
       numbers[field] = parsed.value
       continue
     }
-    if (parsed.reason === 'vacio') empty.add(field)
     const message = parseMessage(field, parsed.reason)
     if (message) fieldErrors[field] = message
-  }
-
-  if (revenueEnabled) {
-    if (numbers.revenueArs !== null && empty.has('usdArsRate')) {
-      fieldErrors.usdArsRate = MARKETING_FIELD_MESSAGES.rateMissing
-    }
-    if (numbers.usdArsRate !== null && empty.has('revenueArs')) {
-      fieldErrors.revenueArs = MARKETING_FIELD_MESSAGES.revenueMissing
-    }
   }
 
   const notes = draft.notes.trim()
@@ -292,6 +346,8 @@ export function checkMarketingDraft(
     adSpendUsd: numbers.adSpendUsd ?? 0,
     messages: numbers.messages,
     reach: numbers.reach,
+    revenuePerGuestArs: numbers.revenuePerGuestArs,
+    costPerGuestArs: numbers.costPerGuestArs,
     revenueArs: numbers.revenueArs,
     usdArsRate: numbers.usdArsRate,
     notes: notes === '' ? null : notes,
@@ -320,6 +376,26 @@ export function checkMarketingDraft(
 }
 
 /**
+ * El aviso del dólar, que NO bloquea: con facturación cargada y sin dólar, el
+ * recuadro «Retorno» de la ficha no se puede armar (es la facturación pasada a
+ * dólares). Va debajo del campo como aviso, no como error de campo: no pinta el
+ * input de rojo ni apaga «Guardar pauta». La carga entra igual y el resto de la
+ * cuenta se muestra sin él.
+ *
+ * Para la otra mitad —la pauta que no se puede pasar a pesos— no hace falta un
+ * aviso acá: la vista previa ya dice «Falta el dólar del día para pasar la
+ * pauta a pesos: por ahora, esto es el margen bruto», con esas palabras.
+ */
+export function missingRateNotice(values: {
+  revenueArs: number | null
+  usdArsRate: number | null
+}): string | null {
+  return values.revenueArs !== null && values.usdArsRate === null
+    ? MARKETING_FIELD_MESSAGES.rateMissing
+    : null
+}
+
+/**
  * Por qué «Guardar pauta» está apagado, en palabras: `Corregí «Mensajes» para
  * guardar.` Recibe solo los errores que están A LA VISTA: un botón apagado por
  * un error que el dueño todavía no ve es un misterio.
@@ -338,13 +414,14 @@ export function blockedSaveMessage(
 
 /**
  * Dónde cae el foco al abrir: el primer campo vacío. Si ya está todo, «Gastado».
- * La facturación entra solo si su sección está a la vista.
+ * Los de plata entran solo si su sección está abierta (y la facturación, además,
+ * si la fecha la admite).
  */
 export function firstEmptyField(draft: MarketingDraft, revenueVisible: boolean): MarketingField {
-  const candidates: MarketingField[] = ['adSpendUsd', 'messages', 'reach']
-  if (revenueVisible && draft.revenueOpen) candidates.push('revenueArs', 'usdArsRate')
-  for (const field of candidates) {
-    if (field !== 'notes' && draft[field].trim() === '') return field
+  for (const field of MARKETING_FIELD_ORDER) {
+    if (field === 'notes') continue
+    if (!marketingFieldEnabled(field, draft, revenueVisible)) continue
+    if (draft[field].trim() === '') return field
   }
   return 'adSpendUsd'
 }

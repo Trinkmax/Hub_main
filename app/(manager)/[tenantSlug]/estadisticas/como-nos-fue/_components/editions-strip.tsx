@@ -193,6 +193,9 @@ export function EditionsStrip({
     phase: editionPhase(e),
     reservations: e.reservations,
     guests: e.guests,
+    // La gente con la que se multiplica la plata (ver `MarketingBlock`): la
+    // suma del mes la necesita para poder totalizar el resultado.
+    billableGuests: e.billableGuests,
     row: rowOf(e, marketing),
   }))
   const resumen = hayPauta ? pooledStripSummary(items) : null
