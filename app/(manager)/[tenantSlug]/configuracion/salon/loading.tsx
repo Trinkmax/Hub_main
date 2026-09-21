@@ -9,8 +9,12 @@ export default function Loading() {
         title="Capacidad del salón"
         description={<Skeleton className="h-4 w-96" />}
       />
+      {/* Mismo orden que la página: grilla de cupos por servicio, cupos
+          especiales por fecha, cupo total del bar y cupo general por planta. */}
+      <Skeleton className="h-96 w-full rounded-xl" />
+      <Skeleton className="h-56 w-full rounded-xl" />
       <Skeleton className="h-32 w-full rounded-xl" />
-      <Skeleton className="h-64 w-full rounded-xl" />
+      <Skeleton className="h-40 w-full rounded-xl" />
     </div>
   )
 }

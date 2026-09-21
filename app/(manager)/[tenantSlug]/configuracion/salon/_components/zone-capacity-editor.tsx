@@ -1,266 +1,147 @@
 'use client'
 
-import { Plus, Save, Trash2 } from 'lucide-react'
-import { useState, useTransition } from 'react'
+import { Layers, Loader2, Save } from 'lucide-react'
+import { useId, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  removeZoneOverride,
-  setZoneCapacityDefaults,
-  upsertZoneOverride,
-} from '@/lib/salon/actions'
-import { type SalonZoneCapacityOverrideRow, ZONE_LABELS } from '@/lib/salon/types'
+import { setZoneCapacityDefaults } from '@/lib/salon/actions'
+import { ZONE_LABELS } from '@/lib/salon/types'
+
+/**
+ * «Cupo general por planta»: PA y PB en `tenants.settings.salon_capacities`.
+ *
+ * Desde el cupo por servicio, este número ya no es el tope del día: es el
+ * RESPALDO de los servicios que no se configuraron arriba (PA + PB por
+ * servicio). Lo sigue mirando el onboarding para dar la capacidad por cargada.
+ *
+ * Los «overrides por fecha» por planta que vivían acá se sacaron: ningún
+ * cálculo los lee más y los reemplaza el cupo especial por servicio (la tabla
+ * se dropea desde el backlog). Tener dos lugares para «el feriado entran 120»
+ * era la receta para que el calendario mostrara uno y la config el otro.
+ */
+
+/** Solo dígitos y hasta 3 (el tope es 999). Vacío cuenta como 0 al guardar. */
+function onlyDigits(raw: string): string {
+  return raw.replace(/\D/g, '').slice(0, 3)
+}
+
+function toCount(raw: string): number {
+  const n = Number(raw)
+  return raw.trim() === '' || !Number.isFinite(n) ? 0 : n
+}
 
 export function ZoneCapacityEditor({
   tenantSlug,
   defaults,
-  initialOverrides,
 }: {
   tenantSlug: string
   defaults: { planta_alta: number; planta_baja: number }
-  initialOverrides: SalonZoneCapacityOverrideRow[]
 }) {
-  const [pa, setPA] = useState(defaults.planta_alta)
-  const [pb, setPB] = useState(defaults.planta_baja)
-  const [overrides, setOverrides] = useState(initialOverrides)
+  const baseId = useId()
+  const [pa, setPA] = useState(String(defaults.planta_alta))
+  const [pb, setPB] = useState(String(defaults.planta_baja))
+  const [saved, setSaved] = useState(defaults)
   const [pending, startTransition] = useTransition()
-  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
 
-  // Nuevo override
-  const [newZone, setNewZone] = useState<'planta_alta' | 'planta_baja'>('planta_alta')
-  const [newDate, setNewDate] = useState('')
-  const [newCap, setNewCap] = useState(0)
-  const [newReason, setNewReason] = useState('')
+  const total = toCount(pa) + toCount(pb)
+  const dirty = toCount(pa) !== saved.planta_alta || toCount(pb) !== saved.planta_baja
 
-  function saveDefaults() {
+  function save() {
+    const next = { planta_alta: toCount(pa), planta_baja: toCount(pb) }
     startTransition(async () => {
-      const r = await setZoneCapacityDefaults(tenantSlug, {
-        planta_alta: pa,
-        planta_baja: pb,
-      } as Record<string, unknown>)
-      if (r.ok) toast.success('Capacidad default guardada.')
-      else toast.error(r.message)
-    })
-  }
-
-  function addOverride() {
-    if (!newDate) {
-      toast.error('Fecha requerida.')
-      return
-    }
-    startTransition(async () => {
-      const r = await upsertZoneOverride(tenantSlug, {
-        zone: newZone,
-        override_date: newDate,
-        capacity: newCap,
-        reason: newReason || undefined,
-      } as Record<string, unknown>)
-      if (r.ok) {
-        toast.success('Override guardado.')
-        // Refresh local: insertamos o actualizamos
-        const existing = overrides.find((o) => o.zone === newZone && o.override_date === newDate)
-        if (existing) {
-          setOverrides((prev) =>
-            prev.map((o) =>
-              o.id === existing.id ? { ...o, capacity: newCap, reason: newReason || null } : o,
-            ),
-          )
-        } else {
-          setOverrides((prev) =>
-            [
-              {
-                id: crypto.randomUUID(),
-                tenant_id: '',
-                zone: newZone,
-                override_date: newDate,
-                capacity: newCap,
-                reason: newReason || null,
-                created_at: new Date().toISOString(),
-              } as SalonZoneCapacityOverrideRow,
-              ...prev,
-            ].sort((a, b) => (a.override_date < b.override_date ? 1 : -1)),
-          )
+      try {
+        const r = await setZoneCapacityDefaults(tenantSlug, next)
+        if (!r.ok) {
+          toast.error(r.message)
+          return
         }
-        setNewDate('')
-        setNewCap(0)
-        setNewReason('')
-      } else {
-        toast.error(r.message)
+        setSaved(next)
+        toast.success(`Cupo general guardado: ${next.planta_alta + next.planta_baja} por servicio.`)
+      } catch (error) {
+        console.error(
+          '[configuracion.salon.setZoneCapacityDefaults]',
+          error instanceof Error ? error.message : 'sin respuesta',
+        )
+        toast.error('No pudimos hablar con el servidor. Revisá la conexión y probá de nuevo.')
       }
-    })
-  }
-
-  function confirmDeleteOverride() {
-    if (!pendingDelete) return
-    const id = pendingDelete
-    startTransition(async () => {
-      const r = await removeZoneOverride(tenantSlug, id)
-      if (r.ok) {
-        setOverrides((prev) => prev.filter((o) => o.id !== id))
-        toast.success('Override eliminado.')
-      } else {
-        toast.error(r.message)
-      }
-      setPendingDelete(null)
     })
   }
 
   return (
-    <>
-      {/* Defaults */}
-      <section className="space-y-4 rounded-xl border bg-card/60 p-5">
-        <h2 className="font-serif text-lg font-semibold tracking-tight">
-          Capacidad default por zona
-        </h2>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <Label className="text-[11px] uppercase tracking-wide">{ZONE_LABELS.planta_alta}</Label>
-            <Input
-              type="number"
-              min={0}
-              max={999}
-              value={pa}
-              onChange={(e) => setPA(Math.max(0, Number(e.target.value)))}
-              className="h-10 text-base tabular-nums"
-            />
-          </div>
-          <div>
-            <Label className="text-[11px] uppercase tracking-wide">{ZONE_LABELS.planta_baja}</Label>
-            <Input
-              type="number"
-              min={0}
-              max={999}
-              value={pb}
-              onChange={(e) => setPB(Math.max(0, Number(e.target.value)))}
-              className="h-10 text-base tabular-nums"
-            />
-          </div>
+    <section
+      aria-labelledby={`${baseId}-title`}
+      className="card-hairline min-w-0 space-y-4 rounded-xl border border-border/70 bg-card/85 p-4 sm:p-5"
+    >
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-2">
+          <Layers className="size-4 text-primary" aria-hidden />
+          <h2 id={`${baseId}-title`} className="font-serif text-lg font-semibold">
+            Cupo general por planta
+          </h2>
         </div>
-        <div className="flex justify-end">
-          <Button onClick={saveDefaults} disabled={pending} className="gap-2">
-            <Save className="size-4" />
-            Guardar defaults
-          </Button>
-        </div>
-      </section>
-
-      {/* Overrides */}
-      <section className="space-y-3 rounded-xl border bg-card/60 p-5">
-        <h2 className="font-serif text-lg font-semibold tracking-tight">Overrides por fecha</h2>
-        <p className="text-xs text-muted-foreground">
-          Para días puntuales (reforma, evento privado, etc.) podés sobreescribir el cupo.
+        <p className="text-sm text-muted-foreground">
+          Se usa para los servicios que no configuraste arriba: PA + PB ={' '}
+          <span className="font-semibold text-foreground tabular-nums">{total}</span> personas por
+          servicio.
+          {total === 0 ? ' Con 0, esos servicios quedan sin tope.' : null}
         </p>
+      </div>
 
-        <div className="grid gap-2 rounded-lg border border-dashed p-3 sm:grid-cols-[1fr_1fr_120px_1fr_auto]">
-          <Select
-            value={newZone}
-            onValueChange={(v) => setNewZone(v as 'planta_alta' | 'planta_baja')}
+      <div className="grid grid-cols-2 gap-3 sm:max-w-sm">
+        <div className="min-w-0 space-y-1.5">
+          <Label
+            htmlFor={`${baseId}-pa`}
+            className="text-[11px] uppercase tracking-wide text-muted-foreground"
           >
-            <SelectTrigger className="h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="planta_alta">{ZONE_LABELS.planta_alta}</SelectItem>
-              <SelectItem value="planta_baja">{ZONE_LABELS.planta_baja}</SelectItem>
-            </SelectContent>
-          </Select>
+            {ZONE_LABELS.planta_alta}
+          </Label>
           <Input
-            type="date"
-            value={newDate}
-            onChange={(e) => setNewDate(e.target.value)}
-            className="h-9"
+            id={`${baseId}-pa`}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="off"
+            maxLength={3}
+            value={pa}
+            onChange={(e) => setPA(onlyDigits(e.target.value))}
+            placeholder="0"
+            className="h-10 text-base tabular-nums"
           />
-          <Input
-            type="number"
-            min={0}
-            placeholder="Cap"
-            value={newCap || ''}
-            onChange={(e) => setNewCap(Number(e.target.value))}
-            className="h-9 tabular-nums"
-          />
-          <Input
-            placeholder="Motivo (opcional)"
-            value={newReason}
-            onChange={(e) => setNewReason(e.target.value)}
-            className="h-9"
-            maxLength={280}
-          />
-          <Button size="sm" onClick={addOverride} disabled={pending} className="gap-1.5">
-            <Plus className="size-4" />
-            Agregar
-          </Button>
         </div>
+        <div className="min-w-0 space-y-1.5">
+          <Label
+            htmlFor={`${baseId}-pb`}
+            className="text-[11px] uppercase tracking-wide text-muted-foreground"
+          >
+            {ZONE_LABELS.planta_baja}
+          </Label>
+          <Input
+            id={`${baseId}-pb`}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="off"
+            maxLength={3}
+            value={pb}
+            onChange={(e) => setPB(onlyDigits(e.target.value))}
+            placeholder="0"
+            className="h-10 text-base tabular-nums"
+          />
+        </div>
+      </div>
 
-        {overrides.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Sin overrides cargados.</p>
-        ) : (
-          <ul className="divide-y divide-border/60">
-            {overrides.map((o) => (
-              <li key={o.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                <div className="flex items-center gap-3">
-                  <span className="rounded-md bg-secondary px-2 py-0.5 text-xs">
-                    {ZONE_LABELS[o.zone as 'planta_alta' | 'planta_baja']}
-                  </span>
-                  <span className="font-mono tabular-nums">{o.override_date}</span>
-                  <span className="font-mono tabular-nums font-semibold">cap {o.capacity}</span>
-                  {o.reason ? (
-                    <span className="text-xs text-muted-foreground">· {o.reason}</span>
-                  ) : null}
-                </div>
-                <Button size="sm" variant="ghost" onClick={() => setPendingDelete(o.id)}>
-                  <Trash2 className="size-4" />
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <AlertDialog
-        open={pendingDelete !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingDelete(null)
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Borrar este override?</AlertDialogTitle>
-            <AlertDialogDescription>
-              La zona volverá a usar su capacidad default para esa fecha. Esta acción no se puede
-              deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={pending}
-              onClick={confirmDeleteOverride}
-            >
-              Borrar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+      <div className="flex justify-end">
+        <Button onClick={save} disabled={pending || !dirty} className="gap-2">
+          {pending ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : (
+            <Save className="size-4" aria-hidden />
+          )}
+          {pending ? 'Guardando…' : 'Guardar cupo general'}
+        </Button>
+      </div>
+    </section>
   )
 }
