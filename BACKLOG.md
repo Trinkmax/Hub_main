@@ -900,3 +900,87 @@ afuera a propósito:
   línea, pero no hay manera de ver QUÉ mesas quedaron sin cerrar sin ir al
   muro. Si el dueño desconfía de un resultado, hoy la respuesta es "mirá el
   muro y contá".
+
+## Cupo por servicio y calendario como puerta única (2026-09-21)
+
+Lo que quedó afuera a propósito del cambio «cupo por almuerzo / merienda /
+cena» y del retiro de la lista `/reservas` (ver `docs/reservas.md` → «Cupo por
+servicio»).
+
+- **SEGURIDAD (preexistente, prioridad alta).** `recalc_reservation_commission`
+  y `recalc_event_commissions` son SECURITY DEFINER sin chequeo de auth y con
+  EXECUTE para anon (`proacl` anon=X): anon puede ejecutarlas con un uuid y
+  borran y reinsertan el ledger no pagado. Revocar EXECUTE a anon/public como
+  hace `20260613030000_lock_internal_functions.sql`, y revisar
+  `evaluate_day_capacity` (se defiende con el `forbidden`, pero también tiene
+  anon=X).
+- **Retirar `evaluate_day_capacity`, `getDayCapacitySnapshot`,
+  `fetchDayCapacity` y los buckets `zone:*`** cuando nadie más los lea. Hoy solo
+  quedan los `event:*` del operativo y del salón, que pueden sacar el usado por
+  evento de los segmentos (`SegmentEventLoad`). `fetchDayCapacity` ya no tiene
+  consumidores.
+- **Dropear `salon_zone_capacity_overrides`.** Quedó sin UI (su reemplazo es el
+  cupo especial por servicio) y con 0 filas en HUB. Con la tabla se van
+  `listZoneOverrides` (sin lectores), `upsertZoneOverride`,
+  `removeZoneOverride` y `zoneCapacityOverrideSchema`.
+- **Realtime en el calendario** (mes y vista del día): dos personas cargando a
+  la vez ven el mes viejo hasta refrescar. Lo mitiga el chequeo fresco
+  (`fetchDaySegments`) al apretar Guardar, pero entre ese chequeo y el insert
+  queda una ventana de segundos (D3 no bloquea, así que es aceptado).
+- **«Cómo nos fue»: el bloque «Sin evento» suma el día entero** (almuerzo +
+  merienda + cena). El 10/09 da 98 contra las 46 normales de la cena. Cortarlo
+  por servicio con `segmentOfReservation` (`REPORT_ROW_SELECT` tiene que sumar
+  `meal_type`).
+- **Migrar las 14–17 reservas `hub_event` a `dinner` y sacar `hub_event` del
+  enum `meal_type`** (también de los selects de evento, formatos y
+  quick-template). El cálculo ya lo trata como cena, pero `groupByService` del
+  operativo todavía lo muestra como un servicio aparte («Evento HUB»).
+- **`default_meal_type` incoherente en los formatos**: Merienda Libre = dinner,
+  Merienda y Arte = lunch, Ramen = lunch (todas sus fechas a las 21:00). Además
+  la hora por defecto de la merienda en `TemplateDropDialog` es 17:00 contra las
+  15:30 de las reservas.
+- **Cortes horarios configurables por bar.** Hoy son constantes
+  (`SEGMENT_CUTS` en `lib/salon/segments.ts`), sacadas de los datos del HUB.
+- **Calendario de feriados.** Hoy se resuelve con el cupo especial por fecha
+  (p. ej. lunes 12/10, que ya tiene un cumple de 25 al mediodía).
+- **Regla por zona y servicio** («lun–vie al mediodía solo Planta Baja») como
+  aviso en el form. El cupo de 70 ya la cubre en números; el viernes 25/09 hay
+  un cumple de 25 al mediodía en Planta Alta que no avisa nada.
+- **Aviso prospectivo de tortas.** Deuda existente que se agrava al sacar la
+  lista de Reservas: si nadie abre el día, nadie se entera de qué tortas hay que
+  hacer.
+- **Dos «usados» distintos para el mismo evento.** El bonus «evento lleno» usa
+  `sum(estimated_guests)` y el calendario usa `actual ?? estimated`: Sushi libre
+  del 10/09 da 72 para el bonus y 73 en el calendario.
+- **Onboarding: `capacitiesReady` debería mirar los cupos por servicio** además
+  de PA/PB.
+- **Queries y componentes muertos de la lista `/reservas`.** Sin lectores:
+  `getRangeReservationTotals`, `listDayCelebrations`, `listDayServiceRows` y
+  `PageOutOfRangeError` (el throw sigue en `listSalonReservations`, que SÍ usa el
+  detalle del evento). Componentes: `components/reservations/attendance-cell.tsx`
+  y `comment-popover.tsx` (los usaba solo la tabla borrada). `serviceTimeRange`
+  quedó solo con su test. Borrar con cuidado de no llevarse lo que usa
+  `/operativo`.
+- **`revalidatePath('/{slug}/reservas')` en `lib/salon/actions.ts`** revalida
+  una ruta que ahora solo redirige. Es inocuo; sacarlo cuando se toque el
+  archivo (el calendario ya se revalida aparte).
+- **Calendario dnd:** falta `KeyboardSensor` para arrastrar con teclado, el id
+  de las celdas de relleno usa `Math.random()` (cambia en cada render) y queda el
+  anti-patrón `useMemo(setEvents)`.
+- **Salón: el link «Cargar una reserva» está muerto para el cajero** (el proxy
+  lo rebota del manager). En HUB no hay cajeros, pero la guía dice que crean
+  reservas.
+- **`consume_special_reservations` se edita en la UI pero ningún cálculo lo
+  lee** (ni el TS ni el SQL): toda reserva con `scheduled_event_id` cuenta para
+  el evento.
+- **`tenants.settings` tiene 3 escritores read-modify-write sin lock**
+  (`setZoneCapacityDefaults`, capture-prompt, `markOnboardingCompleted`): el
+  último que guarda pisa a los otros. Por eso los cupos por servicio viven en
+  tablas propias.
+- **Meriendas que se estiran sobre la cena.** 9 reservas `tea_time` activas
+  tienen fin 20:30, y casi ningún evento tiene `ends_at_local`: hoy cuentan solo
+  en la merienda.
+- **Filtros de la vieja lista.** Si la anfitriona extraña los filtros de estado,
+  zona, gestor y rango, y la asistencia fila por fila, sumarlos al buscador del
+  calendario (hoy: Buscar, Exportar el mes, Pasar lista en la vista del día y
+  `/operativo`).

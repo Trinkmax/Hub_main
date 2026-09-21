@@ -55,7 +55,8 @@ Asignarles rol **cashier** (pueden crear reservas + gestionar eventos pero no ve
 
 | Configuración | Valor actual | Dónde editar |
 |---|---|---|
-| Capacidades del salón | Planta Alta: 60 · Planta Baja: 80 | `Ajustes → Configuración → Salón` |
+| Cupos por servicio | Propuesta HUB: almuerzo lun–vie 70 (aviso en 50: «Conviene abrir la terraza») y sáb–dom 120 · merienda 120 · cena 120. Horas al reservar: 13:00 · 15:30 · 21:00 | `Ajustes → Configuración → Capacidad` |
+| Cupo general por planta | Planta Alta: 60 · Planta Baja: 70 → 130 por servicio mientras no haya cupos por servicio cargados | `Ajustes → Configuración → Capacidad` |
 | Gestores con comisión | Luz · Joaquin | `Ajustes → Configuración → Comisiones → Gestores` |
 | Tarifas (Almuerzo/Merienda/Desayuno) | $140 (1-7) · $160 (8-15) · $180 (16-30) · $220 (31+) por persona | `Ajustes → Configuración → Comisiones → Tarifas` |
 | Tarifas (Cena) | $90 · $120 · $130 · $140 por persona | mismo lugar |
@@ -90,8 +91,15 @@ Templates típicos que conviene crear (con colores que después se ven en el cal
 
 ### Paso 1 — Abrir el form
 
-Desde el sidebar: `Clientes → Reservas → + Nueva reserva`
-O directo a `https://hubbar.vercel.app/hub/reservas/nuevo`.
+Las reservas se cargan **desde el calendario**: `Agenda → Calendario`, tocá el día
+(o directamente el servicio: Alm / Mer / Cena) y apretá **Nueva reserva en la cena**
+(o en el servicio que corresponda). Así ves cómo viene el día antes de cargar.
+
+- Para reservar **adentro de un evento** (Sushi Libre, Pizza Libre…), tocá el evento
+  en el calendario: el form abre con el evento ya elegido.
+- Atajo: `⌘K` / `Ctrl+K` → **Nueva reserva** abre el día de hoy.
+- La vieja sección `Reservas` ya no existe: los links viejos a `/hub/reservas` te
+  llevan al calendario.
 
 ### Paso 2 — Buscar o crear cliente
 
@@ -103,17 +111,24 @@ Tipea las primeras letras del nombre o teléfono en el primer campo. El autocomp
 
 Tres opciones rápidas (chips): **Hoy · Mañana · Sábado**. Si necesitás otra fecha, tap en el campo y elegí del calendario nativo.
 
-Default de horario: 21:30 (modificable).
+La hora viene puesta según el servicio (almuerzo 13:00, merienda 15:30, cena 21:00;
+el dueño las cambia en Capacidad) y es editable.
 
 ### Paso 4 — Tipo de servicio
 
-Tap en uno de los 5 botones: Desayuno · Almuerzo · Merienda · Cena · Evento HUB.
-Esto define qué tabla de tarifa aplica a la comisión.
+Tres botones: **Almuerzo · Merienda · Cena**, cada uno con cómo viene ese servicio
+(«19/70»). Esto define qué tabla de tarifa aplica a la comisión.
+
+- Si elegís un servicio y todavía no tocaste la hora, la hora cambia sola (Merienda → 15:30).
+- Si cambiás la hora y cae en otro servicio, el servicio se mueve solo y te lo dice
+  («Pasó a Cena»).
+- Si la reserva va adentro de un evento, el servicio lo define el evento.
 
 ### Paso 5 — Zona
 
 Tres cards: **Planta Alta · Planta Baja · Sujeta a evento**.
-- **Planta Alta / Baja**: la reserva consume cupo de esa zona.
+- **Planta Alta / Baja**: dónde se sienta. Cuenta para el cupo del servicio (no hay
+  un tope por planta: cada ficha muestra cuántas personas hay en ese servicio).
 - **Sujeta a evento**: obliga a elegir un evento programado del día (paso 6).
 
 ### Paso 6 — Tipo de reserva
@@ -126,10 +141,12 @@ Tres botones: **Normal · Cumpleaños · Reserva especial**.
 
 Stepper grande con + y −. Default = 2. Min = 1, max = 99.
 
-A medida que sumás personas, la **barra de capacidad inline** se llena visualmente:
+A medida que sumás personas, el **medidor del servicio** muestra cómo quedaría
+(«Cena · 123 de 120»):
 - Verde: hay lugares libres
-- Amarillo: cerca del límite
-- Rojo: overbooking (el sistema te avisa pero NO bloquea — los bares aceptan voluntariamente)
+- Amarillo: cerca del límite (o llegó al aviso que puso el dueño)
+- Rojo: te pasás del cupo. Al guardar te lo vuelve a preguntar con los números del
+  momento («Te pasás del cupo de la cena») y podés **Cargar igual**: avisa, NO bloquea.
 
 ### Paso 8 — Quién gestionó
 
@@ -157,7 +174,8 @@ Eso es lo que va a cobrar el/los gestor/es cuando se cierre la mesa con esa cant
 
 Tap el botón **Crear reserva** o atajo de teclado **⌘+Enter** (Mac) / **Ctrl+Enter** (Windows).
 
-Toast verde: "Reserva creada". El sistema te redirige al detalle.
+Toast verde: «Reserva cargada · Cena · 119 de 120». Volvés al día del calendario con
+la reserva recién cargada resaltada.
 
 ---
 
@@ -174,9 +192,10 @@ URL directa: `https://hubbar.vercel.app/hub/salon/reservas-operativo`
 Header sticky arriba muestra:
 - **Fecha** (navegable con ← y →)
 - **Total de reservas** del día + contadores por estado (Pend / Llegó / Sent / Cerr)
-- **Barras de capacidad** por zona y por evento programado del día
+- **Un chip por servicio** (almuerzo, merienda, cena; el que está en curso primero) y
+  uno por evento programado del día
   - Verde si hay lugar
-  - Amarillo si está cerca del 100% (parpadea "¡Casi lleno!")
+  - Amarillo si está cerca del cupo
   - Rojo si hay overbooking
 
 Debajo, 3 columnas: **Planta Alta · Planta Baja · Sujeta a evento**.
@@ -299,10 +318,12 @@ Entries con `paid_at != null` son intocables: el snapshot del rate aplicado qued
 
 | Pregunta | Respuesta |
 |---|---|
-| ¿Qué pasa si cargo una reserva con más personas que la capacidad? | Te avisa en amarillo/rojo pero no bloquea (overbooking voluntario). |
+| ¿Qué pasa si cargo una reserva con más personas que el cupo? | Te muestra cómo quedaría el servicio y, antes de guardar, te pide confirmar. No bloquea (overbooking voluntario). |
+| ¿Por qué la cena dice «Queda 1 lugar» si hay menos gente que el cupo? | El cupo de cada evento se aparta dentro de la cena: con cena 120 y Sushi Libre de 70, quedan 50 para reservas normales. |
+| ¿Cómo abro la terraza un día puntual? | Dueño: en el día del calendario, **Cupo del día** (o **Subir a 120 hoy** cuando salta el aviso del almuerzo). |
 | ¿Puedo borrar una reserva ya cerrada? | Sí, pero las comisiones pagadas no se reversan. |
 | ¿Qué pasa si me equivoco al cerrar una mesa? | "Revertir estado" → vuelve a "Sentada". La comisión se recalcula. |
-| ¿Cómo veo todas las reservas del mes? | `Clientes → Reservas` (con filtros por gestor, zona, estado, rango de fechas). |
+| ¿Cómo veo todas las reservas del mes? | `Agenda → Calendario`: cada día muestra almuerzo, merienda y cena; tocalo para ver la lista. **Buscar** encuentra una reserva por nombre o teléfono y **Exportar** baja el mes en CSV. |
 | ¿El cliente se entera de su reserva por WhatsApp? | NO en MVP. La mensajería está desactivada. Solo email/WhatsApp manual desde el bar. |
 | ¿Puedo cambiar el gestor de una reserva después de creada? | Sí, desde el detalle (`/reservas/[id]`). Recalcula automáticamente. |
 | ¿Cómo agrego un gestor nuevo? | `Ajustes → Configuración → Comisiones → Gestores → + Nuevo`. Marcalo como `commission_eligible` si va a cobrar. |
@@ -319,8 +340,8 @@ Entries con `paid_at != null` son intocables: el snapshot del rate aplicado qued
 | **Reserva normal** | Reserva regular, sin formato especial |
 | **Cumpleaños** | Reserva con extras: tortas + champagne que trae el cliente |
 | **Reserva especial / Evento HUB** | Reserva grande con formato definido (Sushi Libre, etc.) |
-| **Sujeta a evento** | Zona virtual — la reserva consume del cupo del evento, no de PA/PB |
-| **Bucket** | "Caja" donde se contabiliza la capacidad (zona física o evento programado) |
+| **Sujeta a evento** | Zona virtual — la reserva consume del cupo del evento, y el cupo del evento se descuenta del servicio (casi siempre la cena) |
+| **Cupo por servicio** | Personas que entran en el almuerzo, la merienda o la cena de ese día. Se configura por día de la semana, con cupo especial por fecha |
 | **Tier de tarifa** | Rango de personas con un valor por persona (ej: 8-15 personas → $120) |
 | **Commission ledger** | Tabla con todas las comisiones devengadas. Una entry por reserva × gestor. |
 | **Split 50/50** | Cuando ambos gestores cobran, la comisión se divide en partes iguales (con el primario llevando el peso extra si es impar) |
