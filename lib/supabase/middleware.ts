@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSupabaseClientEnv } from '@/lib/env'
 import { isLandingsHost } from '@/lib/landings/security'
+import { legacyReservasRedirect } from '@/lib/salon/calendar-links'
 import {
   claimForTenantId,
   readActiveTenantId,
@@ -138,6 +139,27 @@ export function isSalonWorkspacePath(pathname: string): boolean {
   const slug = pathname.split('/').filter(Boolean)[0]
   if (!slug || RESERVED_SLUGS.has(slug)) return false
   return SALON_PATH_RE.test(pathname)
+}
+
+/**
+ * Destino del redirect de la vieja lista `/{slug}/reservas`, o null si el path
+ * no es esa lista EXACTA (`/reservas/nuevo` y `/reservas/[id]` siguen vivas).
+ *
+ * Se resuelve acá y no solo en `reservas/page.tsx` porque el `loading.tsx` de
+ * `[tenantSlug]` vuelve streaming esa página: en carga dura Next contesta 200 +
+ * meta refresh (después de renderizar el layout entero) en lugar de un 307. El
+ * mapeo es el mismo (`legacyReservasRedirect`); los params repetidos viajan
+ * como array para que gane el primero, igual que con los searchParams de Next.
+ */
+export function legacyReservasTarget(
+  slug: string,
+  rest: readonly string[],
+  searchParams: URLSearchParams,
+): string | null {
+  if (rest.length !== 1 || rest[0] !== 'reservas') return null
+  const sp: Record<string, string[]> = {}
+  for (const key of searchParams.keys()) sp[key] = searchParams.getAll(key)
+  return legacyReservasRedirect(slug, sp)
 }
 
 /** El mismo formato de slug que valida el Route Handler de /p/[slug]. */
@@ -310,6 +332,18 @@ export async function updateSession(request: NextRequest) {
         return NextResponse.redirect(new URL(`/${slug}/salon`, request.url))
       } else if (!canAccessManagerPath(role, rest)) {
         return NextResponse.redirect(new URL(homePathForRole(role, slug), request.url))
+      } else {
+        // La lista /reservas se retiró: 307 al calendario (va DESPUÉS del
+        // chequeo de rol, así el staff sigue cayendo en /salon).
+        const legacyTarget = legacyReservasTarget(slug, rest, request.nextUrl.searchParams)
+        if (legacyTarget) {
+          const redirect = NextResponse.redirect(new URL(legacyTarget, request.url), 307)
+          // Si getClaims() recién refrescó la sesión, las cookies nuevas viven
+          // en `response`: sin copiarlas, el browser seguiría el redirect con
+          // el token viejo.
+          for (const cookie of response.cookies.getAll()) redirect.cookies.set(cookie)
+          return redirect
+        }
       }
     }
   }

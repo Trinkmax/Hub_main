@@ -39,9 +39,24 @@ function queryMatches(href: string, current: URLSearchParams): boolean {
 }
 
 /**
+ * Largo del match más específico de este item contra el pathname (0 = no
+ * matchea). Cuenta su href y cada `alsoMatch` que matchee por prefijo: así
+ * /x/reservas/nuevo, que ya no tiene item propio, resalta Calendario con el
+ * largo de '/x/reservas' y compite en igualdad con el resto (longest-prefix).
+ */
+function matchLength(pathname: string, item: ResolvedNavItem): number {
+  let len = matchesPath(pathname, item.href, item.exact) ? stripQuery(item.href).length : 0
+  for (const alias of item.alsoMatch ?? []) {
+    if (matchesPath(pathname, alias)) len = Math.max(len, stripQuery(alias).length)
+  }
+  return len
+}
+
+/**
  * Set de hrefs activos para el sidebar. Reglas:
  *  1. Gana el match de pathname más específico (longest-prefix), aplanando
- *     padres + hijos para cruzar niveles de anidación.
+ *     padres + hijos para cruzar niveles de anidación. Los `alsoMatch` de un
+ *     item cuentan como si fueran su href (ver `matchLength`).
  *  2. Entre los que empatan en ese pathname, sólo quedan activos los que además
  *     satisfacen su query (subset de la query actual). El padre, sin query, pasa
  *     siempre — pero `SidebarParent` suprime su highlight cuando un hijo está
@@ -62,10 +77,8 @@ export function computeActiveHrefs(
   let maxLen = 0
   for (const item of all) {
     if (item.newTab) continue
-    if (matchesPath(pathname, item.href, item.exact)) {
-      const len = stripQuery(item.href).length
-      if (len > maxLen) maxLen = len
-    }
+    const len = matchLength(pathname, item)
+    if (len > maxLen) maxLen = len
   }
 
   const active = new Set<string>()
@@ -73,8 +86,7 @@ export function computeActiveHrefs(
 
   for (const item of all) {
     if (item.newTab) continue
-    if (!matchesPath(pathname, item.href, item.exact)) continue
-    if (stripQuery(item.href).length !== maxLen) continue
+    if (matchLength(pathname, item) !== maxLen) continue
     if (queryMatches(item.href, current)) active.add(item.href)
   }
   return active

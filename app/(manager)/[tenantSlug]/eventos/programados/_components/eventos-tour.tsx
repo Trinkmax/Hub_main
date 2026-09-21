@@ -4,10 +4,18 @@ import { TourLauncher } from '@/components/tour/tour-launcher'
 import type { TourDefinition } from '@/components/tour/types'
 import type { TenantRole } from '@/lib/tenant/types'
 
-/** Tutorial del calendario de eventos (formatos → drag & drop → cupos → reservas). */
+/**
+ * Tutorial del calendario: formatos → servicios del día → reservar → buscar →
+ * programar. Se auto-lanza para la anfitriona, que desde que se retiró la
+ * lista de Reservas carga todo desde acá.
+ */
 const EVENTOS_TOUR: TourDefinition = {
-  id: 'eventos@1',
-  title: 'Programar eventos',
+  // @2: el calendario pasó a ser la puerta de las reservas, con el día cortado
+  // por servicio. El sufijo es la clave de localStorage (hub:tour:{id}), así
+  // que subirlo re-lanza el tour una vez a quien ya vio el @1: justo lo que
+  // hace falta cuando cambian los gestos de la pantalla.
+  id: 'eventos@2',
+  title: 'Calendario y reservas',
   steps: [
     {
       id: 'bienvenida',
@@ -15,8 +23,9 @@ const EVENTOS_TOUR: TourDefinition = {
       title: 'Así funciona el calendario',
       body: (
         <>
-          Cada evento (Sushi Libre, Pizza Libre…) nace de un <strong>formato</strong> reutilizable:
-          definís el formato una vez y lo programás las veces que quieras.
+          Acá ves el mes, cargás las reservas y programás los eventos. Cada evento (Sushi Libre,
+          Pizza Libre…) nace de un <strong>formato</strong> reutilizable: lo definís una vez y lo
+          programás las veces que quieras.
         </>
       ),
     },
@@ -26,22 +35,49 @@ const EVENTOS_TOUR: TourDefinition = {
       title: 'Calendario y Formatos',
       body: (
         <>
-          En <strong>Calendario</strong> ves el mes con sus eventos y cupos. En{' '}
+          En <strong>Calendario</strong> ves el mes con sus reservas, eventos y cupos. En{' '}
           <strong>Formatos</strong> vive el catálogo: nombre, color, cupo por defecto y franja.
+        </>
+      ),
+    },
+    {
+      id: 'servicios',
+      target: '[data-tour="eventos-leyenda"]',
+      // La leyenda vive en la pestaña Calendario: si se abrió en Formatos, el
+      // paso igual se explica centrado.
+      fallbackCentered: true,
+      kicker: 'Nuevo ✨',
+      title: 'Almuerzo, merienda y cena',
+      body: (
+        <>
+          Cada día muestra almuerzo, merienda y cena por separado: personas sobre el cupo de cada
+          servicio. <strong>Verde</strong> hay lugar, <strong>ámbar</strong> se está llenando,{' '}
+          <strong>rojo</strong> te pasaste.
         </>
       ),
     },
     {
       id: 'mes',
       target: '[data-tour="eventos-mes"]',
-      title: 'Programar es arrastrar',
+      kicker: 'Nuevo ✨',
+      title: 'Reservar es tocar',
       body: (
         <ul className="list-disc space-y-1.5 pl-4">
-          <li>Arrastrá un formato hasta el día → confirmás hora y cupo, y listo.</li>
-          <li>También podés mover un evento de fecha arrastrándolo.</li>
-          <li>Tocá un día para ver sus reservas y cupos.</li>
+          <li>
+            Tocá un día o un servicio para ver cómo viene y cargar una reserva con la hora ya
+            puesta.
+          </li>
+          <li>Tocá un evento para reservar adentro.</li>
+          <li>En la compu, arrastrá formatos y eventos como siempre.</li>
         </ul>
       ),
+    },
+    {
+      id: 'buscar',
+      target: '[data-tour="eventos-buscar"]',
+      fallbackCentered: true,
+      title: 'Buscar y exportar',
+      body: <>Buscá una reserva por nombre o teléfono, o exportá el mes.</>,
     },
     {
       id: 'programar',
@@ -61,9 +97,9 @@ const EVENTOS_TOUR: TourDefinition = {
       title: 'Eventos y reservas van juntos',
       body: (
         <>
-          Una reserva atada a un evento ocupa su cupo, y si el evento se llena se activa el bonus de
-          comisión para quien gestionó esas reservas. El detalle de cada evento muestra su ocupación
-          en vivo.
+          Una reserva adentro de un evento ocupa su cupo, y el cupo del evento se descuenta de la
+          cena. Si el evento se llena, se activa el bonus de comisión para quien gestionó esas
+          reservas.
         </>
       ),
     },

@@ -78,7 +78,9 @@ export function homePathForRole(role: string, slug: string): string {
     case 'editor':
       return `/${slug}/menu`
     case 'host':
-      return `/${slug}/reservas`
+      // El calendario es la puerta única de las reservas (la lista /reservas
+      // solo redirige): la anfitriona arranca viendo el mes por servicio.
+      return `/${slug}/eventos/programados`
     case 'cashier':
     case 'waiter':
     case 'kitchen':
@@ -93,6 +95,11 @@ export function homePathForRole(role: string, slug: string): string {
  * manager para los roles acotados. El proxy redirige cualquier otra ruta al
  * home del rol; las páginas + RLS siguen siendo la defensa en profundidad.
  * `owner` no aparece: navega libre. Los roles de salón tampoco: viven en /salon.
+ *
+ * El host CONSERVA 'reservas' aunque la lista /reservas ya no exista (redirige
+ * al calendario): `canAccessManagerPath` mira solo el primer segmento, y sin
+ * ese prefijo la anfitriona perdería el alta (/reservas/nuevo) y la ficha
+ * (/reservas/[id]), que son justo donde carga la mayoría de las reservas.
  */
 export const MANAGER_SCOPED_PREFIXES: Partial<Record<TenantRole, ReadonlyArray<string>>> = {
   editor: ['menu'],
