@@ -3726,6 +3726,132 @@ export type Database = {
           },
         ]
       }
+      salon_segment_capacities: {
+        Row: {
+          capacity: number
+          created_at: string
+          id: string
+          iso_dow: number
+          segment: Database["public"]["Enums"]["meal_type"]
+          tenant_id: string
+          updated_at: string
+          warn_at: number | null
+        }
+        Insert: {
+          capacity: number
+          created_at?: string
+          id?: string
+          iso_dow: number
+          segment: Database["public"]["Enums"]["meal_type"]
+          tenant_id: string
+          updated_at?: string
+          warn_at?: number | null
+        }
+        Update: {
+          capacity?: number
+          created_at?: string
+          id?: string
+          iso_dow?: number
+          segment?: Database["public"]["Enums"]["meal_type"]
+          tenant_id?: string
+          updated_at?: string
+          warn_at?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "salon_segment_capacities_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      salon_segment_capacity_overrides: {
+        Row: {
+          capacity: number
+          created_at: string
+          id: string
+          override_date: string
+          reason: string | null
+          segment: Database["public"]["Enums"]["meal_type"]
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+          warn_at: number | null
+        }
+        Insert: {
+          capacity: number
+          created_at?: string
+          id?: string
+          override_date: string
+          reason?: string | null
+          segment: Database["public"]["Enums"]["meal_type"]
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+          warn_at?: number | null
+        }
+        Update: {
+          capacity?: number
+          created_at?: string
+          id?: string
+          override_date?: string
+          reason?: string | null
+          segment?: Database["public"]["Enums"]["meal_type"]
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+          warn_at?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "salon_segment_capacity_overrides_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      salon_segment_settings: {
+        Row: {
+          created_at: string
+          default_time: string
+          id: string
+          segment: Database["public"]["Enums"]["meal_type"]
+          tenant_id: string
+          updated_at: string
+          warn_note: string | null
+        }
+        Insert: {
+          created_at?: string
+          default_time: string
+          id?: string
+          segment: Database["public"]["Enums"]["meal_type"]
+          tenant_id: string
+          updated_at?: string
+          warn_note?: string | null
+        }
+        Update: {
+          created_at?: string
+          default_time?: string
+          id?: string
+          segment?: Database["public"]["Enums"]["meal_type"]
+          tenant_id?: string
+          updated_at?: string
+          warn_note?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "salon_segment_settings_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       salon_zone_capacity_overrides: {
         Row: {
           capacity: number

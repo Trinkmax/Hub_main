@@ -1026,3 +1026,33 @@ begin
   perform public.refresh_stats();
 end
 $seed$;
+
+-- ─────────────────────────────────────────────────────────────────
+-- CUPOS POR SERVICIO DEL HUB (migración 20260921120000_salon_segment_capacities)
+-- Van acá y no en la migración: en `db reset` las migraciones corren ANTES
+-- que este seed y el tenant hub recién existe después del bootstrap. Por slug
+-- y con `on conflict do nothing`, así correr el seed dos veces no duplica ni
+-- pisa lo que el dueño haya cambiado desde Configuración → Capacidad.
+-- Almuerzo lun-vie 70 (aviso en 50: "Conviene abrir la terraza"), sáb-dom
+-- 120; merienda 120; cena 120. Horas sugeridas 13:00 / 15:30 / 21:00.
+-- ─────────────────────────────────────────────────────────────────
+insert into public.salon_segment_settings (tenant_id, segment, default_time, warn_note)
+select t.id, s.segment::public.meal_type, s.default_time::time, s.warn_note
+from public.tenants t
+cross join (values
+  ('lunch', '13:00', 'Conviene abrir la terraza'),
+  ('tea_time', '15:30', null),
+  ('dinner', '21:00', null)
+) as s(segment, default_time, warn_note)
+where t.slug = 'hub'
+on conflict (tenant_id, segment) do nothing;
+
+insert into public.salon_segment_capacities (tenant_id, segment, iso_dow, capacity, warn_at)
+select t.id, c.segment::public.meal_type, d.iso_dow::smallint,
+  case when c.segment = 'lunch' and d.iso_dow <= 5 then 70 else 120 end,
+  case when c.segment = 'lunch' and d.iso_dow <= 5 then 50 else null end
+from public.tenants t
+cross join (values ('lunch'), ('tea_time'), ('dinner')) as c(segment)
+cross join generate_series(1, 7) as d(iso_dow)
+where t.slug = 'hub'
+on conflict (tenant_id, segment, iso_dow) do nothing;
