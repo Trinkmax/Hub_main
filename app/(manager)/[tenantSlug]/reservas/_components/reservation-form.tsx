@@ -10,6 +10,7 @@ import {
   MessageCircle,
   Minus,
   Plus,
+  RotateCcw,
   Search,
   Sparkles,
   User as UserIcon,
@@ -24,6 +25,7 @@ import PhoneInput from 'react-phone-number-input'
 import 'react-phone-number-input/style.css'
 import { toast } from 'sonner'
 import { CakeOptionPicker } from '@/components/reservations/cake-option-picker'
+import { SEGMENT_TONE_CLASSES, SegmentBar } from '@/components/reservations/segment-meter'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -36,6 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { calculateCommission, type RateTier } from '@/lib/commissions/calculate'
@@ -47,25 +50,50 @@ import {
   SERVICE_ALERTS,
   type ServiceAlert,
 } from '@/lib/salon/alerts'
-import { fetchDayCapacity, fetchScheduledEventsForDate } from '@/lib/salon/client-actions'
+import { calendarHref } from '@/lib/salon/calendar-links'
+import { fetchScheduledEventsForDate } from '@/lib/salon/client-actions'
 import { durationLabel, endsNextDay, isImplausibleSpan, tableSpanMinutes } from '@/lib/salon/format'
 import { groupManagersForSelect, pickDefaultManagerId } from '@/lib/salon/managers'
+import { buildReservationCandidate } from '@/lib/salon/new-reservation-defaults'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import { type CreateSalonReservationInput, createSalonReservationSchema } from '@/lib/salon/schemas'
+import { fetchDaySegments } from '@/lib/salon/segment-actions'
+import {
+  computeDaySegments,
+  type DaySegmentsSnapshot,
+  eventLoadsById,
+  mealTypeForSegment,
+  projectReservation,
+  resolveSegmentSettings,
+  type SegmentEventLoad,
+  type SegmentKey,
+  type SegmentProjection,
+  segmentOfEventStart,
+  segmentOfMealType,
+  segmentOfTime,
+} from '@/lib/salon/segments'
+import {
+  overCapacityConfirmCopy,
+  SEGMENT_WITH_ARTICLE,
+  savedToastCopy,
+  segmentHeadline,
+  segmentStatusLine,
+  segmentTone,
+} from '@/lib/salon/segments-copy'
+import { OverCapacityConfirm } from './over-capacity-confirm'
 import { QuickTemplateDialog } from './quick-template-dialog'
+import { SegmentPicker } from './segment-picker'
 
 type ReservationFormInput = CreateSalonReservationInput
 
 import {
   type CakeOptionRow,
-  type DayCapacityBucket,
-  MEAL_TYPE_LABELS,
-  type MealType,
   ORIGIN_LABELS,
   RESERVATION_KIND_LABELS,
   type ReservationKind,
   type ReservationManagerRow,
   type ReservationOrigin,
+  type SalonReservationStatus,
   type SalonZone,
   type ScheduledEventTemplateRow,
 } from '@/lib/salon/types'
@@ -75,6 +103,25 @@ type Props = {
   mode: 'create' | 'edit'
   tenantSlug: string
   initialDate: string
+  /**
+   * Hoy en Córdoba, desde el server. Los chips "Hoy / Mañana / …" salen de acá
+   * y no de `initialDate`: todas las altas nacen del calendario con ?date=, y
+   * con initialDate cualquier fecha futura decía "Hoy".
+   */
+  today: string
+  /**
+   * El cupo del día de `initialDate` (reservas activas sin datos personales,
+   * eventos, cupos y horas sugeridas por servicio). Llega con el HTML para que
+   * el medidor no arranque vacío; null si el server no lo pudo leer (el form
+   * lo vuelve a pedir y guardar nunca depende de esto).
+   */
+  initialSnapshot: DaySegmentsSnapshot | null
+  /**
+   * Estado de la reserva editada. Una cancelada o "no vino" no ocupa lugar:
+   * sin esto la proyección la sumaba y editarle el comentario en una cena
+   * llena pedía confirmar un sobrecupo que no existe.
+   */
+  reservationStatus?: SalonReservationStatus
   managers: ReservationManagerRow[]
   templates: ScheduledEventTemplateRow[]
   initialEventsForDate: ScheduledEventWithTemplate[]
@@ -120,10 +167,11 @@ type Props = {
   customerServiceAlerts?: ServiceAlert[]
 }
 
-// 'hub_event' (asociar a un evento de la tabla `events`) quedó retirado: los
-// eventos viven ahora en el Calendario (scheduled_events) y la reserva se asocia
-// vía zona "event_floating". El enum/esquema lo siguen aceptando por compatibilidad.
-const MEAL_TYPES: MealType[] = ['breakfast', 'lunch', 'tea_time', 'dinner']
+// El servicio se elige con <SegmentPicker> (Almuerzo / Merienda / Cena). Ni
+// 'hub_event' (retirado: los eventos viven en el Calendario y la reserva se
+// asocia vía zona "event_floating") ni 'breakfast' (2 en toda la historia,
+// cuenta como almuerzo) se ofrecen; el enum los sigue aceptando por las
+// reservas viejas.
 const ORIGINS: ReservationOrigin[] = [
   'whatsapp',
   'instagram',
@@ -154,6 +202,11 @@ function ddMM(iso: string): string {
   const [, m, d] = iso.split('-')
   return `${d}/${m}`
 }
+
+// El input date da '' mientras está vacío: con eso no se pide el cupo (el
+// server igual valida la fecha con zod).
+const ISO_DAY_RE = /^\d{4}-\d{2}-\d{2}$/
+const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d/
 
 function quickChips(today: string): Array<{ label: string; date: string }> {
   const base = new Date(`${today}T12:00:00Z`)
@@ -193,6 +246,9 @@ export function ReservationForm({
   mode,
   tenantSlug,
   initialDate,
+  today,
+  initialSnapshot,
+  reservationStatus,
   managers,
   templates: templatesProp,
   initialEventsForDate,
@@ -210,8 +266,16 @@ export function ReservationForm({
   const router = useRouter()
   const [templates, setTemplates] = useState<ScheduledEventTemplateRow[]>(templatesProp)
   const [submitting, startSubmit] = useTransition()
-  const [, startCapacity] = useTransition()
+  const [, startSnapshot] = useTransition()
   const [, startEvents] = useTransition()
+
+  // Hora sugerida por servicio (13:00 / 15:30 / 21:00 o la que configuró el
+  // bar). Es del bar, no del día: para los defaults alcanza con la que vino
+  // del server; si no vino, la del primer cupo que llegue (ver `settings`).
+  const initialSettings = useMemo(
+    () => initialSnapshot?.settings ?? resolveSegmentSettings([]),
+    [initialSnapshot],
+  )
 
   // Clave vieja del último gestor usado. Quedó en localStorage de los
   // dispositivos que ya venían cargando reservas; abajo la migramos a cookie.
@@ -238,9 +302,11 @@ export function ReservationForm({
       guest_email: undefined,
       customer_id: undefined,
       kind: 'normal',
+      // La cena a su hora sugerida (21:00 en el HUB; antes era un '21:30'
+      // fijo). Los initialValues de la página (?meal, ?time, ?event) la pisan.
       meal_type: 'dinner',
       reservation_date: initialDate,
-      reservation_time_local: '21:30',
+      reservation_time_local: initialSettings.dinner.defaultTime,
       reservation_end_time_local: '',
       zone: 'planta_alta',
       scheduled_event_id: undefined,
@@ -292,7 +358,20 @@ export function ReservationForm({
   const implausibleSpan = isImplausibleSpan(startTime, endTime)
   const [eventsForDate, setEventsForDate] =
     useState<ScheduledEventWithTemplate[]>(initialEventsForDate)
-  const [capacity, setCapacity] = useState<DayCapacityBucket[]>([])
+  // Cupo del día elegido: la foto con la que se proyecta la reserva sobre su
+  // servicio. `snapshotFailedFor` distingue "no se pudo leer" de "está
+  // llegando" para no dejar un skeleton eterno.
+  const [snapshot, setSnapshot] = useState<DaySegmentsSnapshot | null>(initialSnapshot)
+  const [snapshotFailedFor, setSnapshotFailedFor] = useState<string | null>(null)
+  const snapshotRequest = useRef(0)
+  const settings = snapshot?.settings ?? initialSettings
+  // Confirmación de sobrecupo abierta (D3): lo que se iba a guardar y con qué números.
+  const [confirming, setConfirming] = useState<{
+    data: ReservationFormInput
+    projection: SegmentProjection
+  } | null>(null)
+  // "Pasó a Merienda": el cambio de hora movió la reserva de servicio.
+  const [autoSwitchedTo, setAutoSwitchedTo] = useState<SegmentKey | null>(null)
 
   // Fecha real de cada evento que pasó por el combo. Sin esto, al mover la
   // fecha de la reserva el evento elegido desaparecía de la lista y no había
@@ -335,17 +414,46 @@ export function ReservationForm({
     })
   }, [values.reservation_date, initialDate, initialEventsForDate, tenantSlug])
 
-  // Refetch capacidad cuando cambia fecha (debounced trivial)
-  const lastFetchedDate = useRef('')
+  // Pide el cupo de un día. Guard de respuesta vieja: si la anfitriona toca
+  // "Mañana" y enseguida "Viernes", la respuesta de mañana no puede pisar la
+  // del viernes. Es la misma función para el cambio de fecha y para el
+  // «Reintentar» del medidor: limpiar el error al arrancar vuelve a mostrar el
+  // skeleton mientras se pide, así el reintento se nota.
+  const requestSnapshot = useCallback(
+    (date: string) => {
+      const request = ++snapshotRequest.current
+      setSnapshotFailedFor(null)
+      startSnapshot(async () => {
+        try {
+          const r = await fetchDaySegments(tenantSlug, date)
+          if (request !== snapshotRequest.current) return
+          if (r.ok) {
+            setSnapshot(r.data)
+            setSnapshotFailedFor(null)
+          } else {
+            setSnapshotFailedFor(date)
+          }
+        } catch {
+          // Sin red: el medidor lo dice y guardar sigue andando (D3 no bloquea).
+          if (request === snapshotRequest.current) setSnapshotFailedFor(date)
+        }
+      })
+    },
+    [tenantSlug],
+  )
+
+  // Cupo del día cuando cambia la fecha. La fecha inicial usa la foto que vino
+  // del server.
   useEffect(() => {
-    if (!values.reservation_date) return
-    if (lastFetchedDate.current === values.reservation_date) return
-    lastFetchedDate.current = values.reservation_date
-    startCapacity(async () => {
-      const r = await fetchDayCapacity(tenantSlug, values.reservation_date)
-      if (r.ok) setCapacity(r.buckets)
-    })
-  }, [values.reservation_date, tenantSlug])
+    const date = values.reservation_date
+    if (!date || !ISO_DAY_RE.test(date)) return
+    if (initialSnapshot && initialSnapshot.date === date) {
+      snapshotRequest.current += 1
+      setSnapshot(initialSnapshot)
+      return
+    }
+    requestSnapshot(date)
+  }, [values.reservation_date, initialSnapshot, requestSnapshot])
 
   // Auto-clear scheduled_event_id si zona no es event_floating
   useEffect(() => {
@@ -370,35 +478,118 @@ export function ReservationForm({
     }
   }, [values.kind, values.requested_template_id, form])
 
-  // Bucket activo según los datos del form
-  const activeBucket = useMemo<DayCapacityBucket | null>(() => {
-    // Sujeta a evento → bucket del evento elegido
-    if (values.zone === 'event_floating' && values.scheduled_event_id) {
-      return capacity.find((b) => b.bucket === `event:${values.scheduled_event_id}`) ?? null
+  // ── Cupo por servicio ─────────────────────────────────────
+  // Cómo viene el día (sin esta reserva) y cómo queda con ella. Los números
+  // salen de la MISMA cuenta que el calendario, el operativo y la confirmación
+  // de sobrecupo: la anfitriona ve acá lo que después le va a preguntar el
+  // AlertDialog.
+  const loadedActualGuests = initialValues?.actual_guests ?? null
+  const countsForCapacity = reservationStatus !== 'cancelled' && reservationStatus !== 'no_show'
+  const daySegments = useMemo(
+    () =>
+      snapshot && snapshot.date === values.reservation_date ? computeDaySegments(snapshot) : null,
+    [snapshot, values.reservation_date],
+  )
+  // No se pudo leer el cupo del día elegido (no "está llegando"): el medidor
+  // ofrece reintentar y el selector de servicio deja de mostrar skeletons.
+  const snapshotFailed = snapshotFailedFor === values.reservation_date
+  const eventLoads = useMemo<Record<string, SegmentEventLoad>>(
+    () => (daySegments ? eventLoadsById({ [daySegments.date]: daySegments }) : {}),
+    [daySegments],
+  )
+  const candidate = useMemo(
+    () =>
+      buildReservationCandidate({
+        mode,
+        reservationId,
+        values: {
+          reservation_date: values.reservation_date,
+          meal_type: values.meal_type,
+          reservation_time_local: values.reservation_time_local,
+          scheduled_event_id: values.scheduled_event_id,
+          zone: values.zone,
+          estimated_guests: values.estimated_guests,
+          kind: values.kind,
+          cake_count: values.cake_count,
+          requested_template_id: values.requested_template_id,
+        },
+        loadedActualGuests,
+        templates,
+        eventsForDate,
+      }),
+    [
+      mode,
+      reservationId,
+      values.reservation_date,
+      values.meal_type,
+      values.reservation_time_local,
+      values.scheduled_event_id,
+      values.zone,
+      values.estimated_guests,
+      values.kind,
+      values.cake_count,
+      values.requested_template_id,
+      loadedActualGuests,
+      templates,
+      eventsForDate,
+    ],
+  )
+  const projection = useMemo(
+    () => (countsForCapacity && snapshot ? projectReservation(snapshot, candidate) : null),
+    [countsForCapacity, snapshot, candidate],
+  )
+
+  // ── Hora ↔ servicio ───────────────────────────────────────
+  // Sin evento, el servicio de una reserva sale de `meal_type` (R3) y de eso
+  // sale también su tarifa de comisión: la hora y el servicio tienen que ir
+  // juntos. Se sincronizan SOLO desde lo que toca el usuario (onChange / onClick),
+  // nunca en un efecto: un efecto que escribe hora y servicio a la vez entra en
+  // loop con los otros efectos encadenados del form.
+  const hasEvent = values.zone === 'event_floating' && !!values.scheduled_event_id
+  const chosenEvent = hasEvent
+    ? (eventsForDate.find((e) => e.id === values.scheduled_event_id) ?? null)
+    : null
+  const lockedSegment: SegmentKey | null = hasEvent
+    ? chosenEvent
+      ? segmentOfEventStart(chosenEvent.starts_at_local)
+      : segmentOfMealType(values.meal_type)
+    : null
+  const selectedSegment = lockedSegment ?? segmentOfMealType(values.meal_type)
+  // "La hora no fue tocada": la puso el sistema (default, ?time, un evento, un
+  // servicio). Las escrituras automáticas van con shouldDirty:false.
+  const timeTouched = Boolean(form.formState.dirtyFields.reservation_time_local)
+  const timeValue = values.reservation_time_local ?? ''
+  const timeSegment = HHMM_RE.test(timeValue) ? segmentOfTime(timeValue) : null
+  const timeMismatch =
+    !lockedSegment && timeSegment && timeSegment !== selectedSegment
+      ? { time: timeValue.slice(0, 5), timeSegment }
+      : null
+
+  function selectSegment(segment: SegmentKey) {
+    setAutoSwitchedTo(null)
+    form.setValue('meal_type', mealTypeForSegment(segment), { shouldValidate: true })
+    if (!timeTouched) {
+      form.setValue('reservation_time_local', settings[segment].defaultTime, {
+        shouldValidate: true,
+        shouldDirty: false,
+      })
     }
-    // Reserva especial con formato pedido → si existe instance del template ese día,
-    // mostrar bucket de esa instance. Si va a crear ad-hoc, no hay bucket aún.
-    if (values.requested_template_id) {
-      const existing = eventsForDate.find((e) => e.template?.id === values.requested_template_id)
-      if (existing) {
-        return capacity.find((b) => b.bucket === `event:${existing.id}`) ?? null
-      }
-      return null
-    }
-    if (values.zone === 'planta_alta' || values.zone === 'planta_baja') {
-      return capacity.find((b) => b.bucket === `zone:${values.zone}`) ?? null
-    }
-    return null
-  }, [
-    values.zone,
-    values.scheduled_event_id,
-    values.requested_template_id,
-    capacity,
-    eventsForDate,
-  ])
+  }
+
+  function handleTimeChangedByUser(time: string) {
+    if (hasEvent || !HHMM_RE.test(time)) return
+    const next = segmentOfTime(time)
+    if (next === segmentOfMealType(values.meal_type)) return
+    form.setValue('meal_type', mealTypeForSegment(next), {
+      shouldValidate: true,
+      shouldDirty: false,
+    })
+    setAutoSwitchedTo(next)
+  }
+
+  const timeField = form.register('reservation_time_local')
 
   // Preview de comisión client-side
-  const loadedActualGuests = initialValues?.actual_guests ?? null
   const commissionPreviewCents = useMemo(() => {
     const primary = managers.find((m) => m.id === values.primary_manager_id)
     const assistant = values.assistant_manager_id
@@ -410,13 +601,16 @@ export function ReservationForm({
     const eventInfo = event
       ? {
           capacity: event.capacity,
-          // total_used vs capacity para activar bonus
-          total_used: (() => {
-            const b = capacity.find((x) => x.bucket === `event:${event.id}`)
-            // Sumamos la reserva propia al used si ya estaba activa
-            const used = (b?.used ?? 0) + (mode === 'create' ? values.estimated_guests : 0)
-            return used
-          })(),
+          // total_used vs capacity para activar el bonus de evento lleno: cómo
+          // queda el evento CON esta reserva (la proyección ya la suma, o la
+          // reemplaza en la edición). Sin cupo leído todavía, al menos cuenta
+          // la propia en el alta, como antes.
+          total_used:
+            projection?.event?.id === event.id
+              ? projection.event.used
+              : mode === 'create'
+                ? values.estimated_guests
+                : 0,
           full_bonus_active: event.full_bonus_active,
         }
       : null
@@ -447,7 +641,7 @@ export function ReservationForm({
     values.meal_type,
     managers,
     eventsForDate,
-    capacity,
+    projection,
     rateTiers,
     bonusPerGuestCents,
     mode,
@@ -470,6 +664,70 @@ export function ReservationForm({
       : !eventsForDate.some((e) => e.id === values.scheduled_event_id))
 
   // Submit
+  // Guarda de verdad. El último gestor usado lo persiste `createSalonReservation`
+  // en cookie.
+  async function persist(data: ReservationFormInput, saved: SegmentProjection | null) {
+    const result =
+      mode === 'create'
+        ? await createSalonReservation(tenantSlug, data as Record<string, unknown>)
+        : await updateSalonReservation(tenantSlug, {
+            ...data,
+            id: reservationId,
+          } as Record<string, unknown>)
+    if (result.ok) {
+      // El toast dice cómo quedó el servicio ("Reserva cargada · Cena · 123 de 120").
+      toast.success(savedToastCopy(mode, saved))
+      // Volvemos al calendario ABIERTO EN EL DÍA de la reserva y con su fila
+      // resaltada: al cargar una para el 31/07 el dueño volvía a hoy y no la
+      // veía ("las reservas no salen una vez registradas").
+      const savedId =
+        mode === 'create'
+          ? typeof result.data?.id === 'string'
+            ? result.data.id
+            : undefined
+          : reservationId
+      router.push(calendarHref(tenantSlug, { day: data.reservation_date, focusId: savedId }))
+      router.refresh()
+    } else {
+      toast.error(result.message)
+      if (result.field) {
+        form.setError(result.field as keyof ReservationFormInput, { message: result.message })
+      }
+    }
+  }
+
+  /**
+   * Proyección con datos FRESCOS al apretar Guardar (D3): la anfitriona y los
+   * socios cargan a la vez y el calendario no tiene Realtime, así que la foto
+   * de cuando se eligió la fecha puede estar vieja. Si el pedido falla se usa
+   * la foto que había: la confirmación nunca bloquea el guardado.
+   */
+  async function freshProjection(data: ReservationFormInput): Promise<SegmentProjection | null> {
+    if (!countsForCapacity) return null
+    const fresh = buildReservationCandidate({
+      mode,
+      reservationId,
+      values: data,
+      loadedActualGuests,
+      templates,
+      eventsForDate,
+    })
+    let base = snapshot
+    try {
+      const r = await fetchDaySegments(tenantSlug, data.reservation_date)
+      if (r.ok) {
+        base = r.data
+        // El medidor pasa a mostrar los mismos números que la confirmación.
+        snapshotRequest.current += 1
+        setSnapshot(r.data)
+        setSnapshotFailedFor(null)
+      }
+    } catch {
+      // Sin red: se sigue con la foto que había.
+    }
+    return base ? projectReservation(base, fresh) : null
+  }
+
   const onSubmit = form.handleSubmit(
     (data) => {
       if (eventDateMismatch) {
@@ -479,38 +737,16 @@ export function ReservationForm({
         toast.error('La fecha de la reserva no coincide con la del evento elegido.')
         return
       }
-      // El último gestor usado lo persiste `createSalonReservation` en cookie.
+      if (confirming) return
       startSubmit(async () => {
-        const action =
-          mode === 'create'
-            ? createSalonReservation(tenantSlug, data as Record<string, unknown>)
-            : updateSalonReservation(tenantSlug, {
-                ...data,
-                id: reservationId,
-              } as Record<string, unknown>)
-        const result = await action
-        if (result.ok) {
-          toast.success(
-            result.message ?? (mode === 'create' ? 'Reserva creada.' : 'Reserva actualizada.'),
-          )
-          // Volvemos a la lista PARADA EN EL DÍA de la reserva: la lista arranca
-          // en hoy, así que al cargar una para el 31/07 el dueño volvía y no la
-          // veía ("las reservas no salen una vez registradas"). `nueva` la
-          // resalta y muestra el aviso de creada.
-          if (mode === 'create' && result.data?.id) {
-            router.push(
-              `/${tenantSlug}/reservas?day=${data.reservation_date}&nueva=${result.data.id}`,
-            )
-          } else {
-            router.push(`/${tenantSlug}/reservas?day=${data.reservation_date}`)
-          }
-          router.refresh()
-        } else {
-          toast.error(result.message)
-          if (result.field) {
-            form.setError(result.field as keyof ReservationFormInput, { message: result.message })
-          }
+        const checked = await freshProjection(data)
+        // Se pregunta solo si el servicio queda pasado Y esta reserva lo
+        // empeora: editar el comentario de una cena ya llena no molesta.
+        if (checked?.needsConfirm) {
+          setConfirming({ data, projection: checked })
+          return
         }
+        await persist(data, checked)
       })
     },
     (errors) => {
@@ -549,19 +785,21 @@ export function ReservationForm({
     },
   )
 
-  // Cmd+Enter submit
+  // Cmd+Enter submit: el mismo camino que el botón (chequeo fresco y
+  // confirmación). Con la confirmación abierta o guardando, no dispara otra vez.
   useEffect(() => {
     function handler(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault()
+        if (submitting || confirming) return
         onSubmit()
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [onSubmit])
+  }, [onSubmit, submitting, confirming])
 
-  const chips = quickChips(initialDate)
+  const chips = quickChips(today)
 
   return (
     <form onSubmit={onSubmit} className="space-y-6">
@@ -650,7 +888,11 @@ export function ReservationForm({
                   type="time"
                   step={900}
                   aria-invalid={!!form.formState.errors.reservation_time_local}
-                  {...form.register('reservation_time_local')}
+                  {...timeField}
+                  onChange={(e) => {
+                    void timeField.onChange(e)
+                    handleTimeChangedByUser(e.target.value)
+                  }}
                   className="h-11 pl-9 text-base tabular-nums"
                 />
               </div>
@@ -721,12 +963,25 @@ export function ReservationForm({
         </div>
       </FieldGroup>
 
-      {/* Tipo de comida */}
+      {/* Servicio: Almuerzo / Merienda / Cena con su hora sugerida y cómo
+          viene su cupo ese día. Tocar uno mueve la hora si todavía no la
+          tocaron; si la tocaron y es de otro servicio, se avisa. */}
       <FieldGroup title="Tipo de servicio" icon={Sparkles}>
-        <Segmented
-          options={MEAL_TYPES.map((m) => ({ value: m, label: MEAL_TYPE_LABELS[m] }))}
-          value={values.meal_type}
-          onChange={(v) => form.setValue('meal_type', v as MealType, { shouldValidate: true })}
+        <SegmentPicker
+          value={selectedSegment}
+          settings={settings}
+          segments={daySegments?.segments ?? null}
+          segmentsFailed={snapshotFailed}
+          lockedSegment={lockedSegment}
+          onSelect={selectSegment}
+          timeMismatch={timeMismatch}
+          onUseSuggestedTime={() =>
+            form.setValue('reservation_time_local', settings[selectedSegment].defaultTime, {
+              shouldValidate: true,
+              shouldDirty: false,
+            })
+          }
+          autoSwitchedTo={autoSwitchedTo}
         />
       </FieldGroup>
 
@@ -738,7 +993,6 @@ export function ReservationForm({
         <div className="grid gap-2 sm:grid-cols-3">
           {FLOOR_ZONES.map((z) => {
             const isActive = values.zone === z
-            const bucket = capacity.find((b) => b.bucket === `zone:${z}`) ?? null
             return (
               <button
                 type="button"
@@ -748,9 +1002,13 @@ export function ReservationForm({
                 className={cn(ZONE_TILE, isActive ? ZONE_TILE_ACTIVE : ZONE_TILE_IDLE)}
               >
                 <span>{z === 'planta_alta' ? 'Planta Alta' : 'Planta Baja'}</span>
-                {bucket ? (
+                {/* Personas en la planta EN ESTE SERVICIO, sin denominador: el
+                    tope por planta del día entero mezclaba almuerzo y cena
+                    (el mismo defecto que el "171 de 130"). El tope es del
+                    servicio y lo muestra el medidor de abajo. */}
+                {projection ? (
                   <span className="text-[11px] tabular-nums text-muted-foreground">
-                    {bucket.used}/{bucket.capacity} personas
+                    {projection.before.byZone[z]} en {SEGMENT_WITH_ARTICLE[projection.segment]}
                   </span>
                 ) : null}
               </button>
@@ -761,11 +1019,26 @@ export function ReservationForm({
               key={e.id}
               event={e}
               active={values.zone === 'event_floating' && values.scheduled_event_id === e.id}
-              bucket={capacity.find((b) => b.bucket === `event:${e.id}`) ?? null}
+              load={eventLoads[e.id] ?? null}
               onSelect={() => {
                 form.setValue('zone', 'event_floating', { shouldValidate: true })
                 form.setValue('scheduled_event_id', e.id, { shouldValidate: true })
                 form.clearErrors('scheduled_event_id')
+                // El evento define el servicio (por su hora, R2) y con eso la
+                // tarifa: 'hub_event' no tiene y dejaba la comisión en 0. Si la
+                // hora no la tocaron, la reserva arranca con el evento.
+                setAutoSwitchedTo(null)
+                form.setValue(
+                  'meal_type',
+                  mealTypeForSegment(segmentOfEventStart(e.starts_at_local)),
+                  { shouldValidate: true, shouldDirty: false },
+                )
+                if (!timeTouched) {
+                  form.setValue('reservation_time_local', e.starts_at_local.slice(0, 5), {
+                    shouldValidate: true,
+                    shouldDirty: false,
+                  })
+                }
               }}
             />
           ))}
@@ -951,9 +1224,18 @@ export function ReservationForm({
             value={values.estimated_guests}
             onChange={(v) => form.setValue('estimated_guests', v, { shouldValidate: true })}
           />
-          <CapacityMeter
-            bucket={activeBucket}
-            guestsToAdd={mode === 'create' ? values.estimated_guests : 0}
+          <SegmentMeter
+            projection={projection}
+            fallback={
+              !countsForCapacity
+                ? 'inactive'
+                : !ISO_DAY_RE.test(values.reservation_date ?? '')
+                  ? 'no-date'
+                  : snapshotFailed
+                    ? 'error'
+                    : 'loading'
+            }
+            onRetry={() => requestSnapshot(values.reservation_date)}
           />
         </div>
       </FieldGroup>
@@ -1279,6 +1561,22 @@ export function ReservationForm({
           {submitting ? 'Guardando…' : mode === 'create' ? 'Crear reserva' : 'Guardar cambios'}
         </Button>
       </div>
+
+      {/* Sobrecupo (D3): se guarda recién al confirmar. El AlertDialog va en
+          un portal, así que sus botones no envían este <form>. */}
+      <OverCapacityConfirm
+        projection={confirming?.projection ?? null}
+        mode={mode}
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => {
+          const pending = confirming
+          setConfirming(null)
+          if (!pending) return
+          startSubmit(async () => {
+            await persist(pending.data, pending.projection)
+          })
+        }}
+      />
     </form>
   )
 }
@@ -1557,60 +1855,78 @@ function BringsItemControl({
   )
 }
 
-function CapacityMeter({
-  bucket,
-  guestsToAdd,
+const METER_FALLBACK_TEXT = {
+  'no-date': 'Elegí la fecha para ver el cupo del servicio.',
+  error: 'No pudimos leer el cupo de ese día. Igual podés guardar.',
+  inactive: 'Esta reserva está cancelada o marcada como que no vino: no ocupa lugar en el cupo.',
+} as const
+
+/**
+ * Cómo queda el servicio CON esta reserva: "Cena · 123 de 120", la barra
+ * (evento con su color, normales con el tono del estado, libre) y la decisión
+ * en una línea. Son los mismos números que va a mostrar la confirmación de
+ * sobrecupo al guardar, así el AlertDialog no sorprende. Pasarse se permite:
+ * solo se avisa.
+ */
+function SegmentMeter({
+  projection,
+  fallback,
+  onRetry,
 }: {
-  bucket: DayCapacityBucket | null
-  guestsToAdd: number
+  projection: SegmentProjection | null
+  fallback: 'loading' | 'error' | 'no-date' | 'inactive'
+  /** Vuelve a pedir el cupo del día. Sin esto, la única salida era cambiar de fecha y volver. */
+  onRetry: () => void
 }) {
-  if (!bucket) {
+  if (!projection) {
+    if (fallback === 'loading') {
+      return (
+        <div className="space-y-2 rounded-xl border border-border/60 bg-card/60 p-3">
+          <span className="sr-only">Leyendo el cupo del servicio…</span>
+          <Skeleton aria-hidden className="h-4 w-32" />
+          <Skeleton aria-hidden className="h-1.5 w-full rounded-full" />
+          <Skeleton aria-hidden className="h-3 w-40" />
+        </div>
+      )
+    }
+    if (fallback === 'error') {
+      return (
+        <div className="flex min-h-14 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/70 bg-card/40 px-4 py-3 text-center text-xs text-muted-foreground">
+          <p role="status">{METER_FALLBACK_TEXT.error}</p>
+          <Button type="button" variant="outline" size="sm" className="h-9" onClick={onRetry}>
+            <RotateCcw aria-hidden className="size-3.5" />
+            Reintentar
+          </Button>
+        </div>
+      )
+    }
     return (
-      <div className="flex h-14 items-center justify-center rounded-xl border border-dashed border-border/70 bg-card/40 px-4 text-xs text-muted-foreground">
-        Elegí zona o evento para ver capacidad
+      <div className="flex min-h-14 items-center justify-center rounded-xl border border-dashed border-border/70 bg-card/40 px-4 text-center text-xs text-muted-foreground">
+        {METER_FALLBACK_TEXT[fallback]}
       </div>
     )
   }
-  const projected = bucket.used + guestsToAdd
-  const pct = bucket.capacity > 0 ? Math.min(100, (projected / bucket.capacity) * 100) : 0
-  const isOver = projected > bucket.capacity
+
+  const after = projection.after
+  const tone = SEGMENT_TONE_CLASSES[segmentTone(after)]
+  const status = segmentStatusLine(after)
+  const eventLine = projection.event ? overCapacityConfirmCopy(projection).eventLine : null
   return (
     <div className="space-y-1.5 rounded-xl border border-border/60 bg-card/60 p-3">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-xs uppercase tracking-wide text-muted-foreground">Capacidad</span>
-        <span
-          className={cn(
-            'font-mono text-sm tabular-nums',
-            isOver ? 'text-rose-600 dark:text-rose-400' : 'text-foreground',
-          )}
-        >
-          {projected} / {bucket.capacity}
-        </span>
-      </div>
-      <div className="h-2 overflow-hidden rounded-full bg-secondary">
-        <motion.div
-          animate={{ width: `${pct}%` }}
-          transition={{ duration: 0.4, ease: 'easeOut' }}
-          className={cn(
-            'h-full rounded-full',
-            isOver
-              ? 'bg-rose-500'
-              : projected >= bucket.capacity * 0.9
-                ? 'bg-amber-500'
-                : 'bg-emerald-500',
-          )}
-        />
-      </div>
-      {isOver ? (
-        <p className="text-[11px] text-rose-600 dark:text-rose-400">
-          Vas a hacer overbooking de {projected - bucket.capacity} personas (se permite).
-        </p>
-      ) : (
-        <p className="text-[11px] text-muted-foreground">
-          {bucket.capacity - projected} {bucket.capacity - projected === 1 ? 'lugar' : 'lugares'}{' '}
-          libres tras esta reserva.
-        </p>
-      )}
+      <p className={cn('font-mono text-sm font-medium tabular-nums', tone.text)}>
+        {segmentHeadline(after, 'long')}
+      </p>
+      <SegmentBar segment={after} size="sm" />
+      <p
+        aria-live="polite"
+        className={cn(
+          'text-[11px] leading-snug',
+          projection.needsConfirm ? tone.text : 'text-muted-foreground',
+        )}
+      >
+        {projection.needsConfirm ? `Al guardar te vamos a pedir confirmación: ${status}` : status}
+      </p>
+      {eventLine ? <p className="text-[11px] text-muted-foreground">{eventLine}</p> : null}
     </div>
   )
 }
@@ -1762,24 +2078,25 @@ function CustomerCombobox({
 
 /**
  * Un evento programado del día como opción de "Dónde se sienta": nombre con el
- * color del formato, hora y ocupación real (si ya llegó la capacidad del día).
- * Un toque = zona `event_floating` + `scheduled_event_id`.
+ * color del formato, hora y ocupación real (la misma cuenta del calendario, si
+ * ya llegó el cupo del día). Un toque = zona `event_floating` +
+ * `scheduled_event_id`, y el servicio del evento.
  */
 function EventZoneTile({
   event,
   active,
-  bucket,
+  load,
   onSelect,
 }: {
   event: ScheduledEventWithTemplate
   active: boolean
-  bucket: DayCapacityBucket | null
+  load: SegmentEventLoad | null
   onSelect: () => void
 }) {
   const color = event.template?.color_hex ?? 'var(--primary)'
   const name = event.name_override ?? event.template?.name ?? 'Evento'
-  const used = bucket?.used ?? null
-  const cap = bucket?.capacity ?? event.capacity
+  const used = load?.used ?? null
+  const cap = load?.capacity ?? event.capacity
   const full = used !== null && cap > 0 && used >= cap
   return (
     <button

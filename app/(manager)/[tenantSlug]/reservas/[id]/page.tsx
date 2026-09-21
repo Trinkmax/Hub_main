@@ -4,7 +4,8 @@ import { notFound } from 'next/navigation'
 import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
 import { PageHeader } from '@/components/ui/page-header'
 import { resolveReservationAlerts } from '@/lib/salon/alerts'
-import { formatDayLabel } from '@/lib/salon/date-presets'
+import { calendarHref } from '@/lib/salon/calendar-links'
+import { formatDayLabel, todayInCordoba } from '@/lib/salon/date-presets'
 import { timeRangeLabel } from '@/lib/salon/format'
 import {
   getBonusRule,
@@ -16,6 +17,8 @@ import {
   listScheduledEventsForDate,
   listScheduledTemplates,
 } from '@/lib/salon/queries'
+import { getDaySegmentsSnapshot } from '@/lib/salon/segment-queries'
+import type { DaySegmentsSnapshot } from '@/lib/salon/segments'
 import {
   getCurrentUser,
   RESERVATION_STAFF_ROLES,
@@ -29,6 +32,24 @@ import { ReservationForm } from '../_components/reservation-form'
 
 export const metadata = { title: 'Reserva' }
 export const dynamic = 'force-dynamic'
+
+/**
+ * El cupo del día de la reserva para el medidor del form. No puede tirar la
+ * página: sin él el form lo vuelve a pedir y guardar sigue andando (la
+ * confirmación de sobrecupo nunca bloquea).
+ */
+async function snapshotOrNull(tenantId: string, date: string): Promise<DaySegmentsSnapshot | null> {
+  try {
+    return await getDaySegmentsSnapshot({ tenantId, date })
+  } catch (error) {
+    const code = (error as { code?: unknown } | null)?.code
+    console.error('[reservas.detalle.snapshot]', {
+      tenantId,
+      code: typeof code === 'string' ? code : undefined,
+    })
+    return null
+  }
+}
 
 export default async function ReservaDetailPage({
   params,
@@ -50,15 +71,16 @@ export default async function ReservaDetailPage({
   const user = await getCurrentUser()
 
   // La reserva se pide en paralelo con los catálogos (no dependen de ella);
-  // solo los eventos del día se encadenan a su fecha. Antes eran 2 hops
-  // secuenciales (reserva → todo lo demás); ahora el camino crítico es
-  // reserva → eventos y el resto viaja junto.
+  // solo los eventos y el cupo del día se encadenan a su fecha. Antes eran 2
+  // hops secuenciales (reserva → todo lo demás); ahora el camino crítico es
+  // reserva → eventos/cupo y el resto viaja junto.
   const reservationPromise = getSalonReservation({ tenantId: access.tenant.id, id })
   const [
     reservation,
     managers,
     templates,
     eventsForDate,
+    snapshot,
     tiers,
     bonus,
     linkedManager,
@@ -69,6 +91,9 @@ export default async function ReservaDetailPage({
     listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: true }),
     reservationPromise.then((r) =>
       r ? listScheduledEventsForDate({ tenantId: access.tenant.id, date: r.reservation_date }) : [],
+    ),
+    reservationPromise.then((r) =>
+      r ? snapshotOrNull(access.tenant.id, r.reservation_date) : null,
     ),
     listRateTiers({ tenantId: access.tenant.id }),
     getBonusRule({ tenantId: access.tenant.id }),
@@ -88,14 +113,15 @@ export default async function ReservaDetailPage({
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <PageHeader
         eyebrow={
-          // Vuelve al día DE ESTA reserva, no a hoy: si no, salir del detalle
-          // de una reserva del 31/07 devolvía una lista donde no estaba.
+          // Vuelve al calendario abierto en el día DE ESTA reserva y con su
+          // fila resaltada, no a hoy: si no, salir del detalle de una reserva
+          // del 31/07 devolvía una pantalla donde no estaba.
           <Link
-            href={`/${tenantSlug}/reservas?day=${reservation.reservation_date}`}
+            href={calendarHref(tenantSlug, { day: reservation.reservation_date, focusId: id })}
             className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="size-3.5" />
-            Volver a reservas
+            Volver al calendario
           </Link>
         }
         title={reservation.guest_name}
@@ -129,6 +155,9 @@ export default async function ReservaDetailPage({
           mode="edit"
           tenantSlug={tenantSlug}
           initialDate={reservation.reservation_date}
+          today={todayInCordoba()}
+          initialSnapshot={snapshot}
+          reservationStatus={reservation.status}
           managers={managers}
           templates={templates}
           initialEventsForDate={eventsForDate}
