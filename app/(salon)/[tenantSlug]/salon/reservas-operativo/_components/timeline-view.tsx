@@ -9,8 +9,11 @@ import { type AnyRealtimePayload, mergeRow } from '@/lib/realtime/optimistic-mer
 import { subscribeChanges } from '@/lib/realtime/subscribe'
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'
 import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
+import { newReservationHref } from '@/lib/salon/calendar-links'
 import { fetchDayExtras, fetchReservationsForDate } from '@/lib/salon/client-actions'
+import { nowMinutesInCordoba } from '@/lib/salon/operativo'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
+import { computeDaySegments, type DaySegmentCaps, focusSegment } from '@/lib/salon/segments'
 import type { DayCapacityBucket, ReservationWithJoins, SalonZone } from '@/lib/salon/types'
 import { RESERVATION_OPERATOR_ROLES, RESERVATION_STAFF_ROLES } from '@/lib/tenant/roles'
 import type { TenantRole } from '@/lib/tenant/types'
@@ -37,6 +40,8 @@ import { ReservationCard } from './reservation-card'
 
 // Realtime es el camino principal; esto es la red de seguridad (ver useVisibleInterval).
 const SAFETY_NET_INTERVAL_MS = 90_000
+// El reloj solo elige qué servicio va adelante: con un minuto de precisión sobra.
+const CLOCK_TICK_MS = 60_000
 
 const ZONE_LABEL: Record<SalonZone, string> = {
   planta_alta: 'Alta',
@@ -72,6 +77,7 @@ export function TimelineView({
   isToday,
   initialReservations,
   initialCapacity,
+  initialSegmentCaps,
   initialEvents,
 }: {
   tenantSlug: string
@@ -81,24 +87,33 @@ export function TimelineView({
   isToday: boolean
   initialReservations: ReservationWithJoins[]
   initialCapacity: DayCapacityBucket[]
+  /** Cupos resueltos de almuerzo/merienda/cena para `date` (el cálculo corre acá). */
+  initialSegmentCaps: DaySegmentCaps
   initialEvents: ScheduledEventWithTemplate[]
 }) {
   const router = useRouter()
   const [reservations, setReservations] = useState(initialReservations)
   const [capacity, setCapacity] = useState(initialCapacity)
+  const [segmentCaps, setSegmentCaps] = useState(initialSegmentCaps)
   const [events, setEvents] = useState(initialEvents)
+  // Minutos del reloj del bar, solo hoy. Arranca en null también en el cliente:
+  // el server no sabe la hora del dispositivo y así no hay desajuste de
+  // hidratación (mientras tanto el foco es la cena).
+  const [nowMinutes, setNowMinutes] = useState<number | null>(null)
 
   const canOperate = RESERVATION_OPERATOR_ROLES.includes(role)
   // Cargar una reserva vive en el workspace manager, del que el proxy rebota a
-  // cualquier mozo: mostrarle el link era un callejón sin salida.
+  // cualquier mozo: mostrarle el link era un callejón sin salida. El link lleva
+  // la fecha que se está mirando: el alta abre en ese día, no en hoy.
   const canCreate = RESERVATION_STAFF_ROLES.includes(role)
 
-  // Una sola server action (capacidad + eventos): cada action es una
-  // invocación de función aparte en Vercel.
+  // Una sola server action (capacidad + eventos + cupos por servicio): cada
+  // action es una invocación de función aparte en Vercel.
   const refreshExtras = useCallback(async () => {
     const r = await fetchDayExtras(tenantSlug, date)
     if (!r.ok) return
     setCapacity(r.buckets)
+    setSegmentCaps(r.caps)
     setEvents(r.events)
   }, [tenantSlug, date])
 
@@ -107,7 +122,26 @@ export function TimelineView({
   // Resetear estado al cambiar de fecha (el RSC re-renderea con props nuevas).
   useEffect(() => setReservations(initialReservations), [initialReservations])
   useEffect(() => setCapacity(initialCapacity), [initialCapacity])
+  useEffect(() => setSegmentCaps(initialSegmentCaps), [initialSegmentCaps])
   useEffect(() => setEvents(initialEvents), [initialEvents])
+
+  useEffect(() => {
+    if (!isToday) {
+      setNowMinutes(null)
+      return
+    }
+    const tick = () => setNowMinutes(nowMinutesInCordoba())
+    tick()
+    const id = window.setInterval(tick, CLOCK_TICK_MS)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [isToday])
 
   // Realtime: si el host carga una reserva desde el manager, al mozo le aparece
   // sola en la lista.
@@ -168,6 +202,15 @@ export function TimelineView({
     }
     return { waiting, here, total: reservations.length }
   }, [reservations])
+
+  // Cupo POR SERVICIO sobre las reservas que ya mergea Realtime: una reserva
+  // que carga la anfitriona mueve el chip de la cena al toque, con la misma
+  // cuenta que el calendario y el operativo.
+  const daySegments = useMemo(
+    () => computeDaySegments({ date, reservations, events, caps: segmentCaps }),
+    [date, reservations, events, segmentCaps],
+  )
+  const focus = focusSegment(daySegments, isToday ? nowMinutes : null)
 
   // Agrupadas por hora, en orden. Es como el mozo lee la noche.
   const groups = useMemo(() => {
@@ -242,7 +285,7 @@ export function TimelineView({
           </Button>
         </div>
 
-        <CapacityHeader capacity={capacity} events={events} />
+        <CapacityHeader segments={daySegments} focus={focus} capacity={capacity} events={events} />
       </div>
 
       {groups.length === 0 ? (
@@ -256,7 +299,7 @@ export function TimelineView({
           </p>
           {canCreate ? (
             <Button asChild variant="outline" className="mt-5 gap-2">
-              <Link href={`/${tenantSlug}/reservas/nuevo`} prefetch={false}>
+              <Link href={newReservationHref(tenantSlug, { date })} prefetch={false}>
                 <CalendarPlus className="size-4" aria-hidden />
                 Cargar una
               </Link>
@@ -301,7 +344,7 @@ export function TimelineView({
 
       {canCreate && groups.length > 0 ? (
         <Button asChild variant="outline" className={cn('h-12 w-full gap-2')}>
-          <Link href={`/${tenantSlug}/reservas/nuevo`} prefetch={false}>
+          <Link href={newReservationHref(tenantSlug, { date })} prefetch={false}>
             <CalendarPlus className="size-4" aria-hidden />
             Cargar una reserva
           </Link>

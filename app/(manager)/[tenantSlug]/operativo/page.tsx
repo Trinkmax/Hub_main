@@ -8,6 +8,7 @@ import {
   listScheduledEventsForDate,
   listTimelineForDate,
 } from '@/lib/salon/queries'
+import { getDaySegmentCaps } from '@/lib/salon/segment-queries'
 import {
   RESERVATION_OPERATOR_ROLES,
   RESERVATION_STAFF_ROLES,
@@ -73,11 +74,16 @@ export default async function OperativoPage({
   const date = typeof sp.date === 'string' && isRealDate(sp.date) ? sp.date : today
   const tenantId = access.tenant.id
 
-  const [reservations, capacity, events, rules] = await Promise.all([
+  // Los cupos por servicio llegan RESUELTOS (almuerzo/merienda/cena de ese
+  // día): la cuenta corre en el cliente sobre las reservas vivas, con la misma
+  // función que el calendario, así el pulso late con Realtime y no dice otro
+  // número que el mes.
+  const [reservations, capacity, events, rules, segmentCaps] = await Promise.all([
     listTimelineForDate({ tenantId, date }),
     getDayCapacitySnapshot({ tenantId, date }),
     listScheduledEventsForDate({ tenantId, date }),
     listRules({ tenantId }),
+    getDaySegmentCaps({ tenantId, date }),
   ])
 
   // Acreditaciones de puntos de ESTA noche para los socios que tienen reserva:
@@ -107,6 +113,7 @@ export default async function OperativoPage({
       today={today}
       initialReservations={reservations}
       initialCapacity={capacity}
+      initialSegmentCaps={segmentCaps}
       initialEvents={events}
       initialAwards={awards}
       earnRate={resolveEarnRate(rules)}

@@ -1,7 +1,8 @@
 'use client'
 
-import { summarizeDayCovers } from '@/lib/salon/covers'
+import { SegmentChip } from '@/components/reservations/segment-meter'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
+import { type DaySegments, SEGMENT_KEYS, type SegmentKey } from '@/lib/salon/segments'
 import type { DayCapacityBucket } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
@@ -12,72 +13,60 @@ import { cn } from '@/lib/utils'
  * "¡Casi lleno!" parpadeando — 4 filas apiladas en un celular, que empujaban la
  * lista de reservas casi fuera de la pantalla. Al mozo le alcanza con saber si
  * hay lugar; el detalle es del dueño y vive en el manager.
+ *
+ * El cupo se lee POR SERVICIO ("Cena 119/120"), con la misma cuenta que el
+ * calendario y el operativo. Se fueron el chip "Total" y los de Planta Alta /
+ * Planta Baja: sumaban el almuerzo y la cena contra el tope físico del día y
+ * decían "171/130" una noche sin sobrecupo. El servicio del reloj va primero y
+ * destacado; después, los chips por evento (su propio cupo).
  */
 export function CapacityHeader({
+  segments,
+  focus,
   capacity,
   events,
 }: {
+  segments: DaySegments
+  /** El servicio del reloj (la cena si no es hoy). */
+  focus: SegmentKey
+  /** Solo para los chips por evento (bucket event:*). */
   capacity: DayCapacityBucket[]
   events: ScheduledEventWithTemplate[]
 }) {
-  // Total del día primero: es la respuesta a "¿entramos?" y tiene que ser el
-  // MISMO número que el dueño ve en /reservas (salón + eventos sobre el tope
-  // físico). Antes el mozo veía tres chips sueltos sin total y el manager decía
-  // otra cosa.
-  const covers = summarizeDayCovers(capacity)
+  // Solo los servicios con algo: el del reloj adelante, el resto en orden A/M/C.
+  const services = [focus, ...SEGMENT_KEYS.filter((k) => k !== focus)]
+    .map((k) => segments.segments[k])
+    .filter((s) => s.hasActivity)
 
-  const items: Array<{ key: string; label: string; bucket?: DayCapacityBucket; color?: string }> = [
-    {
-      key: 'pa',
-      label: 'Planta alta',
-      bucket: capacity.find((b) => b.bucket === 'zone:planta_alta'),
-    },
-    {
-      key: 'pb',
-      label: 'Planta baja',
-      bucket: capacity.find((b) => b.bucket === 'zone:planta_baja'),
-    },
-    ...events.map((e) => ({
+  const eventItems = events
+    .map((e) => ({
       key: e.id,
       label: e.name_override ?? e.template?.name ?? 'Evento',
       bucket: capacity.find((b) => b.bucket === `event:${e.id}`),
       color: e.template?.color_hex ?? undefined,
-    })),
-  ]
+    }))
+    .filter((i): i is typeof i & { bucket: DayCapacityBucket } => i.bucket !== undefined)
 
-  const visible = items.filter((i) => i.bucket)
-  if (visible.length === 0) return null
-
-  const totalOver = covers.used > covers.total
-  const totalFull = !totalOver && covers.total > 0 && covers.used >= covers.total * 0.9
+  if (services.length === 0 && eventItems.length === 0) return null
 
   return (
     <ul
       aria-label="Ocupación del día"
       className="-mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
-      <li
-        className={cn(
-          'flex shrink-0 snap-start items-center gap-2 rounded-full border px-3 py-1.5',
-          totalOver
-            ? 'border-destructive/50 bg-destructive/10'
-            : totalFull
-              ? 'border-warning/50 bg-warning/10'
-              : 'border-border/70 bg-card',
-        )}
-      >
-        <span className="text-xs font-medium text-muted-foreground">Total</span>
-        <span
-          className={cn(
-            'font-mono text-xs font-semibold tabular-nums',
-            totalOver ? 'text-destructive' : 'text-foreground',
-          )}
-        >
-          {covers.used}/{covers.total}
-        </span>
-      </li>
-      {visible.map((item) => {
-        const b = item.bucket as DayCapacityBucket
+      {services.map((s) => (
+        <li key={s.key} className="flex shrink-0 snap-start">
+          <SegmentChip
+            segment={s}
+            label="short"
+            emphasized={s.key === focus}
+            // Mismo alto que los chips de evento de al lado.
+            className="px-3 py-1.5 text-xs"
+          />
+        </li>
+      ))}
+      {eventItems.map((item) => {
+        const b = item.bucket
         const over = b.used > b.capacity
         const full = !over && b.capacity > 0 && b.used >= b.capacity * 0.9
         return (

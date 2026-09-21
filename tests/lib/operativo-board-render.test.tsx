@@ -2,6 +2,8 @@
 import { createElement } from 'react'
 import { renderToString } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
+import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
+import type { DaySegmentCaps, ResolvedSegmentCap } from '@/lib/salon/segments'
 import type { ReservationWithJoins } from '@/lib/salon/types'
 
 /**
@@ -90,6 +92,51 @@ function reservation(over: Partial<ReservationWithJoins>): ReservationWithJoins 
     scheduled_event: null,
     customer: null,
     cake_option: null,
+    ...over,
+  }
+}
+
+function weekly(capacity: number, warn?: { at: number; note: string }): ResolvedSegmentCap {
+  return {
+    capacity,
+    warnAt: warn?.at ?? null,
+    warnNote: warn?.note ?? null,
+    source: 'weekly',
+    overrideReason: null,
+  }
+}
+
+/** Cupos por servicio de un sábado del HUB: 120 en los tres. */
+const SAT_CAPS: DaySegmentCaps = {
+  lunch: weekly(120),
+  tea_time: weekly(120),
+  dinner: weekly(120),
+}
+
+function scheduledEvent(over: Partial<ScheduledEventWithTemplate>): ScheduledEventWithTemplate {
+  return {
+    id: 'ev',
+    tenant_id: 't',
+    template_id: 'tpl',
+    name_override: null,
+    event_date: '2026-09-05',
+    starts_at_local: '21:00:00',
+    ends_at_local: null,
+    capacity: 140,
+    meal_type: 'dinner',
+    full_bonus_active: true,
+    attendance_points: 0,
+    notes: null,
+    created_at: '',
+    updated_at: '',
+    template: {
+      id: 'tpl',
+      name: 'Pizza libre',
+      slug: 'pizza',
+      color_hex: '#e11d48',
+      consume_special_reservations: true,
+      default_capacity: 140,
+    },
     ...over,
   }
 }
@@ -203,32 +250,8 @@ describe('OperativoBoard (SSR)', () => {
           { bucket: 'zone:event_floating', used: 22, capacity: 0, available: 0 },
           { bucket: 'event:ev', used: 22, capacity: 140, available: 118 },
         ],
-        initialEvents: [
-          {
-            id: 'ev',
-            tenant_id: 't',
-            template_id: 'tpl',
-            name_override: null,
-            event_date: '2026-09-05',
-            starts_at_local: '21:00:00',
-            ends_at_local: null,
-            capacity: 140,
-            meal_type: 'dinner',
-            full_bonus_active: true,
-            attendance_points: 0,
-            notes: null,
-            created_at: '',
-            updated_at: '',
-            template: {
-              id: 'tpl',
-              name: 'Pizza libre',
-              slug: 'pizza',
-              color_hex: '#e11d48',
-              consume_special_reservations: true,
-              default_capacity: 140,
-            },
-          },
-        ],
+        initialSegmentCaps: SAT_CAPS,
+        initialEvents: [scheduledEvent({})],
         initialAwards: [
           {
             customer_id: 'c1',
@@ -258,6 +281,106 @@ describe('OperativoBoard (SSR)', () => {
     expect(html).toContain('Cena')
     // Sin marcador de "ahora" en SSR (el reloj arranca en null para no romper la hidratación).
     expect(html).not.toContain('data-now-marker')
+
+    // Cupo POR SERVICIO, nunca "usado/total del salón" (el viejo "171 de 130").
+    // Cena de la noche: 24 + 18 (real) + 5 (trasnoche) normales y 22 en Pizza
+    // libre; el no_show y la cancelada no cuentan. Pizza libre (140) aparta los
+    // 120 de la cena, así que las 47 normales la pasan: rojo con su porqué.
+    expect(html).not.toContain('del salón')
+    expect(html).toContain('Cena 69/120')
+    expect(html).toContain('Alm 2')
+    expect(html).toContain('Te pasaste por 47: Pizza libre tiene apartados 120 lugares')
+    expect(html).toContain('Cena · 69 de 120')
+    expect(html).toContain('En la cena: Planta Alta 47 · Planta Baja 0 · En eventos 22')
+    expect(html).not.toMatch(/rose-|amber-|emerald-/)
+  })
+
+  it('el 10/09 se lee por servicio: Cena 119/120 en ámbar y Alm 19 · Mer 33', async () => {
+    const { OperativoBoard } = await import(
+      '@/app/(manager)/[tenantSlug]/operativo/_components/operativo-board'
+    )
+    const day = '2026-09-10'
+    const at = (id: string, over: Partial<ReservationWithJoins>) =>
+      reservation({ id, reservation_date: day, ...over })
+    const sushi = (id: string, guests: number, over: Partial<ReservationWithJoins> = {}) =>
+      at(id, {
+        estimated_guests: guests,
+        zone: 'event_floating',
+        scheduled_event_id: 'sushi',
+        ...over,
+      })
+    const html = renderToString(
+      createElement(OperativoBoard, {
+        tenantSlug: 'hub',
+        tenantId: 't',
+        role: 'owner',
+        date: day,
+        today: '2026-09-21',
+        initialReservations: [
+          at('l1', {
+            meal_type: 'lunch',
+            reservation_time_local: '13:00:00',
+            zone: 'planta_baja',
+            estimated_guests: 19,
+          }),
+          at('t1', {
+            meal_type: 'tea_time',
+            reservation_time_local: '16:00:00',
+            zone: 'planta_baja',
+            estimated_guests: 20,
+          }),
+          at('t2', {
+            meal_type: 'tea_time',
+            reservation_time_local: '16:00:00',
+            zone: 'planta_baja',
+            estimated_guests: 13,
+          }),
+          sushi('s1', 40),
+          sushi('s2', 18, { kind: 'birthday', cake_count: 1 }),
+          sushi('s3', 15),
+          at('n1', { estimated_guests: 16 }),
+          at('n2', { estimated_guests: 15, kind: 'birthday' }),
+          at('n3', { estimated_guests: 15, kind: 'birthday' }),
+          at('x1', { estimated_guests: 10, status: 'cancelled' }),
+          at('x2', { estimated_guests: 6, status: 'no_show' }),
+        ],
+        initialCapacity: [],
+        initialSegmentCaps: {
+          lunch: weekly(70, { at: 50, note: 'Conviene abrir la terraza' }),
+          tea_time: weekly(120),
+          dinner: weekly(120),
+        },
+        initialEvents: [
+          scheduledEvent({
+            id: 'sushi',
+            event_date: day,
+            capacity: 70,
+            template: {
+              id: 'tpl-sushi',
+              name: 'Sushi libre',
+              slug: 'sushi',
+              color_hex: '#0ea5e9',
+              consume_special_reservations: true,
+              default_capacity: 70,
+            },
+          }),
+        ],
+        initialAwards: [],
+        earnRate: null,
+        canOperate: true,
+        canAward: true,
+        canLink: true,
+        isOwner: true,
+      }),
+    )
+
+    expect(html).not.toContain('del salón')
+    expect(html).not.toContain('171/')
+    expect(html).toMatch(/text-warning-text[^"]*"[^>]*>Cena 119\/120</)
+    expect(html).toContain('Alm 19')
+    expect(html).toContain('Mer 33')
+    expect(html).toContain('Queda 1 lugar para reservas normales')
+    expect(html).toContain('En la cena: Planta Alta 46 · Planta Baja 0 · En eventos 73')
   })
 
   it('renderiza un día vacío y uno futuro', async () => {
@@ -269,6 +392,7 @@ describe('OperativoBoard (SSR)', () => {
       tenantId: 't',
       role: 'host' as const,
       initialCapacity: [],
+      initialSegmentCaps: SAT_CAPS,
       initialEvents: [],
       initialAwards: [],
       earnRate: null,
@@ -297,5 +421,65 @@ describe('OperativoBoard (SSR)', () => {
     )
     expect(future).toContain('todavía no se puede marcar llegadas')
     expect(future).not.toContain('>Llegó<')
+  })
+})
+
+describe('CapacityHeader del salón (SSR)', () => {
+  it('muestra un chip por servicio con gente y los eventos, sin Total ni plantas', async () => {
+    const { CapacityHeader } = await import(
+      '@/app/(salon)/[tenantSlug]/salon/reservas-operativo/_components/capacity-header'
+    )
+    const { computeDaySegments } = await import('@/lib/salon/segments')
+    const event = scheduledEvent({})
+    const segments = computeDaySegments({
+      date: '2026-09-05',
+      reservations: NIGHT,
+      events: [event],
+      caps: SAT_CAPS,
+    })
+    const html = renderToString(
+      createElement(CapacityHeader, {
+        segments,
+        focus: 'dinner',
+        capacity: [
+          { bucket: 'zone:planta_alta', used: 44, capacity: 60, available: 16 },
+          { bucket: 'zone:planta_baja', used: 26, capacity: 80, available: 54 },
+          { bucket: 'event:ev', used: 22, capacity: 140, available: 118 },
+        ],
+        events: [event],
+      }),
+    )
+
+    expect(html).not.toContain('Total')
+    expect(html).not.toMatch(/Planta alta|Planta Alta|44\/60/)
+    // La cena (el foco) primero y destacada; el almuerzo después.
+    expect(html.indexOf('Cena 69/120')).toBeGreaterThan(-1)
+    expect(html.indexOf('Cena 69/120')).toBeLessThan(html.indexOf('Alm 2/120'))
+    expect(html).toContain('ring-primary/40')
+    expect(html).toContain('Pizza libre')
+    expect(html).toContain('22/140')
+    // La merienda no tiene nada: no ocupa lugar en la tira.
+    expect(html).not.toContain('Mer ')
+  })
+
+  it('un día sin reservas ni eventos no dibuja nada', async () => {
+    const { CapacityHeader } = await import(
+      '@/app/(salon)/[tenantSlug]/salon/reservas-operativo/_components/capacity-header'
+    )
+    const { computeDaySegments } = await import('@/lib/salon/segments')
+    const html = renderToString(
+      createElement(CapacityHeader, {
+        segments: computeDaySegments({
+          date: '2026-09-05',
+          reservations: [],
+          events: [],
+          caps: SAT_CAPS,
+        }),
+        focus: 'dinner',
+        capacity: [],
+        events: [],
+      }),
+    )
+    expect(html).toBe('')
   })
 })

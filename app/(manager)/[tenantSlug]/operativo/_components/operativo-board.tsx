@@ -45,6 +45,7 @@ import {
   urgencyOf,
 } from '@/lib/salon/operativo'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
+import { computeDaySegments, type DaySegmentCaps, focusSegment } from '@/lib/salon/segments'
 import { groupByService } from '@/lib/salon/services'
 import type {
   DayCapacityBucket,
@@ -95,6 +96,8 @@ type Props = {
   today: string
   initialReservations: ReservationWithJoins[]
   initialCapacity: DayCapacityBucket[]
+  /** Cupos resueltos de almuerzo/merienda/cena para `date` (el cálculo corre acá). */
+  initialSegmentCaps: DaySegmentCaps
   initialEvents: ScheduledEventWithTemplate[]
   initialAwards: RecentQrAward[]
   earnRate: EarnRate | null
@@ -138,6 +141,7 @@ export function OperativoBoard({
   today,
   initialReservations,
   initialCapacity,
+  initialSegmentCaps,
   initialEvents,
   initialAwards,
   earnRate,
@@ -152,6 +156,7 @@ export function OperativoBoard({
 
   const [reservations, setReservations] = useState(initialReservations)
   const [capacity, setCapacity] = useState(initialCapacity)
+  const [segmentCaps, setSegmentCaps] = useState(initialSegmentCaps)
   const [events, setEvents] = useState(initialEvents)
   const [awards, setAwards] = useState<AwardsByCustomer>(() => toAwardMap(initialAwards))
   const [query, setQuery] = useState('')
@@ -208,6 +213,7 @@ export function OperativoBoard({
   // ── Estado inicial y re-sync ─────────────────────────────────────────
   useEffect(() => mergeFresh(initialReservations), [initialReservations, mergeFresh])
   useEffect(() => setCapacity(initialCapacity), [initialCapacity])
+  useEffect(() => setSegmentCaps(initialSegmentCaps), [initialSegmentCaps])
   useEffect(() => setEvents(initialEvents), [initialEvents])
   useEffect(() => setAwards(toAwardMap(initialAwards)), [initialAwards])
   useEffect(() => {
@@ -237,6 +243,7 @@ export function OperativoBoard({
     const r = await fetchOperativoExtras(tenantSlug, date, customerIdsRef.current)
     if (!r.ok || activeDate.current !== date) return
     setCapacity(r.buckets)
+    setSegmentCaps(r.caps)
     setEvents(r.events)
     setAwards(toAwardMap(r.awards))
   }, [tenantSlug, date])
@@ -412,6 +419,19 @@ export function OperativoBoard({
   const cancelled = useMemo(
     () => reservations.filter((r) => r.status === 'cancelled'),
     [reservations],
+  )
+  // Cupo POR SERVICIO sobre el array vivo: una llegada, un "no vino" o una
+  // reserva que entra por Realtime mueven el número al toque, con la misma
+  // cuenta que el calendario (nunca "usado/total del día" contra PA + PB).
+  const daySegments = useMemo(
+    () => computeDaySegments({ date, reservations, events, caps: segmentCaps }),
+    [date, reservations, events, segmentCaps],
+  )
+  // El servicio que se está jugando: el del reloj si es hoy (a la 01:30 sigue
+  // siendo la cena), la cena si se mira otro día.
+  const focus = useMemo(
+    () => focusSegment(daySegments, isToday ? clock.minutes : null),
+    [daySegments, isToday, clock.minutes],
   )
   const groups = useMemo(() => groupByService(visible), [visible])
   // El marcador se calcula sobre el orden en que se RENDERIZA (por servicio y
@@ -789,7 +809,8 @@ export function OperativoBoard({
             <PulseCard
               pulse={pulse}
               reservations={reservations}
-              capacity={capacity}
+              segments={daySegments}
+              focus={focus}
               highlights={highlights}
               clock={clock}
               isToday={isToday}
@@ -875,6 +896,8 @@ export function OperativoBoard({
                   pulse={pulse}
                   reservations={reservations}
                   capacity={capacity}
+                  segments={daySegments}
+                  focus={focus}
                   events={events}
                   highlights={highlights}
                   isToday={isToday}

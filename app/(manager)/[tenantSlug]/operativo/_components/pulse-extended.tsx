@@ -1,11 +1,19 @@
 'use client'
 
 import { Cake, Keyboard, MousePointerClick, PartyPopper } from 'lucide-react'
+import { SEGMENT_TONE_CLASSES, SegmentBar } from '@/components/reservations/segment-meter'
 import { Kbd } from '@/components/ui/kbd'
-import { summarizeDayCovers } from '@/lib/salon/covers'
 import type { DayHighlight } from '@/lib/salon/day-highlights'
 import type { NightPulse } from '@/lib/salon/operativo'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
+import { type DaySegments, SEGMENT_KEYS, type SegmentKey } from '@/lib/salon/segments'
+import {
+  SEGMENT_WITH_ARTICLE,
+  segmentAriaLabel,
+  segmentHeadline,
+  segmentStatusLine,
+  segmentTone,
+} from '@/lib/salon/segments-copy'
 import {
   type DayCapacityBucket,
   describeCake,
@@ -14,36 +22,59 @@ import {
 } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
+/** Cómo se nombra cada zona física en la línea "En la cena: …" (sin denominador). */
+const ZONE_LINE_LABELS = {
+  planta_alta: ZONE_LABELS.planta_alta,
+  planta_baja: ZONE_LABELS.planta_baja,
+  event_floating: 'En eventos',
+} as const
+
 /**
  * Lo que ocupa el aside de desktop cuando no hay una reserva elegida: el
- * "pulso extendido" — ocupación por zona, eventos con su cupo, tortas a
+ * "pulso extendido" — ocupación por servicio, eventos con su cupo, tortas a
  * preparar y cumpleaños. Es el pre-servicio del dueño, a un vistazo.
+ *
+ * La ocupación es POR SERVICIO (la misma cuenta que el calendario). Las
+ * plantas van sin denominador: el tope por planta era del día entero y mezclaba
+ * el almuerzo con la cena, el mismo defecto que el "171 de 130".
  */
 export function PulseExtended({
   pulse,
   reservations,
   capacity,
+  segments,
+  focus,
   events,
   highlights,
   isToday,
 }: {
   pulse: NightPulse
   reservations: ReservationWithJoins[]
+  /** Solo para las barras por evento (bucket event:*). */
   capacity: DayCapacityBucket[]
+  segments: DaySegments
+  /** El servicio en juego (el del reloj hoy; la cena si se mira otro día). */
+  focus: SegmentKey
   events: ScheduledEventWithTemplate[]
   highlights: DayHighlight[]
   isToday: boolean
 }) {
-  const covers = summarizeDayCovers(capacity)
-  const zones = (['planta_alta', 'planta_baja'] as const).map((z) => {
-    const bucket = capacity.find((b) => b.bucket === `zone:${z}`)
-    return {
-      zone: z,
-      label: ZONE_LABELS[z],
-      used: bucket?.used ?? 0,
-      capacity: bucket?.capacity ?? 0,
-    }
-  })
+  // Una fila por servicio con algo, más el del reloj aunque esté vacío (dice
+  // cuánto entra todavía).
+  const services = SEGMENT_KEYS.filter((k) => k === focus || segments.segments[k].hasActivity).map(
+    (k) => segments.segments[k],
+  )
+  const focusLoad = segments.segments[focus]
+  // "En la cena: Planta Alta 44 · Planta Baja 26 · En eventos 22". Las dos
+  // plantas siempre (que abajo haya 0 también sirve para sentar); los eventos
+  // solo si tienen gente.
+  const zoneLine =
+    focusLoad.people > 0
+      ? (['planta_alta', 'planta_baja', 'event_floating'] as const)
+          .filter((z) => z !== 'event_floating' || focusLoad.byZone[z] > 0)
+          .map((z) => `${ZONE_LINE_LABELS[z]} ${focusLoad.byZone[z]}`)
+          .join(' · ')
+      : null
   const cakes = highlights.filter((h) => h.kind !== 'event' && h.cakeCount > 0)
   const birthdays = highlights.filter((h) => h.kind === 'birthday')
   const withTable = reservations.filter(
@@ -63,54 +94,48 @@ export function PulseExtended({
           {pulse.reservations === 1 ? 'reserva' : 'reservas'} ·{' '}
           <strong className="font-semibold text-foreground tabular-nums">{pulse.covers}</strong>{' '}
           cubiertos
-          {covers.total > 0 ? (
-            <>
-              {' '}
-              sobre{' '}
-              <span
-                className={cn(
-                  'tabular-nums',
-                  covers.used > covers.total && 'font-semibold text-destructive',
-                )}
-              >
-                {covers.total}
-              </span>{' '}
-              del salón
-            </>
-          ) : null}
         </p>
       </div>
 
-      <section aria-label="Ocupación por zona" className="space-y-2.5">
-        {zones.map((z) => {
-          const pct = z.capacity > 0 ? Math.min(100, (z.used / z.capacity) * 100) : 0
-          const over = z.capacity > 0 && z.used > z.capacity
+      <section aria-label="Ocupación por servicio" className="space-y-2.5">
+        {services.map((s) => {
+          const tone = segmentTone(s)
+          const alert = tone === 'warn' || tone === 'over'
           return (
-            <div key={z.zone}>
-              <div className="flex items-baseline justify-between text-sm">
-                <span className="font-medium">{z.label}</span>
+            <div key={s.key} title={segmentAriaLabel(s, '')}>
+              <div className="flex items-baseline justify-between gap-2 text-sm">
                 <span
                   className={cn(
-                    'font-mono text-xs tabular-nums text-muted-foreground',
-                    over && 'font-semibold text-destructive',
+                    'font-medium tabular-nums',
+                    alert && SEGMENT_TONE_CLASSES[tone].text,
                   )}
                 >
-                  {z.used}
-                  {z.capacity > 0 ? `/${z.capacity}` : ''}
+                  {segmentHeadline(s, 'long')}
                 </span>
+                {isToday && s.key === focus ? (
+                  <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                    Ahora
+                  </span>
+                ) : null}
               </div>
-              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-                <div
-                  className={cn(
-                    'h-full rounded-full transition-[width] duration-(--duration-slower) ease-(--ease-out)',
-                    over ? 'bg-destructive' : pct >= 90 ? 'bg-warning' : 'bg-primary',
-                  )}
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
+              <SegmentBar segment={s} size="sm" className="mt-1" />
+              <p
+                className={cn(
+                  'mt-1 text-xs',
+                  alert ? SEGMENT_TONE_CLASSES[tone].text : 'text-muted-foreground',
+                  tone === 'over' && 'font-semibold',
+                )}
+              >
+                {segmentStatusLine(s)}
+              </p>
             </div>
           )
         })}
+        {zoneLine ? (
+          <p className="text-xs tabular-nums text-muted-foreground">
+            {`En ${SEGMENT_WITH_ARTICLE[focus]}: ${zoneLine}`}
+          </p>
+        ) : null}
         {events.map((e) => {
           const bucket = capacity.find((b) => b.bucket === `event:${e.id}`)
           const used = bucket?.used ?? 0

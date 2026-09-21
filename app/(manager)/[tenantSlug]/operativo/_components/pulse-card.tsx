@@ -2,13 +2,20 @@
 
 import { Cake, PartyPopper, Sparkles, TrendingUp } from 'lucide-react'
 import { useInView } from 'motion/react'
-import { useEffect, useMemo, useRef } from 'react'
+import { Fragment, useEffect, useMemo, useRef } from 'react'
+import { SEGMENT_TONE_CLASSES, SegmentChip } from '@/components/reservations/segment-meter'
 import { NumberTicker } from '@/components/ui/number-ticker'
-import { summarizeDayCovers } from '@/lib/salon/covers'
 import type { DayHighlight } from '@/lib/salon/day-highlights'
 import { type BoardFilter, type NightPulse, serviceMinutes } from '@/lib/salon/operativo'
+import { type DaySegments, SEGMENT_KEYS, type SegmentKey } from '@/lib/salon/segments'
+import {
+  SEGMENT_SHORT_LABELS,
+  segmentAriaLabel,
+  segmentStatusLine,
+  segmentTone,
+} from '@/lib/salon/segments-copy'
 import { coversOf, occupiesTable } from '@/lib/salon/services'
-import type { DayCapacityBucket, ReservationWithJoins } from '@/lib/salon/types'
+import type { ReservationWithJoins } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
 const SLOT_MINUTES = 30
@@ -75,11 +82,16 @@ function occupancySlots(rows: ReservationWithJoins[], peakStart: number | null):
  *
  * Las píldoras de la leyenda son el alias de los filtros de la lista: tocar
  * "Por llegar" acá es lo mismo que el chip de abajo.
+ *
+ * El cupo se lee POR SERVICIO (el del reloj adelante: "Cena 119/120"), nunca
+ * "usado/total del salón": sumar el almuerzo y la cena contra PA + PB daba
+ * "171 de 130" en rojo una noche que no tuvo sobrecupo.
  */
 export function PulseCard({
   pulse,
   reservations,
-  capacity,
+  segments,
+  focus,
   highlights,
   clock,
   isToday,
@@ -91,7 +103,9 @@ export function PulseCard({
 }: {
   pulse: NightPulse
   reservations: ReservationWithJoins[]
-  capacity: DayCapacityBucket[]
+  segments: DaySegments
+  /** El servicio en juego (el del reloj hoy; la cena si se mira otro día). */
+  focus: SegmentKey
   highlights: DayHighlight[]
   clock: { minutes: number | null; hhmm: string | null }
   isToday: boolean
@@ -105,7 +119,6 @@ export function PulseCard({
   const inView = useInView(ref, { margin: '-56px 0px 0px 0px' })
   useEffect(() => onInViewChange(inView), [inView, onInViewChange])
 
-  const covers = useMemo(() => summarizeDayCovers(capacity), [capacity])
   // El pico sale de la misma ocupación que dibuja el sparkline, en el reloj
   // del servicio: una reserva a las 00:30 se solapa con las de las 23, no con
   // las del desayuno.
@@ -140,7 +153,19 @@ export function PulseCard({
   const events = highlights.filter((h) => h.kind === 'event')
   const cakes = highlights.filter((h) => h.kind !== 'event' && h.cakeCount > 0)
   const birthdays = highlights.filter((h) => h.kind === 'birthday')
-  const overCapacity = covers.total > 0 && covers.used > covers.total
+
+  // El servicio en foco va siempre (aunque esté vacío dice cuánto entra); los
+  // otros solo si tienen algo, en chico: "Alm 19 · Mer 33".
+  const focusLoad = segments.segments[focus]
+  const showFocus = focusLoad.hasActivity || focusLoad.capacity !== null
+  const others = SEGMENT_KEYS.filter((k) => k !== focus && segments.segments[k].hasActivity).map(
+    (k) => segments.segments[k],
+  )
+  const focusTone = segmentTone(focusLoad)
+  const overCapacity = focusLoad.status === 'over'
+  // En ámbar o rojo, el porqué ("Queda 1 lugar", "Te pasaste por 13") va a la
+  // vista: en el celu no hay hover para leer el title del chip.
+  const focusAlert = focusTone === 'warn' || focusTone === 'over'
 
   return (
     <section
@@ -228,18 +253,45 @@ export function PulseCard({
               <TrendingUp className="size-3.5" aria-hidden />
               Pico
             </p>
-            {covers.total > 0 ? (
-              <p
-                className={cn(
-                  'text-[11px] tabular-nums text-muted-foreground',
-                  overCapacity && 'font-semibold text-destructive',
-                )}
-              >
-                {covers.used}/{covers.total} del salón
-                {covers.eventos > 0 ? ` · ${covers.eventos} en eventos` : ''}
-              </p>
+            {showFocus ? (
+              <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1">
+                <SegmentChip segment={focusLoad} label="short" emphasized />
+                {others.length > 0 ? (
+                  <p className="text-[11px] tabular-nums text-muted-foreground">
+                    {others.map((s, i) => {
+                      const tone = segmentTone(s)
+                      return (
+                        <Fragment key={s.key}>
+                          {i > 0 ? ' · ' : null}
+                          <span
+                            title={segmentAriaLabel(s, '')}
+                            className={
+                              tone === 'warn' || tone === 'over'
+                                ? SEGMENT_TONE_CLASSES[tone].text
+                                : undefined
+                            }
+                          >
+                            {`${SEGMENT_SHORT_LABELS[s.key]} ${s.people}`}
+                          </span>
+                        </Fragment>
+                      )
+                    })}
+                  </p>
+                ) : null}
+              </div>
             ) : null}
           </div>
+          {showFocus && focusAlert ? (
+            <p
+              className={cn(
+                'mt-1 text-right text-[11px]',
+                SEGMENT_TONE_CLASSES[focusTone].text,
+                overCapacity && 'font-semibold',
+              )}
+            >
+              {segmentStatusLine(focusLoad)}
+            </p>
+          ) : null}
           {peak ? (
             <p className="mt-1 text-sm">
               <strong className="font-mono font-semibold tabular-nums">
