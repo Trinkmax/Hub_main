@@ -317,6 +317,13 @@ export async function createSalonReservation(
     return badInput(first?.message ?? 'Datos inválidos', first?.path[0]?.toString())
   }
 
+  // 'hub_event' es un servicio legacy SIN tarifa de comisión: una reserva
+  // guardada así cobraba 0 y el cupo por servicio la cuenta como cena igual.
+  // Toda alta nueva que llegue con ese valor (un link viejo, un form cacheado)
+  // se guarda como 'dinner'. Solo en el ALTA: editar una reserva legacy no le
+  // cambia el servicio ni la comisión en silencio.
+  const mealType = parsed.data.meal_type === 'hub_event' ? 'dinner' : parsed.data.meal_type
+
   const supabase = (await createClient()) as SBAny
 
   // Un customer_id que venga del form tiene que ser de ESTE bar (la FK no lo
@@ -411,7 +418,7 @@ export async function createSalonReservation(
       guest_phone: parsed.data.guest_phone ?? null,
       guest_email: parsed.data.guest_email ?? null,
       kind: parsed.data.kind,
-      meal_type: parsed.data.meal_type,
+      meal_type: mealType,
       reservation_date: parsed.data.reservation_date,
       reservation_time_local: parsed.data.reservation_time_local,
       reservation_end_time_local: parsed.data.reservation_end_time_local ?? null,
@@ -463,7 +470,7 @@ export async function createSalonReservation(
     entityId: newId,
     payload: {
       kind: parsed.data.kind,
-      meal_type: parsed.data.meal_type,
+      meal_type: mealType,
       estimated_guests: parsed.data.estimated_guests,
       manager: parsed.data.primary_manager_id,
       origin: parsed.data.origin,
@@ -483,6 +490,9 @@ export async function createSalonReservation(
 
   revalidatePath(`/${slug}/reservas`)
   revalidatePath(`/${slug}/salon/reservas-operativo`)
+  // El calendario (mes y vista del día) cuenta el cupo por servicio con estas
+  // mismas reservas: sin esto, al volver quedaba el número viejo.
+  revalidatePath(`/${slug}/eventos/programados`)
   return { ok: true, message: 'Reserva creada.', data: { id: newId } }
 }
 
@@ -609,6 +619,7 @@ export async function updateSalonReservation(
   revalidatePath(`/${slug}/reservas/${id}`)
   revalidatePath(`/${slug}/salon/reservas-operativo`)
   revalidatePath(`/${slug}/operativo`)
+  revalidatePath(`/${slug}/eventos/programados`)
   return { ok: true, message: 'Reserva actualizada.' }
 }
 
@@ -649,6 +660,7 @@ export async function cancelSalonReservation(
   revalidatePath(`/${slug}/salon/reservas-operativo`)
   revalidatePath(`/${slug}/operativo`)
   revalidatePath(`/${slug}/eventos`)
+  revalidatePath(`/${slug}/eventos/programados`)
   return { ok: true, message: 'Reserva cancelada.' }
 }
 
@@ -721,6 +733,7 @@ export async function transitionStatus(
   revalidatePath(`/${slug}/reservas/${parsed.data.id}`)
   revalidatePath(`/${slug}/salon/reservas-operativo`)
   revalidatePath(`/${slug}/operativo`)
+  revalidatePath(`/${slug}/eventos/programados`)
   return { ok: true, message: warning, data: { row } }
 }
 
@@ -804,6 +817,7 @@ export async function updateActualGuests(
   revalidatePath(`/${slug}/reservas`)
   revalidatePath(`/${slug}/salon/reservas-operativo`)
   revalidatePath(`/${slug}/operativo`)
+  revalidatePath(`/${slug}/eventos/programados`)
   return { ok: true }
 }
 
@@ -1156,6 +1170,7 @@ export async function bulkUpdateActualGuests(
   revalidatePath(`/${slug}/reservas`)
   revalidatePath(`/${slug}/salon/reservas-operativo`)
   revalidatePath(`/${slug}/operativo`)
+  revalidatePath(`/${slug}/eventos/programados`)
 
   if (saved === 0) {
     return { ok: false, message: 'No pudimos guardar ninguna. Recargá y probá de nuevo.' }
@@ -1854,6 +1869,11 @@ export async function setZoneCapacityDefaults(
 
   revalidatePath(`/${slug}/configuracion/salon`)
   revalidatePath(`/${slug}/salon/reservas-operativo`)
+  // PA + PB es el cupo general de cada servicio que no tiene cupo propio: lo
+  // leen el calendario y el operativo. Sin esto, el Router Cache (staleTimes
+  // dynamic 30 s) mostraría el cupo viejo al volver a esas pantallas.
+  revalidatePath(`/${slug}/eventos/programados`)
+  revalidatePath(`/${slug}/operativo`)
   return { ok: true, message: 'Capacidades actualizadas.' }
 }
 
