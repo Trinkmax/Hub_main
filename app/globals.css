@@ -351,6 +351,17 @@
   :where(input, textarea, select, button):focus-visible {
     outline: none;
   }
+
+  /* Con un Dialog modal abierto, Radix le pone pointer-events: none al body y
+     el Toaster de sonner (hijo del body) lo heredaba: el «Deshacer» de un toast
+     no recibía el click y el click caía en lo de abajo (el overlay cerraba el
+     día; en el celu, el link «Nueva reserva» del pie de la hoja). La lista en
+     sí mide 0 de alto (los toasts son absolutos), así que no tapa nada; los
+     toasts ocultos siguen con su pointer-events: none de sonner. Los diálogos
+     que no deben cerrarse al tocar un toast usan keepOpenOnToast. */
+  [data-sonner-toaster] {
+    pointer-events: auto;
+  }
 }
 
 @layer utilities {

@@ -4,11 +4,10 @@ import { notFound } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
-import {
-  getMonthCapacity,
-  listScheduledEventsForDateRange,
-  listScheduledTemplates,
-} from '@/lib/salon/queries'
+import { todayInCordoba } from '@/lib/salon/date-presets'
+import { listScheduledEventsForDateRange, listScheduledTemplates } from '@/lib/salon/queries'
+import { type DayOverview, getDayOverview, getMonthSegments } from '@/lib/salon/segment-queries'
+import { calendarParamsSchema, firstParams } from '@/lib/salon/segment-schemas'
 import {
   RESERVATION_STAFF_ROLES,
   RoleRequiredError,
@@ -16,38 +15,41 @@ import {
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
+import { CalendarSearch } from './_components/calendar-search'
 import { CalendarTabs } from './_components/calendar-tabs'
 import { EventosTourButton } from './_components/eventos-tour'
 
 export const metadata = { title: 'Calendario' }
 export const dynamic = 'force-dynamic'
 
-/** Hoy en el reloj del local (Córdoba), yyyy-MM-dd — para marcar el día actual. */
-function todayCordoba(): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Argentina/Cordoba',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date())
+/** Primer y último día de 'YYYY-MM' (28 a 31, en UTC: sin la TZ del server). */
+function monthRange(ym: string): { from: string; to: string } {
+  const [y, m] = ym.split('-').map(Number)
+  const lastDay = new Date(Date.UTC(y ?? 1970, m ?? 1, 0)).getUTCDate()
+  return { from: `${ym}-01`, to: `${ym}-${String(lastDay).padStart(2, '0')}` }
 }
 
-function defaultRange(monthStr?: string): { from: string; to: string; ymCurrent: string } {
-  const now = new Date()
-  const ym =
-    monthStr && /^\d{4}-\d{2}$/.test(monthStr)
-      ? monthStr
-      : `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  const [yStr, mStr] = ym.split('-')
-  const y = Number(yStr)
-  const m = Number(mStr)
-  const from = `${ym}-01`
-  // Último día del mes:
-  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate()
-  const to = `${ym}-${String(lastDay).padStart(2, '0')}`
-  return { from, to, ymCurrent: ym }
+function errorCode(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) return undefined
+  const code = (error as { code?: unknown }).code
+  return typeof code === 'string' ? code : undefined
 }
 
+/**
+ * El calendario: el mes con sus eventos y, por cada día, almuerzo, merienda y
+ * cena contra su cupo. Es la puerta de las reservas: desde un día se ve cómo
+ * viene y se reserva con la hora del servicio ya puesta, o adentro de un evento.
+ *
+ * URL (todo validado con zod; un param roto se ignora, no rompe la página):
+ * - ?month=YYYY-MM el mes. Si falta, sale de ?day y si no, de hoy en Córdoba
+ *   (antes salía del reloj del server, UTC en Vercel: entre las 21 y las 24 del
+ *   último día del mes mostraba el mes siguiente).
+ * - ?day=YYYY-MM-DD | hoy abre la vista del día (?seg ancla un servicio, ?res
+ *   resalta una reserva). La página la precarga: al volver de guardar una
+ *   reserva el día aparece sin flash de carga.
+ * - ?buscar=texto abre el buscador (viene del redirect de /reservas?q=).
+ * - ?tab=eventos abre la pestaña Formatos.
+ */
 export default async function CalendarioPage({
   params,
   searchParams,
@@ -56,8 +58,7 @@ export default async function CalendarioPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { tenantSlug } = await params
-  const sp = await searchParams
-  const monthStr = typeof sp.month === 'string' ? sp.month : undefined
+  const sp = calendarParamsSchema.parse(firstParams(await searchParams))
   const defaultTab = sp.tab === 'eventos' ? 'eventos' : 'calendario'
 
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
@@ -70,11 +71,31 @@ export default async function CalendarioPage({
     throw e
   }
 
-  const { from, to, ymCurrent } = defaultRange(monthStr)
-  const [events, templates, monthCapacity] = await Promise.all([
-    listScheduledEventsForDateRange({ tenantId: access.tenant.id, from, to }),
-    listScheduledTemplates({ tenantId: access.tenant.id, onlyActive: false }),
-    getMonthCapacity({ tenantId: access.tenant.id, ym: ymCurrent }),
+  const today = todayInCordoba()
+  const day = sp.day === 'hoy' ? today : (sp.day ?? null)
+  const ym = sp.month ?? day?.slice(0, 7) ?? today.slice(0, 7)
+  const { from, to } = monthRange(ym)
+  const tenantId = access.tenant.id
+
+  // El día abierto no depende de nada del mes: arranca ya, en paralelo con
+  // todo lo demás. Si falla, la página igual sale y la vista del día lo pide
+  // por su cuenta (con su "Reintentar"): un día roto no tumba el mes.
+  const dayOverviewPromise: Promise<DayOverview | null> = day
+    ? getDayOverview({ tenantId, date: day }).catch((error: unknown) => {
+        console.error('[calendario.page.dayOverview]', { tenantId, code: errorCode(error) })
+        return null
+      })
+    : Promise.resolve(null)
+
+  // Dos viajes como máximo: eventos + formatos, y después el mes por servicio
+  // reutilizando esos mismos eventos (no se vuelven a pedir).
+  const [events, templates] = await Promise.all([
+    listScheduledEventsForDateRange({ tenantId, from, to }),
+    listScheduledTemplates({ tenantId, onlyActive: false }),
+  ])
+  const [monthSegments, initialOverview] = await Promise.all([
+    getMonthSegments({ tenantId, ym, events }),
+    dayOverviewPromise,
   ])
   const activeTemplates = templates.filter((t) => t.active)
 
@@ -83,10 +104,11 @@ export default async function CalendarioPage({
       <PageHeader
         eyebrow="Agenda"
         title="Calendario"
-        description="Todo lo que pasa en el bar, mes a mes. Programá cada evento a partir de un formato (Sushi Libre, Pizza Libre…) arrastrándolo a su fecha; el catálogo de formatos vive en la pestaña Formatos."
+        description="Cada día, almuerzo, merienda y cena contra su cupo. Tocá un día para ver cómo viene y reservar, o un evento para reservar adentro. Los eventos se programan arrastrando un formato (Sushi Libre, Pizza Libre…) a su fecha."
         actions={
           <div className="flex flex-wrap gap-2">
             <EventosTourButton role={access.role} />
+            <CalendarSearch tenantSlug={tenantSlug} ym={ym} initialQuery={sp.buscar ?? null} />
             <Button asChild className="gap-2">
               <Link href={`/${tenantSlug}/eventos/programados/nuevo`} data-tour="eventos-programar">
                 <CalendarPlus className="size-4" />
@@ -99,14 +121,15 @@ export default async function CalendarioPage({
 
       <CalendarTabs
         tenantSlug={tenantSlug}
-        ym={ymCurrent}
+        ym={ym}
         events={events}
         templates={templates}
         activeTemplates={activeTemplates}
-        monthCapacity={monthCapacity}
-        today={todayCordoba()}
+        monthSegments={monthSegments}
+        today={today}
         defaultTab={defaultTab}
         role={access.role}
+        initialOverview={initialOverview}
       />
     </PageShell>
   )

@@ -17,22 +17,51 @@ import {
   ChevronLeft,
   ChevronRight,
   GripVertical,
+  Info,
   Loader2,
   PartyPopper,
-  Plus,
+  SlidersHorizontal,
   Sparkles,
 } from 'lucide-react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import {
+  type CSSProperties,
+  Fragment,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { moveScheduledEvent } from '@/lib/salon/actions'
-import type { MonthCapacity } from '@/lib/salon/month-capacity'
+import { calendarHref, newReservationHref } from '@/lib/salon/calendar-links'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
+import type { DayOverview } from '@/lib/salon/segment-queries'
+import { calendarParamsSchema } from '@/lib/salon/segment-schemas'
+import {
+  type DaySegments,
+  dayCelebrations,
+  eventDisplayName,
+  eventLoadsById,
+  type MonthSegments,
+  SEGMENT_KEYS,
+  type SegmentEventLoad,
+  type SegmentKey,
+  segmentOfEventStart,
+} from '@/lib/salon/segments'
+import { capSourceLabel, SEGMENT_LABELS } from '@/lib/salon/segments-copy'
 import type { ScheduledEventTemplateRow } from '@/lib/salon/types'
+import type { TenantRole } from '@/lib/tenant/types'
 import { cn } from '@/lib/utils'
-import { DayReservationsDialog } from './day-reservations-dialog'
+import { DayAddMenu } from './day-add-menu'
+import { DayView } from './day-view'
+import { MonthDaySegments } from './month-day-segments'
 import { TemplateDropDialog } from './template-drop-dialog'
 
 function shiftYM(ym: string, months: number): string {
@@ -65,27 +94,45 @@ type ActiveDrag =
   | { kind: 'event'; event: ScheduledEventWithTemplate }
   | null
 
+/** Abre la vista del día; `segment` la ancla en ese servicio. */
+type OpenDay = (date: string, segment?: SegmentKey) => void
+
+/**
+ * ¿La URL del navegador ya tiene un día (válido) abierto? Lee window.location
+ * y no useSearchParams: el pushState de un primer toque ya la cambió aunque
+ * React todavía no haya vuelto a renderizar.
+ */
+function urlHasOpenDay(): boolean {
+  const day = new URLSearchParams(window.location.search).get('day') ?? undefined
+  return calendarParamsSchema.shape.day.parse(day) !== undefined
+}
+
 export function ScheduledEventsMonth({
   tenantSlug,
   ym,
   events: initialEvents,
   templates,
-  monthCapacity,
+  monthSegments,
   today,
+  role,
+  initialOverview,
 }: {
   tenantSlug: string
   ym: string
   events: ScheduledEventWithTemplate[]
   templates: ScheduledEventTemplateRow[]
-  monthCapacity: MonthCapacity
+  /** Personas por servicio contra su cupo, día por día (mismo cálculo que la vista del día). */
+  monthSegments: MonthSegments
   /** Fecha de hoy (yyyy-MM-dd, TZ del local) para marcar el día actual. */
   today: string
+  role: TenantRole
+  /** El día de ?day precargado por la página: al volver de guardar no hay flash de carga. */
+  initialOverview: DayOverview | null
 }) {
   const router = useRouter()
   const [events, setEvents] = useState(initialEvents)
   const [activeDrag, setActiveDrag] = useState<ActiveDrag>(null)
   const [moving, startMoving] = useTransition()
-  const [dayDialogDate, setDayDialogDate] = useState<string | null>(null)
 
   // Estado del dialog cuando se suelta un template
   const [dropDialog, setDropDialog] = useState<{
@@ -98,6 +145,99 @@ export function ScheduledEventsMonth({
   // page se re-monta — entonces este componente recibe nuevos initialEvents.
   // Para asegurar consistencia ante un router.refresh:
   useMemo(() => setEvents(initialEvents), [initialEvents])
+
+  // Carga de cada evento por id (personas anotadas contra su cupo), sacada del
+  // mismo cálculo por servicio que pinta las celdas.
+  const eventLoad = useMemo(() => eventLoadsById(monthSegments.days), [monthSegments])
+
+  // ── Día abierto en la URL (?day, ?seg, ?res) ──
+  // La URL es la fuente de verdad: el deep-link /eventos/programados?day=… abre
+  // el día, ?day=hoy abre hoy (lo usa ⌘K) y el Atrás del celu lo cierra. Next
+  // 16 sincroniza window.history.pushState/replaceState con useSearchParams
+  // (docs 01-app/01-getting-started/04-linking-and-navigating.md, "Native
+  // History API"), así que abrir y cerrar no pide nada al server.
+  const searchParams = useSearchParams()
+  const { openDay, anchorSegment, focusId } = useMemo(() => {
+    // Cada campo trae .catch(undefined): un ?day o ?res roto se ignora.
+    const p = calendarParamsSchema.parse({
+      day: searchParams.get('day') ?? undefined,
+      seg: searchParams.get('seg') ?? undefined,
+      res: searchParams.get('res') ?? undefined,
+    })
+    return {
+      openDay: p.day === 'hoy' ? today : (p.day ?? null),
+      anchorSegment: p.seg ?? null,
+      focusId: p.res ?? null,
+    }
+  }, [searchParams, today])
+
+  // ¿La entrada anterior del historial es este mismo mes sin día abierto? Si
+  // sí, cerrar = history.back() (el Atrás del celu y la X hacen lo mismo y el
+  // historial no acumula el día). Vale cuando el día APARECE con el mes ya
+  // montado y sin cambiar de mes: lo abrimos acá (pushState), desde el
+  // buscador, ⌘K o el Adelante del navegador. Un día que ya venía en la URL al
+  // montar (deep-link, volver de guardar una reserva) se cierra reemplazando la
+  // URL: un back ahí sacaría al usuario del calendario.
+  const pushedRef = useRef(false)
+  const closingRef = useRef(false)
+  const lastUrlRef = useRef<{ day: string | null; ym: string }>({ day: openDay, ym })
+  useEffect(() => {
+    const last = lastUrlRef.current
+    lastUrlRef.current = { day: openDay, ym }
+    if (openDay === null) {
+      pushedRef.current = false
+      closingRef.current = false
+      return
+    }
+    if (last.day === null) pushedRef.current = last.ym === ym
+  }, [openDay, ym])
+
+  // Todo Atrás/Adelante (incluido el back() de closeDay) termina el cierre en
+  // curso. Si la entrada a la que se llegó TODAVÍA tiene un día (⌘K abrió hoy
+  // encima del día abierto, o un doble toque dejó dos entradas iguales), un
+  // back() más no garantiza volver al mes: el próximo cierre reemplaza la URL.
+  // Sin esto closingRef quedaba en true y la X, Esc y el overlay no cerraban.
+  // Si el Adelante abre un día desde el mes, el efecto de arriba corre después
+  // y vuelve a poner pushedRef en true: ahí back() sí es lo correcto.
+  useEffect(() => {
+    function onPopState() {
+      closingRef.current = false
+      if (urlHasOpenDay()) pushedRef.current = false
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  const openDayAt = useCallback<OpenDay>(
+    (date, segment) => {
+      const href = calendarHref(tenantSlug, { month: ym, day: date, segment })
+      // Un segundo toque antes de que el día termine de abrir no suma otra
+      // entrada: con dos entradas iguales, cerrar volvía al mismo día.
+      if (urlHasOpenDay()) window.history.replaceState(null, '', href)
+      else window.history.pushState(null, '', href)
+    },
+    [tenantSlug, ym],
+  )
+
+  const closeDay = useCallback(() => {
+    // Escape + click afuera en el mismo tick: dos back() sacarían del calendario.
+    if (closingRef.current) return
+    if (pushedRef.current) {
+      closingRef.current = true
+      window.history.back()
+      return
+    }
+    window.history.replaceState(null, '', calendarHref(tenantSlug, { month: ym }))
+  }, [tenantSlug, ym])
+
+  // Recorrer días con las flechas no agrega entradas: Atrás sigue cerrando.
+  // ?seg y ?res eran del día que se abrió: no viajan al siguiente.
+  const changeDay = useCallback(
+    (date: string) => {
+      window.history.replaceState(null, '', calendarHref(tenantSlug, { month: ym, day: date }))
+    },
+    [tenantSlug, ym],
+  )
 
   const sensors = useSensors(
     // Distancia mínima evita que un click normal sobre el evento se interprete
@@ -179,140 +319,160 @@ export function ScheduledEventsMonth({
   }, [ym, events])
 
   function gotoMonth(next: string) {
-    router.push(`/${tenantSlug}/eventos/programados?month=${next}`)
+    router.push(calendarHref(tenantSlug, { month: next }))
   }
 
   return (
-    <DndContext
-      id="eventos-mes"
-      sensors={sensors}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-    >
-      {/* Tira de templates draggables */}
-      <TemplateRail templates={templates} tenantSlug={tenantSlug} />
-
-      <div className="card-hairline rounded-2xl border bg-card p-3 sm:p-5">
-        <header className="mb-4 flex items-center justify-between gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Mes anterior"
-            onClick={() => gotoMonth(shiftYM(ym, -1))}
-          >
-            <ChevronLeft className="size-4" />
-          </Button>
-          <div className="flex items-center gap-2.5">
-            <h2 className="font-serif text-xl font-semibold capitalize">{formatYM(ym)}</h2>
-            {ym !== today.slice(0, 7) ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 px-2.5 text-xs"
-                onClick={() => gotoMonth(today.slice(0, 7))}
-              >
-                Hoy
-              </Button>
-            ) : null}
-            {moving ? (
-              <Loader2
-                className="size-3.5 animate-spin text-muted-foreground"
-                aria-label="Guardando cambios"
-              />
-            ) : null}
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Mes siguiente"
-            onClick={() => gotoMonth(shiftYM(ym, 1))}
-          >
-            <ChevronRight className="size-4" />
-          </Button>
-        </header>
-        {/* Agenda vertical para mobile: la grilla 7-col deja celdas ilegibles en celular.
-            El drag-and-drop queda solo en >=sm; en mobile se programa con el botón + por día. */}
-        <div className="space-y-2 sm:hidden">
-          <MonthAgenda
-            ym={ym}
-            events={events}
-            tenantSlug={tenantSlug}
-            monthCapacity={monthCapacity}
-            today={today}
-            onOpenDay={setDayDialogDate}
-          />
-        </div>
-        <div className="hidden grid-cols-7 gap-1.5 text-xs sm:grid">
-          {DOW_LABELS.map((d) => (
-            <div
-              key={d}
-              className="px-1 py-1 text-center uppercase tracking-wide text-muted-foreground"
-            >
-              {d}
-            </div>
-          ))}
-          {grid.map((cell, idx) => (
-            <DayCell
-              key={cell.date ?? `pad-${idx}`}
-              date={cell.date}
-              events={cell.events}
-              tenantSlug={tenantSlug}
-              isToday={cell.date === today}
-              isWeekend={idx % 7 >= 5}
-              isDraggingTemplate={activeDrag?.kind === 'template'}
-              isDraggingEvent={activeDrag?.kind === 'event'}
-              capacity={
-                cell.date
-                  ? (monthCapacity.days[cell.date] ?? {
-                      used: 0,
-                      total: monthCapacity.defaultTotal,
-                    })
-                  : null
-              }
-              celebrations={cell.date ? (monthCapacity.celebrations[cell.date] ?? null) : null}
-              eventLoad={monthCapacity.events}
-              onOpenDay={setDayDialogDate}
-            />
-          ))}
-        </div>
-        <p className="mt-3 hidden text-center text-[11px] text-muted-foreground sm:block">
-          Arrastrá un template a un día para programar, o un evento a otra fecha para moverlo.
-        </p>
-        <p className="mt-3 text-center text-[11px] text-muted-foreground sm:hidden">
-          Tocá el + de un día para programar un evento.
-        </p>
-      </div>
-
-      <DragOverlay dropAnimation={null}>
-        {activeDrag?.kind === 'template' ? <TemplateChip template={activeDrag.template} /> : null}
-        {activeDrag?.kind === 'event' ? (
-          <EventCardOverlay
-            event={activeDrag.event}
-            used={monthCapacity.events[activeDrag.event.id] ?? 0}
-          />
+    <>
+      <DndContext
+        id="eventos-mes"
+        sensors={sensors}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        {role === 'owner' && !monthSegments.configured ? (
+          <UnconfiguredBanner tenantSlug={tenantSlug} fallbackTotal={monthSegments.fallbackTotal} />
         ) : null}
-      </DragOverlay>
 
-      <TemplateDropDialog
-        open={dropDialog !== null}
-        onOpenChange={(open) => {
-          if (!open) setDropDialog(null)
-        }}
-        tenantSlug={tenantSlug}
-        template={dropDialog?.template ?? null}
-        date={dropDialog?.date ?? null}
-        onCreated={refreshEventList}
-      />
+        {/* Tira de templates draggables. Sin formatos no hay nada que arrastrar
+            (el aviso "Creá tus formatos" va arriba, en las pestañas). */}
+        {templates.length > 0 ? (
+          <TemplateRail templates={templates} tenantSlug={tenantSlug} />
+        ) : null}
 
-      <DayReservationsDialog
+        <div className="card-hairline rounded-2xl border bg-card p-3 sm:p-5">
+          <header className="mb-3 flex items-center justify-between gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Mes anterior"
+              onClick={() => gotoMonth(shiftYM(ym, -1))}
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <div className="flex items-center gap-2.5">
+              <h2 className="font-serif text-xl font-semibold capitalize">{formatYM(ym)}</h2>
+              {ym !== today.slice(0, 7) ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2.5 text-xs"
+                  onClick={() => gotoMonth(today.slice(0, 7))}
+                >
+                  Hoy
+                </Button>
+              ) : null}
+              {moving ? (
+                <Loader2
+                  className="size-3.5 animate-spin text-muted-foreground"
+                  aria-label="Guardando cambios"
+                />
+              ) : null}
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Mes siguiente"
+              onClick={() => gotoMonth(shiftYM(ym, 1))}
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </header>
+
+          {/* Leyenda única: explica el número una vez en lugar de en cada celda. */}
+          <p
+            data-tour="eventos-leyenda"
+            className="mb-3 text-center text-[11px] text-muted-foreground text-pretty"
+          >
+            Alm · Mer · Cena = personas / cupo de cada servicio · tocá un evento para reservar
+            adentro
+          </p>
+
+          {/* Agenda vertical para mobile: la grilla 7-col deja celdas ilegibles en celular.
+              El drag-and-drop queda solo en >=sm. */}
+          <div className="space-y-2 sm:hidden">
+            <MonthAgenda
+              ym={ym}
+              events={events}
+              tenantSlug={tenantSlug}
+              monthSegments={monthSegments}
+              eventLoad={eventLoad}
+              today={today}
+              onOpenDay={openDayAt}
+            />
+          </div>
+          <div className="hidden grid-cols-7 gap-1.5 text-xs sm:grid">
+            {DOW_LABELS.map((d) => (
+              <div
+                key={d}
+                className="px-1 py-1 text-center uppercase tracking-wide text-muted-foreground"
+              >
+                {d}
+              </div>
+            ))}
+            {grid.map((cell, idx) => (
+              <DayCell
+                key={cell.date ?? `pad-${idx}`}
+                date={cell.date}
+                day={cell.date ? (monthSegments.days[cell.date] ?? null) : null}
+                events={cell.events}
+                tenantSlug={tenantSlug}
+                today={today}
+                isWeekend={idx % 7 >= 5}
+                isDraggingTemplate={activeDrag?.kind === 'template'}
+                isDraggingEvent={activeDrag?.kind === 'event'}
+                eventLoad={eventLoad}
+                onOpenDay={openDayAt}
+              />
+            ))}
+          </div>
+          <p className="mt-3 hidden text-center text-[11px] text-muted-foreground text-pretty sm:block">
+            Arrastrá un formato a un día para programarlo o un evento para moverlo. Tocá un evento
+            para reservar adentro; tocá un servicio para ver el día.
+          </p>
+          <p className="mt-3 text-center text-[11px] text-muted-foreground text-pretty sm:hidden">
+            Tocá un día o un servicio para ver cómo viene y reservar. Tocá un evento para reservar
+            adentro.
+          </p>
+        </div>
+
+        <DragOverlay dropAnimation={null}>
+          {activeDrag?.kind === 'template' ? <TemplateChip template={activeDrag.template} /> : null}
+          {activeDrag?.kind === 'event' ? (
+            <EventCardOverlay
+              event={activeDrag.event}
+              load={eventLoad[activeDrag.event.id] ?? null}
+            />
+          ) : null}
+        </DragOverlay>
+
+        <TemplateDropDialog
+          open={dropDialog !== null}
+          onOpenChange={(open) => {
+            if (!open) setDropDialog(null)
+          }}
+          tenantSlug={tenantSlug}
+          template={dropDialog?.template ?? null}
+          date={dropDialog?.date ?? null}
+          onCreated={refreshEventList}
+        />
+      </DndContext>
+
+      <DayView
         tenantSlug={tenantSlug}
-        date={dayDialogDate}
-        open={dayDialogDate !== null}
-        onOpenChange={(o) => {
-          if (!o) setDayDialogDate(null)
-        }}
+        date={openDay}
+        today={today}
+        role={role}
+        anchorSegment={anchorSegment}
+        focusReservationId={focusId}
+        initialOverview={initialOverview}
+        onDateChange={changeDay}
+        onClose={closeDay}
+        // Sin onMutated: los cambios del día (vista rápida, pasar lista, cupo
+        // especial) revalidan esta ruta y la respuesta de la action ya trae el
+        // mes re-renderizado. Un router.refresh encima era otra lectura entera.
       />
-    </DndContext>
+    </>
   )
 }
 
@@ -342,22 +502,90 @@ function formatAgendaDate(date: string): string {
   }).format(dt)
 }
 
-// Agenda mensual para mobile: lista de días con eventos (fecha + nombre + hora).
-// Sin drag-and-drop — programar se hace con el botón + de cada día.
+/** 'jueves 10 de septiembre': para los aria-label (la celda solo muestra el número). */
+function formatLongDate(date: string): string {
+  const [y, m, d] = date.split('-').map(Number)
+  if (!y || !m || !d) return date
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  return new Intl.DateTimeFormat('es-AR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'UTC',
+  }).format(dt)
+}
+
+/**
+ * Solo para el dueño y solo mientras no cargó cupos por servicio: el mes está
+ * midiendo cada servicio contra el cupo general (PA + PB) y no contra el
+ * almuerzo de 70 o la cena de 120 que maneja en la cabeza.
+ */
+function UnconfiguredBanner({
+  tenantSlug,
+  fallbackTotal,
+}: {
+  tenantSlug: string
+  fallbackTotal: number
+}) {
+  return (
+    <div className="mb-4 flex items-start gap-2 rounded-xl border border-info/40 bg-info/10 px-3 py-2.5 text-sm">
+      <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden />
+      <p className="text-pretty">
+        {fallbackTotal > 0
+          ? `Estás usando el cupo general del salón (${fallbackTotal} por servicio).`
+          : 'Todavía no cargaste cupos: cada servicio muestra personas, sin tope.'}{' '}
+        <Link
+          href={`/${tenantSlug}/configuracion/salon`}
+          className="rounded-sm font-medium underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          Configurá almuerzo, merienda y cena →
+        </Link>
+      </p>
+    </div>
+  )
+}
+
+/**
+ * Marca de "cupo especial" (feriado, terraza abierta) en el encabezado del
+ * día, con el motivo en el title. No es interactiva: el detalle está en la
+ * vista del día.
+ */
+function OverrideMark({ day }: { day: DaySegments }) {
+  const labels = SEGMENT_KEYS.filter((key) => day.segments[key].capSource === 'override').map(
+    (key) => `${SEGMENT_LABELS[key]} · ${capSourceLabel(day.segments[key], day.isoDow)}`,
+  )
+  if (labels.length === 0) return null
+  const text = labels.join('; ')
+  return (
+    <span role="img" aria-label={text} title={text} className="inline-flex shrink-0">
+      <SlidersHorizontal className="size-3 text-muted-foreground" aria-hidden />
+    </span>
+  )
+}
+
+/** ¿El día tiene algo que mostrar? (un servicio con gente o eventos, o eventos programados). */
+function hasSegmentActivity(day: DaySegments | null): boolean {
+  return day !== null && SEGMENT_KEYS.some((key) => day.segments[key].hasActivity)
+}
+
+// Agenda mensual para mobile: todos los días del mes, con sus servicios y
+// eventos. Sin drag-and-drop — programar se hace desde el + de cada día.
 function MonthAgenda({
   ym,
   events,
   tenantSlug,
-  monthCapacity,
+  monthSegments,
+  eventLoad,
   today,
   onOpenDay,
 }: {
   ym: string
   events: ScheduledEventWithTemplate[]
   tenantSlug: string
-  monthCapacity: MonthCapacity
+  monthSegments: MonthSegments
+  eventLoad: Record<string, SegmentEventLoad>
   today: string
-  onOpenDay: (date: string) => void
+  onOpenDay: OpenDay
 }) {
   // El hook va ANTES de cualquier early return: si no, React rompe el orden.
   const todayRef = useRef<HTMLDivElement | null>(null)
@@ -392,90 +620,161 @@ function MonthAgenda({
   return (
     <>
       {days.map(({ date, events: dayEvents }) => {
-        const capacity = monthCapacity.days[date] ?? {
-          used: 0,
-          total: monthCapacity.defaultTotal,
-        }
+        const day = monthSegments.days[date] ?? null
         const isToday = date === today
-        const isEmpty = dayEvents.length === 0
+        // Un mes son 30 filas: el día sin servicios activos ni eventos va
+        // compacto y apagado para que la lista siga siendo recorrible con el pulgar.
+        const isEmpty = dayEvents.length === 0 && !hasSegmentActivity(day)
+        const celebrations = day ? dayCelebrations(day) : null
+        const longLabel = formatLongDate(date)
         return (
           <div
             key={date}
             ref={isToday ? todayRef : undefined}
             className={cn(
               'scroll-mt-4 rounded-lg border',
-              // Un mes son 30 filas: el día sin eventos va compacto y apagado
-              // para que la lista siga siendo recorrible con el pulgar.
               isEmpty ? 'bg-card/20 px-2 py-1' : 'bg-card/40 p-2',
               isToday ? 'border-primary/40 ring-1 ring-primary/30' : 'border-border/60',
             )}
           >
             <div className={cn('flex items-center justify-between gap-2', !isEmpty && 'mb-1.5')}>
-              <button
-                type="button"
-                onClick={() => onOpenDay(date)}
-                className="-mx-1 flex items-center gap-2 rounded px-1 py-0.5 text-left transition-colors hover:bg-secondary"
-                aria-label={`Ver reservas del ${formatAgendaDate(date)}`}
-              >
-                <span
-                  className={cn(
-                    'capitalize tabular-nums',
-                    isEmpty ? 'text-sm text-muted-foreground' : 'text-sm font-semibold',
-                  )}
+              <div className="flex min-w-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => onOpenDay(date)}
+                  className="-mx-1 flex min-w-0 items-center gap-2 rounded px-1 py-0.5 text-left outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring/50"
+                  aria-label={`Ver el día ${longLabel}`}
                 >
-                  {formatAgendaDate(date)}
-                </span>
-                {isToday ? (
-                  <span className="rounded-full bg-primary px-1.5 py-px text-[10px] font-semibold text-primary-foreground">
-                    Hoy
-                  </span>
-                ) : null}
-                {capacity.used > 0 ? (
-                  <CapacityBadge used={capacity.used} total={capacity.total} />
-                ) : null}
-                {monthCapacity.celebrations[date] ? (
-                  <CelebrationBadge {...monthCapacity.celebrations[date]} />
-                ) : null}
-              </button>
-              {/* El `after` le estira el área táctil a ~44px sin mover el
-                  layout ni engordar la fila del día vacío. Mismo truco que el
-                  ícono de nota en la lista de reservas. Es EL gesto de esta
-                  pantalla en el celular: tiene que ser cómodo con el pulgar. */}
-              <Link
-                href={`/${tenantSlug}/eventos/programados/nuevo?date=${date}`}
-                className="relative rounded p-1 text-muted-foreground transition-colors after:absolute after:-inset-2.5 after:content-[''] hover:bg-secondary sm:after:hidden"
-                aria-label={`Programar evento el ${formatAgendaDate(date)}`}
-              >
-                <Plus className="size-4" />
-              </Link>
-            </div>
-            <div className={cn('space-y-1', isEmpty && 'hidden')}>
-              {dayEvents.map((e) => {
-                const color = e.template?.color_hex ?? '#7c3aed'
-                return (
-                  <Link
-                    key={e.id}
-                    href={`/${tenantSlug}/eventos/programados/${e.id}`}
-                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium leading-snug transition-transform"
-                    style={{ backgroundColor: `${color}1f`, color }}
+                  <span
+                    className={cn(
+                      'capitalize tabular-nums',
+                      isEmpty ? 'text-sm text-muted-foreground' : 'text-sm font-semibold',
+                    )}
                   >
-                    <span className="font-mono text-[11px] tabular-nums opacity-80">
-                      {e.starts_at_local.slice(0, 5)}
+                    {formatAgendaDate(date)}
+                  </span>
+                  {isToday ? (
+                    <span className="rounded-full bg-primary px-1.5 py-px text-[10px] font-semibold text-primary-foreground">
+                      Hoy
                     </span>
-                    <span className="truncate">
-                      {e.name_override ?? e.template?.name ?? 'Evento'}
-                    </span>
-                    <span className="ml-auto shrink-0 text-[10px] opacity-70">
-                      <EventLoad used={monthCapacity.events[e.id] ?? 0} capacity={e.capacity} />
-                    </span>
-                  </Link>
-                )
-              })}
+                  ) : null}
+                  {celebrations ? <CelebrationBadge {...celebrations} /> : null}
+                </button>
+                {day ? <OverrideMark day={day} /> : null}
+              </div>
+              <DayAddMenu
+                variant="agenda"
+                tenantSlug={tenantSlug}
+                date={date}
+                dayLabel={longLabel}
+                onOpenDay={() => onOpenDay(date)}
+              />
             </div>
+            {isEmpty ? null : (
+              <div className="space-y-1.5">
+                {day ? (
+                  <MonthDaySegments
+                    day={day}
+                    variant="agenda"
+                    dayLabel={longLabel}
+                    onOpenSegment={(segment) => onOpenDay(date, segment)}
+                  />
+                ) : null}
+                {dayEvents.length > 0 ? (
+                  <div className="space-y-1">
+                    {dayEvents.map((e) => {
+                      const color = e.template?.color_hex ?? '#7c3aed'
+                      const load = eventLoad[e.id] ?? null
+                      return (
+                        <EventTap
+                          key={e.id}
+                          event={e}
+                          load={load}
+                          tenantSlug={tenantSlug}
+                          today={today}
+                          onOpenDay={onOpenDay}
+                          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-medium leading-snug outline-none transition-transform focus-visible:ring-2 focus-visible:ring-ring/50"
+                          style={{ backgroundColor: `${color}1f`, color }}
+                        >
+                          <span className="font-mono text-[11px] tabular-nums opacity-80">
+                            {e.starts_at_local.slice(0, 5)}
+                          </span>
+                          <span className="truncate">{eventDisplayName(e)}</span>
+                          <span className="ml-auto shrink-0 text-[10px] opacity-70">
+                            <EventLoad load={load} capacity={e.capacity} />
+                          </span>
+                        </EventTap>
+                      )
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            )}
           </div>
         )
       })}
     </>
+  )
+}
+
+/**
+ * Tocar un evento (D2): si todavía no pasó, lleva al alta de reserva ADENTRO
+ * del evento (?date&event: el form ya trae el evento, el servicio y la hora).
+ * Si ya pasó, no hay nada que reservar: abre el día anclado en el servicio del
+ * evento. Editar el evento quedó como acción secundaria en la vista del día.
+ */
+function EventTap({
+  event,
+  load,
+  tenantSlug,
+  today,
+  onOpenDay,
+  className,
+  style,
+  children,
+}: {
+  event: ScheduledEventWithTemplate
+  load: SegmentEventLoad | null
+  tenantSlug: string
+  today: string
+  onOpenDay: OpenDay
+  className: string
+  style: CSSProperties
+  children: ReactNode
+}) {
+  const name = eventDisplayName(event)
+  const time = event.starts_at_local.slice(0, 5)
+  const count = `${load?.used ?? 0} de ${event.capacity}`
+  // El listener de dnd-kit ya consume el drag con umbral de 6 px; si igual
+  // llega un click después de arrastrar, que no suba al contenedor.
+  const stop = (e: ReactMouseEvent) => e.stopPropagation()
+
+  if (event.event_date >= today) {
+    return (
+      <Link
+        href={newReservationHref(tenantSlug, { date: event.event_date, eventId: event.id })}
+        onClick={stop}
+        aria-label={`Reservar en ${name}, ${time}, ${count}`}
+        className={className}
+        style={style}
+      >
+        {children}
+      </Link>
+    )
+  }
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        stop(e)
+        onOpenDay(event.event_date, segmentOfEventStart(event.starts_at_local))
+      }}
+      aria-label={`Ver el día de ${name}, ${time}, ${count}`}
+      className={className}
+      style={style}
+    >
+      {children}
+    </button>
   )
 }
 
@@ -582,7 +881,13 @@ function TemplateChip({ template }: { template: ScheduledEventTemplateRow }) {
   )
 }
 
-function EventCardOverlay({ event, used }: { event: ScheduledEventWithTemplate; used: number }) {
+function EventCardOverlay({
+  event,
+  load,
+}: {
+  event: ScheduledEventWithTemplate
+  load: SegmentEventLoad | null
+}) {
   const color = event.template?.color_hex ?? '#7c3aed'
   return (
     <div
@@ -593,24 +898,22 @@ function EventCardOverlay({ event, used }: { event: ScheduledEventWithTemplate; 
         color,
       }}
     >
-      <span className="block truncate">
-        {event.name_override ?? event.template?.name ?? 'Evento'}
-      </span>
+      <span className="block truncate">{eventDisplayName(event)}</span>
       <span className="block text-[10px] opacity-70 tabular-nums">
-        {event.starts_at_local.slice(0, 5)} · <EventLoad used={used} capacity={event.capacity} />
+        {event.starts_at_local.slice(0, 5)} · <EventLoad load={load} capacity={event.capacity} />
       </span>
     </div>
   )
 }
 
 /**
- * Ocupación del evento: `anotados/cupo`. Antes el chip mostraba solo el cupo,
- * así que cargar reservas no cambiaba nada en el calendario y había que entrar
- * al evento para saber cómo venía. El número es el mismo que muestra el detalle
- * ("N/cupo personas reservadas").
+ * Ocupación del evento: `anotados/cupo`. Sale del mismo cálculo por servicio
+ * que la celda (actual ?? estimado, sin canceladas ni "no vino"), así el chip
+ * y la vista del día dicen el mismo número.
  */
-function EventLoad({ used, capacity }: { used: number; capacity: number }) {
-  const over = capacity > 0 && used > capacity
+function EventLoad({ load, capacity }: { load: SegmentEventLoad | null; capacity: number }) {
+  const used = load?.used ?? 0
+  const over = load?.over ?? false
   const full = !over && capacity > 0 && used >= capacity
   return (
     <span
@@ -623,52 +926,30 @@ function EventLoad({ used, capacity }: { used: number; capacity: number }) {
   )
 }
 
-function CapacityBadge({ used, total }: { used: number; total: number }) {
-  const isOver = used > total
-  const isFull = !isOver && total > 0 && used >= total * 0.9
-  return (
-    <span
-      className={cn(
-        'rounded px-1 py-px font-mono text-[10px] font-semibold tabular-nums',
-        isOver
-          ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
-          : isFull
-            ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
-            : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
-      )}
-      title="Cubiertos del día (mesas a la carta + reservas de evento) / tope del salón"
-    >
-      {used}/{total}
-    </span>
-  )
-}
-
 function DayCell({
   date,
+  day,
   events,
   tenantSlug,
-  isToday,
+  today,
   isWeekend,
   isDraggingTemplate,
   isDraggingEvent,
-  capacity,
-  celebrations,
   eventLoad,
   onOpenDay,
 }: {
   date: string | null
+  /** Los servicios del día (null en las celdas de relleno). */
+  day: DaySegments | null
   events: ScheduledEventWithTemplate[]
   tenantSlug: string
-  isToday: boolean
+  today: string
   isWeekend: boolean
   isDraggingTemplate: boolean
   isDraggingEvent: boolean
-  capacity: { used: number; total: number } | null
-  /** Cumpleaños y tortas del día. Lo que hay que PREPARAR, no lo que hay que sentar. */
-  celebrations: { birthdays: number; cakes: number } | null
-  /** Cubiertos anotados por evento, indexado por id. */
-  eventLoad: Record<string, number>
-  onOpenDay: (date: string) => void
+  /** Carga de cada evento, indexada por id. */
+  eventLoad: Record<string, SegmentEventLoad>
+  onOpenDay: OpenDay
 }) {
   // Las celdas vacías de padding no son droppables.
   const { setNodeRef, isOver } = useDroppable({
@@ -680,19 +961,24 @@ function DayCell({
     return <div className="min-h-[92px] rounded-lg border border-transparent bg-transparent p-2" />
   }
 
+  const isToday = date === today
   const dragging = isDraggingTemplate || isDraggingEvent
   const hasEvents = events.length > 0
+  const busy = hasEvents || hasSegmentActivity(day)
   // Acento de borde-izquierdo con el color del primer evento del día.
   const accent = hasEvents ? (events[0]?.template?.color_hex ?? null) : null
+  const longLabel = formatLongDate(date)
+  // Cumpleaños y tortas del día: lo que hay que PREPARAR, no lo que hay que sentar.
+  const celebrations = day ? dayCelebrations(day) : null
 
   return (
     <div
       ref={setNodeRef}
       className={cn(
-        'group relative min-h-[92px] overflow-hidden rounded-lg border p-2 transition-colors',
+        'group relative min-h-[92px] min-w-0 overflow-hidden rounded-lg border p-2 transition-colors',
         // Día con actividad resalta; día vacío queda liviano.
-        hasEvents ? 'border-border/70 bg-card/70' : 'border-border/40 bg-transparent',
-        isWeekend && !hasEvents && 'bg-cream-tint/40',
+        busy ? 'border-border/70 bg-card/70' : 'border-border/40 bg-transparent',
+        isWeekend && !busy && 'bg-cream-tint/40',
         isToday && 'ring-1 ring-primary/40',
         // Resalta destinos válidos al arrastrar
         dragging && !isOver && 'border-dashed border-border/40',
@@ -708,45 +994,57 @@ function DayCell({
       ) : null}
       <div className="flex h-full flex-col gap-1">
         <div className="flex items-center justify-between gap-1">
-          <button
-            type="button"
-            onClick={() => onOpenDay(date)}
-            className="-mx-1 flex items-center gap-1.5 rounded px-1 py-0.5 transition-colors hover:bg-secondary"
-            aria-label={`Ver reservas del ${formatAgendaDate(date)}`}
-          >
-            <span
-              className={cn(
-                'flex size-5 items-center justify-center rounded-full font-mono text-[11px] font-semibold tabular-nums',
-                isToday ? 'bg-primary text-primary-foreground' : 'text-muted-foreground',
-              )}
+          <div className="flex min-w-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={() => onOpenDay(date)}
+              className="-mx-1 flex items-center gap-1.5 rounded px-1 py-0.5 outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring/50"
+              aria-label={`Ver el día ${longLabel}`}
             >
-              {Number(date.slice(-2))}
-            </span>
-            {capacity && capacity.used > 0 ? (
-              <CapacityBadge used={capacity.used} total={capacity.total} />
-            ) : null}
-            {/* El cumple deja de esconderse adentro del evento ya desde el mes:
-                el 21/09 el calendario decía "Pizza libre" y nada más. */}
-            {celebrations ? <CelebrationBadge {...celebrations} /> : null}
-          </button>
-          <Link
-            href={`/${tenantSlug}/eventos/programados/nuevo?date=${date}`}
-            className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary group-hover:opacity-100"
-            aria-label={`Programar evento ${date}`}
-          >
-            <Plus className="size-3" />
-          </Link>
+              <span
+                className={cn(
+                  'flex size-5 items-center justify-center rounded-full font-mono text-[11px] font-semibold tabular-nums',
+                  isToday ? 'bg-primary text-primary-foreground' : 'text-muted-foreground',
+                )}
+              >
+                {Number(date.slice(-2))}
+              </span>
+              {/* El cumple deja de esconderse adentro del evento ya desde el mes:
+                  el 21/09 el calendario decía "Pizza libre" y nada más. */}
+              {celebrations ? <CelebrationBadge {...celebrations} /> : null}
+            </button>
+            {day ? <OverrideMark day={day} /> : null}
+          </div>
+          <DayAddMenu
+            variant="cell"
+            tenantSlug={tenantSlug}
+            date={date}
+            dayLabel={longLabel}
+            onOpenDay={() => onOpenDay(date)}
+          />
         </div>
-        <div className="flex flex-col gap-1">
-          {events.map((e) => (
-            <DraggableEvent
-              key={e.id}
-              event={e}
-              tenantSlug={tenantSlug}
-              used={eventLoad[e.id] ?? 0}
-            />
-          ))}
-        </div>
+        {day ? (
+          <MonthDaySegments
+            day={day}
+            variant="cell"
+            dayLabel={longLabel}
+            onOpenSegment={(segment) => onOpenDay(date, segment)}
+          />
+        ) : null}
+        {hasEvents ? (
+          <div className="flex flex-col gap-1">
+            {events.map((e) => (
+              <DraggableEvent
+                key={e.id}
+                event={e}
+                tenantSlug={tenantSlug}
+                today={today}
+                load={eventLoad[e.id] ?? null}
+                onOpenDay={onOpenDay}
+              />
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   )
@@ -783,11 +1081,15 @@ function CelebrationBadge({ birthdays, cakes }: { birthdays: number; cakes: numb
 function DraggableEvent({
   event,
   tenantSlug,
-  used,
+  today,
+  load,
+  onOpenDay,
 }: {
   event: ScheduledEventWithTemplate
   tenantSlug: string
-  used: number
+  today: string
+  load: SegmentEventLoad | null
+  onOpenDay: OpenDay
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `${EVENT_PREFIX}${event.id}`,
@@ -800,12 +1102,13 @@ function DraggableEvent({
         className="rounded-md border border-dashed px-1.5 py-0.5 text-[11px] leading-snug"
         style={{ borderColor: `${color}66`, color: `${color}99` }}
       >
-        <span className="block truncate">
-          {event.name_override ?? event.template?.name ?? 'Evento'}
-        </span>
+        <span className="block truncate">{eventDisplayName(event)}</span>
       </div>
     )
   }
+  // Los listeners de dnd quedan en el contenedor (MouseSensor 6 px, TouchSensor
+  // 200 ms): en la compu arrastrar el chip sigue moviendo el evento, y un toque
+  // sin arrastre es un click normal que reserva adentro (o abre el día si ya pasó).
   return (
     <div
       ref={setNodeRef}
@@ -813,19 +1116,14 @@ function DraggableEvent({
       {...listeners}
       className="cursor-grab active:cursor-grabbing"
     >
-      <Link
-        href={`/${tenantSlug}/eventos/programados/${event.id}`}
-        onClick={(e) => {
-          // El listener de dnd-kit ya consume drag con threshold 6px; si igual
-          // se dispara un click después de drag, evitamos navegación accidental.
-          // En la práctica esto rara vez se ejecuta porque drag cancela el click.
-          e.stopPropagation()
-        }}
-        className="block rounded-md px-1.5 py-1 text-[11px] font-medium leading-snug transition-transform hover:scale-[1.02]"
-        style={{
-          backgroundColor: `${color}2e`,
-          color,
-        }}
+      <EventTap
+        event={event}
+        load={load}
+        tenantSlug={tenantSlug}
+        today={today}
+        onOpenDay={onOpenDay}
+        className="block w-full rounded-md px-1.5 py-1 text-left text-[11px] font-medium leading-snug outline-none transition-transform hover:scale-[1.02] focus-visible:ring-2 focus-visible:ring-ring/50"
+        style={{ backgroundColor: `${color}2e`, color }}
       >
         <span className="flex items-center gap-1">
           <span
@@ -833,14 +1131,12 @@ function DraggableEvent({
             className="size-1.5 shrink-0 rounded-full"
             style={{ backgroundColor: color }}
           />
-          <span className="truncate">
-            {event.name_override ?? event.template?.name ?? 'Evento'}
-          </span>
+          <span className="truncate">{eventDisplayName(event)}</span>
         </span>
         <span className="block pl-2.5 text-[10px] opacity-80 tabular-nums">
-          {event.starts_at_local.slice(0, 5)} · <EventLoad used={used} capacity={event.capacity} />
+          {event.starts_at_local.slice(0, 5)} · <EventLoad load={load} capacity={event.capacity} />
         </span>
-      </Link>
+      </EventTap>
     </div>
   )
 }

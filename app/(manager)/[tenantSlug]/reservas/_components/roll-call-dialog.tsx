@@ -1,7 +1,6 @@
 'use client'
 
 import { Check, ClipboardCheck, Loader2 } from 'lucide-react'
-import { useRouter } from 'next/navigation'
 import { useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { GuestCountStepper } from '@/components/reservations/guest-count-stepper'
@@ -44,7 +43,6 @@ export function RollCallDialog({
   day: string
   dayLabel: string
 }) {
-  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [pending, startTransition] = useTransition()
   const [rows, setRows] = useState<ReservationWithJoins[] | null>(null)
@@ -125,10 +123,13 @@ export function RollCallDialog({
     }
     startTransition(async () => {
       const res = await bulkUpdateActualGuests(tenantSlug, { entries: toSave })
+      // Sin router.refresh(): bulkUpdateActualGuests revalida las páginas
+      // que muestran asistencia y Next devuelve la página actual ya
+      // re-renderizada en la respuesta de la action (el calendario con el día
+      // abierto y su cupo). Un refresh encima era otra lectura entera.
       if (res.ok) {
         toast.success(res.message ?? 'Asistencia guardada.')
         setOpen(false)
-        router.refresh()
       } else {
         toast.error(res.message ?? 'No pudimos guardar la asistencia.')
       }

@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { z } from 'zod'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/ui/page-header'
+import { calendarHref, newReservationHref } from '@/lib/salon/calendar-links'
 import {
   getScheduledEvent,
   listSalonReservations,
@@ -67,8 +68,10 @@ export default async function ScheduledEventPage({
     <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <PageHeader
         eyebrow={
+          // Vuelve al mes del evento con su día abierto (antes caía en el mes
+          // de hoy y había que volver a buscar la fecha).
           <Link
-            href={`/${tenantSlug}/eventos/programados`}
+            href={calendarHref(tenantSlug, { day: event.event_date })}
             className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="size-3.5" />
@@ -81,7 +84,9 @@ export default async function ScheduledEventPage({
           // Reservar desde el evento: llega al form con el evento, la fecha y
           // la hora ya elegidos (antes había que volver a buscarlo en un combo).
           <Button asChild className="gap-2">
-            <Link href={`/${tenantSlug}/reservas/nuevo?date=${event.event_date}&event=${event.id}`}>
+            <Link
+              href={newReservationHref(tenantSlug, { date: event.event_date, eventId: event.id })}
+            >
               <CalendarPlus className="size-4" />
               Nueva reserva
             </Link>

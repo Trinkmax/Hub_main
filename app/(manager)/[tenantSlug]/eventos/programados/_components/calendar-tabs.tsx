@@ -1,12 +1,13 @@
 'use client'
 
 import { CalendarPlus, Settings2 } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { EmptyState } from '@/components/ui/empty-state'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type { MonthCapacity } from '@/lib/salon/month-capacity'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
+import type { DayOverview } from '@/lib/salon/segment-queries'
+import type { MonthSegments } from '@/lib/salon/segments'
 import type { ScheduledEventTemplateRow } from '@/lib/salon/types'
 import { TEMPLATE_EDIT_ROLES } from '@/lib/tenant/roles'
 import type { TenantRole } from '@/lib/tenant/types'
@@ -27,6 +28,11 @@ type Tab = 'calendario' | 'eventos'
  * (él da de alta formatos por el atajo del alta de reserva, no por acá).
  * El catálogo para ARRASTRAR formatos al calendario queda para todos los roles
  * con acceso.
+ *
+ * El mes se muestra SIEMPRE, haya formatos o no (R10): el calendario es la
+ * puerta de las reservas, y un bar sin formatos igual tiene almuerzos y cenas
+ * que reservar. Antes, sin formatos ni eventos, el mes se cambiaba por un
+ * "Creá tus formatos primero" y no había dónde cargar una reserva.
  */
 export function CalendarTabs({
   tenantSlug,
@@ -34,23 +40,41 @@ export function CalendarTabs({
   events,
   templates,
   activeTemplates,
-  monthCapacity,
+  monthSegments,
   today,
   defaultTab,
   role,
+  initialOverview,
 }: {
   tenantSlug: string
   ym: string
   events: ScheduledEventWithTemplate[]
   templates: ScheduledEventTemplateRow[]
   activeTemplates: ScheduledEventTemplateRow[]
-  monthCapacity: MonthCapacity
+  monthSegments: MonthSegments
   today: string
   defaultTab: Tab
   role: TenantRole
+  /** El día de ?day precargado por la página (null si no hay día abierto). */
+  initialOverview: DayOverview | null
 }) {
   const canEditTemplates = TEMPLATE_EDIT_ROLES.includes(role)
-  const [tab, setTab] = useState<Tab>(canEditTemplates ? defaultTab : 'calendario')
+
+  // Pedir un día (?day: ⌘K «Nueva reserva», un resultado del buscador, el
+  // Adelante del navegador) vuelve al Calendario. La vista del día vive dentro
+  // del mes, que Radix desmonta en la pestaña Formatos, y el pushState o
+  // router.push que cambia solo la query no remonta esta página: sin esto la
+  // URL decía ?day=… y no se abría nada. Se ajusta en el render (como la vista
+  // del día) para que no haya un frame con la pestaña equivocada.
+  const dayParam = useSearchParams().get('day')
+  const [tab, setTab] = useState<Tab>(
+    canEditTemplates && dayParam === null ? defaultTab : 'calendario',
+  )
+  const [seenDay, setSeenDay] = useState(dayParam)
+  if (dayParam !== seenDay) {
+    setSeenDay(dayParam)
+    if (dayParam !== null) setTab('calendario')
+  }
 
   return (
     <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="gap-5">
@@ -68,34 +92,44 @@ export function CalendarTabs({
       </TabsList>
 
       <TabsContent value="calendario" className="space-y-4" data-tour="eventos-mes">
-        {activeTemplates.length === 0 && events.length === 0 ? (
-          <EmptyState
-            icon={Settings2}
-            title={canEditTemplates ? 'Creá tus formatos primero' : 'Todavía no hay formatos'}
-            description={
-              canEditTemplates
-                ? 'Sushi Libre, Pizza Libre, Ramen… definí al menos un formato en la pestaña Formatos y después arrastralo al calendario.'
-                : 'Sushi Libre, Pizza Libre, Ramen… el dueño tiene que cargar los formatos antes de poder programar eventos en el calendario.'
-            }
-            action={
-              canEditTemplates ? (
-                <Button className="gap-2" onClick={() => setTab('eventos')}>
-                  <Settings2 className="size-4" />
-                  Ir a Formatos
-                </Button>
-              ) : undefined
-            }
-          />
-        ) : (
-          <ScheduledEventsMonth
-            tenantSlug={tenantSlug}
-            ym={ym}
-            events={events}
-            templates={activeTemplates}
-            monthCapacity={monthCapacity}
-            today={today}
-          />
-        )}
+        {activeTemplates.length === 0 ? (
+          <div className="flex flex-col gap-3 rounded-xl border border-dashed border-border bg-card/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <Settings2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium">
+                  {canEditTemplates ? 'Creá tus formatos' : 'Todavía no hay formatos'}
+                </p>
+                <p className="text-sm text-muted-foreground text-pretty">
+                  {canEditTemplates
+                    ? 'Sushi Libre, Pizza Libre, Ramen… definí tus formatos en la pestaña Formatos y arrastralos al calendario para programar eventos. Las reservas se cargan igual desde cada día.'
+                    : 'El dueño todavía no cargó formatos de eventos (Sushi Libre, Pizza Libre…). Las reservas se cargan igual desde cada día.'}
+                </p>
+              </div>
+            </div>
+            {canEditTemplates ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 gap-2 self-start sm:self-center"
+                onClick={() => setTab('eventos')}
+              >
+                <Settings2 className="size-4" aria-hidden />
+                Ir a Formatos
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        <ScheduledEventsMonth
+          tenantSlug={tenantSlug}
+          ym={ym}
+          events={events}
+          templates={activeTemplates}
+          monthSegments={monthSegments}
+          today={today}
+          role={role}
+          initialOverview={initialOverview}
+        />
       </TabsContent>
 
       {canEditTemplates ? (
