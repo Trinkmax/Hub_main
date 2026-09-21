@@ -26,7 +26,6 @@ import {
   type ReportReservationRow,
   type TemplateReport,
 } from './events-report'
-import { aggregateMonthCapacity, type MonthCapacity } from './month-capacity'
 import { computePeakWindow, type PeakWindow } from './peak'
 import type { ServiceRow } from './services'
 import type {
@@ -272,9 +271,9 @@ export async function listSalonReservations(
  * el tope no significa nada, pero el volumen sí — sin esto, al pasar a "este
  * mes" se perdía el contador de cubiertos.
  *
- * `guests` es el total (salón + eventos) y viene con el mismo desglose que el
- * contador del día (`summarizeDayCovers`), para que las dos vistas de la MISMA
- * pantalla hablen el mismo idioma.
+ * `guests` es el total (salón + eventos), con el desglose por zona que usaba
+ * la vieja lista /reservas. Hoy el corte por servicio vive en
+ * lib/salon/segments.ts y esta query quedó sin lectores (ver BACKLOG).
  *
  * Excluye canceladas y no-show: no ocupan mesa.
  */
@@ -514,6 +513,12 @@ export async function listTimelineForDate(opts: {
 // Capacidad por día (RPC)
 // ──────────────────────────────────────────────────────────
 
+/**
+ * Buckets de `evaluate_day_capacity`. El cupo del día ya NO sale de acá: el
+ * corte por servicio (almuerzo/merienda/cena) lo calcula lib/salon/segments.ts.
+ * Queda vivo solo por los `event:*` que leen el operativo y el salón; se
+ * retira desde el BACKLOG cuando esos lectores pasen a los segmentos.
+ */
 export async function getDayCapacitySnapshot(opts: {
   tenantId: string
   date: string
@@ -525,60 +530,6 @@ export async function getDayCapacitySnapshot(opts: {
   })
   if (error) throw error
   return (data ?? []) as DayCapacityBucket[]
-}
-
-/**
- * Capacidad agregada por día para un mes (YYYY-MM). Pensado para el badge
- * del calendario de salón. Resuelve con 3 lecturas (reservas del mes,
- * overrides, defaults) y delega el cómputo a `aggregateMonthCapacity`.
- */
-export async function getMonthCapacity(opts: {
-  tenantId: string
-  ym: string // YYYY-MM
-}): Promise<MonthCapacity> {
-  const supabase = (await createClient()) as SBAny
-  const [yStr, mStr] = opts.ym.split('-')
-  const y = Number(yStr)
-  const m = Number(mStr)
-  const from = `${opts.ym}-01`
-  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate()
-  const to = `${opts.ym}-${String(lastDay).padStart(2, '0')}`
-
-  const [resResult, overrides, defaults] = await Promise.all([
-    supabase
-      .from('salon_reservations')
-      .select(
-        'reservation_date, zone, estimated_guests, actual_guests, status, scheduled_event_id, kind, cake_count',
-      )
-      .eq('tenant_id', opts.tenantId)
-      .gte('reservation_date', from)
-      .lte('reservation_date', to)
-      .not('status', 'in', '(cancelled,no_show)'),
-    listZoneOverrides({ tenantId: opts.tenantId, from, to }),
-    getZoneCapacityDefaults({ tenantId: opts.tenantId }),
-  ])
-  if (resResult.error) throw resResult.error
-
-  const reservations = (resResult.data ?? []) as Array<{
-    reservation_date: string
-    zone: SalonZone
-    estimated_guests: number
-    actual_guests: number | null
-    status: SalonReservationStatus
-    scheduled_event_id: string | null
-    kind: ReservationKind
-    cake_count: number
-  }>
-
-  const physicalOverrides = overrides
-    .filter((o) => o.zone === 'planta_alta' || o.zone === 'planta_baja')
-    .map((o) => ({
-      override_date: o.override_date,
-      zone: o.zone as 'planta_alta' | 'planta_baja',
-      capacity: o.capacity,
-    }))
-
-  return aggregateMonthCapacity({ reservations, overrides: physicalOverrides, defaults })
 }
 
 // ──────────────────────────────────────────────────────────

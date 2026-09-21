@@ -230,14 +230,20 @@ export type DayCapacityBucket = {
    * tiene exactamente una zona) — sumar los TRES da los cubiertos del día sin
    * doble conteo. Los `event:<uuid>` son el otro eje (a qué evento vino): una
    * reserva de planta atada a un evento aparece en los dos, así que **nunca**
-   * sumes `zone:*` + `event:*`. Usá `summarizeDayCovers` (lib/salon/covers.ts).
+   * sumes `zone:*` + `event:*`.
+   *
+   * Hoy solo se leen los `event:*` (operativo y salón). El cupo del día NO sale
+   * de acá: se cuenta por servicio (almuerzo/merienda/cena) contra el cupo de
+   * cada uno con `computeDaySegments` (lib/salon/segments.ts). El total del día
+   * contra PA + PB mezclaba servicios y se retiró.
    */
   bucket: string
   used: number
   /**
    * Tope del bucket. Ojo: `zone:event_floating` viene con `capacity = 0` a
-   * propósito — no tiene tope propio, el que le aplica es el del salón
-   * (PA + PB). No lo pintes crudo como "22/0".
+   * propósito (no tiene tope propio), y los topes de `zone:planta_*` son del
+   * día entero, así que no sirven como cupo de un servicio. No los pintes
+   * crudos como "22/0" ni como "x/60".
    */
   capacity: number
   available: number
