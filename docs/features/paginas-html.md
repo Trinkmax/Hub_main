@@ -129,6 +129,23 @@ Tres solapas a la izquierda y la previa a la derecha (arriba, en celular).
   Soltar una **imagen** en el editor no falla en silencio: avisa que ese archivo
   va en la solapa Imágenes. (El drop de la galería hace `stopPropagation` para
   que soltar una foto ahí no dispare además el handler del editor.)
+
+  Y **sale** por el botón **Descargar** de la barra (en celular, sólo el ícono).
+  Es la otra mitad del ida y vuelta con ChatGPT: si el código se retocó a mano
+  en el panel, la vuelta siguiente tiene que partir de eso y no del archivo
+  viejo que quedó en la compu. Detalles que importan (`lib/landings/download.ts`):
+  - baja **lo que está en el editor**, no lo último guardado; si hay cambios sin
+    guardar, lo avisa con un toast (el archivo ya no es igual a lo que está en
+    vivo);
+  - el archivo es **byte a byte el código**: UTF-8, sin BOM, sin retoques. Vuelve
+    a entrar por *Subir .html* idéntico (`tests/lib/landing-download.test.ts`);
+  - el nombre lleva la hora — `sushi-libre_2026-09-21_14.38.html` — porque se
+    baja muchas veces y sin eso el navegador numera (`sushi-libre (3).html`) y
+    no hay forma de saber cuál es el último.
+
+  Mirando una versión vieja del historial, la banda de arriba de la previa
+  también tiene su **Descargar**: baja ESA versión (con su fecha en el nombre)
+  sin tener que restaurarla ni tocar el editor.
 - **Imágenes** — la galería del bar (ver abajo).
 - **Historial** — visitas + las últimas 20 versiones.
 

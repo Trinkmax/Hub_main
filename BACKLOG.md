@@ -746,6 +746,15 @@ afuera a propósito:
   `Cache-Control: no-store`, así que un F5 suma. Alcanza para comparar dos
   promos entre sí, no para reportar audiencia real. Si hiciera falta, lo próximo
   es hashear IP+día (sin guardar la IP, por la regla de PII).
+- **El editor no se entera si otro dispositivo guardó la misma página**
+  (21/09/2026, al agregar "Descargar"). El buffer sale de `useState(page.html)`
+  y `router.refresh()` no lo re-sincroniza, y `saveLandingHtml` pisa sin
+  comparar contra lo que el editor cargó. Con una pestaña abierta desde ayer y
+  alguien de marketing guardando hoy desde su compu: *Guardar* en la pestaña
+  vieja borra el trabajo del otro sin aviso (queda sólo en el historial), y
+  *Descargar* baja la versión vieja. El fix: mandar el `updated_at` cargado en
+  el save y rebotar si cambió, y al volver el foco a la pestaña mostrar "Esta
+  página cambió desde otro lado · Recargar".
 
 ## Tablero operativo (2026-09-05)
 

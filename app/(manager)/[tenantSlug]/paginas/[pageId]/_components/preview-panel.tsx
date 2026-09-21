@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import type { LandingCheck, LandingCheckLevel } from '@/lib/landings/checks'
 import { LANDING_PREVIEW_SANDBOX } from '@/lib/landings/security'
 import { cn } from '@/lib/utils'
+import { DownloadHtmlButton } from './download-button'
 
 /**
  * La vista previa y la revisión rápida.
@@ -45,6 +46,7 @@ export function PreviewPanel({
   checks,
   note,
   viewingLabel,
+  viewingFileName,
   onExitViewing,
   onRestoreViewing,
   pending,
@@ -55,6 +57,8 @@ export function PreviewPanel({
   note: string | null
   /** Si está, la previa muestra una versión vieja y no el código actual. */
   viewingLabel: string | null
+  /** Nombre del .html de esa versión vieja (lleva su fecha, no la de hoy). */
+  viewingFileName: string | null
   onExitViewing: () => void
   onRestoreViewing?: () => void
   pending: boolean
@@ -111,6 +115,17 @@ export function PreviewPanel({
             <p className="min-w-0 flex-1 text-xs text-amber-800 dark:text-amber-300">
               Estás viendo la {viewingLabel.toLowerCase()}
             </p>
+            {/* Para pasarle a ChatGPT la versión que andaba, sin tener que
+                restaurarla y pisar lo que hay en el editor. */}
+            {viewingFileName ? (
+              <DownloadHtmlButton
+                html={html}
+                fileName={() => viewingFileName}
+                label="Descargar esta versión como .html"
+                showLabel={false}
+                variant="ghost"
+              />
+            ) : null}
             {onRestoreViewing ? (
               <Button size="sm" variant="outline" disabled={pending} onClick={onRestoreViewing}>
                 Restaurar

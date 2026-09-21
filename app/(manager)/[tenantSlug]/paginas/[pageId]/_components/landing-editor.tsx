@@ -41,10 +41,12 @@ import {
   setLandingPublished,
 } from '@/lib/landings/actions'
 import { analyzeLandingHtml, summarizeChecks } from '@/lib/landings/checks'
+import { landingFileName } from '@/lib/landings/download'
 import type { LandingPageDetail, LandingVersionRow, LandingViewPoint } from '@/lib/landings/queries'
 import { LANDING_HTML_MAX_CHARS, LANDING_HTML_MAX_LABEL } from '@/lib/landings/schemas'
 import { HAS_LANDINGS_HOST } from '@/lib/landings/security'
 import { cn } from '@/lib/utils'
+import { DownloadHtmlButton } from './download-button'
 import { HistoryPanel } from './history-panel'
 import { MediaPanel } from './media-panel'
 import { PreviewPanel } from './preview-panel'
@@ -422,8 +424,24 @@ export function LandingEditor({
           </div>
 
           {/* flex-wrap + textos que se esconden abajo de sm: con la página
-              publicada, los cuatro controles no entran en 360px de ancho. */}
+              publicada, los cinco controles no entran en 360px de ancho. */}
           <div className="flex flex-wrap items-center justify-end gap-2">
+            {/* Baja lo que está en el editor, no lo último guardado: si retocaste
+                algo y se lo vas a pasar a ChatGPT, es eso lo que tiene que ver. */}
+            <DownloadHtmlButton
+              html={html}
+              fileName={() => landingFileName(page.slug, new Date())}
+              label="Descargar el código como .html"
+              onDownloaded={() => {
+                if (!dirty) return
+                toast.info('Descargado con cambios sin guardar', {
+                  description: published
+                    ? 'El archivo tiene lo que ves en el editor, pero la página en vivo todavía no.'
+                    : 'El archivo tiene lo que ves en el editor, pero acá todavía no está guardado.',
+                })
+              }}
+            />
+
             <div className="flex items-center gap-2 rounded-lg border border-border/70 px-2.5 py-1.5 sm:px-3">
               <Switch
                 id="published"
@@ -487,6 +505,9 @@ export function LandingEditor({
               viewing
                 ? `Versión del ${format(new Date(viewing.version.createdAt), "d 'de' MMM HH:mm", { locale: es })}`
                 : null
+            }
+            viewingFileName={
+              viewing ? landingFileName(page.slug, new Date(viewing.version.createdAt)) : null
             }
             onExitViewing={() => setViewing(null)}
             onRestoreViewing={viewing ? () => restoreVersion(viewing.version) : undefined}
