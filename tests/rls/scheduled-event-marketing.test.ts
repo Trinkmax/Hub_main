@@ -247,8 +247,10 @@ describeIfRls('RLS — scheduled_event_marketing (pauta por edición, solo owner
   )
 
   it(
-    '«No tuvo pauta» es gasto 0 pelado: los CHECK cortan las filas raras',
+    '«No tuvo pauta» es gasto 0 sin nada de Meta, pero con la plata de la noche',
     async () => {
+      // `sem_no_ads_no_meta_numbers` (migración 20260922120000): sin anuncio no
+      // hay mensajes ni alcance, y sin pauta no hay dólar que la pase a pesos.
       const noAdsWithMessages = await ownerA.client
         .from(TABLE)
         .insert({
@@ -260,24 +262,41 @@ describeIfRls('RLS — scheduled_event_marketing (pauta por edición, solo owner
         .select('scheduled_event_id')
       expect(noAdsWithMessages.error?.code).toBe('23514')
 
-      const revenueWithoutRate = await ownerA.client
+      const noAdsWithRate = await ownerA.client
         .from(TABLE)
         .insert({
           tenant_id: tenantA.id,
           scheduled_event_id: eventA,
-          ad_spend_usd_cents: 1000,
-          revenue_ars_cents: 100_000,
+          ad_spend_usd_cents: 0,
+          usd_ars_rate: 1550,
         })
         .select('scheduled_event_id')
-      expect(revenueWithoutRate.error?.code).toBe('23514')
+      expect(noAdsWithRate.error?.code).toBe('23514')
 
-      const noAds = await ownerA.client
+      // La noche orgánica (Ratatouille): sin pauta, con su ingreso, su costo y
+      // la facturación de la caja.
+      const organic = await ownerA.client
         .from(TABLE)
-        .insert({ tenant_id: tenantA.id, scheduled_event_id: eventA, ad_spend_usd_cents: 0 })
-        .select('ad_spend_usd_cents, messages')
+        .insert({
+          tenant_id: tenantA.id,
+          scheduled_event_id: eventA,
+          ad_spend_usd_cents: 0,
+          revenue_per_guest_ars_cents: 2_500_000,
+          cost_per_guest_ars_cents: 720_000,
+          revenue_ars_cents: 120_000_000,
+        })
+        .select(
+          'ad_spend_usd_cents, messages, usd_ars_rate, revenue_per_guest_ars_cents, cost_per_guest_ars_cents',
+        )
         .single()
-      expect(noAds.error).toBeNull()
-      expect(noAds.data).toEqual({ ad_spend_usd_cents: 0, messages: null })
+      expect(organic.error).toBeNull()
+      expect(organic.data).toEqual({
+        ad_spend_usd_cents: 0,
+        messages: null,
+        usd_ars_rate: null,
+        revenue_per_guest_ars_cents: 2_500_000,
+        cost_per_guest_ars_cents: 720_000,
+      })
 
       const cleanup = await ownerA.client.from(TABLE).delete().eq('scheduled_event_id', eventA)
       expect(cleanup.error).toBeNull()

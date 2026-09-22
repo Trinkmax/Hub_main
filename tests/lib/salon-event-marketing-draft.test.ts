@@ -4,6 +4,7 @@ import {
   blockedSaveMessage,
   checkMarketingDraft,
   draftFromRow,
+  draftIsNoAds,
   EMPTY_MARKETING_DRAFT,
   firstEmptyField,
   keepMarketingDraft,
@@ -50,6 +51,25 @@ const ASTRAL: EventMarketingRow = {
 const perGuest = { revenuePerGuestArsCents: 27_000_00, costPerGuestArsCents: 15_000_00 }
 const RAMEN: EventMarketingRow = { ...ASTRAL, ...perGuest, revenueArsCents: null }
 
+/** Una fecha marcada «No tuvo pauta», pelada. */
+const NO_ADS: EventMarketingRow = {
+  ...ASTRAL,
+  adSpendUsdCents: 0,
+  messages: null,
+  reach: null,
+  revenueArsCents: null,
+  usdArsRate: null,
+  notes: null,
+}
+
+/** Ratatouille: sin pauta («fue todo orgánico»), $ 25.000 el cubierto y $ 7.200 de costo. */
+const ORGANIC: EventMarketingRow = {
+  ...NO_ADS,
+  revenuePerGuestArsCents: 25_000_00,
+  costPerGuestArsCents: 7_200_00,
+  notes: 'Todo orgánico',
+}
+
 function draft(patch: Partial<MarketingDraft>): MarketingDraft {
   return { ...EMPTY_MARKETING_DRAFT, ...patch }
 }
@@ -69,19 +89,21 @@ describe('draftFromRow', () => {
     })
   })
 
-  it('sin fila o con «No tuvo pauta» abre vacío (un 0,00 en Gastado sería inválido)', () => {
+  it('sin fila abre vacío', () => {
     expect(draftFromRow(null)).toEqual(EMPTY_MARKETING_DRAFT)
-    expect(
-      draftFromRow({
-        ...ASTRAL,
-        adSpendUsdCents: 0,
-        messages: null,
-        reach: null,
-        revenueArsCents: null,
-        usdArsRate: null,
-        notes: null,
+  })
+
+  it('«No tuvo pauta» abre con 0 en Gastado: es lo guardado, y el form ya sabe que es orgánica', () => {
+    expect(draftFromRow(NO_ADS)).toEqual(draft({ adSpendUsd: '0' }))
+    expect(draftFromRow(ORGANIC)).toEqual(
+      draft({
+        adSpendUsd: '0',
+        revenuePerGuestArs: '25.000',
+        costPerGuestArs: '7.200',
+        notes: 'Todo orgánico',
+        moneyOpen: true,
       }),
-    ).toEqual(EMPTY_MARKETING_DRAFT)
+    )
   })
 
   it('sin ningún número de plata deja la sección cerrada', () => {
@@ -295,20 +317,84 @@ describe('nextLastValid', () => {
   })
 })
 
+describe('draftIsNoAds', () => {
+  it('solo un Gastado que se lee y da 0 centavos', () => {
+    expect(draftIsNoAds(draft({ adSpendUsd: '0' }))).toBe(true)
+    expect(draftIsNoAds(draft({ adSpendUsd: '0,00' }))).toBe(true)
+    // Vacío es «todavía no lo cargó», no «no hubo».
+    expect(draftIsNoAds(draft({ adSpendUsd: '' }))).toBe(false)
+    expect(draftIsNoAds(draft({ adSpendUsd: 'abc' }))).toBe(false)
+    expect(draftIsNoAds(draft({ adSpendUsd: '0,5' }))).toBe(false)
+    expect(draftIsNoAds(draft({ adSpendUsd: '175,26' }))).toBe(false)
+  })
+
+  it('apaga lo de Meta y el dólar; la plata de la noche sigue prendida', () => {
+    const organic = draft({ adSpendUsd: '0', moneyOpen: true })
+    expect(marketingFieldEnabled('messages', organic, true)).toBe(false)
+    expect(marketingFieldEnabled('reach', organic, true)).toBe(false)
+    expect(marketingFieldEnabled('usdArsRate', organic, true)).toBe(false)
+    expect(marketingFieldEnabled('adSpendUsd', organic, true)).toBe(true)
+    expect(marketingFieldEnabled('revenuePerGuestArs', organic, true)).toBe(true)
+    expect(marketingFieldEnabled('costPerGuestArs', organic, true)).toBe(true)
+    expect(marketingFieldEnabled('revenueArs', organic, true)).toBe(true)
+  })
+
+  it('lo apagado no cuenta como cambio: volver al 0 guardado no es «seguís con lo escrito»', () => {
+    expect(sameDraft(draft({ adSpendUsd: '0', messages: '51' }), draftFromRow(NO_ADS))).toBe(true)
+    expect(sameDraft(draft({ adSpendUsd: '0', notes: 'x' }), draftFromRow(NO_ADS))).toBe(false)
+  })
+
+  it('el foco arranca en la plata si se abre para sumarla', () => {
+    expect(firstEmptyField({ ...draftFromRow(NO_ADS), moneyOpen: true }, true)).toBe(
+      'revenuePerGuestArs',
+    )
+  })
+})
+
 describe('checkMarketingDraft', () => {
-  it('Gastado vacío o en 0 manda a «No tuvo pauta»', () => {
+  it('Gastado vacío pide el número (y dice que sin pauta va 0)', () => {
     expect(checkMarketingDraft(EMPTY_MARKETING_DRAFT, CTX).fieldErrors).toEqual({
       adSpendUsd: M.spendMissing,
     })
-    expect(checkMarketingDraft(draft({ adSpendUsd: '0' }), CTX).fieldErrors.adSpendUsd).toBe(
-      M.spendMissing,
-    )
-    expect(checkMarketingDraft(draft({ adSpendUsd: '0,00' }), CTX).fieldErrors.adSpendUsd).toBe(
-      M.spendMissing,
-    )
+    expect(M.spendMissing).toContain('poné 0')
+    expect(checkMarketingDraft(EMPTY_MARKETING_DRAFT, CTX).input).toBeNull()
     // `0,001` no es "casi cero": una coma seguida de 3 dígitos separa miles (= 1).
     expect(checkMarketingDraft(draft({ adSpendUsd: '0,001' }), CTX).input?.adSpendUsd).toBe(1)
-    expect(checkMarketingDraft(EMPTY_MARKETING_DRAFT, CTX).input).toBeNull()
+  })
+
+  it('Gastado en 0 es una noche sin pauta: guarda la plata, sin nada de Meta', () => {
+    // Lo que el dueño tipeó con Ratatouille: 0 de pauta, mensajes y alcance
+    // escritos de antes, dólar, y la plata de la noche.
+    const typed = draft({
+      adSpendUsd: '0',
+      messages: '51',
+      reach: '8.420',
+      revenuePerGuestArs: '25.000',
+      costPerGuestArs: '7.200',
+      usdArsRate: '1.550',
+      moneyOpen: true,
+    })
+    const check = checkMarketingDraft(typed, CTX)
+    expect(check.fieldErrors).toEqual({})
+    // Lo apagado no viaja: el CHECK de la DB lo rechazaría.
+    expect(check.input).toMatchObject({
+      adSpendUsd: 0,
+      messages: null,
+      reach: null,
+      usdArsRate: null,
+      revenuePerGuestArs: 25_000,
+      costPerGuestArs: 7_200,
+    })
+    for (const adSpendUsd of ['0,00', 'US$ 0', '0.00']) {
+      expect(checkMarketingDraft(draft({ adSpendUsd }), CTX).input?.adSpendUsd).toBe(0)
+    }
+  })
+
+  it('un Gastado ilegible no le inventa errores de «sin pauta» a Mensajes', () => {
+    const check = checkMarketingDraft(draft({ adSpendUsd: 'abc', messages: '51' }), CTX)
+    expect(check.fieldErrors).toEqual({ adSpendUsd: M.unreadable })
+    const empty = checkMarketingDraft(draft({ messages: '51', reach: '8420' }), CTX)
+    expect(empty.fieldErrors).toEqual({ adSpendUsd: M.spendMissing })
   })
 
   it('los errores de lectura, con las palabras del form', () => {

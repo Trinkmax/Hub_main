@@ -275,8 +275,10 @@ export async function saveEventMarketing(
 }
 
 /**
- * «No tuvo pauta»: una fila con gasto 0 y nada más (CHECK `sem_no_ads_is_bare`).
- * Solo alta: si la fecha ya tiene fila, alguien cargó algo y no se pisa.
+ * «No tuvo pauta»: una fila con gasto 0 y nada más. La plata de esa noche
+ * orgánica (ingreso y costo por persona) se suma después con «Sumar la plata»,
+ * que pasa por `saveEventMarketing`. Solo alta: si la fecha ya tiene fila,
+ * alguien cargó algo y no se pisa.
  */
 export async function markEventWithoutAds(
   slug: string,

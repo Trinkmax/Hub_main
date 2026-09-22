@@ -890,11 +890,12 @@ afuera a propósito:
   `getLastPerGuestValues` calcado del del dólar lo resuelve — **nunca
   precargando solo**: un cubierto viejo guardado sin que nadie lo mire es un
   resultado de la noche inventado. Esperar a que el dueño lo pida.
-- **Los tests de RLS de `scheduled_event_marketing` no cubren las columnas
-  nuevas.** `tests/rls/scheduled-event-marketing.test.ts` (no corre en CI, pide
-  Supabase local) no prueba el `sem_no_ads_is_bare` rehecho: una fila con gasto
-  0 y plata por persona colgada tiene que rebotar, y hoy eso solo lo garantiza
-  el CHECK sin test que lo vigile.
+- **¿Las noches orgánicas suman en el resultado del mes?** (22/09/2026) Hoy
+  no: la pestaña Pauta suma solo fechas CON pauta y la noche sin pauta muestra
+  lo que dejó en su renglón de «Sin pauta». Si el dueño quiere «cuánto dejaron
+  todas las noches del mes», hace falta un conjunto aparte (no meterlas en `S`:
+  su base dice «de N fechas con pauta» y el nombre del total del CSV también) y
+  decidir si la pestaña deja de ser solo de pauta. Preguntar antes de tocarlo.
 - **La gente del cálculo no se puede auditar desde la pantalla.** El resultado
   de la noche multiplica por `billableGuests` y la ficha lo explica en una
   línea, pero no hay manera de ver QUÉ mesas quedaron sin cerrar sin ir al

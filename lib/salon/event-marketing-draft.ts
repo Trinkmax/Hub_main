@@ -22,6 +22,7 @@ import {
   formatDayMonth,
   formatLoadedAt,
   formatPesosRate,
+  isNoAdsSpend,
   type MarketingActionState,
   type MarketingField,
   type MarketingPhase,
@@ -112,6 +113,26 @@ export const MARKETING_MONEY_HINTS = {
   usdArsRate: 'El que usaste para pagar Meta (el de la tarjeta). Pasa la pauta a pesos.',
 } as const
 
+/**
+ * Los que se apagan cuando «Gastado» es 0: sin anuncio no hay mensajes ni
+ * alcance de Meta, y el dólar está para pasar la pauta a pesos. Apagados no
+ * viajan (la DB los rechaza con gasto 0), pero lo escrito se conserva en el
+ * borrador: si el 0 era un error de tipeo, al corregirlo vuelven solos.
+ */
+export const MARKETING_NO_ADS_OFF_FIELDS: readonly NumericMarketingField[] = [
+  'messages',
+  'reach',
+  'usdArsRate',
+]
+
+/** La ayuda de esos tres mientras están apagados: por qué, en vez de «En Meta: …». */
+export const MARKETING_NO_ADS_HINTS: Readonly<Record<'messages' | 'reach' | 'usdArsRate', string>> =
+  {
+    messages: 'Sin pauta no hay mensajes de Meta.',
+    reach: 'Sin pauta no hay alcance de Meta.',
+    usdArsRate: 'Sin pauta no hace falta: es para pasar la pauta a pesos.',
+  }
+
 export const EMPTY_MARKETING_DRAFT: MarketingDraft = {
   adSpendUsd: '',
   messages: '',
@@ -126,15 +147,15 @@ export const EMPTY_MARKETING_DRAFT: MarketingDraft = {
 
 /**
  * Lo guardado, escrito como quedaría en el input después del blur. «No tuvo
- * pauta» (gasto 0) abre VACÍO: un `0,00` en «Gastado» sería un número que el
- * formulario mismo rechaza.
+ * pauta» abre con `0` en «Gastado»: es lo que está guardado, y con el 0 el form
+ * ya sabe que es una noche orgánica (apaga lo de Meta y deja la plata).
  *
  * El desplegable de plata abre si hay CUALQUIERA de los cuatro números: si se
  * abriera solo con la facturación, un ingreso por persona ya guardado quedaría
  * escondido y el guardado siguiente lo borraría sin que nadie lo vea.
  */
 export function draftFromRow(row: EventMarketingRow | null): MarketingDraft {
-  if (row === null || row.adSpendUsdCents <= 0) return { ...EMPTY_MARKETING_DRAFT }
+  if (row === null) return { ...EMPTY_MARKETING_DRAFT }
   const pesos = (cents: number | null) =>
     cents === null ? '' : canonicalInput(cents / 100, 'money')
   const draft: MarketingDraft = {
@@ -158,13 +179,18 @@ export function draftFromRow(row: EventMarketingRow | null): MarketingDraft {
  * cambio: tocar el botón no es escribir un número.
  */
 export function sameDraft(a: MarketingDraft, b: MarketingDraft): boolean {
-  const norm = (d: MarketingDraft) => [
-    d.adSpendUsd.trim(),
-    d.messages.trim(),
-    d.reach.trim(),
-    ...MARKETING_MONEY_FIELDS.map((field) => (d.moneyOpen ? d[field].trim() : '')),
-    d.notes.trim(),
-  ]
+  // Lo apagado no cuenta, igual que lo que no se ve: no se va a guardar.
+  const norm = (d: MarketingDraft) => {
+    const on = (field: NumericMarketingField) =>
+      MARKETING_NO_ADS_OFF_FIELDS.includes(field) && draftIsNoAds(d) ? '' : d[field].trim()
+    return [
+      d.adSpendUsd.trim(),
+      on('messages'),
+      on('reach'),
+      ...MARKETING_MONEY_FIELDS.map((field) => (d.moneyOpen ? on(field) : '')),
+      d.notes.trim(),
+    ]
+  }
   const x = norm(a)
   const y = norm(b)
   return x.every((value, i) => value === y[i])
@@ -247,16 +273,27 @@ export function lastValidFromDraft(
 }
 
 /**
- * ¿Ese campo está a la vista, y entonces viaja? Los de plata solo con la
- * sección abierta, y la facturación además solo cuando la fecha la admite
- * (`marketingRevenueVisible`). Lo mira el chequeo y también el formulario, para
- * que lo que se dibuja y lo que se manda no puedan separarse.
+ * ¿«Gastado» dice que no hubo pauta? Solo si se puede leer y da 0 centavos:
+ * vacío es «todavía no lo cargó», no «no hubo».
+ */
+export function draftIsNoAds(draft: MarketingDraft): boolean {
+  const parsed = parseLocaleNumber(draft.adSpendUsd, 'money')
+  return parsed.ok && isNoAdsSpend(parsed.value)
+}
+
+/**
+ * ¿Ese campo está prendido, y entonces viaja? Con «Gastado» en 0 se apagan los
+ * de Meta y el dólar. Los de plata solo con la sección abierta, y la
+ * facturación además solo cuando la fecha la admite (`marketingRevenueVisible`).
+ * Lo mira el chequeo y también el formulario, para que lo que se dibuja y lo
+ * que se manda no puedan separarse.
  */
 export function marketingFieldEnabled(
   field: NumericMarketingField,
   draft: MarketingDraft,
   revenueVisible: boolean,
 ): boolean {
+  if (MARKETING_NO_ADS_OFF_FIELDS.includes(field) && draftIsNoAds(draft)) return false
   if (!MARKETING_MONEY_FIELDS.includes(field)) return true
   if (!draft.moneyOpen) return false
   return field !== 'revenueArs' || revenueVisible
@@ -341,9 +378,11 @@ export function checkMarketingDraft(
   const notes = draft.notes.trim()
   const candidate: SaveEventMarketingInput = {
     scheduledEventId: ctx.scheduledEventId,
-    // Un «Gastado» ilegible viaja como 0 solo para que el schema revise el
-    // resto: su error de lectura ya está puesto y tiene prioridad.
-    adSpendUsd: numbers.adSpendUsd ?? 0,
+    // Un «Gastado» vacío o ilegible viaja como un gasto cualquiera solo para
+    // que el schema revise el resto: su error de lectura ya está puesto, tiene
+    // prioridad y con él `input` sale en null. NO puede viajar como 0: el 0 es
+    // «no hubo pauta» y el schema le reclamaría a Mensajes un error que no es.
+    adSpendUsd: numbers.adSpendUsd ?? 1,
     messages: numbers.messages,
     reach: numbers.reach,
     revenuePerGuestArs: numbers.revenuePerGuestArs,
@@ -494,6 +533,7 @@ export function marketingCopy(title: string, eventDate: string) {
     loadAria: `Cargar pauta de ${of}`,
     noAdsAria: `No tuvo pauta: ${of}`,
     changeAria: `Cambiar la pauta de ${of}`,
+    addMoneyAria: `Sumar la plata de la noche de ${of}`,
     updateAria: `Actualizar la pauta de ${of}`,
     deleteTitle: `¿Borrar la pauta de ${of}?`,
     deleteDescription: 'La fecha vuelve a quedar «Sin cargar». Los números de gente no cambian.',

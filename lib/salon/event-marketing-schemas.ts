@@ -3,6 +3,7 @@ import {
   type EventMarketingRow,
   formatArs,
   formatPesosRate,
+  isNoAdsSpend,
   type MarketingField,
   shortName,
 } from './event-marketing'
@@ -46,7 +47,7 @@ export const EVENT_MARKETING_LIMITS = {
 } as const
 
 export const MARKETING_FIELD_MESSAGES = {
-  spendMissing: 'Poné cuánto se gastó. Si no hubo pauta, usá «No tuvo pauta».',
+  spendMissing: 'Poné cuánto se gastó. Si no hubo pauta, poné 0.',
   unreadable: 'No entendí el número.',
   negative: 'No puede ser negativo.',
   withDecimals: 'Va sin decimales.',
@@ -66,6 +67,14 @@ export const MARKETING_FIELD_MESSAGES = {
   revenuePerGuestOutOfRange: `Revisá el ingreso por persona: el tope es ${formatArs(EVENT_MARKETING_LIMITS.perGuestArsMax)}.`,
   costPerGuestOutOfRange: `Revisá el costo por persona: el tope es ${formatArs(EVENT_MARKETING_LIMITS.perGuestArsMax)}.`,
   notesTooLong: 'La nota puede tener hasta 280 caracteres.',
+  /**
+   * Con gasto 0 el formulario apaga estos tres y no los manda: solo los ve
+   * quien le pegue a la Server Action por otro lado. Van igual con palabras,
+   * porque el CHECK `sem_no_ads_no_meta_numbers` los rebotaría como un «No se
+   * pudo guardar» sin campo.
+   */
+  metaWithoutAds: 'Sin pauta no hay números de Meta: dejalo vacío.',
+  rateWithoutAds: 'Sin pauta no hace falta el dólar: dejalo vacío.',
 } as const
 
 /** `Revisá el dólar: quedó en $ 14,50.` — el número va porque suele ser un punto de más o de menos. */
@@ -110,8 +119,7 @@ function countField(max: number) {
  *
  * El 0 entra a propósito: la DB lo acepta (`between 0 and 100000000`) y es un
  * número que el dueño puede haber tipeado en serio ("esa noche no me costó
- * nada"). Distinto del gasto en pauta, donde el 0 tiene su propia acción
- * («No tuvo pauta») y por eso sí es un error.
+ * nada").
  */
 function perGuestField(tooHigh: string) {
   return z.number(M.unreadable).nonnegative(M.negative).max(L.perGuestArsMax, tooHigh).nullish()
@@ -129,14 +137,10 @@ function perGuestField(tooHigh: string) {
 export const saveEventMarketingSchema = z
   .object({
     scheduledEventId: eventIdField,
-    // "Gastado" en 0 no es un número válido: para eso está «No tuvo pauta», que
-    // es otra acción y otro estado. Tiene que redondear a 1 centavo como mínimo
-    // o se guardaría un 0 disfrazado.
-    adSpendUsd: z
-      .number(M.unreadable)
-      .nonnegative(M.negative)
-      .max(L.adSpendUsdMax, M.spendTooHigh)
-      .refine((v) => Math.round(v * 100) >= 1, M.spendMissing),
+    // "Gastado" en 0 es «No tuvo pauta»: la noche orgánica, que igual puede
+    // traer su ingreso y su costo por persona (migración `20260922120000`).
+    // Lo que decide es el centavo, como en la DB: `0,004` es un 0.
+    adSpendUsd: z.number(M.unreadable).nonnegative(M.negative).max(L.adSpendUsdMax, M.spendTooHigh),
     messages: countField(L.messagesMax).nullish(),
     reach: countField(L.reachMax).nullish(),
     // Facturación y dólar YA NO van de a pares: la migración `20260919120000`
@@ -162,11 +166,8 @@ export const saveEventMarketingSchema = z
         }
       })
       .nullish(),
-    // El CHECK `sem_no_ads_is_bare` ahora también los mira: con gasto 0 los dos
-    // tienen que ir en null. Este schema no puede violarlo — `adSpendUsd` exige
-    // al menos 1 centavo y corta antes con «Poné cuánto se gastó…», que es el
-    // mensaje humano del caso — y la única fila con gasto 0 la escribe
-    // `markEventWithoutAds`, que inserta la fila pelada.
+    // Entran también con gasto 0: la cuenta de una noche orgánica es
+    // exactamente esto, sin pauta que restar.
     revenuePerGuestArs: perGuestField(M.revenuePerGuestOutOfRange),
     costPerGuestArs: perGuestField(M.costPerGuestOutOfRange),
     // `.trim()` corre antes que `.max()`: el tope es sobre lo que se guarda.
@@ -179,6 +180,22 @@ export const saveEventMarketingSchema = z
       .nullish(),
     /** `null` = alta; con valor = edición sobre esa versión (chequeo de stale). */
     expectedUpdatedAt: baselineField.nullish(),
+  })
+  // Sin pauta, los números de Meta no existen y el dólar no tiene qué pasar a
+  // pesos: el CHECK `sem_no_ads_no_meta_numbers` los rechaza, y acá se dice en
+  // qué campo antes de llegar a la DB. El formulario ni los manda (los apaga).
+  .superRefine((v, ctx) => {
+    if (!isNoAdsSpend(v.adSpendUsd)) return
+    const meta = [
+      ['messages', v.messages, M.metaWithoutAds],
+      ['reach', v.reach, M.metaWithoutAds],
+      ['usdArsRate', v.usdArsRate, M.rateWithoutAds],
+    ] as const
+    for (const [field, value, message] of meta) {
+      if (value !== null && value !== undefined) {
+        ctx.addIssue({ code: 'custom', path: [field], message })
+      }
+    }
   })
   .transform((v) => ({
     scheduledEventId: v.scheduledEventId,

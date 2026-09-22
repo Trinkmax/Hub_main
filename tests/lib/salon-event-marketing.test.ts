@@ -14,6 +14,7 @@ import {
   formatPerThousand,
   formatPesosRate,
   formatUsd,
+  hasNightAccount,
   howItsCalculated,
   isPendingMarketing,
   type Kpi,
@@ -32,6 +33,7 @@ import {
   monthMarketingToCsv,
   NIGHT_RESULT_DISCLAIMER,
   nightResultReport,
+  noAdsResultLabel,
   type PoolItem,
   parseLocaleNumber,
   phaseOf,
@@ -88,6 +90,19 @@ const RAMEN_ROW = row({
   usdArsRate: 1450,
   revenuePerGuestArsCents: 27_000_00,
   costPerGuestArsCents: 15_000_00,
+})
+
+/**
+ * Ratatouille (22/09/2026): «fue todo orgánico». Sin pauta, con la plata de la
+ * noche: 48 personas a $ 25.000 de ingreso y $ 7.200 de costo.
+ */
+const RATATOUILLE = { reservations: 18, guests: 54, billableGuests: 48, attendedGuests: 48 }
+const ORGANIC_ROW = row({
+  scheduledEventId: 'ev-ratatouille',
+  adSpendUsdCents: 0,
+  messages: null,
+  revenuePerGuestArsCents: 25_000_00,
+  costPerGuestArsCents: 7_200_00,
 })
 
 function value(k: Kpi): number {
@@ -582,19 +597,56 @@ describe('nightResultReport', () => {
     expect(r?.perGuestAfterAds).toBeNull()
   })
 
-  it('sin pauta no hay nada que descontar: el resultado es el margen', () => {
+  it('sin pauta no hay nada que descontar: el resultado es el margen, y lo dice', () => {
     const r = nightResultReport(RAMEN, {
       ...RAMEN_ROW,
       adSpendUsdCents: 0,
+      messages: null,
       usdArsRate: null,
     })
+    // «sin pauta» en palabras: si no, «margen $ X → quedan $ X» parece una
+    // resta a la que le falta un número.
     expect(r?.math).toBe(
       nb(
-        '29 personas × $ 27.000 = $ 783.000 · costo $ 435.000 · margen $ 348.000 → quedan $ 348.000',
+        '29 personas × $ 27.000 = $ 783.000 · costo $ 435.000 · margen $ 348.000 · sin pauta → quedan $ 348.000',
       ),
     )
+    expect(r?.headline).toBe(nb('La noche dejó $ 348.000.'))
     expect(r?.missing).toBeNull()
     expect(r?.perGuest).toBe(nb('Cada persona dejó $ 12.000.'))
+    // No hay «después de la pauta»: no hubo pauta.
+    expect(r?.perGuestAfterAds).toBeNull()
+  })
+
+  it('Ratatouille, la noche orgánica del dueño: dejó $ 854.400', () => {
+    const r = nightResultReport(RATATOUILLE, ORGANIC_ROW)
+    expect(r?.headline).toBe(nb('La noche dejó $ 854.400.'))
+    expect(r?.math).toBe(
+      nb(
+        '48 personas × $ 25.000 = $ 1.200.000 · costo $ 345.600 · margen $ 854.400 · sin pauta → quedan $ 854.400',
+      ),
+    )
+    expect(r?.perGuest).toBe(nb('Cada persona dejó $ 17.800.'))
+    // 48 contadas al cerrar las mesas, no las 54 reservadas: se dice.
+    expect(r?.basis).toBe(
+      'Se calculó con 48 personas contadas al cerrar las mesas, no con las 54 reservadas.',
+    )
+    // Una noche orgánica que todavía no pasó habla en «por ahora».
+    expect(nightResultReport(RATATOUILLE, ORGANIC_ROW, 'future')?.headline).toBe(
+      nb('Por ahora la noche va dejando $ 854.400.'),
+    )
+  })
+
+  it('sin pauta, la facturación sola ya abre la cuenta (no hay «Retorno» que la muestre)', () => {
+    const soloCaja = row({ adSpendUsdCents: 0, messages: null, revenueArsCents: 1_000_000_00 })
+    expect(hasNightAccount(soloCaja)).toBe(true)
+    const r = nightResultReport(RATATOUILLE, soloCaja)
+    expect(r?.headline).toBe(nb('El ingreso de la noche fue $ 1.000.000.'))
+    expect(r?.missing).toBe('Falta el costo por persona para sacar el resultado de la noche.')
+    // Con pauta, la facturación sola sigue siendo del «Retorno» (las fechas viejas no cambian).
+    expect(hasNightAccount(row({ revenueArsCents: 1_000_000_00, usdArsRate: 1450 }))).toBe(false)
+    // Marcada «No tuvo pauta» y nada más: no hay cuenta.
+    expect(hasNightAccount(row({ adSpendUsdCents: 0, messages: null }))).toBe(false)
   })
 
   it('a medio cargar: dice lo que ya da y qué falta', () => {
@@ -1094,24 +1146,51 @@ describe('previewLines', () => {
     )
   })
 
-  it('un 0 en Gastado no cierra la cuenta con una pauta de $ 0', () => {
-    // El 0 lo rechaza el schema («usá No tuvo pauta»), pero se tipea igual —de
-    // paso, escribiendo «0,50»—, y con él la previa mostraba el margen bruto
-    // disfrazado de resultado: $ 348.000 en vez de los $ 93.873 de esa carga.
+  it('un 0 en Gastado es «no hubo pauta»: cierra la cuenta con «sin pauta» dicho', () => {
+    // Antes el 0 lo rechazaba el schema y la previa lo trataba como vacío. Desde
+    // que una noche orgánica guarda su plata, el 0 es un dato: la previa tiene
+    // que decir lo mismo que la ficha va a decir después de guardar.
     const base = {
       messages: null,
       reach: null,
       revenueArs: null,
-      usdArsRate: 1450,
+      usdArsRate: null,
       revenuePerGuestArs: 27_000,
       costPerGuestArs: 15_000,
     }
-    const esperado = nb(
-      '29 personas × $ 27.000 = $ 783.000 · costo $ 435.000 · margen $ 348.000 · falta la pauta para cerrar la cuenta',
-    )
-    expect(previewLines(RAMEN, { ...base, adSpendUsd: 0 })[3]?.text).toBe(esperado)
-    // Menos de un centavo redondea a 0 centavos: la fila sintética va con 0 igual.
-    expect(previewLines(RAMEN, { ...base, adSpendUsd: 0.004 })[3]?.text).toBe(esperado)
+    const esperado = [
+      'Sin pauta · no hay costo por mensaje, cierre ni costo por reserva.',
+      nb(
+        '29 personas × $ 27.000 = $ 783.000 · costo $ 435.000 · margen $ 348.000 · sin pauta → quedan $ 348.000',
+      ),
+    ]
+    expect(previewLines(RAMEN, { ...base, adSpendUsd: 0 }).map((l) => l.text)).toEqual(esperado)
+    // Menos de un centavo redondea a 0 centavos, como en la DB: también es sin pauta.
+    expect(previewLines(RAMEN, { ...base, adSpendUsd: 0.004 }).map((l) => l.text)).toEqual(esperado)
+  })
+
+  it('sin pauta y sin plata, un solo renglón: nada de guiones de mensajes', () => {
+    const lines = previewLines(RAMEN, {
+      adSpendUsd: 0,
+      messages: null,
+      reach: null,
+      revenueArs: null,
+      usdArsRate: null,
+    })
+    expect(lines.map((l) => l.text)).toEqual([
+      'Sin pauta · no hay costo por mensaje, cierre ni costo por reserva.',
+    ])
+  })
+
+  it('con Gastado vacío, la facturación sola no abre la cuenta (no se sabe si hubo pauta)', () => {
+    const lines = previewLines(RAMEN, {
+      adSpendUsd: null,
+      messages: null,
+      reach: null,
+      revenueArs: 2_480_000,
+      usdArsRate: null,
+    })
+    expect(lines).toHaveLength(3)
   })
 
   it('en una fecha que todavía no pasó, la previa habla como la ficha', () => {
@@ -1760,6 +1839,34 @@ describe('CSV', () => {
     expect(marketingCsvCells(null, row())).toEqual(Array(columnas).fill(''))
   })
 
+  it('una noche orgánica escribe su cuenta, con la pauta en $ 0 (pantalla = CSV)', () => {
+    const cells = marketingCsvCells(RATATOUILLE, { ...ORGANIC_ROW, notes: 'todo orgánico' })
+    const at = (header: string) => cells[MARKETING_EXPORT_HEADERS.indexOf(header)]
+    expect(at('Pauta USD')).toBe('0,00')
+    // Nada de Meta: sin anuncio no hay mensajes, cierre ni costo por reserva.
+    for (const header of [
+      'Mensajes',
+      'Alcance',
+      'Costo por mensaje USD',
+      '% de cierre',
+      'Costo por reserva USD',
+      'Costo por persona USD',
+      'Dólar',
+      'Retorno (USD facturados por USD de pauta)',
+    ]) {
+      expect(at(header), header).toBe('')
+    }
+    expect(at('Personas del cálculo')).toBe('48')
+    expect(at('Ingreso por persona ARS')).toBe('25000')
+    expect(at('Costo por persona ARS')).toBe('7200')
+    expect(at('Ingreso ARS')).toBe('1200000')
+    expect(at('Costo ARS')).toBe('345600')
+    expect(at('Margen ARS')).toBe('854400')
+    expect(at('Pauta ARS')).toBe('0')
+    expect(at('Resultado ARS')).toBe('854400')
+    expect(at('Nota')).toBe('todo orgánico')
+  })
+
   it('la nota lleva apóstrofo si Excel la leería como fórmula', () => {
     for (const note of ['=SUMA(A1)', '+54 351 555', '-3 días', '@campaña', '\tTab', '\rCR']) {
       expect(marketingCsvCells(ASTRAL, row({ notes: note })).at(-1)).toBe(`'${note}`)
@@ -2384,5 +2491,89 @@ describe('el resultado del mes', () => {
     ]).toEqual(['783000', '435000', '348000', '254127', '29'])
     // 29, no las 31 reservadas: la gente de la plata es la de `billableGuests`.
     expect(ficha?.steps[0]?.before).toBe(nb('29 personas × $ 27.000 = '))
+  })
+})
+
+describe('la noche orgánica en el mes (regla 14)', () => {
+  const EDICIONES: EditionSummary[] = [
+    edition({ key: 'o1', date: '2026-09-07', title: 'Ramen', reservations: 12, guests: 31 }),
+    edition({
+      key: 'o2',
+      date: '2026-09-12',
+      title: 'Ratatouille',
+      reservations: 18,
+      guests: 54,
+      billableGuests: 48,
+      attendedGuests: 48,
+    }),
+    edition({ key: 'o3', date: '2026-09-14', title: 'Pizza libre', reservations: 20, guests: 50 }),
+    edition({ key: 'o4', date: '2026-09-20', title: 'Karaoke', isFuture: true }),
+  ]
+  const MARKETING: Record<string, EventMarketingRow> = {
+    o1: { ...RAMEN_ROW, scheduledEventId: 'o1' },
+    o2: { ...ORGANIC_ROW, scheduledEventId: 'o2' },
+    // «No tuvo pauta» pelada: sigue siendo solo un nombre en la lista.
+    o3: row({ scheduledEventId: 'o3', adSpendUsdCents: 0, messages: null }),
+    // Futura, sin pauta y con el cubierto estimado: todavía no «dejó» nada.
+    o4: { ...ORGANIC_ROW, scheduledEventId: 'o4' },
+  }
+  const mes = buildMonthMarketingReport({
+    ym: '2026-09',
+    today: '2026-09-15',
+    editions: EDICIONES,
+    marketing: MARKETING,
+    truncated: false,
+  })
+
+  it('dice cuánto dejó en su renglón de «Sin pauta»', () => {
+    expect(mes.noAdsText).toBe(
+      nb('Sin pauta: Ratatouille 12/09 (dejó $ 854.400) · Pizza libre 14/09 · Karaoke 20/09'),
+    )
+    const [ratatouille, pizza, karaoke] = mes.editions.filter((e) => e.status === 'sin-pauta')
+    expect(ratatouille && noAdsResultLabel(ratatouille)).toEqual({
+      text: nb('dejó $ 854.400'),
+      negative: false,
+    })
+    expect(pizza && noAdsResultLabel(pizza)).toBeNull()
+    expect(karaoke && noAdsResultLabel(karaoke)).toBeNull()
+  })
+
+  it('una noche orgánica que quedó abajo lo dice en palabras', () => {
+    const cara = { ...ORGANIC_ROW, costPerGuestArsCents: 26_000_00 }
+    expect(noAdsResultLabel({ ...RATATOUILLE, phase: 'past', row: cara })).toEqual({
+      text: nb('quedó $ 48.000 abajo'),
+      negative: true,
+    })
+  })
+
+  it('no entra en los totales de la pestaña Pauta: son de las fechas CON pauta', () => {
+    // Solo el ramen: ni fila en la tabla ni suma en el resultado del mes.
+    expect(mes.rows.map((r) => r.eventId)).toEqual(['o1'])
+    expect(mes.pool.S?.dates).toBe(1)
+    expect(mes.pool.all.dates).toBe(1)
+    // Tampoco es una fecha pendiente: se cargó, sin pauta.
+    expect(mes.pending).toBeNull()
+  })
+
+  it('en la planilla del mes sí va con su cuenta, como en su ficha', () => {
+    const csv = monthMarketingToCsv(mes)
+    const linea = csv.split('\r\n').find((l) => l.includes('Ratatouille'))
+    expect(linea?.split(';').slice(0, 5)).toEqual([
+      '2026-09-12',
+      'Ratatouille',
+      'sin pauta',
+      '54',
+      '18',
+    ])
+    expect(linea).toContain(';854400;')
+  })
+
+  it('«¿Cómo se calcula?» no habla de Meta en una noche sin pauta', () => {
+    const bullets = howItsCalculated(ORGANIC_ROW)
+    expect(bullets.some((b) => b.includes('mensaje'))).toBe(false)
+    expect(bullets).toContain(
+      'Resultado de la noche: la gente por el ingreso por persona (o la facturación real, si está cargada), menos esa misma gente por el costo por persona. Sin pauta no hay nada más que restar.',
+    )
+    expect(bullets).toContain(NIGHT_RESULT_DISCLAIMER)
   })
 })

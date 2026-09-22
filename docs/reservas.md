@@ -1580,7 +1580,7 @@ veía**; la cuenta aparece cuando el dueño la empieza a cargar.
    la noche va dejando …»), **también la vista previa** «Con estos números»
    (`→ por ahora quedan $ 93.873`, nunca `la noche quedó …`).
 8. «No tuvo pauta» sobre una fecha sin cargar → queda pelada; `Cambiar` abre el
-   form **vacío**, sin arrastrar plata por persona.
+   form con `0` en Gastado (desde el addendum del 22/09, ver abajo).
 9. Pestaña **Pauta** del mes con dos fechas cargadas → columna `Resultado`, la
    línea de la cuenta del mes, la ficha `Resultado` con su base y las dos notas
    al pie (la segunda avisa que la gente del cálculo puede no coincidir con la
@@ -1588,3 +1588,78 @@ veía**; la cuenta aparece cuando el dueño la empieza a cargar.
 10. Exportar el mes → las ocho columnas nuevas llenas en las fechas con cuenta y
     **todas vacías** en las que no la tienen; la fila de total
     `… con ingreso y costo cargados (N fechas)` cuadra con la pantalla.
+
+## Addendum 2026-09-22 — Noches orgánicas: la cuenta sin pauta
+
+Pedido del dueño con Ratatuille (14/09): *«fue todo orgánico y debería poder dejarme
+cargar eso solo aunque sea 0 en pauta»*. Hasta acá una fecha «No tuvo pauta»
+tenía que ir pelada (`sem_no_ads_is_bare`), así que la noche que se llenó sola
+—justo la que más interesa saber cuánto dejó— no podía cargar su ingreso ni su
+costo por persona.
+
+### La regla nueva (regla 14 de `event-marketing.ts`)
+
+- **Gasto 0 = «No tuvo pauta», y puede traer la plata de la noche**: ingreso y
+  costo por persona, la facturación de la caja y la nota.
+- **Lo que sigue sin tener sentido con gasto 0**: mensajes y alcance (salen del
+  Administrador de anuncios; sin anuncio no existen) y el dólar del día (está
+  para pasar la pauta a pesos).
+- **El resultado es el margen**, y la cuenta lo dice en palabras:
+  `margen $ 854.400 · sin pauta → quedan $ 854.400`. Sin el «sin pauta», un
+  margen igual al resultado parece una resta a la que le falta un número.
+- **Sin pauta, la facturación sola ya abre la cuenta** (extensión de la regla
+  13): no hay recuadro «Retorno» que la muestre, y sin eso quedaría cargada y
+  sin dibujarse en ningún lado. Con pauta no cambia nada: las fechas viejas se
+  siguen viendo igual.
+- **No suma en los totales de la pestaña Pauta**, que son de las fechas CON
+  pauta (y su CSV lo dice en el nombre: `Total con pauta que ya pasó, con
+  ingreso y costo cargados`). Su resultado se ve en su ficha, en su renglón de
+  «Sin pauta» (`Ratatuille 14/09 (dejó $ 854.400)`) y en la planilla, donde va
+  con `Pauta ARS` en `0`: no es un dato que falta, es una pauta que no hubo.
+
+### Migración `20260922120000_event_marketing_organic_nights.sql`
+
+- `sem_no_ads_is_bare` → **`sem_no_ads_no_meta_numbers`**: con gasto 0 solo
+  exige `messages`, `reach` y `usd_ars_rate` en null. Solo afloja: toda fila que
+  cumplía el CHECK viejo cumple el nuevo. Cambia de nombre porque el viejo decía
+  lo contrario de la regla.
+
+### Cómo se carga
+
+Dos puertas, porque cada una es el gesto natural de un momento distinto:
+
+1. **Desde la ficha, sobre una fecha marcada «No tuvo pauta»** → botón
+   `+ Sumar la plata de la noche`: abre el form con la plata desplegada y el
+   foco en «Ingreso por persona».
+2. **Tipeando `0` en Gastado** (lo que el dueño probó primero) → el form lo
+   entiende: la ayuda pasa a `Sin pauta: la noche va sin gasto en Meta.`,
+   Mensajes, Alcance y Dólar se **apagan en su lugar** (vacíos, con `—` y el
+   porqué debajo) y no viajan. Esconderlos movería el form a cada tecla
+   mientras se tipea `0,50`; lo escrito se conserva en el borrador y vuelve si
+   el 0 era un error. El vacío sigue siendo un error (`Poné cuánto se gastó. Si
+   no hubo pauta, poné 0.`): vacío es «todavía no lo cargué», no «no hubo».
+
+La vista previa distingue los tres estados de Gastado: vacío (`falta la pauta
+para cerrar la cuenta`), 0 (un solo renglón `Sin pauta · …` y la cuenta
+cerrada) y cualquier otro número. «Lo que decide es el centavo», como en la DB:
+`0,004` es sin pauta (`isNoAdsSpend`).
+
+Una noche orgánica con su cuenta se lee como una pauta cargada (firma
+`Cargó Nacho B. · …` y `Editar` arriba), pero sin nada de Meta: «La cuenta de la
+noche», la nota y un «¿Cómo se calcula?» que no habla de mensajes.
+
+### Smoke manual
+
+1. Ratatuille 14/09 (marcada «No tuvo pauta») → `+ Sumar la plata de la noche` →
+   Ingreso `25.000`, Costo `7.200`. Previa: `Sin pauta · …` y
+   `48 personas × $ 25.000 = $ 1.200.000 · costo $ 345.600 · margen $ 854.400 ·
+   sin pauta → quedan $ 854.400`.
+2. Guardar → la ficha dice `La noche dejó $ 854.400.` y `Cada persona dejó
+   $ 17.800.`, sin fichas de mensaje/cierre/reserva.
+3. Una fecha sin cargar → `Cargar pauta` → Gastado `0` → Mensajes, Alcance y
+   Dólar se apagan; el chip `Usar $ 1.550` desaparece. Cambiar Gastado a `50`
+   → vuelven con lo que tenían.
+4. Pestaña Pauta → `Sin pauta: … Ratatuille 14/09 (dejó $ 854.400)`; el
+   resultado del mes **no** cambia.
+5. Exportar el mes → la fila de Ratatuille con `Pauta USD 0,00`, la cuenta
+   entera y `Pauta ARS 0`.

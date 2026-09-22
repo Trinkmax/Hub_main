@@ -126,12 +126,43 @@ describe('saveEventMarketingSchema — la fecha', () => {
 })
 
 describe('saveEventMarketingSchema — Gastado', () => {
-  it('0 no es "sin pauta": pide usar «No tuvo pauta»', () => {
-    expect(fieldErrors({ adSpendUsd: 0 })).toEqual({ adSpendUsd: M.spendMissing })
+  it('0 es «No tuvo pauta» y entra con la plata de la noche (Ratatouille, todo orgánico)', () => {
+    const organic = input({
+      adSpendUsd: 0,
+      messages: null,
+      revenuePerGuestArs: 25_000,
+      costPerGuestArs: 7_200,
+      revenueArs: 1_200_000,
+      notes: 'todo orgánico',
+    })
+    const parsed = saveEventMarketingSchema.safeParse(organic)
+    expect(parsed.success).toBe(true)
+    if (!parsed.success) return
+    expect(toMarketingDbFields(parsed.data)).toEqual({
+      ad_spend_usd_cents: 0,
+      messages: null,
+      reach: null,
+      revenue_ars_cents: 120_000_000,
+      usd_ars_rate: null,
+      revenue_per_guest_ars_cents: 2_500_000,
+      cost_per_guest_ars_cents: 720_000,
+      notes: 'todo orgánico',
+    })
   })
 
-  it('tiene que redondear a 1 centavo como mínimo', () => {
-    expect(fieldErrors({ adSpendUsd: 0.004 })).toEqual({ adSpendUsd: M.spendMissing })
+  it('sin pauta, lo de Meta y el dólar rebotan en su campo (el CHECK de la DB)', () => {
+    expect(fieldErrors({ adSpendUsd: 0, messages: 51, reach: 8420, usdArsRate: 1450 })).toEqual({
+      messages: M.metaWithoutAds,
+      reach: M.metaWithoutAds,
+      usdArsRate: M.rateWithoutAds,
+    })
+    // Un 0 de mensajes también es un número de Meta: sin anuncio no existe.
+    expect(fieldErrors({ adSpendUsd: 0, messages: 0 })).toEqual({ messages: M.metaWithoutAds })
+  })
+
+  it('lo que decide es el centavo, como en la DB: 0,004 es sin pauta', () => {
+    expect(fieldErrors({ adSpendUsd: 0.004, messages: null })).toEqual({})
+    expect(fieldErrors({ adSpendUsd: 0.004 })).toEqual({ messages: M.metaWithoutAds })
     expect(fieldErrors({ adSpendUsd: 0.005 })).toEqual({})
     expect(fieldErrors({ adSpendUsd: 0.01 })).toEqual({})
   })
@@ -481,7 +512,7 @@ describe('toEventMarketingRow', () => {
     expect(row.adSpendUsdCents).toBe(0)
     expect(row.messages).toBeNull()
     expect(row.usdArsRate).toBeNull()
-    // El CHECK `sem_no_ads_is_bare` ahora también alcanza a la plata por persona.
+    // Marcada con «No tuvo pauta» y sin plata sumada todavía: todo en null.
     expect(row.revenuePerGuestArsCents).toBeNull()
     expect(row.costPerGuestArsCents).toBeNull()
     expect(row.updatedByName).toBe('Luz')
@@ -872,6 +903,58 @@ describe('saveEventMarketing — ingreso y costo por persona', () => {
         cost_per_guest_ars_cents: null,
       }),
     ])
+  })
+
+  it('una noche sin pauta guarda su plata: gasto 0, nada de Meta, ingreso y costo', async () => {
+    const organicRow: EventMarketingDbRow = {
+      ...RAMEN_ROW,
+      ad_spend_usd_cents: 0,
+      messages: null,
+      revenue_per_guest_ars_cents: '2500000',
+      cost_per_guest_ars_cents: '720000',
+    }
+    const db = fakeSupabase({
+      event: { data: PAST_EVENT, error: null },
+      update: { data: organicRow, error: null },
+    })
+    // La fecha ya estaba marcada «No tuvo pauta»: es una edición sobre esa fila.
+    const state = await saveEventMarketing(
+      'bar-a',
+      input({
+        adSpendUsd: 0,
+        messages: null,
+        revenuePerGuestArs: 25_000,
+        costPerGuestArs: 7_200,
+        expectedUpdatedAt: BASELINE,
+      }),
+    )
+    expect(state.ok).toBe(true)
+    expect(db.updates).toEqual([
+      expect.objectContaining({
+        ad_spend_usd_cents: 0,
+        messages: null,
+        reach: null,
+        usd_ars_rate: null,
+        revenue_per_guest_ars_cents: 2_500_000,
+        cost_per_guest_ars_cents: 720_000,
+      }),
+    ])
+    expect(state.ok && state.row).toMatchObject({
+      adSpendUsdCents: 0,
+      revenuePerGuestArsCents: 2_500_000,
+      costPerGuestArsCents: 720_000,
+    })
+  })
+
+  it('sin pauta, mensajes de Meta no llegan a la DB: rebotan con su campo', async () => {
+    const db = fakeSupabase({ event: { data: PAST_EVENT, error: null } })
+    const state = await saveEventMarketing('bar-a', input({ adSpendUsd: 0, ...RAMEN }))
+    expect(state).toMatchObject({
+      ok: false,
+      code: 'invalid',
+      fieldErrors: { messages: M.metaWithoutAds },
+    })
+    expect(db.tables).toEqual([])
   })
 
   it('un número imposible no llega a la DB: rebota con el campo y el tope', async () => {

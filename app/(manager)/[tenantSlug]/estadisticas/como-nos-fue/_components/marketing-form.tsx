@@ -42,6 +42,7 @@ import {
   blockedSaveMessage,
   checkMarketingDraft,
   draftFromRow,
+  draftIsNoAds,
   firstEmptyField,
   type KeptMarketingDraft,
   keepMarketingDraft,
@@ -50,6 +51,7 @@ import {
   MARKETING_FIELD_ORDER,
   MARKETING_MONEY_FIELDS,
   MARKETING_MONEY_HINTS,
+  MARKETING_NO_ADS_HINTS,
   MARKETING_NUMBER_KINDS,
   MARKETING_UNREACHABLE,
   type MarketingDraft,
@@ -111,6 +113,11 @@ export type MarketingFormProps = {
   initialDraft?: KeptMarketingDraft | null
   /** Justo antes de `onCancel`: lo escrito y su versión, o `null` si es igual a lo guardado. */
   onKeepDraft?: (kept: KeptMarketingDraft | null) => void
+  /**
+   * Abre con «la plata de la noche» desplegada y el foco en su primer campo
+   * vacío: es a lo que se viene desde «Sumar la plata» de una noche sin pauta.
+   */
+  openMoney?: boolean
   className?: string
 }
 
@@ -138,6 +145,7 @@ export function MarketingForm({
   onDeleted,
   initialDraft,
   onKeepDraft,
+  openMoney = false,
   className,
 }: MarketingFormProps) {
   const router = useRouter()
@@ -150,10 +158,14 @@ export function MarketingForm({
   const revenueVisible = marketingRevenueVisible(phase, row)
 
   const saved = useMemo(() => draftFromRow(row), [row])
-  const [draft, setDraft] = useState<MarketingDraft>(() => initialDraft?.draft ?? draftFromRow(row))
-  const [lastValid, setLastValid] = useState(() =>
-    lastValidFromDraft(initialDraft?.draft ?? draftFromRow(row)),
-  )
+  // Un borrador retomado manda (es lo que el dueño dejó escrito); si no, lo
+  // guardado. Venir desde «Sumar la plata» abre esa sección en los dos casos.
+  const [opening] = useState<MarketingDraft>(() => {
+    const base = initialDraft ? initialDraft.draft : draftFromRow(row)
+    return openMoney ? { ...base, moneyOpen: true } : base
+  })
+  const [draft, setDraft] = useState<MarketingDraft>(opening)
+  const [lastValid, setLastValid] = useState(() => lastValidFromDraft(opening))
   const [resumed, setResumed] = useState(
     () => initialDraft != null && !sameDraft(initialDraft.draft, draftFromRow(row)),
   )
@@ -163,9 +175,7 @@ export function MarketingForm({
   const [baselineAt, setBaselineAt] = useState<string | null>(() =>
     marketingBaseline(initialDraft, row),
   )
-  const [initialFocus] = useState(() =>
-    firstEmptyField(initialDraft?.draft ?? draftFromRow(row), revenueVisible),
-  )
+  const [initialFocus] = useState(() => firstEmptyField(opening, revenueVisible))
 
   const [touched, setTouched] = useState<ReadonlySet<MarketingField>>(() => new Set())
   const [submitted, setSubmitted] = useState(false)
@@ -232,6 +242,12 @@ export function MarketingForm({
 
   // ─── Derivados ──────────────────────────────────────────────────────────────
 
+  // «Gastado» en 0: la noche no tuvo pauta. Lo de Meta y el dólar se apagan en
+  // su lugar (esconderlos movería el form a cada tecla mientras se tipea
+  // `0,50`) y se muestran vacíos: lo escrito sigue en el borrador y vuelve si
+  // el 0 era un error, pero no viaja ni se ve como si se fuera a guardar.
+  const noAds = draftIsNoAds(draft)
+
   const check = checkMarketingDraft(draft, {
     scheduledEventId,
     expectedUpdatedAt: row?.updatedAt ?? null,
@@ -267,11 +283,14 @@ export function MarketingForm({
     phase,
   )
   const previewText = lines.map((l) => l.text).join(' ')
-  // No bloquea: el dólar falta para el retorno, pero la carga entra igual.
-  const rateNotice = missingRateNotice({
-    revenueArs: onScreen('revenueArs'),
-    usdArsRate: onScreen('usdArsRate'),
-  })
+  // No bloquea: el dólar falta para el retorno, pero la carga entra igual. Sin
+  // pauta no hay retorno que calcular, y el dólar está apagado.
+  const rateNotice = noAds
+    ? null
+    : missingRateNotice({
+        revenueArs: onScreen('revenueArs'),
+        usdArsRate: onScreen('usdArsRate'),
+      })
 
   const changedUnderneath = (row?.updatedAt ?? null) !== baselineAt
 
@@ -295,16 +314,24 @@ export function MarketingForm({
     setSrPreview(previewText)
   }
 
-  const numberField = (field: NumericMarketingField) => ({
-    id: fieldId(field),
-    kind: MARKETING_NUMBER_KINDS[field],
-    value: draft[field],
-    onValueChange: (value: string) => setNumber(field, value),
-    onBlur: () => markTouched(field),
-    error: visibleErrors[field] ?? null,
-    inputRef: register(field),
-    disabled: pending,
-  })
+  const numberField = (field: NumericMarketingField) => {
+    const off = noAds && !marketingFieldEnabled(field, draft, revenueVisible)
+    return {
+      id: fieldId(field),
+      kind: MARKETING_NUMBER_KINDS[field],
+      value: off ? '' : draft[field],
+      onValueChange: (value: string) => setNumber(field, value),
+      onBlur: () => markTouched(field),
+      error: off ? null : (visibleErrors[field] ?? null),
+      inputRef: register(field),
+      disabled: pending || off,
+      ...(off ? { placeholder: '—' } : {}),
+    }
+  }
+
+  /** La ayuda de un campo de Meta: de dónde sale, o por qué está apagado. */
+  const metaHint = (field: 'messages' | 'reach' | 'usdArsRate', normal: string) =>
+    noAds ? MARKETING_NO_ADS_HINTS[field] : normal
 
   const toggleMoney = () => {
     if (draft.moneyOpen) {
@@ -528,22 +555,26 @@ export function MarketingForm({
             label="Gastado"
             currency="usd"
             placeholder="0,00"
-            hint="En Meta: «Importe gastado»"
+            hint={
+              noAds
+                ? 'Sin pauta: la noche va sin gasto en Meta.'
+                : 'En Meta: «Importe gastado». Si no hubo pauta, 0.'
+            }
           />
           <MoneyField
+            placeholder="0"
             {...numberField('messages')}
             label="Mensajes"
             currency={null}
-            placeholder="0"
-            hint="En Meta: «Conversaciones con mensajes iniciadas»"
+            hint={metaHint('messages', 'En Meta: «Conversaciones con mensajes iniciadas»')}
           />
           <MoneyField
+            placeholder="0"
             {...numberField('reach')}
             label="Alcance"
             optional
             currency={null}
-            placeholder="0"
-            hint="En Meta: «Alcance»"
+            hint={metaHint('reach', 'En Meta: «Alcance»')}
           />
         </div>
 
@@ -609,13 +640,13 @@ export function MarketingForm({
                 />
               ) : null}
               <MoneyField
+                placeholder="0"
                 {...numberField('usdArsRate')}
                 label="Dólar del día"
                 currency="ars"
-                placeholder="0"
-                hint={MARKETING_MONEY_HINTS.usdArsRate}
+                hint={metaHint('usdArsRate', MARKETING_MONEY_HINTS.usdArsRate)}
               >
-                {lastUsdArsRate && draft.usdArsRate.trim() === '' ? (
+                {lastUsdArsRate && !noAds && draft.usdArsRate.trim() === '' ? (
                   <Button
                     type="button"
                     variant="ghost"

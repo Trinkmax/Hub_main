@@ -29,6 +29,7 @@ import {
   type MonthMarketingReport,
   type MonthMarketingTile,
   type MonthPendingRow,
+  noAdsResultLabel,
 } from '@/lib/salon/event-marketing'
 import { deleteEventMarketing, markEventWithoutAds } from '@/lib/salon/event-marketing-actions'
 import {
@@ -559,6 +560,10 @@ export function MarketingMonthView({
           <span>Sin pauta:</span>
           {noAdsEditions.map((e, i) => {
             const open = editingPlace === 'sin-pauta' && editingEdition?.eventId === e.eventId
+            // Una noche orgánica con su cuenta cerrada dice cuánto dejó: no
+            // suma en los totales de arriba (son de las fechas CON pauta), así
+            // que es el único lugar del mes donde se ve.
+            const result = noAdsResultLabel(e)
             return (
               <span key={e.eventId} className="inline-flex items-center">
                 {i > 0 ? (
@@ -581,6 +586,16 @@ export function MarketingMonthView({
                   {e.title} {formatDayMonth(e.date)}
                   <Pencil className="size-3" aria-hidden />
                 </button>
+                {result ? (
+                  <span
+                    className={cn(
+                      'ml-1 tabular-nums',
+                      result.negative ? 'text-warning-text' : 'text-foreground',
+                    )}
+                  >
+                    ({result.text})
+                  </span>
+                ) : null}
               </span>
             )
           })}

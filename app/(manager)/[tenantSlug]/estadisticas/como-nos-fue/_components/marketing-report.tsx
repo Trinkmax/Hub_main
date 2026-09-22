@@ -11,6 +11,7 @@ import {
   type MarketingPhase,
   marketingSentence,
   type NightMathStep,
+  type NightResultReport,
   nightResultReport,
   RETURN_DISCLAIMER,
   returnDetails,
@@ -200,70 +201,7 @@ export function MarketingReport({
           pauta, no de la noche. Cuando la facturación real está cargada, las dos
           hablan de la misma plata: `revenueNote` dice cuál mandó, así ninguna
           contradice a la otra. */}
-      {night ? (
-        <section className="mt-4 rounded-lg border border-border/60 bg-secondary/30 p-3 @md:p-4">
-          <h5 className={EYEBROW}>La cuenta de la noche</h5>
-          {night.headline ? (
-            <p
-              className={cn(
-                'mt-1.5 font-serif text-base leading-snug tracking-tight @md:text-lg',
-                // En negativo el número NUNCA va solo: la frase ya dice «quedó
-                // $ X abajo», y el ámbar se apoya en esas palabras.
-                night.negative && 'text-warning-text',
-              )}
-            >
-              {night.headline}
-            </p>
-          ) : null}
-
-          {night.steps.length > 0 ? (
-            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              {night.steps.map((step, i) => (
-                <span key={`${step.before}|${step.after}`}>
-                  {i > 0 ? ' · ' : null}
-                  <MathStep step={step} />
-                </span>
-              ))}
-              {night.result ? (
-                <>
-                  {' → '}
-                  <MathStep step={night.result} />
-                </>
-              ) : null}
-            </p>
-          ) : null}
-
-          {night.missing ? (
-            <p className="mt-1.5 text-xs leading-snug text-warning-text">{night.missing}</p>
-          ) : null}
-
-          {night.perGuest || night.perGuestAfterAds ? (
-            <p className="mt-2 text-xs leading-relaxed">
-              {night.perGuest}
-              {night.perGuest && night.perGuestAfterAds ? ' ' : null}
-              {night.perGuestAfterAds ? (
-                <span className="text-muted-foreground">{night.perGuestAfterAds}</span>
-              ) : null}
-            </p>
-          ) : null}
-
-          {night.basis || night.revenueNote ? (
-            <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
-              {night.basis}
-              {night.basis && night.revenueNote ? ' ' : null}
-              {night.revenueNote}
-            </p>
-          ) : null}
-
-          {/* La aclaración acompaña a un número: si no se pudo calcular ni uno
-              (una fecha sin nadie sentado), no hay nada que aclarar. */}
-          {night.headline ? (
-            <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
-              {night.disclaimer}
-            </p>
-          ) : null}
-        </section>
-      ) : null}
+      {night ? <NightAccount night={night} className="mt-4" /> : null}
 
       {ret ? (
         <div className="mt-4 rounded-lg bg-secondary/40 p-3 @md:p-4">
@@ -295,20 +233,126 @@ export function MarketingReport({
         </div>
       ) : null}
 
-      {row.notes ? (
-        <p className="mt-4 whitespace-pre-line break-words border-l-2 border-border pl-3 text-xs text-muted-foreground">
-          <span className="sr-only">Nota: </span>
-          {row.notes}
+      {row.notes ? <MarketingNote notes={row.notes} /> : null}
+
+      <HowItsCalculated bullets={bullets} />
+    </div>
+  )
+}
+
+function MarketingNote({ notes }: { notes: string }) {
+  return (
+    <p className="mt-4 whitespace-pre-line break-words border-l-2 border-border pl-3 text-xs text-muted-foreground">
+      <span className="sr-only">Nota: </span>
+      {notes}
+    </p>
+  )
+}
+
+function HowItsCalculated({ bullets }: { bullets: string[] }) {
+  return (
+    <Disclosure summary="¿Cómo se calcula?" className="mt-3">
+      <ul className="max-w-prose list-disc space-y-1 pl-4 leading-relaxed text-muted-foreground">
+        {bullets.map((b) => (
+          <li key={b}>{b}</li>
+        ))}
+      </ul>
+    </Disclosure>
+  )
+}
+
+/**
+ * «La cuenta de la noche»: el recuadro que responde si la noche dejó plata. Lo
+ * usan la pauta leída y la noche sin pauta, con los mismos textos.
+ */
+function NightAccount({ night, className }: { night: NightResultReport; className?: string }) {
+  return (
+    <section
+      className={cn('rounded-lg border border-border/60 bg-secondary/30 p-3 @md:p-4', className)}
+    >
+      <h5 className={EYEBROW}>La cuenta de la noche</h5>
+      {night.headline ? (
+        <p
+          className={cn(
+            'mt-1.5 font-serif text-base leading-snug tracking-tight @md:text-lg',
+            // En negativo el número NUNCA va solo: la frase ya dice «quedó
+            // $ X abajo», y el ámbar se apoya en esas palabras.
+            night.negative && 'text-warning-text',
+          )}
+        >
+          {night.headline}
         </p>
       ) : null}
 
-      <Disclosure summary="¿Cómo se calcula?" className="mt-3">
-        <ul className="max-w-prose list-disc space-y-1 pl-4 leading-relaxed text-muted-foreground">
-          {bullets.map((b) => (
-            <li key={b}>{b}</li>
+      {night.steps.length > 0 ? (
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          {night.steps.map((step, i) => (
+            <span key={`${step.before}|${step.after}`}>
+              {i > 0 ? ' · ' : null}
+              <MathStep step={step} />
+            </span>
           ))}
-        </ul>
-      </Disclosure>
+          {night.result ? (
+            <>
+              {' → '}
+              <MathStep step={night.result} />
+            </>
+          ) : null}
+        </p>
+      ) : null}
+
+      {night.missing ? (
+        <p className="mt-1.5 text-xs leading-snug text-warning-text">{night.missing}</p>
+      ) : null}
+
+      {night.perGuest || night.perGuestAfterAds ? (
+        <p className="mt-2 text-xs leading-relaxed">
+          {night.perGuest}
+          {night.perGuest && night.perGuestAfterAds ? ' ' : null}
+          {night.perGuestAfterAds ? (
+            <span className="text-muted-foreground">{night.perGuestAfterAds}</span>
+          ) : null}
+        </p>
+      ) : null}
+
+      {night.basis || night.revenueNote ? (
+        <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+          {night.basis}
+          {night.basis && night.revenueNote ? ' ' : null}
+          {night.revenueNote}
+        </p>
+      ) : null}
+
+      {/* La aclaración acompaña a un número: si no se pudo calcular ni uno
+          (una fecha sin nadie sentado), no hay nada que aclarar. */}
+      {night.headline ? (
+        <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">{night.disclaimer}</p>
+      ) : null}
+    </section>
+  )
+}
+
+/**
+ * Una noche SIN pauta con su plata cargada (la noche orgánica): la cuenta de la
+ * noche y nada de Meta. Sin cuenta que mostrar (solo una nota), queda la nota.
+ */
+export function OrganicNightReport({
+  block,
+  row,
+  phase,
+  className,
+}: {
+  block: MarketingBlock
+  row: EventMarketingRow
+  phase: MarketingPhase
+  className?: string
+}) {
+  const night = nightResultReport(block, row, phase)
+  return (
+    <div className={className}>
+      {night ? <NightAccount night={night} className="mt-3" /> : null}
+      {row.notes ? <MarketingNote notes={row.notes} /> : null}
+      {night ? <HowItsCalculated bullets={howItsCalculated(row)} /> : null}
     </div>
   )
 }
