@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/sheet'
 import { markArrived, markNoShow, revertStatus, updateActualGuests } from '@/lib/salon/actions'
 import { highestSeverity, resolveReservationAlerts } from '@/lib/salon/alerts'
+import { joinedEventName, placeLabel } from '@/lib/salon/place-label'
 import type { ReservationWithJoins, SalonReservationStatus } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
@@ -128,6 +129,9 @@ export function ReservationCard({
   const here = isHere(reservation.status)
   const canArrive = canOperate && reservation.status === 'pending'
   const tplColor = reservation.scheduled_event?.template?.color_hex
+  // Dónde se sienta, para llevar a la gente: "Planta Baja", "Pizza libre" (del
+  // evento, todavía sin planta) o "Pizza libre · Planta Alta".
+  const place = placeLabel(reservation, joinedEventName(reservation))
   const extras =
     (reservation.cake_count > 0 ? 1 : 0) + (reservation.champagne_count > 0 ? 1 : 0) > 0
 
@@ -224,15 +228,20 @@ export function ReservationCard({
                   {' · '}Mesa {reservation.table_label}
                 </span>
               ) : null}
+              {/* Dónde se sienta va antes que el gestor: la línea se trunca por
+                  el final, y para llevar a la gente importa más la planta que
+                  quién tomó la reserva. */}
+              {reservation.status !== 'pending' ? ' · ' : ''}
+              {place}
               {reservation.primary_manager ? (
                 <>
-                  {reservation.status !== 'pending' ? ' · ' : ''}
+                  {' · '}
                   {reservation.primary_manager.display_name}
                 </>
               ) : null}
               {reservation.comments && !extras ? (
                 <>
-                  {reservation.status !== 'pending' || reservation.primary_manager ? ' · ' : ''}
+                  {' · '}
                   <MessageSquareMore className="inline size-3 align-[-2px]" aria-hidden /> nota
                 </>
               ) : null}
@@ -343,9 +352,7 @@ export function ReservationCard({
               {reservation.primary_manager
                 ? ` · Gestor: ${reservation.primary_manager.display_name}`
                 : ''}
-              {reservation.scheduled_event?.template
-                ? ` · ${reservation.scheduled_event.template.name}`
-                : ''}
+              {` · ${place}`}
             </SheetDescription>
           </SheetHeader>
 

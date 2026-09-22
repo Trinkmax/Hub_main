@@ -4,6 +4,7 @@ import { Cake, Keyboard, MousePointerClick, PartyPopper } from 'lucide-react'
 import { SEGMENT_TONE_CLASSES, SegmentBar } from '@/components/reservations/segment-meter'
 import { Kbd } from '@/components/ui/kbd'
 import type { DayHighlight } from '@/lib/salon/day-highlights'
+import { zoneBreakdown } from '@/lib/salon/event-floor'
 import type { NightPulse } from '@/lib/salon/operativo'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import { type DaySegments, SEGMENT_KEYS, type SegmentKey } from '@/lib/salon/segments'
@@ -14,20 +15,8 @@ import {
   segmentStatusLine,
   segmentTone,
 } from '@/lib/salon/segments-copy'
-import {
-  type DayCapacityBucket,
-  describeCake,
-  type ReservationWithJoins,
-  ZONE_LABELS,
-} from '@/lib/salon/types'
+import { type DayCapacityBucket, describeCake, type ReservationWithJoins } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
-
-/** Cómo se nombra cada zona física en la línea "En la cena: …" (sin denominador). */
-const ZONE_LINE_LABELS = {
-  planta_alta: ZONE_LABELS.planta_alta,
-  planta_baja: ZONE_LABELS.planta_baja,
-  event_floating: 'En eventos',
-} as const
 
 /**
  * Lo que ocupa el aside de desktop cuando no hay una reserva elegida: el
@@ -65,16 +54,11 @@ export function PulseExtended({
     (k) => segments.segments[k],
   )
   const focusLoad = segments.segments[focus]
-  // "En la cena: Planta Alta 44 · Planta Baja 26 · En eventos 22". Las dos
-  // plantas siempre (que abajo haya 0 también sirve para sentar); los eventos
-  // solo si tienen gente.
-  const zoneLine =
-    focusLoad.people > 0
-      ? (['planta_alta', 'planta_baja', 'event_floating'] as const)
-          .filter((z) => z !== 'event_floating' || focusLoad.byZone[z] > 0)
-          .map((z) => `${ZONE_LINE_LABELS[z]} ${focusLoad.byZone[z]}`)
-          .join(' · ')
-      : null
+  // "En la cena: Planta Alta 44 · Planta Baja 26 · Sin ubicar 22". La gente
+  // de un evento con planta elegida cuenta en su planta; el tercer grupo es
+  // solo la de evento sin planta (antes decía "En eventos" y se leía como el
+  // total de los eventos, que ya no es).
+  const zoneLine = focusLoad.people > 0 ? zoneBreakdown(focusLoad.byZone) : null
   const cakes = highlights.filter((h) => h.kind !== 'event' && h.cakeCount > 0)
   const birthdays = highlights.filter((h) => h.kind === 'birthday')
   const withTable = reservations.filter(

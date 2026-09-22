@@ -139,6 +139,40 @@ describe('reservationToExportRow', () => {
     ])
   })
 
+  it('Zona = la planta; Evento al lado. Sin planta dentro del evento: "Sin ubicar"', () => {
+    const pizza: ReservationWithJoins['scheduled_event'] = {
+      id: 'ev',
+      capacity: 140,
+      starts_at_local: '21:00:00',
+      meal_type: 'dinner',
+      template: {
+        id: 'tpl',
+        name: 'Pizza libre',
+        slug: 'pizza',
+        color_hex: '#e11d48',
+        consume_special_reservations: true,
+      },
+    }
+    const ZONA = EXPORT_HEADERS.indexOf('Zona')
+    const EVENTO = EXPORT_HEADERS.indexOf('Evento')
+
+    // Evento con planta elegida (el pedido del 22/09): las dos cosas, en su columna.
+    const upstairs = reservationToExportRow(
+      reservation({ zone: 'planta_alta', scheduled_event_id: 'ev', scheduled_event: pizza }),
+    )
+    expect([upstairs[ZONA], upstairs[EVENTO]]).toEqual(['Planta Alta', 'Pizza libre'])
+
+    // Evento sin planta: antes decía "Evento" en Zona.
+    const floating = reservationToExportRow(
+      reservation({ zone: 'event_floating', scheduled_event_id: 'ev', scheduled_event: pizza }),
+    )
+    expect([floating[ZONA], floating[EVENTO]]).toEqual(['Sin ubicar', 'Pizza libre'])
+
+    // Normal: la planta y Evento vacío.
+    const normal = reservationToExportRow(reservation({ zone: 'planta_baja' }))
+    expect([normal[ZONA], normal[EVENTO]]).toEqual(['Planta Baja', ''])
+  })
+
   it('lo que no está queda vacío, no "null"', () => {
     const row = reservationToExportRow(reservation({ guest_phone: null }))
     expect(row.filter((c) => c === '')).toHaveLength(13)

@@ -291,7 +291,9 @@ describe('OperativoBoard (SSR)', () => {
     expect(html).toContain('Alm 2')
     expect(html).toContain('Te pasaste por 47: Pizza libre tiene apartados 120 lugares')
     expect(html).toContain('Cena · 69 de 120')
-    expect(html).toContain('En la cena: Planta Alta 47 · Planta Baja 0 · En eventos 22')
+    // La gente de evento sin planta es "Sin ubicar" (antes "En eventos").
+    expect(html).toContain('En la cena: Planta Alta 47 · Planta Baja 0 · Sin ubicar 22')
+    expect(html).not.toContain('En eventos')
     expect(html).not.toMatch(/rose-|amber-|emerald-/)
   })
 
@@ -337,7 +339,25 @@ describe('OperativoBoard (SSR)', () => {
           }),
           sushi('s1', 40),
           sushi('s2', 18, { kind: 'birthday', cake_count: 1 }),
-          sushi('s3', 15),
+          // Planta dentro del evento (22/09): sigue contando en Sushi libre por
+          // su scheduled_event_id; la zona solo dice dónde se sienta.
+          sushi('s3', 15, {
+            guest_name: 'Grupo Arriba',
+            zone: 'planta_alta',
+            scheduled_event: {
+              id: 'sushi',
+              capacity: 70,
+              starts_at_local: '21:00:00',
+              meal_type: 'dinner',
+              template: {
+                id: 'tpl-sushi',
+                name: 'Sushi libre',
+                slug: 'sushi',
+                color_hex: '#0ea5e9',
+                consume_special_reservations: true,
+              },
+            },
+          }),
           at('n1', { estimated_guests: 16 }),
           at('n2', { estimated_guests: 15, kind: 'birthday' }),
           at('n3', { estimated_guests: 15, kind: 'birthday' }),
@@ -380,7 +400,11 @@ describe('OperativoBoard (SSR)', () => {
     expect(html).toContain('Alm 19')
     expect(html).toContain('Mer 33')
     expect(html).toContain('Queda 1 lugar para reservas normales')
-    expect(html).toContain('En la cena: Planta Alta 46 · Planta Baja 0 · En eventos 73')
+    // Los 15 de Sushi libre sentados arriba suman a Planta Alta (46 + 15) y
+    // salen de "Sin ubicar" (73 − 15); el cupo de la cena no se mueve.
+    expect(html).toContain('En la cena: Planta Alta 61 · Planta Baja 0 · Sin ubicar 58')
+    // La tarjeta dice las dos cosas: el evento y la planta.
+    expect(html).toContain('Sushi libre · Planta Alta')
   })
 
   it('renderiza un día vacío y uno futuro', async () => {
@@ -481,5 +505,55 @@ describe('CapacityHeader del salón (SSR)', () => {
       }),
     )
     expect(html).toBe('')
+  })
+})
+
+describe('ReservationCard del salón (SSR)', () => {
+  it('la fila dice dónde se sienta: planta, evento o los dos', async () => {
+    const { ReservationCard } = await import(
+      '@/app/(salon)/[tenantSlug]/salon/reservas-operativo/_components/reservation-card'
+    )
+    const pizza: ReservationWithJoins['scheduled_event'] = {
+      id: 'ev',
+      capacity: 140,
+      starts_at_local: '21:00:00',
+      meal_type: 'dinner',
+      template: {
+        id: 'tpl',
+        name: 'Pizza libre',
+        slug: 'pizza',
+        color_hex: '#e11d48',
+        consume_special_reservations: true,
+      },
+    }
+    const row = (r: ReservationWithJoins) =>
+      renderToString(
+        createElement(ReservationCard, { tenantSlug: 'hub', reservation: r, canOperate: true }),
+      )
+
+    // Evento con planta (el pedido del 22/09): las dos cosas.
+    expect(
+      row(
+        reservation({
+          id: 'pa',
+          zone: 'planta_alta',
+          scheduled_event_id: 'ev',
+          scheduled_event: pizza,
+        }),
+      ),
+    ).toContain('Pizza libre · Planta Alta')
+    // Evento sin planta: el evento.
+    const floating = row(
+      reservation({
+        id: 'fl',
+        zone: 'event_floating',
+        scheduled_event_id: 'ev',
+        scheduled_event: pizza,
+      }),
+    )
+    expect(floating).toContain('Pizza libre')
+    expect(floating).not.toContain('· Planta')
+    // Normal: la planta (antes la fila no decía ninguna).
+    expect(row(reservation({ id: 'pb', zone: 'planta_baja' }))).toContain('Planta Baja')
   })
 })

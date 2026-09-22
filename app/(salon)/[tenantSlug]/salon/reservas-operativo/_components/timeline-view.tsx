@@ -14,7 +14,7 @@ import { fetchDayExtras, fetchReservationsForDate } from '@/lib/salon/client-act
 import { nowMinutesInCordoba } from '@/lib/salon/operativo'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import { computeDaySegments, type DaySegmentCaps, focusSegment } from '@/lib/salon/segments'
-import type { DayCapacityBucket, ReservationWithJoins, SalonZone } from '@/lib/salon/types'
+import type { DayCapacityBucket, ReservationWithJoins } from '@/lib/salon/types'
 import { RESERVATION_OPERATOR_ROLES, RESERVATION_STAFF_ROLES } from '@/lib/tenant/roles'
 import type { TenantRole } from '@/lib/tenant/types'
 import { cn } from '@/lib/utils'
@@ -28,7 +28,10 @@ import { ReservationCard } from './reservation-card'
  *
  * - UNA lista cronológica, agrupada por hora. Antes era una grilla de tres
  *   columnas por zona (`lg:grid-cols-3`) que en un teléfono nunca se activaba y
- *   quedaban tres cajas apiladas; la zona ahora es un badge en el grupo.
+ *   quedaban tres cajas apiladas. Dónde se sienta cada reserva va en su fila
+ *   (`placeLabel`: "Pizza libre · Planta Alta"); ya no hay una nota al pie del
+ *   grupo con los nombres "· Evento", que con la planta dentro del evento
+ *   (22/09/2026) dejaba de decir dónde se sientan.
  * - Sin `overflow-auto` propio ni `h-[100dvh]`: scrollea el documento, como
  *   manda el shell. Eso era la mitad de los "scrolls raros" — un contenedor
  *   scrolleable dentro de una página que también scrolleaba.
@@ -42,12 +45,6 @@ import { ReservationCard } from './reservation-card'
 const SAFETY_NET_INTERVAL_MS = 90_000
 // El reloj solo elige qué servicio va adelante: con un minuto de precisión sobra.
 const CLOCK_TICK_MS = 60_000
-
-const ZONE_LABEL: Record<SalonZone, string> = {
-  planta_alta: 'Alta',
-  planta_baja: 'Baja',
-  event_floating: 'Evento',
-}
 
 function formatDateLong(date: string): string {
   const [y, m, d] = date.split('-').map(Number)
@@ -328,15 +325,6 @@ export function TimelineView({
                   />
                 ))}
               </ul>
-              {group.rows.some((r) => r.zone === 'event_floating') ? (
-                <p className="mt-1.5 text-[11px] text-muted-foreground">
-                  {group.rows
-                    .filter((r) => r.zone === 'event_floating')
-                    .map((r) => r.guest_name)
-                    .join(', ')}{' '}
-                  · {ZONE_LABEL.event_floating}
-                </p>
-              ) : null}
             </section>
           ))}
         </div>

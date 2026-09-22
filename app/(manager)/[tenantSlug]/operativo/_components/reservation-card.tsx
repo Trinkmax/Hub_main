@@ -8,7 +8,8 @@ import { ServiceAlertChips } from '@/components/reservations/service-alert-chips
 import type { RecentQrAward } from '@/lib/points/queries'
 import { highestSeverity, resolveReservationAlerts, SERVICE_ALERT_META } from '@/lib/salon/alerts'
 import { minutesUntil, relativeTimeLabel, type Urgency } from '@/lib/salon/operativo'
-import { type ReservationWithJoins, ZONE_LABELS } from '@/lib/salon/types'
+import { joinedEventName, placeLabel } from '@/lib/salon/place-label'
+import type { ReservationWithJoins } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 import { HighlightText } from './highlight-text'
 
@@ -97,10 +98,11 @@ export function ReservationCard({
   const veryLate = late && diff !== null && diff <= -30
   const tplColor = r.scheduled_event?.template?.color_hex
   const tier = r.customer?.tier ?? null
-  const zone =
-    r.zone === 'event_floating'
-      ? (r.scheduled_event?.template?.name ?? 'Evento')
-      : ZONE_LABELS[r.zone]
+  // Dónde se sienta, con `placeLabel` como en todas las pantallas: la planta,
+  // el evento sin planta ("Pizza libre") o los dos ("Pizza libre · Planta
+  // Alta"). Antes una de evento con planta decía solo "Planta Alta" y no se
+  // sabía que venía al evento.
+  const zone = placeLabel(r, joinedEventName(r))
   const arrivedAt = fmtStamp(r.arrived_at)
   // Lo que un lector de pantalla tiene que saber de la fila, en una frase.
   const summary = [

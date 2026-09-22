@@ -189,11 +189,15 @@ export const createSalonReservationSchema = z
     highlight_comment: checkboxField,
   })
   .superRefine((data, ctx) => {
+    // La zona flotante ("Sin ubicar") solo existe dentro de un evento. Al revés
+    // no hay regla: una planta CON evento es válida (la gente de Pizza libre
+    // sentada en Planta Alta, pedido del dueño del 22/09/2026) y la reserva
+    // sigue contando en el evento por su `scheduled_event_id`.
     if (data.zone === 'event_floating' && !data.scheduled_event_id && !data.requested_template_id) {
       ctx.addIssue({
         code: 'custom',
         path: ['scheduled_event_id'],
-        message: 'La zona "Sujeta a evento" requiere un evento programado o un formato pedido.',
+        message: 'Sin planta, la reserva tiene que ir a un evento programado o pedir un formato.',
       })
     }
     if (data.assistant_manager_id && data.assistant_manager_id === data.primary_manager_id) {
@@ -245,11 +249,12 @@ export const updateSalonReservationSchema = z
     table_label: tableLabelField,
   })
   .superRefine((data, ctx) => {
+    // Igual que en el alta: "Sin ubicar" exige evento; planta + evento vale.
     if (data.zone === 'event_floating' && !data.scheduled_event_id) {
       ctx.addIssue({
         code: 'custom',
         path: ['scheduled_event_id'],
-        message: 'La zona "Sujeta a evento" requiere un evento programado.',
+        message: 'Sin planta, la reserva tiene que ir a un evento programado.',
       })
     }
     if (data.assistant_manager_id && data.assistant_manager_id === data.primary_manager_id) {

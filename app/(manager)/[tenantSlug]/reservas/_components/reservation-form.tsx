@@ -50,8 +50,18 @@ import {
   SERVICE_ALERTS,
   type ServiceAlert,
 } from '@/lib/salon/alerts'
-import { calendarHref } from '@/lib/salon/calendar-links'
+import { type ReservationReturnTo, reservationSavedHref } from '@/lib/salon/calendar-links'
 import { fetchScheduledEventsForDate } from '@/lib/salon/client-actions'
+import {
+  EVENT_FLOOR_OPTIONS,
+  EVENT_FLOOR_QUESTION,
+  type FloorZone,
+  floorLabel,
+  isEventReservation,
+  pickEventTile,
+  pickFloorTile,
+  placeSelection,
+} from '@/lib/salon/event-floor'
 import { durationLabel, endsNextDay, isImplausibleSpan, tableSpanMinutes } from '@/lib/salon/format'
 import { groupManagersForSelect, pickDefaultManagerId } from '@/lib/salon/managers'
 import { buildReservationCandidate } from '@/lib/salon/new-reservation-defaults'
@@ -102,6 +112,13 @@ import { cn } from '@/lib/utils'
 type Props = {
   mode: 'create' | 'edit'
   tenantSlug: string
+  /**
+   * A dónde se vuelve después de guardar: la pantalla desde la que se entró.
+   * Lo resuelve la página con el `?volver` de su URL (el form no lee
+   * searchParams): 'calendario' abre el día con la fila resaltada, 'reservas'
+   * (el default) la lista en ese día.
+   */
+  returnTo: ReservationReturnTo
   initialDate: string
   /**
    * Hoy en Córdoba, desde el server. Los chips "Hoy / Mañana / …" salen de acá
@@ -169,7 +186,7 @@ type Props = {
 
 // El servicio se elige con <SegmentPicker> (Almuerzo / Merienda / Cena). Ni
 // 'hub_event' (retirado: los eventos viven en el Calendario y la reserva se
-// asocia vía zona "event_floating") ni 'breakfast' (2 en toda la historia,
+// asocia tocando el evento en "Dónde se sienta") ni 'breakfast' (2 en toda la historia,
 // cuenta como almuerzo) se ofrecen; el enum los sigue aceptando por las
 // reservas viejas.
 const ORIGINS: ReservationOrigin[] = [
@@ -180,8 +197,9 @@ const ORIGINS: ReservationOrigin[] = [
   'partner_referral',
 ]
 // Las plantas se listan fijas; los eventos del día se suman como tiles al lado
-// (ver "Dónde se sienta"). `event_floating` sólo se setea al tocar un evento.
-const FLOOR_ZONES: SalonZone[] = ['planta_alta', 'planta_baja']
+// (ver "Dónde se sienta"). Las tarjetas de planta son la reserva NORMAL; la
+// planta de una reserva de evento se elige abajo, en "¿Dónde se sientan?".
+const FLOOR_ZONES: FloorZone[] = ['planta_alta', 'planta_baja']
 
 const ZONE_TILE =
   'flex min-h-16 flex-col items-center justify-center gap-0.5 rounded-xl border px-2 py-2 text-sm font-medium transition-all'
@@ -245,6 +263,7 @@ function quickChips(today: string): Array<{ label: string; date: string }> {
 export function ReservationForm({
   mode,
   tenantSlug,
+  returnTo,
   initialDate,
   today,
   initialSnapshot,
@@ -455,12 +474,11 @@ export function ReservationForm({
     requestSnapshot(date)
   }, [values.reservation_date, initialSnapshot, requestSnapshot])
 
-  // Auto-clear scheduled_event_id si zona no es event_floating
-  useEffect(() => {
-    if (values.zone !== 'event_floating' && values.scheduled_event_id) {
-      form.setValue('scheduled_event_id', undefined)
-    }
-  }, [values.zone, values.scheduled_event_id, form])
+  // (Acá había un efecto que borraba `scheduled_event_id` apenas la zona era
+  // una planta. Con eso una reserva de evento no podía tener planta, y abrir
+  // en la edición una de Pizza libre en Planta Alta la sacaba del evento sin
+  // avisar. Ahora el evento se limpia solo cuando el usuario toca una planta
+  // suelta — ver `pickFloorTile`.)
 
   // Si vacían el comentario después de destacarlo, el flag queda colgado: la
   // reserva se guardaría con highlight_comment=true y comments=null, y el día
@@ -545,7 +563,10 @@ export function ReservationForm({
   // juntos. Se sincronizan SOLO desde lo que toca el usuario (onChange / onClick),
   // nunca en un efecto: un efecto que escribe hora y servicio a la vez entra en
   // loop con los otros efectos encadenados del form.
-  const hasEvent = values.zone === 'event_floating' && !!values.scheduled_event_id
+  // "De evento" lo dice el id, no la zona: una reserva de Pizza libre puede
+  // tener planta (zone = planta_*) y sigue siendo del evento.
+  const hasEvent = isEventReservation(values)
+  const place = placeSelection(values)
   const chosenEvent = hasEvent
     ? (eventsForDate.find((e) => e.id === values.scheduled_event_id) ?? null)
     : null
@@ -657,8 +678,7 @@ export function ReservationForm({
     ? (eventDates[values.scheduled_event_id] ?? null)
     : null
   const eventDateMismatch =
-    values.zone === 'event_floating' &&
-    !!values.scheduled_event_id &&
+    hasEvent &&
     (selectedEventDate !== null
       ? selectedEventDate !== values.reservation_date
       : !eventsForDate.some((e) => e.id === values.scheduled_event_id))
@@ -677,16 +697,24 @@ export function ReservationForm({
     if (result.ok) {
       // El toast dice cómo quedó el servicio ("Reserva cargada · Cena · 123 de 120").
       toast.success(savedToastCopy(mode, saved))
-      // Volvemos al calendario ABIERTO EN EL DÍA de la reserva y con su fila
-      // resaltada: al cargar una para el 31/07 el dueño volvía a hoy y no la
-      // veía ("las reservas no salen una vez registradas").
+      // Volvemos a la pantalla desde la que se entró (la lista o el
+      // calendario), ABIERTA EN EL DÍA de la reserva y con ella resaltada: al
+      // cargar una para el 31/07 el dueño volvía a hoy y no la veía ("las
+      // reservas no salen una vez registradas").
       const savedId =
         mode === 'create'
           ? typeof result.data?.id === 'string'
             ? result.data.id
             : undefined
           : reservationId
-      router.push(calendarHref(tenantSlug, { day: data.reservation_date, focusId: savedId }))
+      router.push(
+        reservationSavedHref(tenantSlug, {
+          returnTo,
+          mode,
+          date: data.reservation_date,
+          id: savedId,
+        }),
+      )
       router.refresh()
     } else {
       toast.error(result.message)
@@ -988,20 +1016,32 @@ export function ReservationForm({
       {/* Dónde se sienta: plantas + eventos del día en UNA sola grilla. Antes
           había que elegir "Sujeta a evento" y DESPUÉS buscar el evento en un
           combo — dos veces la misma decisión. Ahora cada evento programado del
-          día es una opción más, con su hora y su ocupación a la vista. */}
+          día es una opción más, con su hora y su ocupación a la vista. Con un
+          evento elegido aparece abajo, opcional, en qué planta se sientan. */}
       <FieldGroup title="Dónde se sienta" icon={Users}>
         <div className="grid gap-2 sm:grid-cols-3">
           {FLOOR_ZONES.map((z) => {
-            const isActive = values.zone === z
+            // Activa solo como reserva normal: una de Pizza libre en Planta
+            // Alta muestra activo el evento, y la planta en la pregunta de abajo.
+            const isActive = place.floorTile === z
             return (
               <button
                 type="button"
                 key={z}
                 aria-pressed={isActive}
-                onClick={() => form.setValue('zone', z, { shouldValidate: true })}
+                onClick={() => {
+                  // Tocar una planta suelta es "sin evento": se limpia acá, en
+                  // el toque, y no en un efecto (ver `pickFloorTile`).
+                  const next = pickFloorTile(z)
+                  form.setValue('zone', next.zone, { shouldValidate: true })
+                  form.setValue('scheduled_event_id', next.scheduled_event_id, {
+                    shouldValidate: true,
+                  })
+                  form.clearErrors('scheduled_event_id')
+                }}
                 className={cn(ZONE_TILE, isActive ? ZONE_TILE_ACTIVE : ZONE_TILE_IDLE)}
               >
-                <span>{z === 'planta_alta' ? 'Planta Alta' : 'Planta Baja'}</span>
+                <span>{floorLabel(z)}</span>
                 {/* Personas en la planta EN ESTE SERVICIO, sin denominador: el
                     tope por planta del día entero mezclaba almuerzo y cena
                     (el mismo defecto que el "171 de 130"). El tope es del
@@ -1018,11 +1058,17 @@ export function ReservationForm({
             <EventZoneTile
               key={e.id}
               event={e}
-              active={values.zone === 'event_floating' && values.scheduled_event_id === e.id}
+              active={place.eventId === e.id}
+              floor={place.eventId === e.id ? place.eventFloor : null}
               load={eventLoads[e.id] ?? null}
               onSelect={() => {
-                form.setValue('zone', 'event_floating', { shouldValidate: true })
-                form.setValue('scheduled_event_id', e.id, { shouldValidate: true })
+                // Entra al evento. La planta arranca "Sin definir", salvo que
+                // ya fuera este evento (volver a tocarlo no la borra).
+                const next = pickEventTile(values, e.id)
+                form.setValue('zone', next.zone, { shouldValidate: true })
+                form.setValue('scheduled_event_id', next.scheduled_event_id, {
+                  shouldValidate: true,
+                })
                 form.clearErrors('scheduled_event_id')
                 // El evento define el servicio (por su hora, R2) y con eso la
                 // tarifa: 'hub_event' no tiene y dejaba la comisión en 0. Si la
@@ -1043,6 +1089,17 @@ export function ReservationForm({
             />
           ))}
         </div>
+        {/* La planta DENTRO del evento ("si lo requiere", pidió el dueño): la
+            reserva sigue siendo del evento y cuenta en su cupo; esto solo dice
+            dónde se sienta. Sin elegir queda "Sin ubicar", como siempre. */}
+        {hasEvent ? (
+          <EventFloorChooser
+            value={place.eventFloor ?? 'event_floating'}
+            byZone={projection?.before.byZone ?? null}
+            segmentLabel={projection ? SEGMENT_WITH_ARTICLE[projection.segment] : null}
+            onChange={(z) => form.setValue('zone', z, { shouldValidate: true })}
+          />
+        ) : null}
         {eventsForDate.length === 0 && !eventDateMismatch ? (
           <p className="text-xs text-muted-foreground">
             Sin eventos programados para el {ddMM(values.reservation_date)}. Si la reserva es para
@@ -1094,9 +1151,15 @@ export function ReservationForm({
                 className="h-11"
                 onClick={() => {
                   // Sacarla del evento: vuelve a una planta para que el form
-                  // quede válido aunque ese día no haya otros eventos.
-                  form.setValue('zone', 'planta_alta', { shouldValidate: true })
-                  form.setValue('scheduled_event_id', undefined, { shouldValidate: true })
+                  // quede válido aunque ese día no haya otros eventos. Si ya
+                  // tenía planta elegida dentro del evento, se queda en esa.
+                  const next = pickFloorTile(
+                    values.zone === 'event_floating' ? 'planta_alta' : values.zone,
+                  )
+                  form.setValue('zone', next.zone, { shouldValidate: true })
+                  form.setValue('scheduled_event_id', next.scheduled_event_id, {
+                    shouldValidate: true,
+                  })
                   form.clearErrors('scheduled_event_id')
                 }}
               >
@@ -2079,17 +2142,21 @@ function CustomerCombobox({
 /**
  * Un evento programado del día como opción de "Dónde se sienta": nombre con el
  * color del formato, hora y ocupación real (la misma cuenta del calendario, si
- * ya llegó el cupo del día). Un toque = zona `event_floating` +
- * `scheduled_event_id`, y el servicio del evento.
+ * ya llegó el cupo del día). Un toque = `scheduled_event_id` y el servicio del
+ * evento; la planta se elige aparte (`EventFloorChooser`) y, si la eligieron,
+ * la tarjeta la repite abajo ("Evento · Planta Alta") para leerla de un vistazo.
  */
 function EventZoneTile({
   event,
   active,
+  floor,
   load,
   onSelect,
 }: {
   event: ScheduledEventWithTemplate
   active: boolean
+  /** Planta elegida dentro de este evento (solo si es el elegido). */
+  floor: SalonZone | null
   load: SegmentEventLoad | null
   onSelect: () => void
 }) {
@@ -2123,7 +2190,75 @@ function EventZoneTile({
         {event.starts_at_local.slice(0, 5)} · {used !== null ? `${used}/${cap}` : `cap ${cap}`}
         {full ? ' · lleno' : ''}
       </span>
-      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Evento</span>
+      <span className="max-w-full truncate text-[10px] uppercase tracking-wide text-muted-foreground">
+        {floor && floor !== 'event_floating' ? `Evento · ${floorLabel(floor)}` : 'Evento'}
+      </span>
     </button>
+  )
+}
+
+/**
+ * "¿Dónde se sientan? (opcional)": la planta de una reserva de evento. Radios
+ * nativos (un solo tab stop, flechas del teclado, el lector anuncia "1 de 3")
+ * con cara de tarjeta, como el resto de las decisiones del alta.
+ *
+ * Al lado de cada planta, la gente que ya hay en ella en ESE servicio (la misma
+ * cuenta de las tarjetas de arriba), sin denominador: el tope es del servicio y
+ * lo dice el medidor. Sirve para decidir dónde entra el grupo.
+ */
+function EventFloorChooser({
+  value,
+  byZone,
+  segmentLabel,
+  onChange,
+}: {
+  value: SalonZone
+  byZone: Record<SalonZone, number> | null
+  /** "la cena", "el almuerzo"… (null mientras no llegó el cupo del día). */
+  segmentLabel: string | null
+  onChange: (zone: SalonZone) => void
+}) {
+  return (
+    <div className="border-t border-border/60 pt-3">
+      <fieldset>
+        <legend className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+          {EVENT_FLOOR_QUESTION} <span className="normal-case tracking-normal">(opcional)</span>
+        </legend>
+        <div className="grid grid-cols-3 gap-2">
+          {EVENT_FLOOR_OPTIONS.map((o) => {
+            const checked = value === o.zone
+            const count =
+              o.zone !== 'event_floating' && byZone && segmentLabel
+                ? `${byZone[o.zone]} en ${segmentLabel}`
+                : null
+            return (
+              <label
+                key={o.zone}
+                className={cn(
+                  'flex min-h-12 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg border px-2 py-1.5 text-center text-sm font-medium transition-colors',
+                  'has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring',
+                  checked ? ZONE_TILE_ACTIVE : ZONE_TILE_IDLE,
+                )}
+              >
+                <input
+                  type="radio"
+                  name="event_floor"
+                  value={o.zone}
+                  checked={checked}
+                  onChange={() => onChange(o.zone)}
+                  className="sr-only"
+                />
+                <span>{o.label}</span>
+                {count ? (
+                  <span className="text-[11px] font-normal tabular-nums text-muted-foreground">
+                    {count}
+                  </span>
+                ) : null}
+              </label>
+            )
+          })}
+        </div>
+      </fieldset>
+    </div>
   )
 }

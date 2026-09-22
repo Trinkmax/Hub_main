@@ -23,7 +23,10 @@ import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { updateActualGuests, updateSalonReservation } from '@/lib/salon/actions'
 import { resolveReservationAlerts } from '@/lib/salon/alerts'
+import { editReservationHref } from '@/lib/salon/calendar-links'
+import { EVENT_FLOOR_QUESTION, isEventReservation, zoneChoicesFor } from '@/lib/salon/event-floor'
 import { ARSFormat } from '@/lib/salon/format'
+import { joinedEventName, placeLabel } from '@/lib/salon/place-label'
 import { fetchDaySegments } from '@/lib/salon/segment-actions'
 import {
   type DaySegmentsSnapshot,
@@ -45,7 +48,6 @@ import {
   RESERVATION_KIND_LABELS,
   type ReservationWithJoins,
   type SalonZone,
-  ZONE_LABELS,
 } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 import { ReservationStatusControls } from './reservation-status-controls'
@@ -60,11 +62,6 @@ function fmtDate(d: string): string {
   const [y, m, day] = d.split('-')
   return `${day}/${m}/${y}`
 }
-function zoneOrEvent(r: ReservationWithJoins): string {
-  if (r.zone === 'event_floating') return r.scheduled_event?.template?.name ?? 'Evento'
-  return ZONE_LABELS[r.zone]
-}
-
 /** Lo que el panel edita y mueve la cuenta del servicio. */
 type PanelValues = { guests: number; zone: SalonZone; time: string; meal: MealType }
 
@@ -151,6 +148,10 @@ export function keepOpenOnToast(event: Event): void {
  * estado, como siempre. La vista del día los usa porque una reserva que cambia
  * de hora puede pasar a otro servicio y montarse en OTRA lista; con el estado
  * local, el popup se cerraba solo apenas llegaba el día nuevo.
+ *
+ * `fullEditHref` es el link de "Edición completa". Sin él va a la ficha
+ * pelada, que al guardar vuelve a la lista; el calendario pasa la ficha con
+ * `?volver=calendario` para volver al día desde el que se abrió.
  */
 export function ReservationQuickView({
   tenantSlug,
@@ -159,6 +160,7 @@ export function ReservationQuickView({
   trigger,
   open: openProp,
   onOpenChange,
+  fullEditHref,
 }: {
   tenantSlug: string
   reservation: ReservationWithJoins
@@ -166,6 +168,7 @@ export function ReservationQuickView({
   trigger?: ReactNode
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  fullEditHref?: string
 }) {
   const [localOpen, setLocalOpen] = useState(false)
   const controlled = openProp !== undefined
@@ -222,7 +225,7 @@ export function ReservationQuickView({
                 : ` – ${fmtTime(r.reservation_end_time_local)}`
               : ''}
           </Field>
-          {editable ? null : <Field label="Dónde">{zoneOrEvent(r)}</Field>}
+          {editable ? null : <Field label="Dónde">{placeLabel(r, joinedEventName(r))}</Field>}
           <Field label="Servicio">{MEAL_TYPE_LABELS[r.meal_type]}</Field>
           <Field label="Naturaleza">{RESERVATION_KIND_LABELS[r.kind]}</Field>
           {editable ? null : (
@@ -293,7 +296,9 @@ export function ReservationQuickView({
         <DialogFooter className="gap-2 sm:justify-between">
           <div className="flex gap-2">
             <Button asChild variant="outline">
-              <Link href={`/${tenantSlug}/reservas/${r.id}`}>Edición completa</Link>
+              <Link href={fullEditHref ?? editReservationHref(tenantSlug, r.id)}>
+                Edición completa
+              </Link>
             </Button>
             {r.customer?.phone || r.guest_phone ? (
               <ContactButton
@@ -660,10 +665,19 @@ function QuickEditPanel({
   }
 
   // ── Zona ──
+  // Con evento se elige la planta DENTRO del evento (o "Sin definir") y el
+  // evento se conserva: `panelPayload` manda siempre el `scheduled_event_id`
+  // de la reserva. Sin evento, las dos plantas de siempre.
   const [zoneOpen, setZoneOpen] = useState(false)
-  function saveZone(z: 'planta_alta' | 'planta_baja') {
+  const hasEvent = isEventReservation(r)
+  const eventName = joinedEventName(r)
+  const zoneChoices = zoneChoicesFor(r)
+  const zoneText = placeLabel({ zone, scheduled_event_id: r.scheduled_event_id }, eventName)
+  function saveZone(z: SalonZone) {
     setZoneOpen(false)
     if (z === zoneRef.current) return
+    // La zona flotante sin evento la rechaza el schema: ni se intenta.
+    if (z === 'event_floating' && !hasEvent) return
     zoneDirtyRef.current = true
     setZoneBoth(z)
     startTransition(async () => {
@@ -822,44 +836,49 @@ function QuickEditPanel({
           </PopoverContent>
         </Popover>
 
-        {r.zone === 'event_floating' ? (
-          <span className="inline-flex h-11 items-center gap-2 rounded-full border border-border/70 bg-secondary/50 px-4 text-sm">
-            <Sparkles className="size-4 text-muted-foreground" />
-            {r.scheduled_event?.template?.name ?? 'Evento'}
-          </span>
-        ) : (
-          <Popover open={zoneOpen} onOpenChange={setZoneOpen}>
-            <PopoverTrigger asChild>
+        {/* Antes, una reserva de evento mostraba "Evento" fijo y no se podía
+            tocar: ahora se le elige la planta sin sacarla del evento. */}
+        <Popover open={zoneOpen} onOpenChange={setZoneOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 max-w-full gap-2 rounded-full px-4"
+              aria-label={`${hasEvent ? 'Cambiar dónde se sientan' : 'Cambiar zona'} (actual ${zoneText})`}
+              disabled={guestsHeld}
+            >
+              {hasEvent ? (
+                <Sparkles aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              ) : (
+                <MapPin aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              )}
+              <span className="truncate text-sm">{zoneText}</span>
+              <ChevronDown aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-64 space-y-1.5">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              {hasEvent ? EVENT_FLOOR_QUESTION : 'Zona'}
+            </p>
+            {hasEvent ? (
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                Sigue en {eventName ?? 'el evento'}: esto solo dice en qué planta.
+              </p>
+            ) : null}
+            {zoneChoices.map((c) => (
               <Button
+                key={c.zone}
                 type="button"
-                variant="outline"
-                className="h-11 gap-2 rounded-full px-4"
-                aria-label={`Cambiar zona (actual ${zone === 'event_floating' ? 'evento' : ZONE_LABELS[zone]})`}
-                disabled={guestsHeld}
+                variant={zone === c.zone ? 'default' : 'outline'}
+                aria-pressed={zone === c.zone}
+                className="h-11 w-full justify-start"
+                onClick={() => saveZone(c.zone)}
               >
-                <MapPin className="size-4 text-muted-foreground" />
-                <span className="text-sm">
-                  {zone === 'event_floating' ? 'Evento' : ZONE_LABELS[zone]}
-                </span>
-                <ChevronDown className="size-3.5 text-muted-foreground" />
+                {c.label}
               </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-60 space-y-1.5">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Zona</p>
-              {(['planta_alta', 'planta_baja'] as const).map((z) => (
-                <Button
-                  key={z}
-                  type="button"
-                  variant={zone === z ? 'default' : 'outline'}
-                  className="h-11 w-full justify-start"
-                  onClick={() => saveZone(z)}
-                >
-                  {ZONE_LABELS[z]}
-                </Button>
-              ))}
-            </PopoverContent>
-          </Popover>
-        )}
+            ))}
+          </PopoverContent>
+        </Popover>
       </div>
     </section>
   )

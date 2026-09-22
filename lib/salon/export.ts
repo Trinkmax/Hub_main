@@ -11,6 +11,7 @@
 
 import { rowsToCsv } from '@/lib/stats/csv'
 import { resolveReservationAlerts, SERVICE_ALERT_META } from './alerts'
+import { floorLabel } from './event-floor'
 import { serviceMinutes } from './operativo'
 import {
   describeCake,
@@ -19,7 +20,6 @@ import {
   RESERVATION_KIND_LABELS,
   type ReservationWithJoins,
   STATUS_LABELS,
-  ZONE_LABELS,
 } from './types'
 
 export const EXPORT_HEADERS = [
@@ -90,7 +90,12 @@ function fmtStamp(iso: string | null): string {
 export function reservationToExportRow(r: ReservationWithJoins): string[] {
   const alerts = resolveReservationAlerts(r.service_alerts, r.customer?.service_alerts)
   const event = r.scheduled_event?.template?.name ?? ''
-  const zone = r.zone === 'event_floating' ? 'Evento' : ZONE_LABELS[r.zone]
+  // Zona = la planta sola; el evento va en su propia columna al lado. Una
+  // reserva de Pizza libre en Planta Alta se lee "Planta Alta | Pizza libre" y
+  // se puede filtrar por planta en la planilla (con "Pizza libre · Planta Alta"
+  // en Zona, filtrar "Planta Alta" la perdía). Sin planta elegida: "Sin
+  // ubicar", no "Evento", que repetía la columna de al lado sin decir dónde.
+  const zone = floorLabel(r.zone)
   const cake =
     r.cake_count > 0
       ? `${r.cake_count > 1 ? `${r.cake_count} × ` : ''}${

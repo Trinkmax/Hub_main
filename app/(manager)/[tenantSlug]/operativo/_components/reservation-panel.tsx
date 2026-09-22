@@ -45,13 +45,13 @@ import type { RecentQrAward } from '@/lib/points/queries'
 import { resolveReservationAlerts } from '@/lib/salon/alerts'
 import { ARSFormat, endsNextDay } from '@/lib/salon/format'
 import { minutesUntil, relativeTimeLabel, reverseLabel } from '@/lib/salon/operativo'
+import { joinedEventName, placeLabel } from '@/lib/salon/place-label'
 import {
   MEAL_TYPE_LABELS,
   ORIGIN_LABELS,
   RESERVATION_KIND_LABELS,
   type ReservationWithJoins,
   STATUS_LABELS,
-  ZONE_LABELS,
 } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 import { ArrivalForm } from './arrival-form'
@@ -141,10 +141,11 @@ export function ReservationPanel({
   const operable = canOperate && !isFuture
   const diff = clock !== null && r.status === 'pending' ? minutesUntil(r, clock) : null
   const late = diff !== null && diff < -15
-  const zone =
-    r.zone === 'event_floating'
-      ? (r.scheduled_event?.template?.name ?? 'Evento')
-      : ZONE_LABELS[r.zone]
+  // Dónde se sienta, con `placeLabel` como en todas las pantallas: la planta,
+  // el evento sin planta ("Pizza libre") o los dos ("Pizza libre · Planta
+  // Alta"). Antes una de evento con planta decía solo "Planta Alta" y no se
+  // sabía que venía al evento.
+  const zone = placeLabel(r, joinedEventName(r))
   const phone = r.customer?.phone ?? r.guest_phone ?? ''
   const [revertOpen, setRevertOpen] = useState(false)
   const [tableDraft, setTableDraft] = useState(r.table_label ?? '')
