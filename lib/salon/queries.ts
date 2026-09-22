@@ -1,6 +1,7 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
 import { cordobaDayStartUtc, isoDayInCordoba, nextIsoDay } from './date-presets'
+import { type RangeTotals, type RangeTotalsRow, tallyRangeTotals } from './day-counter'
 import {
   aggregateDepositsByDay,
   type DepositBasis,
@@ -35,7 +36,6 @@ import type {
   CommissionRateTierRow,
   DayCapacityBucket,
   MealType,
-  ReservationKind,
   ReservationManagerRow,
   ReservationWithJoins,
   SalonReservationStatus,
@@ -271,9 +271,9 @@ export async function listSalonReservations(
  * el tope no significa nada, pero el volumen sí — sin esto, al pasar a "este
  * mes" se perdía el contador de cubiertos.
  *
- * `guests` es el total (salón + eventos), con el desglose por zona que usaba
- * la vieja lista /reservas. Hoy el corte por servicio vive en
- * lib/salon/segments.ts y esta query quedó sin lectores (ver BACKLOG).
+ * `guests` es el total (salón + eventos), con el desglose por zona. La usa la
+ * barra de rango de la lista /reservas; el cupo del DÍA no sale de acá sino del
+ * corte por servicio (lib/salon/segments.ts).
  *
  * Excluye canceladas y no-show: no ocupan mesa.
  */
@@ -281,46 +281,20 @@ export async function getRangeReservationTotals(opts: {
   tenantId: string
   from: string
   to: string
-}): Promise<{
-  reservations: number
-  guests: number
-  salon: number
-  eventos: number
-  /** Tortas comprometidas en el período: lo que el bar tiene que producir. */
-  cakes: number
-  birthdays: number
-}> {
+}): Promise<RangeTotals> {
   const supabase = (await createClient()) as SBAny
+  // `scheduled_event_id` y no `zone`: una reserva de evento con planta sigue
+  // siendo de evento (ver `tallyRangeTotals`).
   const { data, error } = await supabase
     .from('salon_reservations')
-    .select('estimated_guests, actual_guests, zone, kind, cake_count')
+    .select('estimated_guests, actual_guests, scheduled_event_id, kind, cake_count')
     .eq('tenant_id', opts.tenantId)
     .gte('reservation_date', opts.from)
     .lte('reservation_date', opts.to)
     .not('status', 'in', '(cancelled,no_show)')
   if (error) throw error
 
-  const rows = (data ?? []) as Array<{
-    estimated_guests: number
-    actual_guests: number | null
-    zone: SalonZone
-    kind: ReservationKind
-    cake_count: number
-  }>
-
-  let salon = 0
-  let eventos = 0
-  let cakes = 0
-  let birthdays = 0
-  for (const r of rows) {
-    const guests = r.actual_guests ?? r.estimated_guests ?? 0
-    if (r.zone === 'event_floating') eventos += guests
-    else salon += guests
-    cakes += r.cake_count
-    if (r.kind === 'birthday') birthdays += 1
-  }
-
-  return { reservations: rows.length, guests: salon + eventos, salon, eventos, cakes, birthdays }
+  return tallyRangeTotals((data ?? []) as RangeTotalsRow[])
 }
 
 /**

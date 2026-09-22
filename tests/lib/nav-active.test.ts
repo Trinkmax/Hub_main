@@ -102,47 +102,47 @@ describe('computeActiveHrefs', () => {
   })
 })
 
-// La lista /reservas se retiró: Calendario (href /x/eventos/programados) se
-// queda con `alsoMatch: ['/x/reservas']` para que el alta y la ficha de una
-// reserva, que siguen siendo rutas propias, no queden sin item resaltado.
-describe('computeActiveHrefs — alsoMatch', () => {
-  const withCalendar: ResolvedNavGroup[] = [
+// Reservas volvió al menú (22/09) antes del Calendario. El alta y la ficha de
+// una reserva viven bajo /reservas: resaltan Reservas por prefijo, se entre
+// desde la lista o desde el calendario (el `?volver=calendario` no cambia qué
+// sección es).
+describe('computeActiveHrefs — Agenda (Reservas + Calendario)', () => {
+  const RES = '/x/reservas'
+  const CAL = '/x/eventos/programados'
+  const withAgenda: ResolvedNavGroup[] = [
     ...groups,
     {
       label: 'Agenda',
       items: [
-        {
-          label: 'Calendario',
-          href: '/x/eventos/programados',
-          iconKey: 'CalendarDays',
-          alsoMatch: ['/x/reservas'],
-        },
+        { label: 'Reservas', href: RES, iconKey: 'CalendarCheck' },
+        { label: 'Calendario', href: CAL, iconKey: 'CalendarDays' },
       ],
     },
   ]
-  const CAL = '/x/eventos/programados'
 
-  it('/x/reservas/nuevo resalta Calendario', () => {
-    expect(computeActiveHrefs('/x/reservas/nuevo', '', withCalendar)).toEqual(new Set([CAL]))
+  it('la lista, el alta y la ficha resaltan Reservas', () => {
+    expect(computeActiveHrefs('/x/reservas', 'day=2026-09-10', withAgenda)).toEqual(new Set([RES]))
+    expect(computeActiveHrefs('/x/reservas/nuevo', '', withAgenda)).toEqual(new Set([RES]))
+    expect(computeActiveHrefs('/x/reservas/abc', '', withAgenda)).toEqual(new Set([RES]))
   })
 
-  it('/x/reservas/{id} resalta Calendario', () => {
-    expect(computeActiveHrefs('/x/reservas/abc', '', withCalendar)).toEqual(new Set([CAL]))
+  it('entrar al alta desde el calendario sigue resaltando Reservas', () => {
+    expect(
+      computeActiveHrefs('/x/reservas/nuevo', 'date=2026-09-10&volver=calendario', withAgenda),
+    ).toEqual(new Set([RES]))
   })
 
-  it('el calendario con ?day sigue resaltando Calendario', () => {
-    expect(computeActiveHrefs('/x/eventos/programados', 'day=2026-09-10', withCalendar)).toEqual(
-      new Set([CAL]),
-    )
+  it('el calendario con ?day resalta Calendario', () => {
+    expect(computeActiveHrefs(CAL, 'day=2026-09-10', withAgenda)).toEqual(new Set([CAL]))
   })
 
-  it('el alias matchea por segmento, no por texto suelto', () => {
-    expect(computeActiveHrefs('/x/reservas-viejas', '', withCalendar).size).toBe(0)
+  it('matchea por segmento, no por texto suelto', () => {
+    expect(computeActiveHrefs('/x/reservas-viejas', '', withAgenda).size).toBe(0)
   })
 
   it('/x/clientes?segment=reserva sigue activando solo Reservas del CRM', () => {
-    const active = computeActiveHrefs('/x/clientes', 'segment=reserva', withCalendar)
+    const active = computeActiveHrefs('/x/clientes', 'segment=reserva', withAgenda)
     expect(active).toEqual(new Set(['/x/clientes', '/x/clientes?segment=reserva']))
-    expect(active.has(CAL)).toBe(false)
+    expect(active.has(RES)).toBe(false)
   })
 })

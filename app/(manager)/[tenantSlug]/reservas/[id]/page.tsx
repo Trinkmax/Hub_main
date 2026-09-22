@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation'
 import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
 import { PageHeader } from '@/components/ui/page-header'
 import { resolveReservationAlerts } from '@/lib/salon/alerts'
-import { calendarHref } from '@/lib/salon/calendar-links'
+import { type ReservationReturnTo, reservationBackLink } from '@/lib/salon/calendar-links'
 import { formatDayLabel, todayInCordoba } from '@/lib/salon/date-presets'
 import { timeRangeLabel } from '@/lib/salon/format'
 import {
@@ -18,6 +18,7 @@ import {
   listScheduledTemplates,
 } from '@/lib/salon/queries'
 import { getDaySegmentsSnapshot } from '@/lib/salon/segment-queries'
+import { firstParams, reservationDetailParamsSchema } from '@/lib/salon/segment-schemas'
 import type { DaySegmentsSnapshot } from '@/lib/salon/segments'
 import {
   getCurrentUser,
@@ -53,10 +54,17 @@ async function snapshotOrNull(tenantId: string, date: string): Promise<DaySegmen
 
 export default async function ReservaDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantSlug: string; id: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  const { tenantSlug, id } = await params
+  const [{ tenantSlug, id }, sp] = await Promise.all([params, searchParams])
+  // ?volver=calendario si se entró desde el calendario; si no (la lista, el
+  // operativo, las comisiones), se vuelve a la lista. Un valor roto se ignora.
+  const parsedParams = reservationDetailParamsSchema.safeParse(firstParams(sp))
+  const returnTo: ReservationReturnTo =
+    parsedParams.success && parsedParams.data.volver === 'calendario' ? 'calendario' : 'reservas'
 
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
@@ -109,19 +117,25 @@ export default async function ReservaDetailPage({
   ])
   if (!reservation) notFound()
 
+  // Vuelve a la pantalla de origen abierta en el día DE ESTA reserva (y, en el
+  // calendario, con su fila resaltada), no a hoy: si no, salir del detalle de
+  // una reserva del 31/07 devolvía una pantalla donde no estaba.
+  const back = reservationBackLink(tenantSlug, {
+    returnTo,
+    date: reservation.reservation_date,
+    focusId: id,
+  })
+
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <PageHeader
         eyebrow={
-          // Vuelve al calendario abierto en el día DE ESTA reserva y con su
-          // fila resaltada, no a hoy: si no, salir del detalle de una reserva
-          // del 31/07 devolvía una pantalla donde no estaba.
           <Link
-            href={calendarHref(tenantSlug, { day: reservation.reservation_date, focusId: id })}
+            href={back.href}
             className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="size-3.5" />
-            Volver al calendario
+            {back.label}
           </Link>
         }
         title={reservation.guest_name}
@@ -154,6 +168,7 @@ export default async function ReservaDetailPage({
         <ReservationForm
           mode="edit"
           tenantSlug={tenantSlug}
+          returnTo={returnTo}
           initialDate={reservation.reservation_date}
           today={todayInCordoba()}
           initialSnapshot={snapshot}

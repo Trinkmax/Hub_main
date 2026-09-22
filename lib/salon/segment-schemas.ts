@@ -13,7 +13,7 @@
 
 import { z } from 'zod'
 import { isRealIsoDay } from './date-presets'
-import { SEGMENT_KEYS } from './segments'
+import { SEGMENT_KEYS, ZONE_FILTERS } from './segments'
 
 export const segmentKeySchema = z.enum(SEGMENT_KEYS)
 
@@ -134,9 +134,16 @@ export const segmentOverrideKeySchema = z.object({
 })
 
 /**
- * /reservas/nuevo: ?date, ?event (alta dentro de un evento), ?meal (servicio)
- * y ?time (hora puntual). `guest_name` lo manda el operativo al cargar un
- * walk-in y antes se ignoraba.
+ * ?volver=calendario en el alta y en la ficha: se entró desde el calendario y
+ * al guardar (o al tocar «Volver») se vuelve ahí. Cualquier otro valor se
+ * ignora y el destino es la lista /reservas, el default de siempre.
+ */
+const returnToField = z.literal('calendario').optional().catch(undefined)
+
+/**
+ * /reservas/nuevo: ?date, ?event (alta dentro de un evento), ?meal (servicio),
+ * ?time (hora puntual) y ?volver. `guest_name` lo manda el operativo al
+ * cargar un walk-in y antes se ignoraba.
  */
 export const newReservationParamsSchema = z.object({
   date: isoDaySchema.optional().catch(undefined),
@@ -144,15 +151,26 @@ export const newReservationParamsSchema = z.object({
   meal: segmentKeySchema.optional().catch(undefined),
   time: hhmmSchema.optional().catch(undefined),
   guest_name: z.string().trim().min(1).max(120).optional().catch(undefined),
+  volver: returnToField,
 })
 export type NewReservationParams = z.infer<typeof newReservationParamsSchema>
 
+/** /reservas/[id] (la ficha): solo ?volver. */
+export const reservationDetailParamsSchema = z.object({
+  volver: returnToField,
+})
+export type ReservationDetailParams = z.infer<typeof reservationDetailParamsSchema>
+
 /**
- * /eventos/programados: ?month, ?day ('hoy' lo usa ⌘K "Nueva reserva"),
- * ?seg (servicio anclado), ?res (reserva resaltada), ?buscar y ?tab.
+ * /eventos/programados: ?month, ?planta (filtro de planta: alta, baja o sin =
+ * reservas de evento sin planta; sin param es «Todo»), ?day ('hoy' se resuelve
+ * con la fecha de Córdoba: sirve para un link fijo al día de hoy), ?seg
+ * (servicio anclado), ?res (reserva resaltada), ?buscar (abre el buscador con
+ * ese texto) y ?tab.
  */
 export const calendarParamsSchema = z.object({
   month: ymSchema.optional().catch(undefined),
+  planta: z.enum(ZONE_FILTERS).optional().catch(undefined),
   day: z
     .union([z.literal('hoy'), isoDaySchema])
     .optional()

@@ -3,6 +3,7 @@ import { logAudit } from '@/lib/audit'
 import { exportFilename, reservationsToCsv } from '@/lib/salon/export'
 import { listSalonReservationsForExport } from '@/lib/salon/queries'
 import { mealTypeEnum, salonStatusEnum, salonZoneEnum } from '@/lib/salon/schemas'
+import { isoDaySchema } from '@/lib/salon/segment-schemas'
 import {
   RESERVATION_STAFF_ROLES,
   RoleRequiredError,
@@ -15,7 +16,6 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
@@ -45,7 +45,11 @@ export async function GET(request: Request) {
     const rangeMode = Boolean(from || to)
     const dateFrom = rangeMode ? from : day
     const dateTo = rangeMode ? to : day
-    if ((dateFrom && !DATE_RE.test(dateFrom)) || (dateTo && !DATE_RE.test(dateTo))) {
+    // La forma Y que exista: el 30/02 pasaba la regex, Postgres lo rechazaba y
+    // la descarga era un 500 en vez de un 400.
+    const invalidDay = (value: string | null) =>
+      Boolean(value) && !isoDaySchema.safeParse(value).success
+    if (invalidDay(dateFrom) || invalidDay(dateTo)) {
       return NextResponse.json({ error: 'invalid_date' }, { status: 400 })
     }
 

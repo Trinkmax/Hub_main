@@ -6,6 +6,7 @@ import {
   hhmmSchema,
   isoDaySchema,
   newReservationParamsSchema,
+  reservationDetailParamsSchema,
   reservationSearchSchema,
   segmentConfigSaveSchema,
   segmentKeySchema,
@@ -78,6 +79,29 @@ describe('newReservationParamsSchema', () => {
     expect(newReservationParamsSchema.parse({})).toEqual({})
     expect(newReservationParamsSchema.parse({ guest_name: '' }).guest_name).toBeUndefined()
   })
+
+  it('?volver: solo "calendario"; cualquier otra cosa se ignora (vuelve a la lista)', () => {
+    expect(newReservationParamsSchema.parse({ volver: 'calendario' }).volver).toBe('calendario')
+    expect(newReservationParamsSchema.parse({ volver: 'reservas' }).volver).toBeUndefined()
+    expect(
+      newReservationParamsSchema.parse({ volver: 'https://otro.sitio' }).volver,
+    ).toBeUndefined()
+    // Un ?volver roto no se lleva puesto al resto.
+    expect(
+      newReservationParamsSchema.parse({ date: '2026-09-28', meal: 'dinner', volver: 'x' }),
+    ).toEqual({ date: '2026-09-28', meal: 'dinner' })
+  })
+})
+
+describe('reservationDetailParamsSchema', () => {
+  it('?volver=calendario pasa; lo demás se ignora', () => {
+    expect(reservationDetailParamsSchema.parse({ volver: 'calendario' })).toEqual({
+      volver: 'calendario',
+    })
+    expect(reservationDetailParamsSchema.parse({ volver: 'CALENDARIO' }).volver).toBeUndefined()
+    expect(reservationDetailParamsSchema.parse({ otro: '1' })).toEqual({})
+    expect(reservationDetailParamsSchema.parse({})).toEqual({})
+  })
 })
 
 describe('calendarParamsSchema', () => {
@@ -107,6 +131,19 @@ describe('calendarParamsSchema', () => {
     expect(
       calendarParamsSchema.parse({ day: 'ayer', seg: 'breakfast', res: 'x', tab: 'lista' }),
     ).toEqual({})
+  })
+
+  it('?planta: alta, baja o sin; cualquier otra cosa se ignora (es «Todo»)', () => {
+    expect(calendarParamsSchema.parse({ planta: 'alta' }).planta).toBe('alta')
+    expect(calendarParamsSchema.parse({ planta: 'baja' }).planta).toBe('baja')
+    expect(calendarParamsSchema.parse({ planta: 'sin' }).planta).toBe('sin')
+    for (const bad of ['todo', 'planta_alta', 'Alta', '', 'terraza']) {
+      expect(calendarParamsSchema.parse({ planta: bad }).planta).toBeUndefined()
+    }
+    // Un ?planta roto no tira abajo el resto de la URL.
+    expect(calendarParamsSchema.parse({ planta: 'x', day: '2026-09-10' })).toEqual({
+      day: '2026-09-10',
+    })
   })
 })
 

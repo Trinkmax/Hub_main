@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { canAccessManagerPath, homePathForRole, MANAGER_SCOPED_PREFIXES } from '@/lib/tenant/roles'
 
 // El proxy usa estas dos funciones para decidir a dónde cae cada rol al
-// loguearse y qué rutas del manager puede abrir. Con la lista /reservas
-// retirada, el calendario pasa a ser el home de la anfitriona, pero el alta y
-// la ficha de una reserva tienen que seguir abiertas para ella.
+// loguearse y qué rutas del manager puede abrir. La lista /reservas volvió al
+// menú (22/09) y vuelve a ser el home de la anfitriona; el calendario, desde
+// donde también reserva, le sigue abierto.
 describe('homePathForRole', () => {
-  it('la anfitriona arranca en el calendario (la lista /reservas ya no existe)', () => {
-    expect(homePathForRole('host', 'hub')).toBe('/hub/eventos/programados')
+  it('la anfitriona arranca en la lista de reservas', () => {
+    expect(homePathForRole('host', 'hub')).toBe('/hub/reservas')
   })
 
   it('el resto de los roles no cambia', () => {
@@ -20,15 +20,16 @@ describe('homePathForRole', () => {
 })
 
 describe('canAccessManagerPath', () => {
-  it('el host conserva el prefijo reservas (alta y ficha siguen vivas)', () => {
+  it('el host abre la lista, el alta y la ficha de reservas', () => {
     expect(MANAGER_SCOPED_PREFIXES.host).toContain('reservas')
+    expect(canAccessManagerPath('host', ['reservas'])).toBe(true)
     expect(canAccessManagerPath('host', ['reservas', 'nuevo'])).toBe(true)
     expect(canAccessManagerPath('host', ['reservas', '6f1c2a54-1b2c-4d5e-8f90-1a2b3c4d5e6f'])).toBe(
       true,
     )
   })
 
-  it('el host abre el calendario, que es su home', () => {
+  it('el host también abre el calendario (reserva desde los dos lados)', () => {
     expect(canAccessManagerPath('host', ['eventos', 'programados'])).toBe(true)
   })
 

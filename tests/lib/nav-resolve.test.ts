@@ -60,10 +60,11 @@ describe('resolveNavGroups — rol + feature + superadmin', () => {
     const groups = resolveNavGroups('host', SLUG, allOff, false)
     expect(labels(groups)).toEqual(['Hoy', 'Agenda', 'Negocio'])
     expect(itemLabels(groups, 'Hoy')).toEqual(['Operativo'])
-    // La lista de Reservas se retiró: el calendario es la puerta de las reservas.
-    expect(itemLabels(groups, 'Agenda')).toEqual(['Calendario'])
+    // Reservas volvió al menú (22/09) y va antes del calendario: se reserva
+    // desde los dos lados.
+    expect(itemLabels(groups, 'Agenda')).toEqual(['Reservas', 'Calendario'])
     expect(itemLabels(groups, 'Negocio')).toEqual(['Mis números'])
-    // Con 3 items los grupos no colapsan.
+    // Con 4 items los grupos no colapsan.
     expect(groups.every((g) => !g.collapsible)).toBe(true)
     const all = groups.flatMap((g) => g.items.map((i) => i.label))
     expect(all).not.toContain('Estadísticas')
@@ -100,15 +101,12 @@ describe('resolveNavGroups — rol + feature + superadmin', () => {
     }
   })
 
-  it('owner: la Agenda es solo Calendario y resalta también el alta y la ficha de reservas', () => {
+  it('owner: la Agenda es Reservas y después Calendario', () => {
     const groups = resolveNavGroups('owner', SLUG, allOff, false)
-    expect(itemLabels(groups, 'Agenda')).toEqual(['Calendario'])
-    const calendario = group(groups, 'Agenda')?.items[0]
+    expect(itemLabels(groups, 'Agenda')).toEqual(['Reservas', 'Calendario'])
+    const [reservas, calendario] = group(groups, 'Agenda')?.items ?? []
+    expect(reservas?.href).toBe('/hub/reservas')
     expect(calendario?.href).toBe('/hub/eventos/programados')
-    // alsoMatch viaja resuelto con el slug (serializable al Client Component).
-    expect(calendario?.alsoMatch).toEqual(['/hub/reservas'])
-    const all = groups.flatMap((g) => g.items.map((i) => i.href))
-    expect(all).not.toContain('/hub/reservas')
   })
 
   it('resuelve hrefs con el slug y mantiene la anidación de Personas', () => {

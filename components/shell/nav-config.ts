@@ -22,13 +22,6 @@ export type NavItem = {
   expanderOnly?: boolean
   /** Sub-items anidados (1 nivel). El padre además navega a su propio href. */
   children?: NavItem[]
-  /**
-   * Otras rutas que también resaltan este item (por prefijo, igual que el
-   * href). Para secciones que ya no tienen item propio pero siguen vivas bajo
-   * otro: el alta y la ficha de una reserva (/reservas/nuevo, /reservas/[id])
-   * se abren desde el Calendario, así que resaltan Calendario.
-   */
-  alsoMatch?: (slug: string) => string[]
 }
 
 export type NavGroup = {
@@ -53,8 +46,6 @@ export type ResolvedNavItem = {
   newTab?: boolean
   expanderOnly?: boolean
   children?: ResolvedNavItem[]
-  /** Paths (ya resueltos con el slug) que también activan el item. */
-  alsoMatch?: string[]
 }
 
 export type ResolvedNavGroup = {
@@ -67,15 +58,15 @@ export type ResolvedNavGroup = {
 /**
  * Information architecture del Manager Workspace para el producto loyalty-first.
  * Orden por el FLUJO del dueño: primero el hoy (resumen, operativo del día,
- * mensajería), después la agenda (el calendario, que es también la puerta de
- * las reservas), el CRM (personas + acreditar puntos), el crecimiento (carta,
- * club de beneficios), el negocio (estadísticas) y, anclada abajo, la
- * configuración. Lo de servicio de mesa (Salón) queda OCULTO detrás de
- * feature-flags de superadmin.
+ * mensajería), después la agenda (reservas + calendario: se reserva desde los
+ * dos), el CRM (personas + acreditar puntos), el crecimiento (carta, club de
+ * beneficios), el negocio (estadísticas) y, anclada abajo, la configuración.
+ * Lo de servicio de mesa (Salón) queda OCULTO detrás de feature-flags de
+ * superadmin.
  *
  * Roles acotados (el proxy además limita sus rutas — lib/tenant/roles.ts):
  *   editor → sólo Carta (+ ver la carta pública)
- *   host   → Operativo, Calendario y Mis números
+ *   host   → Operativo, Reservas, Calendario y Mis números
  */
 export const NAV_GROUPS: NavGroup[] = [
   {
@@ -109,15 +100,20 @@ export const NAV_GROUPS: NavGroup[] = [
     collapsible: true,
     items: [
       {
-        // Puerta única de las reservas: el día del calendario las muestra
-        // cortadas por servicio y desde ahí se cargan. La vieja lista /reservas
-        // redirige acá, pero el alta y la ficha (/reservas/nuevo, /reservas/[id])
-        // siguen siendo rutas propias: `alsoMatch` las resalta como Calendario.
+        // La lista del día / semana / mes. Volvió al menú después de un día
+        // oculta (22/09/2026): la anfitriona trabaja con la lista, el filtro y
+        // «Pasar lista». El alta y la ficha (/reservas/nuevo, /reservas/[id])
+        // resaltan este item por prefijo, se entre desde donde se entre.
+        label: 'Reservas',
+        href: (s) => `/${s}/reservas`,
+        icon: 'CalendarCheck',
+        roles: ['owner', 'host'],
+      },
+      {
         label: 'Calendario',
         href: (s) => `/${s}/eventos/programados`,
         icon: 'CalendarDays',
         roles: ['owner', 'host'],
-        alsoMatch: (s) => [`/${s}/reservas`],
       },
     ],
   },
@@ -410,14 +406,12 @@ export function resolveNavGroups(
       exact: item.exact,
       newTab: item.newTab,
       expanderOnly: item.expanderOnly,
-      alsoMatch: item.alsoMatch?.(slug),
       children: item.children?.map((child) => ({
         label: child.label,
         href: child.href(slug),
         iconKey: child.icon,
         exact: child.exact,
         newTab: child.newTab,
-        alsoMatch: child.alsoMatch?.(slug),
       })),
     })),
   }))

@@ -3,7 +3,7 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
-import { calendarHref } from '@/lib/salon/calendar-links'
+import { type ReservationReturnTo, reservationBackLink } from '@/lib/salon/calendar-links'
 import { todayInCordoba } from '@/lib/salon/date-presets'
 import { lastManagerCookieName } from '@/lib/salon/managers'
 import { resolveNewReservationDefaults } from '@/lib/salon/new-reservation-defaults'
@@ -79,10 +79,14 @@ export default async function NuevaReservaPage({
   const tenantId = access.tenant.id
 
   // ?date, ?event (alta adentro de un evento), ?meal (servicio), ?time (hora
-  // puntual) y ?guest_name. Cada param tiene su .catch: uno roto se ignora y la
-  // página abre igual con sus defaults, en vez de tirar un 500 por un link viejo.
+  // puntual), ?guest_name y ?volver. Cada param tiene su .catch: uno roto se
+  // ignora y la página abre igual con sus defaults, en vez de tirar un 500 por
+  // un link viejo.
   const parsed = newReservationParamsSchema.safeParse(firstParams(sp))
   const query = parsed.success ? parsed.data : {}
+  // Se vuelve a la pantalla desde la que se entró: el calendario manda
+  // ?volver=calendario; sin él (la lista, el operativo, ⌘K), a la lista.
+  const returnTo: ReservationReturnTo = query.volver === 'calendario' ? 'calendario' : 'reservas'
   const today = todayInCordoba()
   const date0 = query.date ?? today
 
@@ -140,19 +144,20 @@ export default async function NuevaReservaPage({
   const { initialDate, segment } = defaults
   const targetEvent = requestedEvent && defaults.targetEventId ? requestedEvent : null
   const [, mm, dd] = initialDate.split('-')
+  // Al calendario abierto en ese día y en ese servicio (desde ahí se veía cómo
+  // venía el día), o a la lista parada en ese día.
+  const back = reservationBackLink(tenantSlug, { returnTo, date: initialDate, segment })
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <PageHeader
         eyebrow={
-          // Vuelve al calendario abierto en ese día y en ese servicio: es la
-          // puerta de las reservas, y desde ahí se veía cómo venía el día.
           <Link
-            href={calendarHref(tenantSlug, { day: initialDate, segment })}
+            href={back.href}
             className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="size-3.5" />
-            Volver al calendario
+            {back.label}
           </Link>
         }
         title={targetEvent ? `Reserva para ${eventDisplayName(targetEvent)}` : 'Nueva reserva'}
@@ -170,6 +175,7 @@ export default async function NuevaReservaPage({
       <ReservationForm
         mode="create"
         tenantSlug={tenantSlug}
+        returnTo={returnTo}
         initialDate={initialDate}
         today={today}
         initialSnapshot={snapshot}

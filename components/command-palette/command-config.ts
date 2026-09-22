@@ -66,15 +66,14 @@ export const commandEntries: CommandEntry[] = [
     keywords: ['cliente', 'persona', 'agregar', 'crear'],
   },
   {
-    // Abre el día de HOY en el calendario, no el form pelado: primero se ve
-    // cómo viene cada servicio (almuerzo, merienda, cena) y desde ahí se
-    // reserva con la hora del servicio ya puesta.
+    // El alta pelada: al guardar vuelve a la lista de Reservas en el día de la
+    // reserva (sin ?volver, el destino por defecto).
     id: 'new-reservation',
     label: 'Nueva reserva',
     icon: CalendarCheck,
     group: 'Acciones rápidas',
     type: 'navigate-new',
-    href: (s) => `/${s}/eventos/programados?day=hoy`,
+    href: (s) => `/${s}/reservas/nuevo`,
     keywords: ['reserva', 'mesa', 'agendar', 'crear'],
     roles: ['owner', 'host'],
   },
@@ -266,8 +265,8 @@ export const commandEntries: CommandEntry[] = [
     group: 'Ir a',
     type: 'navigate',
     href: (s) => `/${s}/eventos/programados`,
-    // El calendario es la puerta de las reservas (la lista /reservas redirige
-    // acá): buscar «reserva» tiene que traerlo.
+    // Desde el calendario también se reserva (por servicio o adentro de un
+    // evento): buscar «reserva» trae Reservas y también el calendario.
     keywords: [
       'agenda',
       'mes',
@@ -283,6 +282,16 @@ export const commandEntries: CommandEntry[] = [
       'reservar',
       'mesa',
     ],
+    roles: ['owner', 'host'],
+  },
+  {
+    id: 'reservations',
+    label: 'Reservas',
+    icon: CalendarCheck,
+    group: 'Ir a',
+    type: 'navigate',
+    href: (s) => `/${s}/reservas`,
+    keywords: ['reserva', 'mesa', 'reservar', 'lista', 'pasar lista'],
     roles: ['owner', 'host'],
   },
   {
