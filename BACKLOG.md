@@ -906,7 +906,10 @@ afuera a propósito:
 
 Lo que quedó afuera a propósito del cambio «cupo por almuerzo / merienda /
 cena» y del retiro de la lista `/reservas` (ver `docs/reservas.md` → «Cupo por
-servicio»).
+servicio»). El 22/09 la lista volvió al menú con el contador por servicio
+(«Dos puertas: la lista y el calendario»): se sacaron las entradas que eso
+resolvió (queries y componentes «muertos» de la lista, sus filtros perdidos y el
+`revalidatePath` de `/reservas`).
 
 - **SEGURIDAD (preexistente, prioridad alta).** `recalc_reservation_commission`
   y `recalc_event_commissions` son SECURITY DEFINER sin chequeo de auth y con
@@ -947,24 +950,14 @@ servicio»).
 - **Regla por zona y servicio** («lun–vie al mediodía solo Planta Baja») como
   aviso en el form. El cupo de 70 ya la cubre en números; el viernes 25/09 hay
   un cumple de 25 al mediodía en Planta Alta que no avisa nada.
-- **Aviso prospectivo de tortas.** Deuda existente que se agrava al sacar la
-  lista de Reservas: si nadie abre el día, nadie se entera de qué tortas hay que
-  hacer.
+- **Aviso prospectivo de tortas.** Deuda existente: la lista muestra las tortas
+  del día (hitos) y las del período (barra de rango), pero si nadie abre ese
+  día o ese rango, nadie se entera de qué tortas hay que hacer.
 - **Dos «usados» distintos para el mismo evento.** El bonus «evento lleno» usa
   `sum(estimated_guests)` y el calendario usa `actual ?? estimated`: Sushi libre
   del 10/09 da 72 para el bonus y 73 en el calendario.
 - **Onboarding: `capacitiesReady` debería mirar los cupos por servicio** además
   de PA/PB.
-- **Queries y componentes muertos de la lista `/reservas`.** Sin lectores:
-  `getRangeReservationTotals`, `listDayCelebrations`, `listDayServiceRows` y
-  `PageOutOfRangeError` (el throw sigue en `listSalonReservations`, que SÍ usa el
-  detalle del evento). Componentes: `components/reservations/attendance-cell.tsx`
-  y `comment-popover.tsx` (los usaba solo la tabla borrada). `serviceTimeRange`
-  quedó solo con su test. Borrar con cuidado de no llevarse lo que usa
-  `/operativo`.
-- **`revalidatePath('/{slug}/reservas')` en `lib/salon/actions.ts`** revalida
-  una ruta que ahora solo redirige. Es inocuo; sacarlo cuando se toque el
-  archivo (el calendario ya se revalida aparte).
 - **Calendario dnd:** falta `KeyboardSensor` para arrastrar con teclado, el id
   de las celdas de relleno usa `Math.random()` (cambia en cada render) y queda el
   anti-patrón `useMemo(setEvents)`.
@@ -981,7 +974,37 @@ servicio»).
 - **Meriendas que se estiran sobre la cena.** 9 reservas `tea_time` activas
   tienen fin 20:30, y casi ningún evento tiene `ends_at_local`: hoy cuentan solo
   en la merienda.
-- **Filtros de la vieja lista.** Si la anfitriona extraña los filtros de estado,
-  zona, gestor y rango, y la asistencia fila por fila, sumarlos al buscador del
-  calendario (hoy: Buscar, Exportar el mes, Pasar lista en la vista del día y
-  `/operativo`).
+- **La lista corta por `meal_type` y el contador por servicio.** (22/09) Los
+  chips `?servicio=` y los encabezados de la tabla de `/reservas` agrupan con
+  `groupByService` (el `meal_type` guardado, 4–5 valores con desayuno y el
+  `hub_event` legacy), y el contador de arriba con `segmentOfReservation` (la
+  hora del evento manda, 3 servicios). Una reserva `hub_event` o colgada de un
+  evento con la hora de otro servicio cae en una fila distinta de la que la
+  cuenta. Unificar la tabla y los chips sobre los segmentos cuando se migre
+  `hub_event` (entrada de arriba); el filtro `?servicio=` pasaría a los 3
+  servicios.
+- **Planta en el alta desde un día filtrado.** (22/09) Con el calendario en
+  «Planta alta», «Nueva reserva» y «Reservar en {evento}» no preeligen la
+  planta: `newReservationParamsSchema` no tiene `zone`. Sumar `?zona=` al alta
+  (normal → la card de esa planta; evento → «¿Dónde se sientan?» en esa planta).
+- **El filtro de planta se pierde al guardar.** (22/09) A propósito: al volver
+  del alta o la ficha (`reservationSavedHref`) y al abrir un resultado del
+  buscador el calendario vuelve a «Todo», para que la reserva siempre se vea
+  aunque esté en otra planta. Si el dueño prefiere conservarlo, llevar
+  `planta` por `?volver` y resaltar igual la fila aunque quede fuera del filtro.
+- **Chips de evento del mes por planta.** (22/09) Con una planta elegida el chip
+  del evento en el mes sigue diciendo el total del evento (usado/cupo); el
+  desglose por planta está solo en la vista del día (`SegmentEventLoad.byZone`).
+- **La ficha del evento no dice dónde se sienta cada reserva.** (22/09)
+  `event-reservations-list.tsx` (`/eventos/programados/[id]`) lista las reservas
+  del evento sin la planta; con la planta opcional adentro del evento es la
+  lista donde más sirve («Sin ubicar» / Planta Alta / Planta Baja, con
+  `floorLabel`).
+- **La vista rápida de `/reservas` se cierra de golpe al cambiar la planta con
+  el filtro de zona puesto.** (22/09) El popup de la lista no es controlado
+  (`reservations-table.tsx`) y `?zone` filtra en el server: con «Sin ubicar» (o
+  PA/PB en una normal), elegir otra planta revalida, la fila sale de la lista y
+  el popup se desmonta sin aviso. En la vista del día del calendario ya se
+  resolvió (la fila abierta se queda hasta cerrar el popup); en la lista haría
+  falta levantar el `open` a la tabla y conservar la fila abierta, o un toast
+  «Pasó a Planta Baja».

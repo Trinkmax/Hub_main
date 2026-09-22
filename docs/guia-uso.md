@@ -56,7 +56,7 @@ Asignarles rol **cashier** (pueden crear reservas + gestionar eventos pero no ve
 | Configuración | Valor actual | Dónde editar |
 |---|---|---|
 | Cupos por servicio | Propuesta HUB: almuerzo lun–vie 70 (aviso en 50: «Conviene abrir la terraza») y sáb–dom 120 · merienda 120 · cena 120. Horas al reservar: 13:00 · 15:30 · 21:00 | `Ajustes → Configuración → Capacidad` |
-| Cupo general por planta | Planta Alta: 60 · Planta Baja: 70 → 130 por servicio mientras no haya cupos por servicio cargados | `Ajustes → Configuración → Capacidad` |
+| Cupo general por planta | Planta Alta: 60 · Planta Baja: 70 → 130 por servicio mientras no haya cupos por servicio cargados. Es también el tope de cada planta en el filtro **Ver por planta** del calendario | `Ajustes → Configuración → Capacidad` |
 | Gestores con comisión | Luz · Joaquin | `Ajustes → Configuración → Comisiones → Gestores` |
 | Tarifas (Almuerzo/Merienda/Desayuno) | $140 (1-7) · $160 (8-15) · $180 (16-30) · $220 (31+) por persona | `Ajustes → Configuración → Comisiones → Tarifas` |
 | Tarifas (Cena) | $90 · $120 · $130 · $140 por persona | mismo lugar |
@@ -91,15 +91,22 @@ Templates típicos que conviene crear (con colores que después se ven en el cal
 
 ### Paso 1 — Abrir el form
 
-Las reservas se cargan **desde el calendario**: `Agenda → Calendario`, tocá el día
-(o directamente el servicio: Alm / Mer / Cena) y apretá **Nueva reserva en la cena**
-(o en el servicio que corresponda). Así ves cómo viene el día antes de cargar.
+Las reservas se cargan **desde los dos lados**, y al guardar volvés a donde estabas:
 
+- **Desde la lista**: `Agenda → Reservas` → **Nueva reserva**. Al guardar volvés a la
+  lista parada en el día de la reserva, con la reserva recién cargada resaltada.
+  Arriba de la lista ves cómo viene cada servicio del día («Alm 19/70 · Mer 33/120 ·
+  Cena 119/120»), con los mismos colores que el calendario.
+- **Desde el calendario**: `Agenda → Calendario`, tocá el día (o directamente el
+  servicio: Alm / Mer / Cena) y apretá **Nueva reserva en la cena** (o en el servicio
+  que corresponda). Así ves cómo viene el día antes de cargar, y al guardar volvés a
+  ese día del calendario.
 - Para reservar **adentro de un evento** (Sushi Libre, Pizza Libre…), tocá el evento
-  en el calendario: el form abre con el evento ya elegido.
-- Atajo: `⌘K` / `Ctrl+K` → **Nueva reserva** abre el día de hoy.
-- La vieja sección `Reservas` ya no existe: los links viejos a `/hub/reservas` te
-  llevan al calendario.
+  en el calendario (o **Reservar** en el evento, arriba de la lista): el form abre con
+  el evento ya elegido.
+- Atajo: `⌘K` / `Ctrl+K` → **Nueva reserva** (o directo a
+  `https://hubbar.vercel.app/hub/reservas/nuevo`).
+- La anfitriona entra directo a `Reservas` cuando inicia sesión.
 
 ### Paso 2 — Buscar o crear cliente
 
@@ -126,16 +133,22 @@ Tres botones: **Almuerzo · Merienda · Cena**, cada uno con cómo viene ese ser
 
 ### Paso 5 — Zona
 
-Tres cards: **Planta Alta · Planta Baja · Sujeta a evento**.
-- **Planta Alta / Baja**: dónde se sienta. Cuenta para el cupo del servicio (no hay
-  un tope por planta: cada ficha muestra cuántas personas hay en ese servicio).
-- **Sujeta a evento**: obliga a elegir un evento programado del día (paso 6).
+Una sola grilla **Dónde se sienta**: **Planta Alta · Planta Baja** y una card por cada
+evento programado de ese día (con su hora y cuánto lleva vendido).
+- **Planta Alta / Baja**: reserva normal, dónde se sienta. Cuenta para el cupo del
+  servicio (cada card muestra cuántas personas hay en esa planta en ese servicio).
+- **Un evento** (Pizza Libre, Ratatuille…): la reserva va adentro del evento y cuenta
+  en su cupo. Abajo aparece **¿Dónde se sientan? (opcional)**: dejalo en **Sin
+  definir** o elegí **Planta Alta / Planta Baja** si ya sabés dónde van. Elegir la
+  planta no cambia el cupo (sigue contando en el evento); solo dice dónde se sientan,
+  y la reserva se ve como «Pizza Libre · Planta Alta» en todas las pantallas.
+- Tocar una card de planta suelta saca la reserva del evento.
 
 ### Paso 6 — Tipo de reserva
 
 Tres botones: **Normal · Cumpleaños · Reserva especial**.
 - Si elegís **Cumpleaños**: aparecen steppers de "Tortas que traen" (0-2) y "Champagne que traen" (0-2).
-- Si elegís **Reserva especial** o **Sujeta a evento**: aparece selector de evento programado para esa fecha.
+- Si la reserva es para un evento, elegilo en **Dónde se sienta** (paso 5).
 
 ### Paso 7 — Personas
 
@@ -174,8 +187,10 @@ Eso es lo que va a cobrar el/los gestor/es cuando se cierre la mesa con esa cant
 
 Tap el botón **Crear reserva** o atajo de teclado **⌘+Enter** (Mac) / **Ctrl+Enter** (Windows).
 
-Toast verde: «Reserva cargada · Cena · 119 de 120». Volvés al día del calendario con
-la reserva recién cargada resaltada.
+Toast verde: «Reserva cargada · Cena · 119 de 120». Volvés a la pantalla desde la que
+entraste, en el día de la reserva y con ella resaltada: la lista de Reservas o el día
+del calendario. Editar una reserva hace lo mismo: desde el calendario vuelve al
+calendario; desde la lista, el operativo o cualquier otro lado, a la lista.
 
 ---
 
@@ -198,8 +213,8 @@ Header sticky arriba muestra:
   - Amarillo si está cerca del cupo
   - Rojo si hay overbooking
 
-Debajo, 3 columnas: **Planta Alta · Planta Baja · Sujeta a evento**.
-Cada columna lista las reservas del día ordenadas por hora.
+Debajo, las reservas del día agrupadas por hora. Cada una dice dónde se sienta:
+«Planta Baja», «Pizza Libre» (evento sin planta todavía) o «Pizza Libre · Planta Alta».
 
 ### Cada card de reserva muestra:
 
@@ -323,7 +338,8 @@ Entries con `paid_at != null` son intocables: el snapshot del rate aplicado qued
 | ¿Cómo abro la terraza un día puntual? | Dueño: en el día del calendario, **Cupo del día** (o **Subir a 120 hoy** cuando salta el aviso del almuerzo). |
 | ¿Puedo borrar una reserva ya cerrada? | Sí, pero las comisiones pagadas no se reversan. |
 | ¿Qué pasa si me equivoco al cerrar una mesa? | "Revertir estado" → vuelve a "Sentada". La comisión se recalcula. |
-| ¿Cómo veo todas las reservas del mes? | `Agenda → Calendario`: cada día muestra almuerzo, merienda y cena; tocalo para ver la lista. **Buscar** encuentra una reserva por nombre o teléfono y **Exportar** baja el mes en CSV. |
+| ¿Cómo veo todas las reservas del mes? | `Agenda → Reservas` → **Este mes** (o **Rango**), con filtros por estado, zona, gestor y servicio, **Pasar lista** y **Exportar**. En `Agenda → Calendario` cada día muestra almuerzo, merienda y cena; **Buscar** encuentra una reserva por nombre o teléfono. |
+| ¿Cómo veo cuánta gente tengo arriba o abajo? | `Agenda → Calendario` → **Ver por planta**: **Planta alta**, **Planta baja** o **Sin ubicar** (reservas de evento sin planta). Cada servicio muestra la gente de esa planta contra el cupo de la planta («Cena 46/60»); al abrir el día ves solo las reservas de esa planta. **Todo** vuelve a la vista completa. |
 | ¿El cliente se entera de su reserva por WhatsApp? | NO en MVP. La mensajería está desactivada. Solo email/WhatsApp manual desde el bar. |
 | ¿Puedo cambiar el gestor de una reserva después de creada? | Sí, desde el detalle (`/reservas/[id]`). Recalcula automáticamente. |
 | ¿Cómo agrego un gestor nuevo? | `Ajustes → Configuración → Comisiones → Gestores → + Nuevo`. Marcalo como `commission_eligible` si va a cobrar. |
@@ -340,7 +356,8 @@ Entries con `paid_at != null` son intocables: el snapshot del rate aplicado qued
 | **Reserva normal** | Reserva regular, sin formato especial |
 | **Cumpleaños** | Reserva con extras: tortas + champagne que trae el cliente |
 | **Reserva especial / Evento HUB** | Reserva grande con formato definido (Sushi Libre, etc.) |
-| **Sujeta a evento** | Zona virtual — la reserva consume del cupo del evento, y el cupo del evento se descuenta del servicio (casi siempre la cena) |
+| **Reserva de evento** | Va adentro de un evento programado: consume del cupo del evento, y el cupo del evento se descuenta del servicio (casi siempre la cena). Puede tener planta (Planta Alta / Baja) o no |
+| **Sin ubicar** | Reserva de evento a la que todavía no se le eligió planta |
 | **Cupo por servicio** | Personas que entran en el almuerzo, la merienda o la cena de ese día. Se configura por día de la semana, con cupo especial por fecha |
 | **Tier de tarifa** | Rango de personas con un valor por persona (ej: 8-15 personas → $120) |
 | **Commission ledger** | Tabla con todas las comisiones devengadas. Una entry por reserva × gestor. |

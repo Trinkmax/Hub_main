@@ -12,13 +12,13 @@
 |---|---|---|
 | DB | 8 tablas nuevas + 5 RPCs + seeds HUB | `supabase/migrations/20260520*` |
 | Server | Schemas zod, queries, Server Actions, motor TS de comisión | `lib/salon/*`, `lib/commissions/*` |
-| UI manager | Calendario (puerta única: mes + vista del día por servicio), alta y ficha de reserva, templates, config | `app/(manager)/[tenantSlug]/eventos/programados/*`, `app/(manager)/[tenantSlug]/reservas/{nuevo,[id]}/*`, `app/(manager)/[tenantSlug]/configuracion/{comisiones,salon}/*` |
+| UI manager | Lista de reservas (día / semana / mes) y calendario (mes + vista del día por servicio): se reserva desde los dos; alta y ficha de reserva, templates, config | `app/(manager)/[tenantSlug]/reservas/*`, `app/(manager)/[tenantSlug]/eventos/programados/*`, `app/(manager)/[tenantSlug]/configuracion/{comisiones,salon}/*` |
 | Cupo | Cupo por servicio (almuerzo / merienda / cena) en TS puro | `lib/salon/segments.ts`, `lib/salon/segments-copy.ts`, `supabase/migrations/20260921120000_salon_segment_capacities.sql` |
 | UI salón | Panel operativo full-screen con Realtime | `app/(salon)/[tenantSlug]/salon/reservas-operativo/*` |
 | Stats | Liquidación por gestor con drill-down | `app/(manager)/[tenantSlug]/estadisticas/comisiones/*` |
 | Stats | Señas por día (criterio reserva / carga, canceladas aparte) | `app/(manager)/[tenantSlug]/estadisticas/senas/*`, `lib/salon/deposits.ts` |
 | Stats | Cómo nos fue: gente por noche y por evento | `app/(manager)/[tenantSlug]/estadisticas/como-nos-fue/*`, `lib/salon/events-report.ts` |
-| Nav | Items "Operativo", "Calendario" (resalta también `/reservas/*`), "Comisiones", "Señas", "Cómo nos fue" | `components/shell/nav-config.ts` |
+| Nav | Items "Operativo", "Reservas", "Calendario", "Comisiones", "Señas", "Cómo nos fue" | `components/shell/nav-config.ts` |
 | Tests | Motor TS (24 cases), schemas zod (24), RLS isolation | `tests/lib/commissions-engine.test.ts`, `tests/lib/salon-schemas.test.ts`, `tests/rls/salon-reservations.test.ts` |
 
 ---
@@ -152,11 +152,12 @@ del HUB: 10/09, 19/09, 21/09, 22/09, 03/09, 15/09 y 03/10):
   el string `YYYY-MM-DD` (`isoDowOf`), nunca de `new Date(fecha)` en la TZ del
   server (Vercel corre en UTC).
 - **R9 · Un solo criterio.** El total del día contra PA + PB desapareció de todas
-  las pantallas; las fichas PA/PB del form y del operativo muestran personas por
+  las pantallas (también de la lista `/reservas`, que al volver cuenta por
+  servicio); las fichas PA/PB del form y del operativo muestran personas por
   zona **sin denominador** (el tope por planta mezclaba almuerzo y cena).
   `evaluate_day_capacity` queda solo por los buckets `event:*` (ver BACKLOG).
-- **R10 · El calendario se ve siempre**, aunque el bar no tenga formatos: es la
-  única puerta para reservar.
+- **R10 · El calendario se ve siempre**, aunque el bar no tenga formatos: es una
+  de las dos puertas para reservar (la otra es la lista).
 
 **Sobrecupo (D3): avisa, no bloquea.** Antes de guardar, el form (y la vista
 rápida) vuelve a pedir el día con `fetchDaySegments` —el calendario no tiene
@@ -171,28 +172,62 @@ día con aviso opcional, hora sugerida y nota del aviso por servicio, y cupos
 especiales por fecha. Una celda vacía vuelve al cupo general. El editor por
 planta quedó como «Cupo general por planta» (el fallback de R7).
 
-### El calendario, puerta única de las reservas
+### Dos puertas: la lista y el calendario (22/09/2026)
 
-La lista `/[slug]/reservas` se retiró: el proxy (`legacyReservasTarget` en
-`lib/supabase/middleware.ts`, después del chequeo de rol) contesta un 307 al
-calendario con `legacyReservasRedirect` (`lib/salon/calendar-links.ts`). Se
-resuelve en el proxy porque `[tenantSlug]` tiene `loading.tsx`: el `redirect()`
-de `reservas/page.tsx` corre en contexto de streaming y en carga dura saldría
-como 200 + meta refresh. La página queda de red de seguridad con el mismo mapeo.
+El 21/09 la lista `/[slug]/reservas` se ocultó detrás del calendario (redirect
+307 en el proxy). Al día siguiente el dueño la pidió de vuelta: la anfitriona
+trabaja con la lista (buscar, filtrar, pasar lista, exportar). Decisiones (no
+reabrir):
 
-| Link viejo | Destino |
-|---|---|
-| `/reservas?day=D` | `/eventos/programados?month=YYYY-MM&day=D` |
-| `/reservas?day=D&nueva=ID` | lo mismo + `&res=ID` (la fila queda resaltada) |
-| `/reservas?from=F&to=T` | `/eventos/programados?month=` del mes de `F` |
-| `/reservas?q=texto` | `/eventos/programados?buscar=texto` (abre el buscador) |
-| cualquier otro filtro | `/eventos/programados` |
+1. **La sección Reservas vuelve completa al menú** (grupo Agenda, antes de
+   Calendario): lista por día / semana / mes / rango, buscador, filtros de
+   estado, zona y gestor, chips por servicio, **Pasar lista**, **Exportar** y
+   **Nueva reserva**. Se reserva **desde los dos lados**.
+2. **El contador del día de la lista es POR SERVICIO**, con la misma cuenta que
+   el calendario (`getDaySegmentsSnapshot` + `computeDaySegments`; qué
+   servicios se muestran lo decide `activeDaySegments` en
+   `lib/salon/day-counter.ts`): un `SegmentChip` por servicio con actividad
+   («Alm 19/70 · Mer 33/120 · Cena 119/120»). El «171/130» del total del día
+   contra PA + PB **no vuelve**. En modo rango (semana, mes) la barra sigue
+   dando el volumen del período sin tope (`getRangeReservationTotals`). La gente
+   de cada evento en el renglón de hitos sale de la misma cuenta
+   (`eventUsedById`), ya no del RPC.
+3. **Al guardar se vuelve a la pantalla desde la que se entró.** Todos los links
+   al alta o a la ficha que salen del calendario (vista del día: «Nueva reserva»
+   por servicio y del pie, «Reservar en {evento}», «Edición completa» de la
+   vista rápida; los chips de evento del mes y de la agenda; «Editar» del
+   buscador; «Nueva reserva» de la ficha del evento) llevan
+   `?volver=calendario` (`newReservationHref` / `editReservationHref` con
+   `from: 'calendario'`). La página lo valida con zod
+   (`newReservationParamsSchema`, `reservationDetailParamsSchema`) y le pasa al
+   form el destino por prop (`returnTo`):
 
-`/reservas/nuevo` y `/reservas/[id]` siguen siendo rutas propias. El sidebar no
-tiene más item «Reservas»: Calendario las resalta con `alsoMatch`. La
-anfitriona arranca en el calendario (`homePathForRole('host')`) y conserva el
-prefijo `reservas` en el proxy, sin el cual perdería el alta y la ficha. En ⌘K,
-«Nueva reserva» abre `?day=hoy`.
+   | Entrada | Después de guardar | «Volver» del encabezado |
+   |---|---|---|
+   | con `?volver=calendario` | `/eventos/programados?month=…&day=D&res=ID` | «Volver al calendario» (día y servicio, o la fila resaltada) |
+   | sin `?volver` (lista, operativo, resumen, onboarding, salón, ⌘K, comisiones) | alta: `/reservas?day=D&nueva=ID` · edición: `/reservas?day=D` | «Volver a reservas» (`/reservas?day=D`) |
+
+   Las reglas viven en `reservationSavedHref` y `reservationBackLink`
+   (`lib/salon/calendar-links.ts`), con tests. Cualquier otro valor de
+   `?volver` se ignora (no es un redirect abierto: el destino siempre se arma
+   con el slug).
+4. **La anfitriona entra en `/reservas`** al iniciar sesión
+   (`homePathForRole('host')`); sus prefijos siguen siendo `reservas`, `eventos`,
+   `operativo` y `mis-numeros`.
+
+Se fueron el redirect del proxy (`legacyReservasTarget`), `legacyReservasRedirect`
+y el `alsoMatch` del sidebar: el alta y la ficha viven bajo `/reservas` y
+resaltan Reservas por prefijo, se entre desde donde se entre. En ⌘K vuelven
+«Ir a → Reservas» y «Nueva reserva» abre `/reservas/nuevo`. `?day=hoy` y
+`?buscar=` del calendario siguen andando como links directos.
+
+En la lista, «dónde se sienta» sale de `placeLabel` (`lib/salon/place-label.ts`):
+«Pizza libre · Planta Alta» si la reserva del evento tiene planta, «Pizza
+libre» si no. En el corte por zona del encabezado de cada servicio y en el
+filtro de zona, las reservas de evento sin planta (`event_floating`) se llaman
+**Sin ubicar**, como en el filtro de planta del calendario.
+
+El calendario, en detalle:
 
 - **Mes.** Cada celda muestra solo los servicios con actividad (`C 119/120` en
   tablet, `Cena 119/120` + desglose desde 1280 px) con una mini-barra; la agenda
@@ -211,18 +246,103 @@ prefijo `reservas` en el proxy, sin el cual perdería el alta y la ficha. En ⌘
   cupo especial con Deshacer. Si las reservas de un evento caen en otro servicio
   que el evento (Merienda Libre 03/10 cargada a las 21:00), el día lo avisa con
   el link para corregir la hora; el dato no se toca solo.
-- **Alta.** `/reservas/nuevo` acepta `?date`, `?event`, `?meal`, `?time` y
-  `?guest_name` (zod con `.catch`: un parámetro inválido se ignora). Con evento,
-  el servicio sale de su hora (R2) y ya no copia su `meal_type`: **las reservas
-  nuevas en eventos se guardan como `dinner` y cobran la tarifa de cena** (antes
-  `hub_event`, sin tarifa). Al guardar vuelve a
-  `/eventos/programados?day=…&res=…` con la reserva resaltada.
+- **Alta.** `/reservas/nuevo` acepta `?date`, `?event`, `?meal`, `?time`,
+  `?guest_name` y `?volver` (zod con `.catch`: un parámetro inválido se
+  ignora). Con evento, el servicio sale de su hora (R2) y ya no copia su
+  `meal_type`: **las reservas nuevas en eventos se guardan como `dinner` y
+  cobran la tarifa de cena** (antes `hub_event`, sin tarifa). Al guardar vuelve
+  al origen (tabla de arriba).
 - **Buscar / Exportar** en el header del calendario: por nombre o teléfono
   (20 resultados, abre el día con la fila resaltada) y el CSV del mes con
-  `/api/reservas/export`. Los filtros de estado, zona, gestor y rango de la
-  vieja lista no se migraron (BACKLOG).
+  `/api/reservas/export`. Los filtros de estado, zona, gestor y rango siguen en
+  la lista.
 
-### Smoke manual — cupo por servicio y puerta única
+### Filtro de planta en el calendario (22/09/2026)
+
+Decisión del dueño (no reabrir): el calendario se puede ver **Todo · Planta
+alta · Planta baja · Sin ubicar** (`ZoneFilterControl`, un fieldset con radios
+nativos debajo del título del mes). Vive en la URL como `?planta=alta|baja|sin`
+(`calendarParamsSchema`, con `.catch`: un valor raro es «Todo») y se cambia con
+`replaceState`, así que no ensucia el Atrás. Abrir un día, las flechas entre
+días, cerrar el día y cambiar de mes lo conservan.
+
+- **Con una planta**, el mes y el día muestran solo la gente de esa planta en
+  cada servicio contra el **cupo de la planta** (`tenants.settings.salon_capacities`,
+  «Cupo general por planta» en Configuración; en el HUB PA 60 / PB 70): con
+  Planta alta el 10/09 dice «Cena 46/60» y la leyenda cambia a «Planta alta ·
+  personas / cupo de la planta (60)». La cuenta es `zoneLoad`
+  (`lib/salon/segments.ts`) y los textos, `segments-copy.ts`: rojo si
+  personas > cupo, ámbar desde el 90 % (lleno justo es ámbar, «Planta Alta
+  llena»), verde el resto. Cumples y tortas del chip y de la agenda también
+  cuentan solo esa planta.
+- **La planta la dice la zona real**, también para las reservas de evento con
+  planta (ver la sección siguiente): 29 personas de Pizza libre en Planta Alta
+  suman en PA.
+- **«Sin ubicar»** = reservas de evento sin planta (`zone = event_floating`).
+  No tiene cupo: muestra personas sin semáforo («Cena 22»).
+- **El cupo del servicio no cambia.** El filtro es una lente: la vista del día
+  filtrada agrega una línea con el servicio entero («Toda la cena: 119/120»)
+  para que «Quedan 14 lugares en Planta Alta» no invite a vender lugares que la
+  cena no tiene, y esconde lo que es del servicio entero («Subir a N», la nota
+  del evento que se lleva el servicio). Si el servicio recorta la planta
+  (cerrado con cupo 0, o con menos cupo que ella), manda el servicio: dice
+  «Cerrado» con su motivo («Cupo especial: evento privado»), o la línea del
+  servicio entero aunque esté vacío (`zoneSectionCopy`).
+- **Vista del día filtrada:** chip «Viendo Planta alta · Ver todo»; las filas
+  son solo las de esa planta; las tarjetas de evento dicen cuántos de ese
+  evento están en la planta («29 personas en Planta Alta»). «Ver todo» limpia
+  el filtro también del mes: cerrar con la X o con el Atrás vuelve al mes sin
+  filtro, y el historial no guarda debajo el mes filtrado. Si desde la vista
+  rápida se le cambia la planta a una reserva, su fila queda (con la planta
+  nueva) hasta cerrar el popup.
+- **Cuándo se pierde el filtro, a propósito:** al abrir un resultado del
+  buscador y al volver del alta o la ficha (`reservationSavedHref` arma el link
+  sin `planta`), para que la reserva buscada o recién cargada siempre se vea
+  aunque esté en otra planta.
+- Si el bar no cargó cupo por planta (PA + PB = 0), el filtro igual filtra y
+  muestra personas sin semáforo.
+
+### Planta dentro de un evento (22/09/2026)
+
+Decisión del dueño (no reabrir): al reservar **adentro** de un evento (Pizza
+libre, Ratatuille…) se puede elegir, **si hace falta**, Planta Alta o Planta
+Baja. En datos es `zone = planta_alta | planta_baja` **con**
+`scheduled_event_id`; sin elegir queda `zone = event_floating` («Sin ubicar»),
+como siempre. El schema y el check de la DB ya lo permitían (solo rechazan
+`event_floating` sin evento); lo impedía un efecto del form que borraba el
+evento apenas la zona era una planta.
+
+**La regla:** «es de evento» lo dice `scheduled_event_id`, **nunca la zona**
+(`isEventReservation` en `lib/salon/event-floor.ts`). El cupo por servicio no
+cambia: la reserva cuenta en el evento por su id (R5), tenga o no planta. La
+planta solo dice dónde se sienta (y suma en el filtro de planta).
+
+- **Alta / ficha** (`reservation-form.tsx`): con un evento elegido aparece
+  «¿Dónde se sientan? (opcional)» con Sin definir · Planta Alta · Planta Baja
+  (radios nativos) y cuánta gente del servicio ya hay en cada planta. Tocar un
+  evento arranca en «Sin definir» (volver a tocar el mismo evento conserva la
+  planta); tocar una tarjeta de planta suelta la convierte en reserva normal;
+  «Sacarla del evento» conserva la planta elegida. Todo pasa en el
+  onClick/onChange, sin `setValue` dentro de un efecto.
+- **Vista rápida:** en una reserva de evento el chip de zona ofrece Sin
+  definir / Planta Alta / Planta Baja sin sacarla del evento (`zoneChoicesFor`);
+  en una normal, las dos plantas de siempre.
+- **Cómo se nombra:** una sola función, `placeLabel`
+  (`lib/salon/place-label.ts`): «Pizza libre · Planta Alta», «Pizza libre» o
+  «Planta Baja». La usan la lista, la vista del día del calendario, la vista
+  rápida, el operativo (tarjeta y panel) y la fila del salón del staff (que
+  antes no decía dónde).
+- **«Sin ubicar»** (`UNPLACED_LABEL`, un solo string) reemplaza a «En eventos» /
+  «En evento» / «Sujeta a evento» en el pulso del operativo, el corte por zona
+  de la lista, su filtro de zona y el filtro de planta del calendario.
+- **CSV:** la columna Zona trae solo la planta (Planta Alta / Planta Baja / Sin
+  ubicar) y el evento sigue en su columna Evento, para poder filtrar por planta
+  en Excel sin perder las reservas de evento.
+- **Modo rango de la lista** («… cubiertos (50 salón · 30 eventos)»):
+  `tallyRangeTotals` separa por `scheduled_event_id`; antes separaba por zona y
+  una reserva de evento con planta caía en «salón».
+
+### Smoke manual — cupo por servicio y las dos puertas
 
 1. `/hub/eventos/programados?month=2026-09` a 1280 px: el 10/09 dice
    `Alm 19/70 · Mer 33/120 · Cena 119/120`, la cena en ámbar; nunca un total del
@@ -233,29 +353,77 @@ prefijo `reservas` en el proxy, sin el cual perdería el alta y la ficha. En ⌘
    se lleva toda la cena de 120».
 3. Tocar la cena del 10/09 → se abre el día anclado en la cena, la URL tiene
    `?day=2026-09-10&seg=dinner`; el Atrás del navegador lo cierra.
-4. En el día, «Nueva reserva en la merienda» → el form arranca en Merienda a las
-   15:30. Cambiar la hora a 21:00 → aparece «Pasó a Cena».
-5. Cargar una normal de 4 en la cena del 10/09 → AlertDialog «Te pasás del cupo
-   de la cena» → «Cargar igual» → vuelve al día con la fila resaltada y el
-   toast «Reserva cargada · Cena · 123 de 120».
-6. Tocar un evento futuro en el mes → abre `/reservas/nuevo?date=…&event=…`
-   con el evento elegido y el servicio deshabilitado («El servicio lo define el
-   evento»). En escritorio, arrastrar el mismo evento a otro día lo mueve.
+4. En el día, «Nueva reserva en la merienda» → la URL termina en
+   `&volver=calendario`, el form arranca en Merienda a las 15:30 y el encabezado
+   dice «Volver al calendario». Cambiar la hora a 21:00 → aparece «Pasó a Cena».
+5. Cargar una normal de 4 en la cena del 10/09 desde el día → AlertDialog «Te
+   pasás del cupo de la cena» → «Cargar igual» → vuelve **al día del
+   calendario** con la fila resaltada y el toast «Reserva cargada · Cena · 123
+   de 120».
+6. Tocar un evento futuro en el mes → abre
+   `/reservas/nuevo?date=…&event=…&volver=calendario` con el evento elegido y el
+   servicio deshabilitado («El servicio lo define el evento»). En escritorio,
+   arrastrar el mismo evento a otro día lo mueve.
 7. Como owner, un jueves con 50+ al mediodía → «Conviene abrir la terraza» +
    «Subir a 120 hoy» → el almuerzo pasa a 120 y el toast ofrece Deshacer.
-8. `/hub/reservas?day=2026-09-10&nueva={id}` → termina en
-   `/hub/eventos/programados?month=2026-09&day=2026-09-10&res={id}` con el día
-   abierto y la fila resaltada. `/hub/reservas?q=lopez` abre el buscador con
-   «lopez».
-9. Login como host → cae en `/hub/eventos/programados` (el tour `eventos@2` se
-   lanza solo); abre `/hub/reservas/nuevo` y `/hub/reservas/{id}` sin rebote, y
-   el sidebar resalta Calendario.
-10. ⌘K → «reserva» encuentra Calendario y Nueva reserva; Nueva reserva abre el
-    día de hoy.
-11. `/hub/configuracion/salon` → guardar la grilla, vaciar una celda (vuelve al
+8. Sidebar → **Reservas** (antes de Calendario) → `/hub/reservas` es la lista
+   (no redirige). En `?day=2026-09-10` el contador dice `Alm 19/70 · Mer 33/120
+   · Cena 119/120` (el mismo semáforo que el calendario), nunca «Cubiertos
+   171/130». «Esta semana» → la barra da reservas y cubiertos del período, sin
+   tope. Filtro de zona «Sin ubicar» → solo reservas de evento sin planta.
+9. En la lista, «Nueva reserva» → el encabezado dice «Volver a reservas»;
+   guardar → `/hub/reservas?day=D&nueva={id}` con el aviso «Reserva de … creada»
+   y la fila resaltada. «Abrir reserva» → la ficha; guardar → `/hub/reservas?day=D`.
+10. En el calendario, vista rápida de una reserva → «Edición completa» → la
+    ficha con `?volver=calendario`; guardar → el día del calendario con la fila
+    resaltada. Lo mismo desde «Editar» del buscador. Desde `/hub/operativo`, la
+    ficha vuelve a la lista.
+11. Login como host → cae en `/hub/reservas` (el tour `reservas@2` no se relanza
+    si ya lo vio); abre el calendario, `/hub/reservas/nuevo` y
+    `/hub/reservas/{id}` sin rebote, y el sidebar resalta Reservas en el alta y
+    la ficha.
+12. ⌘K → «reserva» encuentra Reservas, Nueva reserva y Calendario; Nueva
+    reserva abre `/hub/reservas/nuevo`.
+13. `/hub/configuracion/salon` → guardar la grilla, vaciar una celda (vuelve al
     cupo general), agregar y borrar un cupo especial.
-12. `/hub/operativo` y `/hub/salon/reservas-operativo` → un chip por servicio
+14. `/hub/operativo` y `/hub/salon/reservas-operativo` → un chip por servicio
     (el del reloj primero), sin «del salón» ni «Total».
+
+**Filtro de planta** (a 360 px y en escritorio):
+
+15. `/hub/eventos/programados?month=2026-09` → el filtro «Ver por planta» está
+    debajo del título del mes, sin scroll horizontal a 360 px. «Planta alta» →
+    la URL suma `?planta=alta` sin entrada nueva en el historial, la leyenda
+    dice «… cupo de la planta (60)», el 19/09 muestra `C 76/60` en rojo y el
+    10/09 `C 46/60`.
+16. Tocar un servicio → el día abre con «Viendo Planta alta · Ver todo», solo
+    filas de PA, las tarjetas de evento con «N personas en Planta Alta» y la
+    línea «Toda la cena: …». Las flechas entre días y cambiar de mes conservan
+    el filtro. «Ver todo» lo saca del día y, al cerrar, también del mes; el
+    Atrás del celu después de «Ver todo» cierra el día al mes sin filtro, y
+    otro Atrás ya no vuelve al mes filtrado. En la vista rápida de una reserva de PA,
+    cambiarla a Planta Baja no cierra el popup; al cerrarlo, la fila se va.
+17. «Sin ubicar» → conteos tipo «Cena 91» sin semáforo; en el día, solo
+    reservas de evento sin planta.
+
+**Planta dentro de un evento:**
+
+18. Desde el calendario, «Reservar en Pizza libre» → el form muestra «¿Dónde
+    se sientan? (opcional)» en Sin definir, con la gente de cada planta en ese
+    servicio (a 360 px, las tres opciones entran). Elegir Planta Alta y
+    guardar → vuelve al día del calendario.
+19. La reserva se lee «Pizza libre · Planta Alta» en la vista del día, la
+    lista, la vista rápida, `/hub/operativo` y el salón del staff. El chip de
+    la cena **no cambia** respecto de cargarla en Sin definir (cuenta en el
+    evento); con el filtro «Planta alta», sí suma en PA.
+20. Abrir la ficha → la tarjeta del evento activa («Evento · Planta Alta») y
+    Planta Alta marcada. Tocar la tarjeta suelta Planta Baja → pasa a reserva
+    normal (sin evento).
+21. En la vista rápida de una reserva de evento, el chip de zona cambia entre
+    Sin definir / Planta Alta / Planta Baja sin sacarla del evento.
+22. Exportar el mes → la reserva tiene Zona = Planta Alta y Evento = Pizza
+    libre; una de evento sin planta, Zona = Sin ubicar. En la lista, «Este mes»
+    → la reserva suma en «eventos», no en «salón».
 
 ### Estado de la reserva — máquina
 
@@ -460,8 +628,9 @@ Antes de mergear, verificar localmente:
   `/reservas/[id]`. Los controles viven en `components/reservations/`.
 - **Vista por día**: `/reservas` usa el param `?day=YYYY-MM-DD` (default hoy) con
   stepper de flechas + "Hoy" + contador de cubiertos. El rango (`from`/`to`)
-  queda como filtro avanzado. *(Retirada en 09/2026: la lista redirige al
-  calendario. Ver «Cupo por servicio».)*
+  queda como filtro avanzado. *(El 21/09/2026 la lista se ocultó detrás del
+  calendario y el 22/09 volvió al menú; el contador de cubiertos del día pasó a
+  ser por servicio. Ver «Dos puertas: la lista y el calendario».)*
 - **Calendario**: `/eventos/programados` muestra un badge `used/total` por día y
   un popup (`DayReservationsDialog`) con el listado completo de reservas del día
   y el desglose de capacidad. Capacidad mensual: `getMonthCapacity` +
@@ -479,10 +648,10 @@ Tres pedidos del dueño del HUB, con el mismo diagnóstico de fondo: **la agenda
 mostraba todo al mismo nivel y lo importante se perdía adentro**.
 
 > **Nota 09/2026:** la lista `/reservas`, sus chips `?servicio=`,
-> `ServiceSummary` y `DayHighlights` (el componente) se retiraron con el cupo
-> por servicio: el corte ahora vive en la vista del día del calendario (ver
-> «Cupo por servicio»). `groupByService` y `buildDayHighlights` siguen vivos
-> para `/operativo`. Lo que sigue queda como registro de la decisión.
+> `ServiceSummary` y `DayHighlights` (el componente) se retiraron el 21/09 con
+> el cupo por servicio y **volvieron el 22/09** junto con la lista (ver «Dos
+> puertas: la lista y el calendario»). Lo único que cambió de lo que sigue es
+> el contador del día, que ahora es por servicio contra el cupo de cada uno.
 
 ### 1. La agenda cortada por servicio
 
