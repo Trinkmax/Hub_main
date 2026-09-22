@@ -5,6 +5,7 @@ import {
   currentSegment,
   type DaySegmentsSnapshot,
   dayCelebrations,
+  dayHasZoneActivity,
   eventLoadsById,
   eventSegmentMap,
   focusSegment,
@@ -12,7 +13,9 @@ import {
   isoDowOf,
   isSegmentConfigured,
   isSegmentKey,
+  isZoneFilter,
   mealTypeForSegment,
+  NO_ZONE_CAPS,
   projectReservation,
   type ReservationCandidate,
   resolveDaySegmentCaps,
@@ -26,6 +29,11 @@ import {
   segmentOfTime,
   suggestedCapacityRaise,
   VIRTUAL_EVENT_ID,
+  ZONE_FILTERS,
+  type ZoneCaps,
+  zoneCapacity,
+  zoneLoad,
+  zoneOfFilter,
 } from '@/lib/salon/segments'
 
 // ──────────────────────────────────────────────────────────
@@ -1022,5 +1030,194 @@ describe('projectReservation', () => {
     const before = JSON.stringify(snap)
     projectReservation(snap, candidate({ id: 'n16', guests: 40 }))
     expect(JSON.stringify(snap)).toBe(before)
+  })
+})
+
+// ──────────────────────────────────────────────────────────
+// Plantas: el filtro de planta del calendario (22/09/2026)
+// ──────────────────────────────────────────────────────────
+
+/** El «Cupo general por planta» del HUB en Configuración. */
+const HUB_ZONE_CAPS: ZoneCaps = { planta_alta: 60, planta_baja: 70 }
+
+describe('zonas por servicio (zones)', () => {
+  it('10/09: la cena reparte por la zona REAL; canceladas y "no vino" no suman', () => {
+    const { reservations, events } = sep10()
+    const d = day('2026-09-10', reservations, events)
+    expect(d.segments.dinner.zones).toEqual({
+      planta_alta: { people: 46, reservations: 3, birthdays: 2, cakes: 0 },
+      planta_baja: { people: 0, reservations: 0, birthdays: 0, cakes: 0 },
+      event_floating: { people: 73, reservations: 3, birthdays: 1, cakes: 1 },
+    })
+    expect(d.segments.tea_time.zones.planta_baja).toEqual({
+      people: 33,
+      reservations: 2,
+      birthdays: 0,
+      cakes: 0,
+    })
+  })
+
+  it('21/09: las de Pizza libre sentadas en PA cuentan en PA (y en el evento, no como normales)', () => {
+    const { date, reservations, events } = sep21()
+    const s = day(date, reservations, events).segments.dinner
+    expect(s.zones.planta_alta).toEqual({ people: 29, reservations: 2, birthdays: 2, cakes: 2 })
+    expect(s.zones.planta_baja.people).toBe(11)
+    expect(s.zones.event_floating.people).toBe(89)
+    // El cupo del servicio no cambia: siguen siendo del evento.
+    expect(s.eventUsed).toBe(118)
+    expect(s.normalUsed).toBe(11)
+  })
+
+  it('byZone es exactamente las personas de zones (lo leen el form y el operativo)', () => {
+    const { date, reservations, events } = sep21()
+    const s = day(date, reservations, events).segments.dinner
+    expect(s.byZone).toEqual({
+      planta_alta: s.zones.planta_alta.people,
+      planta_baja: s.zones.planta_baja.people,
+      event_floating: s.zones.event_floating.people,
+    })
+  })
+
+  it('cada evento sabe cuántos de los suyos van en cada planta', () => {
+    const { date, reservations, events } = sep21()
+    const [load] = day(date, reservations, events).segments.dinner.events
+    expect(load?.byZone).toEqual({ planta_alta: 29, planta_baja: 0, event_floating: 89 })
+  })
+
+  it('una zona que no está en el enum no suma a ninguna planta ni rompe el servicio', () => {
+    const rows = [res({ estimated_guests: 4, zone: 'terraza' as never })]
+    const s = day('2026-09-10', rows, []).segments.dinner
+    expect(s.people).toBe(4)
+    expect(s.zones.planta_alta.people + s.zones.planta_baja.people).toBe(0)
+    expect(s.zones.event_floating.people).toBe(0)
+  })
+})
+
+describe('zoneCapacity', () => {
+  it('la planta usa su cupo; la flotante nunca tiene tope', () => {
+    expect(zoneCapacity('planta_alta', HUB_ZONE_CAPS)).toBe(60)
+    expect(zoneCapacity('planta_baja', HUB_ZONE_CAPS)).toBe(70)
+    expect(zoneCapacity('event_floating', HUB_ZONE_CAPS)).toBeNull()
+  })
+
+  it('0, negativo o ilegible = sin tope (el bar no lo cargó), nunca "cerrado"', () => {
+    expect(zoneCapacity('planta_alta', NO_ZONE_CAPS)).toBeNull()
+    expect(zoneCapacity('planta_alta', { planta_alta: -5, planta_baja: 70 })).toBeNull()
+    expect(zoneCapacity('planta_alta', { planta_alta: Number.NaN, planta_baja: 70 })).toBeNull()
+  })
+})
+
+describe('zoneLoad', () => {
+  function dinnerWithPa(guests: number) {
+    return day('2026-09-10', [res({ zone: 'planta_alta', estimated_guests: guests })], []).segments
+      .dinner
+  }
+
+  it('21/09 cena en PA: 29/60, ok, con los 2 cumples y 2 tortas del evento', () => {
+    const { date, reservations, events } = sep21()
+    const z = zoneLoad(
+      day(date, reservations, events).segments.dinner,
+      'planta_alta',
+      HUB_ZONE_CAPS,
+    )
+    expect(z).toEqual({
+      segment: 'dinner',
+      zone: 'planta_alta',
+      people: 29,
+      capacity: 60,
+      status: 'ok',
+      reservations: 2,
+      birthdays: 2,
+      cakes: 2,
+      hasActivity: true,
+    })
+  })
+
+  it('semáforo: ámbar desde el 90 % (54 de 60), rojo recién al pasarse', () => {
+    expect(zoneLoad(dinnerWithPa(53), 'planta_alta', HUB_ZONE_CAPS).status).toBe('ok')
+    expect(zoneLoad(dinnerWithPa(54), 'planta_alta', HUB_ZONE_CAPS).status).toBe('warn')
+    expect(zoneLoad(dinnerWithPa(60), 'planta_alta', HUB_ZONE_CAPS).status).toBe('warn')
+    expect(zoneLoad(dinnerWithPa(61), 'planta_alta', HUB_ZONE_CAPS).status).toBe('over')
+  })
+
+  it('la flotante (Sin ubicar) no tiene cupo: siempre ok, aunque haya 89', () => {
+    const { date, reservations, events } = sep21()
+    const z = zoneLoad(
+      day(date, reservations, events).segments.dinner,
+      'event_floating',
+      HUB_ZONE_CAPS,
+    )
+    expect(z).toMatchObject({ people: 89, capacity: null, status: 'ok', hasActivity: true })
+  })
+
+  it('sin cupo por planta cargado (PA + PB = 0): filtra y cuenta, sin semáforo', () => {
+    const z = zoneLoad(dinnerWithPa(500), 'planta_alta', NO_ZONE_CAPS)
+    expect(z).toMatchObject({ people: 500, capacity: null, status: 'ok' })
+  })
+
+  it('una planta vacía no tiene actividad (el mes no la dibuja)', () => {
+    const z = zoneLoad(dinnerWithPa(10), 'planta_baja', HUB_ZONE_CAPS)
+    expect(z).toMatchObject({ people: 0, capacity: 70, status: 'ok', hasActivity: false })
+  })
+
+  it('no toca el cupo del servicio: la misma cena sigue en su semáforo', () => {
+    const s = dinnerWithPa(61)
+    zoneLoad(s, 'planta_alta', HUB_ZONE_CAPS)
+    expect(s.capacity).toBe(120)
+    expect(s.status).toBe('ok')
+  })
+})
+
+describe('filtro de planta (?planta)', () => {
+  it('alta, baja y sin; cada uno con su zona', () => {
+    expect(ZONE_FILTERS).toEqual(['alta', 'baja', 'sin'])
+    expect(zoneOfFilter('alta')).toBe('planta_alta')
+    expect(zoneOfFilter('baja')).toBe('planta_baja')
+    expect(zoneOfFilter('sin')).toBe('event_floating')
+  })
+
+  it('isZoneFilter solo acepta los tres valores', () => {
+    expect(isZoneFilter('alta')).toBe(true)
+    expect(isZoneFilter('todo')).toBe(false)
+    expect(isZoneFilter('planta_alta')).toBe(false)
+    expect(isZoneFilter(undefined)).toBe(false)
+  })
+})
+
+describe('el día filtrado por planta', () => {
+  it('dayCelebrations con zona: solo los festejos de esa planta', () => {
+    const { reservations, events } = sep10()
+    const d = day('2026-09-10', reservations, events)
+    expect(dayCelebrations(d)).toEqual({ birthdays: 3, cakes: 1 })
+    expect(dayCelebrations(d, 'planta_alta')).toEqual({ birthdays: 2, cakes: 0 })
+    expect(dayCelebrations(d, 'event_floating')).toEqual({ birthdays: 1, cakes: 1 })
+    expect(dayCelebrations(d, 'planta_baja')).toEqual({ birthdays: 0, cakes: 0 })
+    expect(dayCelebrations(d, null)).toEqual({ birthdays: 3, cakes: 1 })
+  })
+
+  it('dayHasZoneActivity: 22/09 (todo sin planta) no tiene nadie en PA', () => {
+    const { date, reservations, events } = sep22()
+    const d = day(date, reservations, events)
+    expect(dayHasZoneActivity(d, 'planta_alta')).toBe(false)
+    expect(dayHasZoneActivity(d, 'event_floating')).toBe(true)
+  })
+
+  it('computeMonthSegments trae el cupo de cada planta; sin el dato, sin tope', () => {
+    const withCaps = computeMonthSegments({
+      ym: '2026-09',
+      reservations: [],
+      events: [],
+      config: { ...HUB_CONFIG, zoneCaps: HUB_ZONE_CAPS },
+    })
+    expect(withCaps.zoneCaps).toEqual({ planta_alta: 60, planta_baja: 70 })
+    const without = computeMonthSegments({
+      ym: '2026-09',
+      reservations: [],
+      events: [],
+      config: HUB_CONFIG,
+    })
+    expect(without.zoneCaps).toEqual({ planta_alta: 0, planta_baja: 0 })
+    // Copia, no la constante compartida: mutarla no cambia NO_ZONE_CAPS.
+    expect(without.zoneCaps).not.toBe(NO_ZONE_CAPS)
   })
 })

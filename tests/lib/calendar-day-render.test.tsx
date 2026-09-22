@@ -4,13 +4,17 @@ import { renderToString } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CalendarTabs } from '@/app/(manager)/[tenantSlug]/eventos/programados/_components/calendar-tabs'
 import { DaySegmentSection } from '@/app/(manager)/[tenantSlug]/eventos/programados/_components/day-segment-section'
+import { MonthDaySegments } from '@/app/(manager)/[tenantSlug]/eventos/programados/_components/month-day-segments'
+import { ZoneFilterControl } from '@/app/(manager)/[tenantSlug]/eventos/programados/_components/zone-filter-control'
 import { ReservationQuickView } from '@/components/reservations/reservation-quick-view'
 import {
   computeDaySegments,
   type DaySegmentCaps,
   type MonthSegments,
   type ResolvedSegmentCap,
+  type SegmentEventInput,
   type SegmentLoad,
+  type ZoneCaps,
 } from '@/lib/salon/segments'
 import type { ReservationWithJoins } from '@/lib/salon/types'
 
@@ -282,5 +286,352 @@ describe('CalendarTabs · un día pedido deja el Calendario a la vista', () => {
     const html = renderTabs('eventos')
     expect(html).toContain('MES-DEL-CALENDARIO')
     expect(html).not.toContain('EDITOR-DE-FORMATOS')
+  })
+})
+
+// ──────────────────────────────────────────────────────────
+// Filtro de planta (decisión del dueño, 22/09/2026)
+// ──────────────────────────────────────────────────────────
+
+const HUB_ZONE_CAPS: ZoneCaps = { planta_alta: 60, planta_baja: 70 }
+
+// Lun 21/09: Pizza libre a las 21, con 2 mesas del evento sentadas en PA, una
+// del evento todavía sin planta y una normal en PB.
+const PIZZA_21: SegmentEventInput = {
+  id: 'bbbbbbbb-0000-4000-8000-000000000021',
+  event_date: '2026-09-21',
+  starts_at_local: '21:00:00',
+  capacity: 140,
+  name_override: null,
+  template: { name: 'Pizza libre', color_hex: '#e11d48' },
+}
+const ID = (n: number) => `cccccccc-0000-4000-8000-00000000000${n}`
+const DINNER_21_ROWS = [
+  reservation({
+    id: ID(1),
+    guest_name: 'Cumple Sofi',
+    reservation_date: '2026-09-21',
+    reservation_time_local: '21:00:00',
+    meal_type: 'dinner',
+    zone: 'planta_alta',
+    scheduled_event_id: PIZZA_21.id,
+    estimated_guests: 15,
+    kind: 'birthday',
+    cake_count: 1,
+  }),
+  reservation({
+    id: ID(2),
+    guest_name: 'Mesa Gómez',
+    reservation_date: '2026-09-21',
+    reservation_time_local: '21:30:00',
+    meal_type: 'dinner',
+    zone: 'planta_alta',
+    scheduled_event_id: PIZZA_21.id,
+    estimated_guests: 14,
+  }),
+  reservation({
+    id: ID(3),
+    guest_name: 'Grupo Flotante',
+    reservation_date: '2026-09-21',
+    reservation_time_local: '21:00:00',
+    meal_type: 'dinner',
+    zone: 'event_floating',
+    scheduled_event_id: PIZZA_21.id,
+    estimated_guests: 50,
+  }),
+  reservation({
+    id: ID(4),
+    guest_name: 'Normal PB',
+    reservation_date: '2026-09-21',
+    reservation_time_local: '21:00:00',
+    meal_type: 'dinner',
+    zone: 'planta_baja',
+    estimated_guests: 11,
+  }),
+]
+const DAY_21 = computeDaySegments({
+  date: '2026-09-21',
+  reservations: DINNER_21_ROWS,
+  events: [PIZZA_21],
+  caps: THU_CAPS,
+})
+
+function renderDinner21(
+  zone: 'planta_alta' | 'planta_baja' | 'event_floating' | null,
+  openReservationId: string | null = null,
+): string {
+  return text(
+    renderToString(
+      createElement(DaySegmentSection, {
+        tenantSlug: 'hub',
+        date: '2026-09-21',
+        dayLabel: 'lun 21/09',
+        isoDow: 1,
+        segment: DAY_21.segments.dinner,
+        defaultTime: '21:00',
+        reservations: DINNER_21_ROWS,
+        canBook: true,
+        canRaise: true,
+        isToday: false,
+        suggestedRaise: null,
+        zone,
+        zoneCaps: HUB_ZONE_CAPS,
+        raising: false,
+        focusReservationId: null,
+        openReservationId,
+        onOpenReservation: () => {},
+        onRaise: () => {},
+      }),
+    ),
+  )
+}
+
+describe('DaySegmentSection · filtro de planta', () => {
+  it('sin filtro: todas las filas y el dónde con placeLabel (evento + planta)', () => {
+    const html = renderDinner21(null)
+    for (const n of [1, 2, 3, 4]) expect(html).toContain(`id="dia-res-${ID(n)}"`)
+    expect(html).toContain('Pizza libre · Planta Alta')
+    expect(html).toContain('Planta Baja')
+    expect(html).toContain('Cena · 90 de 120')
+    expect(html).not.toContain('Toda la cena')
+  })
+
+  it('Planta alta: chip de la planta, solo sus filas y cuántos del evento van ahí', () => {
+    const html = renderDinner21('planta_alta')
+    expect(html).toContain('Cena · Planta Alta · 29 de 60')
+    expect(html).toContain('Quedan 31 lugares en Planta Alta')
+    expect(html).toContain(`id="dia-res-${ID(1)}"`)
+    expect(html).toContain(`id="dia-res-${ID(2)}"`)
+    expect(html).not.toContain(`id="dia-res-${ID(3)}"`)
+    expect(html).not.toContain(`id="dia-res-${ID(4)}"`)
+    expect(html).toContain('aria-label="Reservas de la cena · Planta Alta"')
+    // La tarjeta del evento queda y dice cuántos de Pizza libre van en PA.
+    expect(html).toContain('Reservar en Pizza libre')
+    expect(html).toContain('29 personas en Planta Alta')
+    // El servicio entero como contexto.
+    expect(html).toContain('Toda la cena: 90/120')
+  })
+
+  it('Sin ubicar: las del evento sin planta, sin cupo', () => {
+    const html = renderDinner21('event_floating')
+    expect(html).toContain('Cena · Sin ubicar · 50')
+    expect(html).toContain('50 personas sin planta')
+    expect(html).toContain(`id="dia-res-${ID(3)}"`)
+    expect(html).not.toContain(`id="dia-res-${ID(1)}"`)
+  })
+
+  it('Planta baja: el evento no tiene a nadie ahí', () => {
+    const html = renderDinner21('planta_baja')
+    expect(html).toContain('Cena · Planta Baja · 11 de 70')
+    expect(html).toContain('Nadie en Planta Baja')
+    expect(html).toContain(`id="dia-res-${ID(4)}"`)
+  })
+
+  it('«Subir a N» es del servicio entero: con planta no aparece', () => {
+    const html = text(
+      renderToString(
+        createElement(DaySegmentSection, {
+          tenantSlug: 'hub',
+          date: '2026-09-25',
+          dayLabel: 'jue 25/09',
+          isoDow: 4,
+          segment: LUNCH_WARN,
+          defaultTime: '13:00',
+          reservations: LUNCH_ROWS,
+          canBook: true,
+          canRaise: true,
+          isToday: false,
+          suggestedRaise: 120,
+          zone: 'planta_baja',
+          zoneCaps: HUB_ZONE_CAPS,
+          raising: false,
+          focusReservationId: null,
+          openReservationId: null,
+          onOpenReservation: () => {},
+          onRaise: () => {},
+        }),
+      ),
+    )
+    expect(html).not.toContain('Subir a')
+    expect(html).toContain('Almuerzo · Planta Baja · 52 de 70')
+  })
+})
+
+describe('DaySegmentSection · la vista rápida abierta sobrevive al filtro', () => {
+  it('una reserva que ya no es de la planta se queda mientras su popup está abierto', () => {
+    // Con el día en «Planta baja», a Cumple Sofi le cambiaron la zona a Planta
+    // Alta desde su vista rápida: la fila (y el popup montado en ella) no se
+    // desmonta de golpe mientras está abierta.
+    const html = renderDinner21('planta_baja', ID(1))
+    expect(html).toContain(`id="dia-res-${ID(1)}"`)
+    expect(rowExpanded(html, ID(1))).toBe('true')
+    // Las demás de otra planta siguen afuera.
+    expect(html).not.toContain(`id="dia-res-${ID(2)}"`)
+    expect(html).toContain(`id="dia-res-${ID(4)}"`)
+  })
+
+  it('cerrado el popup, la fila se va', () => {
+    expect(renderDinner21('planta_baja', null)).not.toContain(`id="dia-res-${ID(1)}"`)
+  })
+})
+
+describe('DaySegmentSection · servicio cerrado con planta', () => {
+  // Jue 25/09 con el almuerzo cerrado por un cupo especial 0 y sin reservas.
+  const CLOSED_LUNCH = computeDaySegments({
+    date: '2026-09-25',
+    reservations: [],
+    events: [],
+    caps: {
+      ...THU_CAPS,
+      lunch: {
+        capacity: 0,
+        warnAt: null,
+        warnNote: null,
+        source: 'override',
+        overrideReason: 'evento privado',
+      },
+    },
+  }).segments.lunch
+
+  function renderClosed(zone: 'planta_alta' | null): string {
+    return text(
+      renderToString(
+        createElement(DaySegmentSection, {
+          tenantSlug: 'hub',
+          date: '2026-09-25',
+          dayLabel: 'jue 25/09',
+          isoDow: 4,
+          segment: CLOSED_LUNCH,
+          defaultTime: '13:00',
+          reservations: [],
+          canBook: true,
+          canRaise: true,
+          isToday: false,
+          suggestedRaise: null,
+          zone,
+          zoneCaps: HUB_ZONE_CAPS,
+          raising: false,
+          focusReservationId: null,
+          openReservationId: null,
+          onOpenReservation: () => {},
+          onRaise: () => {},
+        }),
+      ),
+    )
+  }
+
+  it('con Planta alta dice «Cerrado» y el motivo, no «Quedan 60 lugares»', () => {
+    const html = renderClosed('planta_alta')
+    expect(html).toContain('Cerrado')
+    expect(html).toContain('Cupo especial: evento privado')
+    expect(html).not.toContain('Quedan 60 lugares')
+    expect(html).not.toContain('Todo el almuerzo')
+  })
+
+  it('sin filtro, lo mismo que antes', () => {
+    const html = renderClosed(null)
+    expect(html).toContain('Cerrado')
+    expect(html).toContain('Cupo especial: evento privado')
+  })
+})
+
+describe('MonthDaySegments · filtro de planta', () => {
+  function month(
+    zone: 'planta_alta' | 'event_floating' | null,
+    variant: 'cell' | 'agenda',
+    caps: ZoneCaps = HUB_ZONE_CAPS,
+  ): string {
+    return text(
+      renderToString(
+        createElement(MonthDaySegments, {
+          day: DAY_21,
+          variant,
+          dayLabel: 'lunes 21 de septiembre',
+          zone,
+          zoneCaps: caps,
+          onOpenSegment: () => {},
+        }),
+      ),
+    )
+  }
+
+  it('Todo: la vista por servicio de siempre', () => {
+    const cell = month(null, 'cell')
+    expect(cell).toContain('C 90/120')
+    expect(cell).not.toContain('/60')
+  })
+
+  it('Planta alta en la celda: personas de PA contra 60 y sus festejos', () => {
+    const cell = month('planta_alta', 'cell')
+    expect(cell).toContain('C 29/60')
+    expect(cell).toContain('Cena 29/60')
+    expect(cell).toContain('1 cumple · 1 torta')
+    expect(cell).toContain(
+      'aria-label="Cena, lunes 21 de septiembre, Planta Alta: 29 de 60 personas. Quedan 31 lugares en Planta Alta. 1 cumple, 1 torta."',
+    )
+    expect(cell).not.toContain('120')
+  })
+
+  it('Sin ubicar en la agenda: el chip sin tope', () => {
+    const agenda = month('event_floating', 'agenda')
+    expect(agenda).toContain('Cena 50')
+    expect(agenda).toContain('<button type="button"')
+  })
+
+  it('sin cupo por planta: filtra igual y muestra personas sin semáforo', () => {
+    const cell = month('planta_alta', 'cell', { planta_alta: 0, planta_baja: 0 })
+    expect(cell).toContain('C 29')
+    expect(cell).not.toContain('C 29/')
+    expect(cell).not.toContain('text-destructive')
+  })
+
+  it('una planta sin gente no dibuja nada', () => {
+    const empty = computeDaySegments({
+      date: '2026-09-21',
+      reservations: [DINNER_21_ROWS[3] as ReservationWithJoins],
+      events: [],
+      caps: THU_CAPS,
+    })
+    const out = renderToString(
+      createElement(MonthDaySegments, {
+        day: empty,
+        variant: 'cell',
+        dayLabel: 'lunes 21 de septiembre',
+        zone: 'planta_alta',
+        zoneCaps: HUB_ZONE_CAPS,
+        onOpenSegment: () => {},
+      }),
+    )
+    expect(out).toBe('')
+  })
+})
+
+describe('ZoneFilterControl', () => {
+  function control(value: 'alta' | 'baja' | 'sin' | null): string {
+    return text(renderToString(createElement(ZoneFilterControl, { value, onChange: () => {} })))
+  }
+
+  it('grupo con nombre y las 4 opciones del dueño, en orden', () => {
+    const html = control(null)
+    expect(html).toMatch(/^<fieldset/)
+    expect(html).toContain('<legend class="sr-only">Ver por planta</legend>')
+    const labels = [...html.matchAll(/type="radio"[^>]*\/>([^<]+)<\/label>/g)].map((m) => m[1])
+    expect(labels).toEqual(['Todo', 'Planta alta', 'Planta baja', 'Sin ubicar'])
+    expect(html.match(/type="radio"/g)).toHaveLength(4)
+  })
+
+  it('radios nativos: uno solo marcado, el del valor', () => {
+    const html = control('baja')
+    expect(html.match(/checked=""/g)).toHaveLength(1)
+    expect(html).toMatch(/checked="" value="baja"/)
+    expect(control(null)).toMatch(/checked="" value="todo"/)
+  })
+
+  it('en el celu ocupa el ancho sin scroll; en desktop, su tamaño', () => {
+    const html = control(null)
+    expect(html).toContain('flex w-full')
+    expect(html).toContain('sm:inline-flex sm:w-auto')
+    expect(html).not.toContain('overflow-x')
+    expect(html).toContain('whitespace-nowrap')
   })
 })

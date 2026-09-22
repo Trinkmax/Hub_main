@@ -83,9 +83,14 @@ export default async function ScheduledEventPage({
         actions={
           // Reservar desde el evento: llega al form con el evento, la fecha y
           // la hora ya elegidos (antes había que volver a buscarlo en un combo).
+          // El evento es parte del calendario: al guardar se vuelve al día.
           <Button asChild className="gap-2">
             <Link
-              href={newReservationHref(tenantSlug, { date: event.event_date, eventId: event.id })}
+              href={newReservationHref(tenantSlug, {
+                date: event.event_date,
+                eventId: event.id,
+                from: 'calendario',
+              })}
             >
               <CalendarPlus className="size-4" />
               Nueva reserva

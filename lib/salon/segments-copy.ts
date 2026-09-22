@@ -7,15 +7,24 @@
  * `segments.ts`; si hace falta un número nuevo, va allá, no acá.
  */
 
+import { UNPLACED_LABEL } from './event-floor'
 import {
   type DaySegments,
   type EventSegmentMismatch,
   type IsoDow,
   SEGMENT_KEYS,
+  type SegmentEventLoad,
   type SegmentKey,
   type SegmentLoad,
   type SegmentProjection,
+  type ZoneCaps,
+  type ZoneFilter,
+  type ZoneLoad,
+  zoneCapacity,
+  zoneLoad,
+  zoneOfFilter,
 } from './segments'
+import { type SalonZone, ZONE_LABELS } from './types'
 
 export const SEGMENT_LABELS: Record<SegmentKey, string> = {
   lunch: 'Almuerzo',
@@ -316,4 +325,219 @@ export function overCapacityConfirmCopy(p: SegmentProjection): {
 export function savedToastCopy(mode: 'create' | 'edit', p: SegmentProjection | null): string {
   if (mode === 'edit') return 'Reserva actualizada'
   return p ? `Reserva cargada · ${segmentHeadline(p.after, 'long')}` : 'Reserva cargada'
+}
+
+// ──────────────────────────────────────────────────────────
+// Filtro de planta del calendario (decisión del dueño, 22/09/2026)
+// ──────────────────────────────────────────────────────────
+
+/**
+ * Cómo se nombra cada zona adentro de una frase. Las plantas con mayúscula,
+ * como en el resto del salón ("Planta Alta"); la flotante es «Sin ubicar»:
+ * reservas de evento que todavía no tienen planta.
+ */
+export const ZONE_PLACE_LABELS: Record<SalonZone, string> = {
+  ...ZONE_LABELS,
+  event_floating: UNPLACED_LABEL,
+}
+
+/** Las opciones del filtro, como las dijo el dueño: Todo · Planta alta · Planta baja · Sin ubicar. */
+export const ZONE_FILTER_LABELS: Record<ZoneFilter, string> = {
+  alta: 'Planta alta',
+  baja: 'Planta baja',
+  sin: UNPLACED_LABEL,
+}
+
+/** El rótulo de una opción del filtro; null = sin filtro («Todo»). */
+export function zoneFilterLabel(filter: ZoneFilter | null): string {
+  return filter === null ? 'Todo' : ZONE_FILTER_LABELS[filter]
+}
+
+/** Nombre accesible del grupo de opciones del filtro. */
+export const ZONE_FILTER_GROUP_LABEL = 'Ver por planta'
+
+/**
+ * La leyenda de arriba del mes: dice QUÉ número se está viendo. Sin filtro es
+ * la de siempre; con una planta, que el número es gente de esa planta contra
+ * el cupo de la planta (y cuál es), no contra el del servicio.
+ */
+export function calendarLegend(filter: ZoneFilter | null, caps: Readonly<ZoneCaps>): string {
+  if (filter === null) {
+    return 'Alm · Mer · Cena = personas / cupo de cada servicio · tocá un evento para reservar adentro'
+  }
+  const label = ZONE_FILTER_LABELS[filter]
+  if (filter === 'sin') return `${label} · personas de eventos que todavía no tienen planta`
+  const cap = zoneCapacity(zoneOfFilter(filter), caps)
+  return cap === null
+    ? `${label} · personas (la planta no tiene cupo cargado)`
+    : `${label} · personas / cupo de la planta (${cap})`
+}
+
+/** El chip del día filtrado: «Viendo Planta alta» (al lado va «Ver todo»). */
+export function zoneViewingLabel(filter: ZoneFilter): string {
+  return `Viendo ${ZONE_FILTER_LABELS[filter]}`
+}
+
+/** Nombre accesible del «Ver todo» que saca el filtro. */
+export const ZONE_CLEAR_LABEL = 'Ver todo'
+export const ZONE_CLEAR_ARIA = 'Ver todo el día, sin filtro de planta'
+
+/** 'none' si la zona no tiene gente o no tiene tope (no se pinta semáforo). */
+export function zoneTone(z: ZoneLoad): SegmentTone {
+  if (!z.hasActivity || z.capacity === null) return 'none'
+  return z.status
+}
+
+/** '46/60', o solo las personas si la zona no tiene tope. */
+export function zoneRatio(z: ZoneLoad): string {
+  return z.capacity === null ? `${z.people}` : `${z.people}/${z.capacity}`
+}
+
+/**
+ * El número de la zona en un servicio, por densidad:
+ * letter 'C 46/60' · short 'Cena 46/60' · long 'Cena · Planta Alta · 46 de 60'.
+ * Sin tope: 'C 22' · 'Cena 22' · 'Cena · Sin ubicar · 22'.
+ */
+export function zoneHeadline(z: ZoneLoad, density: 'letter' | 'short' | 'long'): string {
+  if (density === 'letter') return `${SEGMENT_LETTERS[z.segment]} ${zoneRatio(z)}`
+  if (density === 'short') return `${SEGMENT_SHORT_LABELS[z.segment]} ${zoneRatio(z)}`
+  const head = `${SEGMENT_LABELS[z.segment]} · ${ZONE_PLACE_LABELS[z.zone]}`
+  return z.capacity === null ? `${head} · ${z.people}` : `${head} · ${z.people} de ${z.capacity}`
+}
+
+/**
+ * La decisión en una línea, para esa planta: cuántos lugares quedan, si se
+ * llenó o por cuánto se pasó. La zona flotante no tiene cupo: dice cuánta
+ * gente falta ubicar.
+ */
+export function zoneStatusLine(z: ZoneLoad): string {
+  const place = ZONE_PLACE_LABELS[z.zone]
+  if (z.zone === 'event_floating') {
+    return z.people === 0 ? 'Nadie sin planta' : `${persons(z.people)} sin planta`
+  }
+  if (z.capacity === null) {
+    return z.people === 0
+      ? `Nadie en ${place} · sin tope`
+      : `${persons(z.people)} en ${place} · sin tope`
+  }
+  if (z.people > z.capacity) return `Te pasaste por ${z.people - z.capacity} en ${place}`
+  if (z.people === z.capacity) return `${place} llena`
+  const free = z.capacity - z.people
+  return free === 1 ? `Queda 1 lugar en ${place}` : `Quedan ${free} lugares en ${place}`
+}
+
+/** El desglose de la zona en la celda del mes: '3 cumples · 1 torta'. null si no hay nada. */
+export function zoneCellBreakdown(z: ZoneLoad): string | null {
+  const parts: string[] = []
+  if (z.birthdays > 0) parts.push(birthdaysText(z.birthdays))
+  if (z.cakes > 0) parts.push(cakesText(z.cakes))
+  return parts.length > 0 ? parts.join(' · ') : null
+}
+
+/**
+ * Etiqueta completa de la zona para lectores de pantalla y el `title`:
+ * "Cena, jueves 10 de septiembre, Planta Alta: 46 de 60 personas. Quedan 14
+ * lugares en Planta Alta. 3 cumples, 1 torta." El color nunca es la única señal.
+ */
+export function zoneAriaLabel(z: ZoneLoad, dayLabel: string): string {
+  const label = SEGMENT_LABELS[z.segment]
+  const head = `${dayLabel ? `${label}, ${dayLabel}` : label}, ${ZONE_PLACE_LABELS[z.zone]}`
+  const count =
+    z.capacity !== null
+      ? `${z.people} de ${z.capacity} personas`
+      : z.zone === 'event_floating'
+        ? `${persons(z.people)} sin planta`
+        : `${persons(z.people)}, sin tope`
+  const parts = [`${head}: ${count}`]
+  if (z.capacity !== null) parts.push(zoneStatusLine(z))
+  const breakdown = zoneCellBreakdown(z)
+  if (breakdown) parts.push(breakdown.replaceAll(' · ', ', '))
+  return `${parts.join('. ')}.`
+}
+
+/**
+ * La segunda línea de la agenda mobile con el filtro puesto: por servicio con
+ * gente en la zona, el estado si está en ámbar o rojo y los festejos.
+ */
+export function zoneAgendaDetailLines(
+  day: DaySegments,
+  zone: SalonZone,
+  caps: Readonly<ZoneCaps>,
+): string[] {
+  const lines: string[] = []
+  for (const key of SEGMENT_KEYS) {
+    const z = zoneLoad(day.segments[key], zone, caps)
+    if (!z.hasActivity) continue
+    const tone = zoneTone(z)
+    const items = [
+      tone === 'warn' || tone === 'over' ? zoneStatusLine(z) : null,
+      zoneCellBreakdown(z),
+    ].filter((item): item is string => item !== null)
+    if (items.length > 0) lines.push(`${SEGMENT_LABELS[key]}: ${items.join(' · ')}`)
+  }
+  return lines
+}
+
+/**
+ * En la tarjeta del evento, con el día filtrado: cuántos DE ESE EVENTO van en
+ * la planta ("29 personas en Planta Alta"), o cuántos no tienen planta.
+ */
+export function eventZoneLine(e: Pick<SegmentEventLoad, 'byZone'>, zone: SalonZone): string {
+  const n = e.byZone[zone] ?? 0
+  if (zone === 'event_floating') return n === 0 ? 'Nadie sin planta' : `${persons(n)} sin planta`
+  const place = ZONE_PLACE_LABELS[zone]
+  return n === 0 ? `Nadie en ${place}` : `${persons(n)} en ${place}`
+}
+
+/**
+ * El servicio entero, como contexto chico debajo de la planta: «Toda la cena:
+ * 119/120». Sin esto, «Quedan 14 lugares en Planta Alta» con la cena ya llena
+ * invitaba a vender lugares que el servicio no tiene.
+ */
+export function segmentWholeLine(s: SegmentLoad): string {
+  const whole = wholeSegment(s.key)
+  return `${whole.charAt(0).toUpperCase()}${whole.slice(1)}: ${segmentRatio(s)}`
+}
+
+/** Lo que dice un servicio en la vista del día con el filtro de planta puesto. */
+export type ZoneSectionCopy = {
+  /** La línea de estado: la de la planta, salvo con el servicio cerrado. */
+  status: string
+  /** El tono de `status` (el de la planta o, si la línea es del servicio, el suyo). */
+  tone: SegmentTone
+  /** «Todo el almuerzo: 0/20», o null si no hace falta. */
+  whole: string | null
+  /**
+   * El cupo del servicio recorta el de la planta (cerrado, o más chico que
+   * la planta): ahí vuelve de dónde sale el cupo («Cupo especial: …»).
+   */
+  serviceLimits: boolean
+}
+
+/**
+ * La planta se mide contra su cupo, pero el servicio manda. Un almuerzo con
+ * cupo especial 0 («evento privado») y sin reservas decía «Quedan 60 lugares
+ * en Planta Alta» y escondía el «Cerrado» y el motivo: la línea del servicio
+ * entero dependía de que hubiera actividad, y un servicio cerrado y vacío no
+ * la tiene. Lo mismo un almuerzo de 20 contra una planta de 60.
+ *
+ * - Servicio cerrado → la línea es la del servicio («Cerrado», o «Te pasaste
+ *   por N» si igual quedó gente), con su tono: ninguna planta tiene lugar.
+ * - La línea chica del servicio entero va si tiene actividad (como antes) o si
+ *   su cupo recorta el de la planta, aunque esté vacío. Cerrado y sin gente no
+ *   la lleva: «Todo el almuerzo: 0/0» repetiría el «Cerrado».
+ * - Sin cupo por planta (o «Sin ubicar») no hay nada que recortar: la planta
+ *   ya dice «sin tope» y no ofrece un número de lugares.
+ */
+export function zoneSectionCopy(s: SegmentLoad, z: ZoneLoad): ZoneSectionCopy {
+  const closed = s.capacity === 0
+  const serviceLimits =
+    s.capacity !== null && (closed || (z.capacity !== null && s.capacity < z.capacity))
+  const showWhole = (s.hasActivity || serviceLimits) && !(closed && s.people === 0)
+  return {
+    status: closed ? segmentStatusLine(s) : zoneStatusLine(z),
+    tone: closed ? segmentTone(s) : zoneTone(z),
+    whole: showWhole ? segmentWholeLine(s) : null,
+    serviceLimits,
+  }
 }

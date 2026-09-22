@@ -23,6 +23,7 @@ import {
   toSegmentReservationInput,
   toSettingRows,
   toWeeklyCapRows,
+  zoneCapsFromSettings,
 } from '@/lib/salon/segment-rows'
 import { createClient } from '@/lib/supabase/server'
 import { requireTenantAccess } from '@/lib/tenant'
@@ -456,6 +457,36 @@ describe('mappers de config', () => {
     expect(fallbackTotalFromSettings(undefined)).toBe(0)
   })
 
+  it('zoneCapsFromSettings: cada planta por separado, con la misma tolerancia que el total', () => {
+    expect(
+      zoneCapsFromSettings({ salon_capacities: { planta_alta: 60, planta_baja: 70 } }),
+    ).toEqual({ planta_alta: 60, planta_baja: 70 })
+    expect(
+      zoneCapsFromSettings({ salon_capacities: { planta_alta: '60', planta_baja: 'abc' } }),
+    ).toEqual({ planta_alta: 60, planta_baja: 0 })
+    expect(zoneCapsFromSettings({ salon_capacities: { planta_baja: 70 } })).toEqual({
+      planta_alta: 0,
+      planta_baja: 70,
+    })
+    expect(zoneCapsFromSettings({ salon_capacities: null })).toEqual({
+      planta_alta: 0,
+      planta_baja: 0,
+    })
+    expect(zoneCapsFromSettings(undefined)).toEqual({ planta_alta: 0, planta_baja: 0 })
+  })
+
+  it('el total y las plantas salen de la misma lectura: nunca se contradicen', () => {
+    for (const settings of [
+      { salon_capacities: { planta_alta: 60, planta_baja: 70 } },
+      { salon_capacities: { planta_alta: '45', planta_baja: 'x' } },
+      {},
+      null,
+    ]) {
+      const caps = zoneCapsFromSettings(settings)
+      expect(fallbackTotalFromSettings(settings)).toBe(caps.planta_alta + caps.planta_baja)
+    }
+  })
+
   it('SEGMENT_RES_SELECT no pide datos personales', () => {
     expect(SEGMENT_RES_SELECT).not.toMatch(/guest_name|guest_phone|guest_email|comments/)
   })
@@ -602,6 +633,8 @@ describe('segment-queries: migración pendiente y paginación', () => {
     expect(res.data.caps.dinner.capacity).toBe(130)
     expect(res.data.isoDow).toBe(4)
     expect(res.data.suggestedRaise).toEqual({ lunch: null, tea_time: null, dinner: null })
+    // El cupo de cada planta viaja para el filtro de planta de la vista del día.
+    expect(res.data.zoneCaps).toEqual({ planta_alta: 60, planta_baja: 70 })
   })
 
   it('otro error de la config NO se tapa con el fallback: ok:false y log con tenant y código', async () => {
@@ -721,6 +754,9 @@ describe('segment-queries: migración pendiente y paginación', () => {
     expect(month.days['2026-09-10']?.segments.dinner.people).toBe(2345)
     expect(month.configured).toBe(false)
     expect(month.fallbackTotal).toBe(130)
+    // Misma lectura de tenants: el cupo por planta llega sin un viaje más.
+    expect(month.zoneCaps).toEqual({ planta_alta: 60, planta_baja: 70 })
+    expect(calls.filter((c) => c.table === 'tenants')).toHaveLength(1)
 
     const resCalls = calls.filter((c) => c.table === 'salon_reservations')
     expect(resCalls).toHaveLength(3)

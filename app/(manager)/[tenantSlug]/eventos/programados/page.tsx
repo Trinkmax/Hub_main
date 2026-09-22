@@ -37,8 +37,10 @@ function errorCode(error: unknown): string | undefined {
 
 /**
  * El calendario: el mes con sus eventos y, por cada día, almuerzo, merienda y
- * cena contra su cupo. Es la puerta de las reservas: desde un día se ve cómo
- * viene y se reserva con la hora del servicio ya puesta, o adentro de un evento.
+ * cena contra su cupo. Es una de las dos puertas de las reservas (la otra es la
+ * lista /reservas): desde un día se ve cómo viene y se reserva con la hora del
+ * servicio ya puesta, o adentro de un evento. Al guardar se vuelve acá
+ * (?volver=calendario en el alta y en la ficha).
  *
  * URL (todo validado con zod; un param roto se ignora, no rompe la página):
  * - ?month=YYYY-MM el mes. Si falta, sale de ?day y si no, de hoy en Córdoba
@@ -47,7 +49,11 @@ function errorCode(error: unknown): string | undefined {
  * - ?day=YYYY-MM-DD | hoy abre la vista del día (?seg ancla un servicio, ?res
  *   resalta una reserva). La página la precarga: al volver de guardar una
  *   reserva el día aparece sin flash de carga.
- * - ?buscar=texto abre el buscador (viene del redirect de /reservas?q=).
+ * - ?planta=alta|baja|sin filtra el mes y el día por planta (sin = reservas
+ *   de evento sin planta). Lo lee y lo cambia el mes en el cliente: el mes ya
+ *   trae todas las zonas y el cupo de cada planta, así que filtrar no pide
+ *   nada al server.
+ * - ?buscar=texto abre el buscador con ese texto.
  * - ?tab=eventos abre la pestaña Formatos.
  */
 export default async function CalendarioPage({

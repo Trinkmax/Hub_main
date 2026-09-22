@@ -13,6 +13,7 @@ import {
   eventDisplayName,
   type IsoDow,
   isSegmentKey,
+  NO_ZONE_CAPS,
   type SegmentEventInput,
   type SegmentKey,
   type SegmentOverrideRow,
@@ -21,6 +22,7 @@ import {
   type SegmentWeeklyCapRow,
   segmentOfEventStart,
   segmentOfMealType,
+  type ZoneCaps,
 } from './segments'
 import type { MealType, ReservationKind, SalonReservationStatus, SalonZone } from './types'
 
@@ -212,21 +214,31 @@ export function toOverrideRows(rows: ReadonlyArray<Record<string, unknown>>): Se
 }
 
 /**
- * `tenants.settings` → cupo general del salón: planta alta + planta baja de
- * `salon_capacities`, SIN los overrides por zona (quedaron sin UI y los
- * reemplaza el cupo especial por servicio).
+ * `tenants.settings` → cupo de cada planta de `salon_capacities` (el «Cupo
+ * general por planta» de Configuración), SIN los overrides por zona (quedaron
+ * sin UI y los reemplaza el cupo especial por servicio).
  *
- * Sin `salon_capacities` (o sin una de las plantas) da 0, que en el cálculo es
- * "sin tope": el bar todavía no cargó el cupo. Un valor que no es número
- * cuenta 0 en esa planta: con `Number()` pelado un "abc" daba NaN, NaN + 70 es
- * NaN, y el cupo quedaba en un número que no compara con nada.
+ * Una planta sin cargar da 0, que en el filtro de planta es "sin tope". Un
+ * valor que no es número también cuenta 0: con `Number()` pelado un "abc" daba
+ * NaN y el cupo quedaba en un número que no compara con nada.
+ */
+export function zoneCapsFromSettings(settings: unknown): ZoneCaps {
+  if (typeof settings !== 'object' || settings === null) return { ...NO_ZONE_CAPS }
+  const caps = (settings as Record<string, unknown>).salon_capacities
+  if (typeof caps !== 'object' || caps === null) return { ...NO_ZONE_CAPS }
+  const { planta_alta, planta_baja } = caps as Record<string, unknown>
+  return { planta_alta: asNumber(planta_alta), planta_baja: asNumber(planta_baja) }
+}
+
+/**
+ * Cupo general del salón: planta alta + planta baja. Sale de
+ * `zoneCapsFromSettings` para que el cupo por servicio de un bar sin config
+ * (130 en el HUB) y el de cada planta (60 y 70) no puedan contradecirse.
+ * Sin `salon_capacities` da 0, que en el cálculo es "sin tope".
  */
 export function fallbackTotalFromSettings(settings: unknown): number {
-  if (typeof settings !== 'object' || settings === null) return 0
-  const caps = (settings as Record<string, unknown>).salon_capacities
-  if (typeof caps !== 'object' || caps === null) return 0
-  const { planta_alta, planta_baja } = caps as Record<string, unknown>
-  return asNumber(planta_alta) + asNumber(planta_baja)
+  const caps = zoneCapsFromSettings(settings)
+  return caps.planta_alta + caps.planta_baja
 }
 
 /**

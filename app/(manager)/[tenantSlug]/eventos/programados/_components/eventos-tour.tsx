@@ -6,14 +6,16 @@ import type { TenantRole } from '@/lib/tenant/types'
 
 /**
  * Tutorial del calendario: formatos → servicios del día → reservar → buscar →
- * programar. Se auto-lanza para la anfitriona, que desde que se retiró la
- * lista de Reservas carga todo desde acá.
+ * programar. Se auto-lanza para la anfitriona la primera vez que abre el
+ * calendario: además de la lista de Reservas, desde acá también reserva.
  */
 const EVENTOS_TOUR: TourDefinition = {
-  // @2: el calendario pasó a ser la puerta de las reservas, con el día cortado
-  // por servicio. El sufijo es la clave de localStorage (hub:tour:{id}), así
-  // que subirlo re-lanza el tour una vez a quien ya vio el @1: justo lo que
-  // hace falta cuando cambian los gestos de la pantalla.
+  // @2: el calendario pasó a ser también una puerta de las reservas, con el
+  // día cortado por servicio. El sufijo es la clave de localStorage
+  // (hub:tour:{id}), así que subirlo re-lanza el tour una vez a quien ya vio
+  // el @1: justo lo que hace falta cuando cambian los gestos de la pantalla.
+  // Que la lista de Reservas haya vuelto al menú no cambia nada de lo que
+  // explica este tour, por eso sigue en @2.
   id: 'eventos@2',
   title: 'Calendario y reservas',
   steps: [
@@ -52,7 +54,8 @@ const EVENTOS_TOUR: TourDefinition = {
         <>
           Cada día muestra almuerzo, merienda y cena por separado: personas sobre el cupo de cada
           servicio. <strong>Verde</strong> hay lugar, <strong>ámbar</strong> se está llenando,{' '}
-          <strong>rojo</strong> te pasaste.
+          <strong>rojo</strong> te pasaste. Con el filtro de arriba ves una sola planta contra su
+          cupo, o la gente de eventos que todavía está <strong>sin ubicar</strong>.
         </>
       ),
     },

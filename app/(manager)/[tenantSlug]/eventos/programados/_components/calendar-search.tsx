@@ -16,7 +16,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
-import { calendarHref } from '@/lib/salon/calendar-links'
+import { calendarHref, editReservationHref } from '@/lib/salon/calendar-links'
 import { formatDayLabel } from '@/lib/salon/date-presets'
 import { searchReservations } from '@/lib/salon/segment-actions'
 import type { ReservationSearchResult } from '@/lib/salon/segment-rows'
@@ -59,7 +59,7 @@ function exportHref(slug: string, ym: string): string {
   return `/api/reservas/export?${params.toString()}`
 }
 
-/** Saca ?buscar de la URL (el link viejo /reservas?q= abre el buscador una sola vez). */
+/** Saca ?buscar de la URL (un link con ?buscar= abre el buscador una sola vez). */
 function dropSearchParam() {
   const url = new URL(window.location.href)
   if (!url.searchParams.has('buscar')) return
@@ -68,11 +68,11 @@ function dropSearchParam() {
 }
 
 /**
- * "Buscar" del calendario: reemplaza al filtro por nombre de la vieja lista de
- * reservas. Busca por nombre o teléfono en cualquier fecha y, en lugar de
- * llevar a la ficha, abre el día con la reserva resaltada: se la ve en su
- * contexto (el servicio, el evento, cómo viene el cupo). "Editar" queda como
- * segunda acción. Al pie, exportar el mes visible.
+ * "Buscar" del calendario. Busca por nombre o teléfono en cualquier fecha y, en
+ * lugar de llevar a la ficha, abre el día con la reserva resaltada: se la ve en
+ * su contexto (el servicio, el evento, cómo viene el cupo). "Editar" queda como
+ * segunda acción y, al guardar, vuelve al calendario. Al pie, exportar el mes
+ * visible.
  *
  * El texto buscado nunca se loguea: puede ser un nombre o un teléfono.
  */
@@ -84,7 +84,7 @@ export function CalendarSearch({
   tenantSlug: string
   /** Mes visible del calendario: el del export y el que decide si abrir el día sin navegar. */
   ym: string
-  /** ?buscar= (viene del redirect de /reservas?q=): abre el buscador con ese texto. */
+  /** ?buscar=: abre el buscador con ese texto. */
   initialQuery?: string | null
 }) {
   const router = useRouter()
@@ -265,7 +265,7 @@ export function CalendarSearch({
                   </button>
                   <Button asChild variant="ghost" size="sm" className="m-1.5 shrink-0">
                     <Link
-                      href={`/${tenantSlug}/reservas/${r.id}`}
+                      href={editReservationHref(tenantSlug, r.id, { from: 'calendario' })}
                       aria-label={`Editar la reserva de ${r.guest_name}`}
                     >
                       Editar

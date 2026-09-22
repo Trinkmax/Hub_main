@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import type { CSSProperties } from 'react'
-import type { SegmentLoad } from '@/lib/salon/segments'
+import type { SegmentLoad, ZoneLoad } from '@/lib/salon/segments'
 import {
   type SegmentTone,
   segmentAlertMark,
@@ -8,6 +8,9 @@ import {
   segmentHeadline,
   segmentStatusLine,
   segmentTone,
+  zoneAriaLabel,
+  zoneHeadline,
+  zoneTone,
 } from '@/lib/salon/segments-copy'
 import { cn } from '@/lib/utils'
 
@@ -248,5 +251,97 @@ export function SegmentStatusDot({ tone, className }: { tone: SegmentTone; class
         className,
       )}
     />
+  )
+}
+
+/**
+ * El número de una PLANTA en un servicio, para el calendario filtrado por
+ * planta: "Cena 46/60" (personas de Planta Alta contra el cupo de la planta).
+ * Mismo aspecto y mismos tonos que `SegmentChip` para que se lea igual; sin el
+ * «!» porque una planta no tiene lugares apartados por eventos. Botón con
+ * `onClick`, `<span>` si no hace nada.
+ */
+export function ZoneChip({
+  load,
+  label = 'short',
+  onClick,
+  ariaLabel,
+  className,
+}: {
+  load: ZoneLoad
+  label?: 'letter' | 'short' | 'long'
+  onClick?: () => void
+  ariaLabel?: string
+  className?: string
+}) {
+  const tone = SEGMENT_TONE_CLASSES[zoneTone(load)]
+  const fullLabel = ariaLabel ?? zoneAriaLabel(load, '')
+  const classes = cn(CHIP_BASE, tone.chip, tone.text, onClick && CHIP_INTERACTIVE, className)
+  const headline = zoneHeadline(load, label)
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={fullLabel}
+        title={fullLabel}
+        className={classes}
+      >
+        {headline}
+      </button>
+    )
+  }
+  // Como en SegmentChip: el texto visible es el nombre del span y el detalle
+  // va en el title (el rojo lo explica la línea de estado de al lado).
+  return (
+    <span title={fullLabel} className={classes}>
+      {headline}
+    </span>
+  )
+}
+
+/**
+ * La barra de una planta: personas contra el cupo de la planta, con el tono
+ * del estado, y lo libre. Más simple que `SegmentBar` a propósito: la planta
+ * no tiene lugares apartados por eventos. La pista es max(cupo, personas, 1):
+ * pasada, se llena de rojo. Sin tope (zona flotante o planta sin cupo) la
+ * barra se llena con el tono neutro: hay gente pero nada contra qué medirla.
+ * Decorativa: el número y la causa van en el chip.
+ */
+export function ZoneBar({
+  load,
+  size = 'xs',
+  className,
+}: {
+  load: ZoneLoad
+  size?: 'xs' | 'sm'
+  className?: string
+}) {
+  const free = load.capacity === null ? 0 : Math.max(0, load.capacity - load.people)
+  const parts = [
+    { key: 'people', value: load.people, className: SEGMENT_TONE_CLASSES[zoneTone(load)].bar },
+    { key: 'free', value: free, className: 'bg-secondary' },
+  ]
+  return (
+    <div
+      aria-hidden
+      className={cn(
+        'flex w-full overflow-hidden rounded-full bg-secondary',
+        size === 'xs' ? 'h-[3px]' : 'h-1.5',
+        className,
+      )}
+    >
+      {parts
+        .filter((p) => p.value > 0)
+        .map((p) => (
+          <div
+            key={p.key}
+            data-part={p.key}
+            className={cn('h-full min-w-0 basis-0', p.className)}
+            style={{ flexGrow: p.value }}
+          />
+        ))}
+    </div>
   )
 }

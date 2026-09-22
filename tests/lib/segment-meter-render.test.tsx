@@ -7,6 +7,8 @@ import {
   SegmentBar,
   SegmentChip,
   SegmentStatusDot,
+  ZoneBar,
+  ZoneChip,
 } from '@/components/reservations/segment-meter'
 import {
   computeDaySegments,
@@ -16,6 +18,8 @@ import {
   type SegmentKey,
   type SegmentLoad,
   type SegmentReservationInput,
+  type ZoneCaps,
+  zoneLoad,
 } from '@/lib/salon/segments'
 
 /**
@@ -369,6 +373,112 @@ describe('paleta', () => {
       ]),
       JSON.stringify(SEGMENT_TONE_CLASSES),
     ].join('\n')
+    expect(all).not.toContain('rose-')
+    expect(all).not.toContain('amber-')
+    expect(all).not.toContain('emerald-')
+    expect(all).not.toMatch(/-\[--/)
+  })
+})
+
+// ──────────────────────────────────────────────────────────
+// Filtro de planta: ZoneChip y ZoneBar
+// ──────────────────────────────────────────────────────────
+
+const HUB_ZONE_CAPS: ZoneCaps = { planta_alta: 60, planta_baja: 70 }
+
+// 19/09: 76 en PA (40 + 36) contra 60 → rojo; 57 en PB (30 + 27) de 70 → verde.
+const PA_19_09 = zoneLoad(DINNER_19_09, 'planta_alta', HUB_ZONE_CAPS)
+const PB_19_09 = zoneLoad(DINNER_19_09, 'planta_baja', HUB_ZONE_CAPS)
+// 22/09: 56 de evento sin planta: sin tope.
+const FLOATING_22_09 = zoneLoad(DINNER_22_09, 'event_floating', HUB_ZONE_CAPS)
+// PA con 55 de 60: ámbar.
+const PA_WARN = zoneLoad(
+  segmentOf('dinner', { reservations: [res({ estimated_guests: 55 })] }),
+  'planta_alta',
+  HUB_ZONE_CAPS,
+)
+
+describe('ZoneChip', () => {
+  it('19/09 en PA: 76 de 60 en rojo, con los mismos tonos que el servicio', () => {
+    expect(PA_19_09.status).toBe('over')
+    const out = html(createElement(ZoneChip, { load: PA_19_09 }))
+    expect(out).toContain('Cena 76/60')
+    expect(out).toContain('text-destructive')
+    expect(out).toContain('border-destructive/50')
+  })
+
+  it('ámbar con el token de texto de warning; verde en foreground', () => {
+    const warn = html(createElement(ZoneChip, { load: PA_WARN, label: 'long' }))
+    expect(warn).toContain('Cena · Planta Alta · 55 de 60')
+    expect(warn).toContain('text-warning-text')
+    const ok = html(createElement(ZoneChip, { load: PB_19_09, label: 'letter' }))
+    expect(ok).toContain('C 57/70')
+    expect(ok).toContain('text-foreground')
+  })
+
+  it('Sin ubicar no tiene cupo: sin semáforo', () => {
+    const out = html(createElement(ZoneChip, { load: FLOATING_22_09, label: 'long' }))
+    expect(out).toContain('Cena · Sin ubicar · 56')
+    expect(out).toContain('text-muted-foreground')
+  })
+
+  it('con onClick es un botón con el aria-label completo; sin, un span con title', () => {
+    const button = html(
+      createElement(ZoneChip, {
+        load: PA_19_09,
+        onClick: () => {},
+        ariaLabel: 'Cena, sábado 19 de septiembre, Planta Alta: 76 de 60 personas.',
+      }),
+    )
+    expect(button).toMatch(/^<button type="button"/)
+    expect(button).toContain('aria-label="Cena, sábado 19 de septiembre, Planta Alta')
+    expect(button).toContain('min-h-6')
+    const span = html(createElement(ZoneChip, { load: PA_19_09 }))
+    expect(span).toMatch(/^<span title="Cena, Planta Alta: 76 de 60 personas\. Te pasaste por 16/)
+    expect(span).not.toContain('aria-label')
+  })
+})
+
+describe('ZoneBar', () => {
+  it('decorativa, xs 3 px y sm h-1.5', () => {
+    const out = html(createElement(ZoneBar, { load: PB_19_09 }))
+    expect(out).toContain('aria-hidden="true"')
+    expect(out).toContain('h-[3px]')
+    expect(html(createElement(ZoneBar, { load: PB_19_09, size: 'sm' }))).toContain('h-1.5')
+  })
+
+  it('PB 57/70: gente en verde y 13 libres', () => {
+    const out = html(createElement(ZoneBar, { load: PB_19_09 }))
+    expect(out).toMatch(/data-part="people" class="[^"]*bg-success[^"]*" style="flex-grow:57"/)
+    expect(out).toMatch(/data-part="free" class="[^"]*bg-secondary[^"]*" style="flex-grow:13"/)
+  })
+
+  it('pasada: se llena de rojo y no queda libre', () => {
+    const out = html(createElement(ZoneBar, { load: PA_19_09 }))
+    expect(out).toMatch(/data-part="people" class="[^"]*bg-destructive[^"]*" style="flex-grow:76"/)
+    expect(out).not.toContain('data-part="free"')
+  })
+
+  it('sin tope: toda la pista en el tono neutro', () => {
+    const out = html(createElement(ZoneBar, { load: FLOATING_22_09 }))
+    expect(out).toMatch(/data-part="people" class="[^"]*bg-muted-foreground\/50[^"]*"/)
+    expect(out).not.toContain('data-part="free"')
+  })
+
+  it('sin gente en la planta: solo la pista', () => {
+    const empty = zoneLoad(DINNER_22_09, 'planta_baja', HUB_ZONE_CAPS)
+    const out = html(createElement(ZoneBar, { load: empty }))
+    expect(out).not.toContain('data-part="people"')
+    expect(out).toContain('data-part="free"')
+  })
+
+  it('paleta: ni rose, ni amber, ni emerald, ni bracket v3', () => {
+    const all = [PA_19_09, PB_19_09, FLOATING_22_09, PA_WARN]
+      .flatMap((load) => [
+        html(createElement(ZoneChip, { load, onClick: () => {} })),
+        html(createElement(ZoneBar, { load, size: 'sm' })),
+      ])
+      .join('\n')
     expect(all).not.toContain('rose-')
     expect(all).not.toContain('amber-')
     expect(all).not.toContain('emerald-')

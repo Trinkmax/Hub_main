@@ -227,6 +227,56 @@ export function groupReservationsBySegment<
 }
 
 // ──────────────────────────────────────────────────────────
+// Plantas: el filtro del calendario (decisión del dueño, 22/09/2026)
+// ──────────────────────────────────────────────────────────
+
+/** Las plantas físicas. `event_floating` no es un lugar: es "todavía sin planta". */
+export type FloorZone = Exclude<SalonZone, 'event_floating'>
+
+/**
+ * Cupo de cada planta, de `tenants.settings.salon_capacities` (el «Cupo
+ * general por planta» de Configuración: en el HUB, PA 60 y PB 70). 0 = el bar
+ * no lo cargó: esa planta se muestra sin tope, nunca "cerrada".
+ */
+export type ZoneCaps = Record<FloorZone, number>
+
+export const NO_ZONE_CAPS: Readonly<ZoneCaps> = { planta_alta: 0, planta_baja: 0 }
+
+/**
+ * Valores de `?planta=` en la URL del calendario. Cortos y en castellano para
+ * que el link se pueda leer y dictar; «sin» es la zona flotante (reservas de
+ * evento que todavía no tienen planta). Sin param = «Todo».
+ */
+export const ZONE_FILTERS = ['alta', 'baja', 'sin'] as const
+export type ZoneFilter = (typeof ZONE_FILTERS)[number]
+
+const ZONE_OF_FILTER: Readonly<Record<ZoneFilter, SalonZone>> = {
+  alta: 'planta_alta',
+  baja: 'planta_baja',
+  sin: 'event_floating',
+}
+
+export function zoneOfFilter(filter: ZoneFilter): SalonZone {
+  return ZONE_OF_FILTER[filter]
+}
+
+export function isZoneFilter(value: unknown): value is ZoneFilter {
+  return typeof value === 'string' && (ZONE_FILTERS as ReadonlyArray<string>).includes(value)
+}
+
+/**
+ * Tope de una zona, o null = sin tope. La zona flotante nunca tiene: no es un
+ * lugar del salón. Un cupo de planta 0, negativo o ilegible también es sin
+ * tope (el bar no lo cargó), a diferencia del cupo 0 de un servicio, que es
+ * "cerrado": una planta cerrada se maneja con el cupo del servicio.
+ */
+export function zoneCapacity(zone: SalonZone, caps: Readonly<ZoneCaps>): number | null {
+  if (zone === 'event_floating') return null
+  const cap = caps[zone]
+  return Number.isFinite(cap) && cap > 0 ? cap : null
+}
+
+// ──────────────────────────────────────────────────────────
 // Config: cupo por servicio × día de la semana, especiales por fecha
 // ──────────────────────────────────────────────────────────
 
@@ -254,6 +304,13 @@ export type SegmentConfig = {
   settings: SegmentSettingRow[]
   /** cap(PA) + cap(PB) de tenants.settings.salon_capacities (sin overrides por zona). */
   fallbackTotal: number
+  /**
+   * Los mismos dos números por separado: el cupo de cada planta para el
+   * filtro de planta del calendario. Opcional porque el editor de cupos
+   * especiales arma una config parcial solo para resolver el cupo del día;
+   * sin él, cada planta es "sin tope".
+   */
+  zoneCaps?: ZoneCaps
 }
 export type SegmentCapSource = 'override' | 'weekly' | 'fallback' | 'none'
 export type ResolvedSegmentCap = {
@@ -394,7 +451,22 @@ export type SegmentEventLoad = {
   reservations: number
   birthdays: number
   cakes: number
+  /**
+   * Personas del evento por zona real: cuántos de Pizza libre van en Planta
+   * Alta, cuántos en Planta Baja y cuántos todavía sin planta. La tarjeta del
+   * evento lo muestra cuando el día está filtrado por planta.
+   */
+  byZone: Record<SalonZone, number>
 }
+
+/** Lo que hay en una zona dentro de un servicio (solo reservas activas). */
+export type ZoneTally = {
+  people: number
+  reservations: number
+  birthdays: number
+  cakes: number
+}
+
 export type SegmentLoad = {
   key: SegmentKey
   capacity: number | null
@@ -417,7 +489,13 @@ export type SegmentLoad = {
   eventExceedsSegment: boolean // C > 0 && eventCapSum > C (cerrado nunca)
   birthdays: { total: number; inEvents: number }
   cakes: { total: number; inEvents: number }
-  byZone: Record<SalonZone, number>
+  byZone: Record<SalonZone, number> // = zones[z].people (lo leen el form y el operativo)
+  /**
+   * Cada zona por separado, con la zona REAL de la reserva: una de Pizza
+   * libre sentada en Planta Alta cuenta en Planta Alta (y en el evento). La
+   * flotante son las de evento que todavía no tienen planta.
+   */
+  zones: Record<SalonZone, ZoneTally>
   activeReservations: number
   hasActivity: boolean // people > 0 || events.length > 0
 }
@@ -461,7 +539,12 @@ type SegmentTally = {
   birthdays: { total: number; inEvents: number }
   cakes: { total: number; inEvents: number }
   byZone: Record<SalonZone, number>
+  zones: Record<SalonZone, ZoneTally>
   activeReservations: number
+}
+
+function emptyZoneTally(): ZoneTally {
+  return { people: 0, reservations: 0, birthdays: 0, cakes: 0 }
 }
 
 function emptyTally(): SegmentTally {
@@ -472,6 +555,11 @@ function emptyTally(): SegmentTally {
     birthdays: { total: 0, inEvents: 0 },
     cakes: { total: 0, inEvents: 0 },
     byZone: { planta_alta: 0, planta_baja: 0, event_floating: 0 },
+    zones: {
+      planta_alta: emptyZoneTally(),
+      planta_baja: emptyZoneTally(),
+      event_floating: emptyZoneTally(),
+    },
     activeReservations: 0,
   }
 }
@@ -542,6 +630,7 @@ function finishSegment(key: SegmentKey, cap: ResolvedSegmentCap, t: SegmentTally
     birthdays: t.birthdays,
     cakes: t.cakes,
     byZone: t.byZone,
+    zones: t.zones,
     activeReservations: t.activeReservations,
     hasActivity: people > 0 || t.events.length > 0,
   }
@@ -643,6 +732,7 @@ export function computeDaySegments(input: DaySegmentsInput): DaySegments {
       reservations: 0,
       birthdays: 0,
       cakes: 0,
+      byZone: { planta_alta: 0, planta_baja: 0, event_floating: 0 },
     }
     loads.set(e.id, load)
     tallies[eventSegments.get(e.id) ?? 'dinner'].events.push(load)
@@ -661,10 +751,21 @@ export function computeDaySegments(input: DaySegmentsInput): DaySegments {
     if (isBirthday) t.birthdays.total += 1
     t.cakes.total += cakes
 
+    // La zona llega de la DB como texto: una que no está en el enum no suma a
+    // ninguna planta (ni rompe la cuenta del servicio, que no depende de ella).
+    const zone = t.zones[r.zone] as ZoneTally | undefined
+    if (zone) {
+      zone.people += guests
+      zone.reservations += 1
+      if (isBirthday) zone.birthdays += 1
+      zone.cakes += cakes
+    }
+
     if (load) {
       t.eventUsed += guests
       load.used += guests
       load.reservations += 1
+      load.byZone[r.zone] = (load.byZone[r.zone] ?? 0) + guests
       if (isBirthday) {
         load.birthdays += 1
         t.birthdays.inEvents += 1
@@ -698,6 +799,8 @@ export type MonthSegments = {
   days: Record<string, DaySegments> // todas las fechas del mes
   configured: boolean
   fallbackTotal: number
+  /** Cupo de cada planta: el denominador del filtro de planta. */
+  zoneCaps: ZoneCaps
   settings: SegmentSettingsResolved
 }
 
@@ -758,6 +861,7 @@ export function computeMonthSegments(input: {
     days,
     configured: isSegmentConfigured(input.config),
     fallbackTotal: input.config.fallbackTotal,
+    zoneCaps: { ...(input.config.zoneCaps ?? NO_ZONE_CAPS) },
     settings: resolveSegmentSettings(input.config.settings),
   }
 }
@@ -775,15 +879,85 @@ export function eventLoadsById(
   return out
 }
 
-/** Cumples y tortas del día entero (el badge de festejos de la celda). */
-export function dayCelebrations(day: DaySegments): { birthdays: number; cakes: number } {
+/**
+ * Cumples y tortas del día entero (el badge de festejos de la celda). Con
+ * `zone`, solo los de esa zona: con el calendario filtrado por planta, el badge
+ * no puede decir 3 tortas cuando la celda de Planta Alta dice 1.
+ */
+export function dayCelebrations(
+  day: DaySegments,
+  zone?: SalonZone | null,
+): { birthdays: number; cakes: number } {
   let birthdays = 0
   let cakes = 0
   for (const key of SEGMENT_KEYS) {
-    birthdays += day.segments[key].birthdays.total
-    cakes += day.segments[key].cakes.total
+    const s = day.segments[key]
+    if (zone) {
+      birthdays += s.zones[zone]?.birthdays ?? 0
+      cakes += s.zones[zone]?.cakes ?? 0
+    } else {
+      birthdays += s.birthdays.total
+      cakes += s.cakes.total
+    }
   }
   return { birthdays, cakes }
+}
+
+// ──────────────────────────────────────────────────────────
+// Una zona dentro de un servicio (el filtro de planta del calendario)
+// ──────────────────────────────────────────────────────────
+
+export type ZoneLoad = {
+  segment: SegmentKey
+  zone: SalonZone
+  people: number
+  capacity: number | null // null = sin tope (zona flotante o planta sin cupo cargado)
+  status: SegmentStatus
+  reservations: number
+  birthdays: number
+  cakes: number
+  hasActivity: boolean // people > 0
+}
+
+/**
+ * Cómo viene UNA zona en un servicio, contra el cupo de esa planta: «Cena PA
+ * 46/60». Personas de la zona real de cada reserva, también las de evento
+ * sentadas en esa planta: es la gente que el mozo de Planta Alta tiene que
+ * atender, sea del evento o no.
+ *
+ * El semáforo es el del servicio reducido a personas: rojo si pasa el cupo,
+ * ámbar desde el 90 % (en enteros: people × 10 ≥ cupo × 9, igual que el
+ * servicio). No hay apartado de eventos por planta: el evento no dice en qué
+ * planta va, así que la planta solo cuenta gente. Sin tope → siempre ok.
+ *
+ * El cupo del servicio NO cambia por esto: una reserva cuenta en el evento por
+ * `scheduled_event_id`, no por zona.
+ */
+export function zoneLoad(s: SegmentLoad, zone: SalonZone, caps: Readonly<ZoneCaps>): ZoneLoad {
+  const tally = s.zones[zone] ?? emptyZoneTally()
+  const capacity = zoneCapacity(zone, caps)
+  const people = tally.people
+  let status: SegmentStatus = 'ok'
+  if (capacity !== null) {
+    if (people > capacity) status = 'over'
+    else if (people * 10 >= capacity * 9) status = 'warn'
+  }
+  return {
+    segment: s.key,
+    zone,
+    people,
+    capacity,
+    status,
+    reservations: tally.reservations,
+    birthdays: tally.birthdays,
+    cakes: tally.cakes,
+    hasActivity: people > 0,
+  }
+}
+
+/** ¿Hay alguien en esa zona en algún servicio del día? (la agenda compacta los días vacíos). */
+export function dayHasZoneActivity(day: DaySegments, zone: SalonZone): boolean {
+  return SEGMENT_KEYS.some((key) => (day.segments[key].zones[zone]?.people ?? 0) > 0)
 }
 
 /**

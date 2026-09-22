@@ -8,22 +8,36 @@ import {
   SEGMENT_TONE_CLASSES,
   SegmentBar,
   SegmentChip,
+  ZoneBar,
+  ZoneChip,
 } from '@/components/reservations/segment-meter'
 import { StatusPill } from '@/components/reservations/status-pill'
 import { Button } from '@/components/ui/button'
-import { editEventHref, newReservationHref } from '@/lib/salon/calendar-links'
+import { editEventHref, editReservationHref, newReservationHref } from '@/lib/salon/calendar-links'
 import { timeRangeLabel } from '@/lib/salon/format'
-import type { IsoDow, SegmentEventLoad, SegmentLoad } from '@/lib/salon/segments'
+import { joinedEventName, placeLabel } from '@/lib/salon/place-label'
+import {
+  type IsoDow,
+  NO_ZONE_CAPS,
+  type SegmentEventLoad,
+  type SegmentLoad,
+  type ZoneCaps,
+  zoneLoad,
+} from '@/lib/salon/segments'
 import {
   capSourceLabel,
+  eventZoneLine,
   SEGMENT_LABELS,
   SEGMENT_WITH_ARTICLE,
   segmentAriaLabel,
   segmentEventNote,
   segmentStatusLine,
   segmentTone,
+  ZONE_PLACE_LABELS,
+  zoneAriaLabel,
+  zoneSectionCopy,
 } from '@/lib/salon/segments-copy'
-import { type ReservationWithJoins, ZONE_LABELS } from '@/lib/salon/types'
+import type { ReservationWithJoins, SalonZone } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
 /**
@@ -38,6 +52,15 @@ import { cn } from '@/lib/utils'
  * Ningún número se calcula acá: todo sale de `SegmentLoad` (segments.ts) y los
  * textos de `segments-copy.ts`, así la cena dice lo mismo que en el mes, el
  * form y el operativo.
+ *
+ * Con `zone` (el filtro de planta del calendario) el encabezado mide la planta
+ * contra su cupo («Cena · Planta Alta · 46 de 60»), las filas son solo las de
+ * esa zona y cada evento dice cuántos de los suyos van ahí. Lo que es del
+ * servicio entero (el aviso de que un evento se lleva todo, «Subir a N», de
+ * dónde sale el cupo) se esconde: queda una línea chica con el servicio entero
+ * («Toda la cena: 119/120») para no vender lugares que el servicio no tiene.
+ * Si el servicio recorta la planta (cerrado, o con menos cupo que ella), el
+ * servicio manda: ver `zoneSectionCopy`.
  */
 export function DaySegmentSection({
   tenantSlug,
@@ -51,6 +74,8 @@ export function DaySegmentSection({
   canRaise,
   isToday,
   suggestedRaise,
+  zone = null,
+  zoneCaps = NO_ZONE_CAPS,
   raising,
   focusReservationId,
   openReservationId,
@@ -75,6 +100,10 @@ export function DaySegmentSection({
   /** El botón dice «hoy» solo si el día abierto es hoy; si no, nombra el día. */
   isToday: boolean
   suggestedRaise: number | null
+  /** Planta del filtro del calendario; null = «Todo» (el servicio entero). */
+  zone?: SalonZone | null
+  /** Cupo de cada planta (el denominador cuando hay `zone`). */
+  zoneCaps?: ZoneCaps
   raising: boolean
   focusReservationId: string | null
   /**
@@ -89,19 +118,39 @@ export function DaySegmentSection({
 }) {
   const key = s.key
   const headingId = `dia-seg-${key}-titulo`
-  const tone = segmentTone(s)
-  const statusLine = segmentStatusLine(s)
-  const eventNote = segmentEventNote(s)
+  const zl = zone ? zoneLoad(s, zone, zoneCaps) : null
+  // Con planta, las líneas salen de zoneSectionCopy: un servicio cerrado o con
+  // menos cupo que la planta no puede decir «Quedan 60 lugares en Planta Alta».
+  const zc = zl ? zoneSectionCopy(s, zl) : null
+  const tone = zc ? zc.tone : segmentTone(s)
+  const statusLine = zc ? zc.status : segmentStatusLine(s)
+  // Lo del servicio entero no se mezcla con la planta: ver el comentario de arriba.
+  const eventNote = zl ? null : segmentEventNote(s)
   const [onlyEvent] = s.events
   // El título del chip lleva también de dónde sale el cupo: en un bar sin
   // config dice "Cupo general del salón", que explica por qué la cena es 130.
   const chipLabel = `${segmentAriaLabel(s, dayLabel)} ${capSourceLabel(s, isoDow)}.`
   // Solo el especial se muestra aparte (feriado, terraza): el semanal es lo
-  // esperado y "sin tope" ya lo dice la línea de estado.
-  const sourceLine = s.capSource === 'override' ? capSourceLabel(s, isoDow) : null
+  // esperado y "sin tope" ya lo dice la línea de estado. Con planta, solo si
+  // el servicio la recorta: es el porqué del «Cerrado» (evento privado).
+  const sourceLine =
+    s.capSource === 'override' && (!zc || zc.serviceLimits) ? capSourceLabel(s, isoDow) : null
   const showRaise =
-    canRaise && s.cause === 'warn_threshold' && suggestedRaise !== null && suggestedRaise > 0
+    !zl && canRaise && s.cause === 'warn_threshold' && suggestedRaise !== null && suggestedRaise > 0
   const eventNames = new Map(s.events.map((e) => [e.id, e.name]))
+  // Con planta: solo las filas de esa zona (canceladas incluidas, atenuadas
+  // como siempre). «Sin ubicar» son las de evento que todavía no tienen planta.
+  // La que tiene la vista rápida abierta se queda aunque ya no sea de la
+  // planta: cambiarle la zona desde el popup la sacaba de la lista, el popup
+  // (montado en la fila) desaparecía de golpe y, como nadie avisaba el cierre,
+  // «Ver todo» lo volvía a abrir solo. Así se ve adónde pasó y, al cerrar el
+  // popup, la fila se va.
+  const rows = zone
+    ? reservations.filter((r) => r.zone === zone || r.id === openReservationId)
+    : reservations
+  const listLabel = zone
+    ? `Reservas de ${SEGMENT_WITH_ARTICLE[key]} · ${ZONE_PLACE_LABELS[zone]}`
+    : `Reservas de ${SEGMENT_WITH_ARTICLE[key]}`
 
   return (
     <section
@@ -117,21 +166,44 @@ export function DaySegmentSection({
           </span>
         </h3>
         {/* Un servicio sin nada no lleva chip ni barra: "0 de 120" no dice más
-            que "Libre · 120 lugares" y ensucia el día vacío. */}
-        {s.hasActivity ? <SegmentChip segment={s} label="long" ariaLabel={chipLabel} /> : null}
+            que "Libre · 120 lugares" y ensucia el día vacío. Con planta, lo
+            mismo para la planta. */}
+        {zl ? (
+          zl.hasActivity ? (
+            <ZoneChip load={zl} label="long" ariaLabel={zoneAriaLabel(zl, dayLabel)} />
+          ) : null
+        ) : s.hasActivity ? (
+          <SegmentChip segment={s} label="long" ariaLabel={chipLabel} />
+        ) : null}
       </header>
 
-      {s.hasActivity ? <SegmentBar segment={s} size="sm" /> : null}
+      {zl ? (
+        zl.hasActivity ? (
+          <ZoneBar load={zl} size="sm" />
+        ) : null
+      ) : s.hasActivity ? (
+        <SegmentBar segment={s} size="sm" />
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         {/* El title repite de dónde sale el cupo también en un servicio vacío
             (sin chip): "Cupo general del salón" en un bar sin config. */}
         <p
           className={cn('text-sm', SEGMENT_TONE_CLASSES[tone].text)}
-          title={capSourceLabel(s, isoDow)}
+          title={zl ? undefined : capSourceLabel(s, isoDow)}
         >
           {statusLine}
         </p>
+        {zc?.whole ? (
+          // El servicio entero, en chico y con su propio tono: Planta Alta
+          // puede tener lugar con la cena ya llena.
+          <p
+            className={cn('text-xs', SEGMENT_TONE_CLASSES[segmentTone(s)].text)}
+            title={segmentAriaLabel(s, dayLabel)}
+          >
+            {zc.whole}
+          </p>
+        ) : null}
         {showRaise && suggestedRaise !== null ? (
           // El aviso propio del servicio (almuerzo lun-vie en 50: "conviene
           // abrir la terraza") se resuelve con un toque: crea el cupo especial
@@ -188,15 +260,21 @@ export function DaySegmentSection({
         <ul className="space-y-1.5" aria-label={`Eventos de ${SEGMENT_WITH_ARTICLE[key]}`}>
           {s.events.map((e) => (
             <li key={e.id}>
-              <EventCard tenantSlug={tenantSlug} date={date} event={e} canBook={canBook} />
+              <EventCard
+                tenantSlug={tenantSlug}
+                date={date}
+                event={e}
+                canBook={canBook}
+                zoneLine={zone ? eventZoneLine(e, zone) : null}
+              />
             </li>
           ))}
         </ul>
       ) : null}
 
-      {reservations.length > 0 ? (
-        <ul className="space-y-1.5" aria-label={`Reservas de ${SEGMENT_WITH_ARTICLE[key]}`}>
-          {reservations.map((r) => (
+      {rows.length > 0 ? (
+        <ul className="space-y-1.5" aria-label={listLabel}>
+          {rows.map((r) => (
             <li key={r.id} id={`dia-res-${r.id}`}>
               {/* Sin onChanged: cada action de la vista rápida revalida el
                   calendario y Next trae la página re-renderizada en la misma
@@ -205,9 +283,21 @@ export function DaySegmentSection({
               <ReservationQuickView
                 tenantSlug={tenantSlug}
                 reservation={r}
+                // "Edición completa" vuelve al calendario al guardar, no a la lista.
+                fullEditHref={editReservationHref(tenantSlug, r.id, { from: 'calendario' })}
                 open={openReservationId === r.id}
                 onOpenChange={(open) => onOpenReservation(open ? r.id : null)}
-                trigger={reservationRow(r, whereLabel(r, eventNames), r.id === focusReservationId)}
+                trigger={reservationRow(
+                  r,
+                  // El nombre del evento como lo muestra el día (con el nombre
+                  // propio de esa fecha); si no vino, el del join.
+                  placeLabel(
+                    r,
+                    (r.scheduled_event_id ? eventNames.get(r.scheduled_event_id) : null) ??
+                      joinedEventName(r),
+                  ),
+                  r.id === focusReservationId,
+                )}
               />
             </li>
           ))}
@@ -216,9 +306,10 @@ export function DaySegmentSection({
 
       {canBook ? (
         // La hora la precarga el server desde la config del bar: el link lleva
-        // solo el servicio (una sola fuente para "a qué hora se reserva").
+        // solo el servicio (una sola fuente para "a qué hora se reserva"). Con
+        // ?volver=calendario, al guardar se vuelve a este día.
         <Button asChild variant="outline" size="sm" className="max-w-full gap-1.5">
-          <Link href={newReservationHref(tenantSlug, { date, segment: key })}>
+          <Link href={newReservationHref(tenantSlug, { date, segment: key, from: 'calendario' })}>
             <CalendarPlus className="size-3.5" aria-hidden />
             <span className="truncate">
               Nueva reserva en {SEGMENT_WITH_ARTICLE[key]} · {defaultTime}
@@ -255,11 +346,14 @@ function EventCard({
   date,
   event: e,
   canBook,
+  zoneLine,
 }: {
   tenantSlug: string
   date: string
   event: SegmentEventLoad
   canBook: boolean
+  /** Con el día filtrado por planta: cuántos de este evento van en esa planta. */
+  zoneLine: string | null
 }) {
   const color = safeColor(e.colorHex)
   const full = !e.over && e.capacity > 0 && e.used >= e.capacity
@@ -305,11 +399,14 @@ function EventCard({
           {e.used}/{e.capacity}
         </span>
       </div>
+      {zoneLine ? <p className="pl-4 text-xs font-medium text-foreground">{zoneLine}</p> : null}
       {inside ? <p className="pl-4 text-[11px] text-muted-foreground">{inside}</p> : null}
       {canBook ? (
         <div className="flex flex-wrap items-center gap-1.5 pl-4">
           <Button asChild size="sm" className="max-w-full gap-1.5">
-            <Link href={newReservationHref(tenantSlug, { date, eventId: e.id })}>
+            <Link
+              href={newReservationHref(tenantSlug, { date, eventId: e.id, from: 'calendario' })}
+            >
               <CalendarPlus className="size-3.5" aria-hidden />
               <span className="truncate">Reservar en {e.name}</span>
             </Link>
@@ -324,21 +421,6 @@ function EventCard({
       ) : null}
     </div>
   )
-}
-
-/**
- * Dónde se sienta: el evento si la reserva cuelga de uno (sumando la planta si
- * no es la zona flotante: el 21/09 hay 29 personas de Pizza libre en Planta
- * Alta), si no la planta.
- */
-function whereLabel(r: ReservationWithJoins, eventNames: ReadonlyMap<string, string>): string {
-  const fallbackName = r.scheduled_event?.template?.name ?? 'Evento'
-  const eventName = r.scheduled_event_id
-    ? (eventNames.get(r.scheduled_event_id) ?? fallbackName)
-    : null
-  if (r.zone === 'event_floating') return eventName ?? fallbackName
-  const zone = ZONE_LABELS[r.zone]
-  return eventName ? `${eventName} · ${zone}` : zone
 }
 
 /**

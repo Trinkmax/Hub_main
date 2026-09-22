@@ -7,7 +7,6 @@ import {
 } from './queries'
 import {
   collectPages,
-  fallbackTotalFromSettings,
   isMissingTableError,
   mapSearchRow,
   type ReservationSearchResult,
@@ -19,6 +18,7 @@ import {
   toSegmentReservationInput,
   toSettingRows,
   toWeeklyCapRows,
+  zoneCapsFromSettings,
 } from './segment-rows'
 import {
   computeMonthSegments,
@@ -27,6 +27,7 @@ import {
   type IsoDow,
   isoDowOf,
   type MonthSegments,
+  NO_ZONE_CAPS,
   resolveDaySegmentCaps,
   resolveSegmentSettings,
   SEGMENT_KEYS,
@@ -38,6 +39,7 @@ import {
   type SegmentSettingsResolved,
   type SegmentWeeklyCapRow,
   suggestedCapacityRaise,
+  type ZoneCaps,
 } from './segments'
 import type { ReservationWithJoins } from './types'
 
@@ -72,6 +74,8 @@ export type DayOverview = {
   caps: DaySegmentCaps
   settings: SegmentSettingsResolved
   suggestedRaise: Record<SegmentKey, number | null>
+  /** Cupo de cada planta, para el filtro de planta de la vista del día. */
+  zoneCaps: ZoneCaps
 }
 
 export type SegmentEditorData = {
@@ -116,8 +120,9 @@ async function readConfigTable(
 }
 
 /**
- * El cupo general (PA + PB de `tenants.settings.salon_capacities`) con la
- * misma política que `readConfigTable`: un error SUBE con su código.
+ * El cupo de cada planta (`tenants.settings.salon_capacities`), del que sale
+ * el cupo general PA + PB, con la misma política que `readConfigTable`: un
+ * error SUBE con su código.
  *
  * No usa `getZoneCapacityDefaults` a propósito: ese helper devuelve 0 ante
  * cualquier error, y acá un 0 no es "cupo general" sino "sin tope". Un timeout
@@ -125,14 +130,14 @@ async function readConfigTable(
  * dejaba pasar sin confirmación una reserva con sobrecupo, sin ningún log.
  * Sin fila o sin `salon_capacities` sí es 0: el bar todavía no cargó el cupo.
  */
-async function readFallbackTotal(supabase: SBAny, tenantId: string): Promise<number> {
+async function readZoneCaps(supabase: SBAny, tenantId: string): Promise<ZoneCaps> {
   const { data, error } = (await supabase
     .from('tenants')
     .select('settings')
     .eq('id', tenantId)
     .maybeSingle()) as { data: { settings?: unknown } | null; error: PgError | null }
   if (error) throw Object.assign(new Error(error.message), { code: error.code })
-  return fallbackTotalFromSettings(data?.settings)
+  return zoneCapsFromSettings(data?.settings)
 }
 
 /**
@@ -157,7 +162,7 @@ async function readSegmentConfig(opts: {
     .order('override_date', { ascending: true })
     .order('segment', { ascending: true })
 
-  const [weeklyRows, settingRows, overrideRows, fallbackTotal] = await Promise.all([
+  const [weeklyRows, settingRows, overrideRows, zoneCaps] = await Promise.all([
     readConfigTable(
       'salon_segment_capacities',
       supabase
@@ -173,7 +178,7 @@ async function readSegmentConfig(opts: {
         .eq('tenant_id', opts.tenantId),
     ),
     readConfigTable('salon_segment_capacity_overrides', overridesQuery),
-    readFallbackTotal(supabase, opts.tenantId),
+    readZoneCaps(supabase, opts.tenantId),
   ])
 
   return {
@@ -181,8 +186,10 @@ async function readSegmentConfig(opts: {
     overrides: toOverrideRows(overrideRows),
     settings: toSettingRows(settingRows),
     // El cupo general por planta SIN los overrides por zona: esos quedaron sin
-    // UI y los reemplaza el cupo especial por servicio.
-    fallbackTotal,
+    // UI y los reemplaza el cupo especial por servicio. Las dos plantas por
+    // separado viajan para el filtro de planta del calendario (misma lectura).
+    fallbackTotal: zoneCaps.planta_alta + zoneCaps.planta_baja,
+    zoneCaps,
   }
 }
 
@@ -277,6 +284,7 @@ export async function getDayOverview(opts: {
     caps,
     settings: resolveSegmentSettings(config.settings),
     suggestedRaise,
+    zoneCaps: { ...(config.zoneCaps ?? NO_ZONE_CAPS) },
   }
 }
 

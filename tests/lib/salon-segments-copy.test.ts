@@ -11,10 +11,14 @@ import {
   type SegmentLoad,
   type SegmentProjection,
   type SegmentReservationInput,
+  type ZoneCaps,
+  zoneLoad,
 } from '@/lib/salon/segments'
 import {
   agendaDetailLines,
+  calendarLegend,
   capSourceLabel,
+  eventZoneLine,
   mismatchCopy,
   overCapacityConfirmCopy,
   SEGMENT_LABELS,
@@ -31,6 +35,22 @@ import {
   segmentRatio,
   segmentStatusLine,
   segmentTone,
+  segmentWholeLine,
+  ZONE_CLEAR_ARIA,
+  ZONE_CLEAR_LABEL,
+  ZONE_FILTER_GROUP_LABEL,
+  ZONE_FILTER_LABELS,
+  ZONE_PLACE_LABELS,
+  zoneAgendaDetailLines,
+  zoneAriaLabel,
+  zoneCellBreakdown,
+  zoneFilterLabel,
+  zoneHeadline,
+  zoneRatio,
+  zoneSectionCopy,
+  zoneStatusLine,
+  zoneTone,
+  zoneViewingLabel,
 } from '@/lib/salon/segments-copy'
 
 // Fixtures mínimos (los mismos días que salon-segments.test.ts). Los strings de
@@ -582,5 +602,336 @@ describe('overCapacityConfirmCopy y savedToastCopy', () => {
   it('toast de edición y alta sin proyección', () => {
     expect(savedToastCopy('edit', null)).toBe('Reserva actualizada')
     expect(savedToastCopy('create', null)).toBe('Reserva cargada')
+  })
+})
+
+// ──────────────────────────────────────────────────────────
+// Filtro de planta del calendario (decisión del dueño, 22/09/2026)
+// ──────────────────────────────────────────────────────────
+
+const HUB_ZONE_CAPS: ZoneCaps = { planta_alta: 60, planta_baja: 70 }
+const NO_CAPS: ZoneCaps = { planta_alta: 0, planta_baja: 0 }
+
+/** Una cena con `pa` personas en Planta Alta (normales) y `floating` de evento sin planta. */
+function dinnerZones(pa: number, floating = 0) {
+  const rows = [
+    ...(pa > 0 ? [res({ zone: 'planta_alta', estimated_guests: pa })] : []),
+    ...(floating > 0
+      ? [res({ scheduled_event_id: 'pizza', zone: 'event_floating', estimated_guests: floating })]
+      : []),
+  ]
+  return day('2026-09-10', rows, [ev({ id: 'pizza', name: 'Pizza libre', capacity: 140 })]).segments
+    .dinner
+}
+
+describe('filtro de planta · labels', () => {
+  it('las opciones del filtro, como las dijo el dueño', () => {
+    expect([null, 'alta', 'baja', 'sin'].map((f) => zoneFilterLabel(f as 'alta' | null))).toEqual([
+      'Todo',
+      'Planta alta',
+      'Planta baja',
+      'Sin ubicar',
+    ])
+    expect(ZONE_FILTER_LABELS).toEqual({
+      alta: 'Planta alta',
+      baja: 'Planta baja',
+      sin: 'Sin ubicar',
+    })
+    expect(ZONE_FILTER_GROUP_LABEL).toBe('Ver por planta')
+  })
+
+  it('cómo se nombra cada zona adentro de una frase', () => {
+    expect(ZONE_PLACE_LABELS).toEqual({
+      planta_alta: 'Planta Alta',
+      planta_baja: 'Planta Baja',
+      event_floating: 'Sin ubicar',
+    })
+  })
+
+  it('el chip del día filtrado y su «Ver todo»', () => {
+    expect(zoneViewingLabel('alta')).toBe('Viendo Planta alta')
+    expect(zoneViewingLabel('sin')).toBe('Viendo Sin ubicar')
+    expect(ZONE_CLEAR_LABEL).toBe('Ver todo')
+    expect(ZONE_CLEAR_ARIA).toBe('Ver todo el día, sin filtro de planta')
+  })
+})
+
+describe('filtro de planta · leyenda del mes', () => {
+  it('sin filtro, la de siempre (por servicio)', () => {
+    expect(calendarLegend(null, HUB_ZONE_CAPS)).toBe(
+      'Alm · Mer · Cena = personas / cupo de cada servicio · tocá un evento para reservar adentro',
+    )
+  })
+
+  it('con planta dice que el número es de la planta y cuál es su cupo', () => {
+    expect(calendarLegend('alta', HUB_ZONE_CAPS)).toBe(
+      'Planta alta · personas / cupo de la planta (60)',
+    )
+    expect(calendarLegend('baja', HUB_ZONE_CAPS)).toBe(
+      'Planta baja · personas / cupo de la planta (70)',
+    )
+  })
+
+  it('sin cupo por planta cargado no promete un denominador', () => {
+    expect(calendarLegend('alta', NO_CAPS)).toBe(
+      'Planta alta · personas (la planta no tiene cupo cargado)',
+    )
+  })
+
+  it('Sin ubicar no tiene cupo: explica qué gente es', () => {
+    expect(calendarLegend('sin', HUB_ZONE_CAPS)).toBe(
+      'Sin ubicar · personas de eventos que todavía no tienen planta',
+    )
+  })
+})
+
+describe('filtro de planta · el número de la planta', () => {
+  it('46 de 60 en PA, por densidad', () => {
+    const z = zoneLoad(dinnerZones(46), 'planta_alta', HUB_ZONE_CAPS)
+    expect(zoneRatio(z)).toBe('46/60')
+    expect(zoneHeadline(z, 'letter')).toBe('C 46/60')
+    expect(zoneHeadline(z, 'short')).toBe('Cena 46/60')
+    expect(zoneHeadline(z, 'long')).toBe('Cena · Planta Alta · 46 de 60')
+  })
+
+  it('sin tope (Sin ubicar): solo las personas', () => {
+    const z = zoneLoad(dinnerZones(0, 22), 'event_floating', HUB_ZONE_CAPS)
+    expect(zoneRatio(z)).toBe('22')
+    expect(zoneHeadline(z, 'letter')).toBe('C 22')
+    expect(zoneHeadline(z, 'short')).toBe('Cena 22')
+    expect(zoneHeadline(z, 'long')).toBe('Cena · Sin ubicar · 22')
+  })
+
+  it('el almuerzo en PB se abrevia como el servicio', () => {
+    const s = day(
+      '2026-09-10',
+      [
+        res({
+          meal_type: 'lunch',
+          reservation_time_local: '13:00:00',
+          zone: 'planta_baja',
+          estimated_guests: 19,
+        }),
+      ],
+      [],
+    ).segments.lunch
+    const z = zoneLoad(s, 'planta_baja', HUB_ZONE_CAPS)
+    expect(zoneHeadline(z, 'letter')).toBe('A 19/70')
+    expect(zoneHeadline(z, 'short')).toBe('Alm 19/70')
+  })
+
+  it('tono: sin gente o sin tope no se pinta; si no, el estado', () => {
+    expect(zoneTone(zoneLoad(dinnerZones(0), 'planta_alta', HUB_ZONE_CAPS))).toBe('none')
+    expect(zoneTone(zoneLoad(dinnerZones(0, 22), 'event_floating', HUB_ZONE_CAPS))).toBe('none')
+    expect(zoneTone(zoneLoad(dinnerZones(46), 'planta_alta', HUB_ZONE_CAPS))).toBe('ok')
+    expect(zoneTone(zoneLoad(dinnerZones(55), 'planta_alta', HUB_ZONE_CAPS))).toBe('warn')
+    expect(zoneTone(zoneLoad(dinnerZones(65), 'planta_alta', HUB_ZONE_CAPS))).toBe('over')
+  })
+})
+
+describe('filtro de planta · la línea de estado', () => {
+  const pa = (n: number, caps: ZoneCaps = HUB_ZONE_CAPS) =>
+    zoneStatusLine(zoneLoad(dinnerZones(n), 'planta_alta', caps))
+
+  it('cuántos lugares quedan en la planta', () => {
+    expect(pa(46)).toBe('Quedan 14 lugares en Planta Alta')
+    expect(pa(59)).toBe('Queda 1 lugar en Planta Alta')
+    expect(pa(0)).toBe('Quedan 60 lugares en Planta Alta')
+  })
+
+  it('justo lleno y pasado', () => {
+    expect(pa(60)).toBe('Planta Alta llena')
+    expect(pa(65)).toBe('Te pasaste por 5 en Planta Alta')
+  })
+
+  it('Sin ubicar: cuánta gente falta ubicar', () => {
+    const floating = (n: number) =>
+      zoneStatusLine(zoneLoad(dinnerZones(0, n), 'event_floating', HUB_ZONE_CAPS))
+    expect(floating(22)).toBe('22 personas sin planta')
+    expect(floating(1)).toBe('1 persona sin planta')
+    expect(floating(0)).toBe('Nadie sin planta')
+  })
+
+  it('planta sin cupo cargado: personas y «sin tope»', () => {
+    expect(pa(22, NO_CAPS)).toBe('22 personas en Planta Alta · sin tope')
+    expect(pa(0, NO_CAPS)).toBe('Nadie en Planta Alta · sin tope')
+  })
+})
+
+describe('filtro de planta · desglose, aria-label y agenda', () => {
+  it('desglose de celda: cumples y tortas de ESA planta', () => {
+    // 21/09: los 2 cumples con torta de Pizza libre están sentados en PA.
+    const rows = [
+      res({
+        reservation_date: '2026-09-21',
+        scheduled_event_id: 'pizza21',
+        zone: 'planta_alta',
+        estimated_guests: 15,
+        kind: 'birthday',
+        cake_count: 1,
+      }),
+      res({
+        reservation_date: '2026-09-21',
+        scheduled_event_id: 'pizza21',
+        zone: 'planta_alta',
+        estimated_guests: 14,
+        kind: 'birthday',
+        cake_count: 1,
+      }),
+      res({ reservation_date: '2026-09-21', zone: 'planta_baja', estimated_guests: 11 }),
+    ]
+    const d = day('2026-09-21', rows, [
+      ev({ id: 'pizza21', name: 'Pizza libre', capacity: 140, event_date: '2026-09-21' }),
+    ])
+    const pa = zoneLoad(d.segments.dinner, 'planta_alta', HUB_ZONE_CAPS)
+    const pb = zoneLoad(d.segments.dinner, 'planta_baja', HUB_ZONE_CAPS)
+    expect(zoneCellBreakdown(pa)).toBe('2 cumples · 2 tortas')
+    expect(zoneCellBreakdown(pb)).toBeNull()
+  })
+
+  it('aria-label: servicio, fecha, planta, número, estado y festejos', () => {
+    const rows = [
+      res({ zone: 'planta_alta', estimated_guests: 40 }),
+      res({ zone: 'planta_alta', estimated_guests: 6, kind: 'birthday', cake_count: 1 }),
+    ]
+    const z = zoneLoad(day('2026-09-10', rows).segments.dinner, 'planta_alta', HUB_ZONE_CAPS)
+    expect(zoneAriaLabel(z, 'jueves 10 de septiembre')).toBe(
+      'Cena, jueves 10 de septiembre, Planta Alta: 46 de 60 personas. Quedan 14 lugares en Planta Alta. 1 cumple, 1 torta.',
+    )
+    expect(zoneAriaLabel(z, '')).toBe(
+      'Cena, Planta Alta: 46 de 60 personas. Quedan 14 lugares en Planta Alta. 1 cumple, 1 torta.',
+    )
+  })
+
+  it('aria-label sin tope: Sin ubicar y planta sin cupo', () => {
+    const floating = zoneLoad(dinnerZones(0, 22), 'event_floating', HUB_ZONE_CAPS)
+    expect(zoneAriaLabel(floating, 'jueves 10 de septiembre')).toBe(
+      'Cena, jueves 10 de septiembre, Sin ubicar: 22 personas sin planta.',
+    )
+    const noCap = zoneLoad(dinnerZones(22), 'planta_alta', NO_CAPS)
+    expect(zoneAriaLabel(noCap, '')).toBe('Cena, Planta Alta: 22 personas, sin tope.')
+  })
+
+  it('agenda: solo servicios con gente en la planta, estado si está en ámbar o rojo', () => {
+    const rows = [
+      res({
+        meal_type: 'lunch',
+        reservation_time_local: '13:00:00',
+        zone: 'planta_baja',
+        estimated_guests: 19,
+      }),
+      res({ zone: 'planta_alta', estimated_guests: 58 }),
+      res({ zone: 'planta_alta', estimated_guests: 4, kind: 'birthday', cake_count: 1 }),
+    ]
+    const d = day('2026-09-10', rows)
+    expect(zoneAgendaDetailLines(d, 'planta_alta', HUB_ZONE_CAPS)).toEqual([
+      'Cena: Te pasaste por 2 en Planta Alta · 1 cumple · 1 torta',
+    ])
+    // PB al mediodía: 19/70, en verde y sin festejos → nada que agregar.
+    expect(zoneAgendaDetailLines(d, 'planta_baja', HUB_ZONE_CAPS)).toEqual([])
+  })
+})
+
+describe('filtro de planta · el día', () => {
+  it('la tarjeta del evento dice cuántos de los suyos van en la planta', () => {
+    const byZone = { planta_alta: 29, planta_baja: 0, event_floating: 89 }
+    expect(eventZoneLine({ byZone }, 'planta_alta')).toBe('29 personas en Planta Alta')
+    expect(eventZoneLine({ byZone }, 'planta_baja')).toBe('Nadie en Planta Baja')
+    expect(eventZoneLine({ byZone }, 'event_floating')).toBe('89 personas sin planta')
+    expect(eventZoneLine({ byZone: { ...byZone, event_floating: 0 } }, 'event_floating')).toBe(
+      'Nadie sin planta',
+    )
+    expect(eventZoneLine({ byZone: { ...byZone, planta_alta: 1 } }, 'planta_alta')).toBe(
+      '1 persona en Planta Alta',
+    )
+  })
+
+  it('el servicio entero como contexto: «Toda la cena: 119/120»', () => {
+    const d = day('2026-09-10', SEP10, SEP10_EVENTS)
+    expect(segmentWholeLine(d.segments.dinner)).toBe('Toda la cena: 119/120')
+    expect(segmentWholeLine(d.segments.lunch)).toBe('Todo el almuerzo: 19/70')
+    const noCap = day('2026-09-10', [res({ estimated_guests: 22 })], [], {
+      weekly: [],
+      overrides: [],
+      settings: [],
+      fallbackTotal: 0,
+    })
+    expect(segmentWholeLine(noCap.segments.dinner)).toBe('Toda la cena: 22')
+  })
+})
+
+describe('filtro de planta · el servicio manda sobre la planta', () => {
+  const lunchOverride = (capacity: number, reason: string | null): SegmentConfig => ({
+    ...HUB_CONFIG,
+    overrides: [{ segment: 'lunch', override_date: '2026-09-10', capacity, warn_at: null, reason }],
+  })
+  const lunchRes = (guests: number, zone: 'planta_alta' | 'planta_baja' = 'planta_baja') =>
+    res({ meal_type: 'lunch', reservation_time_local: '13:00:00', zone, estimated_guests: guests })
+
+  it('almuerzo cerrado (cupo especial 0) y vacío: «Cerrado», no «Quedan 60 lugares»', () => {
+    const s = day('2026-09-10', [], [], lunchOverride(0, 'Evento privado')).segments.lunch
+    const c = zoneSectionCopy(s, zoneLoad(s, 'planta_alta', HUB_ZONE_CAPS))
+    expect(c).toEqual({ status: 'Cerrado', tone: 'none', whole: null, serviceLimits: true })
+    // El motivo lo pinta la vista con capSourceLabel cuando serviceLimits.
+    expect(capSourceLabel(s, 4)).toBe('Cupo especial: Evento privado')
+  })
+
+  it('cerrado con un evento y sin gente: sigue «Cerrado», sin «Todo el almuerzo: 0/0»', () => {
+    const s = day(
+      '2026-09-10',
+      [],
+      [ev({ id: 'brunch', name: 'Brunch', capacity: 80, starts_at_local: '13:00:00' })],
+      lunchOverride(0, 'Evento privado'),
+    ).segments.lunch
+    expect(s.hasActivity).toBe(true)
+    const c = zoneSectionCopy(s, zoneLoad(s, 'planta_alta', HUB_ZONE_CAPS))
+    expect(c.status).toBe('Cerrado')
+    expect(c.whole).toBeNull()
+  })
+
+  it('cerrado pero con gente: la línea del servicio y el servicio entero en chico', () => {
+    const s = day('2026-09-10', [lunchRes(5)], [], lunchOverride(0, null)).segments.lunch
+    const c = zoneSectionCopy(s, zoneLoad(s, 'planta_alta', HUB_ZONE_CAPS))
+    expect(c.status).toBe('Te pasaste por 5')
+    expect(c.tone).toBe('over')
+    expect(c.whole).toBe('Todo el almuerzo: 5/0')
+  })
+
+  it('servicio vacío con menos cupo que la planta: va el servicio entero y de dónde sale', () => {
+    const s = day('2026-09-10', [], [], lunchOverride(20, null)).segments.lunch
+    const c = zoneSectionCopy(s, zoneLoad(s, 'planta_alta', HUB_ZONE_CAPS))
+    expect(c.status).toBe('Quedan 60 lugares en Planta Alta')
+    expect(c.whole).toBe('Todo el almuerzo: 0/20')
+    expect(c.serviceLimits).toBe(true)
+  })
+
+  it('servicio que no recorta la planta: como siempre (vacío no dice nada del servicio)', () => {
+    const empty = day('2026-09-10', []).segments.dinner
+    expect(zoneSectionCopy(empty, zoneLoad(empty, 'planta_alta', HUB_ZONE_CAPS))).toEqual({
+      status: 'Quedan 60 lugares en Planta Alta',
+      tone: 'none',
+      whole: null,
+      serviceLimits: false,
+    })
+    const busy = dinnerZones(46)
+    const c = zoneSectionCopy(busy, zoneLoad(busy, 'planta_alta', HUB_ZONE_CAPS))
+    expect(c.status).toBe('Quedan 14 lugares en Planta Alta')
+    expect(c.tone).toBe('ok')
+    expect(c.whole).toBe('Toda la cena: 46/120')
+    expect(c.serviceLimits).toBe(false)
+  })
+
+  it('sin cupo por planta o «Sin ubicar»: no hay número de la planta que recortar', () => {
+    const s = day('2026-09-10', [], [], lunchOverride(20, null)).segments.lunch
+    expect(zoneSectionCopy(s, zoneLoad(s, 'planta_alta', NO_CAPS))).toMatchObject({
+      status: 'Nadie en Planta Alta · sin tope',
+      whole: null,
+      serviceLimits: false,
+    })
+    expect(zoneSectionCopy(s, zoneLoad(s, 'event_floating', HUB_ZONE_CAPS))).toMatchObject({
+      status: 'Nadie sin planta',
+      whole: null,
+      serviceLimits: false,
+    })
   })
 })

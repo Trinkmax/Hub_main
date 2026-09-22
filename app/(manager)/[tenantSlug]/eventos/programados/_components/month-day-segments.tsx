@@ -2,8 +2,16 @@ import {
   SEGMENT_TONE_CLASSES,
   SegmentBar,
   SegmentChip,
+  ZoneBar,
+  ZoneChip,
 } from '@/components/reservations/segment-meter'
-import { type DaySegments, SEGMENT_KEYS, type SegmentKey } from '@/lib/salon/segments'
+import {
+  type DaySegments,
+  SEGMENT_KEYS,
+  type SegmentKey,
+  type ZoneCaps,
+  zoneLoad,
+} from '@/lib/salon/segments'
 import {
   agendaDetailLines,
   segmentAlertMark,
@@ -11,7 +19,13 @@ import {
   segmentCellBreakdown,
   segmentHeadline,
   segmentTone,
+  zoneAgendaDetailLines,
+  zoneAriaLabel,
+  zoneCellBreakdown,
+  zoneHeadline,
+  zoneTone,
 } from '@/lib/salon/segments-copy'
+import type { SalonZone } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
 /**
@@ -34,19 +48,41 @@ import { cn } from '@/lib/utils'
  * nunca es la única señal: el número va siempre y la causa completa está en el
  * aria-label y el title (no se usa Tooltip porque no hay TooltipProvider
  * global). Sin directiva: lo importa el mes, que es cliente.
+ *
+ * Con `zone` (el filtro de planta) cada servicio muestra solo la gente de esa
+ * planta contra el cupo de la planta ("C 46/60"): ver `ZoneDaySegments`.
  */
 export function MonthDaySegments({
   day,
   variant,
   dayLabel,
   onOpenSegment,
+  zone = null,
+  zoneCaps,
 }: {
   day: DaySegments
   variant: 'cell' | 'agenda'
   /** Fecha larga ('jueves 10 de septiembre') para el aria-label de cada servicio. */
   dayLabel: string
   onOpenSegment: (segment: SegmentKey) => void
+  /** Planta elegida en el filtro del calendario; null = «Todo». */
+  zone?: SalonZone | null
+  /** Cupo de cada planta (obligatorio si hay `zone`). */
+  zoneCaps?: ZoneCaps
 }) {
+  if (zone && zoneCaps) {
+    return (
+      <ZoneDaySegments
+        day={day}
+        variant={variant}
+        dayLabel={dayLabel}
+        onOpenSegment={onOpenSegment}
+        zone={zone}
+        zoneCaps={zoneCaps}
+      />
+    )
+  }
+
   const active = SEGMENT_KEYS.map((key) => day.segments[key]).filter((s) => s.hasActivity)
   if (active.length === 0) return null
 
@@ -103,6 +139,91 @@ export function MonthDaySegments({
               {segmentAlertMark(s)}
             </span>
             <SegmentBar segment={s} size="xs" />
+            {breakdown ? (
+              <span className="hidden text-[10px] leading-3 text-muted-foreground lg:line-clamp-2">
+                {breakdown}
+              </span>
+            ) : null}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
+ * El día filtrado por planta: por servicio CON GENTE EN ESA PLANTA, personas de
+ * la planta contra su cupo ("Cena 46/60"), la barra simple y los festejos de
+ * esa planta. Mismo layout que la vista sin filtro para que el ojo no tenga
+ * que reaprender la celda; sin el desglose de normales ni del evento, que son
+ * del servicio entero.
+ */
+function ZoneDaySegments({
+  day,
+  variant,
+  dayLabel,
+  onOpenSegment,
+  zone,
+  zoneCaps,
+}: {
+  day: DaySegments
+  variant: 'cell' | 'agenda'
+  dayLabel: string
+  onOpenSegment: (segment: SegmentKey) => void
+  zone: SalonZone
+  zoneCaps: ZoneCaps
+}) {
+  const active = SEGMENT_KEYS.map((key) => zoneLoad(day.segments[key], zone, zoneCaps)).filter(
+    (z) => z.hasActivity,
+  )
+  if (active.length === 0) return null
+
+  if (variant === 'agenda') {
+    const details = zoneAgendaDetailLines(day, zone, zoneCaps)
+    return (
+      <div className="space-y-1">
+        <div className="flex flex-wrap gap-1.5">
+          {active.map((z) => (
+            <ZoneChip
+              key={z.segment}
+              load={z}
+              label="short"
+              onClick={() => onOpenSegment(z.segment)}
+              ariaLabel={zoneAriaLabel(z, dayLabel)}
+            />
+          ))}
+        </div>
+        {details.length > 0 ? (
+          <p className="line-clamp-2 text-[11px] leading-4 text-muted-foreground">
+            {details.join('. ')}
+          </p>
+        ) : null}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      {active.map((z) => {
+        const tone = SEGMENT_TONE_CLASSES[zoneTone(z)]
+        const label = zoneAriaLabel(z, dayLabel)
+        const breakdown = zoneCellBreakdown(z)
+        return (
+          <button
+            key={z.segment}
+            type="button"
+            onClick={() => onOpenSegment(z.segment)}
+            aria-label={label}
+            title={label}
+            className="-mx-1 flex min-w-0 flex-col gap-0.5 rounded px-1 py-0.5 text-left outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            <span
+              className={cn('font-mono text-[10px] leading-3 font-medium tabular-nums', tone.text)}
+            >
+              <span className="xl:hidden">{zoneHeadline(z, 'letter')}</span>
+              <span className="hidden xl:inline">{zoneHeadline(z, 'short')}</span>
+            </span>
+            <ZoneBar load={z} size="xs" />
             {breakdown ? (
               <span className="hidden text-[10px] leading-3 text-muted-foreground lg:line-clamp-2">
                 {breakdown}

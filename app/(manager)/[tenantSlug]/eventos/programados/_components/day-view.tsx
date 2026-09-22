@@ -34,8 +34,16 @@ import {
   type SegmentKey,
   type SegmentLoad,
   type SegmentOverrideRow,
+  type ZoneFilter,
+  zoneOfFilter,
 } from '@/lib/salon/segments'
-import { mismatchCopy, SEGMENT_LABELS } from '@/lib/salon/segments-copy'
+import {
+  mismatchCopy,
+  SEGMENT_LABELS,
+  ZONE_CLEAR_ARIA,
+  ZONE_CLEAR_LABEL,
+  zoneViewingLabel,
+} from '@/lib/salon/segments-copy'
 import { RESERVATION_OPERATOR_ROLES, RESERVATION_STAFF_ROLES } from '@/lib/tenant/roles'
 import type { TenantRole } from '@/lib/tenant/types'
 import { cn } from '@/lib/utils'
@@ -55,6 +63,10 @@ export type DayViewProps = {
   anchorSegment: SegmentKey | null
   focusReservationId: string | null
   initialOverview: DayOverview | null
+  /** Filtro de planta del calendario (?planta); null = «Todo». */
+  zoneFilter?: ZoneFilter | null
+  /** «Ver todo»: saca el filtro de planta (el mes también queda sin filtro). */
+  onClearZone?: () => void
   onDateChange: (date: string) => void
   onClose: () => void
 }
@@ -162,8 +174,13 @@ function offsetWithin(el: HTMLElement, container: HTMLElement): number {
  * misma función que usan el mes, el form y el operativo: ninguna pantalla
  * muestra otro número para lo mismo.
  *
- * La URL (?day, ?seg, ?res) la maneja el mes: esta vista solo avisa con
- * `onDateChange` / `onClose`.
+ * La URL (?day, ?seg, ?res, ?planta) la maneja el mes: esta vista solo avisa
+ * con `onDateChange` / `onClose` / `onClearZone`.
+ *
+ * Con el filtro de planta, cada servicio se mide contra el cupo de la planta,
+ * las filas son solo las de esa planta («Sin ubicar» = reservas de evento sin
+ * planta) y las tarjetas de evento dicen cuántos de ese evento van ahí. El
+ * chip «Viendo Planta alta · Ver todo» deja salir del filtro sin cerrar el día.
  *
  * Después de un cambio (cupo especial, vista rápida, pasar lista) no se relee
  * nada a mano: todas esas actions revalidan /eventos/programados y Next 16
@@ -180,9 +197,12 @@ export function DayView({
   anchorSegment,
   focusReservationId,
   initialOverview,
+  zoneFilter = null,
+  onClearZone,
   onDateChange,
   onClose,
 }: DayViewProps) {
+  const zone = zoneFilter ? zoneOfFilter(zoneFilter) : null
   // Último día abierto: el contenido sigue en pantalla durante la animación
   // de cierre en lugar de vaciarse de golpe.
   const [shownDate, setShownDate] = useState(date)
@@ -297,14 +317,22 @@ export function DayView({
     [overview],
   )
 
-  // Vista rápida abierta, atada a su día: al cambiar de día o cerrar la vista
-  // se descarta, así reabrir el mismo día no vuelve a abrir el popup solo.
-  const [quickOpen, setQuickOpen] = useState<{ date: string; id: string } | null>(null)
-  if (quickOpen !== null && quickOpen.date !== date) setQuickOpen(null)
+  // Vista rápida abierta, atada a su día y a su filtro de planta: al cambiar
+  // de día, cerrar la vista o cambiar el filtro se descarta, así reabrir el
+  // mismo día o tocar «Ver todo» no vuelve a abrir el popup solo (un popup que
+  // se desmonta sin cerrarse no avisa, y el estado quedaba apuntando a él).
+  const [quickOpen, setQuickOpen] = useState<{
+    date: string
+    zone: ZoneFilter | null
+    id: string
+  } | null>(null)
+  if (quickOpen !== null && (quickOpen.date !== date || quickOpen.zone !== zoneFilter)) {
+    setQuickOpen(null)
+  }
   const openReservationId = quickOpen?.id ?? null
   const onOpenReservation = useCallback(
-    (id: string | null) => setQuickOpen(id && date ? { date, id } : null),
-    [date],
+    (id: string | null) => setQuickOpen(id && date ? { date, zone: zoneFilter, id } : null),
+    [date, zoneFilter],
   )
 
   // ── Reloj: el servicio en foco de hoy es el que está en curso ──
@@ -487,10 +515,11 @@ export function DayView({
   const shortLabel = shownDate ? shortDayLabel(shownDate) : ''
   const isoDow = shownDate ? isoDowOf(shownDate) : null
 
+  // Con ?volver=calendario: al guardar se vuelve a este día, no a la lista.
   const footerHref =
     shownDate && focus
-      ? newReservationHref(tenantSlug, { date: shownDate, segment: focus })
-      : newReservationHref(tenantSlug, shownDate ? { date: shownDate } : {})
+      ? newReservationHref(tenantSlug, { date: shownDate, segment: focus, from: 'calendario' })
+      : newReservationHref(tenantSlug, { date: shownDate ?? undefined, from: 'calendario' })
   const footerLabel =
     focus && overview
       ? `Nueva reserva · ${SEGMENT_LABELS[focus]} ${overview.settings[focus].defaultTime}`
@@ -563,6 +592,27 @@ export function DayView({
               </Button>
             </DialogClose>
           </div>
+
+          {zoneFilter ? (
+            <div className="flex justify-center">
+              <p className="inline-flex max-w-full items-center gap-1 rounded-full border border-primary/40 bg-primary/10 py-0.5 pr-0.5 pl-2.5 text-xs font-medium text-primary">
+                <span className="truncate">{zoneViewingLabel(zoneFilter)}</span>
+                {onClearZone ? (
+                  <>
+                    <span aria-hidden>·</span>
+                    <button
+                      type="button"
+                      onClick={onClearZone}
+                      aria-label={ZONE_CLEAR_ARIA}
+                      className="min-h-6 shrink-0 rounded-full px-2 underline underline-offset-2 outline-none transition-colors hover:bg-primary/15 focus-visible:ring-2 focus-visible:ring-ring/50"
+                    >
+                      {ZONE_CLEAR_LABEL}
+                    </button>
+                  </>
+                ) : null}
+              </p>
+            </div>
+          ) : null}
 
           {shownDate && (canRollCall || isOwner) ? (
             <div className="flex flex-wrap items-center justify-center gap-2">
@@ -658,6 +708,8 @@ export function DayView({
                     canRaise={canRaise}
                     isToday={isToday}
                     suggestedRaise={overview.suggestedRaise[key]}
+                    zone={zone}
+                    zoneCaps={overview.zoneCaps}
                     raising={busySegment === key}
                     focusReservationId={focusReservationId}
                     openReservationId={openReservationId}

@@ -40,13 +40,14 @@ import {
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { moveScheduledEvent } from '@/lib/salon/actions'
-import { calendarHref, newReservationHref } from '@/lib/salon/calendar-links'
+import { calendarHref, hrefWithoutZone, newReservationHref } from '@/lib/salon/calendar-links'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import type { DayOverview } from '@/lib/salon/segment-queries'
 import { calendarParamsSchema } from '@/lib/salon/segment-schemas'
 import {
   type DaySegments,
   dayCelebrations,
+  dayHasZoneActivity,
   eventDisplayName,
   eventLoadsById,
   type MonthSegments,
@@ -54,15 +55,19 @@ import {
   type SegmentEventLoad,
   type SegmentKey,
   segmentOfEventStart,
+  type ZoneCaps,
+  type ZoneFilter,
+  zoneOfFilter,
 } from '@/lib/salon/segments'
-import { capSourceLabel, SEGMENT_LABELS } from '@/lib/salon/segments-copy'
-import type { ScheduledEventTemplateRow } from '@/lib/salon/types'
+import { calendarLegend, capSourceLabel, SEGMENT_LABELS } from '@/lib/salon/segments-copy'
+import type { SalonZone, ScheduledEventTemplateRow } from '@/lib/salon/types'
 import type { TenantRole } from '@/lib/tenant/types'
 import { cn } from '@/lib/utils'
 import { DayAddMenu } from './day-add-menu'
 import { DayView } from './day-view'
 import { MonthDaySegments } from './month-day-segments'
 import { TemplateDropDialog } from './template-drop-dialog'
+import { ZoneFilterControl } from './zone-filter-control'
 
 function shiftYM(ym: string, months: number): string {
   const [y, m] = ym.split('-').map(Number)
@@ -150,26 +155,33 @@ export function ScheduledEventsMonth({
   // mismo cálculo por servicio que pinta las celdas.
   const eventLoad = useMemo(() => eventLoadsById(monthSegments.days), [monthSegments])
 
-  // ── Día abierto en la URL (?day, ?seg, ?res) ──
+  // ── Día abierto en la URL (?day, ?seg, ?res) y filtro de planta (?planta) ──
   // La URL es la fuente de verdad: el deep-link /eventos/programados?day=… abre
-  // el día, ?day=hoy abre hoy (lo usa ⌘K) y el Atrás del celu lo cierra. Next
+  // el día, ?day=hoy abre hoy (un link fijo) y el Atrás del celu lo cierra. Next
   // 16 sincroniza window.history.pushState/replaceState con useSearchParams
   // (docs 01-app/01-getting-started/04-linking-and-navigating.md, "Native
   // History API"), así que abrir y cerrar no pide nada al server.
   const searchParams = useSearchParams()
-  const { openDay, anchorSegment, focusId } = useMemo(() => {
-    // Cada campo trae .catch(undefined): un ?day o ?res roto se ignora.
+  const { openDay, anchorSegment, focusId, zoneFilter } = useMemo(() => {
+    // Cada campo trae .catch(undefined): un ?day, ?res o ?planta roto se ignora.
     const p = calendarParamsSchema.parse({
       day: searchParams.get('day') ?? undefined,
       seg: searchParams.get('seg') ?? undefined,
       res: searchParams.get('res') ?? undefined,
+      planta: searchParams.get('planta') ?? undefined,
     })
     return {
       openDay: p.day === 'hoy' ? today : (p.day ?? null),
       anchorSegment: p.seg ?? null,
       focusId: p.res ?? null,
+      zoneFilter: p.planta ?? null,
     }
   }, [searchParams, today])
+  // La zona que filtra el mes y el día (null = «Todo»). El filtro es solo de
+  // vista: el mes ya trae todas las zonas y acá se elige cuál mostrar, sin
+  // pedir nada al server.
+  const zone: SalonZone | null = zoneFilter ? zoneOfFilter(zoneFilter) : null
+  const zoneParam = zoneFilter ?? undefined
 
   // ¿La entrada anterior del historial es este mismo mes sin día abierto? Si
   // sí, cerrar = history.back() (el Atrás del celu y la X hacen lo mismo y el
@@ -180,6 +192,10 @@ export function ScheduledEventsMonth({
   // URL: un back ahí sacaría al usuario del calendario.
   const pushedRef = useRef(false)
   const closingRef = useRef(false)
+  // «Ver todo» con un día abierto desde el mes: la entrada de abajo es el mes
+  // CON ?planta. Al volver a ella (la X hace back(), o el Atrás del celu), el
+  // popstate le saca el filtro. Ver `clearZoneFromDay`.
+  const dropZoneOnPopRef = useRef(false)
   const lastUrlRef = useRef<{ day: string | null; ym: string }>({ day: openDay, ym })
   useEffect(() => {
     const last = lastUrlRef.current
@@ -187,6 +203,7 @@ export function ScheduledEventsMonth({
     if (openDay === null) {
       pushedRef.current = false
       closingRef.current = false
+      dropZoneOnPopRef.current = false
       return
     }
     if (last.day === null) pushedRef.current = last.ym === ym
@@ -202,7 +219,19 @@ export function ScheduledEventsMonth({
   useEffect(() => {
     function onPopState() {
       closingRef.current = false
-      if (urlHasOpenDay()) pushedRef.current = false
+      if (urlHasOpenDay()) {
+        pushedRef.current = false
+        return
+      }
+      // Se llegó al mes que quedó debajo del día después de «Ver todo»: se le
+      // saca ?planta reemplazando la entrada (sin sumar otra), así el mes
+      // queda sin filtro como pidió el dueño y el Atrás siguiente no vuelve
+      // al mes filtrado.
+      if (dropZoneOnPopRef.current) {
+        dropZoneOnPopRef.current = false
+        const href = hrefWithoutZone(window.location.href)
+        if (href) window.history.replaceState(null, '', href)
+      }
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
@@ -210,13 +239,14 @@ export function ScheduledEventsMonth({
 
   const openDayAt = useCallback<OpenDay>(
     (date, segment) => {
-      const href = calendarHref(tenantSlug, { month: ym, day: date, segment })
+      // El filtro de planta viaja: el día abre mostrando la misma planta.
+      const href = calendarHref(tenantSlug, { month: ym, zone: zoneParam, day: date, segment })
       // Un segundo toque antes de que el día termine de abrir no suma otra
       // entrada: con dos entradas iguales, cerrar volvía al mismo día.
       if (urlHasOpenDay()) window.history.replaceState(null, '', href)
       else window.history.pushState(null, '', href)
     },
-    [tenantSlug, ym],
+    [tenantSlug, ym, zoneParam],
   )
 
   const closeDay = useCallback(() => {
@@ -227,17 +257,51 @@ export function ScheduledEventsMonth({
       window.history.back()
       return
     }
-    window.history.replaceState(null, '', calendarHref(tenantSlug, { month: ym }))
-  }, [tenantSlug, ym])
+    window.history.replaceState(null, '', calendarHref(tenantSlug, { month: ym, zone: zoneParam }))
+  }, [tenantSlug, ym, zoneParam])
 
   // Recorrer días con las flechas no agrega entradas: Atrás sigue cerrando.
   // ?seg y ?res eran del día que se abrió: no viajan al siguiente.
   const changeDay = useCallback(
     (date: string) => {
-      window.history.replaceState(null, '', calendarHref(tenantSlug, { month: ym, day: date }))
+      window.history.replaceState(
+        null,
+        '',
+        calendarHref(tenantSlug, { month: ym, zone: zoneParam, day: date }),
+      )
     },
-    [tenantSlug, ym],
+    [tenantSlug, ym, zoneParam],
   )
+
+  // Cambiar el filtro de planta REEMPLAZA la URL: no ensucia el historial (el
+  // Atrás no recorre filtros) y conserva el mes y el día abierto con su ancla.
+  const changeZone = useCallback(
+    (next: ZoneFilter | null) => {
+      window.history.replaceState(
+        null,
+        '',
+        calendarHref(tenantSlug, {
+          month: ym,
+          zone: next ?? undefined,
+          day: openDay ?? undefined,
+          segment: anchorSegment ?? undefined,
+          focusId: focusId ?? undefined,
+        }),
+      )
+    },
+    [tenantSlug, ym, openDay, anchorSegment, focusId],
+  )
+
+  // «Ver todo» desde el día abierto. Si el día se abrió desde el mes, la
+  // entrada de abajo es el mes TODAVÍA filtrado (tiene ?planta). Cerrar sigue
+  // siendo history.back() —la X y el Atrás del celu hacen lo mismo y el
+  // historial no acumula el día— y el popstate le saca el filtro a esa
+  // entrada al llegar. Antes se apagaba pushedRef: la X reemplazaba la URL y
+  // el mes filtrado quedaba debajo, y el Atrás del celu volvía directo a él.
+  const clearZoneFromDay = useCallback(() => {
+    if (pushedRef.current) dropZoneOnPopRef.current = true
+    changeZone(null)
+  }, [changeZone])
 
   const sensors = useSensors(
     // Distancia mínima evita que un click normal sobre el evento se interprete
@@ -319,7 +383,7 @@ export function ScheduledEventsMonth({
   }, [ym, events])
 
   function gotoMonth(next: string) {
-    router.push(calendarHref(tenantSlug, { month: next }))
+    router.push(calendarHref(tenantSlug, { month: next, zone: zoneParam }))
   }
 
   return (
@@ -379,13 +443,19 @@ export function ScheduledEventsMonth({
             </Button>
           </header>
 
-          {/* Leyenda única: explica el número una vez en lugar de en cada celda. */}
+          {/* Filtro de planta: «Todo» es la vista por servicio de siempre. */}
+          <div className="mb-2 flex justify-center">
+            <ZoneFilterControl value={zoneFilter} onChange={changeZone} />
+          </div>
+
+          {/* Leyenda única: explica el número una vez en lugar de en cada celda.
+              Con una planta elegida dice que el número es de esa planta. */}
           <p
             data-tour="eventos-leyenda"
+            aria-live="polite"
             className="mb-3 text-center text-[11px] text-muted-foreground text-pretty"
           >
-            Alm · Mer · Cena = personas / cupo de cada servicio · tocá un evento para reservar
-            adentro
+            {calendarLegend(zoneFilter, monthSegments.zoneCaps)}
           </p>
 
           {/* Agenda vertical para mobile: la grilla 7-col deja celdas ilegibles en celular.
@@ -398,6 +468,7 @@ export function ScheduledEventsMonth({
               monthSegments={monthSegments}
               eventLoad={eventLoad}
               today={today}
+              zone={zone}
               onOpenDay={openDayAt}
             />
           </div>
@@ -422,6 +493,8 @@ export function ScheduledEventsMonth({
                 isDraggingTemplate={activeDrag?.kind === 'template'}
                 isDraggingEvent={activeDrag?.kind === 'event'}
                 eventLoad={eventLoad}
+                zone={zone}
+                zoneCaps={monthSegments.zoneCaps}
                 onOpenDay={openDayAt}
               />
             ))}
@@ -466,6 +539,8 @@ export function ScheduledEventsMonth({
         anchorSegment={anchorSegment}
         focusReservationId={focusId}
         initialOverview={initialOverview}
+        zoneFilter={zoneFilter}
+        onClearZone={clearZoneFromDay}
         onDateChange={changeDay}
         onClose={closeDay}
         // Sin onMutated: los cambios del día (vista rápida, pasar lista, cupo
@@ -563,9 +638,14 @@ function OverrideMark({ day }: { day: DaySegments }) {
   )
 }
 
-/** ¿El día tiene algo que mostrar? (un servicio con gente o eventos, o eventos programados). */
-function hasSegmentActivity(day: DaySegments | null): boolean {
-  return day !== null && SEGMENT_KEYS.some((key) => day.segments[key].hasActivity)
+/**
+ * ¿El día tiene algo que mostrar? Un servicio con gente o eventos; con el
+ * filtro de planta, gente en esa planta (los eventos se ven igual en su chip).
+ */
+function hasSegmentActivity(day: DaySegments | null, zone: SalonZone | null): boolean {
+  if (day === null) return false
+  if (zone) return dayHasZoneActivity(day, zone)
+  return SEGMENT_KEYS.some((key) => day.segments[key].hasActivity)
 }
 
 // Agenda mensual para mobile: todos los días del mes, con sus servicios y
@@ -577,6 +657,7 @@ function MonthAgenda({
   monthSegments,
   eventLoad,
   today,
+  zone,
   onOpenDay,
 }: {
   ym: string
@@ -585,6 +666,8 @@ function MonthAgenda({
   monthSegments: MonthSegments
   eventLoad: Record<string, SegmentEventLoad>
   today: string
+  /** Planta del filtro (null = «Todo»). */
+  zone: SalonZone | null
   onOpenDay: OpenDay
 }) {
   // El hook va ANTES de cualquier early return: si no, React rompe el orden.
@@ -624,8 +707,8 @@ function MonthAgenda({
         const isToday = date === today
         // Un mes son 30 filas: el día sin servicios activos ni eventos va
         // compacto y apagado para que la lista siga siendo recorrible con el pulgar.
-        const isEmpty = dayEvents.length === 0 && !hasSegmentActivity(day)
-        const celebrations = day ? dayCelebrations(day) : null
+        const isEmpty = dayEvents.length === 0 && !hasSegmentActivity(day, zone)
+        const celebrations = day ? dayCelebrations(day, zone) : null
         const longLabel = formatLongDate(date)
         return (
           <div
@@ -677,6 +760,8 @@ function MonthAgenda({
                     day={day}
                     variant="agenda"
                     dayLabel={longLabel}
+                    zone={zone}
+                    zoneCaps={monthSegments.zoneCaps}
                     onOpenSegment={(segment) => onOpenDay(date, segment)}
                   />
                 ) : null}
@@ -752,7 +837,11 @@ function EventTap({
   if (event.event_date >= today) {
     return (
       <Link
-        href={newReservationHref(tenantSlug, { date: event.event_date, eventId: event.id })}
+        href={newReservationHref(tenantSlug, {
+          date: event.event_date,
+          eventId: event.id,
+          from: 'calendario',
+        })}
         onClick={stop}
         aria-label={`Reservar en ${name}, ${time}, ${count}`}
         className={className}
@@ -936,6 +1025,8 @@ function DayCell({
   isDraggingTemplate,
   isDraggingEvent,
   eventLoad,
+  zone,
+  zoneCaps,
   onOpenDay,
 }: {
   date: string | null
@@ -949,6 +1040,9 @@ function DayCell({
   isDraggingEvent: boolean
   /** Carga de cada evento, indexada por id. */
   eventLoad: Record<string, SegmentEventLoad>
+  /** Planta del filtro (null = «Todo»). */
+  zone: SalonZone | null
+  zoneCaps: ZoneCaps
   onOpenDay: OpenDay
 }) {
   // Las celdas vacías de padding no son droppables.
@@ -964,12 +1058,13 @@ function DayCell({
   const isToday = date === today
   const dragging = isDraggingTemplate || isDraggingEvent
   const hasEvents = events.length > 0
-  const busy = hasEvents || hasSegmentActivity(day)
+  const busy = hasEvents || hasSegmentActivity(day, zone)
   // Acento de borde-izquierdo con el color del primer evento del día.
   const accent = hasEvents ? (events[0]?.template?.color_hex ?? null) : null
   const longLabel = formatLongDate(date)
-  // Cumpleaños y tortas del día: lo que hay que PREPARAR, no lo que hay que sentar.
-  const celebrations = day ? dayCelebrations(day) : null
+  // Cumpleaños y tortas del día: lo que hay que PREPARAR, no lo que hay que
+  // sentar. Con el filtro, los de esa planta (los mismos que dice la celda).
+  const celebrations = day ? dayCelebrations(day, zone) : null
 
   return (
     <div
@@ -1028,6 +1123,8 @@ function DayCell({
             day={day}
             variant="cell"
             dayLabel={longLabel}
+            zone={zone}
+            zoneCaps={zoneCaps}
             onOpenSegment={(segment) => onOpenDay(date, segment)}
           />
         ) : null}
