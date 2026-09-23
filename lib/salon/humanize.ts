@@ -52,7 +52,9 @@ export function humanizeSalonError(message: string): string {
     return 'Ya hay un evento programado de ese tipo para ese día.'
   if (m.includes('exclusion violation') && m.includes('commission_rate_tiers_no_overlap'))
     return 'El rango de personas se solapa con otro tier activo.'
-  if (m.includes('salon_reservations_table_label_len'))
+  // `table_label_too_long` lo tira `set_reservation_table_label` (la RPC con la
+  // que el mozo carga la mesa); el `_len` es el CHECK de la tabla.
+  if (m.includes('salon_reservations_table_label_len') || m.includes('table_label_too_long'))
     return 'La mesa es un texto corto (hasta 24 caracteres).'
   if (m.includes('check constraint') || m.includes('violates check'))
     return 'Algún campo tiene un valor fuera de rango.'

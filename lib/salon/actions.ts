@@ -127,6 +127,32 @@ function asObject(input: FormData | Record<string, unknown>): Record<string, unk
 // ──────────────────────────────────────────────────────────
 
 /**
+ * Primera fila de una RPC `returns table(...)`.
+ *
+ * PostgREST devuelve un array para esas funciones y un objeto para las que
+ * devuelven un row compuesto: normalizamos acá para no repetir el ternario en
+ * cada llamada.
+ */
+function firstRpcRow<T>(data: unknown): T | null {
+  if (Array.isArray(data)) return (data[0] as T | undefined) ?? null
+  return (data as T | null) ?? null
+}
+
+/**
+ * ¿El error es "la función todavía no existe en esta base"?
+ *
+ * `set_reservation_table_label` nace con la migración 20260923130000. Si un
+ * deploy lleva el código pero todavía no la migración, PostgREST contesta
+ * `PGRST202` (no encuentra la función en el schema cache) y Postgres `42883`.
+ * Sin esto el mozo veía "No pudimos completar la acción" y nadie podía saber
+ * que lo que faltaba era aplicar la migración.
+ */
+function missingTableLabelRpc(error: { code?: string | null } | null): boolean {
+  const code = error?.code ?? ''
+  return code === 'PGRST202' || code === '42883'
+}
+
+/**
  * Marca al cliente como "adquirido por reserva".
  *
  * La pestaña Personas → Reservas filtra por `customers.acquisition_channel =
@@ -698,22 +724,27 @@ export async function transitionStatus(
   let warning: string | undefined
 
   // La mesa viaja en el mismo gesto que "Llegó" (contar + ubicar es un solo
-  // momento con la gente adelante). Va DESPUÉS de la transición y por UPDATE
-  // directo: la RPC es la máquina de estados y no tiene por qué saber de mesas.
-  // Si este paso falla, la llegada ya quedó registrada — que es lo que importa
-  // para la comisión — y se avisa que la mesa no se guardó.
+  // momento con la gente adelante). Va DESPUÉS de la transición y por su propia
+  // RPC: la máquina de estados no tiene por qué saber de mesas, y el UPDATE
+  // directo que había acá no servía para el mozo — la RLS `sr_staff_write` es
+  // owner/cashier/host, así que al waiter le devolvía 0 filas en silencio y
+  // siempre veía el aviso de abajo. Si este paso falla, la llegada ya quedó
+  // registrada —que es lo que importa para la comisión— y se avisa.
   if (parsed.data.table_label !== undefined) {
-    const { data: updated, error: tableError } = await supabase
-      .from('salon_reservations')
-      .update({ table_label: parsed.data.table_label })
-      .eq('tenant_id', access.tenant.id)
-      .eq('id', parsed.data.id)
-      .select('table_label')
-      .maybeSingle()
-    if (tableError || !updated) {
-      warning = 'Se marcó la llegada, pero no pudimos guardar la mesa. Asignala de nuevo.'
+    const { data: updated, error: tableError } = await supabase.rpc('set_reservation_table_label', {
+      p_reservation_id: parsed.data.id,
+      p_table_label: parsed.data.table_label,
+      // El tenant del slug, no el de la fila (CLAUDE.md §4): quien es miembro de
+      // dos bares no puede escribir en el otro mandando un id ajeno.
+      p_tenant_id: access.tenant.id,
+    })
+    const tableRow = firstRpcRow<{ table_label: string | null }>(updated)
+    if (tableError || !tableRow) {
+      warning = missingTableLabelRpc(tableError)
+        ? 'Se marcó la llegada, pero falta actualizar el sistema para guardar la mesa. Avisale al dueño.'
+        : 'Se marcó la llegada, pero no pudimos guardar la mesa. Asignala de nuevo.'
     } else {
-      row = { ...row, table_label: (updated as { table_label: string | null }).table_label }
+      row = { ...row, table_label: tableRow.table_label }
     }
   }
 
@@ -873,14 +904,18 @@ export async function closeTable(
  *
  * Es la única edición "chica" que se hace decenas de veces por noche, así que
  * no pasa por `updateSalonReservation` (payload completo + recalc de comisión
- * por un dato que no afecta comisiones). UPDATE directo: la RLS `sr_staff_write`
- * (owner/cashier/host) es exactamente quien opera esta pantalla.
+ * por un dato que no afecta comisiones).
+ *
+ * Va por RPC `SECURITY DEFINER` y no por UPDATE directo porque desde el
+ * 23/09/2026 la mesa también la carga el MOZO al sentar a la gente, y la RLS
+ * `sr_staff_write` deja escribir solo a owner/cashier/host: al waiter el UPDATE
+ * le devolvía 0 filas en silencio. Mismo camino que `transition_reservation_status`.
  */
 export async function updateReservationTableLabel(
   slug: string,
   input: FormData | Record<string, unknown>,
 ): Promise<ActionState> {
-  const access = await authorize(slug, STAFF)
+  const access = await authorize(slug, OPERATORS)
   if (!access) return noAccess()
 
   const parsed = reservationTableLabelSchema.safeParse(asObject(input))
@@ -891,15 +926,26 @@ export async function updateReservationTableLabel(
 
   const label = parsed.data.table_label ?? null
   const supabase = (await createClient()) as SBAny
-  const { data, error } = await supabase
-    .from('salon_reservations')
-    .update({ table_label: label })
-    .eq('tenant_id', access.tenant.id)
-    .eq('id', parsed.data.id)
-    .select('id, table_label, updated_at')
-    .maybeSingle()
-  if (error) return { ok: false, message: humanizeSalonError(error.message) }
-  if (!data) return { ok: false, message: 'La reserva no existe.' }
+  const { data: rpcData, error } = await supabase.rpc('set_reservation_table_label', {
+    p_reservation_id: parsed.data.id,
+    p_table_label: label,
+    // El tenant del slug, no el de la fila (CLAUDE.md §4).
+    p_tenant_id: access.tenant.id,
+  })
+  if (error) {
+    return {
+      ok: false,
+      message: missingTableLabelRpc(error)
+        ? 'Falta actualizar el sistema para cargar la mesa desde acá. Avisale al dueño.'
+        : humanizeSalonError(error.message),
+      code: error.code ?? undefined,
+    }
+  }
+  // La RPC levanta `reservation_not_found` / `forbidden` (los traduce
+  // `humanizeSalonError`), así que acá siempre vuelve la fila; la guarda es por
+  // si algún día devuelve vacío.
+  const data = firstRpcRow<{ id: string; table_label: string | null; updated_at: string }>(rpcData)
+  if (!data) return { ok: false, message: 'No pudimos guardar la mesa.' }
 
   await logAudit({
     tenantId: access.tenant.id,

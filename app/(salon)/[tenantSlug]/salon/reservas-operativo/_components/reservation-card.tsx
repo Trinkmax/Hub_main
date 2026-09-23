@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  Armchair,
   Check,
   GlassWater,
   Loader2,
@@ -25,11 +26,18 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { markArrived, markNoShow, revertStatus, updateActualGuests } from '@/lib/salon/actions'
+import {
+  markArrived,
+  markNoShow,
+  revertStatus,
+  updateActualGuests,
+  updateReservationTableLabel,
+} from '@/lib/salon/actions'
 import { highestSeverity, resolveReservationAlerts } from '@/lib/salon/alerts'
 import { joinedEventName, placeLabel } from '@/lib/salon/place-label'
 import type { ReservationWithJoins, SalonReservationStatus } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
+import { cleanTableLabel, TableField } from './table-field'
 
 /**
  * Una reserva en el pase de lista de la noche.
@@ -47,6 +55,13 @@ import { cn } from '@/lib/utils'
  *
  * Lo que queda detrás del tap en la card es la excepción: no vino, se
  * equivocaron de mesa, o vinieron más/menos personas que las reservadas.
+ *
+ * La MESA (23/09/2026) entra por el mismo camino: se carga opcionalmente junto
+ * con el conteo al marcar "Llegó" —el que la sienta es el que sabe dónde— y
+ * después se corrige tocándola en la tarjeta. Antes solo podía cargarla la
+ * anfitriona desde el tablero del manager, así que quedaba vacía justo cuando
+ * sirve. Se escribe por RPC (`set_reservation_table_label`): la RLS de
+ * `salon_reservations` no le deja escribir al mozo.
  */
 
 const STATUS_STYLE: Record<SalonReservationStatus, string> = {
@@ -97,6 +112,11 @@ export function ReservationCard({
   // lo reservado, que es la respuesta correcta la mayoría de las veces.
   const [arriveOpen, setArriveOpen] = useState(false)
   const [arriveGuests, setArriveGuests] = useState(reservation.estimated_guests)
+  // La mesa: se carga en el mismo gesto que la llegada (el que la sienta es el
+  // que sabe dónde) y se corrige después tocándola en la tarjeta.
+  const [arriveTable, setArriveTable] = useState('')
+  const [tableOpen, setTableOpen] = useState(false)
+  const [tableDraft, setTableDraft] = useState('')
 
   function run(p: Promise<{ ok: boolean; message?: string }>, label: string) {
     startTransition(async () => {
@@ -105,6 +125,7 @@ export function ReservationCard({
         toast.success(label)
         setOpen(false)
         setArriveOpen(false)
+        setTableOpen(false)
         return
       }
       // Se queda abierto a propósito: si se cerrara, el mozo perdería el conteo
@@ -134,6 +155,53 @@ export function ReservationCard({
   const place = placeLabel(reservation, joinedEventName(reservation))
   const extras =
     (reservation.cake_count > 0 ? 1 : 0) + (reservation.champagne_count > 0 ? 1 : 0) > 0
+  const table = reservation.table_label ?? ''
+
+  /**
+   * Confirma la llegada y, si el mozo la cargó, la mesa — en UNA sola llamada
+   * (`markArrived` la manda junto con la transición). El orden lo decide el
+   * server: primero la llegada, que es lo que dispara la comisión y no se puede
+   * perder; si la mesa falla, vuelve `ok: true` con un aviso y la llegada queda
+   * igual hecha.
+   */
+  function confirmArrival() {
+    const label = cleanTableLabel(arriveTable)
+    const people = `${arriveGuests} ${arriveGuests === 1 ? 'persona' : 'personas'}`
+    startTransition(async () => {
+      const res = await markArrived(
+        tenantSlug,
+        reservation.id,
+        arriveGuests,
+        // `undefined` = no tocar la columna (no la editó); `null` = la borró.
+        label === table ? undefined : label || null,
+      )
+      if (!res.ok) {
+        toast.error(res.message ?? 'No pudimos guardarlo.')
+        return
+      }
+      setArriveOpen(false)
+      // La mesa que confirma el server, no la que se tipeó: si esa segunda
+      // escritura falló, la llegada igual quedó hecha (ok: true + aviso) y el
+      // toast verde no puede decir "Mesa 12" de una mesa que no se guardó.
+      const saved =
+        (res.data?.row as { table_label?: string | null } | undefined)?.table_label ?? ''
+      toast.success(`Llegó · ${people}${saved ? ` · Mesa ${saved}` : ''}`)
+      if (res.message) toast.warning(res.message)
+    })
+  }
+
+  /** Cambiar la mesa de una reserva que ya está adentro. */
+  function saveTable() {
+    const label = cleanTableLabel(tableDraft)
+    if (label === table) {
+      setTableOpen(false)
+      return
+    }
+    run(
+      updateReservationTableLabel(tenantSlug, { id: reservation.id, table_label: label }),
+      label ? `Mesa ${label}` : 'Mesa quitada',
+    )
+  }
 
   return (
     <>
@@ -221,13 +289,10 @@ export function ReservationCard({
                   {STATUS_TEXT[reservation.status]}
                 </span>
               ) : null}
-              {/* La mesa la asigna la anfitriona desde el tablero del manager:
-                  el mozo la necesita para llevar a la gente. */}
-              {here && reservation.table_label ? (
-                <span className="font-semibold text-foreground">
-                  {' · '}Mesa {reservation.table_label}
-                </span>
-              ) : null}
+              {/* La mesa ya NO va en esta línea: para una reserva que está
+                  adentro vive a la derecha, en su propio botón (se toca para
+                  cambiarla). Acá se perdía por el truncado justo cuando alguien
+                  pregunta dónde está la mesa de García. */}
               {/* Dónde se sienta va antes que el gestor: la línea se trunca por
                   el final, y para llevar a la gente importa más la planta que
                   quién tomó la reserva. */}
@@ -264,6 +329,7 @@ export function ReservationCard({
               // agenda, arrancar en el estimado haría que el mozo le pise el
               // dato sin enterarse.
               setArriveGuests(reservation.actual_guests ?? reservation.estimated_guests)
+              setArriveTable(table)
               setArriveOpen(true)
             }}
             className="h-12 shrink-0 gap-1.5 px-4"
@@ -276,12 +342,45 @@ export function ReservationCard({
             Llegó
           </Button>
         ) : here ? (
-          <span
-            aria-hidden
-            className="grid size-9 shrink-0 place-items-center rounded-full bg-success/15 text-success"
-          >
-            <Check className="size-5" strokeWidth={2.6} />
-          </span>
+          /* Ya está adentro: el lugar del botón lo ocupa la mesa. Es el dato
+             que se pregunta a mitad del servicio ("¿dónde está García?") y
+             ahora además se toca para cambiarla. El tilde verde se fue: la
+             tarjeta ya está teñida de verde y dice "Llegó" en la línea de
+             estado, así que no decía nada nuevo. */
+          canOperate ? (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => {
+                setTableDraft(table)
+                setTableOpen(true)
+              }}
+              aria-label={
+                table
+                  ? `Mesa ${table} de ${reservation.guest_name}. Tocá para cambiarla`
+                  : `Asignar mesa a ${reservation.guest_name}`
+              }
+              className={cn(
+                'flex h-12 min-w-16 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border px-2.5 transition-colors',
+                table
+                  ? 'border-success/40 bg-success/15 text-success active:bg-success/25'
+                  : 'border-dashed border-border text-muted-foreground active:bg-secondary',
+              )}
+            >
+              <TableFace label={table} />
+            </button>
+          ) : table ? (
+            <span className="flex h-12 min-w-16 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border border-success/40 bg-success/15 px-2.5 text-success">
+              <TableFace label={table} />
+            </span>
+          ) : (
+            <span
+              aria-hidden
+              className="grid size-9 shrink-0 place-items-center rounded-full bg-success/15 text-success"
+            >
+              <Check className="size-5" strokeWidth={2.6} />
+            </span>
+          )
         ) : null}
       </motion.li>
 
@@ -316,16 +415,31 @@ export function ReservationCard({
                 ? ` · ${arriveGuests > reservation.estimated_guests ? 'vinieron' : 'faltaron'} ${Math.abs(arriveGuests - reservation.estimated_guests)}`
                 : ''}
             </p>
+
+            {/* La mesa, en el mismo paso: el mozo sienta a la gente y anota
+                dónde de una. Opcional y sin foco automático — el teclado
+                taparía el contador, que es lo que se toca siempre. */}
+            <div className="mb-4">
+              <label
+                htmlFor={`mesa-llegada-${reservation.id}`}
+                className="mb-1.5 block text-sm font-medium"
+              >
+                Mesa <span className="font-normal text-muted-foreground">(opcional)</span>
+              </label>
+              <TableField
+                id={`mesa-llegada-${reservation.id}`}
+                value={arriveTable}
+                onChange={setArriveTable}
+                disabled={pending}
+                onSubmit={confirmArrival}
+              />
+            </div>
+
             <Button
               size="xl"
               disabled={pending}
               className="h-14 w-full justify-center gap-3"
-              onClick={() =>
-                run(
-                  markArrived(tenantSlug, reservation.id, arriveGuests),
-                  `Llegó · ${arriveGuests} ${arriveGuests === 1 ? 'persona' : 'personas'}`,
-                )
-              }
+              onClick={confirmArrival}
             >
               {pending ? (
                 <Loader2 className="size-5 animate-spin" aria-hidden />
@@ -470,6 +584,75 @@ export function ReservationCard({
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Cambiar la mesa de una que ya está adentro: los cambian de mesa todo
+          el tiempo. Sheet chico, un campo y un botón — se entra tocando la mesa
+          en la tarjeta, así que no hay nada más que decidir acá. */}
+      <Sheet open={tableOpen} onOpenChange={setTableOpen}>
+        <SheetContent side="bottom">
+          <SheetHeader className="text-left">
+            <SheetTitle className="flex items-center gap-2.5">
+              <Armchair className="size-5 shrink-0 text-muted-foreground" aria-hidden />
+              <span className="truncate">Mesa de {reservation.guest_name}</span>
+            </SheetTitle>
+            <SheetDescription>
+              Podés poner varias ("12+13") o un lugar ("Barra"). Vacío = sin mesa.
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="px-4 pb-4">
+            <TableField
+              id={`mesa-${reservation.id}`}
+              label={`Mesa de ${reservation.guest_name}`}
+              value={tableDraft}
+              onChange={setTableDraft}
+              disabled={pending}
+              autoFocus
+              onSubmit={saveTable}
+            />
+            <Button
+              size="xl"
+              disabled={pending || cleanTableLabel(tableDraft) === table}
+              className="mt-4 h-14 w-full justify-center gap-3"
+              onClick={saveTable}
+            >
+              {pending ? (
+                <Loader2 className="size-5 animate-spin" aria-hidden />
+              ) : (
+                <Check className="size-5" aria-hidden />
+              )}
+              {cleanTableLabel(tableDraft)
+                ? `Guardar mesa ${cleanTableLabel(tableDraft)}`
+                : table
+                  ? 'Quitar la mesa'
+                  : 'Guardar mesa'}
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+    </>
+  )
+}
+
+/**
+ * La cara del control de mesa: "MESA / 12" cuando ya la tiene, o una silla con
+ * la palabra "Mesa" cuando todavía no (invita a cargarla sin gritar).
+ */
+function TableFace({ label }: { label: string }) {
+  if (!label) {
+    return (
+      <>
+        <Armchair className="size-4" aria-hidden />
+        <span className="text-[10px] font-medium leading-none">Mesa</span>
+      </>
+    )
+  }
+  return (
+    <>
+      <span className="text-[10px] font-medium uppercase leading-none opacity-80">Mesa</span>
+      <span className="max-w-20 truncate font-mono text-base font-bold leading-none tabular-nums">
+        {label}
+      </span>
     </>
   )
 }
