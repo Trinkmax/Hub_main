@@ -1030,3 +1030,35 @@ resolvió (queries y componentes «muertos» de la lista, sus filtros perdidos y
   canceladas ni ausentes), así que puede no coincidir con el "N reservas" del
   encabezado de /reservas. Se aclara en el título del chip; si molesta, unificar
   el criterio del encabezado.
+
+## CI: el job de RLS volvió a correr y hay 9 tests rojos preexistentes (2026-09-23)
+
+Hasta hoy los dos jobs de CI morían antes de ejecutar nada, así que nadie veía
+estos resultados:
+
+- `npm ci` abortaba con EUSAGE porque el lock no tenía `@emnapi/runtime` (la pide
+  `@img/sharp-wasm32`, opcional de Next). En macOS npm poda esa rama al generar
+  el lock y en el runner de Linux la exige. Arreglado agregando la entrada al
+  lock; **ojo: un `npm install` desde una Mac puede volver a podarla** y romper
+  CI de nuevo (revisar que `node_modules/@emnapi/runtime` siga en el lock).
+- El job de RLS ni arrancaba: dos migraciones compartían el prefijo
+  `20260624120000` y `supabase db reset` moría con `schema_migrations_pkey`.
+  Arreglado renombrando `platform_meta_config` a `20260624130000`.
+
+Con eso corriendo, `tests/rls` da **233 verdes y 9 rojos** (6 archivos), ninguno
+de los cambios de esta semana (cupos por servicio, mesa del mozo y tamaños pasan):
+
+- `welcome-reward.test.ts` (4): el cashier escribe cuando no debería, y el RPC no
+  entrega el welcome reward al registrar (incluye un "Missing Supabase service
+  role configuration").
+- `broadcasts-optin.test.ts` (2): materializa 0 recipients en vez de 2 y los
+  stats no reflejan `excluded=2`.
+- `cobro.test.ts` (1): el `qr_token` no rota después de cobrar.
+- `customers.test.ts` (1): `submit_capture` no deduplica por teléfono.
+- `find-or-create-conversation.test.ts` (1): la segunda llamada no es idempotente.
+- `loyalty-tiers.test.ts` (1).
+
+Hay que ver si son fallas reales contra el stack local (deriva entre lo aplicado
+al remoto por MCP y lo que reconstruyen las migraciones) o interferencia entre
+archivos al correr los 30 en paralelo contra la misma base. Hasta resolverlo, el
+check de CI queda en rojo aunque el job de lint/typecheck/tests esté verde.
