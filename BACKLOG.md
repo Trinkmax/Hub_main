@@ -1008,3 +1008,25 @@ resolvió (queries y componentes «muertos» de la lista, sus filtros perdidos y
   resolvió (la fila abierta se queda hasta cerrar el popup); en la lista haría
   falta levantar el `open` a la tabla y conservar la fila abierta, o un toast
   «Pasó a Planta Baja».
+
+## Mesa del mozo y tamaños de mesa (2026-09-23)
+
+- **`types/database.ts` sin `set_reservation_table_label`.** La RPC nueva se
+  llama por el cast `SBAny`, así que un typo en el nombre o en un parámetro
+  revienta recién en runtime. No se regeneró el archivo porque lo estaba
+  editando otro trabajo en paralelo (cumpleaños). Regenerar por MCP y
+  re-apendear los exports manuales del final (ver memoria `supabase-env-remote`).
+- **`transition_reservation_status` sigue con EXECUTE para `anon`.** Es
+  inofensivo (corta con `unauthenticated`), pero contradice el criterio de
+  `20260613030000_lock_internal_functions` y el de la RPC nueva de la mesa.
+  Revocar cuando se toque esa función. Junto con eso está pendiente lo ya
+  anotado de `recalc_reservation_commission` / `recalc_event_commissions`.
+- **`transition_reservation_status` no recibe el tenant del slug.** Autoriza
+  contra el tenant DE LA FILA, igual que hacía la mesa antes de sumarle
+  `p_tenant_id`: un usuario con membresía en dos bares podría operar el bar B
+  entrando por el slug de A (hoy no es explotable: hay un solo bar y nadie con
+  dos membresías). Mismo arreglo: parámetro `p_tenant_id` + chequeo.
+- **El chip "Todas" de Personas por mesa** cuenta mesas que se arman (sin
+  canceladas ni ausentes), así que puede no coincidir con el "N reservas" del
+  encabezado de /reservas. Se aclara en el título del chip; si molesta, unificar
+  el criterio del encabezado.

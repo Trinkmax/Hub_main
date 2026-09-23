@@ -167,10 +167,17 @@ describe('reservasExportHref', () => {
         status: 'confirmed',
         zone: 'planta_alta',
         mealType: 'dinner',
+        partySize: '4',
         managerId: U,
       }),
     ).toBe(
-      `/api/reservas/export?slug=hub&day=2026-09-10&q=l%C3%B3pez%20%26%20c%C3%ADa&status=confirmed&zone=planta_alta&servicio=dinner&manager=${U}`,
+      `/api/reservas/export?slug=hub&day=2026-09-10&q=l%C3%B3pez%20%26%20c%C3%ADa&status=confirmed&zone=planta_alta&servicio=dinner&mesa=4&manager=${U}`,
+    )
+  })
+
+  it('el tamaño de mesa viaja para que la planilla sea lo que se está viendo', () => {
+    expect(reservasExportHref('hub', { day: '2026-09-10', partySize: '7mas' })).toBe(
+      '/api/reservas/export?slug=hub&day=2026-09-10&mesa=7mas',
     )
   })
 })

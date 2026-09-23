@@ -12,6 +12,7 @@
 
 import { formatInTimeZone } from 'date-fns-tz'
 import { SALON_TZ } from './date-presets'
+import { filterByPartySize, type PartySizeBucket } from './party-size'
 import { coversOf, occupiesTable } from './services'
 import type { ReservationWithJoins, SalonReservationStatus } from './types'
 
@@ -290,19 +291,22 @@ export function searchRank(r: SearchableReservation, query: string): number {
 }
 
 /**
- * Lo que se ve en el tablero. Con búsqueda activa el filtro de estado se
- * ignora: si escribís "García" querés a García, esté donde esté.
+ * Lo que se ve en el tablero. Con búsqueda activa los filtros de estado y de
+ * tamaño de mesa se ignoran: si escribís "García" querés a García, esté donde
+ * esté y sea de la mesa que sea.
  */
 export function filterForBoard<T extends ReservationWithJoins>(
   rows: T[],
-  opts: { query: string; filter: BoardFilter },
+  opts: { query: string; filter: BoardFilter; partySize?: PartySizeBucket | null },
 ): T[] {
   const searching = normalizeText(opts.query).length > 0
   const visible = rows.filter(
     (r) =>
       isOperable(r) && (searching ? matchesQuery(r, opts.query) : matchesFilter(r, opts.filter)),
   )
-  const sorted = sortForBoard(visible)
+  // El tamaño ("mesas de 4") es un filtro de SALA: deja afuera lo que no ocupa
+  // mesa, así el número del chip es exactamente lo que queda listado.
+  const sorted = sortForBoard(searching ? visible : filterByPartySize(visible, opts.partySize))
   if (!searching) return sorted
   return sorted
     .map((r, i) => ({ r, i, rank: searchRank(r, opts.query) }))

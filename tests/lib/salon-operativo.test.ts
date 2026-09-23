@@ -275,6 +275,46 @@ describe('sortForBoard / filterForBoard', () => {
     expect(countByFilter(rows)).toEqual({ all: 5, waiting: 1, inside: 2, done: 2 })
   })
 
+  it('el tamaño de mesa filtra: "mesas de 4" deja solo las de 4', () => {
+    const rows = [
+      reservation({ id: 'dos', estimated_guests: 2 }),
+      reservation({ id: 'cuatro', estimated_guests: 4 }),
+      // Reservaron 6 pero vinieron 4: es una mesa de 4.
+      reservation({ id: 'vino4', estimated_guests: 6, actual_guests: 4, status: 'arrived' }),
+      reservation({ id: 'doce', estimated_guests: 12 }),
+    ]
+    const ids = (partySize: '4' | '7mas' | null) =>
+      filterForBoard(rows, { query: '', filter: 'all', partySize }).map((r) => r.id)
+    expect(ids('4')).toEqual(['cuatro', 'vino4'])
+    expect(ids('7mas')).toEqual(['doce'])
+    expect(ids(null)).toEqual(['dos', 'cuatro', 'vino4', 'doce'])
+  })
+
+  it('un tamaño de mesa es una mesa que se arma: la no-show queda afuera', () => {
+    const rows = [
+      reservation({ id: 'ok', estimated_guests: 4 }),
+      reservation({ id: 'no', estimated_guests: 4, status: 'no_show' }),
+    ]
+    // Sin tamaño elegido la no-show se sigue viendo (está en "Terminadas").
+    expect(filterForBoard(rows, { query: '', filter: 'all' }).map((r) => r.id)).toEqual([
+      'ok',
+      'no',
+    ])
+    expect(
+      filterForBoard(rows, { query: '', filter: 'all', partySize: '4' }).map((r) => r.id),
+    ).toEqual(['ok'])
+  })
+
+  it('con búsqueda activa el tamaño se ignora, igual que el estado', () => {
+    const rows = [
+      reservation({ id: 'garcia', guest_name: 'García Pérez', estimated_guests: 8 }),
+      reservation({ id: 'otro', guest_name: 'Zulma', estimated_guests: 4 }),
+    ]
+    expect(
+      filterForBoard(rows, { query: 'garcia', filter: 'waiting', partySize: '4' }).map((r) => r.id),
+    ).toEqual(['garcia'])
+  })
+
   it('el marcador de "ahora" va antes de la primera reserva futura', () => {
     const rows = sortForBoard([
       reservation({ id: 'a', reservation_time_local: '20:00:00' }),

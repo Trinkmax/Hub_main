@@ -27,6 +27,11 @@ import {
   type ReportReservationRow,
   type TemplateReport,
 } from './events-report'
+import {
+  type PartySizeBucket,
+  type PartySizeCountable,
+  partySizePostgrestFilter,
+} from './party-size'
 import { computePeakWindow, type PeakWindow } from './peak'
 import type { ServiceRow } from './services'
 import type {
@@ -130,6 +135,12 @@ export type ReservationFilters = {
   mealType?: MealType
   /** Solo cumpleaños / solo especiales — el filtro de "lo que no es una mesa más". */
   kind?: ReservationWithJoins['kind']
+  /**
+   * Un tamaño de mesa: 1, 2, 3, 4, 5, 6 o 7 y más personas
+   * (`coalesce(actual_guests, estimated_guests)`). Ver `partySize` en
+   * `applyReservationFilters`.
+   */
+  partySize?: PartySizeBucket
   status?: SalonReservationStatus | SalonReservationStatus[]
   /**
    * Estados que NO entran en el listado. La agenda saca las `cancelled`: una
@@ -194,6 +205,16 @@ function applyReservationFilters(query: SBAny, opts: ReservationFilters): SBAny 
   }
   if (opts.managerId) {
     q = q.or(`primary_manager_id.eq.${opts.managerId},assistant_manager_id.eq.${opts.managerId}`)
+  }
+  if (opts.partySize) {
+    // Un tamaño de mesa es una MESA QUE SE ARMA: las canceladas y las no-show
+    // no ocupan mesa, así que salen aunque haya un estado elegido. Es la misma
+    // regla que `tallyPartySizes`, y es lo que hace que el número del chip sea
+    // exactamente la cantidad de filas que se listan al tocarlo.
+    q = q.not('status', 'in', '(cancelled,no_show)')
+    // Dos `.or()` en la misma query son dos parámetros `or=`, y PostgREST los
+    // combina con AND: el del gestor y el del tamaño no se pisan.
+    q = q.or(partySizePostgrestFilter(opts.partySize))
   }
   if (opts.scheduledEventId) q = q.eq('scheduled_event_id', opts.scheduledEventId)
   if (opts.q && opts.q.trim().length >= 2) {
@@ -345,6 +366,49 @@ export async function listDayServiceRows(opts: {
   const { data, error } = await query
   if (error) throw error
   return (data ?? []) as ServiceRow[]
+}
+
+/**
+ * Las filas de un PERÍODO reducidas a lo que necesita el contador por tamaño
+ * de mesa ("cuántas mesas de 4 hay"). Tres columnas y nada más.
+ *
+ * Solo hace falta en modo rango ("esta semana", "este mes"): en modo día los
+ * mismos números salen de `listDayServiceRows`, que ya se pide para los chips
+ * de servicio. Un mes del HUB son ~400 filas de 3 enteros — el mismo costo que
+ * `getRangeReservationTotals`, y va en el mismo `Promise.all`, así que no suma
+ * un hop.
+ *
+ * Recibe TODOS los filtros de la pantalla menos el de tamaño: un chip tiene
+ * que contar lo que vas a ver si lo tocás (si se contara ya filtrado, los
+ * otros seis darían 0 y no habría manera de volver).
+ */
+export async function listPartySizeRows(opts: {
+  tenantId: string
+  dateFrom?: string
+  dateTo?: string
+  zone?: SalonZone
+  status?: SalonReservationStatus
+  mealType?: MealType
+  managerId?: string
+  q?: string
+}): Promise<PartySizeCountable[]> {
+  const supabase = (await createClient()) as SBAny
+  const query = applyReservationFilters(
+    supabase
+      .from('salon_reservations')
+      .select('status, estimated_guests, actual_guests')
+      .eq('tenant_id', opts.tenantId),
+    {
+      ...opts,
+      // Lo que no ocupa mesa no tiene tamaño: se descarta en la query para no
+      // traerlo al pedo (el contador lo descartaría igual). Si el usuario
+      // eligió un estado, manda el suyo — ver `applyReservationFilters`.
+      excludeStatus: ['cancelled', 'no_show'],
+    },
+  )
+  const { data, error } = await query
+  if (error) throw error
+  return (data ?? []) as PartySizeCountable[]
 }
 
 /**

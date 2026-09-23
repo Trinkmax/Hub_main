@@ -29,6 +29,8 @@ type Defaults = {
   zone?: string
   /** El servicio elegido en los chips. Solo para que "Limpiar" sepa que existe. */
   mealType?: string
+  /** El tamaño de mesa elegido en los chips (`?mesa=`), por lo mismo. */
+  partySize?: string
   managerId?: string
   dateFrom?: string
   dateTo?: string
@@ -74,6 +76,7 @@ export function ReservationsFilters({
       defaults.status ||
       defaults.zone ||
       defaults.mealType ||
+      defaults.partySize ||
       defaults.managerId ||
       defaults.dateFrom ||
       defaults.dateTo,

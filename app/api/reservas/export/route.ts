@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { logAudit } from '@/lib/audit'
 import { exportFilename, reservationsToCsv } from '@/lib/salon/export'
+import { partySizeBucketSchema } from '@/lib/salon/party-size'
 import { listSalonReservationsForExport } from '@/lib/salon/queries'
 import { mealTypeEnum, salonStatusEnum, salonZoneEnum } from '@/lib/salon/schemas'
 import { isoDaySchema } from '@/lib/salon/segment-schemas'
@@ -56,6 +57,9 @@ export async function GET(request: Request) {
     const status = salonStatusEnum.safeParse(p.get('status'))
     const zone = salonZoneEnum.safeParse(p.get('zone'))
     const mealType = mealTypeEnum.safeParse(p.get('servicio'))
+    // El tamaño de mesa ('1'…'6' o '7mas'): la planilla es lo que se está
+    // viendo, así que el filtro de los chips también viaja.
+    const partySize = partySizeBucketSchema.safeParse(p.get('mesa'))
     const managerRaw = p.get('manager')
     const managerId = managerRaw && UUID_RE.test(managerRaw) ? managerRaw : undefined
     const q = p.get('q')?.trim() || undefined
@@ -67,6 +71,7 @@ export async function GET(request: Request) {
       status: status.success ? status.data : undefined,
       zone: zone.success ? zone.data : undefined,
       mealType: mealType.success ? mealType.data : undefined,
+      partySize: partySize.success ? partySize.data : undefined,
       managerId,
       q,
     })
@@ -88,6 +93,7 @@ export async function GET(request: Request) {
         status: status.success ? status.data : null,
         zone: zone.success ? zone.data : null,
         meal_type: mealType.success ? mealType.data : null,
+        party_size: partySize.success ? partySize.data : null,
         manager_id: managerId ?? null,
         with_query: Boolean(q),
         rows: rows.length,

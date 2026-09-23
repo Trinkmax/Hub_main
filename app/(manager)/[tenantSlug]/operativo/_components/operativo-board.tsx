@@ -44,6 +44,7 @@ import {
   occupiedTables,
   urgencyOf,
 } from '@/lib/salon/operativo'
+import { type PartySizeBucket, tallyPartySizes } from '@/lib/salon/party-size'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import { computeDaySegments, type DaySegmentCaps, focusSegment } from '@/lib/salon/segments'
 import { groupByService } from '@/lib/salon/services'
@@ -163,6 +164,10 @@ export function OperativoBoard({
   const deferredQuery = useDeferredValue(query)
   const [filter, setFilterState] = useState<BoardFilter>('all')
   const [eventFilter, setEventFilter] = useState<string | null>(null)
+  // El tamaño de mesa NO se recuerda entre noches (a diferencia del filtro de
+  // estado): es una lente para armar el salón, y encontrarse el tablero filtrado
+  // en "mesas de 6" al abrirlo mañana sería una reserva perdida.
+  const [partySize, setPartySize] = useState<PartySizeBucket | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [panelMode, setPanelMode] = useState<PanelMode>('detail')
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -382,12 +387,25 @@ export function OperativoBoard({
 
   // ── Derivados ────────────────────────────────────────────────────────
   const searching = normalizeText(deferredQuery).length > 0
-  const visible = useMemo(() => {
-    const rows = filterForBoard(reservations, { query: deferredQuery, filter })
-    return eventFilter && !searching
-      ? rows.filter((r) => r.scheduled_event_id === eventFilter)
-      : rows
-  }, [reservations, deferredQuery, filter, eventFilter, searching])
+  // El filtro de evento (se toca desde el pulso) no vive en la lógica pura
+  // porque es un id, no una regla: se aplica igual en los dos pases de abajo y,
+  // como el resto de los filtros, no corre con una búsqueda activa.
+  const ofEvent = useCallback(
+    (rows: ReservationWithJoins[]) =>
+      eventFilter && !searching ? rows.filter((r) => r.scheduled_event_id === eventFilter) : rows,
+    [eventFilter, searching],
+  )
+  const visible = useMemo(
+    () => ofEvent(filterForBoard(reservations, { query: deferredQuery, filter, partySize })),
+    [reservations, deferredQuery, filter, partySize, ofEvent],
+  )
+  // La MISMA vista pero sin el tamaño: es lo que cuentan los chips de "personas
+  // por mesa". Si contaran lo ya filtrado, elegir "mesas de 4" dejaría los otros
+  // seis en 0 y no habría cómo volver.
+  const partyTally = useMemo(
+    () => tallyPartySizes(ofEvent(filterForBoard(reservations, { query: deferredQuery, filter }))),
+    [reservations, deferredQuery, filter, ofEvent],
+  )
 
   const counts = useMemo(() => countByFilter(reservations), [reservations])
   const pulse = useMemo(
@@ -846,6 +864,9 @@ export function OperativoBoard({
                 filter={filter}
                 eventFilter={eventFilter}
                 onClearEventFilter={() => setEventFilter(null)}
+                partySize={partySize}
+                partyTally={partyTally}
+                onPartySize={setPartySize}
                 markerIndex={markerIndex}
                 nowLabel={clock.hhmm}
                 cancelled={cancelled}

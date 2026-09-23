@@ -105,6 +105,8 @@ export type ReservasExportHrefOptions = {
   zone?: string
   /** El servicio (`?servicio=` en la lista). */
   mealType?: string
+  /** El tamaño de mesa (`?mesa=` en la lista): '1'…'6' o '7mas'. */
+  partySize?: string
   managerId?: string
 }
 
@@ -126,6 +128,7 @@ export function reservasExportHref(slug: string, opts: ReservasExportHrefOptions
     ['status', opts.status],
     ['zone', opts.zone],
     ['servicio', opts.mealType],
+    ['mesa', opts.partySize],
     ['manager', opts.managerId],
   ])
 }

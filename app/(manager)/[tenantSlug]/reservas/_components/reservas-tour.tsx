@@ -60,6 +60,20 @@ const RESERVAS_TOUR: TourDefinition = (() => {
         ),
       },
       {
+        id: 'personas-por-mesa',
+        target: '[data-tour="reservas-personas-por-mesa"]',
+        kicker: 'Nuevo ✨',
+        title: 'Cuántas mesas de cada tamaño',
+        body: (
+          <>
+            De un vistazo: cuántas mesas de 2, de 3, de 4… hay ese día (o en el período que estés
+            mirando). El número de cada chip son <strong>mesas</strong>, no personas — pasá el dedo
+            por encima y te dice las dos cosas. Tocá un tamaño para ver solo esas y «Todas» para
+            volver. Las canceladas y las que no vinieron no cuentan: no hay mesa que armar.
+          </>
+        ),
+      },
+      {
         id: 'nueva',
         target: '[data-tour="reservas-nueva"]',
         title: 'Cargar una reserva',

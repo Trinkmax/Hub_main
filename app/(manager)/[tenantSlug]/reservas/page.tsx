@@ -29,12 +29,14 @@ import {
 } from '@/lib/salon/date-presets'
 import { activeDaySegments, counterDayLabel, eventUsedById } from '@/lib/salon/day-counter'
 import { buildDayHighlights } from '@/lib/salon/day-highlights'
+import { partySizeBucketSchema, tallyPartySizes, totalPartySizes } from '@/lib/salon/party-size'
 import {
   getRangeReservationTotals,
   getSalonReservation,
   listDayCelebrations,
   listDayServiceRows,
   listManagers,
+  listPartySizeRows,
   listSalonReservations,
   PageOutOfRangeError,
 } from '@/lib/salon/queries'
@@ -53,6 +55,7 @@ import {
 } from '@/lib/tenant'
 import { CancelledSection } from './_components/cancelled-section'
 import { DayNavigator } from './_components/day-navigator'
+import { PartySizeFilter } from './_components/party-size-filter'
 import { ReservationRangeChips } from './_components/range-chips'
 import { ReservasTourButton } from './_components/reservas-tour'
 import { ReservationsFilters } from './_components/reservations-filters'
@@ -123,6 +126,12 @@ export default async function ReservasPage({
     typeof sp.servicio === 'string' && mealTypeEnum.safeParse(sp.servicio).success
       ? mealTypeEnum.parse(sp.servicio)
       : undefined
+  // Filtro por TAMAÑO DE MESA (`?mesa=4`, `?mesa=7mas`). Lo pidieron los
+  // encargados: "cuántas mesas de 5 hay, cuántas de 4, cuántas de 3". Va en
+  // castellano en la URL por lo mismo que `?servicio=`: se comparte por
+  // WhatsApp entre los socios.
+  const mesaParam = partySizeBucketSchema.safeParse(sp.mesa)
+  const partySize = mesaParam.success ? mesaParam.data : undefined
 
   // Modo rango (chips "Esta semana" / "Este mes" / rango libre) vs modo día
   // (default). El rango tiene prioridad. Una fecha rota (tipeada a mano, un
@@ -169,6 +178,7 @@ export default async function ReservasPage({
     Awaited<ReturnType<typeof listSalonReservations>> | null,
     Awaited<ReturnType<typeof listDayServiceRows>> | null,
     Awaited<ReturnType<typeof listDayCelebrations>> | null,
+    Awaited<ReturnType<typeof listPartySizeRows>> | null,
   ]
   try {
     loaded = await Promise.all([
@@ -178,6 +188,7 @@ export default async function ReservasPage({
         status,
         zone,
         mealType,
+        partySize,
         managerId,
         dateFrom,
         dateTo,
@@ -215,6 +226,9 @@ export default async function ReservasPage({
       // secuencial. Solo en la vista por defecto: si el usuario eligió un estado
       // está haciendo una búsqueda puntual, no trabajando la agenda — y si eligió
       // "Cancelada", el listado principal ya se las muestra.
+      // El tamaño de mesa NO se le pasa a propósito: una cancelada no ocupa
+      // mesa, así que con `?mesa=4` el bloque quedaría siempre vacío y el
+      // "¿esta no había reservado?" —para lo que existe— dejaría de responderse.
       status
         ? null
         : listSalonReservations({
@@ -247,6 +261,22 @@ export default async function ReservasPage({
       // página filtrada (si no, filtrar por zona escondía el cumple y dejaba el
       // evento — el moco original de vuelta).
       day ? listDayCelebrations({ tenantId: access.tenant.id, date: day }) : null,
+      // Los tamaños de mesa del PERÍODO (modo rango). En modo día los mismos
+      // números salen de `dayServiceRows`, que ya se pide acá al lado: pedirlos
+      // de nuevo sería un hop al pedo. Van todos los filtros de la pantalla
+      // menos el de tamaño, porque el chip cuenta lo que vas a ver si lo tocás.
+      !day && (dateFrom || dateTo)
+        ? listPartySizeRows({
+            tenantId: access.tenant.id,
+            dateFrom,
+            dateTo,
+            zone,
+            status,
+            mealType,
+            managerId,
+            q,
+          })
+        : null,
     ])
   } catch (error) {
     // Cancelar una reserva achica el listado; si el usuario estaba en la última
@@ -266,6 +296,7 @@ export default async function ReservasPage({
     cancelled,
     dayServiceRows,
     dayCelebrations,
+    rangePartySizeRows,
   ] = loaded
 
   // El borde exacto `offset === total` no da 416: devuelve una página vacía. Sin
@@ -292,7 +323,7 @@ export default async function ReservasPage({
   )
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
-  const hasFilters = Boolean(q || status || zone || managerId || mealType)
+  const hasFilters = Boolean(q || status || zone || managerId || mealType || partySize)
 
   // Corte por servicio del día entero: alimenta los chips de filtro (contadores
   // que no mienten cuando hay un servicio elegido).
@@ -314,6 +345,21 @@ export default async function ReservasPage({
       cakes: b.cakes,
     }))
   const dayActiveCount = dayServices.reduce((acc, b) => acc + listedCountOf(b), 0)
+
+  // Cuántas mesas de cada tamaño hay — 1, 2, 3, 4, 5, 6 y 7 o más. El conteo
+  // NO sale de la página cargada (en un mes hay más reservas que filas) sino
+  // del día entero o del período entero, con los mismos filtros de la pantalla
+  // menos el de tamaño: el número del chip es exactamente lo que se lista al
+  // tocarlo. En modo día reusa las filas que ya trajeron los chips de servicio
+  // (cero queries extra) y les aplica el servicio elegido acá, en memoria.
+  const partySizeRows =
+    dayServiceRows !== null
+      ? mealType
+        ? dayServiceRows.filter((r) => r.meal_type === mealType)
+        : dayServiceRows
+      : (rangePartySizeRows ?? [])
+  const partySizeTally = tallyPartySizes(partySizeRows)
+  const partySizeTotal = totalPartySizes(partySizeTally)
 
   // Eventos + cumpleaños del día, al mismo nivel: es lo que hay que PREPARAR.
   // La gente de cada evento sale de la misma cuenta que el calendario.
@@ -349,6 +395,7 @@ export default async function ReservasPage({
     status,
     zone,
     mealType,
+    partySize,
     managerId,
   })
 
@@ -472,6 +519,19 @@ export default async function ReservasPage({
             totalCount={dayActiveCount}
           />
         ) : null}
+
+        {/* Y adentro del servicio, de qué tamaño son las mesas. Pedido de los
+            encargados: armar el salón es decidir cuántas mesas de 2 se juntan
+            y cuántas de 6 quedan enteras. Si no hay una sola mesa (un día
+            vacío, todo cancelado) no se dibuja nada — salvo que el filtro esté
+            puesto, para poder sacarlo. */}
+        {partySizeTotal.reservations > 0 || partySize ? (
+          <PartySizeFilter
+            tenantSlug={tenantSlug}
+            tally={partySizeTally}
+            active={partySize ?? null}
+          />
+        ) : null}
       </div>
 
       {day && dayHighlights.length > 0 ? (
@@ -515,6 +575,7 @@ export default async function ReservasPage({
             status,
             zone,
             mealType,
+            partySize,
             managerId,
             dateFrom: fromParam,
             dateTo: toParam,
