@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { logAudit } from '@/lib/audit'
+import { getMonthBirthdayReport } from '@/lib/salon/birthday-queries'
+import { monthBirthdaysToCsv } from '@/lib/salon/birthdays-report'
 import { isRealIsoDay, todayInCordoba } from '@/lib/salon/date-presets'
 import { monthMarketingToCsv } from '@/lib/salon/event-marketing'
 import {
@@ -48,7 +50,14 @@ export async function GET(request: Request) {
 
     const tenantId = access.tenant.id
     const vistaParam = url.searchParams.get('vista')
-    const vista = vistaParam === 'evento' ? 'evento' : vistaParam === 'pauta' ? 'pauta' : 'dia'
+    const vista =
+      vistaParam === 'evento'
+        ? 'evento'
+        : vistaParam === 'pauta'
+          ? 'pauta'
+          : vistaParam === 'cumples'
+            ? 'cumples'
+            : 'dia'
 
     if (vista === 'dia') {
       const dia = url.searchParams.get('dia')
@@ -93,6 +102,32 @@ export async function GET(request: Request) {
       return csvResponse(
         monthMarketingToCsv(report),
         reportExportFilename(access.tenant.slug, `pauta-${mes}`),
+      )
+    }
+
+    if (vista === 'cumples') {
+      const mes = url.searchParams.get('mes')
+      if (!mes || !YM_RE.test(mes)) {
+        return NextResponse.json({ error: 'invalid_month' }, { status: 400 })
+      }
+      const report = await getMonthBirthdayReport({ tenantId, ym: mes, today: todayInCordoba() })
+      await logAudit({
+        tenantId,
+        userId: access.user.id,
+        action: 'salon_events_report.exported',
+        entity: 'salon_reservation',
+        payload: {
+          vista,
+          mes,
+          cumples: report.totals.birthdays,
+          personas: report.totals.guests,
+          truncated: report.truncated,
+        },
+      })
+      // `como-nos-fue-hub-cumpleanos-2026-09.csv`.
+      return csvResponse(
+        monthBirthdaysToCsv(report),
+        reportExportFilename(access.tenant.slug, `cumpleanos-${mes}`),
       )
     }
 

@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
+import { getMonthBirthdayReport } from '@/lib/salon/birthday-queries'
 import { isRealIsoDay, todayInCordoba } from '@/lib/salon/date-presets'
 import {
   getDayReport,
@@ -51,7 +52,14 @@ export default async function ComoNosFuePage({
 
   const tenantId = access.tenant.id
   const today = todayInCordoba()
-  const view = sp.vista === 'evento' ? 'evento' : sp.vista === 'pauta' ? 'pauta' : 'dia'
+  const view =
+    sp.vista === 'evento'
+      ? 'evento'
+      : sp.vista === 'pauta'
+        ? 'pauta'
+        : sp.vista === 'cumples'
+          ? 'cumples'
+          : 'dia'
   // Cualquier valor raro cae al default en vez de romper la pantalla.
   const requestedDay = typeof sp.dia === 'string' && isRealIsoDay(sp.dia) ? sp.dia : undefined
   const requestedTemplate =
@@ -76,12 +84,13 @@ export default async function ComoNosFuePage({
   // y el default. Abrir un reporte retrospectivo en una noche vacía es una mala
   // primera pantalla, aunque el vacío también sea un dato cuando se lo busca.
   // El mes de pauta no depende del día ni del evento: va en esta misma tanda.
-  const [recentDays, templateOptions, monthReport] = await Promise.all([
+  const [recentDays, templateOptions, monthReport, birthdayReport] = await Promise.all([
     listRecentReservationDays({ tenantId, until: today }),
     view === 'evento'
       ? listEventTemplateOptions({ tenantId, today })
       : Promise.resolve({ options: [], truncated: false }),
     view === 'pauta' ? getMonthMarketingReport({ tenantId, ym, today }) : Promise.resolve(null),
+    view === 'cumples' ? getMonthBirthdayReport({ tenantId, ym, today }) : Promise.resolve(null),
   ])
   const day = requestedDay ?? recentDays[0]?.day ?? today
   const templates = templateOptions.options
@@ -114,7 +123,7 @@ export default async function ComoNosFuePage({
         title="Cómo nos fue"
         description={
           <span className="hidden sm:inline">
-            Cuánta gente entró, en cuántas reservas y cuánto costó traerla.
+            Cuánta gente entró, en cuántas reservas, cuántos cumpleaños y cuánto costó traerla.
           </span>
         }
       />
@@ -131,6 +140,7 @@ export default async function ComoNosFuePage({
         templateId={templateId}
         templateReport={templateReport}
         monthReport={monthReport}
+        birthdayReport={birthdayReport}
         lastUsdArsRate={lastUsdArsRate}
       />
     </PageShell>

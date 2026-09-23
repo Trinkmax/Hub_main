@@ -1832,3 +1832,99 @@ noche», la nota y un «¿Cómo se calcula?» que no habla de mensajes.
    resultado del mes **no** cambia.
 5. Exportar el mes → la fila de Ratatuille con `Pauta USD 0,00`, la cuenta
    entera y `Pauta ARS 0`.
+
+## Addendum 2026-09-23 — Cumpleaños en «Cómo nos fue»
+
+Pedido del dueño: una sección de cumpleaños que diga, día por día del mes,
+cuántos cumples hubo y con cuánta gente; el total del mes y el promedio de
+personas por cumple; y poder cargar la **pauta de cumpleaños** (una campaña de
+Meta que corre todo el mes, para cualquier fecha) para ver cuánto cierra y qué
+falta.
+
+Es la cuarta pestaña: **Por día · Por evento · Pauta · Cumpleaños**
+(`?vista=cumples&mes=2026-09`). Las cuentas y los textos viven en
+`lib/salon/birthdays-report.ts` (puro, testeado en
+`tests/lib/salon-birthdays-report.test.ts`).
+
+### Dos decisiones del dueño (no reabrir)
+
+1. **La pauta se mide contra los cumples RESERVADOS en el mes**
+   (`salon_reservations.created_at`, en el calendario del bar), sean para la
+   fecha que sean. Es lo que producen los mensajes de ese mes. Los festejados
+   en el mes se reservaron en parte con la pauta del anterior: de los 58 de
+   septiembre, 12 se reservaron en agosto; y en septiembre se reservaron 11 para
+   octubre. La pantalla lo dice: `En septiembre se reservaron 57 cumples: 46
+   para septiembre y 11 para octubre.`
+2. **Entran todos los cumples, también los reservados dentro de un evento** (13
+   en septiembre). Se aclara cuántos fueron dentro de uno.
+
+### Qué cuenta como qué
+
+- **Cumpleaños** = reserva `kind = 'birthday'` **en pie**. Canceladas y no-show
+  no cuentan, y se dicen aparte (`No cuentan 4 cumples que se cayeron: 3 se
+  cancelaron y 1 no vino.`).
+- **Personas** = lo contado al cerrar cada mesa y, si no se cerró, lo reservado
+  (`actual_guests ?? estimated_guests`), el mismo criterio que la cuenta de la
+  noche. Si no coincide con lo reservado, se dice.
+- **Calendario y totales** van por el **día del festejo**. **La pauta**, por el
+  día de la reserva (decisión 1).
+- **Cierre** = cumples reservados ÷ mensajes. Nunca pasa de 100 %: si hay más
+  cumples que mensajes, se dice en palabras. Es un techo, porque cuenta también
+  los cumples que llegaron por otro lado.
+- **Lo que falta cerrar** = mensajes − cumples reservados: las conversaciones
+  que no terminaron en un cumple.
+- El mes en curso habla en «Por ahora»; uno que no empezó, en futuro.
+
+### Tabla `birthday_marketing` (migración `20260923120000`)
+
+Una fila por mes (`month` = primer día; unique `(tenant_id, month)`): gastado en
+US$ (centavos, **de 1 para arriba**), mensajes, alcance opcional y nota. **No
+hay «no tuvo pauta»**: un mes sin campaña de cumpleaños no se carga (sin fila =
+«Sin cargar»). RLS `bm_owner_all`, solo dueño, SELECT incluido (es plata), con
+GRANT a `authenticated` y revoke a `anon`. Verificada contra la base real: el
+anfitrión, el mozo y alguien de otro bar no ven ni escriben; se rechazan el
+gasto 0, un día que no sea el 1 y el mes repetido.
+
+Guardar y borrar (`lib/salon/birthday-marketing-actions.ts`) siguen el mismo
+contrato que la pauta de eventos: alta con `insert` pelado (23505 → «otro dueño
+la cargó»), edición y borrado filtrados por el `updated_at` que se tenía en
+pantalla, y `audit_log` en cada cambio.
+
+### La pantalla
+
+1. **Mes** con flechas.
+2. **La oración del mes** y tres números grandes: Cumpleaños, Personas y Por
+   cumple (promedio con un decimal: `17,3`). Debajo, las aclaraciones: cuántos
+   fueron dentro de un evento, los que se cayeron, con qué gente se contó y el
+   día con más cumples.
+3. **Día por día**: una grilla que arranca el lunes. Cada día dice cuántos
+   cumples tuvo (y cuánta gente, desde tablet). El color sube con la cantidad,
+   relativo al día más cargado del mes; los días que todavía no pasaron llevan
+   borde punteado y hoy lleva un anillo. Tocar un día abre «Por día» en esa
+   fecha.
+4. **Pauta de cumpleaños**: sin cargar muestra los cumples reservados en el mes y
+   «Cargar pauta de cumpleaños». Cargada: la oración, cuatro números (por
+   mensaje, de cierre, por cumple, por persona), «Lo que falta cerrar», la ficha
+   técnica si hay alcance, el desglose de reservados por mes, la nota y «¿Cómo se
+   calcula?». El formulario tiene vista previa con la misma cuenta.
+
+**Exportar** baja `como-nos-fue-<bar>-cumpleanos-2026-09.csv`: un renglón por
+día, el total y, abajo, la pauta en dos columnas (dato; valor), con los mismos
+números que la pantalla.
+
+### Smoke manual
+
+1. `Cómo nos fue` → `Cumpleaños` → septiembre 2026: `Por ahora, septiembre
+   tiene 58 cumpleaños con 1.001 personas…`, `58 · 1.001 · 17,3`, `13 fueron
+   dentro de un evento.` y el sábado 19/09 con 6 cumples como el día más
+   cargado.
+2. Tocar el 19 → abre «Por día» en el sábado 19/09.
+3. `Cargar pauta de cumpleaños` → Gastado `300`, Mensajes `400` → la vista previa
+   dice `US$ 0,75 por mensaje · 14,3 % de cierre · US$ 5,26 por cumple · …` y
+   `343 conversaciones no terminaron en un cumple reservado.`
+4. Guardar → la sección muestra lo mismo, con `Cargó <nombre> · …` y el chip
+   «Por ahora».
+5. Gastado `0` → `Poné cuánto se gastó. Si ese mes no hubo pauta de cumpleaños,
+   no la cargues.` y «Guardar» apagado.
+6. Exportar → la planilla trae los 30 días, el total `58;1001;17,3` y la pauta.
+7. Borrar pauta → vuelve a «Sin cargar».

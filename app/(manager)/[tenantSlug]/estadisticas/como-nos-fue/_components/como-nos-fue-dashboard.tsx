@@ -15,10 +15,12 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { SlidingTabs } from '@/components/ui/sliding-tabs'
+import type { MonthBirthdayReport } from '@/lib/salon/birthdays-report'
 import { type MonthMarketingReport, phaseOf } from '@/lib/salon/event-marketing'
 import type { DayReport, ReportMarketingByEvent, TemplateReport } from '@/lib/salon/events-report'
 import { legendFlags } from '@/lib/salon/tables-wall'
 import { cn } from '@/lib/utils'
+import { BirthdaysMonthView } from './birthdays-month-view'
 import { EditionsStrip } from './editions-strip'
 import { MarketingMonthView } from './marketing-month-view'
 import { NightCard } from './night-card'
@@ -37,7 +39,7 @@ export type TemplateOption = {
   upcoming: number
 }
 
-export type ComoNosFueView = 'dia' | 'evento' | 'pauta'
+export type ComoNosFueView = 'dia' | 'evento' | 'pauta' | 'cumples'
 
 /** El último dólar cargado en cualquier pauta del bar: el chip del formulario. */
 export type LastUsdArsRate = { rate: number; loadedAt: string } | null
@@ -96,6 +98,7 @@ export function ComoNosFueDashboard({
   templateId,
   templateReport,
   monthReport,
+  birthdayReport,
   lastUsdArsRate,
 }: {
   tenantSlug: string
@@ -112,6 +115,8 @@ export function ComoNosFueDashboard({
   templateReport: TemplateReportWithMarketing | null
   /** Solo en la pestaña «Pauta». */
   monthReport: MonthMarketingReport | null
+  /** Solo en la pestaña «Cumpleaños». */
+  birthdayReport: MonthBirthdayReport | null
   lastUsdArsRate: LastUsdArsRate
 }) {
   const router = useRouter()
@@ -136,7 +141,9 @@ export function ComoNosFueDashboard({
       ? `${exportBase}&vista=dia&dia=${day}`
       : view === 'pauta'
         ? `${exportBase}&vista=pauta&mes=${monthReport?.ym ?? ym}`
-        : `${exportBase}&vista=evento&evento=${templateId ?? ''}`
+        : view === 'cumples'
+          ? `${exportBase}&vista=cumples&mes=${birthdayReport?.ym ?? ym}`
+          : `${exportBase}&vista=evento&evento=${templateId ?? ''}`
 
   const relativo = relativeLabel(day, today)
   // Las banderas de la leyenda salen de las MISMAS mesas que se dibujan.
@@ -147,7 +154,7 @@ export function ComoNosFueDashboard({
   // "se sumó alguien": solo si hay una en pantalla. La pestaña «Pauta» no
   // dibuja ningún muro, así que tampoco lleva leyenda.
   const chipsEnPantalla =
-    view === 'pauta'
+    view === 'pauta' || view === 'cumples'
       ? []
       : [
           ...(dayReport?.blocks.filter((b) => b.reservations > 0).flatMap((b) => b.tables) ?? []),
@@ -168,6 +175,7 @@ export function ComoNosFueDashboard({
             { value: 'dia', label: 'Por día' },
             { value: 'evento', label: 'Por evento' },
             { value: 'pauta', label: 'Pauta' },
+            { value: 'cumples', label: 'Cumpleaños' },
           ]}
         />
         <Button asChild variant="outline" size="sm" className="gap-2">
@@ -267,6 +275,10 @@ export function ComoNosFueDashboard({
             />
           ) : null}
         </>
+      ) : view === 'cumples' ? (
+        birthdayReport ? (
+          <BirthdaysMonthView tenantSlug={tenantSlug} report={birthdayReport} onNavigate={push} />
+        ) : null
       ) : view === 'pauta' ? (
         monthReport ? (
           <MarketingMonthView
@@ -326,12 +338,15 @@ export function ComoNosFueDashboard({
         </>
       )}
 
-      {hayMuro && view !== 'pauta' ? <TablesWallLegend flags={legend} /> : null}
+      {hayMuro && view !== 'pauta' && view !== 'cumples' ? (
+        <TablesWallLegend flags={legend} />
+      ) : null}
 
       {dayReport?.truncated ||
       templateReport?.truncated ||
       templatesTruncated ||
-      monthReport?.truncated ? (
+      monthReport?.truncated ||
+      birthdayReport?.truncated ? (
         <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-text">
           Hay más reservas de las que entran en una sola lectura: los números pueden estar
           incompletos.

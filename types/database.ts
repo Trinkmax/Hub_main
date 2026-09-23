@@ -96,6 +96,56 @@ export type Database = {
           },
         ]
       }
+      birthday_marketing: {
+        Row: {
+          ad_spend_usd_cents: number
+          created_at: string
+          created_by: string | null
+          id: string
+          messages: number | null
+          month: string
+          notes: string | null
+          reach: number | null
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          ad_spend_usd_cents: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          messages?: number | null
+          month: string
+          notes?: string | null
+          reach?: number | null
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          ad_spend_usd_cents?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          messages?: number | null
+          month?: string
+          notes?: string | null
+          reach?: number | null
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "birthday_marketing_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       broadcast_recipients: {
         Row: {
           broadcast_id: string

@@ -234,7 +234,7 @@ function groupThousands(intDigits: string): string {
 }
 
 /** Número con `digits` decimales fijos, coma decimal y puntos de miles opcionales. */
-function decimalEsAr(v: number, digits: number, grouping: boolean): string {
+export function decimalEsAr(v: number, digits: number, grouping: boolean): string {
   if (!Number.isFinite(v)) return '—'
   const n = scaledInt(v, digits)
   const negative = v < 0 && n > 0
@@ -1751,7 +1751,7 @@ export function csvFormulaGuard(text: string): string {
 
 // Mismos redondeos que la pantalla, sin separador de miles: es lo que Excel en
 // es-AR lee como número.
-const csvUsd = (v: number) => decimalEsAr(v, 2, false)
+export const csvUsd = (v: number) => decimalEsAr(v, 2, false)
 const csvArs = (v: number) => decimalEsAr(v, 0, false)
 // Los dos precios por persona, con sus centavos si los tienen (igual que el
 // dólar y que la pantalla): son los únicos que en Excel se multiplican por la
@@ -1763,7 +1763,7 @@ const csvArsUnit = (v: number) => rateDigits(v, false)
  * a cero escribe `menos de 0,1`: la celda queda como texto, pero un `0,0` sería
  * un cero que no es, y la pantalla no lo dice.
  */
-function csvPercent(ratio: number): string {
+export function csvPercent(ratio: number): string {
   if (ratio === 0) return '0'
   const tenths = scaledInt(ratio, 3)
   if (tenths === 0 && ratio > 0) return 'menos de 0,1'
@@ -1852,7 +1852,7 @@ const MONTHS = [
 const WEEKDAYS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'] as const
 
 /** `'2026-09-09'` → `'mié 09/09'`. Aritmética de calendario pura, idéntica en cualquier TZ. */
-function weekdayDayMonth(isoDay: string): string {
+export function weekdayDayMonth(isoDay: string): string {
   const [y, m, d] = isoDay.split('-').map(Number)
   const weekday = WEEKDAYS[new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1)).getUTCDay()]
   return `${weekday ?? ''} ${formatDayMonth(isoDay)}`.trim()
@@ -2023,7 +2023,7 @@ export const MONTH_RESULT_FOOTNOTE =
 export const MONTH_RESULT_BASIS_FOOTNOTE =
   'Se multiplica por la gente contada al cerrar cada mesa —lo reservado en las que quedaron sin cerrar—, así que puede no coincidir con la columna «Personas».'
 
-function monthNameOf(ym: string): string | null {
+export function monthNameOf(ym: string): string | null {
   const month = Number(ym.slice(5, 7))
   return /^\d{4}-\d{2}$/.test(ym) ? (MONTHS[month - 1] ?? null) : null
 }
