@@ -48,6 +48,7 @@ import {
   keepMarketingDraft,
   lastRateChipLabel,
   lastValidFromDraft,
+  MARKETING_FIELD_LABELS,
   MARKETING_FIELD_ORDER,
   MARKETING_MONEY_FIELDS,
   MARKETING_MONEY_HINTS,
@@ -63,6 +64,7 @@ import {
   type NumericMarketingField,
   nextLastValid,
   sameDraft,
+  withoutMoney,
 } from '@/lib/salon/event-marketing-draft'
 import { cn } from '@/lib/utils'
 import { Disclosure } from './marketing-report'
@@ -277,6 +279,8 @@ export function MarketingForm({
       reach: lastValid.reach,
       revenuePerGuestArs: onScreen('revenuePerGuestArs'),
       costPerGuestArs: onScreen('costPerGuestArs'),
+      drinkRevenuePerGuestArs: onScreen('drinkRevenuePerGuestArs'),
+      drinkCostPerGuestArs: onScreen('drinkCostPerGuestArs'),
       revenueArs: onScreen('revenueArs'),
       usdArsRate: onScreen('usdArsRate'),
     },
@@ -335,25 +339,16 @@ export function MarketingForm({
 
   const toggleMoney = () => {
     if (draft.moneyOpen) {
-      // Cerrar la sección es borrar sus cuatro números: lo que no se ve no se
+      // Cerrar la sección es borrar sus seis números: lo que no se ve no se
       // guarda, y dejarlos escritos por detrás terminaba guardando plata que el
       // dueño creía haber sacado.
       const money = [...MARKETING_MONEY_FIELDS]
-      setDraft((d) => ({
-        ...d,
-        moneyOpen: false,
-        revenuePerGuestArs: '',
-        costPerGuestArs: '',
-        revenueArs: '',
-        usdArsRate: '',
-      }))
-      setLastValid((prev) => ({
-        ...prev,
-        revenuePerGuestArs: null,
-        costPerGuestArs: null,
-        revenueArs: null,
-        usdArsRate: null,
-      }))
+      setDraft(withoutMoney)
+      setLastValid((prev) => {
+        const next = { ...prev }
+        for (const field of money) next[field] = null
+        return next
+      })
       setServerErrors((e) => withoutFields(e, money))
       setTouched((t) => new Set([...t].filter((f) => !money.some((m) => m === f))))
       return
@@ -582,7 +577,7 @@ export function MarketingForm({
           <p className="mt-2 text-xs text-warning-text">{check.softWarning}</p>
         ) : null}
 
-        {/* La plata de la noche, en un desplegable: son cuatro números que no
+        {/* La plata de la noche, en un desplegable: son seis números que no
             se cargan todas las veces, y abiertos de entrada empujaban la pauta
             —que es lo que casi siempre se viene a cargar— fuera de la pantalla. */}
         <div className="mt-4">
@@ -614,7 +609,7 @@ export function MarketingForm({
               className="mt-2 grid gap-x-4 gap-y-3 border-l border-border/60 pl-3 @md:grid-cols-2 @md:pl-4"
             >
               {/* Ninguno lleva «(opcional)»: opcional es la sección entera, y
-                  cuatro veces la misma aclaración tapa las ayudas, que son las
+                  seis veces la misma aclaración tapa las ayudas, que son las
                   que de verdad dicen qué va en cada campo. */}
               <MoneyField
                 {...numberField('revenuePerGuestArs')}
@@ -629,6 +624,20 @@ export function MarketingForm({
                 currency="ars"
                 placeholder="0"
                 hint={MARKETING_MONEY_HINTS.costPerGuestArs}
+              />
+              {/* La bebida, sin placeholder: un «0» gris se leería como «bebida
+                  incluida», que es un dato y no un vacío. */}
+              <MoneyField
+                {...numberField('drinkRevenuePerGuestArs')}
+                label={MARKETING_FIELD_LABELS.drinkRevenuePerGuestArs}
+                currency="ars"
+                hint={MARKETING_MONEY_HINTS.drinkRevenuePerGuestArs}
+              />
+              <MoneyField
+                {...numberField('drinkCostPerGuestArs')}
+                label={MARKETING_FIELD_LABELS.drinkCostPerGuestArs}
+                currency="ars"
+                hint={MARKETING_MONEY_HINTS.drinkCostPerGuestArs}
               />
               {revenueVisible ? (
                 <MoneyField

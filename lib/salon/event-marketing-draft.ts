@@ -43,8 +43,9 @@ import {
 
 /**
  * Lo que hay escrito en cada campo, tal cual. `moneyOpen` es el desplegable
- * «Sumar la plata de la noche», que hoy guarda los cuatro números de plata:
- * ingreso y costo por persona, la facturación real y el dólar del día.
+ * «Sumar la plata de la noche», que guarda los seis números de plata: ingreso y
+ * costo por persona, ingreso y costo de bebida por persona, la facturación real
+ * y el dólar del día.
  */
 export type MarketingDraft = {
   adSpendUsd: string
@@ -52,6 +53,8 @@ export type MarketingDraft = {
   reach: string
   revenuePerGuestArs: string
   costPerGuestArs: string
+  drinkRevenuePerGuestArs: string
+  drinkCostPerGuestArs: string
   revenueArs: string
   usdArsRate: string
   notes: string
@@ -66,6 +69,8 @@ export const MARKETING_NUMBER_KINDS: Readonly<Record<NumericMarketingField, Numb
   reach: 'count',
   revenuePerGuestArs: 'money',
   costPerGuestArs: 'money',
+  drinkRevenuePerGuestArs: 'money',
+  drinkCostPerGuestArs: 'money',
   revenueArs: 'money',
   usdArsRate: 'rate',
 }
@@ -77,6 +82,8 @@ export const MARKETING_NUMBER_KINDS: Readonly<Record<NumericMarketingField, Numb
 export const MARKETING_MONEY_FIELDS: readonly NumericMarketingField[] = [
   'revenuePerGuestArs',
   'costPerGuestArs',
+  'drinkRevenuePerGuestArs',
+  'drinkCostPerGuestArs',
   'revenueArs',
   'usdArsRate',
 ]
@@ -88,6 +95,8 @@ export const MARKETING_FIELD_ORDER: readonly MarketingField[] = [
   'reach',
   'revenuePerGuestArs',
   'costPerGuestArs',
+  'drinkRevenuePerGuestArs',
+  'drinkCostPerGuestArs',
   'revenueArs',
   'usdArsRate',
   'notes',
@@ -100,6 +109,8 @@ export const MARKETING_FIELD_LABELS: Readonly<Record<MarketingField, string>> = 
   reach: 'Alcance',
   revenuePerGuestArs: 'Ingreso por persona',
   costPerGuestArs: 'Costo por persona',
+  drinkRevenuePerGuestArs: 'Ingreso de bebida por persona',
+  drinkCostPerGuestArs: 'Costo de bebida por persona',
   revenueArs: 'Facturación del evento',
   usdArsRate: 'Dólar del día',
   notes: 'Nota',
@@ -107,9 +118,13 @@ export const MARKETING_FIELD_LABELS: Readonly<Record<MarketingField, string>> = 
 
 /** La ayuda de una línea que va debajo de cada campo de plata. */
 export const MARKETING_MONEY_HINTS = {
-  revenuePerGuestArs: 'Lo que deja cada persona.',
-  costPerGuestArs: 'Lo que cuesta servirla: comida y bebida, sin sueldos.',
-  revenueArs: 'Solo lo del evento, sin las mesas normales. Si la cargás, manda sobre el estimado.',
+  revenuePerGuestArs: 'El cubierto: lo que paga cada persona, sin la bebida que se cobra aparte.',
+  costPerGuestArs: 'Lo que cuesta servirla: la comida, sin la bebida ni sueldos.',
+  drinkRevenuePerGuestArs: 'La que se cobra aparte, en promedio. 0 si está incluida, ej. el vino.',
+  drinkCostPerGuestArs:
+    'Lo que cuesta la bebida de cada persona, también la incluida. Si ya está en «Costo por persona», poné 0.',
+  revenueArs:
+    'Solo lo del evento, con la bebida y sin las mesas normales. Si la cargás, manda sobre el estimado.',
   usdArsRate: 'El que usaste para pagar Meta (el de la tarjeta). Pasa la pauta a pesos.',
 } as const
 
@@ -139,6 +154,8 @@ export const EMPTY_MARKETING_DRAFT: MarketingDraft = {
   reach: '',
   revenuePerGuestArs: '',
   costPerGuestArs: '',
+  drinkRevenuePerGuestArs: '',
+  drinkCostPerGuestArs: '',
   revenueArs: '',
   usdArsRate: '',
   notes: '',
@@ -150,9 +167,10 @@ export const EMPTY_MARKETING_DRAFT: MarketingDraft = {
  * pauta» abre con `0` en «Gastado»: es lo que está guardado, y con el 0 el form
  * ya sabe que es una noche orgánica (apaga lo de Meta y deja la plata).
  *
- * El desplegable de plata abre si hay CUALQUIERA de los cuatro números: si se
- * abriera solo con la facturación, un ingreso por persona ya guardado quedaría
- * escondido y el guardado siguiente lo borraría sin que nadie lo vea.
+ * El desplegable de plata abre si hay CUALQUIERA de los seis números: si se
+ * abriera solo con la facturación, un ingreso por persona (o la bebida) ya
+ * guardado quedaría escondido y el guardado siguiente lo borraría sin que nadie
+ * lo vea.
  */
 export function draftFromRow(row: EventMarketingRow | null): MarketingDraft {
   if (row === null) return { ...EMPTY_MARKETING_DRAFT }
@@ -164,6 +182,8 @@ export function draftFromRow(row: EventMarketingRow | null): MarketingDraft {
     reach: row.reach === null ? '' : canonicalInput(row.reach, 'count'),
     revenuePerGuestArs: pesos(row.revenuePerGuestArsCents),
     costPerGuestArs: pesos(row.costPerGuestArsCents),
+    drinkRevenuePerGuestArs: pesos(row.drinkRevenuePerGuestArsCents),
+    drinkCostPerGuestArs: pesos(row.drinkCostPerGuestArsCents),
     revenueArs: pesos(row.revenueArsCents),
     usdArsRate: row.usdArsRate === null ? '' : canonicalInput(row.usdArsRate, 'rate'),
     notes: row.notes ?? '',
@@ -171,6 +191,18 @@ export function draftFromRow(row: EventMarketingRow | null): MarketingDraft {
   }
   draft.moneyOpen = MARKETING_MONEY_FIELDS.some((field) => draft[field] !== '')
   return draft
+}
+
+/**
+ * Cerrar «Sumar la plata de la noche» es vaciar sus seis números: lo que no se
+ * ve no se guarda, y dejarlos escritos por detrás terminaba guardando plata que
+ * el dueño creía haber sacado. El form la usa en vez de enumerar los campos a
+ * mano (con la bebida pasaron de cuatro a seis).
+ */
+export function withoutMoney(draft: MarketingDraft): MarketingDraft {
+  const next: MarketingDraft = { ...draft, moneyOpen: false }
+  for (const field of MARKETING_MONEY_FIELDS) next[field] = ''
+  return next
 }
 
 /**
@@ -267,6 +299,8 @@ export function lastValidFromDraft(
     reach: read('reach'),
     revenuePerGuestArs: read('revenuePerGuestArs'),
     costPerGuestArs: read('costPerGuestArs'),
+    drinkRevenuePerGuestArs: read('drinkRevenuePerGuestArs'),
+    drinkCostPerGuestArs: read('drinkCostPerGuestArs'),
     revenueArs: read('revenueArs'),
     usdArsRate: read('usdArsRate'),
   }
@@ -302,8 +336,14 @@ export function marketingFieldEnabled(
 function parseMessage(
   field: NumericMarketingField,
   reason: Extract<ParsedNumber, { ok: false }>['reason'],
+  raw: string,
 ): string | null {
   const M = MARKETING_FIELD_MESSAGES
+  // «incluida», «incluido», «va con el vino»: sin un dígito es una palabra, y
+  // en el ingreso de bebida esa palabra quiere decir 0.
+  if (field === 'drinkRevenuePerGuestArs' && reason === 'ilegible' && !/\d/.test(raw)) {
+    return M.drinkIncludedIsZero
+  }
   switch (reason) {
     // Vacío solo es error en «Gastado»: todo lo demás es opcional. Desde que se
     // borró el CHECK `sem_revenue_needs_rate`, tampoco hay campos que vayan de a
@@ -360,6 +400,8 @@ export function checkMarketingDraft(
     reach: null,
     revenuePerGuestArs: null,
     costPerGuestArs: null,
+    drinkRevenuePerGuestArs: null,
+    drinkCostPerGuestArs: null,
     revenueArs: null,
     usdArsRate: null,
   }
@@ -371,7 +413,7 @@ export function checkMarketingDraft(
       numbers[field] = parsed.value
       continue
     }
-    const message = parseMessage(field, parsed.reason)
+    const message = parseMessage(field, parsed.reason, draft[field])
     if (message) fieldErrors[field] = message
   }
 
@@ -387,6 +429,8 @@ export function checkMarketingDraft(
     reach: numbers.reach,
     revenuePerGuestArs: numbers.revenuePerGuestArs,
     costPerGuestArs: numbers.costPerGuestArs,
+    drinkRevenuePerGuestArs: numbers.drinkRevenuePerGuestArs,
+    drinkCostPerGuestArs: numbers.drinkCostPerGuestArs,
     revenueArs: numbers.revenueArs,
     usdArsRate: numbers.usdArsRate,
     notes: notes === '' ? null : notes,

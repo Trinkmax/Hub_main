@@ -194,6 +194,8 @@ export function EventMarketingSection({
         usdArsRate: null,
         revenuePerGuestArsCents: null,
         costPerGuestArsCents: null,
+        drinkRevenuePerGuestArsCents: null,
+        drinkCostPerGuestArsCents: null,
         notes: null,
         updatedAt: '',
         updatedByName: null,

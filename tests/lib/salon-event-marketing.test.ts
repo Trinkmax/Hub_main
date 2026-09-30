@@ -66,6 +66,8 @@ function row(over: Partial<EventMarketingRow> = {}): EventMarketingRow {
     usdArsRate: null,
     revenuePerGuestArsCents: null,
     costPerGuestArsCents: null,
+    drinkRevenuePerGuestArsCents: null,
+    drinkCostPerGuestArsCents: null,
     notes: null,
     updatedAt: '2026-09-10T17:32:00Z',
     updatedByName: 'Nacho B.',
@@ -1641,7 +1643,7 @@ describe('parseLocaleNumber', () => {
 describe('CSV', () => {
   it('los encabezados de §13, con la cuenta de la noche antes de la nota', () => {
     expect(MARKETING_EXPORT_HEADERS.join('; ')).toBe(
-      'Pauta USD; Mensajes; Alcance; Costo por mensaje USD; % de cierre; Costo por reserva USD; Costo por persona USD; Facturación ARS; Dólar; Retorno (USD facturados por USD de pauta); Pauta sobre facturación %; Personas del cálculo; Ingreso por persona ARS; Costo por persona ARS; Ingreso ARS; Costo ARS; Margen ARS; Pauta ARS; Resultado ARS; Nota',
+      'Pauta USD; Mensajes; Alcance; Costo por mensaje USD; % de cierre; Costo por reserva USD; Costo por persona USD; Facturación ARS; Dólar; Retorno (USD facturados por USD de pauta); Pauta sobre facturación %; Personas del cálculo; Ingreso por persona ARS; Costo por persona ARS; Ingreso de bebida por persona ARS; Costo de bebida por persona ARS; Ingreso ARS; Costo ARS; Margen ARS; Pauta ARS; Resultado ARS; Nota',
     )
     // La nota es lo último: es texto largo escrito a mano y correría el resto.
     expect(MARKETING_EXPORT_HEADERS.at(-1)).toBe('Nota')
@@ -1662,25 +1664,20 @@ describe('CSV', () => {
       '1450',
       '9,76',
       '10,2',
-      // Sin ingreso ni costo por persona, esta fecha no tiene cuenta de la
-      // noche: las ocho columnas van vacías. Escribir «Personas del cálculo» y
-      // «Pauta ARS» al lado de un «Margen ARS» vacío era invitar a restar en
-      // Excel dos celdas que no son la cuenta.
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
+      // Sin ingreso ni costo por persona (ni bebida), esta fecha no tiene
+      // cuenta de la noche: las diez columnas van vacías. Escribir «Personas
+      // del cálculo» y «Pauta ARS» al lado de un «Margen ARS» vacío era invitar
+      // a restar en Excel dos celdas que no son la cuenta.
+      ...Array(10).fill(''),
       'Campaña de reels del 1/9 al 9/9',
     ])
   })
 
-  it('las ocho columnas de la cuenta salen juntas o no sale ninguna', () => {
-    const night = (r: EventMarketingRow) => marketingCsvCells(ASTRAL, r).slice(11, 19)
-    const vacias = ['', '', '', '', '', '', '', '']
+  it('las diez columnas de la cuenta salen juntas o no sale ninguna', () => {
+    const from = MARKETING_EXPORT_HEADERS.indexOf('Personas del cálculo')
+    const to = MARKETING_EXPORT_HEADERS.indexOf('Nota')
+    const night = (r: EventMarketingRow) => marketingCsvCells(ASTRAL, r).slice(from, to)
+    const vacias = Array(10).fill('')
     // Una fecha de las que ya estaban cargadas: facturación y dólar, nada más.
     expect(night(ASTRAL_FULL)).toEqual(vacias)
     // Y una pelada, que además tenía «Personas del cálculo» colgada sola.
@@ -1688,14 +1685,19 @@ describe('CSV', () => {
     // Con un solo número por persona ya hay cuenta, aunque quede a medio hacer.
     expect(night(row({ revenuePerGuestArsCents: 27_000_00 }))).not.toEqual(vacias)
     expect(night(row({ costPerGuestArsCents: 15_000_00 }))).not.toEqual(vacias)
+    // La bebida sola también abre la cuenta (regla 13 extendida).
+    expect(night(row({ drinkRevenuePerGuestArsCents: 0 }))).not.toEqual(vacias)
+    expect(night(row({ drinkCostPerGuestArsCents: 2_500_00 }))).not.toEqual(vacias)
   })
 
   it('las celdas de la cuenta de la noche, con el ejemplo del ramen', () => {
     const cells = marketingCsvCells(RAMEN, RAMEN_ROW)
-    expect(cells.slice(11, 19)).toEqual([
+    expect(cells.slice(11, 21)).toEqual([
       '29', // personas del cálculo: 27 contadas + 2 de mesas sin cerrar
       '27000',
       '15000',
+      '', // sin bebida cargada: vacío, no 0
+      '',
       '783000',
       '435000',
       '348000',
@@ -1708,11 +1710,12 @@ describe('CSV', () => {
     const k = computeMarketingKpis(RAMEN, RAMEN_ROW)
     const cells = marketingCsvCells(RAMEN, RAMEN_ROW)
     const bare = (screen: string) => screen.replace(/^\$ /, '').replace(/\./g, '')
-    expect(cells[14]).toBe(bare(formatArs(value(k.revenueArs))))
-    expect(cells[15]).toBe(bare(formatArs(value(k.costArs))))
-    expect(cells[16]).toBe(bare(formatArs(value(k.grossMarginArs))))
-    expect(cells[17]).toBe(bare(formatArs(value(k.adSpendArs))))
-    expect(cells[18]).toBe(bare(formatArs(value(k.nightResultArs))))
+    const at = (header: string) => cells[MARKETING_EXPORT_HEADERS.indexOf(header)]
+    expect(at('Ingreso ARS')).toBe(bare(formatArs(value(k.revenueArs))))
+    expect(at('Costo ARS')).toBe(bare(formatArs(value(k.costArs))))
+    expect(at('Margen ARS')).toBe(bare(formatArs(value(k.grossMarginArs))))
+    expect(at('Pauta ARS')).toBe(bare(formatArs(value(k.adSpendArs))))
+    expect(at('Resultado ARS')).toBe(bare(formatArs(value(k.nightResultArs))))
   })
 
   it('un resultado negativo va con signo en la planilla (Excel lo lee como número)', () => {
@@ -1725,23 +1728,24 @@ describe('CSV', () => {
       }),
     )
     // Margen 0, pauta $ 254.127: la noche quedó $ 254.127 abajo.
-    expect(perdida[16]).toBe('0')
-    expect(perdida[18]).toBe('-254127')
+    expect(perdida[MARKETING_EXPORT_HEADERS.indexOf('Margen ARS')]).toBe('0')
+    expect(perdida[MARKETING_EXPORT_HEADERS.indexOf('Resultado ARS')]).toBe('-254127')
   })
 
   it('lo que no se pudo calcular queda vacío, no en cero', () => {
+    const col = (cells: string[], header: string) => cells[MARKETING_EXPORT_HEADERS.indexOf(header)]
     const sinDolar = marketingCsvCells(RAMEN, { ...RAMEN_ROW, usdArsRate: null })
-    expect(sinDolar[16]).toBe('348000')
-    expect(sinDolar[17]).toBe('')
-    expect(sinDolar[18]).toBe('')
+    expect(col(sinDolar, 'Margen ARS')).toBe('348000')
+    expect(col(sinDolar, 'Pauta ARS')).toBe('')
+    expect(col(sinDolar, 'Resultado ARS')).toBe('')
     const sinCosto = marketingCsvCells(RAMEN, { ...RAMEN_ROW, costPerGuestArsCents: null })
-    expect(sinCosto[14]).toBe('783000')
-    expect(sinCosto[15]).toBe('')
-    expect(sinCosto[16]).toBe('')
+    expect(col(sinCosto, 'Ingreso ARS')).toBe('783000')
+    expect(col(sinCosto, 'Costo ARS')).toBe('')
+    expect(col(sinCosto, 'Margen ARS')).toBe('')
     // Sin margen tampoco se escribe la pauta: al lado de un «Margen ARS» vacío
     // es una resta en Excel que no es la cuenta. Misma reja que la ficha.
-    expect(sinCosto[17]).toBe('')
-    expect(sinCosto[18]).toBe('')
+    expect(col(sinCosto, 'Pauta ARS')).toBe('')
+    expect(col(sinCosto, 'Resultado ARS')).toBe('')
   })
 
   it('los dos precios por persona se exportan con sus centavos', () => {
@@ -2162,35 +2166,35 @@ describe('buildMonthMarketingReport', () => {
     const lines = monthMarketingToCsv(report).replace(/^﻿/, '').split('\r\n')
     expect(lines).toHaveLength(1 + 7 + 4)
     expect(lines[0]).toBe(
-      'Fecha;Evento;Estado;Personas;Reservas;Pauta USD;Mensajes;Alcance;Costo por mensaje USD;% de cierre;Costo por reserva USD;Costo por persona USD;Facturación ARS;Dólar;Retorno (USD facturados por USD de pauta);Pauta sobre facturación %;Personas del cálculo;Ingreso por persona ARS;Costo por persona ARS;Ingreso ARS;Costo ARS;Margen ARS;Pauta ARS;Resultado ARS;Nota',
+      'Fecha;Evento;Estado;Personas;Reservas;Pauta USD;Mensajes;Alcance;Costo por mensaje USD;% de cierre;Costo por reserva USD;Costo por persona USD;Facturación ARS;Dólar;Retorno (USD facturados por USD de pauta);Pauta sobre facturación %;Personas del cálculo;Ingreso por persona ARS;Costo por persona ARS;Ingreso de bebida por persona ARS;Costo de bebida por persona ARS;Ingreso ARS;Costo ARS;Margen ARS;Pauta ARS;Resultado ARS;Nota',
     )
-    expect(lines[1]).toBe('2026-09-07;Ramen;sin cargar;0;0;;;;;;;;;;;;;;;;;;;;')
+    expect(lines[1]).toBe('2026-09-07;Ramen;sin cargar;0;0;;;;;;;;;;;;;;;;;;;;;;')
     // Ninguna fecha de este mes tiene ingreso ni costo por persona, así que las
     // ocho columnas de la cuenta de la noche van vacías en todas las filas.
     expect(lines[2]).toBe(
-      '2026-09-09;Noche Astral;completa;29;11;175,26;51;8420;3,44;21,6;15,93;6,04;2480000;1450;9,76;10,2;;;;;;;;;Campaña de reels del 1/9 al 9/9',
+      '2026-09-09;Noche Astral;completa;29;11;175,26;51;8420;3,44;21,6;15,93;6,04;2480000;1450;9,76;10,2;;;;;;;;;;;Campaña de reels del 1/9 al 9/9',
     )
-    expect(lines[3]).toBe('2026-09-10;Pizza libre;sin pauta;50;20;0,00;;;;;;;;;;;;;;;;;;;')
-    expect(lines[4]).toBe('2026-09-12;Tapeo;completa;30;14;80,00;9;;8,89;;5,71;2,67;;;;;;;;;;;;;')
-    expect(lines[5]).toBe('2026-09-13;Jazz;incompleta;12;5;50,00;;;;;10,00;4,17;;;;;;;;;;;;;')
+    expect(lines[3]).toBe('2026-09-10;Pizza libre;sin pauta;50;20;0,00;;;;;;;;;;;;;;;;;;;;;')
+    expect(lines[4]).toBe('2026-09-12;Tapeo;completa;30;14;80,00;9;;8,89;;5,71;2,67;;;;;;;;;;;;;;;')
+    expect(lines[5]).toBe('2026-09-13;Jazz;incompleta;12;5;50,00;;;;;10,00;4,17;;;;;;;;;;;;;;;')
     // Hoy: lo cargado sí, los cocientes no (igual que la lista de la pantalla).
-    expect(lines[6]).toBe('2026-09-15;Merienda y Arte;es hoy;8;3;60,00;12;;;;;;;;;;;;;;;;;;')
-    expect(lines[7]).toBe('2026-09-26;Karaoke;todavía no pasó;0;0;;;;;;;;;;;;;;;;;;;;')
+    expect(lines[6]).toBe('2026-09-15;Merienda y Arte;es hoy;8;3;60,00;12;;;;;;;;;;;;;;;;;;;;')
+    expect(lines[7]).toBe('2026-09-26;Karaoke;todavía no pasó;0;0;;;;;;;;;;;;;;;;;;;;;;')
     // Antes era una sola fila que mezclaba P, Q y R (305,26 ÷ 60 no daba 4,25).
     // Cada total lleva solo las sumas de sus cocientes: se rehace con su fila.
     // P: 305,26 ÷ 30 = 10,18 · 305,26 ÷ 71 = 4,30.
     expect(lines[8]).toBe(
-      'Total con pauta que ya pasó (3 fechas);;;71;30;305,26;;;;;10,18;4,30;;;;;;;;;;;;;',
+      'Total con pauta que ya pasó (3 fechas);;;71;30;305,26;;;;;10,18;4,30;;;;;;;;;;;;;;;',
     )
     // Q (sin Jazz): 255,26 ÷ 60 = 4,25 · 25 ÷ 60 = 41,7 % · 255,26 ÷ 25 = 10,21.
     expect(lines[9]).toBe(
-      'Total con pauta que ya pasó, con mensajes cargados (2 fechas);;;;25;255,26;60;;4,25;41,7;10,21;;;;;;;;;;;;;;',
+      'Total con pauta que ya pasó, con mensajes cargados (2 fechas);;;;25;255,26;60;;4,25;41,7;10,21;;;;;;;;;;;;;;;;',
     )
     // R (solo Noche Astral): cada fecha pasa a dólares con SU dólar.
     expect(lines[10]).toBe(
-      'Total con pauta que ya pasó, con facturación (1 fecha);;;;;175,26;;;;;;;2480000;;9,76;10,2;;;;;;;;;',
+      'Total con pauta que ya pasó, con facturación (1 fecha);;;;;175,26;;;;;;;2480000;;9,76;10,2;;;;;;;;;;;',
     )
-    expect(lines[11]).toBe('Pauta de fechas que todavía no pasaron;;;;;60,00;;;;;;;;;;;;;;;;;;;')
+    expect(lines[11]).toBe('Pauta de fechas que todavía no pasaron;;;;;60,00;;;;;;;;;;;;;;;;;;;;;')
   })
 
   it('la planilla: cada total sale solo si su conjunto tiene fechas', () => {
@@ -2205,7 +2209,7 @@ describe('buildMonthMarketingReport', () => {
     expect(futureLines).toHaveLength(1 + 7 + 1)
     expect(futureLines.some((l) => l.startsWith('Total'))).toBe(false)
     expect(futureLines.at(-1)).toBe(
-      'Pauta de fechas que todavía no pasaron;;;;;365,26;;;;;;;;;;;;;;;;;;;',
+      'Pauta de fechas que todavía no pasaron;;;;;365,26;;;;;;;;;;;;;;;;;;;;;',
     )
 
     // Una sola fecha pasada, sin facturación: P y Q, sin la fila de R. El cierre

@@ -134,6 +134,15 @@ function auditNumbers(row: EventMarketingDbRow) {
       row.revenue_per_guest_ars_cents === null ? null : Number(row.revenue_per_guest_ars_cents),
     cost_per_guest_ars_cents:
       row.cost_per_guest_ars_cents === null ? null : Number(row.cost_per_guest_ars_cents),
+    // La bebida también: la cuenta de ayer se rehace con los números de ayer.
+    drink_revenue_per_guest_ars_cents:
+      row.drink_revenue_per_guest_ars_cents === null
+        ? null
+        : Number(row.drink_revenue_per_guest_ars_cents),
+    drink_cost_per_guest_ars_cents:
+      row.drink_cost_per_guest_ars_cents === null
+        ? null
+        : Number(row.drink_cost_per_guest_ars_cents),
   }
 }
 
@@ -186,10 +195,10 @@ export async function saveEventMarketing(
   // movió a una fecha futura): viaja tal cual y se deja, si no corregir una nota
   // obligaba a borrarla.
   //
-  // El ingreso y el costo POR PERSONA no entran en esta regla: son lo que el
-  // dueño estima de antemano («el ramen sale 27 mil y me cuesta 15 mil»), no un
-  // número de la caja. Cargarlos antes de la fecha es exactamente para lo que
-  // sirven.
+  // Los números POR PERSONA (ingreso, costo y la bebida) no entran en esta
+  // regla: son lo que el dueño estima de antemano («el ramen sale 27 mil y me
+  // cuesta 15 mil»), no un número de la caja. Cargarlos antes de la fecha es
+  // exactamente para lo que sirven.
   if (values.revenueArs !== null && event.event_date > todayInCordoba()) {
     let unchanged = false
     if (values.expectedUpdatedAt !== null) {

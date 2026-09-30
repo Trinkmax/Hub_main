@@ -39,6 +39,8 @@ const ASTRAL: EventMarketingRow = {
   usdArsRate: 1450,
   revenuePerGuestArsCents: null,
   costPerGuestArsCents: null,
+  drinkRevenuePerGuestArsCents: null,
+  drinkCostPerGuestArsCents: null,
   notes: 'Campaña de reels del 1/9 al 9/9',
   updatedAt: '2026-09-10T17:32:00+00:00',
   updatedByName: 'Nacho B.',
@@ -82,6 +84,8 @@ describe('draftFromRow', () => {
       reach: '8.420',
       revenuePerGuestArs: '27.000',
       costPerGuestArs: '15.000',
+      drinkRevenuePerGuestArs: '',
+      drinkCostPerGuestArs: '',
       revenueArs: '',
       usdArsRate: '1.450',
       notes: 'Campaña de reels del 1/9 al 9/9',
@@ -146,6 +150,8 @@ describe('draftFromRow', () => {
       reach: 8420,
       revenuePerGuestArs: 27_000,
       costPerGuestArs: 15_000,
+      drinkRevenuePerGuestArs: null,
+      drinkCostPerGuestArs: null,
       revenueArs: null,
       usdArsRate: 1450,
       notes: 'Campaña de reels del 1/9 al 9/9',
@@ -310,6 +316,8 @@ describe('nextLastValid', () => {
       reach: 8420,
       revenuePerGuestArs: 27_000,
       costPerGuestArs: 15_000,
+      drinkRevenuePerGuestArs: null,
+      drinkCostPerGuestArs: null,
       revenueArs: 2_480_000,
       usdArsRate: 1450,
     })
@@ -672,9 +680,15 @@ describe('firstEmptyField', () => {
       moneyOpen: true,
       revenuePerGuestArs: '27.000',
       costPerGuestArs: '15.000',
+      drinkRevenuePerGuestArs: '0',
+      drinkCostPerGuestArs: '4.000',
     })
     expect(firstEmptyField(full, true)).toBe('revenueArs')
     expect(firstEmptyField(full, false)).toBe('usdArsRate')
+    // Con el cubierto cargado y la bebida vacía, el foco va a la bebida.
+    expect(
+      firstEmptyField({ ...full, drinkRevenuePerGuestArs: '', drinkCostPerGuestArs: '' }, true),
+    ).toBe('drinkRevenuePerGuestArs')
   })
 })
 

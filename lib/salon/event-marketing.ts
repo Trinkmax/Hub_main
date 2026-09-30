@@ -46,18 +46,31 @@
  *     el mismo criterio que el motor de comisiones. La pauta sigue
  *     repartiéndose entre las reservas en pie y su gente, que es lo que el
  *     anuncio trajo: son dos bases distintas y cada texto nombra la suya.
- * 13. **La cuenta de la noche existe si hay ingreso o costo por persona.** Lo
- *     decide `hasNightAccount` y nada más: la ficha, la planilla y la vista
- *     previa preguntan lo mismo. Una fecha vieja —facturación y dólar, sin los
- *     dos números nuevos— se sigue viendo como se veía. En una noche SIN
- *     pauta alcanza con la facturación: no hay recuadro «Retorno» que la
- *     muestre, y sin la cuenta quedaría cargada y sin dibujarse en ningún lado.
+ * 13. **La cuenta de la noche existe si hay algún dato por persona**: ingreso,
+ *     costo o algo de la bebida. Lo decide `hasNightAccount` y nada más: la
+ *     ficha, la planilla y la vista previa preguntan lo mismo. Una fecha vieja
+ *     —facturación y dólar, sin los números por persona— se sigue viendo como
+ *     se veía. En una noche SIN pauta alcanza con la facturación: no hay
+ *     recuadro «Retorno» que la muestre, y sin la cuenta quedaría cargada y sin
+ *     dibujarse en ningún lado.
  * 14. **Sin pauta también hay cuenta.** Una noche orgánica (gasto 0) lleva su
  *     ingreso, su costo y su resultado, con pauta $ 0 dicha en palabras («sin
  *     pauta»). Lo que no lleva son los números de Meta ni el dólar. No suma en
  *     los totales de la pestaña Pauta, que son de las fechas CON pauta: su
  *     resultado se ve en su ficha, en su renglón de «Sin pauta» y en la
- *     planilla.
+ *     planilla. (El consolidado de «Por evento» sí la suma: es otra base, la
+ *     de las noches del evento, y la nombra.)
+ * 15. **La bebida entra entera o no entra** (30/09). Con sus dos números
+ *     vacíos la cuenta va sin bebida, como hasta el 30/09, y ningún texto la
+ *     nombra. En cuanto se carga uno hacen falta los dos, salvo el ingreso
+ *     cuando manda la facturación real, que ya la trae. Lo que falte se dice en
+ *     palabras; nunca se completa con 0. El 0 del ingreso de bebida es la
+ *     bebida incluida y se dice «bebida incluida». Se multiplica por la misma
+ *     gente que el cubierto (`billableGuests`).
+ * 16. **✓ / ✗ es el signo del resultado que se LEE** (D2, 30/09): la noche dejó
+ *     plata o quedó abajo (`resultSign`); en $ 0 no hay marca. Hoy, lo que
+ *     viene, lo sin cargar y la cuenta abierta no se juzgan, y se dice por qué
+ *     (`nightGap`). Es aritmética, no un semáforo contra un umbral (regla 8).
  *
  * Sobre el formato: todo se arma A MANO (dígitos, puntos de miles, coma
  * decimal y espacio duro `\u00A0`), sin `Intl.NumberFormat`. Node 25 formatea
@@ -98,6 +111,13 @@ export type EventMarketingRow = {
   revenuePerGuestArsCents: number | null
   /** Lo que cuesta servir a cada persona: los $ 15.000 del ejemplo. Sin sueldos ni gastos fijos. */
   costPerGuestArsCents: number | null
+  /**
+   * La bebida que se cobra APARTE, por persona (los «35 mil pesos más bebida»
+   * del dueño). 0 = bebida incluida en el cubierto (el vino); null = sin cargar.
+   */
+  drinkRevenuePerGuestArsCents: number | null
+  /** Lo que cuesta la bebida de cada persona, también la incluida. null = sin cargar. */
+  drinkCostPerGuestArsCents: number | null
   notes: string | null
   updatedAt: string
   /** Ya abreviado con `shortName` ('Nacho B.'). */
@@ -115,6 +135,10 @@ export type KpiReason =
   | 'sin-facturacion'
   | 'sin-ingreso-por-persona'
   | 'sin-costo-por-persona'
+  /** Se cargó la bebida (algo de ella) pero no su ingreso, y no hay facturación real que lo traiga. */
+  | 'sin-ingreso-de-bebida'
+  /** Se cargó la bebida (algo de ella) pero no su costo. */
+  | 'sin-costo-de-bebida'
   | 'sin-dolar'
   /** El margen por persona es cero o negativo: no hay cantidad de gente que cubra la pauta. */
   | 'sin-margen'
@@ -127,9 +151,11 @@ export type Kpi = { ok: true; value: number } | { ok: false; reason: KpiReason }
  * en la DB son centavos, acá son unidades).
  *
  * El contrato, en orden: personas = `billableGuests`; ingreso = la facturación
- * real si está cargada y si no personas × ingreso por persona; costo =
- * personas × costo por persona; margen = ingreso − costo; pauta en pesos =
- * gastado en dólares × dólar cargado; resultado = margen − pauta.
+ * real si está cargada (ya trae la bebida) y si no personas × (ingreso por
+ * persona + ingreso de bebida); costo = personas × (costo por persona + costo
+ * de bebida); margen = ingreso − costo; pauta en pesos = gastado en dólares ×
+ * dólar cargado; resultado = margen − pauta. La bebida entra entera o no entra
+ * (regla 15).
  */
 export type NightMoneyKpis = {
   revenueArs: Kpi
@@ -175,6 +201,8 @@ export type MarketingField =
   | 'usdArsRate'
   | 'revenuePerGuestArs'
   | 'costPerGuestArs'
+  | 'drinkRevenuePerGuestArs'
+  | 'drinkCostPerGuestArs'
   | 'notes'
 
 export type MarketingActionState =
@@ -279,7 +307,7 @@ export function formatPesosRate(v: number): string {
  * se los acepta y se los devuelve escritos). El que se multiplica se muestra
  * entero.
  */
-function formatArsUnit(pesos: number): string {
+export function formatArsUnit(pesos: number): string {
   return `$${NBSP}${rateDigits(pesos, true)}`
 }
 
@@ -506,10 +534,112 @@ function realRevenue(row: EventMarketingRow): number | null {
   return row.revenueArsCents === null ? null : row.revenueArsCents / 100
 }
 
+/** El ingreso de bebida por persona, en pesos. 0 = incluida; `null` = sin cargar. */
+function perGuestDrinkRevenue(row: EventMarketingRow): number | null {
+  return row.drinkRevenuePerGuestArsCents === null ? null : row.drinkRevenuePerGuestArsCents / 100
+}
+
+/** El costo de bebida por persona, en pesos. `null` = sin cargar. */
+function perGuestDrinkCost(row: EventMarketingRow): number | null {
+  return row.drinkCostPerGuestArsCents === null ? null : row.drinkCostPerGuestArsCents / 100
+}
+
+/**
+ * ¿La bebida entra en la cuenta? Sí en cuanto el dueño carga CUALQUIERA de sus
+ * dos números, y entonces hacen falta los dos (salvo el ingreso cuando manda la
+ * facturación real, que ya la trae). Con los dos vacíos la cuenta es la de
+ * siempre: es el estado de todas las fechas cargadas antes del 30/09, y no
+ * pueden cambiar (regla 13).
+ */
+export function hasDrinks(row: EventMarketingRow): boolean {
+  return row.drinkRevenuePerGuestArsCents !== null || row.drinkCostPerGuestArsCents !== null
+}
+
+/** Un dato por persona que la cuenta necesita, en el orden del formulario. */
+export type NightInput =
+  | 'revenuePerGuest'
+  | 'costPerGuest'
+  | 'drinkRevenuePerGuest'
+  | 'drinkCostPerGuest'
+
+/**
+ * Qué datos por persona le faltan a la cuenta para cerrar, TODOS a la vez (no
+ * de a uno, que obligaba a guardar para descubrir el siguiente). La facturación
+ * real reemplaza a los dos ingresos: la caja ya dijo cuánto entró, bebida
+ * incluida (decisión 2 del 19/09). Los costos nunca: la caja no sabe de costos.
+ */
+export function missingNightInputs(row: EventMarketingRow): NightInput[] {
+  const out: NightInput[] = []
+  const drinks = hasDrinks(row)
+  const real = row.revenueArsCents !== null
+  if (!real && row.revenuePerGuestArsCents === null) out.push('revenuePerGuest')
+  if (row.costPerGuestArsCents === null) out.push('costPerGuest')
+  if (drinks && !real && row.drinkRevenuePerGuestArsCents === null) out.push('drinkRevenuePerGuest')
+  if (drinks && row.drinkCostPerGuestArsCents === null) out.push('drinkCostPerGuest')
+  return out
+}
+
+const NIGHT_INPUT_NOUNS: Readonly<Record<NightInput, string>> = {
+  revenuePerGuest: 'el ingreso',
+  costPerGuest: 'el costo',
+  drinkRevenuePerGuest: 'el ingreso de bebida',
+  drinkCostPerGuest: 'el costo de bebida',
+}
+
+/** `a` · `a y b` · `a, b y c`. */
+function joinY(items: ReadonlyArray<string>): string {
+  if (items.length <= 1) return items[0] ?? ''
+  return `${items.slice(0, -1).join(', ')} y ${items[items.length - 1]}`
+}
+
+/**
+ * `falta el costo de bebida por persona` · `faltan el ingreso y el costo por
+ * persona`. Todos terminan en «por persona», así que va una sola vez al final.
+ */
+function missingInputsPhrase(inputs: ReadonlyArray<NightInput>): string {
+  const verb = inputs.length === 1 ? 'falta' : 'faltan'
+  return `${verb} ${joinY(inputs.map((i) => NIGHT_INPUT_NOUNS[i]))} por persona`
+}
+
+/**
+ * Por qué una fecha no tiene resultado. `null` = el resultado cierra.
+ *
+ * Sin gente no hay cuenta, falte lo que falte: se dice eso solo, porque cargar
+ * plata no lo arreglaría. Si hay gente, TODO lo que falta a la vez: los datos
+ * por persona (`missingNightInputs`) y el dólar del día, si hubo pauta.
+ */
+export type NightGap =
+  | { kind: 'sin-gente' }
+  | { kind: 'faltan-datos'; inputs: NightInput[]; dollar: boolean }
+
+export function nightGap(block: MarketingBlock, row: EventMarketingRow): NightGap | null {
+  const k = computeMarketingKpis(block, row)
+  if (k.nightResultArs.ok) return null
+  if (block.billableGuests <= 0) return { kind: 'sin-gente' }
+  return {
+    kind: 'faltan-datos',
+    inputs: missingNightInputs(row),
+    dollar: !k.adSpendArs.ok && k.adSpendArs.reason === 'sin-dolar',
+  }
+}
+
+/**
+ * Lo que falta, en minúscula y entero: `falta el dólar del día` · `faltan el
+ * costo por persona y el dólar del día` · `faltan el ingreso y el costo por
+ * persona, y el dólar del día`.
+ */
+function missingPhrase(inputs: ReadonlyArray<NightInput>, dollar: boolean): string {
+  if (inputs.length === 0) return dollar ? 'falta el dólar del día' : 'falta cargar la cuenta'
+  if (!dollar) return missingInputsPhrase(inputs)
+  const nouns = joinY(inputs.map((i) => NIGHT_INPUT_NOUNS[i]))
+  return `faltan ${nouns} por persona${inputs.length > 1 ? ',' : ''} y el dólar del día`
+}
+
 /**
  * ¿Esta fecha tiene la cuenta de la noche? La decide UN dato: que el dueño haya
- * cargado el ingreso o el costo por persona. Es la regla 13 y manda en los tres
- * lados (ficha, planilla y vista previa), así que vive en una sola función.
+ * cargado algo por persona (ingreso, costo o la bebida). Es la regla 13 y manda
+ * en los tres lados (ficha, planilla y vista previa), así que vive en una sola
+ * función.
  *
  * La facturación sola NO alcanza, aunque sea plata. Las fechas que ya estaban
  * cargadas antes de esta pantalla tienen facturación y dólar y nada más: si
@@ -520,6 +650,9 @@ function realRevenue(row: EventMarketingRow): number | null {
  */
 export function hasNightAccount(row: EventMarketingRow): boolean {
   if (row.revenuePerGuestArsCents !== null || row.costPerGuestArsCents !== null) return true
+  // La bebida también es un dato por persona que el dueño empieza a cargar a
+  // propósito. Las fechas viejas la tienen en null: no cambian.
+  if (hasDrinks(row)) return true
   // Sin pauta no hay recuadro «Retorno»: la facturación sola se dibuja acá o en
   // ningún lado. Con pauta, la muestra el «Retorno» (y las fechas viejas no
   // cambian).
@@ -543,24 +676,38 @@ function computeNightMoney(
   const perRevenue = perGuestRevenue(row)
   const perCost = perGuestCost(row)
   const real = realRevenue(row)
+  const drinks = hasDrinks(row)
+  const drinkRevenue = perGuestDrinkRevenue(row)
+  const drinkCost = perGuestDrinkCost(row)
 
   // La facturación real manda sobre el estimado por persona (decisión del
-  // dueño): si la caja ya dijo cuánto entró, no hay por qué estimarlo.
+  // dueño): si la caja ya dijo cuánto entró, no hay por qué estimarlo. La caja
+  // cobra también la bebida, así que manda sobre cubierto + bebida: sumarle el
+  // ingreso de bebida la contaría dos veces.
+  //
+  // Sin bebida cargada, `drinkRevenue ?? 0` no es un «faltante como cero»: la
+  // bebida no está en la cuenta y los textos no la nombran (fechas viejas).
   const revenueArs: Kpi =
     real !== null
       ? ok(real)
       : perRevenue === null
         ? no('sin-ingreso-por-persona')
-        : people > 0
-          ? ok(people * perRevenue)
-          : no('cero-personas')
+        : drinks && drinkRevenue === null
+          ? no('sin-ingreso-de-bebida')
+          : people > 0
+            ? ok(people * (perRevenue + (drinkRevenue ?? 0)))
+            : no('cero-personas')
 
+  // El costo de la bebida va SIEMPRE que la bebida esté en la cuenta, también
+  // con facturación real: la caja dice cuánto entró, no cuánto costó.
   const costArs: Kpi =
     perCost === null
       ? no('sin-costo-por-persona')
-      : people > 0
-        ? ok(people * perCost)
-        : no('cero-personas')
+      : drinks && drinkCost === null
+        ? no('sin-costo-de-bebida')
+        : people > 0
+          ? ok(people * (perCost + (drinkCost ?? 0)))
+          : no('cero-personas')
 
   const grossMarginArs: Kpi = !revenueArs.ok
     ? revenueArs
@@ -870,14 +1017,27 @@ export type NightResultReport = {
   disclaimer: string
 }
 
-/** El valor que se LEE, que es el que decide si algo es negativo o cero. */
-function shownPesos(v: number): number {
+/**
+ * El valor que se LEE, que es el que decide si algo es negativo o cero. Son
+ * los pesos enteros de `formatArs` y de la planilla: con él la fila de total
+ * del consolidado cierra su cuenta con el mismo número que muestra la pantalla.
+ */
+export function shownPesos(v: number): number {
   return roundTo(v, 0)
 }
 
 /** `$ 93.873`, siempre en positivo: el signo lo pone el texto, en palabras. */
 function absArs(v: number): string {
   return formatArs(Math.abs(v))
+}
+
+/**
+ * El signo del número que se LEE (redondeado a pesos, como `shownPesos`): lo
+ * que decide ✓ / ✗ en el consolidado. −$ 0,40 se lee «$ 0»: no es una pérdida.
+ */
+export function resultSign(v: number): 'positive' | 'zero' | 'negative' {
+  const shown = shownPesos(v)
+  return shown > 0 ? 'positive' : shown < 0 ? 'negative' : 'zero'
 }
 
 /**
@@ -926,6 +1086,10 @@ export function nightResultReport(
   // personas × $ 27.000» y para el aviso de cuál de los dos ingresos mandó.
   const perRevenue = perGuestRevenue(row)
   const real = realRevenue(row)
+  const drinks = hasDrinks(row)
+  const drinkRevenue = perGuestDrinkRevenue(row)
+  const drinkCost = perGuestDrinkCost(row)
+  const people = block.billableGuests
 
   const k = computeMarketingKpis(block, row)
   const live = phase !== 'past'
@@ -936,13 +1100,26 @@ export function nightResultReport(
       real !== null
         ? { before: 'facturación ', value: formatArs(real), after: '' }
         : {
-            before: `${personas(block.billableGuests)} × ${formatArsUnit(perRevenue ?? 0)} = `,
+            before: `${personas(people)} × ${revenueUnitText(perRevenue ?? 0, drinks ? drinkRevenue : null)} = `,
             value: formatArs(k.revenueArs.value),
             after: '',
           },
     )
   }
-  if (k.costArs.ok) steps.push({ before: 'costo ', value: formatArs(k.costArs.value), after: '' })
+  if (k.costArs.ok) {
+    // Sin bebida, como siempre: «costo $ 435.000» (29 × $ 15.000 se rehace de
+    // cabeza con el paso de arriba). Con bebida son dos precios y la cuenta
+    // tiene que mostrarlos, o nadie la puede rehacer.
+    steps.push(
+      drinks && drinkCost !== null
+        ? {
+            before: `costo ${formatCount(people)} × (${formatArsUnit(perGuestCost(row) ?? 0)} + ${formatArsUnit(drinkCost)} de bebida) = `,
+            value: formatArs(k.costArs.value),
+            after: '',
+          }
+        : { before: 'costo ', value: formatArs(k.costArs.value), after: '' },
+    )
+  }
   if (k.grossMarginArs.ok) {
     const margin = k.grossMarginArs.value
     steps.push({
@@ -1018,10 +1195,12 @@ export function nightResultReport(
   let perGuest: string | null = null
   if (k.marginPerGuestArs.ok) {
     const margin = k.marginPerGuestArs.value
+    // Con la bebida en la cuenta se dice: si no, este «por persona» se compara
+    // contra el de una fecha sin bebida y parece que el cubierto rindió más.
     const head =
       shownPesos(margin) < 0
-        ? `Cada persona costó ${absArs(margin)} más de lo que dejó`
-        : `Cada persona dejó ${formatArs(margin)}`
+        ? `Cada persona costó ${absArs(margin)} más de lo que dejó${drinks ? ', con la bebida' : ''}`
+        : `Cada persona dejó ${formatArs(margin)}${drinks ? ' con la bebida' : ''}`
     if (k.guestsToCoverAds.ok) {
       const n = k.guestsToCoverAds.value
       perGuest =
@@ -1043,12 +1222,18 @@ export function nightResultReport(
   // Sin gente, el estimado por persona no da $ 0: no da nada (el motor lo dice
   // con `cero-personas`). Publicar ese cero se leería como que el número que
   // cargó el dueño no daba plata, así que se cae a la variante corta.
+  // Con bebida cargada la caja «ya la trae»: se dice, para que nadie la sume
+  // encima. El estimado se nombra solo si se puede armar entero (sin el
+  // ingreso de bebida no hay estimado honesto que comparar).
+  const revenueLead = drinks
+    ? 'El ingreso es la facturación real de la caja, que ya trae la bebida'
+    : 'El ingreso es la facturación real de la caja'
   const revenueNote =
     real === null
       ? null
-      : perRevenue === null || block.billableGuests === 0
-        ? 'El ingreso es la facturación real de la caja.'
-        : `El ingreso es la facturación real de la caja: manda sobre los ${formatArsUnit(perRevenue)} por persona, que daban ${formatArs(block.billableGuests * perRevenue)}.`
+      : perRevenue === null || people === 0 || (drinks && drinkRevenue === null)
+        ? `${revenueLead}.`
+        : `${revenueLead}: manda sobre los ${revenueUnitNote(perRevenue, drinks ? drinkRevenue : null)}, que daban ${formatArs(people * (perRevenue + (drinks ? (drinkRevenue ?? 0) : 0)))}.`
 
   return {
     headline,
@@ -1060,34 +1245,52 @@ export function nightResultReport(
     perGuestAfterAds,
     basis: steps.length > 0 ? guestBasisLine(block) : null,
     revenueNote,
-    missing: nightMissingLine(k),
+    missing: nightMissingLine(block, row),
     disclaimer: NIGHT_RESULT_DISCLAIMER,
   }
 }
 
-/** Qué le falta a la cuenta, con el nombre exacto del dato que falta. */
-function nightMissingLine(k: MarketingKpis): string | null {
-  if (k.nightResultArs.ok) return null
-  if (!k.revenueArs.ok && !k.costArs.ok) {
-    if (k.revenueArs.reason === 'cero-personas' || k.costArs.reason === 'cero-personas') {
-      return 'No quedó ninguna reserva en pie: no hay gente con la que hacer la cuenta.'
-    }
-    return 'Faltan el ingreso y el costo por persona para sacar el resultado de la noche.'
+/**
+ * El precio que se multiplica en el paso del ingreso: `$ 27.000` (sin bebida
+ * cargada, como siempre) · `($ 18.000 + $ 6.000 de bebida)` · `$ 27.000
+ * (bebida incluida)` — el 0 de bebida es la incluida (decisión del dueño), y se
+ * dice así en vez de sumar «+ $ 0».
+ */
+function revenueUnitText(perRevenue: number, drinkRevenue: number | null): string {
+  if (drinkRevenue === null) return formatArsUnit(perRevenue)
+  if (drinkRevenue === 0) return `${formatArsUnit(perRevenue)} (bebida incluida)`
+  return `(${formatArsUnit(perRevenue)} + ${formatArsUnit(drinkRevenue)} de bebida)`
+}
+
+/** Lo mismo, dicho dentro de `revenueNote`: `$ 18.000 + $ 6.000 de bebida por persona`. */
+function revenueUnitNote(perRevenue: number, drinkRevenue: number | null): string {
+  if (drinkRevenue === null) return `${formatArsUnit(perRevenue)} por persona`
+  if (drinkRevenue === 0) return `${formatArsUnit(perRevenue)} por persona (bebida incluida)`
+  return `${formatArsUnit(perRevenue)} + ${formatArsUnit(drinkRevenue)} de bebida por persona`
+}
+
+const NO_PEOPLE_LINE = 'No quedó ninguna reserva en pie: no hay gente con la que hacer la cuenta.'
+
+/** Se agrega cuando falta el ingreso de bebida: el 0 es la respuesta más común (el vino). */
+const DRINK_INCLUDED_TIP = 'Si la bebida está incluida, poné 0.'
+
+/**
+ * Qué le falta a la cuenta, con el nombre exacto de cada dato: TODOS los que
+ * faltan a la vez, en el orden del formulario. Sin gente no hay cuenta, falte lo
+ * que falte; con los datos completos, lo único que puede faltar es el dólar.
+ */
+function nightMissingLine(block: MarketingBlock, row: EventMarketingRow): string | null {
+  const gap = nightGap(block, row)
+  if (gap === null) return null
+  if (gap.kind === 'sin-gente') return NO_PEOPLE_LINE
+  if (gap.inputs.length > 0) {
+    const tip = gap.inputs.includes('drinkRevenuePerGuest') ? ` ${DRINK_INCLUDED_TIP}` : ''
+    return `${capitalize(missingInputsPhrase(gap.inputs))} para sacar el resultado de la noche.${tip}`
   }
-  const missing = !k.revenueArs.ok ? k.revenueArs : !k.costArs.ok ? k.costArs : k.adSpendArs
-  if (missing.ok) return null
-  switch (missing.reason) {
-    case 'sin-ingreso-por-persona':
-      return 'Falta el ingreso por persona para sacar el resultado de la noche.'
-    case 'sin-costo-por-persona':
-      return 'Falta el costo por persona para sacar el resultado de la noche.'
-    case 'cero-personas':
-      return 'No quedó ninguna reserva en pie: no hay gente con la que hacer la cuenta.'
-    case 'sin-dolar':
-      return 'Falta el dólar del día para pasar la pauta a pesos: por ahora, esto es el margen bruto.'
-    default:
-      return null
+  if (gap.dollar) {
+    return 'Falta el dólar del día para pasar la pauta a pesos: por ahora, esto es el margen bruto.'
   }
+  return null
 }
 
 export type KpiTileKind = 'costPerMessage' | 'closingRate' | 'costPerReservation'
@@ -1204,10 +1407,14 @@ export function howItsCalculated(row: EventMarketingRow): string[] {
   }
   const conCuenta = hasNightAccount(row)
   if (conCuenta) {
+    // Sin bebida cargada, las mismas palabras de siempre (regla 13).
+    const ingreso = hasDrinks(row)
+      ? 'la gente por el ingreso por persona más el de bebida (o la facturación real, si está cargada, que ya trae la bebida), menos esa misma gente por el costo por persona más el de bebida'
+      : 'la gente por el ingreso por persona (o la facturación real, si está cargada), menos esa misma gente por el costo por persona'
     bullets.push(
       organic
-        ? 'Resultado de la noche: la gente por el ingreso por persona (o la facturación real, si está cargada), menos esa misma gente por el costo por persona. Sin pauta no hay nada más que restar.'
-        : 'Resultado de la noche: la gente por el ingreso por persona (o la facturación real, si está cargada), menos esa misma gente por el costo por persona, menos la pauta pasada a pesos con el dólar del día.',
+        ? `Resultado de la noche: ${ingreso}. Sin pauta no hay nada más que restar.`
+        : `Resultado de la noche: ${ingreso}, menos la pauta pasada a pesos con el dólar del día.`,
     )
   }
   // La misma gente divide el «por persona» del recuadro «Retorno», que se
@@ -1245,6 +1452,9 @@ export function previewLines(
     /** En PESOS, como se tipea. Sin ninguno de los dos, la cuenta de la noche no se muestra. */
     revenuePerGuestArs?: number | null
     costPerGuestArs?: number | null
+    /** En PESOS. 0 = bebida incluida; vacío = sin cargar (la cuenta va sin bebida). */
+    drinkRevenuePerGuestArs?: number | null
+    drinkCostPerGuestArs?: number | null
   },
   phase: MarketingPhase = 'past',
 ): Array<{ text: string }> {
@@ -1290,11 +1500,21 @@ export function previewLines(
 
   const revenuePerGuest = values.revenuePerGuestArs ?? null
   const costPerGuest = values.costPerGuestArs ?? null
+  const drinkRevenuePerGuest = values.drinkRevenuePerGuestArs ?? null
+  const drinkCostPerGuest = values.drinkCostPerGuestArs ?? null
+  const cents = (pesos: number | null) => (pesos === null ? null : Math.round(pesos * 100))
 
   // Con «Gastado» vacío todavía no se sabe si hubo pauta, y la facturación sola
   // solo abre la cuenta en una noche SIN pauta (regla 13): dejarla abrir acá
   // haría aparecer la línea y borrarla en cuanto el dueño tipea el gasto.
-  if (typedSpend === null && revenuePerGuest === null && costPerGuest === null) return lines
+  if (
+    typedSpend === null &&
+    revenuePerGuest === null &&
+    costPerGuest === null &&
+    drinkRevenuePerGuest === null &&
+    drinkCostPerGuest === null
+  )
+    return lines
 
   // Se arma una fila "como si" y se la pasa por la misma cuenta de la pantalla:
   // el preview no puede tener aritmética propia o diría algo distinto al
@@ -1311,8 +1531,10 @@ export function previewLines(
       reach: null,
       revenueArsCents: values.revenueArs === null ? null : Math.round(values.revenueArs * 100),
       usdArsRate: values.usdArsRate,
-      revenuePerGuestArsCents: revenuePerGuest === null ? null : Math.round(revenuePerGuest * 100),
-      costPerGuestArsCents: costPerGuest === null ? null : Math.round(costPerGuest * 100),
+      revenuePerGuestArsCents: cents(revenuePerGuest),
+      costPerGuestArsCents: cents(costPerGuest),
+      drinkRevenuePerGuestArsCents: cents(drinkRevenuePerGuest),
+      drinkCostPerGuestArsCents: cents(drinkCostPerGuest),
       notes: null,
       updatedAt: '',
       updatedByName: null,
@@ -1336,8 +1558,11 @@ export function previewLines(
     .map((s) => `${s.before}${s.value}${s.after}`)
     .join(' · ')
   const head = (pautaSinCargar ? steps : night.math) || `${DASH} de resultado`
+  // Con «Gastado» vacío, primero lo que le falta a la plata (tipear la bebida
+  // antes que el cubierto decía «falta la pauta» con el cubierto vacío al lado)
+  // y recién con la plata completa, la pauta.
   const tail = pautaSinCargar
-    ? 'falta la pauta para cerrar la cuenta'
+    ? (night.missing ?? 'falta la pauta para cerrar la cuenta')
     : night.result === null
       ? night.missing
       : null
@@ -1440,6 +1665,8 @@ export type PooledMarketing = {
   } | null
   S: {
     dates: number
+    /** Cuántas de esas fechas llevan la bebida en la cuenta: la base la nombra. */
+    drinkDates: number
     /** La gente de esas fechas, la misma que multiplicó cada ingreso y cada costo. */
     guests: number
     revenueArs: number
@@ -1463,7 +1690,7 @@ export function poolMarketing(items: ReadonlyArray<PoolItem>): PooledMarketing {
   const P = { dates: 0, spendUsd: 0, reservations: 0, guests: 0, missingMessages: 0 }
   const Q = { dates: 0, spendUsd: 0, messages: 0, reservations: 0 }
   const R = { dates: 0, spendUsd: 0, revenueUsd: 0, revenueArs: 0, spendArs: 0 }
-  const S = { dates: 0, guests: 0, revenueArs: 0, costArs: 0, adSpendArs: 0 }
+  const S = { dates: 0, drinkDates: 0, guests: 0, revenueArs: 0, costArs: 0, adSpendArs: 0 }
 
   // Se suma en centavos para no arrastrar error de coma flotante entre muchas fechas.
   let allCents = 0
@@ -1508,6 +1735,7 @@ export function poolMarketing(items: ReadonlyArray<PoolItem>): PooledMarketing {
     const money = computeNightMoney(item, row, cents / 100)
     if (money.revenueArs.ok && money.costArs.ok && money.adSpendArs.ok) {
       S.dates += 1
+      if (hasDrinks(row)) S.drinkDates += 1
       S.guests += item.billableGuests
       S.revenueArs += money.revenueArs.value
       S.costArs += money.costArs.value
@@ -1706,6 +1934,9 @@ export const MARKETING_EXPORT_HEADERS: readonly string[] = [
   'Personas del cálculo',
   'Ingreso por persona ARS',
   'Costo por persona ARS',
+  // La bebida, en el orden del formulario: después del cubierto y su costo.
+  'Ingreso de bebida por persona ARS',
+  'Costo de bebida por persona ARS',
   'Ingreso ARS',
   'Costo ARS',
   'Margen ARS',
@@ -1715,13 +1946,23 @@ export const MARKETING_EXPORT_HEADERS: readonly string[] = [
 ]
 
 /**
+ * Las diez columnas de la cuenta de la noche, de «Personas del cálculo» a
+ * «Resultado ARS»: salen juntas o no sale ninguna. Se derivan de la lista para
+ * que sumar una columna no deje un `['', …]` de largo viejo.
+ */
+const NIGHT_CSV_HEADERS: readonly string[] = MARKETING_EXPORT_HEADERS.slice(
+  MARKETING_EXPORT_HEADERS.indexOf('Personas del cálculo'),
+  MARKETING_EXPORT_HEADERS.indexOf('Nota'),
+)
+
+/**
  * Las columnas que una fecha de HOY o futura NO lleva: cocientes y conclusiones
  * de una noche que todavía no terminó (regla 6). Esa fecha dice solo lo
  * cargado ("Por ahora: pauta US$ 60,00 · 12 mensajes"), y la misma edición no
  * puede leerse distinto en dos planillas. La usan `monthMarketingToCsv` y la
  * planilla por evento de `events-report.ts`.
  *
- * Los dos por persona NO están en la lista a propósito: son lo que tipeó el
+ * Los cuatro por persona NO están en la lista a propósito: son lo que tipeó el
  * dueño —el cubierto se sabe de antemano—, igual que «Pauta USD» o el dólar.
  * Blanquearlos borraría de la planilla un número que él mismo cargó.
  */
@@ -1790,7 +2031,7 @@ export function marketingCsvCells(
   if (block === null || row === null) return empty
   const k = computeMarketingKpis(block, row)
 
-  // Las ocho columnas de la cuenta de la noche salen JUNTAS o no sale ninguna,
+  // Las diez columnas de la cuenta de la noche salen JUNTAS o no sale ninguna,
   // con la misma regla que la pantalla (`hasNightAccount`). Sin esto, una fecha
   // vieja escribía «Personas del cálculo» y «Pauta ARS» al lado de un «Margen
   // ARS» vacío —la facturación pasa por `revenueArs` aunque no haya cuenta—, y
@@ -1798,12 +2039,17 @@ export function marketingCsvCells(
   //
   // «Juntas» es de esta función: encima corre el blanqueo por fase
   // (`MARKETING_LIVE_BLANK_HEADERS`), que en una fecha que todavía no pasó deja
-  // solo los dos por persona, que son lo que tipeó el dueño y no un cociente.
+  // solo los cuatro por persona, que son lo que tipeó el dueño y no un cociente.
+  const unit = (cents: number | null) => (cents === null ? '' : csvArsUnit(cents / 100))
   const night = hasNightAccount(row)
     ? [
         String(block.billableGuests),
-        row.revenuePerGuestArsCents === null ? '' : csvArsUnit(row.revenuePerGuestArsCents / 100),
-        row.costPerGuestArsCents === null ? '' : csvArsUnit(row.costPerGuestArsCents / 100),
+        unit(row.revenuePerGuestArsCents),
+        unit(row.costPerGuestArsCents),
+        // La bebida incluida es un 0 de verdad y se escribe `0` (en pantalla,
+        // «bebida incluida»): mismo precedente que «Pauta USD» en `0,00`.
+        unit(row.drinkRevenuePerGuestArsCents),
+        unit(row.drinkCostPerGuestArsCents),
         csvKpi(k.revenueArs, csvArs),
         csvKpi(k.costArs, csvArs),
         csvKpi(k.grossMarginArs, csvArs),
@@ -1813,7 +2059,7 @@ export function marketingCsvCells(
         k.grossMarginArs.ok ? csvKpi(k.adSpendArs, csvArs) : '',
         csvKpi(k.nightResultArs, csvArs),
       ]
-    : ['', '', '', '', '', '', '', '']
+    : NIGHT_CSV_HEADERS.map(() => '')
 
   return [
     csvUsd(k.spendUsd),
@@ -2023,6 +2269,10 @@ export const MONTH_RESULT_FOOTNOTE =
 export const MONTH_RESULT_BASIS_FOOTNOTE =
   'Se multiplica por la gente contada al cerrar cada mesa —lo reservado en las que quedaron sin cerrar—, así que puede no coincidir con la columna «Personas».'
 
+/** Va con las otras dos cuando alguna fecha con pauta que ya pasó tiene la bebida cargada. */
+export const MONTH_RESULT_DRINKS_FOOTNOTE =
+  'Donde se cargó la bebida, el ingreso y el costo la incluyen; una fecha con la bebida a medio cargar no suma hasta completarla.'
+
 export function monthNameOf(ym: string): string | null {
   const month = Number(ym.slice(5, 7))
   return /^\d{4}-\d{2}$/.test(ym) ? (MONTHS[month - 1] ?? null) : null
@@ -2038,20 +2288,26 @@ function cell(
 
 const NOT_APPLICABLE = cell('', 'muted')
 
-/** Por qué esa fecha no tiene resultado, en las pocas palabras que entran en una celda. */
-function nightCellReason(reason: KpiReason): string {
-  switch (reason) {
-    case 'sin-ingreso-por-persona':
-      return 'falta el ingreso por persona'
-    case 'sin-costo-por-persona':
-      return 'falta el costo por persona'
-    case 'sin-dolar':
-      return 'falta el dólar del día'
-    case 'cero-personas':
-      return 'ninguna reserva en pie'
-    default:
-      return 'falta cargar la cuenta'
+/**
+ * Por qué esa fecha no tiene resultado, en palabras que entran en el `title` de
+ * una celda: la columna «Resultado» del mes y el consolidado de «Por evento»
+ * dicen lo mismo. `null` si el resultado cierra.
+ */
+export function nightResultReason(block: MarketingBlock, row: EventMarketingRow): string | null {
+  const gap = nightGap(block, row)
+  return gap === null ? null : nightGapPhrase(gap, block.reservations)
+}
+
+/**
+ * `NightGap` en palabras, en minúscula: `ninguna reserva en pie` · `se
+ * contaron 0 personas` (hubo reservas, pero todas las mesas se cerraron con 0)
+ * · `faltan el ingreso y el costo por persona, y el dólar del día`.
+ */
+export function nightGapPhrase(gap: NightGap, reservations: number): string {
+  if (gap.kind === 'sin-gente') {
+    return reservations > 0 ? 'se contaron 0 personas' : 'ninguna reserva en pie'
   }
+  return missingPhrase(gap.inputs, gap.dollar)
 }
 
 function listRow(e: MonthEdition, row: EventMarketingRow): MonthMarketingListRow {
@@ -2129,7 +2385,7 @@ function listRow(e: MonthEdition, row: EventMarketingRow): MonthMarketingListRow
       negative ? 'la noche quedó abajo' : null,
     )
   } else {
-    nightResult = cell('—', 'muted', nightCellReason(k.nightResultArs.reason))
+    nightResult = cell('—', 'muted', nightResultReason(e, row) ?? 'falta cargar la cuenta')
   }
 
   const parts = [`Pauta ${spend}`]
@@ -2328,7 +2584,11 @@ export function buildMonthMarketingReport(input: {
             : ` → quedan ${formatArs(S.resultArs)}`,
         ),
       negative: shown < 0,
-      base: `en ${formatCount(S.dates)} de ${ofPastDates} con ingreso y costo cargados`,
+      // «(1 con bebida)»: el total mezcla noches con y sin bebida, y se nombra.
+      // Sin bebida en ninguna, la base es la de siempre.
+      base: `en ${formatCount(S.dates)} de ${ofPastDates} con ingreso y costo cargados${
+        S.drinkDates > 0 ? ` (${formatCount(S.drinkDates)} con bebida)` : ''
+      }`,
       disclaimer: NIGHT_RESULT_DISCLAIMER,
     }
   }
@@ -2440,6 +2700,11 @@ export function buildMonthMarketingReport(input: {
   const rows = editions.flatMap((e) =>
     e.row !== null && e.row.adSpendUsdCents > 0 ? [listRow(e, e.row)] : [],
   )
+  // La nota de la bebida solo si alguna fecha con pauta que ya pasó la cargó:
+  // un mes sin bebida se sigue leyendo como antes.
+  const drinksInPast = editions.some(
+    (e) => e.phase === 'past' && e.row !== null && e.row.adSpendUsdCents > 0 && hasDrinks(e.row),
+  )
   const noAds = editions.filter((e) => e.status === 'sin-pauta')
 
   return {
@@ -2471,7 +2736,12 @@ export function buildMonthMarketingReport(input: {
     footnotes:
       S === null
         ? [...MONTH_FOOTNOTES]
-        : [...MONTH_FOOTNOTES, MONTH_RESULT_FOOTNOTE, MONTH_RESULT_BASIS_FOOTNOTE],
+        : [
+            ...MONTH_FOOTNOTES,
+            MONTH_RESULT_FOOTNOTE,
+            MONTH_RESULT_BASIS_FOOTNOTE,
+            ...(drinksInPast ? [MONTH_RESULT_DRINKS_FOOTNOTE] : []),
+          ],
     editions,
     pool,
   }
@@ -2595,14 +2865,20 @@ export function monthMarketingToCsv(report: MonthMarketingReport): string {
     // S: la cuenta de la noche sumada. El resultado va con signo (Excel lo lee
     // como número negativo); en pantalla, el mismo caso se dice «abajo».
     rows.push(
-      totalRow(`Total con pauta que ya pasó, con ingreso y costo cargados (${fechas(S.dates)})`, {
-        'Personas del cálculo': String(S.guests),
-        'Ingreso ARS': csvArs(S.revenueArs),
-        'Costo ARS': csvArs(S.costArs),
-        'Margen ARS': csvArs(S.grossMarginArs),
-        'Pauta ARS': csvArs(S.adSpendArs),
-        'Resultado ARS': csvArs(S.resultArs),
-      }),
+      // Como la base de la pantalla: «(2 fechas, 1 con bebida)». Sin bebida, igual que antes.
+      totalRow(
+        `Total con pauta que ya pasó, con ingreso y costo cargados (${fechas(S.dates)}${
+          S.drinkDates > 0 ? `, ${formatCount(S.drinkDates)} con bebida` : ''
+        })`,
+        {
+          'Personas del cálculo': String(S.guests),
+          'Ingreso ARS': csvArs(S.revenueArs),
+          'Costo ARS': csvArs(S.costArs),
+          'Margen ARS': csvArs(S.grossMarginArs),
+          'Pauta ARS': csvArs(S.adSpendArs),
+          'Resultado ARS': csvArs(S.resultArs),
+        },
+      ),
     )
   }
   rows.push([

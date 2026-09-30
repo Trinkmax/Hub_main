@@ -363,6 +363,8 @@ export function MarketingMonthView({
       usdArsRate: null,
       revenuePerGuestArsCents: null,
       costPerGuestArsCents: null,
+      drinkRevenuePerGuestArsCents: null,
+      drinkCostPerGuestArsCents: null,
       notes: null,
       updatedAt: '',
       updatedByName: null,

@@ -38,8 +38,10 @@ export const EVENT_MARKETING_LIMITS = {
   usdArsRateMax: 100_000,
   /**
    * $ 1.000.000 = 100.000.000 centavos, el CHECK de `revenue_per_guest_ars_cents`
-   * y de `cost_per_guest_ars_cents` (migración `20260919120000`). Un cubierto más
-   * caro que eso es alguien que tipeó los centavos o le sobró un cero.
+   * y de `cost_per_guest_ars_cents` (migración `20260919120000`), y el de las dos
+   * de bebida (`sem_drink_*_per_guest_range`, migración `20260930120000`). Un
+   * cubierto más caro que eso es alguien que tipeó los centavos o le sobró un
+   * cero.
    */
   perGuestArsMax: 1_000_000,
   notesMax: 280,
@@ -66,6 +68,14 @@ export const MARKETING_FIELD_MESSAGES = {
   revenueInFuture: 'La facturación se carga cuando pasa la fecha.',
   revenuePerGuestOutOfRange: `Revisá el ingreso por persona: el tope es ${formatArs(EVENT_MARKETING_LIMITS.perGuestArsMax)}.`,
   costPerGuestOutOfRange: `Revisá el costo por persona: el tope es ${formatArs(EVENT_MARKETING_LIMITS.perGuestArsMax)}.`,
+  drinkRevenuePerGuestOutOfRange: `Revisá el ingreso de bebida por persona: el tope es ${formatArs(EVENT_MARKETING_LIMITS.perGuestArsMax)}.`,
+  drinkCostPerGuestOutOfRange: `Revisá el costo de bebida por persona: el tope es ${formatArs(EVENT_MARKETING_LIMITS.perGuestArsMax)}.`,
+  /**
+   * Solo del form (el server recibe números): quien escribe «incluida» en el
+   * ingreso de bebida quiere decir 0, y «No entendí el número» no le dice qué
+   * poner. Nunca se convierte solo: nada se pre-llena en silencio.
+   */
+  drinkIncludedIsZero: 'Si la bebida está incluida, poné 0.',
   notesTooLong: 'La nota puede tener hasta 280 caracteres.',
   /**
    * Con gasto 0 el formulario apaga estos tres y no los manda: solo los ve
@@ -170,6 +180,11 @@ export const saveEventMarketingSchema = z
     // exactamente esto, sin pauta que restar.
     revenuePerGuestArs: perGuestField(M.revenuePerGuestOutOfRange),
     costPerGuestArs: perGuestField(M.costPerGuestOutOfRange),
+    // La bebida, igual que el cubierto: por persona, en pesos, 0 entra (es la
+    // bebida incluida) y también con gasto 0. Sin pares: una sin la otra se
+    // guarda y la pantalla dice qué falta para cerrar la cuenta.
+    drinkRevenuePerGuestArs: perGuestField(M.drinkRevenuePerGuestOutOfRange),
+    drinkCostPerGuestArs: perGuestField(M.drinkCostPerGuestOutOfRange),
     // `.trim()` corre antes que `.max()`: el tope es sobre lo que se guarda.
     // `.length` cuenta como el `maxLength` del textarea (unidades UTF-16), más
     // estricto que el `char_length` de Postgres: nunca pasa algo que la DB rebote.
@@ -206,6 +221,8 @@ export const saveEventMarketingSchema = z
     usdArsRate: v.usdArsRate ?? null,
     revenuePerGuestArs: v.revenuePerGuestArs ?? null,
     costPerGuestArs: v.costPerGuestArs ?? null,
+    drinkRevenuePerGuestArs: v.drinkRevenuePerGuestArs ?? null,
+    drinkCostPerGuestArs: v.drinkCostPerGuestArs ?? null,
     notes: v.notes ? v.notes : null,
     expectedUpdatedAt: v.expectedUpdatedAt ?? null,
   }))
@@ -222,6 +239,10 @@ export type SaveEventMarketingInput = {
   revenuePerGuestArs: number | null
   /** Lo que cuesta servir a una persona, en PESOS (los $ 15.000 del ejemplo). */
   costPerGuestArs: number | null
+  /** La bebida que se cobra aparte, por persona, en PESOS. 0 = incluida. */
+  drinkRevenuePerGuestArs: number | null
+  /** Lo que cuesta la bebida de cada persona, en PESOS. */
+  drinkCostPerGuestArs: number | null
   notes: string | null
   expectedUpdatedAt: string | null
 }
@@ -245,6 +266,8 @@ const MARKETING_FIELDS: ReadonlySet<string> = new Set<MarketingField>([
   'usdArsRate',
   'revenuePerGuestArs',
   'costPerGuestArs',
+  'drinkRevenuePerGuestArs',
+  'drinkCostPerGuestArs',
   'notes',
 ])
 
@@ -285,6 +308,12 @@ export function toMarketingDbFields(values: SaveEventMarketingValues) {
       values.revenuePerGuestArs === null ? null : Math.round(values.revenuePerGuestArs * 100),
     cost_per_guest_ars_cents:
       values.costPerGuestArs === null ? null : Math.round(values.costPerGuestArs * 100),
+    drink_revenue_per_guest_ars_cents:
+      values.drinkRevenuePerGuestArs === null
+        ? null
+        : Math.round(values.drinkRevenuePerGuestArs * 100),
+    drink_cost_per_guest_ars_cents:
+      values.drinkCostPerGuestArs === null ? null : Math.round(values.drinkCostPerGuestArs * 100),
     notes: values.notes,
   }
 }
@@ -316,7 +345,7 @@ export function sameStoredRevenue(
 
 /** Las columnas que alimentan `EventMarketingRow`. Queries y actions leen lo mismo. */
 export const EVENT_MARKETING_DB_SELECT =
-  'scheduled_event_id, ad_spend_usd_cents, messages, reach, revenue_ars_cents, usd_ars_rate, revenue_per_guest_ars_cents, cost_per_guest_ars_cents, notes, updated_at, updated_by'
+  'scheduled_event_id, ad_spend_usd_cents, messages, reach, revenue_ars_cents, usd_ars_rate, revenue_per_guest_ars_cents, cost_per_guest_ars_cents, drink_revenue_per_guest_ars_cents, drink_cost_per_guest_ars_cents, notes, updated_at, updated_by'
 
 /**
  * Una fila como llega de PostgREST. `numeric` y `bigint` pueden venir como
@@ -332,6 +361,8 @@ export type EventMarketingDbRow = {
   usd_ars_rate: number | string | null
   revenue_per_guest_ars_cents: number | string | null
   cost_per_guest_ars_cents: number | string | null
+  drink_revenue_per_guest_ars_cents: number | string | null
+  drink_cost_per_guest_ars_cents: number | string | null
   notes: string | null
   updated_at: string
   updated_by: string | null
@@ -362,6 +393,8 @@ export function toEventMarketingRow(
     usdArsRate: toNumberOrNull(raw.usd_ars_rate),
     revenuePerGuestArsCents: toNumberOrNull(raw.revenue_per_guest_ars_cents),
     costPerGuestArsCents: toNumberOrNull(raw.cost_per_guest_ars_cents),
+    drinkRevenuePerGuestArsCents: toNumberOrNull(raw.drink_revenue_per_guest_ars_cents),
+    drinkCostPerGuestArsCents: toNumberOrNull(raw.drink_cost_per_guest_ars_cents),
     notes: raw.notes,
     updatedAt: raw.updated_at,
     updatedByName: shortName(displayName),
