@@ -305,6 +305,71 @@ describeIfRls('RLS — scheduled_event_marketing (pauta por edición, solo owner
   )
 
   it(
+    'la bebida por persona: rango del CHECK, 0 = incluida, y va también sin pauta',
+    async () => {
+      // `sem_drink_*_per_guest_range` (migración 20260930120000): de $ 0 a
+      // $ 1.000.000, como las otras dos por persona.
+      const negative = await ownerA.client
+        .from(TABLE)
+        .insert({
+          tenant_id: tenantA.id,
+          scheduled_event_id: eventA,
+          ad_spend_usd_cents: 100,
+          drink_revenue_per_guest_ars_cents: -1,
+        })
+        .select('scheduled_event_id')
+      expect(negative.error?.code).toBe('23514')
+      expect(negative.error?.message).toContain('sem_drink_revenue_per_guest_range')
+
+      const tooHigh = await ownerA.client
+        .from(TABLE)
+        .insert({
+          tenant_id: tenantA.id,
+          scheduled_event_id: eventA,
+          ad_spend_usd_cents: 100,
+          drink_cost_per_guest_ars_cents: 100_000_001,
+        })
+        .select('scheduled_event_id')
+      expect(tooHigh.error?.code).toBe('23514')
+      expect(tooHigh.error?.message).toContain('sem_drink_cost_per_guest_range')
+
+      // Una noche orgánica con la bebida incluida (0) y su costo en el tope:
+      // `sem_no_ads_no_meta_numbers` no la toca, porque la bebida no es de Meta.
+      const organic = await ownerA.client
+        .from(TABLE)
+        .insert({
+          tenant_id: tenantA.id,
+          scheduled_event_id: eventA,
+          ad_spend_usd_cents: 0,
+          revenue_per_guest_ars_cents: 2_500_000,
+          cost_per_guest_ars_cents: 720_000,
+          drink_revenue_per_guest_ars_cents: 0,
+          drink_cost_per_guest_ars_cents: 100_000_000,
+        })
+        .select('drink_revenue_per_guest_ars_cents, drink_cost_per_guest_ars_cents')
+        .single()
+      expect(organic.error).toBeNull()
+      expect(organic.data).toEqual({
+        drink_revenue_per_guest_ars_cents: 0,
+        drink_cost_per_guest_ars_cents: 100_000_000,
+      })
+
+      // Las columnas nuevas quedan detrás de la misma RLS de dueño.
+      for (const other of [cashierA, hostA, waiterA, ownerB]) {
+        const read = await other.client
+          .from(TABLE)
+          .select('drink_revenue_per_guest_ars_cents, drink_cost_per_guest_ars_cents')
+          .eq('scheduled_event_id', eventA)
+        expect(read.data ?? []).toEqual([])
+      }
+
+      const cleanup = await ownerA.client.from(TABLE).delete().eq('scheduled_event_id', eventA)
+      expect(cleanup.error).toBeNull()
+    },
+    TEST_TIMEOUT,
+  )
+
+  it(
     'cajero, anfitrión y mozo del MISMO bar no ven ni escriben la pauta',
     async () => {
       for (const staff of [cashierA, hostA, waiterA]) {

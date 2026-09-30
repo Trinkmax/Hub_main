@@ -3946,6 +3946,8 @@ export type Database = {
           cost_per_guest_ars_cents: number | null
           created_at: string
           created_by: string | null
+          drink_cost_per_guest_ars_cents: number | null
+          drink_revenue_per_guest_ars_cents: number | null
           id: string
           messages: number | null
           notes: string | null
@@ -3963,6 +3965,8 @@ export type Database = {
           cost_per_guest_ars_cents?: number | null
           created_at?: string
           created_by?: string | null
+          drink_cost_per_guest_ars_cents?: number | null
+          drink_revenue_per_guest_ars_cents?: number | null
           id?: string
           messages?: number | null
           notes?: string | null
@@ -3980,6 +3984,8 @@ export type Database = {
           cost_per_guest_ars_cents?: number | null
           created_at?: string
           created_by?: string | null
+          drink_cost_per_guest_ars_cents?: number | null
+          drink_revenue_per_guest_ars_cents?: number | null
           id?: string
           messages?: number | null
           notes?: string | null
