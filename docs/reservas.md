@@ -1928,3 +1928,303 @@ números que la pantalla.
    no la cargues.` y «Guardar» apagado.
 6. Exportar → la planilla trae los 30 días, el total `58;1001;17,3` y la pauta.
 7. Borrar pauta → vuelve a «Sin cargar».
+
+## Addendum 2026-09-30 — Consolidado por evento y bebida por persona
+
+Dos pedidos del dueño el mismo día, textuales:
+
+- *«un consolidado al lado [de la tira] como para poder comparar todo de forma
+  más rápida y decir, por ejemplo, en este 2x1 no nos fue tan bien, este sí,
+  en este sí, en este no»*. Boceto que eligió: `Fecha | Pers | Pauta | $/pers |
+  Bebida/p | Resultado`, con ✓ / ✗.
+- *«también agregar ingreso por bebida por persona. A veces este puede ser 0
+  porque tiene por ejemplo el vino incluido, pero a veces es 35 mil pesos más
+  bebida»*.
+
+### Tres decisiones del dueño (no reabrir)
+
+1. **D1 — El consolidado compara las fechas del MISMO evento** (cada 2x1 Burger
+   Martes). Va en la pestaña «Por evento», al lado de la tira de fechas, con las
+   columnas del boceto: una fila por fecha y el Resultado con ✓ / ✗.
+2. **D2 — «Nos fue bien» = la noche DEJÓ PLATA.** ✓ si ingreso − costo − pauta
+   en pesos da positivo; ✗ si quedó abajo. Sin la cuenta cerrada **no se
+   juzga**, y se dice por qué: falta ingreso, costo o dólar, o todavía no pasó.
+3. **D3 — La bebida son dos campos por FECHA**: ingreso de bebida por persona y
+   costo de bebida por persona. **0 es un valor real** (bebida incluida, el
+   vino); vacío = sin cargar. Ejemplo del dueño: el cubierto sale $ 35.000 y la
+   bebida se cobra aparte.
+
+Siguen valiendo las de siempre: plata en pesos en la UI (centavos solo en la
+DB), negativo en palabras («$ X abajo», con signo solo en el CSV), pantalla =
+CSV, faltante no es cero, una fecha vieja se sigue viendo como se veía (la
+regla 13) y totales = cociente de sumas.
+
+### La cuenta con bebida
+
+```
+personas   = billableGuests          (la bebida la consume la misma gente)
+ingreso    = facturación real si está cargada (ya trae la bebida)
+             si no: personas × (ingreso por persona + ingreso de bebida por persona)
+costo      = personas × (costo por persona + costo de bebida por persona)
+             ← también con facturación: la caja dice cuánto entró, no cuánto costó
+margen     = ingreso − costo
+pauta en $ = gastado USD × dólar del día (0 sin pauta)
+RESULTADO  = margen − pauta en $
+```
+
+Vacío contra 0:
+
+| Campo | Vacío (sin cargar) | 0 |
+|---|---|---|
+| Ingreso por persona | Sin facturación, la cuenta no cierra. Con facturación, no hace falta. | Cubierto $ 0. |
+| Costo por persona | No cierra. | Costo $ 0. |
+| Ingreso de bebida | Con el costo de bebida también vacío: **la cuenta va sin bebida y no la nombra** (las 21 fechas cargadas hasta el 30/09). Con el costo de bebida cargado y sin facturación: no cierra, y el aviso termina en `Si la bebida está incluida, poné 0.` Con facturación: no hace falta. | **Bebida incluida**: `$ 27.000 (bebida incluida)` en la cuenta, `0` en la planilla, `incluida` en el consolidado. |
+| Costo de bebida | Con el ingreso de bebida también vacío: sin bebida. Con el ingreso de bebida cargado: no cierra, **también con facturación**. | `+ $ 0 de bebida`: la bebida no cuesta aparte. |
+
+El `?? 0` del motor corre solo cuando la bebida no está en la cuenta o cuando
+manda la facturación: **nunca completa un faltante**. El encabezado de
+`lib/salon/event-marketing.ts` suma dos reglas:
+
+- **15. La bebida entra entera o no entra.** Con sus dos números vacíos, la
+  cuenta es la de siempre y ningún texto la nombra. En cuanto se carga uno,
+  hacen falta los dos (salvo el ingreso cuando manda la facturación).
+- **16. ✓ / ✗ es el signo del resultado que se LEE** (`resultSign`, redondeado a
+  pesos): −$ 0,40 se lee «$ 0» y en $ 0 no hay marca. Es aritmética, no un
+  semáforo contra un umbral (regla 8).
+
+### Migración `20260930120000_event_marketing_drinks.sql`
+
+- `+ drink_revenue_per_guest_ars_cents bigint` y `+ drink_cost_per_guest_ars_cents
+  bigint`, en centavos de **peso**, de 0 a 100.000.000 (el mismo tope de
+  $ 1.000.000 que los otros dos por persona). Los CHECK llevan nombre propio
+  (`sem_drink_revenue_per_guest_range`, `sem_drink_cost_per_guest_range`): el
+  automático pasaba de 63 caracteres y Postgres lo recortaba.
+- Van también en noches **sin pauta**: `sem_no_ads_no_meta_numbers` solo exige en
+  null los números de Meta y el dólar, y la bebida es plata de la noche.
+- Sin pares en la DB: una sin la otra se guarda y la pantalla dice qué falta.
+- Sin GRANT nuevo: los privilegios de `20260915120000` son de TABLA y cubren las
+  columnas nuevas (`authenticated` con `sem_owner_all`; `anon`, nada). Sin
+  políticas nuevas.
+- Reescribe los comentarios de `revenue_per_guest_ars_cents` y
+  `cost_per_guest_ars_cents`: ahora dicen que son sin la bebida.
+- `types/database.ts` se editó **a mano** (`npm run db:types` está roto): las
+  dos columnas en Row, Insert y Update.
+
+**ORDEN DE DEPLOY — primero la migración, después el código.**
+`EVENT_MARKETING_DB_SELECT` pide las columnas nuevas y `listEventMarketing` hace
+`throw`: si el código sale antes, «Cómo nos fue» entera tira error.
+
+1. Aplicar la migración en el remoto (MCP `apply_migration`, name
+   `event_marketing_drinks`), **solo con el OK del dueño**: es DDL en producción.
+2. Verificar (solo lectura):
+   - `select conname from pg_constraint where conrelid =
+     'public.scheduled_event_marketing'::regclass and conname like 'sem_drink%'`
+     → 2 filas.
+   - `select has_column_privilege('anon', 'public.scheduled_event_marketing',
+     'drink_revenue_per_guest_ars_cents', 'SELECT')` → `false`; con
+     `authenticated` → `true`.
+   - `select count(*) from public.scheduled_event_marketing where
+     drink_revenue_per_guest_ars_cents is not null or
+     drink_cost_per_guest_ars_cents is not null` → `0`.
+3. Merge con el pre-commit en verde, deploy a Vercel y el smoke de abajo.
+
+**Costos viejos con la bebida adentro.** Hasta el 30/09 la ayuda de «Costo por
+persona» decía «comida y bebida». Si en una fecha vieja se suma el costo de
+bebida sin bajar el costo por persona, la bebida se cuenta dos veces. La ayuda
+nueva lo avisa (`Si ya está en «Costo por persona», poné 0.`), pero no se puede
+detectar por dato: la pregunta al dueño está en el BACKLOG.
+
+### Dónde se ve
+
+- **La ficha** («La cuenta de la noche»): los pasos llevan la bebida (`65
+  personas × ($ 18.000 + $ 6.000 de bebida) = $ 1.560.000 · costo 65 ×
+  ($ 7.000 + $ 2.500 de bebida) = $ 617.500 · …`), lo que falta se dice en
+  palabras (`Falta el costo de bebida por persona para sacar el resultado de la
+  noche.`), la nota de la facturación aclara que la caja ya trae la bebida y
+  «¿Cómo se calcula?» la nombra. **Sin bebida, la ficha no cambia ni una
+  palabra.**
+- **El formulario** (desplegable «Sumar la plata de la noche»): dos campos
+  después de «Costo por persona», **sin placeholder** (un «0» gris se leería
+  como «incluida»). Grilla: cubierto | costo · bebida | costo de bebida ·
+  facturación | dólar. Ayudas: `La que se cobra aparte, en promedio. 0 si está
+  incluida, ej. el vino.` y `Lo que cuesta la bebida de cada persona, también la
+  incluida. Si ya está en «Costo por persona», poné 0.` Tipear «incluida» en el
+  ingreso de bebida contesta `Si la bebida está incluida, poné 0.` «Quitar la
+  plata» vacía los seis números. Se cargan también en fechas futuras y en noches
+  sin pauta.
+- **Pestaña «Pauta»**: la base del resultado suma `(1 con bebida)`, aparece la
+  nota `Donde se cargó la bebida, el ingreso y el costo la incluyen; una fecha
+  con la bebida a medio cargar no suma hasta completarla.` y la celda «—» del
+  Resultado nombra TODO lo que falta, dólar incluido (`faltan el ingreso y el
+  costo por persona, y el dólar del día`; antes decía solo `falta el ingreso por
+  persona`).
+- **Por evento → el consolidado**, al lado de la tira (a la izquierda, columna
+  fija de 32rem, desde un contenedor de 64rem) y arriba en el celular. Es
+  container query y no breakpoint: plegar la barra lateral cambia el ancho sin
+  cambiar la pantalla (a 1280 con la barra abierta van apilados; plegándola, lado
+  a lado). Debajo de 30rem la tabla pasa a tarjetas. La tira se adapta sola: en
+  menos de 56rem la barra de cada fecha va en su propio renglón.
+- **Planillas**: día, evento y mes suman `Ingreso de bebida por persona ARS` y
+  `Costo de bebida por persona ARS` entre `Costo por persona ARS` e `Ingreso ARS`
+  (vacío = sin cargar; `0` = incluida; con centavos si los tiene; viajan también
+  en fechas futuras). El bloque de la cuenta pasa a 10 columnas, que salen juntas
+  o no sale ninguna. La del evento suma la columna `¿Dejó plata?` (entre
+  `Todavía no pasó` y `Pauta USD`) y una fila de total. **Cualquier Excel armado
+  por posición se rompe.**
+
+### El consolidado, en detalle
+
+Todo sale armado de `lib/salon/event-consolidated.ts` (puro, reglas C1–C8 en su
+encabezado); el componente solo dibuja.
+
+- **Filas**: las fechas que ya pasaron, con reservas o con pauta gastada, desde
+  la PRIMERA que tiene fila de pauta. Hoy y lo que viene van a una nota (`Las 4
+  fechas que vienen se juzgan cuando pasen.`); las anteriores con reservas, a
+  otra (`Antes del 12/09 no se cargó la plata: 29/08 · 31/07.`); las vacías no
+  aparecen. Sin ninguna fila no hay consolidado y la tira va a lo ancho.
+- **Pers = la gente de la cuenta** (`billableGuests`), para que Pers × $/pers dé
+  el ingreso. Puede no coincidir con la tira (15/09: 65 contra 62) y una nota al
+  pie lo dice, solo si pasa.
+- **Resultado**: ✓ `$ 355.979` · ✗ `$ 136.488 abajo` en ámbar · `$ 0` sin marca
+  · sin juzgar, con el motivo corto (`sin cargar`, `ninguna reserva`, `sin gente`,
+  `falta el costo de bebida`, `faltan ingreso, costo y dólar`…). «Sin gente» va
+  antes que «sin cargar»: no se pide plata que no arreglaría la cuenta. El lector
+  oye la frase entera (`La noche dejó $ 355.979.`, `Sin juzgar: …`).
+- **Las fechas viejas sin bebida se juzgan** (la bebida no está entre lo que D2
+  pide) con `—` en Bebida/p y una nota. Con facturación real, $/pers y Bebida/p
+  dicen `caja`: el precio tipeado no hizo la cuenta.
+- **Orden cronológico**, de la más nueva a la más vieja, como la tira. Sin
+  ranking: una barra con signo sobre un eje común (con 2 juzgadas o más) deja ver
+  la mejor y la peor.
+- **Desglose**: tocar la fecha abre la cuenta de la ficha tal cual
+  (`nightResultReport`), y se pueden abrir varias para comparar. Termina en
+  `Ver la noche →` (Por día de esa fecha).
+- **Total**, solo con 2 juzgadas o más y sobre ellas: sumas y cocientes de sumas.
+  $/pers y Bebida/p solo si todas lo tienen y ninguna usa la caja. Las noches sin
+  pauta **sí suman**: es el total del evento, otra base que la pestaña Pauta
+  (regla 14), y lo nombra.
+- **Notas al pie**, en orden y solo si aplican: lo que viene, las anteriores, la
+  gente de la cuenta, la caja, la bebida (`La bebida no está cargada en ninguna
+  fecha…` o `Sin la bebida cargada: 08/09 · 01/09. …`) y `No es la ganancia del
+  bar: …`.
+
+### Correcciones de la revisión (30/09)
+
+- **La fila de total de la planilla no cerraba.** La pauta y el resultado se
+  redondeaban por separado: en Noche Astral la pauta es 814.068,5 y el
+  resultado 636.131,5, los dos subían medio peso e Ingreso − Costo − Pauta daba
+  636.131 contra un Resultado de 636.132. Ahora se redondean UNA vez las sumas
+  parciales de la cuenta (ingreso, margen y resultado, que es el de la pantalla)
+  y el costo y la pauta salen por diferencia: `814.068`. Se descartó armar el
+  margen como «ingreso − costo» ya redondeados: con centavos en el cubierto o el
+  costo, una serie sin pauta terminaba con `Pauta ARS 1` al lado de `Pauta USD
+  0,00`. Las filas por fecha y la ficha siguen redondeando cada número por su
+  lado (09/09: `margen $ 513.000 · pauta $ 271.669 → quedan $ 241.332`):
+  tocarlas cambia fechas viejas (regla 13) y lo decide el dueño (BACKLOG).
+- **La nota «La bebida no está cargada en ninguna fecha»** salía aunque una fila
+  mostrara la bebida (una fecha sin juzgar: el 15/09 del paso 6 de abajo, o una
+  a la que le falta el dólar). Ahora sale solo si ninguna fila de la tabla tiene
+  algo de la bebida; si no, va la lista de las juzgadas sin ella.
+- **El lector no oía el monto del total** en $/pers ni en Bebida/p: el texto
+  para el lector reemplaza al visible y decía solo «promedio de las 3 fechas,
+  sobre 152 personas». Ahora empieza por el monto.
+- **Guarda de desborde de la tabla.** Con montos anchos (una pérdida de 7
+  cifras, centavos en $/pers y en Bebida/p, pauta de 4 cifras) la tabla mide
+  516 px en una columna de 510: se salía 6 px de la tarjeta y, apilada, le daba
+  hasta 35 px de scroll horizontal a la página. La envoltura pasó a `relative
+  overflow-x-auto` y lo que sobra se desplaza adentro. El `relative` hace falta:
+  los `sr-only` (son `absolute`) quedaban fuera del recorte y seguían corriendo
+  la página 24 px con la sección en 482 px (medido en Chrome con Inter y el CSS
+  real). Con los datos del 2x1 no hay scroll en ningún ancho.
+
+### Piezas
+
+| Qué | Dónde |
+|---|---|
+| La cuenta con bebida, `nightGap`, `nightResultReason`, textos, mes y CSV (reglas 13–16) | `lib/salon/event-marketing.ts` |
+| Consolidado: veredicto por fecha, filas, total, notas y la fila de total de la planilla | `lib/salon/event-consolidated.ts` |
+| Planilla del evento (`¿Dejó plata?` y fila de total) | `lib/salon/events-report.ts` → `templateReportToCsv` |
+| Schemas, mapeo a la DB y mensajes | `lib/salon/event-marketing-schemas.ts` |
+| Borrador del form (`withoutMoney`, ayudas, «incluida» → poné 0) | `lib/salon/event-marketing-draft.ts` |
+| Auditoría (`auditNumbers` suma la bebida) | `lib/salon/event-marketing-actions.ts` |
+| UI | `_components/event-consolidated.tsx` (nuevo), `como-nos-fue-dashboard.tsx` (EventView), `editions-strip.tsx`, `marketing-form.tsx`, `marketing-report.tsx` (exporta `MathStep`), `event-marketing-section.tsx`, `marketing-month-view.tsx` |
+| Migración y tipos | `supabase/migrations/20260930120000_event_marketing_drinks.sql`, `types/database.ts` |
+| Tests | `tests/lib/salon-event-consolidated.test.ts`, `salon-event-marketing-drinks.test.ts`, `salon-event-marketing-drinks-form.test.ts` (nuevos); `salon-event-marketing*.test.ts` y `salon-events-report.test.ts` (actualizados); `tests/rls/scheduled-event-marketing.test.ts` (rango del CHECK, 0 = incluida, sin pauta; corre solo en el job `rls`) |
+
+`lib/salon/queries.ts`, la ruta de exportar, `night-card.tsx`, `money-field.tsx`
+y `page.tsx` no cambian: toman las columnas nuevas del
+`EVENT_MARKETING_DB_SELECT` y la ruta ya llamaba `templateReportToCsv(report,
+report.marketing)`.
+
+### Smoke manual
+
+Datos al 30/09 (contrastar con SQL si cambió la gente).
+
+1. **Por evento → 2x1 Burger Martes, a 1440 con la barra lateral** → el
+   consolidado a la izquierda y la tira a la derecha. Titular `Dejó plata en 2
+   de 3 fechas con la cuenta cerrada. 2 fechas sin juzgar.` Filas: 29/09 `sin
+   cargar` · 22/09 `faltan ingreso, costo y dólar` · 15/09 ✓ `$ 355.979` ·
+   08/09 ✓ `$ 194.515` · 01/09 ✗ `$ 136.488 abajo` (ámbar). Total `152 ·
+   US$ 301,48 · $ 12.230 · — · $ 414.006` y debajo `$ 2.724 por persona`.
+   Cuatro notas: `Las 4 fechas que vienen se juzgan cuando pasen.`, la de la
+   gente de la cuenta, `La bebida no está cargada en ninguna fecha: …` y `No es
+   la ganancia del bar: …`.
+2. **Tocar 01/09 y 15/09** → se abren los dos desgloses. El del 01/09: `28
+   personas × $ 8.500 = $ 238.000 · costo $ 154.000 · margen $ 84.000 · pauta
+   $ 220.488 → la noche quedó $ 136.488 abajo`. `Ver la noche` lleva a Por día
+   01/09 con la misma cuenta.
+3. **Anchos** → a 1280 con la barra lateral, apilados; plegándola, lado a lado.
+   A 360: tarjetas, sin scroll horizontal. En la tira de Pizza libre, la barra
+   del 21/09 (104 personas) no pisa nada.
+4. **Por día 15/09 → Editar → Sumar la plata de la noche** → aparecen «Ingreso
+   de bebida por persona» y «Costo de bebida por persona», vacíos y sin «0».
+   Tipear `6.000` y `2.500`: la previa dice `65 personas × ($ 14.500 + $ 6.000
+   de bebida) = $ 1.332.500 · costo 65 × ($ 6.500 + $ 2.500 de bebida) =
+   $ 585.000 · margen $ 747.500 · pauta $ 164.021 → quedan $ 583.479`. Guardar
+   → la ficha dice `La noche dejó $ 583.479.`; el consolidado, ✓ `$ 583.479`
+   con Bebida/p `$ 6.000`, el total `$ 641.506` y la nota `Sin la bebida
+   cargada: 08/09 · 01/09. Ahí el resultado sale solo del ingreso y el costo por
+   persona.` En la pestaña Pauta de septiembre, la base dice `(1 con bebida)` y
+   aparece la nota de bebida.
+5. **Ingreso de bebida `incluida`** → el campo dice `Si la bebida está incluida,
+   poné 0.` Con `0`: la cuenta dice `$ 14.500 (bebida incluida)`, el
+   consolidado `incluida` y el resultado `$ 193.479`. Exportar el día 15/09:
+   `Ingreso de bebida por persona ARS` dice `0`.
+6. **Borrar el costo de bebida y guardar** → se guarda igual. La ficha dice en
+   ámbar `Falta el costo de bebida por persona…`; el consolidado, `falta el
+   costo de bebida`; el titular pasa a `Dejó plata en 1 de 2 fechas con la cuenta
+   cerrada. 3 fechas sin juzgar.` y la nota sigue siendo la lista `Sin la bebida
+   cargada: 08/09 · 01/09. …` (nunca «en ninguna fecha», con el 15/09 mostrando
+   `incluida`). Volver a dejar el 15/09 como estaba: los dos de bebida vacíos.
+7. **Ratatuille** → dos ✓ `sin pauta` (`$ 925.600` y `$ 936.000`) y el total
+   `$ 1.861.600`. En la pestaña Pauta, el resultado del mes **no** cambia
+   (regla 14).
+8. **Merienda y Arte** → `Todavía no hay ninguna fecha con la cuenta cerrada.` y
+   `Antes del 12/09 no se cargó la plata: 29/08 · 31/07.` **Comida Coreana** →
+   no hay consolidado y la tira va a lo ancho.
+9. **Exportar el evento (2x1)** → la columna `¿Dejó plata?` dice 4 veces `sin
+   juzgar: todavía no pasó`, después `sin juzgar: sin cargar`, `sin juzgar:
+   faltan ingreso, costo y dólar`, `sí`, `sí` y `no`; las 2 columnas de bebida
+   van antes de `Ingreso ARS`, y la última fila es:
+
+   ```
+   Total con la cuenta cerrada (3 fechas);;;;;;;;;;2 de 3;301,48;;;;;;;;;;;152;12230;;;;1859000;977700;881300;467294;414006;
+   ```
+
+   **Exportar Noche Astral** → la fila de total termina en
+   `2840000;1389800;1450200;814068;636132;`: Ingreso − Costo − Pauta da justo
+   el Resultado.
+10. **Exportar día y mes** → las 2 columnas nuevas antes de `Ingreso ARS`,
+    vacías donde no se cargó la bebida (el `0` de la incluida se ve en el paso 5).
+11. **Pestaña Pauta, septiembre**, con el 15/09 de vuelta como estaba (paso 6)
+    → la base ya no dice `con bebida` y la nota de bebida no aparece.
+12. **Teclado + VoiceOver y tema oscuro** → Tab recorre los botones de fecha y
+    después la tira. Se oye «Personas de la cuenta», «La noche quedó $ 136.488
+    abajo.» y, en el total, «Ingreso por persona, $ 12.230, promedio de las 3
+    fechas, sobre 152 personas».
+13. **Montos anchos (con DevTools, sin tocar datos)** → cambiar el texto de un
+    Resultado a `$ 1.730.488 abajo` y el de un $/pers a `$ 27.500,50`: la tabla
+    no se sale de la tarjeta (lo que sobra se desplaza adentro) y, con la ventana
+    en ~520 px, la página no gana scroll horizontal.
+14. **Como cajero o host** → la página no se sirve. Por SQL, un `select` de las
+    columnas nuevas devuelve `[]`.

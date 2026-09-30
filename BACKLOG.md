@@ -889,7 +889,9 @@ afuera a propósito:
   ramen, aunque sean siempre los mismos 27.000 y 15.000. Un
   `getLastPerGuestValues` calcado del del dólar lo resuelve — **nunca
   precargando solo**: un cubierto viejo guardado sin que nadie lo mire es un
-  resultado de la noche inventado. Esperar a que el dueño lo pida.
+  resultado de la noche inventado. Esperar a que el dueño lo pida. Desde el
+  30/09 son cuatro: si se hace, que sugiera cubierto **y** bebida (ingreso y
+  costo de bebida por persona) de un solo toque, con el mismo criterio.
 - **¿Las noches orgánicas suman en el resultado del mes?** (22/09/2026) Hoy
   no: la pestaña Pauta suma solo fechas CON pauta y la noche sin pauta muestra
   lo que dejó en su renglón de «Sin pauta». Si el dueño quiere «cuánto dejaron
@@ -901,6 +903,50 @@ afuera a propósito:
   línea, pero no hay manera de ver QUÉ mesas quedaron sin cerrar sin ir al
   muro. Si el dueño desconfía de un resultado, hoy la respuesta es "mirá el
   muro y contá".
+- **Pregunta al dueño (no bloquea, 30/09/2026): los costos por persona que ya
+  cargaste, ¿incluyen la bebida?** Hasta el 30/09 la ayuda del formulario decía
+  «comida y bebida». Si la incluyen, cuando sumes la bebida en esas fechas poné
+  0 en «Costo de bebida por persona» (o bajá el costo por persona); si no, la
+  bebida se cuenta dos veces. El sistema no lo puede saber por dato: la ayuda
+  nueva lo avisa (`Si ya está en «Costo por persona», poné 0.`).
+- **Consolidado por evento: lo que quedó afuera (30/09/2026).** Ordenar por
+  resultado (hoy va cronológico, alineado con la tira de al lado; la casa ya
+  descartó los rankings porque invitan a sobreleer), resaltado cruzado fila ↔
+  tira y editar la plata desde la fila (hoy se carga desde la ficha, con «Ver la
+  noche»). Esperar a que el dueño lo pida.
+- **Dos totales de pauta lado a lado (30/09/2026).** La tira dice «Pauta en 4
+  fechas: US$ 349,30» (las fechas con mensajes) y el total del consolidado,
+  «US$ 301,48» (las 3 juzgadas). Cada uno nombra su base, pero juntos invitan a
+  compararlos. Si el dueño pregunta, alinear los conjuntos o decirlo en una nota.
+- **«Pauta y nadie sentado» no se juzga (30/09/2026).** Una fecha con pauta
+  gastada y 0 personas sale «sin juzgar» (`ninguna reserva` / `sin gente`),
+  igual que la ficha, que sin gente no tiene cuenta. Si el dueño la quiere ✗ (la
+  pauta se perdió entera), se cambia en el motor (`nightGap` y
+  `editionVerdict`), no en el consolidado. Hoy no hay ninguna fila así en la DB.
+- **El comentario de `usd_ars_rate` en la DB miente.** Dice «Obligatorio si hay
+  facturación.», falso desde el 19/09 (se borró `sem_revenue_needs_rate`). No se
+  tocó en `20260930120000` para no mezclar: corregirlo en la próxima migración
+  que toque `scheduled_event_marketing`.
+- **El placeholder «0» de «Ingreso por persona» y «Costo por persona»** choca con
+  «faltante no es cero»: un 0 gris se lee como un valor cargado. Los dos campos
+  de bebida van sin placeholder justamente por eso (ahí un «0» se leería
+  «incluida»). Unificar sacándolo también de esos dos.
+- **La ficha y la planilla por fecha no cierran por un peso (30/09/2026).** Cada
+  número se redondea por su lado, así que en las fechas con la pauta en medio
+  peso margen − pauta da un peso menos que el resultado: Noche Astral 09/09
+  (`margen $ 513.000 · pauta $ 271.669 → quedan $ 241.332`), 2x1 08/09 (`margen
+  $ 277.300 · pauta $ 82.786 → quedan $ 194.515`), Ramen 07/09 y Sushi en pasos
+  18/09. Pasa desde el 19/09 en la ficha, en la planilla por fecha y en la fila
+  de total del mes. La fila de total del consolidado ya cierra (la pauta sale
+  por diferencia). Arreglarlo en la ficha cambia textos de fechas viejas (regla
+  13): **decide el dueño**.
+- **La tabla de la pestaña Pauta tiene la envoltura sin `relative`
+  (30/09/2026).** `marketing-month-view.tsx` usa `hidden overflow-x-auto
+  md:block`, el mismo patrón que tenía el consolidado: si esa tabla se desborda,
+  sus `sr-only` (el motivo de cada «—» de `CellText` y el «Editar» de cada
+  fila) quedan fuera del recorte y le pueden dar scroll horizontal a la página
+  (en el consolidado eran 24 px, medido en Chrome). Medirlo con montos anchos y
+  sumar `relative` si pasa.
 
 ## Cupo por servicio y calendario como puerta única (2026-09-21)
 
