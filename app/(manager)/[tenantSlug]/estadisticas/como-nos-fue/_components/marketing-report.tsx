@@ -82,7 +82,7 @@ function KpiNumber({ value }: { value: string }) {
  * `lib/salon/event-marketing.ts` justamente para esto: acá no se corta ni se
  * arma ninguna frase.
  */
-function MathStep({ step }: { step: NightMathStep }) {
+export function MathStep({ step }: { step: NightMathStep }) {
   return (
     <>
       {step.before}

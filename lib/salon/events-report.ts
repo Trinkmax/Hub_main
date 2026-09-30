@@ -36,6 +36,12 @@
 
 import { rowsToCsv } from '@/lib/stats/csv'
 import {
+  buildEventConsolidated,
+  CONSOLIDATED_CSV_HEADER,
+  editionVerdict,
+  editionVerdictCsv,
+} from './event-consolidated'
+import {
   csvFormulaGuard,
   type EventMarketingRow,
   MARKETING_EXPORT_HEADERS,
@@ -566,42 +572,62 @@ function editionWhen(e: { isFuture: boolean; isTonight: boolean }): string {
   return ''
 }
 
-/** Con `marketing`, cada edición suma las columnas de pauta (vacías si no tiene fila). */
+/**
+ * Con `marketing`, cada edición suma «¿Dejó plata?» (el veredicto del
+ * consolidado, también para las fechas que la pantalla no pone en la tabla) y
+ * las columnas de pauta (vacías si no tiene fila); al final va la fila de total
+ * del consolidado, si la pantalla la muestra. Sin `marketing` la planilla queda
+ * byte a byte como antes.
+ */
 export function templateReportToCsv(
   report: TemplateReport,
   marketing?: ReportMarketingByEvent,
 ): string {
   const headers: string[] = [...TEMPLATE_EXPORT_HEADERS]
-  if (marketing) headers.push(...MARKETING_EXPORT_HEADERS)
-  return rowsToCsv(
-    headers,
-    report.editions.map((e) => {
-      const cells = [
-        e.date,
-        csvFormulaGuard(e.title),
-        String(e.guests),
-        String(e.reservations),
-        avgCell(e.avg),
-        String(e.attendedGuests),
-        `${e.countedTables} de ${e.reservations}`,
-        String(e.cancelled),
-        String(e.noShow),
-        editionWhen(e),
-      ]
-      if (!marketing) return cells
-      const pauta = marketingCsvCells(e, e.eventId ? (marketing[e.eventId] ?? null) : null)
-      const live = e.isFuture || e.isTonight
-      return [
-        ...cells,
-        ...(live
-          ? pauta.map((c, i) =>
-              MARKETING_LIVE_BLANK_HEADERS.has(MARKETING_EXPORT_HEADERS[i] ?? '') ? '' : c,
-            )
-          : pauta),
-      ]
-    }),
-    { separator: ';', bom: true },
-  )
+  if (marketing) headers.push(CONSOLIDATED_CSV_HEADER, ...MARKETING_EXPORT_HEADERS)
+  const rows = report.editions.map((e) => {
+    const cells = [
+      e.date,
+      csvFormulaGuard(e.title),
+      String(e.guests),
+      String(e.reservations),
+      avgCell(e.avg),
+      String(e.attendedGuests),
+      `${e.countedTables} de ${e.reservations}`,
+      String(e.cancelled),
+      String(e.noShow),
+      editionWhen(e),
+    ]
+    if (!marketing) return cells
+    const row = e.eventId ? (marketing[e.eventId] ?? null) : null
+    const pauta = marketingCsvCells(e, row)
+    const live = e.isFuture || e.isTonight
+    return [
+      ...cells,
+      editionVerdictCsv(editionVerdict(e, row), e.reservations),
+      ...(live
+        ? pauta.map((c, i) =>
+            MARKETING_LIVE_BLANK_HEADERS.has(MARKETING_EXPORT_HEADERS[i] ?? '') ? '' : c,
+          )
+        : pauta),
+    ]
+  })
+  if (marketing) {
+    const total = buildEventConsolidated({
+      templateName: report.templateName,
+      editions: report.editions,
+      marketing,
+    })?.total
+    if (total) {
+      rows.push([
+        total.csv.label,
+        ...TEMPLATE_EXPORT_HEADERS.slice(1).map(() => ''),
+        total.csv.verdict,
+        ...MARKETING_EXPORT_HEADERS.map((h) => total.csv.cells[h] ?? ''),
+      ])
+    }
+  }
+  return rowsToCsv(headers, rows, { separator: ';', bom: true })
 }
 
 /** `como-nos-fue-hub-2026-09-07.csv` / `como-nos-fue-hub-ramen.csv`. */

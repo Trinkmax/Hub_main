@@ -646,6 +646,8 @@ describe('CSV con pauta', () => {
       usdArsRate: null,
       revenuePerGuestArsCents: null,
       costPerGuestArsCents: null,
+      drinkRevenuePerGuestArsCents: null,
+      drinkCostPerGuestArsCents: null,
       notes: null,
       updatedAt: '2026-09-08T15:00:00Z',
       updatedByName: 'Nacho B.',
@@ -680,7 +682,7 @@ describe('CSV con pauta', () => {
     // son la cuenta de la noche: esta fila no tiene ingreso ni costo por
     // persona, así que van vacías (incluida «Personas del cálculo»).
     expect(lines[1]).toBe(
-      '2026-09-07;Ramen;10;2;5,0;6;1 de 2;1;0;2;100,00;20;;5,00;10,0;50,00;10,00;;;;;;;;;;;;;',
+      '2026-09-07;Ramen;10;2;5,0;6;1 de 2;1;0;2;100,00;20;;5,00;10,0;50,00;10,00;;;;;;;;;;;;;;;',
     )
   })
 
@@ -727,12 +729,23 @@ describe('CSV con pauta', () => {
       vieja: pauta({ scheduledEventId: 'vieja', adSpendUsdCents: 1_000, messages: 5 }),
     }
     const lines = templateReportToCsv(tpl, marketing).split('\r\n')
-    const pautaDe = (i: number) => lines[i]?.split(';').slice(TEMPLATE_EXPORT_HEADERS.length)
+    // La columna del consolidado va entre «Todavía no pasó» y las de pauta.
+    const veredicto = (i: number) => lines[i]?.split(';')[TEMPLATE_EXPORT_HEADERS.length]
+    const pautaDe = (i: number) => lines[i]?.split(';').slice(TEMPLATE_EXPORT_HEADERS.length + 1)
 
     expect(lines[0]?.replace('\uFEFF', '').split(';')).toEqual([
       ...TEMPLATE_EXPORT_HEADERS,
+      '¿Dejó plata?',
       ...MARKETING_EXPORT_HEADERS,
     ])
+    expect([1, 2, 3, 4].map(veredicto)).toEqual([
+      'sin juzgar: todavía no pasó',
+      'sin juzgar: es hoy',
+      'sin juzgar: faltan ingreso, costo y dólar',
+      'sin juzgar: sin reservas ni pauta',
+    ])
+    // Una sola fecha que ya pasó y sin juzgar: no hay fila de total.
+    expect(lines).toHaveLength(5)
     expect(pautaDe(1)).toEqual(MARKETING_EXPORT_HEADERS.map(() => ''))
     expect(pautaDe(2)).toEqual([
       '60,00',

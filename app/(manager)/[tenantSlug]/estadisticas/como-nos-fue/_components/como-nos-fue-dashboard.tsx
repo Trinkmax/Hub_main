@@ -16,12 +16,14 @@ import {
 } from '@/components/ui/select'
 import { SlidingTabs } from '@/components/ui/sliding-tabs'
 import type { MonthBirthdayReport } from '@/lib/salon/birthdays-report'
+import { buildEventConsolidated } from '@/lib/salon/event-consolidated'
 import { type MonthMarketingReport, phaseOf } from '@/lib/salon/event-marketing'
 import type { DayReport, ReportMarketingByEvent, TemplateReport } from '@/lib/salon/events-report'
 import { legendFlags } from '@/lib/salon/tables-wall'
 import { cn } from '@/lib/utils'
 import { BirthdaysMonthView } from './birthdays-month-view'
 import { EditionsStrip } from './editions-strip'
+import { EventConsolidated } from './event-consolidated'
 import { MarketingMonthView } from './marketing-month-view'
 import { NightCard } from './night-card'
 import { TablesWallLegend } from './tables-wall'
@@ -496,6 +498,14 @@ function EventView({
   // anotadas justo abajo es peor: se la nombra.
   const vendiendo = porVenir.find((e) => e.reservations > 0)
   const heroEventId = hero ? (hero.eventId ?? hero.key) : null
+  // El consolidado (30/09): la cuenta de cada fecha, al lado de la tira. Puro y
+  // O(fechas): no hace falta memo. `null` si ninguna fecha que ya pasó tiene
+  // plata cargada, y entonces la tira va a lo ancho, como antes.
+  const consolidated = buildEventConsolidated({
+    templateName: report.templateName,
+    editions: report.editions,
+    marketing: report.marketing,
+  })
 
   return (
     <div className="space-y-4">
@@ -541,7 +551,27 @@ function EventView({
         </p>
       )}
 
-      <EditionsStrip report={report} marketing={report.marketing} tenantSlug={tenantSlug} />
+      {/* Consolidado y tira, uno al lado del otro desde que el bloque mide
+          64rem (container query: plegar la barra lateral cambia el ancho sin
+          cambiar la pantalla). Más angosto van apilados, en el mismo orden del
+          DOM: el consolidado primero, que es lo que se vino a comparar. */}
+      <div className="@container">
+        <div
+          className={cn(
+            'grid items-start gap-4',
+            consolidated && '@5xl:grid-cols-[32rem_minmax(0,1fr)] @5xl:gap-5',
+          )}
+        >
+          {consolidated ? (
+            <EventConsolidated
+              key={report.templateId}
+              data={consolidated}
+              tenantSlug={tenantSlug}
+            />
+          ) : null}
+          <EditionsStrip report={report} marketing={report.marketing} tenantSlug={tenantSlug} />
+        </div>
+      </div>
     </div>
   )
 }

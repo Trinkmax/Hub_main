@@ -23,12 +23,16 @@ import { cn } from '@/lib/utils'
  * Todas las fechas de un evento, de la más nueva a la más vieja: la respuesta a
  * "¿este evento crece o se apaga?".
  *
- * La barra usa SU propia unidad (`--u` = una persona: 3px, 5px desde `sm`), no
- * la del muro de mesas. Son dos gráficos distintos: con el asiento del muro
- * (7px / 9px) las barras crecían un tercio y se salían de la fila en las fechas
- * grandes. Dentro de la tira sí es una sola unidad, así que un Ramen de 53 y
- * otro de 4 se comparan de un vistazo. Sin línea de tendencia ni proyección: con
- * dos a siete ediciones, una recta es adivinación con estética de dato.
+ * La barra usa SU propia unidad (`--u` = una persona), no la del muro de mesas.
+ * Sale del ancho de la TIRA (container query), no de la pantalla: al lado del
+ * consolidado la tira mide ~32rem en una pantalla de 1440, y con la unidad por
+ * pantalla una fecha de 62 personas pisaba el texto de al lado. `--u` es el
+ * menor entre 5px y lo que entra para la fecha más grande (`--max-guests`):
+ * nunca se sale del renglón. Angosta (menos de 56rem), la barra baja a su
+ * propio renglón. Dentro de la tira sigue siendo UNA sola unidad, así que un
+ * Ramen de 53 y otro de 4 se comparan de un vistazo. Sin línea de tendencia ni
+ * proyección: con dos a siete ediciones, una recta es adivinación con estética
+ * de dato.
  *
  * La pauta va como segunda línea de cada fecha, y el resumen agrupado arriba a
  * la derecha solo con 2 fechas o más con mensajes: con una sola, el "total" es
@@ -108,7 +112,7 @@ function Row({
 
         {/* Una unidad por persona, en la tinta del evento: la barra es la gente,
             no un porcentaje. */}
-        <span className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="flex min-w-0 flex-1 items-center gap-2 @max-4xl:order-1 @max-4xl:basis-full">
           <span
             aria-hidden
             style={{ width: `calc(var(--u) * ${guests})` }}
@@ -154,7 +158,7 @@ function Row({
         {marketingLine ? (
           <span
             className={cn(
-              'basis-full pl-28 font-mono text-[11px]',
+              'basis-full pl-28 font-mono text-[11px] @max-4xl:order-2 @max-4xl:pl-0',
               marketingLine.tone === 'warning' ? 'text-warning-text' : 'text-muted-foreground',
             )}
           >
@@ -205,8 +209,13 @@ export function EditionsStrip({
 
   return (
     <div
-      style={ink ? ({ '--ev-l': ink.light, '--ev-d': ink.dark } as CSSProperties) : undefined}
-      className="ev-ink card-hairline rounded-xl border bg-card [--u:3px] sm:[--u:5px]"
+      style={
+        {
+          ...(ink ? { '--ev-l': ink.light, '--ev-d': ink.dark } : {}),
+          '--max-guests': Math.max(1, ...listadas.map((e) => e.guests)),
+        } as CSSProperties
+      }
+      className="ev-ink @container card-hairline min-w-0 rounded-xl border bg-card"
     >
       <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border/60 px-4 py-3">
         <h2 className="font-serif text-base font-semibold tracking-tight">
@@ -216,7 +225,7 @@ export function EditionsStrip({
           </span>
         </h2>
         {report.best || resumen ? (
-          <div className="space-y-0.5 sm:text-right">
+          <div className="space-y-0.5 @xl:text-right">
             {report.best ? (
               <p className="text-[11px] text-muted-foreground">
                 La mejor: {dayLabel(report.best.date).slice(0, 5)} con{' '}
@@ -241,7 +250,7 @@ export function EditionsStrip({
         ) : null}
       </header>
 
-      <ul className="divide-y divide-border/60">
+      <ul className="divide-y divide-border/60 [--u:min(5px,calc((100cqw_-_2rem)/var(--max-guests)))] @4xl:[--u:min(5px,calc((100cqw_-_36rem)/var(--max-guests)))]">
         {listadas.map((e) => {
           const index = report.editions.indexOf(e)
           return (
