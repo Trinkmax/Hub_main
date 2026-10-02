@@ -24,8 +24,18 @@ const securityHeaders = [
     value: 'DENY',
   },
   {
+    // `camera=(self)` y no `camera=()`: el salón escanea el QR del socio con la
+    // cámara (/salon/escanear, /salon/mesas, /acreditar). Con `camera=()` Chrome
+    // —Android incluido— rechaza getUserMedia antes de preguntarle nada al mozo,
+    // y como Safari no implementa este header, en iPhone andaba y en Android no
+    // (reportado el 02/10/2026). `(self)` la habilita solo para el propio
+    // origen: ningún iframe de terceros la puede pedir. Va para TODO el sitio y
+    // no solo para las pantallas con escáner porque el header se lee al cargar
+    // el documento: si el mozo entra por /salon y navega a /salon/escanear del
+    // lado del cliente, manda la política de /salon. Las landings, que son HTML
+    // de marketing, la vuelven a cerrar (lib/landings/security.ts).
     key: 'Permissions-Policy',
-    value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
+    value: 'camera=(self), microphone=(), geolocation=(), interest-cohort=()',
   },
 ]
 

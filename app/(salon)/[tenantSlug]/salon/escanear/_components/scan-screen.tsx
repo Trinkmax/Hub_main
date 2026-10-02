@@ -66,12 +66,47 @@ export function ScanScreen({
 
   // Si la última vez la cámara fue denegada, no volvemos a disparar el prompt
   // solo: mostramos el estado y que el mozo decida.
+  //
+  // Pero la marca guardada no alcanza para creerle: hasta el 02/10/2026 el
+  // propio sitio bloqueaba la cámara en Chrome (`Permissions-Policy: camera=()`,
+  // ver next.config.ts), así que todos los Android quedaron con la marca puesta
+  // sin que el mozo hubiera negado nada. Donde el navegador sabe decir el estado
+  // real del permiso, manda ese: solo `denied` muestra la pantalla de "sin
+  // acceso"; `prompt` o `granted` borran la marca y la cámara arranca sola.
   useEffect(() => {
     if (initialCode) return
+    let marked = false
     try {
-      if (localStorage.getItem(CAMERA_DENIED_KEY) === '1') setStep('denied')
+      marked = localStorage.getItem(CAMERA_DENIED_KEY) === '1'
     } catch {
       // localStorage bloqueado (modo privado): seguimos con la cámara.
+    }
+    if (!marked) return
+
+    let cancelled = false
+    const forget = () => {
+      try {
+        localStorage.removeItem(CAMERA_DENIED_KEY)
+      } catch {}
+    }
+    const query = navigator.permissions?.query?.bind(navigator.permissions)
+    if (!query) {
+      setStep('denied')
+      return
+    }
+    // `camera` no está en el tipo PermissionName de todos los lib.dom, y
+    // Firefox tira TypeError con ese nombre: ahí vale la marca, como antes.
+    query({ name: 'camera' as PermissionName })
+      .then((status) => {
+        if (cancelled) return
+        if (status.state === 'denied') setStep('denied')
+        else forget()
+      })
+      .catch(() => {
+        if (!cancelled) setStep('denied')
+      })
+    return () => {
+      cancelled = true
     }
   }, [initialCode])
 

@@ -78,10 +78,23 @@ export const LANDING_CSP =
  * - `Cross-Origin-Resource-Policy: same-origin` — que otro sitio no pueda
  *   cargar la landing como subrecurso.
  */
+/**
+ * Cámara, micrófono y ubicación CERRADOS para las landings. El bloque general
+ * de `next.config.ts` abrió la cámara para el propio origen (`camera=(self)`,
+ * 02/10/2026: el salón escanea el QR del socio y en Android no andaba), pero una
+ * landing es HTML que escribe marketing: no tiene por qué poder pedirla. Va en
+ * los dos modos porque los dos bloques pisan al general.
+ */
+export const LANDING_PERMISSIONS_POLICY = {
+  key: 'Permissions-Policy',
+  value: 'camera=(), microphone=(), geolocation=()',
+}
+
 export const LANDING_SECURITY_HEADERS = [
   { key: 'Content-Security-Policy', value: LANDING_CSP },
   { key: 'Referrer-Policy', value: 'no-referrer' },
   { key: 'Cross-Origin-Resource-Policy', value: 'same-origin' },
+  LANDING_PERMISSIONS_POLICY,
 ]
 
 /**
@@ -90,7 +103,10 @@ export const LANDING_SECURITY_HEADERS = [
  * (`strict-origin-when-cross-origin`), que le manda a YouTube el origen que
  * necesita para autorizar el reproductor, sin filtrar la ruta completa.
  */
-export const LANDING_HOST_HEADERS = [{ key: 'Cross-Origin-Resource-Policy', value: 'same-origin' }]
+export const LANDING_HOST_HEADERS = [
+  { key: 'Cross-Origin-Resource-Policy', value: 'same-origin' },
+  LANDING_PERMISSIONS_POLICY,
+]
 
 /**
  * El `sandbox` del <iframe> de la vista previa del panel.

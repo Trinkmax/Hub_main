@@ -113,3 +113,34 @@ describe('headers de next.config para /p/*', () => {
     expect(byKey.get('Cross-Origin-Resource-Policy')).toBe('same-origin')
   })
 })
+
+/**
+ * La cámara del salón (02/10/2026): con `camera=()` en el bloque general,
+ * Chrome —Android incluido— rechazaba getUserMedia y el mozo no podía escanear
+ * el QR del socio. Safari no implementa este header, por eso en iPhone andaba.
+ */
+describe('Permissions-Policy: la cámara', () => {
+  const policyOf = (headers: ReadonlyArray<{ key: string; value: string }> | undefined) =>
+    headers?.find((header) => header.key === 'Permissions-Policy')?.value ?? ''
+
+  it('el sitio la habilita para su propio origen (el escáner del salón)', async () => {
+    const general = (await nextConfig.headers?.())?.find((entry) => entry.source === '/:path*')
+    const policy = policyOf(general?.headers)
+    expect(policy).toContain('camera=(self)')
+    // Nunca abierta a cualquier origen: un iframe de terceros no la puede pedir.
+    expect(policy).not.toMatch(/camera=\*/)
+    // Micrófono y ubicación siguen cerrados: nadie los usa.
+    expect(policy).toContain('microphone=()')
+    expect(policy).toContain('geolocation=()')
+  })
+
+  it('las landings la vuelven a cerrar, en los dos modos', () => {
+    // Son HTML de marketing: no tienen por qué poder pedir la cámara.
+    for (const headers of [LANDING_SECURITY_HEADERS, LANDING_HOST_HEADERS]) {
+      const policy = policyOf(headers)
+      expect(policy).toContain('camera=()')
+      expect(policy).toContain('microphone=()')
+      expect(policy).toContain('geolocation=()')
+    }
+  })
+})
