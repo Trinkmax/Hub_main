@@ -28,7 +28,10 @@ Hallazgos fuera del scope de la tarea en curso, anotados para retomar
   justo quien trabaja desde el teléfono.
 - **El editor de Formatos en mobile** colapsa su grilla de 7 columnas a una sola
   y queda un formulario largo con etiquetas de 11px. Ahora que Luz lo usa desde
-  el celular, conviene revisarlo.
+  el celular, conviene revisarlo. (02/10: ya son 8 columnas. Justo arriba de
+  `sm`, entre 640 y ~700 px, Nombre y Slug quedan en 50 y 31 px, y a 640 la
+  tarjeta todavía se pasa 10 px. Antes del 02/10 era peor: ahí el «Guardar» se
+  salía de la pantalla.)
 
 ## Comisiones — deuda que sigue abierta (03/09/2026)
 
@@ -923,10 +926,6 @@ afuera a propósito:
   igual que la ficha, que sin gente no tiene cuenta. Si el dueño la quiere ✗ (la
   pauta se perdió entera), se cambia en el motor (`nightGap` y
   `editionVerdict`), no en el consolidado. Hoy no hay ninguna fila así en la DB.
-- **El comentario de `usd_ars_rate` en la DB miente.** Dice «Obligatorio si hay
-  facturación.», falso desde el 19/09 (se borró `sem_revenue_needs_rate`). No se
-  tocó en `20260930120000` para no mezclar: corregirlo en la próxima migración
-  que toque `scheduled_event_marketing`.
 - **El placeholder «0» de «Ingreso por persona» y «Costo por persona»** choca con
   «faltante no es cero»: un 0 gris se lee como un valor cargado. Los dos campos
   de bebida van sin placeholder justamente por eso (ahí un «0» se leería
@@ -938,8 +937,10 @@ afuera a propósito:
   $ 277.300 · pauta $ 82.786 → quedan $ 194.515`), Ramen 07/09 y Sushi en pasos
   18/09. Pasa desde el 19/09 en la ficha, en la planilla por fecha y en la fila
   de total del mes. La fila de total del consolidado ya cierra (la pauta sale
-  por diferencia). Arreglarlo en la ficha cambia textos de fechas viejas (regla
-  13): **decide el dueño**.
+  por diferencia). Arreglarlo en la ficha cambia textos de fechas viejas: **decide
+  el dueño**. Desde el 02/10 también se ve en la planilla de «Rentabilidad»
+  (2x1 08/09: `277300 − 82786 = 194514` contra `194515`), y la regla 13 vieja
+  ya no lo traba (se reemplazó por «la cuenta siempre»).
 - **La tabla de la pestaña Pauta tiene la envoltura sin `relative`
   (30/09/2026).** `marketing-month-view.tsx` usa `hidden overflow-x-auto
   md:block`, el mismo patrón que tenía el consolidado: si esa tabla se desborda,
@@ -1076,6 +1077,76 @@ resolvió (queries y componentes «muertos» de la lista, sus filtros perdidos y
   canceladas ni ausentes), así que puede no coincidir con el "N reservas" del
   encabezado de /reservas. Se aclara en el título del chip; si molesta, unificar
   el criterio del encabezado.
+
+## «Cómo nos fue» — comentarios de los socios (2026-10-02)
+
+- **Rentabilidad de los cumpleaños (C7).** Pedido: *«linkear el gasto de la
+  mesa, para ver la rentabilidad de los cumpleaños también»*. Hoy no se puede:
+  al 02/10 ningún dato de la base ata lo que gastó una mesa a una reserva.
+  `salon_reservations` solo tiene la seña (`deposit_cents`, que no es consumo) y
+  `actual_guests`; `table_sessions` (9), `tickets` (8) y `ticket_items` (10) son
+  el piloto del 21/05 al 10/06, apagado por feature flag y sin vínculo a
+  reservas (la mesa física contra un `table_label` de texto libre); `visits` (10)
+  es por CLIENTE y ninguna coincide con un cumple el mismo día; y
+  `birthday_marketing` no tiene dólar, así que su pauta no se puede restar en
+  pesos. Plan, en orden:
+  1. **El dato**: `salon_reservations.check_total_cents bigint null check (>= 0)`
+     (centavos en la DB, pesos en la UI; null = sin cargar), opcional en «Cerrar
+     mesa» (Operativo y Salón), en el mismo paso que hoy pide la gente que vino:
+     «¿Cuánto salió la cuenta? Lo que cobraste en la mesa, sin propina». El mozo
+     cierra por RPC y la RLS de UPDATE no lo deja: sumar el parámetro a
+     `transition_reservation_status` o una RPC SECURITY DEFINER como
+     `set_reservation_table_label`, con audit. Antes de construirlo, **preguntar
+     qué POS usa el bar**: si exporta tickets por mesa, conviene integrarlo.
+  2. **El costo** (decide el dueño): un % de costo del mes o un costo por
+     persona del cumple por mes en `birthday_marketing`.
+  3. **`birthday_marketing.usd_ars_rate`**, con las reglas de la pauta de
+     eventos: hace falta para el resultado, no para guardar.
+  4. **«La cuenta de los cumpleaños»** en la pestaña, con la cobertura dicha
+     («Cargaste la cuenta en 12 de 58 cumples»), faltante no es cero, cocientes
+     de sumas, negativo en palabras, «no es la ganancia del bar» y la misma dona
+     (`buildMoneyShare`). A decidir: la pauta se mide contra los cumples
+     RESERVADOS en el mes y la cuenta es del día del FESTEJO; y los cumples
+     dentro de un evento ya entran estimados en la cuenta de la noche (no
+     contarlos dos veces).
+- **La wallet pública lista grupos privados como «próximos eventos».**
+  `lib/wallet/queries.ts` (los próximos 5 eventos) no filtra `private_group`: hoy
+  mostraría, por ejemplo, la Pizza libre ad-hoc del 03/10 22:00 (4 cumples) como
+  un evento abierto. El arreglo es `.eq('private_group', false)`; confirmar con
+  el dueño antes (cambia lo que ven los clientes).
+- **Otros listados de eventos que incluyen grupos privados**: el ranking de
+  eventos (`lib/stats/queries.ts`, `getEventsRanking`), el flow «evento que
+  arranca en X horas» (`lib/flows/triggers.ts`), el combo de eventos de
+  audiencias (`lib/audiences/queries.ts`) y el selector de eventos de una
+  difusión nueva (`mensajeria/difusiones/nueva`). Decidir caso por caso.
+- **Bonus de «evento lleno» en grupos privados.** Una fecha creada desde el
+  calendario nace con `full_bonus_active = true` (el diálogo de arrastrar lo
+  manda fijo), también si es privada; las ad-hoc de `ensure` nacen en false. El
+  18/09 (Pizza libre privada) fueron 69 en cupo 64. Preguntar si un grupo
+  privado tiene que pagar ese bonus.
+- **Borrar una fecha privada con una «No tuvo pauta» pelada.** La marca queda
+  guardada pero la franja privada no muestra pauta, así que el 23503 («tiene
+  pauta cargada en «Cómo nos fue»») no tiene dónde destrabarse: hay que
+  destildar, borrar la marca en Por día y recién ahí borrar. Solo pasa con
+  fechas sin reservas activas (Pizza libre 19/09). Si molesta: que el trigger
+  de la marca borre la «No tuvo pauta» pelada al tildar, o que borrar la fecha
+  la lleve si está pelada.
+- **«Contarlo como evento» desde la franja de Por día.** Hoy la franja lleva a
+  la fecha del calendario (donde está el tilde). `setEventPrivateGroup` ya
+  existe: si el dueño quiere destildar desde el reporte, es un botón con
+  Deshacer.
+- **La vista del DÍA del calendario no muestra el candado** (sí los chips del
+  mes y la agenda).
+- **Merienda y Arte 31/07** también la creó una reserva especial (1 reserva de 5
+  personas) y hoy cae en «Antes del 12/09 no se cargó la plata». El paso de
+  datos del 02/10 no la tocó (no es Pizza libre ni Merienda Libre): marcarla si
+  el dueño dice que fue un grupo.
+- **La dona compara valores parecidos** (2x1: pauta 24,1 % contra resultado
+  24,2 %) y una torta es mala para eso; la leyenda con % y montos lo compensa.
+  Validar con los socios, igual que el aro vacío en una pérdida (hoy ningún
+  total real da pérdida) y la palabra «Resultado» (ellos dijeron «ganancia»).
+- **`TemplateReport.latest` ya no se dibuja**: solo decide si va la oración «Todavía
+  no terminó ninguna fecha…». Si esa oración se va, sacarlo del tipo.
 
 ## CI: el job de RLS volvió a correr y hay 9 tests rojos preexistentes (2026-09-23)
 

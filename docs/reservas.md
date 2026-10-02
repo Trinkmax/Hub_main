@@ -1259,12 +1259,16 @@ barrido aparte.
    Ratatuille 28/12/2,3, y el aviso de que la noche todavía no pasó.
 7. **Por evento → Ramen** → hero con la última fecha pasada (07/09) y la tira de
    todas sus fechas; la del 28/09 marcada como *todavía no pasó*, la primera con
-   `primera fecha`, y las fechas sin reservas agrupadas al pie.
+   `primera fecha`, y las fechas sin reservas agrupadas al pie. *(Desde el
+   02/10 no hay hero: arriba van directo «Rentabilidad» y «Conversión». Ver el
+   addendum 2026-10-02.)*
 8. Clic en una fecha de la tira → vuelve a **Por día** en esa noche. Clic en
    *"Ver todas sus fechas"* desde el día → vuelve a **Por evento**. El ida y
    vuelta no pierde la selección.
 9. Exportar en las dos vistas → `como-nos-fue-hub-2026-09-07.csv` y
-   `como-nos-fue-hub-ramen.csv`, en columnas en Excel es-AR.
+   `como-nos-fue-hub-ramen.csv`, en columnas en Excel es-AR. *(Desde el 02/10,
+   «Por evento» baja un cuadro por vez: `…-ramen-rentabilidad.csv` y
+   `…-ramen-conversion.csv`.)*
 10. Entrar como `cashier` → redirect a `/hub/salon`. Como `host` → redirect a
     `/hub/reservas`.
 11. `⌘K` → "como nos fue" / "gente" / "evento" trae la entrada; el sidebar marca
@@ -1667,6 +1671,10 @@ lee como un monto a cobrar.
 
 ### Regla 13: cuándo existe la cuenta
 
+> **Reemplazada el 02/10/2026** (C2 de los socios): la cuenta está SIEMPRE en la
+> ficha de un evento, y la facturación sola la abre también con pauta. Ver el
+> addendum 2026-10-02. Lo de abajo queda como historia.
+
 La decide **un solo dato** — que esté cargado el ingreso **o** el costo por
 persona (`hasNightAccount` en `event-marketing.ts`) — y la preguntan los tres
 lados: la ficha, la vista previa del formulario y las ocho columnas nuevas del
@@ -1799,7 +1807,9 @@ Dos puertas, porque cada una es el gesto natural de un momento distinto:
 
 1. **Desde la ficha, sobre una fecha marcada «No tuvo pauta»** → botón
    `+ Sumar la plata de la noche`: abre el form con la plata desplegada y el
-   foco en «Ingreso por persona».
+   foco en «Ingreso por persona». *(Desde el 02/10 es el botón de la caja «La
+   cuenta de la noche» —«Cargar la cuenta» / «Completar la cuenta» / «Editar la
+   cuenta»—, en todas las fechas.)*
 2. **Tipeando `0` en Gastado** (lo que el dueño probó primero) → el form lo
    entiende: la ayuda pasa a `Sin pauta: la noche va sin gasto en Meta.`,
    Mensajes, Alcance y Dólar se **apagan en su lugar** (vacíos, con `—` y el
@@ -2074,6 +2084,10 @@ detectar por dato: la pregunta al dueño está en el BACKLOG.
 
 ### El consolidado, en detalle
 
+> Desde el 02/10/2026 el consolidado se llama **«Rentabilidad»** y la tira
+> «Todas las fechas», **«Conversión»**; cada uno baja su propia planilla (la
+> planilla mezclada del evento ya no existe). Ver el addendum 2026-10-02.
+
 Todo sale armado de `lib/salon/event-consolidated.ts` (puro, reglas C1–C8 en su
 encabezado); el componente solo dibuja.
 
@@ -2228,3 +2242,315 @@ Datos al 30/09 (contrastar con SQL si cambió la gente).
     en ~520 px, la página no gana scroll horizontal.
 14. **Como cajero o host** → la página no se sirve. Por SQL, un `select` de las
     columnas nuevas devuelve `[]`.
+
+## Addendum 2026-10-02 — Comentarios de los socios: grupos privados, la cuenta siempre, Rentabilidad y Conversión, y la dona
+
+Los socios leyeron «Cómo nos fue» y dejaron siete comentarios, textuales:
+
+- **C1 (Por día)** *«usamos los templates para ver en el calendario cuando hay
+  una "merienda libre" o "pizza libre", y el reporte lo toma como un evento que
+  se pautó. Al mismo tiempo te da la opción de poner "no se pautó", no sería
+  problema. Pero deberían salir del reporte porque estamos viendo EVENTOS.»*
+- **C2 (Por día, 22/09)** *«no entiendo porque a veces hace "la cuenta de la
+  noche" y a veces no.. Para el ojo de los que leemos los reportes, es ideal que
+  siempre tenga la misma info»* (Ratatuille la mostraba y el 2x1 no).
+- **C3 (Por evento)** *«El resumen de la "ultima fecha", me parece al pedo y
+  confuso. Lo puedo ver, por dia, y seleccionando esa noche particular.»*
+- **C4 (Por evento)** *«Estos cuadritos son la clave, y deberian ser exportables
+  ambos. Pero el reporte que sale, es como una mezcla sin forma de ambos
+  reportes. Estaria bueno ver, con el cuadro de la izquierda rentabilidad. Con
+  el cuadro de la derecha, conversión.»*
+- **C5 (Por evento)** y **C6 (Pauta)**: un gráfico de torta con la participación
+  de «Pauta, costo, ganancia».
+- **C7 (Cumpleaños)** *«Cuando podamos el objetivo seria linkear el gasto de la
+  mesa, para ver la rentabilidad de los cumpleaños tambien»*.
+
+### Decisiones (no reabrir)
+
+1. **C1 — Tilde por FECHA**: «Grupo privado — no sale en Cómo nos fue»
+   (`scheduled_events.private_group`). Nace tildado si la fecha la crea una
+   reserva especial pidiendo un formato (`ensure_scheduled_event_for_template`)
+   o si el formato está marcado «Se usa para grupos privados»
+   (`scheduled_event_templates.default_private_group`; Merienda Libre). Pizza
+   libre es MIXTO (hay noches abiertas con pauta): no se excluye por formato. Un
+   grupo privado SIGUE ocupando cupo (calendario, cupos por servicio,
+   comisiones, puntos por asistencia) y sus cumples siguen contando en
+   Cumpleaños: solo sale del reporte de EVENTOS. No se le pide pauta.
+2. **C2 — «La cuenta de la noche» SIEMPRE** en la ficha de cada evento, con la
+   misma estructura y un botón para cargarla cuando falta. Reemplaza a la regla
+   13 del 19/09 («una fecha vieja se sigue viendo como se veía»).
+3. **C3 — Sin el hero «Última fecha»** en Por evento.
+4. **C4 — Los dos cuadros se llaman RENTABILIDAD (izquierda) y CONVERSIÓN
+   (derecha)**, cada uno con su «Exportar», que baja exactamente lo que muestra.
+   La planilla mezclada se va.
+5. **C5/C6 — Una dona** de pauta / costo / resultado sobre el ingreso: una por
+   evento (sus fechas con la cuenta cerrada) y una del mes en Pauta.
+6. **C7 — No se hace ahora**: no hay en la base un gasto por mesa que se pueda
+   atar a un cumple. Plan en el BACKLOG.
+
+### C1 — Grupos privados
+
+**Migración `20261002120000_private_group_events.sql`** (sin datos):
+
+- `scheduled_events.private_group boolean not null default false` y
+  `scheduled_event_templates.default_private_group boolean not null default
+  false`, con sus comentarios.
+- `ensure_scheduled_event_for_template` idéntica a la de `20260901003129` salvo
+  `private_group = true` en el insert ad-hoc. Si el formato ya estaba ese día,
+  devuelve esa fecha sin tocarla. Se repiten los permisos y se le saca EXECUTE a
+  `anon` (el default privileges se lo daba; nunca le sirvió).
+- **Invariante «un grupo privado no lleva pauta ni la plata de la noche»**, con
+  dos triggers SECURITY DEFINER (el anfitrión y el cajero marcan desde el
+  calendario y no ven la pauta por RLS):
+  - marcar privada una fecha con plata (solo en la transición a privada) →
+    `private_group_has_money`;
+  - cargar plata en una fecha privada → `event_is_private_group`.
+  «Plata» = gasto > 0 o cualquier número de la noche. Una «No tuvo pauta» pelada
+  convive con el tilde. Si las dos cosas pasan **al mismo tiempo**, lo cubre un
+  lock: el trigger de la pauta toma `for share` sobre la fila de la fecha, que
+  choca con el UPDATE que la marca; el que llega segundo espera y rebota con su
+  error (con dos EXISTS sin lock, los dos pasaban y quedaba una privada con
+  pauta). Ese trigger es AFTER, así corre después de la RLS: al dueño de otro
+  bar no le dice si una fecha ajena es privada.
+- De paso, el comentario de `usd_ars_rate` deja de decir «Obligatorio si hay
+  facturación» (BACKLOG del 30/09).
+- **RLS y GRANT sin cambios**: no hay tablas nuevas; las columnas quedan
+  cubiertas por los GRANT de tabla y por `sev_staff_write` (fecha: owner,
+  cashier, host) y `set_owner_write` + `set_host_update` (formato).
+- `types/database.ts` a mano (`npm run db:types` sigue roto).
+
+**ORDEN DE DEPLOY: primero la migración, después el código** (las queries piden
+las columnas nuevas). El **paso de datos del HUB va aparte**, con el OK del
+dueño. **Aplicado el 02/10/2026 con criterio conservador** (esconder del
+reporte un evento real es peor que dejar un grupo privado a la vista, que se
+destilda en dos segundos):
+
+- Merienda Libre → «Se usa para grupos privados», y sus 4 fechas privadas.
+- Pizza libre (es mixto): privada solo si no tiene pauta > 0 ni plata **y**
+  además ya pasó, o nació de una reserva especial (`full_bonus_active = false`),
+  o su cupo es justo el del grupo (`capacity` ≤ personas reservadas).
+
+Resultado: 1 formato y 16 fechas (4 Merienda Libre + 12 Pizza libre). Siguen
+como evento Pizza libre 03/09 y 21/09 (tuvieron pauta) y 06/10 y 05/12 (futuras,
+con el cupo de 140 de una noche abierta). Ninguna privada quedó con plata.
+
+**Dónde se ve:**
+
+- **Por día**: su gente no desaparece. Va en su propia franja (`kind:
+  'private'` de `aggregateDayReport`), después de los eventos y antes de «Sin
+  evento», con el chip «🔒 Grupo privado», la nota *«No sale en los reportes de
+  eventos: ocupa lugar en el salón, pero no es un evento.»*, los tres números,
+  el muro y la asistencia. Sin «Pauta en Meta», sin «La cuenta de la noche» y sin
+  link a Por evento: su link es «Ver en el calendario» (ahí se cambia el
+  tilde). Los totales de la noche la cuentan. Un grupo privado sin nadie (ni en
+  pie ni caído) no se dibuja. «Sin evento» se promueve a protagonista solo si
+  no hubo ni eventos ni grupos privados. La planilla del día lo rotula
+  `Pizza libre (grupo privado)` con las columnas de pauta vacías.
+- **Por evento**: un grupo privado no es una edición (`aggregateEditions` lo
+  descarta; `TemplateReport.privateEditions` lo cuenta). Debajo de los dos
+  cuadros, una nota: *«No cuentan 14 fechas de grupo privado: ocupan lugar en el
+  salón, pero no son eventos. Se ven en «Por día».»* (las dos planillas la
+  repiten al final). El selector no ofrece un formato con todas sus fechas
+  privadas, ni uno «Se usa para grupos privados» sin fechas; por link directo
+  dice *«Todas las fechas de Merienda Libre son de grupos privados»*.
+- **Pauta**: no suma, no se pide en pendientes y no va a la planilla
+  (`getMonthMarketingReport` devuelve los privados aparte, en `privateGroups`).
+  Al pie: *«No cuentan 4 fechas de grupo privado: Pizza libre 17/09 · … ·
+  Merienda Libre 30/09. Ocupan lugar en el salón, pero no son eventos: se ven en
+  «Por día».»* En los pendientes, una fecha sin fila de pauta ofrece un tercer
+  botón **«🔒 Grupo privado»** (dueño; optimista con Deshacer 6 s, como «No tuvo
+  pauta»): la fecha sale del recuadro, de los totales y de la lista, y pasa al
+  pie. Una fecha con pauta no lo ofrece (y la base lo rebota igual).
+- **Cumpleaños**: los cumples de un grupo privado cuentan como cualquiera, pero
+  ya no «dentro de un evento» (septiembre: 73 cumples, «15 fueron dentro de un
+  evento», antes 18).
+- **Calendario**: el tilde está en el editor de la fecha y en el diálogo de
+  programar (arranca como diga el formato; en la edición viene de la fecha), y
+  la columna «Grupos privados» en Formatos. Los chips del mes y de la agenda
+  llevan un candado y el lector oye «(grupo privado)».
+
+`upsertScheduledEvent` aplica el default del formato en un alta que no trae el
+tilde y no lo toca en una edición que no lo trae (un cliente viejo no puede
+destildar sin querer). `setEventPrivateGroup` (owner) es un SET idempotente, con
+audit `scheduled_event.private_group_set`. Los códigos de los triggers se
+traducen en `privateGroupErrorMessage` (`lib/salon/private-groups.ts`).
+
+### C2 — «La cuenta de la noche», siempre (regla 13 nueva)
+
+Una caja propia (`night-account-box.tsx`), **debajo de toda la sección «Pauta en
+Meta»**, con la misma anatomía en todas las fechas: título, estado, lo que haya y
+un botón. El estado lo decide `nightAccountView` y nada más:
+
+| Estado | Cuándo | Indicador (pasada / hoy-futura) | Botón |
+|---|---|---|---|
+| `sin-cargar` | ningún dato de la noche (sin fila, o fila sin ingreso, costo, bebida ni facturación) | «Sin cargar» en ámbar / — | Cargar la cuenta |
+| `incompleta` | algo cargado y el resultado no cierra | «Incompleta» / «Por ahora» | Completar la cuenta |
+| `completa` | el resultado cierra | — / «Por ahora» | Editar la cuenta |
+| `sin-gente` | ya pasó y no hubo nadie con quien multiplicar | — | ninguno |
+
+- Sin nada cargado, la frase nombra TODO lo que falta: *«Faltan la pauta, el
+  ingreso y el costo por persona para saber si la noche dejó plata.»* (sin
+  fila) · *«Faltan el ingreso y el costo por persona, y el dólar del día, …»*
+  (pauta sin dólar: el 2x1 del 22/09) · *«Faltan el ingreso y el costo por
+  persona …»*. Hoy o a futuro: *«Todavía no se cargó. El ingreso y el costo por
+  persona se pueden cargar antes: el cubierto se sabe de antemano.»*
+- `hasNightAccount` = algún dato por persona o la facturación real, **con o sin
+  pauta** (el dólar solo no cuenta). La planilla y la vista previa preguntan lo
+  mismo: con facturación sola salen «Personas del cálculo» e «Ingreso ARS» y lo
+  que falta va vacío.
+- Los tres botones abren el MISMO formulario con «la plata de la noche»
+  desplegada; el foco cae en «Gastado» si está vacío (se necesita, aunque sea
+  0) y si no en el primer campo de plata vacío. Al cerrar, el foco vuelve al
+  botón que lo abrió.
+- «¿Cómo se calcula?» se parte en dos: el de la pauta (`howItsCalculated`, vacío
+  sin pauta) y el de la cuenta (`nightHowItsCalculated`).
+- Se va el «+ Sumar la plata de la noche» de las fechas «No tuvo pauta»: lo
+  reemplaza el botón de la caja.
+
+### C3 — Por evento sin «Última fecha»
+
+Arriba van directo el selector y los dos cuadros. La oración de estado queda
+solo cuando no hay ninguna fecha terminada con reservas. La leyenda del muro ya
+no aparece en Por evento (no hay muro).
+
+### C4 — Rentabilidad y Conversión (pantalla = CSV)
+
+- **Rentabilidad** (`event-consolidated.ts`): *«Cuánto dejó cada fecha: el
+  ingreso, menos el costo y la pauta.»* Su planilla
+  (`eventProfitabilityToCsv`): `Fecha;Personas de la cuenta;Ingreso por persona
+  ARS;Ingreso de bebida por persona ARS;Costo por persona ARS;Costo de bebida por
+  persona ARS;Ingreso ARS;Costo ARS;Margen ARS;Pauta USD;Dólar;Pauta ARS;Resultado
+  ARS;¿Dejó plata?`. Las filas son las del cuadro, en su orden; la fila de total
+  solo si el cuadro la muestra; después un renglón vacío y sus notas.
+- **Conversión** (`event-conversion.ts`, `buildEventConversion` arma la tira y
+  su planilla): *«Cuánta gente trajo cada fecha y cuánto costó traerla.»* Al
+  lado del título, «9 fechas» (sin los privados). Planilla: `Fecha;Estado;Personas;
+  Reservas;Personas por reserva;Diferencia con la anterior;Fecha anterior;Pauta
+  USD;Mensajes;Costo por mensaje USD;% de cierre;Costo por reserva USD;Estado de
+  la pauta`, primero las fechas de la tira, después las vacías, y abajo el total
+  con mensajes cargados, la mejor y el promedio. La segunda línea de cada fecha
+  suma el costo por mensaje (`54 mensajes a US$ 1,44`). Los tres cocientes van
+  en la planilla solo si la línea los dice: sin los mensajes, con 0 o sin
+  ninguna reserva en pie, la línea lo dice en palabras y esas celdas van vacías
+  (las dos deciden con `pastEditionQuotients`).
+- Ruta: `GET /api/como-nos-fue/export?slug&vista=evento&evento=<uuid>&cuadro=
+  rentabilidad|conversion`. Sin `cuadro` → 400 `invalid_cuadro`. Archivos:
+  `como-nos-fue-hub-2x1-burger-martes-rentabilidad.csv` / `…-conversion.csv`.
+- El «Exportar» general no se dibuja en Por evento; cada cuadro lleva el suyo
+  (nombre accesible `Exportar Rentabilidad de 2x1 Burger Martes`).
+
+### C5/C6 — La dona «Cómo se repartió el ingreso»
+
+`lib/salon/money-share.ts` (puro) y `money-share-donut.tsx` (SVG a mano: un
+`<circle>` por porción con `stroke-dasharray`, sin recharts y sin animación).
+Así la dona sale entera en el HTML del server: con recharts el server mandaba
+solo el riel gris hasta hidratar, que es el dibujo de «quedó abajo». Tokens
+propios `--viz-pauta`, `--viz-costo`, `--viz-resultado` (claro, oscuro y
+`.force-light`), validados para contraste y daltonismo. Solo el dibujo va
+`aria-hidden`: el lector oye el centro (el ingreso, que en Por evento no está
+escrito en otro lado), la leyenda y la oración.
+
+- El todo es el INGRESO: pauta + costo + resultado, siempre en ese orden. % con
+  un decimal que suman 100,0. Se llama «Resultado», no «ganancia» (regla 11), y
+  lleva el disclaimer.
+- **Por evento**: debajo de Rentabilidad, sobre las fechas juzgadas (✓ / ✗ / $ 0);
+  con 2 o más, los mismos montos que la fila de total de su planilla.
+- **Pauta**: después de las fichas, sobre la cuenta del mes (fechas CON pauta,
+  con ingreso, costo y dólar). Las noches sin pauta no entran y una nota lo
+  dice.
+- **Pérdida**: una torta no tiene porciones negativas. El aro queda vacío, el
+  centro dice `$ 73.600 / abajo` en ámbar y la oración lo cuenta: *«La pauta y el
+  costo ($ 423.600) se llevaron más que todo el ingreso ($ 350.000): faltaron
+  $ 73.600.»*
+- **Sin la cuenta cerrada** no hay dona (faltante no es cero). **Sin pauta**, la
+  pauta dice «sin pauta · 0 %».
+
+### C7 — Rentabilidad de los cumpleaños
+
+No se hace ahora. Al 02/10 no hay en la base ningún gasto de mesa atado a una
+reserva (`salon_reservations` solo tiene la seña; `table_sessions`/`tickets` son
+el piloto de mayo-junio sin vínculo a reservas; `visits` es por cliente). Plan y
+decisiones pendientes en el BACKLOG.
+
+### Piezas
+
+| Qué | Dónde |
+|---|---|
+| Migración (columnas, ensure, triggers) | `supabase/migrations/20261002120000_private_group_events.sql`, `types/database.ts`, `lib/salon/types.ts` |
+| Palabras y notas de grupos privados, errores de los triggers | `lib/salon/private-groups.ts` |
+| Franja privada del día, ediciones sin privados, planilla del día | `lib/salon/events-report.ts` |
+| Queries (día, evento, mes, selector) | `lib/salon/queries.ts` |
+| Cumpleaños sin privados «dentro de un evento» | `lib/salon/birthday-queries.ts`, `lib/salon/birthdays-report.ts` |
+| Rentabilidad y su planilla | `lib/salon/event-consolidated.ts` |
+| Conversión y su planilla | `lib/salon/event-conversion.ts` |
+| Los dos cuadros y su «Exportar» | `lib/salon/event-cuadros.ts`, `app/api/como-nos-fue/export/route.ts` |
+| Regla 13 nueva, `nightAccountView`, «¿Cómo se calcula?» en dos | `lib/salon/event-marketing.ts`, `lib/salon/event-marketing-draft.ts` |
+| La dona | `lib/salon/money-share.ts`, `_components/money-share-donut.tsx`, `app/globals.css` |
+| UI | `_components/night-account-box.tsx`, `event-marketing-section.tsx`, `marketing-report.tsx`, `marketing-form.tsx`, `como-nos-fue-dashboard.tsx`, `event-consolidated.tsx`, `editions-strip.tsx`, `cuadro-export-button.tsx`, `night-card.tsx`, `marketing-month-view.tsx` |
+| Tilde en el calendario y Formatos | `eventos/programados/_components/scheduled-event-form.tsx`, `template-drop-dialog.tsx`, `scheduled-events-month.tsx`, `[id]/page.tsx`, `eventos/templates/_components/templates-editor.tsx` |
+| Acciones | `lib/salon/actions.ts` (`upsertScheduledEvent`, `upsertScheduledTemplate`), `lib/salon/event-marketing-actions.ts` (`setEventPrivateGroup`), `lib/salon/schemas.ts`, `lib/salon/humanize.ts` |
+
+### Tests
+
+- Nuevos: `salon-private-groups.test.ts`, `salon-event-cuadros.test.ts`,
+  `salon-night-account.test.ts`, `salon-money-share.test.ts` (datos reales del
+  02/10 sin PII en `salon-como-nos-fue-fixtures.ts`, con ids sintéticos),
+  `salon-private-group-schemas.test.ts` (el tilde: `'false'` no es `true`, y sin
+  el campo no se pisa) y `tests/rls/private-group-events.test.ts` (corre en el
+  job `rls`).
+- Actualizados por las decisiones: la regla 13 vieja (`salon-event-marketing*`),
+  el título y las notas del consolidado, la planilla mezclada (reemplazada por
+  las de los dos cuadros) y dos fixtures con `private_group: false`.
+
+### Smoke manual
+
+> Números del 02/10/2026 ~15:30 con el paso de datos aplicado. La base está
+> viva: contrastar con SQL del día. Lo que tiene que cerrar siempre es pantalla =
+> CSV.
+
+1. **Por día 22/09** → las dos fichas tienen «LA CUENTA DE LA NOCHE». 2x1 Burger
+   Martes: «Sin cargar» en ámbar, *«Faltan el ingreso y el costo por persona, y
+   el dólar del día, para saber si la noche dejó plata.»* y «Cargar la cuenta»;
+   tocarlo abre el formulario con la plata desplegada y el foco en «Ingreso por
+   persona»; Esc devuelve el foco al botón. Ratatuille: *«La noche dejó
+   $ 925.600.»* y «Editar la cuenta».
+2. **Por día 18/09** → Sushi en pasos (60 / 24), después la franja **Pizza libre
+   · 🔒 Grupo privado** (69 / 2, sin pauta ni cuenta, «Ver en el calendario»),
+   después Sin evento (2 / 1). Exportar el día: `Pizza libre (grupo privado)`
+   con las columnas de pauta vacías.
+3. **Por evento → 2x1 Burger Martes** → sin «Última fecha». Rentabilidad (total
+   `$ 476.894`) con la dona debajo: `$ 1.971.000 de ingreso · 24,1 % / 51,7 % /
+   24,2 %` y *«De cada $ 100 que entraron, $ 24 se fueron en pauta, $ 52 en costo
+   y quedaron $ 24.»* Conversión «9 fechas», con `54 mensajes a US$ 1,44` en la
+   del 29/09. Sin «Exportar» arriba. A 1280 con la barra abierta van apilados;
+   plegada, lado a lado. A 360, sin scroll horizontal.
+4. **Exportar Rentabilidad** → `como-nos-fue-hub-2x1-burger-martes-rentabilidad.csv`:
+   las 5 fechas del cuadro, `Total con la cuenta cerrada (3 fechas);152;12230;;;;
+   1971000;1019700;951300;301,48;;474406;476894;2 de 3` y las notas. **Exportar
+   Conversión** → `…-conversion.csv`: las 5 de la tira, las 4 vacías y
+   `Total con mensajes cargados (5 fechas);;;63;;;;427,04;376;1,14;16,8;6,78;`.
+   Un link viejo sin `cuadro` → 400.
+5. **Por evento → Pizza libre** → «2 fechas · 166 personas» en el selector,
+   dona `$ 2.736.000 · 18,4 % / 44,8 % / 36,8 %` y, debajo de los cuadros, *«No
+   cuentan 14 fechas de grupo privado: …»*. Merienda Libre no aparece en el
+   selector.
+6. **Pauta, septiembre** → invertido `US$ 3.428,68` en 21 fechas, resultado
+   `$ 7.077.362`, la dona `$ 20.483.000 · 22,2 % / 43,3 % / 34,5 %` con la nota de
+   las noches sin pauta, «Sin pauta: Fernet Libre + Lomo 03/09 · Ratatuille 14/09
+   (dejó $ 936.000) · Ratatuille 22/09 (dejó $ 925.600)» y al pie los 4 grupos
+   privados. En pendientes, Noche de tacos 30/09 con «Cargar», «No tuvo pauta» y
+   «🔒 Grupo privado».
+7. **«Grupo privado» en un pendiente** → la fila sale del recuadro y la fecha va
+   al pie; «Deshacer» la devuelve. En el calendario, esa fecha lleva el candado
+   y el tilde prendido. **Deshacerlo de verdad** antes de seguir (no es un grupo
+   privado).
+8. **Calendario como anfitrión** → tildar «Grupo privado» en Pizza libre 21/09
+   (tiene pauta) → *«Esta fecha tiene pauta o la plata de la noche cargada en
+   «Cómo nos fue»: no puede ser un grupo privado. Un dueño tiene que borrarla
+   primero.»* Una fecha nueva de Merienda Libre nace tildada.
+9. **Reserva especial pidiendo un formato** en un día sin programar → la fecha
+   ad-hoc nace privada (candado en el calendario, franja en Por día).
+10. **Cumpleaños, septiembre** → 73 cumples, 1.221 personas, «15 fueron dentro de
+    un evento».
+11. **Como cajero o host** → «Cómo nos fue» no se sirve; el host sí ve y cambia
+    el tilde en el calendario.
