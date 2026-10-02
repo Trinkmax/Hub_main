@@ -115,6 +115,7 @@ export default async function ScheduledEventPage({
           full_bonus_active: event.full_bonus_active,
           attendance_points: event.attendance_points,
           notes: event.notes ?? undefined,
+          private_group: event.private_group,
         }}
       />
 

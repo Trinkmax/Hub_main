@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { upsertScheduledTemplate } from '@/lib/salon/actions'
+import { TEMPLATE_PRIVATE_SWITCH } from '@/lib/salon/private-groups'
 import { MEAL_TYPE_LABELS, type MealType, type ScheduledEventTemplateRow } from '@/lib/salon/types'
 
 const MEAL_TYPES: MealType[] = ['breakfast', 'lunch', 'tea_time', 'dinner', 'hub_event']
@@ -42,6 +43,7 @@ export function TemplatesEditor({
         default_meal_type: 'dinner',
         default_capacity: null,
         active: true,
+        default_private_group: false,
       } as Draft,
       ...prev,
     ])
@@ -68,6 +70,7 @@ export function TemplatesEditor({
         default_meal_type: d.default_meal_type ?? 'dinner',
         default_capacity: d.default_capacity,
         active: d.active ?? true,
+        default_private_group: d.default_private_group ?? false,
       } as Record<string, unknown>)
       if (r.ok) {
         toast.success('Formato guardado.')
@@ -101,10 +104,15 @@ export function TemplatesEditor({
           Sin formatos todavía. Creá el primero.
         </p>
       ) : null}
+      {/* Las dos columnas de tildes («Consume cupo» y «Grupos privados») van
+          `auto`, al ancho de su rótulo (unos 72 y 38 px): con 120 px fijos cada una,
+          entre 768 y ~1080 px (la barra lateral abierta) Nombre y Slug quedaban
+          en 50 y 31 px y el «Guardar» se salía de la pantalla. Como sus rótulos
+          son fijos, las columnas miden lo mismo en todas las tarjetas. */}
       {drafts.map((d, idx) => (
         <div
           key={d.id ?? `new-${idx}`}
-          className="grid gap-3 rounded-xl border bg-card/60 p-4 sm:grid-cols-[40px_1fr_1fr_120px_140px_120px_auto]"
+          className="grid gap-3 rounded-xl border bg-card/60 p-4 sm:grid-cols-[40px_1fr_1fr_120px_140px_auto_auto_auto]"
         >
           <div className="flex items-center justify-center">
             <label className="relative size-8 cursor-pointer">
@@ -181,6 +189,23 @@ export function TemplatesEditor({
                 aria-label="Consume cupo en cumpleaños"
               />
               <span className="text-[9px]">en cumples</span>
+            </div>
+          </div>
+          {/* «Se usa para grupos privados» (C1): solo decide cómo NACEN las
+              fechas nuevas de este formato (Merienda Libre). Mismo formato que
+              «Consume cupo». */}
+          <div className="flex items-center justify-center">
+            <div
+              className="flex flex-col items-center gap-1 text-[10px] text-muted-foreground"
+              title={TEMPLATE_PRIVATE_SWITCH.hint}
+            >
+              <span>{TEMPLATE_PRIVATE_SWITCH.stacked[0]}</span>
+              <Switch
+                checked={d.default_private_group ?? false}
+                onCheckedChange={(v) => patch(idx, 'default_private_group', v)}
+                aria-label={TEMPLATE_PRIVATE_SWITCH.label}
+              />
+              <span className="text-[9px]">{TEMPLATE_PRIVATE_SWITCH.stacked[1]}</span>
             </div>
           </div>
           <div className="flex items-center justify-end gap-1">

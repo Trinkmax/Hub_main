@@ -318,6 +318,17 @@ export const cancelReservationSchema = z.object({
 // Eventos programados + templates
 // ──────────────────────────────────────────────────────────
 
+/**
+ * Un tilde que viaja como booleano (react-hook-form, objetos) o como texto de
+ * FormData. `z.coerce.boolean()` lee `'false'` como `true`: para un tilde que
+ * saca una fecha de los reportes eso no puede pasar. Opcional a propósito: si
+ * el pedido no lo trae, NO se pisa lo guardado (ver `upsertScheduledEvent`).
+ */
+const optionalFlag = z
+  .union([z.boolean(), z.literal('true'), z.literal('false'), z.literal('on')])
+  .transform((v) => v === true || v === 'true' || v === 'on')
+  .optional()
+
 export const scheduledTemplateSchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().trim().min(1).max(80),
@@ -334,6 +345,8 @@ export const scheduledTemplateSchema = z.object({
     .regex(/^#[0-9a-fA-F]{6}$/, 'Color inválido (#RRGGBB)')
     .default('#7c3aed'),
   active: z.coerce.boolean().default(true),
+  /** «Se usa para grupos privados»: las fechas NUEVAS del formato nacen privadas. */
+  default_private_group: optionalFlag,
 })
 
 // Alta rápida de formato (staff) desde el alta de reservas — campos mínimos.
@@ -368,6 +381,11 @@ export const scheduledEventSchema = z.object({
   // Puntos de fidelización que gana quien asiste (reserva cerrada/sentada).
   attendance_points: z.coerce.number().int().min(0).max(100000).default(0),
   notes: optionalText(500).optional(),
+  /**
+   * «Grupo privado — no sale en Cómo nos fue». Sin el campo: en el alta manda
+   * el default del formato; en la edición no se toca lo guardado.
+   */
+  private_group: optionalFlag,
 })
 
 // ──────────────────────────────────────────────────────────

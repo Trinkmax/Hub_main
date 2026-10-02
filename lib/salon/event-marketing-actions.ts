@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { z } from 'zod'
 import { logAudit } from '@/lib/audit'
 import { createClient } from '@/lib/supabase/server'
 import {
@@ -25,6 +26,7 @@ import {
   toEventMarketingRow,
   toMarketingDbFields,
 } from './event-marketing-schemas'
+import { EVENT_IS_PRIVATE_GROUP, PRIVATE_GROUP_UNREACHABLE } from './private-groups'
 import { getManagerForUser } from './queries'
 
 /**
@@ -93,11 +95,17 @@ async function authorizeOwner(slug: unknown, op: string): Promise<OwnerAuth> {
 /**
  * Error de escritura → estado. 42501 es la RLS (le sacaron el rol entre la page
  * y el click) y 23503 es la FK compuesta (la fecha se borró del calendario en
- * el medio, o el id es de otro bar).
+ * el medio, o el id es de otro bar). `event_is_private_group` es el trigger de
+ * grupos privados (02/10): alguien marcó la fecha «Grupo privado» mientras el
+ * dueño tenía el formulario abierto. Es un `stale`: se refresca y la ficha pasa
+ * a ser la de un grupo privado, sin pauta.
  */
 function writeFailure(op: string, error: PgError, fallback: string): Failure {
   if (error.code === '42501') return fail('forbidden', FORBIDDEN)
   if (error.code === '23503') return fail('not_found', NOT_FOUND)
+  if (String(error.message ?? '').includes('event_is_private_group')) {
+    return fail('stale', EVENT_IS_PRIVATE_GROUP)
+  }
   console.error(`[event-marketing.${op}]`, error.code, error.message)
   return fail('error', fallback)
 }
@@ -394,4 +402,85 @@ export async function deleteEventMarketing(
 
   revalidatePath(COMO_NOS_FUE_PATH(slug))
   return { ok: true, row: null }
+}
+
+// ─── Grupo privado (02/10/2026) ──────────────────────────────────────────────
+
+const PRIVATE_FAILED = PRIVATE_GROUP_UNREACHABLE
+const PRIVATE_HAS_MONEY =
+  'Esta fecha tiene pauta o la plata de la noche cargada: un grupo privado no la lleva. Si de verdad fue un grupo privado, borrá la pauta primero.'
+
+export type PrivateGroupActionState =
+  | { ok: true; privateGroup: boolean }
+  | {
+      ok: false
+      code: 'forbidden' | 'invalid' | 'not_found' | 'has_money' | 'error'
+      message: string
+    }
+
+const setPrivateGroupSchema = z.object({
+  scheduledEventId: z.string().uuid(),
+  privateGroup: z.boolean(),
+})
+
+/**
+ * «Grupo privado» desde los pendientes de la pestaña Pauta, y su Deshacer
+ * (la misma acción con `false`). Owner y nadie más, como el resto de «Cómo nos
+ * fue»; desde el calendario el tilde va por `upsertScheduledEvent` (staff).
+ *
+ * Es un SET, no un toggle: repetirlo no cambia nada y el Deshacer es la misma
+ * acción con el valor contrario. Sin chequeo de versión: un booleano idempotente
+ * no pisa números de nadie.
+ *
+ * Una fecha con pauta (gasto > 0) o con la plata de la noche no puede ser
+ * privada: lo frena el trigger `scheduled_events_private_group_no_money` en la
+ * DB (atómico, sin leer antes) y acá se traduce a `has_money`.
+ */
+export async function setEventPrivateGroup(
+  slug: string,
+  scheduledEventId: string,
+  privateGroup: boolean,
+): Promise<PrivateGroupActionState> {
+  const auth = await authorizeOwner(slug, 'privateGroup')
+  if (!auth.ok) {
+    return {
+      ok: false,
+      code: auth.state.code === 'forbidden' ? 'forbidden' : 'error',
+      message: auth.state.message,
+    }
+  }
+
+  const parsed = setPrivateGroupSchema.safeParse({ scheduledEventId, privateGroup })
+  if (!parsed.success) return { ok: false, code: 'invalid', message: 'Esa fecha no es válida.' }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('scheduled_events')
+    .update({ private_group: parsed.data.privateGroup })
+    .eq('tenant_id', auth.tenantId)
+    .eq('id', parsed.data.scheduledEventId)
+    .select('id, private_group')
+    .maybeSingle()
+  if (error) {
+    if (String(error.message ?? '').includes('private_group_has_money')) {
+      return { ok: false, code: 'has_money', message: PRIVATE_HAS_MONEY }
+    }
+    if (error.code === '42501') return { ok: false, code: 'forbidden', message: FORBIDDEN }
+    console.error('[event-marketing.privateGroup]', error.code, error.message)
+    return { ok: false, code: 'error', message: PRIVATE_FAILED }
+  }
+  if (!data) return { ok: false, code: 'not_found', message: NOT_FOUND }
+
+  await logAudit({
+    tenantId: auth.tenantId,
+    userId: auth.userId,
+    action: 'scheduled_event.private_group_set',
+    entity: 'scheduled_event',
+    entityId: parsed.data.scheduledEventId,
+    payload: { private_group: parsed.data.privateGroup, source: 'como_nos_fue' },
+  })
+
+  revalidatePath(COMO_NOS_FUE_PATH(slug))
+  revalidatePath(`/${slug}/eventos/programados`)
+  return { ok: true, privateGroup: parsed.data.privateGroup }
 }

@@ -14,7 +14,9 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { upsertScheduledEvent } from '@/lib/salon/actions'
+import { PRIVATE_GROUP_SWITCH } from '@/lib/salon/private-groups'
 import { MEAL_TYPE_LABELS, type ScheduledEventTemplateRow } from '@/lib/salon/types'
 
 const DEFAULT_TIMES: Record<string, string> = {
@@ -54,12 +56,14 @@ export function TemplateDropDialog({
 }) {
   const timeId = useId()
   const capId = useId()
+  const privateId = useId()
 
   const initialTime = template ? (DEFAULT_TIMES[template.default_meal_type] ?? '21:00') : '21:00'
   const initialCap = template?.default_capacity ?? 40
 
   const [time, setTime] = useState(initialTime)
   const [capacity, setCapacity] = useState(initialCap)
+  const [privateGroup, setPrivateGroup] = useState(template?.default_private_group ?? false)
   const [pending, startTransition] = useTransition()
 
   // Reset cuando abre con otro template/día
@@ -67,6 +71,7 @@ export function TemplateDropDialog({
     if (open && template) {
       setTime(DEFAULT_TIMES[template.default_meal_type] ?? '21:00')
       setCapacity(template.default_capacity ?? 40)
+      setPrivateGroup(template.default_private_group)
     }
   }, [open, template])
 
@@ -81,6 +86,7 @@ export function TemplateDropDialog({
         capacity,
         meal_type: template.default_meal_type,
         full_bonus_active: true,
+        private_group: privateGroup,
       })
       if (result.ok) {
         toast.success(`${template.name} programado para el ${formatDateLong(date)}`)
@@ -148,6 +154,20 @@ export function TemplateDropDialog({
                 Este template no tiene cupo por defecto — completalo manualmente.
               </p>
             ) : null}
+          </div>
+
+          {/* «Grupo privado»: arranca como diga el formato. */}
+          <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-background/40 p-3">
+            <Switch
+              id={privateId}
+              className="mt-0.5"
+              checked={privateGroup}
+              onCheckedChange={setPrivateGroup}
+            />
+            <label htmlFor={privateId} className="cursor-pointer">
+              <div className="text-sm font-medium">{PRIVATE_GROUP_SWITCH.label}</div>
+              <p className="text-xs text-muted-foreground">{PRIVATE_GROUP_SWITCH.hint}</p>
+            </label>
           </div>
 
           <DialogFooter>

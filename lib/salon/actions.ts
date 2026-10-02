@@ -1249,6 +1249,23 @@ export async function upsertScheduledEvent(
   }
 
   const supabase = (await createClient()) as SBAny
+
+  // Grupo privado (02/10). En el alta, si el pedido no lo trae (arrastrar un
+  // formato al calendario), manda el default del formato. En la edición, sin el
+  // campo no se toca: un cliente viejo no puede destildar una fecha sin querer.
+  let privateGroup = parsed.data.private_group
+  if (!parsed.data.id && privateGroup === undefined) {
+    const { data: tpl, error: tplError } = await supabase
+      .from('scheduled_event_templates')
+      .select('default_private_group')
+      .eq('tenant_id', access.tenant.id)
+      .eq('id', parsed.data.template_id)
+      .maybeSingle()
+    if (tplError) return { ok: false, message: humanizeSalonError(tplError.message) }
+    if (!tpl) return badInput('Ese formato no es de este bar.', 'template_id')
+    privateGroup = (tpl as { default_private_group: boolean }).default_private_group === true
+  }
+
   const payload = {
     tenant_id: access.tenant.id,
     template_id: parsed.data.template_id,
@@ -1261,6 +1278,7 @@ export async function upsertScheduledEvent(
     full_bonus_active: parsed.data.full_bonus_active,
     attendance_points: parsed.data.attendance_points,
     notes: parsed.data.notes ?? null,
+    ...(privateGroup === undefined ? {} : { private_group: privateGroup }),
   }
 
   let id = parsed.data.id
@@ -1283,10 +1301,13 @@ export async function upsertScheduledEvent(
 
   await logAudit({
     tenantId: access.tenant.id,
-    userId: null,
+    userId: access.user.id,
     action: id === parsed.data.id ? 'scheduled_event.updated' : 'scheduled_event.created',
     entity: 'scheduled_event',
     entityId: id ?? null,
+    // Sacar una fecha de los reportes del dueño queda registrado, y quién.
+    payload:
+      privateGroup === undefined ? undefined : { private_group: privateGroup, role: access.role },
   })
 
   revalidatePath(`/${slug}/eventos/programados`)
@@ -1435,6 +1456,10 @@ export async function upsertScheduledTemplate(
     default_meal_type: parsed.data.default_meal_type,
     color_hex: parsed.data.color_hex,
     active: parsed.data.active,
+    // Sin el campo no se pisa (un editor viejo destildaría Merienda Libre).
+    ...(parsed.data.default_private_group === undefined
+      ? {}
+      : { default_private_group: parsed.data.default_private_group }),
   }
 
   let id = parsed.data.id
@@ -1463,7 +1488,12 @@ export async function upsertScheduledTemplate(
     action: isUpdate ? 'scheduled_event_template.updated' : 'scheduled_event_template.created',
     entity: 'scheduled_event_template',
     entityId: id,
-    payload: { name: parsed.data.name, slug: parsed.data.slug, role: access.role },
+    payload: {
+      name: parsed.data.name,
+      slug: parsed.data.slug,
+      role: access.role,
+      default_private_group: parsed.data.default_private_group ?? null,
+    },
   })
 
   revalidatePath(`/${slug}/eventos/programados`)

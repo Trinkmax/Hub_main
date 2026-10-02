@@ -29,6 +29,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { deleteScheduledEvent, upsertScheduledEvent } from '@/lib/salon/actions'
+import { PRIVATE_GROUP_SWITCH } from '@/lib/salon/private-groups'
 import { type ScheduledEventInput, scheduledEventSchema } from '@/lib/salon/schemas'
 
 type ScheduledEventFormInput = ScheduledEventInput
@@ -73,6 +74,10 @@ export function ScheduledEventForm({
       attendance_points: 0,
       name_override: undefined,
       notes: undefined,
+      // Un alta nace como diga su formato («Se usa para grupos privados»).
+      private_group:
+        templates.find((t) => t.id === (presetTemplateId ?? templates[0]?.id))
+          ?.default_private_group ?? false,
       ...initialValues,
     },
   })
@@ -85,6 +90,8 @@ export function ScheduledEventForm({
     if (mode === 'create') {
       if (tpl.default_capacity) form.setValue('capacity', tpl.default_capacity)
       if (tpl.default_meal_type) form.setValue('meal_type', tpl.default_meal_type)
+      // Como el cupo: cambiar de formato en un alta trae su default.
+      form.setValue('private_group', tpl.default_private_group)
     }
   }, [watchedTemplate, templates, mode, form])
 
@@ -106,6 +113,7 @@ export function ScheduledEventForm({
       attendance_points: 'Puntos por asistir',
       name_override: 'Nombre',
       notes: 'Notas',
+      private_group: 'Grupo privado',
     }
     const fields = Object.keys(errors).map((k) => LABELS[k] ?? k)
     toast.error(
@@ -255,6 +263,22 @@ export function ScheduledEventForm({
       <div className="grid gap-1.5">
         <Label htmlFor="notes">Notas internas</Label>
         <Textarea id="notes" {...form.register('notes')} rows={2} maxLength={500} />
+      </div>
+
+      {/* «Grupo privado» (C1, 02/10): justo antes del bonus, con la misma forma.
+          Deja la fecha fuera de «Cómo nos fue» y de sus pendientes de pauta;
+          el cupo, el calendario y las comisiones no cambian. */}
+      <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-background/40 p-3">
+        <Switch
+          id="private_group"
+          className="mt-0.5"
+          checked={form.watch('private_group') ?? false}
+          onCheckedChange={(v) => form.setValue('private_group', v, { shouldDirty: true })}
+        />
+        <label htmlFor="private_group" className="cursor-pointer">
+          <div className="text-sm font-medium">{PRIVATE_GROUP_SWITCH.label}</div>
+          <p className="text-xs text-muted-foreground">{PRIVATE_GROUP_SWITCH.hint}</p>
+        </label>
       </div>
 
       <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-background/40 p-3">

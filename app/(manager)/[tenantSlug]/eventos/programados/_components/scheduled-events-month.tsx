@@ -19,6 +19,7 @@ import {
   GripVertical,
   Info,
   Loader2,
+  Lock,
   PartyPopper,
   SlidersHorizontal,
   Sparkles,
@@ -41,6 +42,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { moveScheduledEvent } from '@/lib/salon/actions'
 import { calendarHref, hrefWithoutZone, newReservationHref } from '@/lib/salon/calendar-links'
+import { PRIVATE_GROUP_CALENDAR_TITLE, PRIVATE_GROUP_LABEL } from '@/lib/salon/private-groups'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import type { DayOverview } from '@/lib/salon/segment-queries'
 import { calendarParamsSchema } from '@/lib/salon/segment-schemas'
@@ -785,6 +787,7 @@ function MonthAgenda({
                             {e.starts_at_local.slice(0, 5)}
                           </span>
                           <span className="truncate">{eventDisplayName(e)}</span>
+                          <PrivateMark event={e} />
                           <span className="ml-auto shrink-0 text-[10px] opacity-70">
                             <EventLoad load={load} capacity={e.capacity} />
                           </span>
@@ -827,7 +830,10 @@ function EventTap({
   style: CSSProperties
   children: ReactNode
 }) {
-  const name = eventDisplayName(event)
+  // El nombre accesible reemplaza al texto del chip: el candado se dice acá.
+  const name = event.private_group
+    ? `${eventDisplayName(event)} (${PRIVATE_GROUP_LABEL})`
+    : eventDisplayName(event)
   const time = event.starts_at_local.slice(0, 5)
   const count = `${load?.used ?? 0} de ${event.capacity}`
   // El listener de dnd-kit ya consume el drag con umbral de 6 px; si igual
@@ -967,6 +973,20 @@ function TemplateChip({ template }: { template: ScheduledEventTemplateRow }) {
       />
       {template.name}
     </div>
+  )
+}
+
+/**
+ * Grupo privado (02/10): un candado chico al lado del nombre. Ocupa cupo igual;
+ * solo no sale en «Cómo nos fue». El nombre accesible del chip ya lo dice
+ * (`EventTap`), así que acá es solo para la vista.
+ */
+function PrivateMark({ event }: { event: ScheduledEventWithTemplate }) {
+  if (!event.private_group) return null
+  return (
+    <span aria-hidden title={PRIVATE_GROUP_CALENDAR_TITLE} className="inline-flex shrink-0">
+      <Lock className="size-2.5" />
+    </span>
   )
 }
 
@@ -1229,6 +1249,7 @@ function DraggableEvent({
             style={{ backgroundColor: color }}
           />
           <span className="truncate">{eventDisplayName(event)}</span>
+          <PrivateMark event={event} />
         </span>
         <span className="block pl-2.5 text-[10px] opacity-80 tabular-nums">
           {event.starts_at_local.slice(0, 5)} · <EventLoad load={load} capacity={event.capacity} />

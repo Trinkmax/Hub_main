@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowRight, ChevronLeft, ChevronRight, Megaphone, Pencil } from 'lucide-react'
+import { ArrowRight, ChevronLeft, ChevronRight, Lock, Megaphone, Pencil } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -31,7 +31,12 @@ import {
   type MonthPendingRow,
   noAdsResultLabel,
 } from '@/lib/salon/event-marketing'
-import { deleteEventMarketing, markEventWithoutAds } from '@/lib/salon/event-marketing-actions'
+import {
+  deleteEventMarketing,
+  markEventWithoutAds,
+  type PrivateGroupActionState,
+  setEventPrivateGroup,
+} from '@/lib/salon/event-marketing-actions'
 import {
   type KeptMarketingDraft,
   MARKETING_UNREACHABLE,
@@ -39,8 +44,16 @@ import {
   pinOpenPendingRow,
   restoreMarkAfterFailedUndo,
 } from '@/lib/salon/event-marketing-draft'
+import { monthMoneyShare } from '@/lib/salon/money-share'
+import {
+  monthPrivateGroupsNote,
+  PRIVATE_GROUP_UNREACHABLE,
+  privateGroupPendingCopy,
+  type WithPrivateGroups,
+} from '@/lib/salon/private-groups'
 import { cn } from '@/lib/utils'
 import { MarketingForm } from './marketing-form'
+import { MoneyShareDonut } from './money-share-donut'
 
 /**
  * La pestaña «Pauta»: un mes de pauta en Meta, contado por fecha de evento.
@@ -57,10 +70,14 @@ import { MarketingForm } from './marketing-form'
  * la noche en «Por día». Abre el mismo formulario, debajo de la fila.
  *
  * Todo lo que se lee sale armado de `buildMonthMarketingReport`; acá solo se
- * dibuja. Lo único propio es el estado optimista de «No tuvo pauta» y de lo
- * recién guardado, que se reconstruye con esa MISMA función para que el
- * recuadro, la oración y los totales no se contradigan mientras vuelve el
- * server.
+ * dibuja. Lo único propio es el estado optimista de «No tuvo pauta», de «Grupo
+ * privado» y de lo recién guardado, que se reconstruye con esa MISMA función
+ * para que el recuadro, la oración y los totales no se contradigan mientras
+ * vuelve el server.
+ *
+ * Desde el 02/10: los grupos privados del mes no son ediciones (se nombran al
+ * pie, `monthPrivateGroupsNote`) y, después de las fichas, va la dona «Cómo se
+ * repartió el ingreso» (`monthMoneyShare`), sobre la misma cuenta del mes.
  */
 
 /** `2026-09` + 1 → `2026-10`. Aritmética en UTC: en local, un runtime en
@@ -105,47 +122,70 @@ function useIsMd(): boolean {
  */
 type Overrides = Readonly<Record<string, EventMarketingRow | null>>
 
+/** El mes como lo manda la page: las ediciones y, aparte, los grupos privados. */
+type MonthReport = WithPrivateGroups<MonthMarketingReport>
+
 /**
  * El mes con lo optimista aplicado, contado por la misma función que el server.
  *
  * `startsAtLocal` viaja como el índice ya ordenado: las ediciones llegan en el
  * orden bueno (fecha y hora) pero sin la hora, y sin esto dos eventos de la
  * misma noche se reordenaban por nombre durante el instante optimista.
+ *
+ * «Grupo privado» optimista (`privateIds`): la fecha deja de ser una edición
+ * (sale de los pendientes, de los totales y de la lista) y pasa al pie, igual
+ * que la va a mandar el server. Con la MISMA función: si no, el pie y los
+ * números parpadearían hasta que vuelva.
  */
 function withOverrides(
-  report: MonthMarketingReport,
+  report: MonthReport,
   today: string,
   overrides: Overrides,
-): MonthMarketingReport {
+  privateIds: ReadonlySet<string>,
+): MonthReport {
   const touched = Object.entries(overrides)
-  if (touched.length === 0) return report
+  if (touched.length === 0 && privateIds.size === 0) return report
   const rows = new Map<string, EventMarketingRow>()
   for (const e of report.editions) if (e.row) rows.set(e.eventId, e.row)
   for (const [id, row] of touched) {
     if (row) rows.set(id, row)
     else rows.delete(id)
   }
-  return buildMonthMarketingReport({
+  const moved = report.editions.filter((e) => privateIds.has(e.eventId))
+  const rebuilt = buildMonthMarketingReport({
     ym: report.ym,
     today,
     truncated: report.truncated,
     marketing: Object.fromEntries(rows),
-    editions: report.editions.map((e, i) => ({
-      key: e.eventId,
-      eventId: e.eventId,
-      date: e.date,
-      title: e.title,
-      colorHex: e.colorHex,
-      reservations: e.reservations,
-      guests: e.guests,
-      // La gente de la plata viaja igual que la reservada: sin esto, el
-      // instante optimista recalcularía el resultado de la noche con cero
-      // personas y la cuenta parpadearía a «—».
-      billableGuests: e.billableGuests,
-      attendedGuests: e.attendedGuests,
-      startsAtLocal: String(i).padStart(5, '0'),
-    })),
+    editions: report.editions.flatMap((e, i) =>
+      privateIds.has(e.eventId)
+        ? []
+        : [
+            {
+              key: e.eventId,
+              eventId: e.eventId,
+              date: e.date,
+              title: e.title,
+              colorHex: e.colorHex,
+              reservations: e.reservations,
+              guests: e.guests,
+              // La gente de la plata viaja igual que la reservada: sin esto, el
+              // instante optimista recalcularía el resultado de la noche con cero
+              // personas y la cuenta parpadearía a «—».
+              billableGuests: e.billableGuests,
+              attendedGuests: e.attendedGuests,
+              startsAtLocal: String(i).padStart(5, '0'),
+            },
+          ],
+    ),
   })
+  return {
+    ...rebuilt,
+    privateGroups: [
+      ...report.privateGroups,
+      ...moved.map((e) => ({ eventId: e.eventId, date: e.date, title: e.title })),
+    ],
+  }
 }
 
 /** Las variables de tinta del evento para un `.ev-ink`. Sin color, cae al verde de la casa. */
@@ -212,7 +252,7 @@ export function MarketingMonthView({
   tenantSlug: string
   /** Hoy en el calendario del bar: el mismo con el que la page armó el mes. */
   today: string
-  report: MonthMarketingReport
+  report: MonthReport
   lastUsdArsRate: { rate: number; loadedAt: string } | null
   /** Mergea en la URL, con la transición del tablero. */
   onNavigate: (next: Record<string, string>) => void
@@ -234,6 +274,9 @@ export function MarketingMonthView({
   // Lo tipeado antes de un Esc, por edición, como en la ficha.
   const [drafts, setDrafts] = useState<Readonly<Record<string, KeptMarketingDraft>>>({})
   const [focusTarget, setFocusTarget] = useState<string | null>(null)
+  // Fechas recién marcadas «Grupo privado» desde los pendientes: dejan de ser
+  // ediciones al toque (optimista) hasta que el server traiga el mes sin ellas.
+  const [privateIds, setPrivateIds] = useState<ReadonlySet<string>>(() => new Set())
 
   // Cuando llega un mes nuevo del server (revalidatePath después de guardar, un
   // refresh, o cambiar de mes) lo optimista se tira: el server ya lo sabe, y
@@ -248,11 +291,12 @@ export function MarketingMonthView({
     }
     setSeenReport(serverReport)
     setOverrides({})
+    setPrivateIds(new Set())
   }
 
   const report = useMemo(
-    () => withOverrides(serverReport, today, overrides),
-    [serverReport, today, overrides],
+    () => withOverrides(serverReport, today, overrides, privateIds),
+    [serverReport, today, overrides, privateIds],
   )
   const ym = report.ym
 
@@ -451,6 +495,77 @@ export function MarketingMonthView({
     setFocusTarget(p.eventId)
   }
 
+  function unmarkPrivate(eventId: string) {
+    setPrivateIds((prev) => {
+      const next = new Set(prev)
+      next.delete(eventId)
+      return next
+    })
+  }
+
+  /**
+   * «Grupo privado» (C1, 02/10): la fecha deja de ser un evento y sale de toda
+   * la pestaña (pendientes, totales, lista) para ir al pie. Optimista con
+   * Deshacer 6 s, como «No tuvo pauta». Solo se ofrece sin fila de pauta: una
+   * con pauta es un evento, y la base la frena igual (`has_money`).
+   */
+  async function markPrivateGroup(p: MonthPendingRow) {
+    const copy = privateGroupPendingCopy(p.title, p.date)
+    setOpenRow((o) => (o?.eventId === p.eventId ? null : o))
+    setPrivateIds((prev) => new Set(prev).add(p.eventId))
+    setFocusTarget(p.eventId)
+    let res: PrivateGroupActionState
+    try {
+      res = await setEventPrivateGroup(tenantSlug, p.eventId, true)
+    } catch (error) {
+      console.error(
+        '[como-nos-fue.pauta.month.privateGroup]',
+        error instanceof Error ? error.message : 'sin respuesta',
+      )
+      res = { ok: false, code: 'error', message: PRIVATE_GROUP_UNREACHABLE }
+    }
+    if (!res.ok) {
+      unmarkPrivate(p.eventId)
+      toast.error(res.message, { id: `privado-${p.eventId}` })
+      // Con plata cargada mientras tanto: se trae la de verdad.
+      if (res.code === 'has_money') router.refresh()
+      return
+    }
+    toast(copy.toast, {
+      id: `privado-${p.eventId}`,
+      duration: UNDO_MS,
+      action: {
+        label: 'Deshacer',
+        onClick: () => {
+          void undoPrivateGroup(p)
+        },
+      },
+    })
+  }
+
+  async function undoPrivateGroup(p: MonthPendingRow) {
+    const copy = privateGroupPendingCopy(p.title, p.date)
+    let res: PrivateGroupActionState
+    try {
+      res = await setEventPrivateGroup(tenantSlug, p.eventId, false)
+    } catch (error) {
+      console.error(
+        '[como-nos-fue.pauta.month.undoPrivateGroup]',
+        error instanceof Error ? error.message : 'sin respuesta',
+      )
+      res = { ok: false, code: 'error', message: PRIVATE_GROUP_UNREACHABLE }
+    }
+    if (!res.ok) {
+      toast.error(res.message, { id: `privado-${p.eventId}` })
+      return
+    }
+    // Si el server ya trajo el mes con la fecha en el pie, el `revalidatePath`
+    // de la acción la devuelve como edición; si no, se saca lo optimista acá.
+    unmarkPrivate(p.eventId)
+    toast.success(copy.undoneToast, { id: `privado-${p.eventId}` })
+    setFocusTarget(p.eventId)
+  }
+
   const monthNav = (
     <div className="flex items-center gap-2">
       <Button
@@ -482,6 +597,7 @@ export function MarketingMonthView({
   )
 
   if (report.emptyState) {
+    const note = monthPrivateGroupsNote(report.privateGroups)
     return (
       <div className="space-y-4">
         {monthNav}
@@ -490,13 +606,17 @@ export function MarketingMonthView({
           title={report.emptyState.title}
           description={report.emptyState.description}
         />
+        {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
       </div>
     )
   }
 
   const dayHref = (date: string) => `/${tenantSlug}/estadisticas/como-nos-fue?vista=dia&dia=${date}`
+  // Sale del mes con lo optimista aplicado: lo que se ve arriba y la dona no se contradicen.
+  const share = monthMoneyShare(report)
 
   const calloutRows = pinOpenPendingRow(report.pending?.rows ?? [], openRow, report.editions)
+  const privateNote = monthPrivateGroupsNote(report.privateGroups)
 
   // La edición abierta, con la fila de AHORA (un refresh trae lo que guardó otro
   // dueño y el form lo muestra); la foto solo si ya no está en el mes.
@@ -636,6 +756,7 @@ export function MarketingMonthView({
               // Con fila ya cargada (incompleta, o la clavada que otro dueño
               // completó) «No tuvo pauta» no aplica: el server lo rebota.
               const canMarkNoAds = p.row === null
+              const privateCopy = privateGroupPendingCopy(p.title, p.date)
               return (
                 <li key={p.eventId} className="ev-ink py-3 last:pb-0" style={inkStyle(p.colorHex)}>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -652,8 +773,10 @@ export function MarketingMonthView({
                         </span>
                       ) : null}
                     </div>
-                    {/* En el teléfono los botones van en su propia línea y a lo
-                        ancho: dos blancos de 40px en vez de dos links chicos. */}
+                    {/* En el teléfono los botones van en su propia línea: «Cargar»
+                        a lo ancho y abajo «No tuvo pauta» y «Grupo privado» de a
+                        dos (blancos de 40 px, no links chicos). Desde `sm`, en
+                        línea. */}
                     <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
                       <Button
                         ref={(el) => {
@@ -663,7 +786,7 @@ export function MarketingMonthView({
                         type="button"
                         variant="outline"
                         size="sm"
-                        className={cn('h-10 gap-1.5 sm:h-8', !canMarkNoAds && 'col-span-2')}
+                        className="col-span-2 h-10 gap-1.5 sm:h-8"
                         aria-label={p.cargarAriaLabel}
                         aria-expanded={open}
                         onClick={() => {
@@ -686,6 +809,23 @@ export function MarketingMonthView({
                           }}
                         >
                           No tuvo pauta
+                        </Button>
+                      )}
+                      {/* Solo sin fila de pauta: una fecha con pauta gastada es un
+                          evento, y la base lo frena igual. */}
+                      {!canMarkNoAds ? null : (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-10 gap-1.5 sm:h-8"
+                          aria-label={privateCopy.ariaLabel}
+                          onClick={() => {
+                            void markPrivateGroup(p)
+                          }}
+                        >
+                          <Lock aria-hidden className="size-3.5" />
+                          {privateCopy.label}
                         </Button>
                       )}
                     </div>
@@ -760,6 +900,11 @@ export function MarketingMonthView({
 
       {report.tiles.length > 0 ? <MonthTiles tiles={report.tiles} /> : null}
 
+      {/* La dona del mes (C6): la misma cuenta del resultado del mes (fechas
+          CON pauta, con ingreso, costo y dólar), repartida. Sin esa cuenta no
+          hay dona ni nada en su lugar. */}
+      {share ? <MoneyShareDonut data={share} headingLevel="h3" /> : null}
+
       {report.rows.length > 0 ? (
         <section aria-labelledby={listTitleId} className="card-hairline rounded-xl border bg-card">
           <header className="border-b border-border/60 px-4 py-3">
@@ -804,6 +949,9 @@ export function MarketingMonthView({
         {report.footnotes.map((f) => (
           <li key={f}>{f}</li>
         ))}
+        {/* Los grupos privados del mes no son ediciones (C1): se nombran para
+            que nadie los busque en la lista. */}
+        {privateNote ? <li>{privateNote}</li> : null}
       </ul>
     </div>
   )

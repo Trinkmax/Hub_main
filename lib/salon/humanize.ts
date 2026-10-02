@@ -1,3 +1,5 @@
+import { privateGroupErrorMessage } from './private-groups'
+
 /**
  * Mapea códigos de error del SQL/RPC a mensajes amigables en español rioplatense.
  */
@@ -20,6 +22,11 @@ export function humanizeSalonError(message: string): string {
     return 'El evento programado ya no existe. Elegí otro.'
   if (m.includes('reservation_event_tenant_mismatch')) return 'Ese evento es de otro local.'
 
+  // Triggers de la migración 20261002120000: un grupo privado no lleva pauta
+  // ni la plata de la noche. Quien marca la fecha desde el calendario
+  // (anfitrión, cajero) no ve la pauta: el mensaje dice quién lo destraba.
+  const privateGroup = privateGroupErrorMessage(message)
+  if (privateGroup) return privateGroup
   if (m.includes('forbidden')) return 'No tenés permiso para esa acción.'
   if (m.includes('unauthenticated')) return 'Iniciá sesión de nuevo.'
   if (m.includes('reservation_not_found')) return 'La reserva no existe.'

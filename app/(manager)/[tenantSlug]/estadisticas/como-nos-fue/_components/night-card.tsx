@@ -1,11 +1,12 @@
 'use client'
 
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, Lock } from 'lucide-react'
 import Link from 'next/link'
 import type { CSSProperties, ReactNode } from 'react'
 import { eventInk } from '@/lib/salon/event-ink'
 import type { EventMarketingRow, MarketingPhase } from '@/lib/salon/event-marketing'
 import type { ReportBlock } from '@/lib/salon/events-report'
+import { PRIVATE_BLOCK_NOTE, PRIVATE_GROUP_CHIP } from '@/lib/salon/private-groups'
 import { cn } from '@/lib/utils'
 import { EventMarketingSection } from './event-marketing-section'
 import { TablesWall } from './tables-wall'
@@ -231,6 +232,14 @@ export function NightCard({
               {hora}
             </span>
           ) : null}
+          {/* Grupo privado (C1): su gente es de la noche, pero no es un evento.
+              Chip gris con candado, sin link a «Por evento», sin pauta ni cuenta. */}
+          {block.kind === 'private' ? (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted/60 px-1.5 text-[10px] font-medium leading-4 text-muted-foreground">
+              <Lock aria-hidden className="size-2.5" />
+              {PRIVATE_GROUP_CHIP}
+            </span>
+          ) : null}
         </div>
         {eventHref ? (
           <Link
@@ -242,6 +251,12 @@ export function NightCard({
           </Link>
         ) : null}
       </header>
+
+      {block.kind === 'private' ? (
+        <p className="-mt-3 mb-4 text-xs leading-snug text-muted-foreground">
+          {PRIVATE_BLOCK_NOTE}
+        </p>
+      ) : null}
 
       {vacio ? (
         <p className="text-sm text-muted-foreground">
