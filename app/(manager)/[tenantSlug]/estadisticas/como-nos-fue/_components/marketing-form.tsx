@@ -117,7 +117,8 @@ export type MarketingFormProps = {
   onKeepDraft?: (kept: KeptMarketingDraft | null) => void
   /**
    * Abre con «la plata de la noche» desplegada y el foco en su primer campo
-   * vacío: es a lo que se viene desde «Sumar la plata» de una noche sin pauta.
+   * vacío («Gastado» antes, si está vacío): es a lo que se viene desde el botón
+   * de «La cuenta de la noche» (02/10).
    */
   openMoney?: boolean
   className?: string
@@ -177,7 +178,8 @@ export function MarketingForm({
   const [baselineAt, setBaselineAt] = useState<string | null>(() =>
     marketingBaseline(initialDraft, row),
   )
-  const [initialFocus] = useState(() => firstEmptyField(opening, revenueVisible))
+  // Desde «La cuenta de la noche» el foco va a la plata (no a «Alcance»).
+  const [initialFocus] = useState(() => firstEmptyField(opening, revenueVisible, openMoney))
 
   const [touched, setTouched] = useState<ReadonlySet<MarketingField>>(() => new Set())
   const [submitted, setSubmitted] = useState(false)

@@ -12,7 +12,6 @@ import {
   marketingSentence,
   type NightMathStep,
   type NightResultReport,
-  nightResultReport,
   RETURN_DISCLAIMER,
   returnDetails,
   returnSentence,
@@ -138,9 +137,6 @@ export function MarketingReport({
   const ret = returnSentence(computeMarketingKpis(block, row))
   const details = returnDetails(block, row)
   const bullets = howItsCalculated(row)
-  // `null` = no hay un solo número de plata cargado: la sección entera no se
-  // dibuja, en vez de dibujar una cuenta llena de guiones.
-  const night = nightResultReport(block, row, phase)
 
   return (
     <div className={className}>
@@ -196,13 +192,9 @@ export function MarketingReport({
         </dl>
       ) : null}
 
-      {/* La cuenta de la noche va ANTES del retorno: es lo que el dueño pidió
-          («ahí podés calcular la ganancia»), y el retorno es un número de la
-          pauta, no de la noche. Cuando la facturación real está cargada, las dos
-          hablan de la misma plata: `revenueNote` dice cuál mandó, así ninguna
-          contradice a la otra. */}
-      {night ? <NightAccount night={night} className="mt-4" /> : null}
-
+      {/* «La cuenta de la noche» ya no vive acá: es una caja propia, SIEMPRE
+          presente, debajo de toda la sección «Pauta en Meta» (regla 13,
+          02/10). Ver `night-account-box.tsx`. */}
       {ret ? (
         <div className="mt-4 rounded-lg bg-secondary/40 p-3 @md:p-4">
           <p className={EYEBROW}>Retorno</p>
@@ -249,7 +241,8 @@ function MarketingNote({ notes }: { notes: string }) {
   )
 }
 
-function HowItsCalculated({ bullets }: { bullets: string[] }) {
+export function HowItsCalculated({ bullets }: { bullets: string[] }) {
+  if (bullets.length === 0) return null
   return (
     <Disclosure summary="¿Cómo se calcula?" className="mt-3">
       <ul className="max-w-prose list-disc space-y-1 pl-4 leading-relaxed text-muted-foreground">
@@ -262,15 +255,13 @@ function HowItsCalculated({ bullets }: { bullets: string[] }) {
 }
 
 /**
- * «La cuenta de la noche»: el recuadro que responde si la noche dejó plata. Lo
- * usan la pauta leída y la noche sin pauta, con los mismos textos.
+ * El cuerpo de «La cuenta de la noche»: titular, la cuenta paso a paso, lo que
+ * falta, el por persona, la base y la aclaración. La caja (título, estado y
+ * botón) la pone `NightAccountBox`.
  */
-function NightAccount({ night, className }: { night: NightResultReport; className?: string }) {
+export function NightAccountBody({ night }: { night: NightResultReport }) {
   return (
-    <section
-      className={cn('rounded-lg border border-border/60 bg-secondary/30 p-3 @md:p-4', className)}
-    >
-      <h5 className={EYEBROW}>La cuenta de la noche</h5>
+    <>
       {night.headline ? (
         <p
           className={cn(
@@ -323,36 +314,15 @@ function NightAccount({ night, className }: { night: NightResultReport; classNam
         </p>
       ) : null}
 
-      {/* La aclaración acompaña a un número: si no se pudo calcular ni uno
-          (una fecha sin nadie sentado), no hay nada que aclarar. */}
+      {/* La aclaración acompaña a un número: si no se pudo calcular ni uno, no
+          hay nada que aclarar. */}
       {night.headline ? (
         <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">{night.disclaimer}</p>
       ) : null}
-    </section>
+    </>
   )
 }
 
-/**
- * Una noche SIN pauta con su plata cargada (la noche orgánica): la cuenta de la
- * noche y nada de Meta. Sin cuenta que mostrar (solo una nota), queda la nota.
- */
-export function OrganicNightReport({
-  block,
-  row,
-  phase,
-  className,
-}: {
-  block: MarketingBlock
-  row: EventMarketingRow
-  phase: MarketingPhase
-  className?: string
-}) {
-  const night = nightResultReport(block, row, phase)
-  return (
-    <div className={className}>
-      {night ? <NightAccount night={night} className="mt-3" /> : null}
-      {row.notes ? <MarketingNote notes={row.notes} /> : null}
-      {night ? <HowItsCalculated bullets={howItsCalculated(row)} /> : null}
-    </div>
-  )
+export function MarketingNoteLine({ notes }: { notes: string }) {
+  return <MarketingNote notes={notes} />
 }

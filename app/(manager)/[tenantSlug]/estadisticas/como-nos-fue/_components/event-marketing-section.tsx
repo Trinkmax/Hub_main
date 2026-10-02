@@ -1,19 +1,19 @@
 'use client'
 
-import { Megaphone, Pencil, Plus } from 'lucide-react'
+import { Megaphone, Pencil } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   type EventMarketingRow,
-  hasNightAccount,
   loadedBeforeEventLine,
   loadedByLabel,
   type MarketingActionState,
   type MarketingBlock,
   type MarketingPhase,
   marketingStatusChip,
+  nightAccountView,
 } from '@/lib/salon/event-marketing'
 import { deleteEventMarketing, markEventWithoutAds } from '@/lib/salon/event-marketing-actions'
 import {
@@ -24,7 +24,8 @@ import {
 } from '@/lib/salon/event-marketing-draft'
 import { cn } from '@/lib/utils'
 import { MarketingForm } from './marketing-form'
-import { MarketingReport, OrganicNightReport } from './marketing-report'
+import { MarketingNoteLine, MarketingReport } from './marketing-report'
+import { NightAccountBox } from './night-account-box'
 
 /**
  * «Pauta en Meta» dentro de la ficha de un evento. Una máquina de estados chica:
@@ -33,8 +34,7 @@ import { MarketingReport, OrganicNightReport } from './marketing-report'
  * |---------------------|--------------------------------------|
  * | Sin cargar (pasada) | sin fila y la fecha ya pasó          |
  * | Sin cargar (en vivo)| sin fila, hoy o futura               |
- * | No tuvo pauta       | fila con gasto 0, sin plata (ofrece «Sumar la plata de la noche») |
- * | Noche orgánica      | fila con gasto 0 y su cuenta: se lee como la pauta, sin lo de Meta |
+ * | No tuvo pauta       | fila con gasto 0 (la plata de la noche, si la hay, va en su caja) |
  * | Editando            | el form abierto                      |
  * | Leyendo             | gasto > 0 (con chip Incompleta / Por ahora, y el aviso de "se cargó antes") |
  *
@@ -43,6 +43,12 @@ import { MarketingReport, OrganicNightReport } from './marketing-report'
  * props y la reemplaza. Para no parpadear entre las dos, lo local va atado a la
  * versión de props que había cuando se escribió (`propsAt`): en cuanto llega
  * otra versión, gana la del server. Nada de `useEffect` copiando props a estado.
+ *
+ * **Dos secciones, un formulario** (02/10): debajo de «Pauta en Meta» va
+ * SIEMPRE «La cuenta de la noche» (`NightAccountBox`, regla 13). Su botón abre
+ * el mismo formulario con la plata desplegada; mientras está abierto, el
+ * formulario ocupa el lugar de las dos (su vista previa ya muestra la cuenta),
+ * y al cerrarlo el foco vuelve al botón que lo abrió.
  *
  * **«No tuvo pauta» es optimista** con Deshacer 6 s (el patrón del tablero
  * operativo): es un click, casi siempre es cierto, y equivocarse se arregla con
@@ -107,8 +113,8 @@ export function EventMarketingSection({
   const row = local && local.propsAt === propsAt ? local.row : propsRow
 
   const [editing, setEditing] = useState(false)
-  // Se abrió desde «Sumar la plata de la noche»: el form arranca con esa
-  // sección desplegada y el foco adentro.
+  // Se abrió desde «La cuenta de la noche»: el form arranca con la plata
+  // desplegada y el foco adentro.
   const [withMoney, setWithMoney] = useState(false)
   // Lo tipeado antes de cancelar, con la versión contra la que se escribió:
   // vive mientras la ficha esté montada.
@@ -126,22 +132,34 @@ export function EventMarketingSection({
   // Cambiar). Al cerrar el form, o cuando el botón que se tocó desaparece, el
   // foco vuelve acá y no se pierde en el <body>.
   const actionRef = useRef<HTMLButtonElement>(null)
+  // El botón de «La cuenta de la noche»: si el form se abrió desde ahí, el foco
+  // vuelve ahí al cerrarlo.
+  const accountRef = useRef<HTMLButtonElement>(null)
+  const openedFrom = useRef<'pauta' | 'cuenta'>('pauta')
   const refocus = useRef(false)
   useEffect(() => {
     if (!refocus.current) return
     refocus.current = false
-    actionRef.current?.focus()
+    const target = openedFrom.current === 'cuenta' ? accountRef.current : actionRef.current
+    // «Desde la cuenta» vale para UN cierre del form. Si quedaba puesto, el
+    // próximo pedido de foco (el de «No tuvo pauta», que es de la pauta) iba a
+    // la caja de la cuenta en vez de a «Cambiar» o «Cargar pauta».
+    openedFrom.current = 'pauta'
+    ;(target ?? actionRef.current)?.focus()
   })
 
   const showLocal = (next: EventMarketingRow | null) =>
     setLocal({ row: next, propsAt: propsAtRef.current })
 
   const openForm = () => {
+    openedFrom.current = 'pauta'
     setWithMoney(false)
     setEditing(true)
   }
 
-  const openFormWithMoney = () => {
+  /** Desde «La cuenta de la noche»: el form abre con la plata desplegada y el foco adentro. */
+  const openFromAccount = () => {
+    openedFrom.current = 'cuenta'
     setWithMoney(true)
     setEditing(true)
   }
@@ -257,6 +275,28 @@ export function EventMarketingSection({
     </h4>
   )
 
+  // «La cuenta de la noche»: siempre, en cualquier estado de la pauta (regla 13).
+  // Apagada mientras «No tuvo pauta» espera al server (no hay versión contra la
+  // cual guardar), como «Cambiar».
+  const account = (
+    <NightAccountBox
+      view={nightAccountView(block, row, phase)}
+      row={row}
+      eventTitle={eventTitle}
+      eventDate={eventDate}
+      onAction={openFromAccount}
+      actionRef={accountRef}
+      disabled={busy || row?.updatedAt === ''}
+      className={className}
+    />
+  )
+  const withAccount = (pauta: ReactNode) => (
+    <>
+      {pauta}
+      {account}
+    </>
+  )
+
   // ─── Editando ───────────────────────────────────────────────────────────────
   if (editing) {
     return shell(
@@ -291,13 +331,52 @@ export function EventMarketingSection({
   // ─── Sin cargar ─────────────────────────────────────────────────────────────
   if (row === null) {
     if (phase === 'past') {
-      return shell(
+      return withAccount(
+        shell(
+          <>
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              {heading}
+              <span className="text-xs font-medium text-warning-text">Sin cargar</span>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 @sm:flex @sm:flex-wrap">
+              <Button
+                ref={actionRef}
+                variant="outline"
+                size="sm"
+                className="h-10 @sm:h-8"
+                aria-label={copy.loadAria}
+                onClick={openForm}
+                disabled={busy}
+              >
+                <Megaphone aria-hidden />
+                Cargar pauta
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-10 text-muted-foreground @sm:h-8"
+                aria-label={copy.noAdsAria}
+                onClick={() => void markNoAds()}
+                disabled={busy}
+              >
+                No tuvo pauta
+              </Button>
+            </div>
+          </>,
+        ),
+      )
+    }
+
+    // Hoy o futura: nada está "pendiente" todavía, así que nada va en ámbar ni
+    // se ofrece «No tuvo pauta» (la campaña puede arrancar mañana).
+    return withAccount(
+      shell(
         <>
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            {heading}
-            <span className="text-xs font-medium text-warning-text">Sin cargar</span>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 @sm:flex @sm:flex-wrap">
+          {heading}
+          <p className="mt-1.5 max-w-prose text-xs leading-relaxed text-muted-foreground">
+            Todavía no se cargó. Si la campaña ya está corriendo, cargala y la vas actualizando.
+          </p>
+          <div className="mt-3 flex">
             <Button
               ref={actionRef}
               variant="outline"
@@ -305,48 +384,13 @@ export function EventMarketingSection({
               className="h-10 @sm:h-8"
               aria-label={copy.loadAria}
               onClick={openForm}
-              disabled={busy}
             >
               <Megaphone aria-hidden />
               Cargar pauta
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-10 text-muted-foreground @sm:h-8"
-              aria-label={copy.noAdsAria}
-              onClick={() => void markNoAds()}
-              disabled={busy}
-            >
-              No tuvo pauta
-            </Button>
           </div>
         </>,
-      )
-    }
-
-    // Hoy o futura: nada está "pendiente" todavía, así que nada va en ámbar ni
-    // se ofrece «No tuvo pauta» (la campaña puede arrancar mañana).
-    return shell(
-      <>
-        {heading}
-        <p className="mt-1.5 max-w-prose text-xs leading-relaxed text-muted-foreground">
-          Todavía no se cargó. Si la campaña ya está corriendo, cargala y la vas actualizando.
-        </p>
-        <div className="mt-3 flex">
-          <Button
-            ref={actionRef}
-            variant="outline"
-            size="sm"
-            className="h-10 @sm:h-8"
-            aria-label={copy.loadAria}
-            onClick={openForm}
-          >
-            <Megaphone aria-hidden />
-            Cargar pauta
-          </Button>
-        </div>
-      </>,
+      ),
     )
   }
 
@@ -357,74 +401,40 @@ export function EventMarketingSection({
     // Mientras la marca optimista no vuelve del server no hay versión contra la
     // cual editar: el form haría un alta y rebotaría como stale.
     const unsaved = busy || row.updatedAt === ''
+    // La plata de la noche (si la hay) va en su caja, debajo: acá queda la
+    // marca, la firma cuando se cargó algo más que la marca, y la nota.
+    const signed = row.notes !== null || nightAccountView(block, row, phase).report !== null
 
-    // La noche orgánica, con su plata: se lee como una pauta cargada (firma y
-    // «Editar» arriba), pero sin nada de Meta.
-    if (hasNightAccount(row)) {
-      return shell(
+    return withAccount(
+      shell(
         <>
-          <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
             <div className="flex items-baseline gap-2">
               {heading}
               <span className="text-xs text-muted-foreground">{noAdsLabel}</span>
             </div>
             <div className="flex items-baseline gap-1">
-              <span className="text-[11px] tabular-nums text-muted-foreground">
-                {loadedByLabel(row)}
-              </span>
+              {signed && !unsaved ? (
+                <span className="text-[11px] tabular-nums text-muted-foreground">
+                  {loadedByLabel(row)}
+                </span>
+              ) : null}
               <Button
                 ref={actionRef}
                 variant="ghost"
                 size="sm"
                 className="-mr-2 h-10 px-2 text-xs @sm:h-7"
-                aria-label={copy.editAria}
+                aria-label={copy.changeAria}
                 onClick={openForm}
                 disabled={unsaved}
               >
-                <Pencil aria-hidden className="size-3.5" />
-                Editar
+                Cambiar
               </Button>
             </div>
-          </header>
-          <OrganicNightReport block={block} row={row} phase={phase} />
-        </>,
-      )
-    }
-
-    return shell(
-      <>
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-          <div className="flex items-baseline gap-2">
-            {heading}
-            <span className="text-xs text-muted-foreground">{noAdsLabel}</span>
           </div>
-          <Button
-            ref={actionRef}
-            variant="ghost"
-            size="sm"
-            className="-mr-2 h-10 px-2 text-xs @sm:h-7"
-            aria-label={copy.changeAria}
-            onClick={openForm}
-            disabled={unsaved}
-          >
-            Cambiar
-          </Button>
-        </div>
-        {/* Sin pauta la noche igual pudo dejar plata: una noche que se llenó
-            sola es justo la que más interesa saber cuánto dejó. */}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="-ml-2 mt-1 h-10 px-2 text-xs @sm:h-8"
-          aria-label={copy.addMoneyAria}
-          onClick={openFormWithMoney}
-          disabled={unsaved}
-        >
-          <Plus aria-hidden className="size-3.5" />
-          Sumar la plata de la noche
-        </Button>
-        {row.notes ? <OrganicNightReport block={block} row={row} phase={phase} /> : null}
-      </>,
+          {row.notes ? <MarketingNoteLine notes={row.notes} /> : null}
+        </>,
+      ),
     )
   }
 
@@ -432,46 +442,48 @@ export function EventMarketingSection({
   const chip = marketingStatusChip(row, phase)
   const beforeLine = loadedBeforeEventLine(row, eventDate, phase)
 
-  return shell(
-    <>
-      <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <div className="flex items-baseline gap-2">
-          {heading}
-          {chip ? <StatusChip text={chip.text} tone={chip.tone} /> : null}
-        </div>
-        <div className="flex items-baseline gap-1">
-          <span className="text-[11px] tabular-nums text-muted-foreground">
-            {loadedByLabel(row)}
-          </span>
-          <Button
-            ref={actionRef}
-            variant="ghost"
-            size="sm"
-            className="-mr-2 h-10 px-2 text-xs @sm:h-7"
-            aria-label={copy.editAria}
-            onClick={openForm}
-          >
-            <Pencil aria-hidden className="size-3.5" />
-            Editar
-          </Button>
-        </div>
-      </header>
+  return withAccount(
+    shell(
+      <>
+        <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <div className="flex items-baseline gap-2">
+            {heading}
+            {chip ? <StatusChip text={chip.text} tone={chip.tone} /> : null}
+          </div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-[11px] tabular-nums text-muted-foreground">
+              {loadedByLabel(row)}
+            </span>
+            <Button
+              ref={actionRef}
+              variant="ghost"
+              size="sm"
+              className="-mr-2 h-10 px-2 text-xs @sm:h-7"
+              aria-label={copy.editAria}
+              onClick={openForm}
+            >
+              <Pencil aria-hidden className="size-3.5" />
+              Editar
+            </Button>
+          </div>
+        </header>
 
-      {beforeLine ? (
-        <p className="mt-2 max-w-prose text-xs leading-relaxed text-muted-foreground">
-          {beforeLine}{' '}
-          <Button
-            variant="link"
-            className="h-auto p-0 text-xs"
-            aria-label={copy.updateAria}
-            onClick={openForm}
-          >
-            Actualizar
-          </Button>
-        </p>
-      ) : null}
+        {beforeLine ? (
+          <p className="mt-2 max-w-prose text-xs leading-relaxed text-muted-foreground">
+            {beforeLine}{' '}
+            <Button
+              variant="link"
+              className="h-auto p-0 text-xs"
+              aria-label={copy.updateAria}
+              onClick={openForm}
+            >
+              Actualizar
+            </Button>
+          </p>
+        ) : null}
 
-      <MarketingReport block={block} row={row} phase={phase} />
-    </>,
+        <MarketingReport block={block} row={row} phase={phase} />
+      </>,
+    ),
   )
 }

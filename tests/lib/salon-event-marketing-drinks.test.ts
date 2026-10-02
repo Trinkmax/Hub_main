@@ -5,7 +5,6 @@ import {
   type EventMarketingRow,
   hasDrinks,
   hasNightAccount,
-  howItsCalculated,
   MARKETING_EXPORT_HEADERS,
   MONTH_EXPORT_HEADERS,
   MONTH_FOOTNOTES,
@@ -15,6 +14,7 @@ import {
   marketingCsvCells,
   missingNightInputs,
   monthMarketingToCsv,
+  nightHowItsCalculated,
   nightResultReason,
   nightResultReport,
   noAdsResultLabel,
@@ -273,19 +273,20 @@ describe('la bebida en la cuenta de la noche', () => {
   it('regla 13: la bebida sola abre la cuenta; sin bebida, nada cambia', () => {
     expect(hasNightAccount(row({ drinkRevenuePerGuestArsCents: 0 }))).toBe(true)
     expect(hasNightAccount(row({ drinkCostPerGuestArsCents: 2_500_00 }))).toBe(true)
-    expect(hasNightAccount(row({ revenueArsCents: 2_480_000_00, usdArsRate: 1450 }))).toBe(false)
+    // La facturación sola también, con pauta (desde el 02/10: la caja está siempre).
+    expect(hasNightAccount(row({ revenueArsCents: 2_480_000_00, usdArsRate: 1450 }))).toBe(true)
     expect(hasDrinks(RAMEN_ROW)).toBe(false)
     // La fecha del ramen se lee EXACTAMENTE como antes: ni un «bebida» en ningún texto.
     const r = nightResultReport(RAMEN, RAMEN_ROW)
     expect(JSON.stringify(r)).not.toMatch(/bebida/)
-    expect(howItsCalculated(RAMEN_ROW).join(' ')).not.toMatch(/bebida/)
+    expect(nightHowItsCalculated(RAMEN_ROW).join(' ')).not.toMatch(/bebida/)
   })
 
   it('«¿Cómo se calcula?» nombra la bebida solo cuando está cargada', () => {
-    expect(howItsCalculated(BURGER_ROW)).toContain(
+    expect(nightHowItsCalculated(BURGER_ROW)).toContain(
       'Resultado de la noche: la gente por el ingreso por persona más el de bebida (o la facturación real, si está cargada, que ya trae la bebida), menos esa misma gente por el costo por persona más el de bebida, menos la pauta pasada a pesos con el dólar del día.',
     )
-    expect(howItsCalculated(ORGANIC_DRINKS)).toContain(
+    expect(nightHowItsCalculated(ORGANIC_DRINKS)).toContain(
       'Resultado de la noche: la gente por el ingreso por persona más el de bebida (o la facturación real, si está cargada, que ya trae la bebida), menos esa misma gente por el costo por persona más el de bebida. Sin pauta no hay nada más que restar.',
     )
   })

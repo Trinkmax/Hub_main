@@ -28,6 +28,8 @@ import {
   type MarketingPhase,
   type MonthEdition,
   type MonthPendingRow,
+  NIGHT_ACCOUNT_ACTION_LABELS,
+  type NightAccountAction,
   type NumberKind,
   type ParsedNumber,
   parseLocaleNumber,
@@ -499,8 +501,24 @@ export function blockedSaveMessage(
  * Dónde cae el foco al abrir: el primer campo vacío. Si ya está todo, «Gastado».
  * Los de plata entran solo si su sección está abierta (y la facturación, además,
  * si la fecha la admite).
+ *
+ * `moneyFirst` es para cuando se abre desde «La cuenta de la noche» (02/10):
+ * ahí se vino a cargar la plata, así que el foco va a su primer campo vacío y
+ * no a «Alcance», que es opcional. «Gastado» vacío va primero igual: sin él no
+ * se puede guardar (0 si no hubo pauta).
  */
-export function firstEmptyField(draft: MarketingDraft, revenueVisible: boolean): MarketingField {
+export function firstEmptyField(
+  draft: MarketingDraft,
+  revenueVisible: boolean,
+  moneyFirst = false,
+): MarketingField {
+  if (moneyFirst && draft.adSpendUsd.trim() !== '') {
+    for (const field of MARKETING_MONEY_FIELDS) {
+      if (!marketingFieldEnabled(field, draft, revenueVisible)) continue
+      if (draft[field].trim() === '') return field
+    }
+    return 'revenuePerGuestArs'
+  }
   for (const field of MARKETING_FIELD_ORDER) {
     if (field === 'notes') continue
     if (!marketingFieldEnabled(field, draft, revenueVisible)) continue
@@ -577,7 +595,12 @@ export function marketingCopy(title: string, eventDate: string) {
     loadAria: `Cargar pauta de ${of}`,
     noAdsAria: `No tuvo pauta: ${of}`,
     changeAria: `Cambiar la pauta de ${of}`,
-    addMoneyAria: `Sumar la plata de la noche de ${of}`,
+    // «La cuenta de la noche» (02/10): el botón de la caja, en sus tres estados.
+    nightAria: {
+      load: `${NIGHT_ACCOUNT_ACTION_LABELS.load} de ${of}`,
+      complete: `${NIGHT_ACCOUNT_ACTION_LABELS.complete} de ${of}`,
+      edit: `${NIGHT_ACCOUNT_ACTION_LABELS.edit} de ${of}`,
+    } satisfies Record<NightAccountAction, string>,
     updateAria: `Actualizar la pauta de ${of}`,
     deleteTitle: `¿Borrar la pauta de ${of}?`,
     deleteDescription: 'La fecha vuelve a quedar «Sin cargar». Los números de gente no cambian.',

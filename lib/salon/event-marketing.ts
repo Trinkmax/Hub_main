@@ -46,13 +46,19 @@
  *     el mismo criterio que el motor de comisiones. La pauta sigue
  *     repartiéndose entre las reservas en pie y su gente, que es lo que el
  *     anuncio trajo: son dos bases distintas y cada texto nombra la suya.
- * 13. **La cuenta de la noche existe si hay algún dato por persona**: ingreso,
- *     costo o algo de la bebida. Lo decide `hasNightAccount` y nada más: la
- *     ficha, la planilla y la vista previa preguntan lo mismo. Una fecha vieja
- *     —facturación y dólar, sin los números por persona— se sigue viendo como
- *     se veía. En una noche SIN pauta alcanza con la facturación: no hay
- *     recuadro «Retorno» que la muestre, y sin la cuenta quedaría cargada y sin
- *     dibujarse en ningún lado.
+ * 13. **La cuenta de la noche está SIEMPRE en la ficha de un evento** (02/10,
+ *     C2 de los socios: «para el ojo de los que leemos los reportes, es ideal
+ *     que siempre tenga la misma info»). Es una caja propia debajo de «Pauta en
+ *     Meta», con la misma anatomía en todas las fechas: título, estado, lo que
+ *     haya y un botón. Sin ningún dato de la noche (sin fila, o con la fila
+ *     pero sin ingreso, costo, bebida ni facturación) dice «Sin cargar», nombra
+ *     TODO lo que falta y ofrece «Cargar la cuenta»; con algo cargado muestra
+ *     la cuenta hasta donde da y dice qué falta («Completar la cuenta»); cerrada,
+ *     «Editar la cuenta»; sin gente lo dice. El estado lo decide
+ *     `nightAccountView` y nada más. Si hay algo calculable lo decide
+ *     `hasNightAccount` (algún dato por persona o la facturación real, con o
+ *     sin pauta), y la planilla y la vista previa preguntan lo mismo. Reemplaza
+ *     a «una fecha vieja se sigue viendo como se veía» (19/09).
  * 14. **Sin pauta también hay cuenta.** Una noche orgánica (gasto 0) lleva su
  *     ingreso, su costo y su resultado, con pauta $ 0 dicha en palabras («sin
  *     pauta»). Lo que no lleva son los números de Meta ni el dólar. No suma en
@@ -636,27 +642,22 @@ function missingPhrase(inputs: ReadonlyArray<NightInput>, dollar: boolean): stri
 }
 
 /**
- * ¿Esta fecha tiene la cuenta de la noche? La decide UN dato: que el dueño haya
- * cargado algo por persona (ingreso, costo o la bebida). Es la regla 13 y manda
- * en los tres lados (ficha, planilla y vista previa), así que vive en una sola
- * función.
+ * ¿Esta fecha tiene algo de la cuenta de la noche cargado? Ingreso, costo o
+ * bebida por persona, o la facturación real de la caja. Es la regla 13 y
+ * manda en los tres lados (ficha, planilla y vista previa), así que vive en una
+ * sola función. El dólar no cuenta: es de la pauta, no de la noche.
  *
- * La facturación sola NO alcanza, aunque sea plata. Las fechas que ya estaban
- * cargadas antes de esta pantalla tienen facturación y dólar y nada más: si
- * contaran, a las doce les aparecería de un día para el otro una sección nueva
- * que repite la facturación que el recuadro «Retorno» ya muestra y que encima
- * reclama en ámbar un dato que nadie les pidió. Una fecha vieja se sigue
- * viendo como se veía; la cuenta aparece cuando el dueño la empieza a cargar.
+ * Desde el 02/10 la facturación sola alcanza también CON pauta: la cuenta está
+ * siempre en la ficha (`nightAccountView`), y una facturación cargada que no
+ * aparece en la cuenta sería un dato escondido.
  */
 export function hasNightAccount(row: EventMarketingRow): boolean {
-  if (row.revenuePerGuestArsCents !== null || row.costPerGuestArsCents !== null) return true
-  // La bebida también es un dato por persona que el dueño empieza a cargar a
-  // propósito. Las fechas viejas la tienen en null: no cambian.
-  if (hasDrinks(row)) return true
-  // Sin pauta no hay recuadro «Retorno»: la facturación sola se dibuja acá o en
-  // ningún lado. Con pauta, la muestra el «Retorno» (y las fechas viejas no
-  // cambian).
-  return row.adSpendUsdCents <= 0 && row.revenueArsCents !== null
+  return (
+    row.revenuePerGuestArsCents !== null ||
+    row.costPerGuestArsCents !== null ||
+    hasDrinks(row) ||
+    row.revenueArsCents !== null
+  )
 }
 
 /**
@@ -1245,7 +1246,7 @@ export function nightResultReport(
     perGuestAfterAds,
     basis: steps.length > 0 ? guestBasisLine(block) : null,
     revenueNote,
-    missing: nightMissingLine(block, row),
+    missing: nightMissingLine(block, row, phase),
     disclaimer: NIGHT_RESULT_DISCLAIMER,
   }
 }
@@ -1270,6 +1271,12 @@ function revenueUnitNote(perRevenue: number, drinkRevenue: number | null): strin
 }
 
 const NO_PEOPLE_LINE = 'No quedó ninguna reserva en pie: no hay gente con la que hacer la cuenta.'
+/** Hubo reservas, pero todas las mesas se cerraron con 0. */
+const COUNTED_ZERO_LINE =
+  'Se contaron 0 personas al cerrar las mesas: no hay gente con la que hacer la cuenta.'
+/** Hoy o a futuro sin nadie todavía: nada «quedó», la noche no pasó. */
+const LIVE_NO_PEOPLE_LINE =
+  'Todavía no hay reservas en pie: la cuenta se hace con la gente de la noche.'
 
 /** Se agrega cuando falta el ingreso de bebida: el 0 es la respuesta más común (el vino). */
 const DRINK_INCLUDED_TIP = 'Si la bebida está incluida, poné 0.'
@@ -1279,10 +1286,14 @@ const DRINK_INCLUDED_TIP = 'Si la bebida está incluida, poné 0.'
  * faltan a la vez, en el orden del formulario. Sin gente no hay cuenta, falte lo
  * que falte; con los datos completos, lo único que puede faltar es el dólar.
  */
-function nightMissingLine(block: MarketingBlock, row: EventMarketingRow): string | null {
+function nightMissingLine(
+  block: MarketingBlock,
+  row: EventMarketingRow,
+  phase: MarketingPhase = 'past',
+): string | null {
   const gap = nightGap(block, row)
   if (gap === null) return null
-  if (gap.kind === 'sin-gente') return NO_PEOPLE_LINE
+  if (gap.kind === 'sin-gente') return noPeopleLine(block, phase)
   if (gap.inputs.length > 0) {
     const tip = gap.inputs.includes('drinkRevenuePerGuest') ? ` ${DRINK_INCLUDED_TIP}` : ''
     return `${capitalize(missingInputsPhrase(gap.inputs))} para sacar el resultado de la noche.${tip}`
@@ -1291,6 +1302,158 @@ function nightMissingLine(block: MarketingBlock, row: EventMarketingRow): string
     return 'Falta el dólar del día para pasar la pauta a pesos: por ahora, esto es el margen bruto.'
   }
   return null
+}
+
+function noPeopleLine(block: MarketingBlock, phase: MarketingPhase): string {
+  if (phase !== 'past') return LIVE_NO_PEOPLE_LINE
+  return block.reservations > 0 ? COUNTED_ZERO_LINE : NO_PEOPLE_LINE
+}
+
+// ─── La caja «La cuenta de la noche» (regla 13, 02/10) ───────────────────────
+
+export const NIGHT_ACCOUNT_TITLE = 'La cuenta de la noche'
+
+export type NightAccountStatus = 'sin-cargar' | 'sin-gente' | 'incompleta' | 'completa'
+
+/** El botón de la caja. Los tres abren el MISMO formulario, con la plata desplegada. */
+export type NightAccountAction = 'load' | 'complete' | 'edit'
+
+/** Lo que dice el botón. El nombre accesible lo arma `marketingCopy` (lo contiene). */
+export const NIGHT_ACCOUNT_ACTION_LABELS: Readonly<Record<NightAccountAction, string>> = {
+  load: 'Cargar la cuenta',
+  complete: 'Completar la cuenta',
+  edit: 'Editar la cuenta',
+}
+
+/**
+ * Lo que dibuja la caja «La cuenta de la noche» de UNA ficha de evento, en
+ * cualquier estado. Siempre existe (regla 13): la ficha tiene la misma
+ * estructura en todas las fechas, cargadas o no.
+ */
+export type NightAccountView = {
+  status: NightAccountStatus
+  /**
+   * Al lado del título, con el trato de «Pauta en Meta»: «Sin cargar» en ámbar;
+   * «Incompleta» y «Por ahora» como chip. `null` = nada que marcar.
+   */
+  chip: { text: 'Sin cargar' | 'Incompleta' | 'Por ahora'; tone: 'warning' | 'muted' } | null
+  /**
+   * La frase que va en lugar de la cuenta cuando no hay nada calculado: lo que
+   * falta (sin cargar) o por qué no hay cuenta (sin gente). `null` cuando la
+   * cuenta (`report`) ya lo dice.
+   */
+  lead: string | null
+  /** La cuenta de siempre (`nightResultReport`), cuando hay algo cargado. */
+  report: NightResultReport | null
+  /**
+   * El botón: abre el formulario de la fecha con «Sumar la plata de la noche»
+   * desplegado y el foco en el primer campo vacío. `null` solo en una fecha que
+   * ya pasó sin gente: cargar plata no arreglaría la cuenta.
+   */
+  action: NightAccountAction | null
+}
+
+const FOR_RESULT = 'para saber si la noche dejó plata.'
+const LIVE_EARLY =
+  'El ingreso y el costo por persona se pueden cargar antes: el cubierto se sabe de antemano.'
+
+/**
+ * Qué le falta a una fecha que ya pasó y no tiene NADA de la cuenta cargado,
+ * entero: sin fila, también la pauta (el formulario la pide, aunque sea 0); con
+ * pauta y sin dólar, también el dólar.
+ */
+function emptyAccountLead(row: EventMarketingRow | null): string {
+  if (row === null) return `Faltan la pauta, el ingreso y el costo por persona ${FOR_RESULT}`
+  const dollar = row.adSpendUsdCents > 0 && !(row.usdArsRate !== null && row.usdArsRate > 0)
+  return dollar
+    ? `Faltan el ingreso y el costo por persona, y el dólar del día, ${FOR_RESULT}`
+    : `Faltan el ingreso y el costo por persona ${FOR_RESULT}`
+}
+
+/**
+ * La caja «La cuenta de la noche», en cualquier estado (regla 13). Sin fila de
+ * pauta también: `row === null` es «Sin cargar», nunca «no hay caja».
+ *
+ * | status       | cuándo                                                 | chip (pasada / hoy-futura) | botón    |
+ * |--------------|--------------------------------------------------------|----------------------------|----------|
+ * | `sin-cargar` | ningún dato de la noche (sin fila, o fila sin ingreso, costo, bebida ni facturación) | Sin cargar / — | load |
+ * | `sin-gente`  | ya pasó y no hay nadie con quien multiplicar            | — / (no aplica)            | —        |
+ * | `incompleta` | algo cargado y el resultado no cierra                  | Incompleta / Por ahora     | complete |
+ * | `completa`   | el resultado cierra                                    | — / Por ahora              | edit     |
+ *
+ * Hoy o a futuro sin gente todavía no es «sin gente»: la noche no pasó. Va
+ * como `incompleta` (con «Por ahora») y la cuenta dice que falta la gente.
+ */
+export function nightAccountView(
+  block: MarketingBlock,
+  row: EventMarketingRow | null,
+  phase: MarketingPhase,
+): NightAccountView {
+  const live = phase !== 'past'
+  if (row === null || !hasNightAccount(row)) {
+    if (live) {
+      return {
+        status: 'sin-cargar',
+        chip: null,
+        lead:
+          block.billableGuests > 0
+            ? `Todavía no se cargó. ${LIVE_EARLY}`
+            : `${LIVE_NO_PEOPLE_LINE} ${LIVE_EARLY}`,
+        report: null,
+        action: 'load',
+      }
+    }
+    // Sin gente no se pide plata: cargarla no arreglaría la cuenta (mismo
+    // criterio que «Rentabilidad»: «sin gente» va antes que «sin cargar»).
+    if (block.billableGuests <= 0) {
+      return {
+        status: 'sin-gente',
+        chip: null,
+        lead: noPeopleLine(block, phase),
+        report: null,
+        action: null,
+      }
+    }
+    return {
+      status: 'sin-cargar',
+      chip: { text: 'Sin cargar', tone: 'warning' },
+      lead: emptyAccountLead(row),
+      report: null,
+      action: 'load',
+    }
+  }
+
+  const report = nightResultReport(block, row, phase)
+  if (computeMarketingKpis(block, row).nightResultArs.ok) {
+    return {
+      status: 'completa',
+      chip: live ? { text: 'Por ahora', tone: 'muted' } : null,
+      lead: null,
+      report,
+      // Siempre el mismo botón en el mismo lugar: en una noche sin pauta es el
+      // único camino a la vista para corregir la cuenta («Cambiar» es de la pauta).
+      action: 'edit',
+    }
+  }
+  if (!live && block.billableGuests <= 0) {
+    // `report.missing` ya dice por qué (`noPeopleLine`).
+    return { status: 'sin-gente', chip: null, lead: null, report, action: null }
+  }
+  return {
+    status: 'incompleta',
+    chip: live ? { text: 'Por ahora', tone: 'muted' } : { text: 'Incompleta', tone: 'warning' },
+    lead: null,
+    report,
+    // Hoy o a futuro sin gente con los datos ya completos: no falta nada que
+    // cargar, falta la noche. El botón edita lo que hay.
+    action: block.billableGuests <= 0 && !lacksLoadableData(row) ? 'edit' : 'complete',
+  }
+}
+
+/** ¿Le falta algo que se carga en el formulario? Datos por persona, o el dólar si hubo pauta. */
+function lacksLoadableData(row: EventMarketingRow): boolean {
+  const dollar = row.adSpendUsdCents > 0 && !(row.usdArsRate !== null && row.usdArsRate > 0)
+  return dollar || missingNightInputs(row).length > 0
 }
 
 export type KpiTileKind = 'costPerMessage' | 'closingRate' | 'costPerReservation'
@@ -1384,52 +1547,62 @@ export function fichaItems(
   return items
 }
 
-/** Los bullets de «¿Cómo se calcula?». Los de alcance y retorno aparecen solo si aplican. */
+const RESERVATIONS_AS_NOW =
+  'Las reservas se toman como están ahora: si se cancela una, estos números cambian.'
+
+/**
+ * Los bullets de «¿Cómo se calcula?» de «Pauta en Meta». Los de la cuenta de la
+ * noche viven en su caja (`nightHowItsCalculated`, regla 13). Una noche sin
+ * pauta no tiene nada de Meta que explicar: lista vacía y el desplegable no se
+ * dibuja.
+ */
 export function howItsCalculated(row: EventMarketingRow): string[] {
-  // Una noche orgánica no tiene nada de Meta que explicar: solo su cuenta.
-  const organic = row.adSpendUsdCents <= 0
-  const bullets = organic
-    ? []
-    : [
-        'Por mensaje: lo gastado dividido los mensajes. Tiene que parecerse al «Costo por resultado» de Meta.',
-        'De cierre: reservas en pie de la fecha sobre mensajes. Cuenta todas las reservas, también las que no pasaron por el anuncio, así que es lo máximo que pudo cerrar la pauta.',
-        'Por reserva y por persona: la pauta repartida entre las reservas en pie y su gente. Si parte llegó por otro lado, cada reserva de la pauta costó más.',
-        'Mensajes: Meta no vuelve a contar a quien escribe de nuevo dentro de los 7 días.',
-      ]
+  if (row.adSpendUsdCents <= 0) return []
+  const bullets = [
+    'Por mensaje: lo gastado dividido los mensajes. Tiene que parecerse al «Costo por resultado» de Meta.',
+    'De cierre: reservas en pie de la fecha sobre mensajes. Cuenta todas las reservas, también las que no pasaron por el anuncio, así que es lo máximo que pudo cerrar la pauta.',
+    'Por reserva y por persona: la pauta repartida entre las reservas en pie y su gente. Si parte llegó por otro lado, cada reserva de la pauta costó más.',
+    'Mensajes: Meta no vuelve a contar a quien escribe de nuevo dentro de los 7 días.',
+  ]
   if (row.reach !== null && row.reach > 0) {
     bullets.push('Cada 1.000 alcanzados no es el CPM de Meta: ese es por cada 1.000 impresiones.')
   }
-  const conRetorno = row.adSpendUsdCents > 0 && hasRevenue(row)
-  if (conRetorno) {
+  if (hasRevenue(row)) {
+    // El «por persona» del recuadro reparte la facturación entre la gente de la
+    // cuenta de la noche: se nombra acá, porque su explicación larga vive en la
+    // otra caja.
     bullets.push(
-      'Retorno: la facturación pasada a dólares con el dólar cargado, dividida la pauta.',
+      'Retorno: la facturación pasada a dólares con el dólar cargado, dividida la pauta. Su «por persona» reparte la facturación entre la misma gente que la cuenta de la noche.',
     )
   }
-  const conCuenta = hasNightAccount(row)
-  if (conCuenta) {
-    // Sin bebida cargada, las mismas palabras de siempre (regla 13).
-    const ingreso = hasDrinks(row)
+  bullets.push(RESERVATIONS_AS_NOW)
+  return bullets
+}
+
+/**
+ * Los bullets de «¿Cómo se calcula?» de «La cuenta de la noche». Van en todos
+ * los estados con gente, también «Sin cargar»: dicen qué hay que cargar. `row`
+ * en `null` = la fecha no tiene nada cargado: la versión general.
+ */
+export function nightHowItsCalculated(row: EventMarketingRow | null): string[] {
+  const organic = row !== null && row.adSpendUsdCents <= 0
+  // Sin bebida cargada, las mismas palabras de siempre (regla 15).
+  const ingreso =
+    row !== null && hasDrinks(row)
       ? 'la gente por el ingreso por persona más el de bebida (o la facturación real, si está cargada, que ya trae la bebida), menos esa misma gente por el costo por persona más el de bebida'
       : 'la gente por el ingreso por persona (o la facturación real, si está cargada), menos esa misma gente por el costo por persona'
-    bullets.push(
-      organic
+  return [
+    row === null
+      ? `Resultado de la noche: ${ingreso}, menos la pauta pasada a pesos con el dólar del día, si hubo pauta.`
+      : organic
         ? `Resultado de la noche: ${ingreso}. Sin pauta no hay nada más que restar.`
         : `Resultado de la noche: ${ingreso}, menos la pauta pasada a pesos con el dólar del día.`,
-    )
-  }
-  // La misma gente divide el «por persona» del recuadro «Retorno», que se
-  // dibuja con la facturación sola. Colgado de la cuenta de la noche, ese
-  // número se quedaba sin una sola línea que explicara su denominador.
-  if (conCuenta || conRetorno) {
-    bullets.push(
-      organic
-        ? 'La gente con la que se hace esa plata es la contada al cerrar cada mesa y, en las que quedaron sin cerrar, lo reservado.'
-        : 'La gente con la que se hace esa plata es la contada al cerrar cada mesa y, en las que quedaron sin cerrar, lo reservado. Por eso puede no coincidir con las personas reservadas que dividen la pauta.',
-    )
-  }
-  if (conCuenta) bullets.push(NIGHT_RESULT_DISCLAIMER)
-  bullets.push('Las reservas se toman como están ahora: si se cancela una, estos números cambian.')
-  return bullets
+    organic
+      ? 'La gente con la que se hace esa plata es la contada al cerrar cada mesa y, en las que quedaron sin cerrar, lo reservado.'
+      : 'La gente con la que se hace esa plata es la contada al cerrar cada mesa y, en las que quedaron sin cerrar, lo reservado. Por eso puede no coincidir con las personas reservadas que dividen la pauta.',
+    NIGHT_RESULT_DISCLAIMER,
+    RESERVATIONS_AS_NOW,
+  ]
 }
 
 /**
@@ -1504,11 +1677,13 @@ export function previewLines(
   const drinkCostPerGuest = values.drinkCostPerGuestArs ?? null
   const cents = (pesos: number | null) => (pesos === null ? null : Math.round(pesos * 100))
 
-  // Con «Gastado» vacío todavía no se sabe si hubo pauta, y la facturación sola
-  // solo abre la cuenta en una noche SIN pauta (regla 13): dejarla abrir acá
-  // haría aparecer la línea y borrarla en cuanto el dueño tipea el gasto.
+  // Sin ningún número de la noche (y con «Gastado» vacío) no hay cuenta que
+  // mostrar. Desde el 02/10 la facturación sola abre la cuenta con o sin pauta
+  // (regla 13), así que también cuenta acá: la línea aparece en cuanto se tipea
+  // y no desaparece al tipear el gasto.
   if (
     typedSpend === null &&
+    values.revenueArs === null &&
     revenuePerGuest === null &&
     costPerGuest === null &&
     drinkRevenuePerGuest === null &&
@@ -1519,8 +1694,8 @@ export function previewLines(
   // Se arma una fila "como si" y se la pasa por la misma cuenta de la pantalla:
   // el preview no puede tener aritmética propia o diría algo distinto al
   // guardar. También hereda de ahí cuándo NO hay cuenta (regla 13): mientras el
-  // dueño no toque ninguno de los dos campos nuevos, `nightResultReport`
-  // devuelve `null` y la línea no se agrega, en vez de una fila de guiones.
+  // dueño no cargue ningún número de la noche, `nightResultReport` devuelve
+  // `null` y la línea no se agrega, en vez de una fila de guiones.
   const adSpendUsdCents = spend === null ? 0 : Math.round(spend * 100)
   const night = nightResultReport(
     block,
@@ -1572,6 +1747,40 @@ export function previewLines(
 
 // ─── Tira de ediciones (Por evento) ──────────────────────────────────────────
 
+/**
+ * Qué dice la tira de la pauta de una fecha que YA PASÓ con gasto > 0: los tres
+ * cocientes (por mensaje, cierre, por reserva) o por qué no hay ninguno
+ * (`sin-mensajes` = «faltan los mensajes», `cero-mensajes` = «no escribió
+ * nadie», `cero-reservas` = «ninguna reserva en pie»).
+ */
+export type PastEditionQuotients =
+  | { kind: 'sin-mensajes' }
+  | { kind: 'cero-mensajes' }
+  | { kind: 'cero-reservas'; messages: number }
+  | { kind: 'cocientes'; messages: number; kpis: MarketingKpis }
+
+/**
+ * Los cocientes de Meta de una fecha que ya pasó con gasto > 0 (quien llama
+ * resuelve antes «Pauta sin cargar», «Sin pauta» y «Por ahora»).
+ *
+ * La segunda línea de la tira (`editionMarketingLine`) y la planilla de
+ * «Conversión» (`eventConversionToCsv`) salen de ESTA función (regla 9): sin
+ * los mensajes, con 0 mensajes o sin ninguna reserva en pie, la línea lo dice
+ * en palabras y la planilla deja vacías esas tres celdas. Antes la planilla
+ * calculaba por su lado y traía, por ejemplo, el costo por reserva de una fecha
+ * que en pantalla decía «faltan los mensajes».
+ */
+export function pastEditionQuotients(
+  edition: MarketingBlock,
+  row: EventMarketingRow,
+): PastEditionQuotients {
+  const { messages } = row
+  if (messages === null) return { kind: 'sin-mensajes' }
+  if (messages === 0) return { kind: 'cero-mensajes' }
+  if (edition.reservations === 0) return { kind: 'cero-reservas', messages }
+  return { kind: 'cocientes', messages, kpis: computeMarketingKpis(edition, row) }
+}
+
 /** La segunda línea de cada edición en la tira. `null` cuando no hay nada que decir. */
 export function editionMarketingLine(
   edition: MarketingBlock,
@@ -1590,24 +1799,34 @@ export function editionMarketingLine(
     return { text: `Por ahora: pauta ${spend}${tail}`, tone: 'muted' }
   }
 
-  if (messages === null) return { text: `Pauta ${spend} · faltan los mensajes`, tone: 'muted' }
-  if (messages === 0) return { text: `Pauta ${spend} · no escribió nadie`, tone: 'muted' }
-  if (edition.reservations === 0) {
+  // Sin cocientes se dice en palabras por qué. La planilla de «Conversión» lee
+  // la misma función y en estos casos deja vacías las celdas de los cocientes.
+  const q = pastEditionQuotients(edition, row)
+  if (q.kind === 'sin-mensajes') {
+    return { text: `Pauta ${spend} · faltan los mensajes`, tone: 'muted' }
+  }
+  if (q.kind === 'cero-mensajes') {
+    return { text: `Pauta ${spend} · no escribió nadie`, tone: 'muted' }
+  }
+  if (q.kind === 'cero-reservas') {
     return {
-      text: `Pauta ${spend} · ${mensajes(messages)} · ninguna reserva en pie`,
+      text: `Pauta ${spend} · ${mensajes(q.messages)} · ninguna reserva en pie`,
       tone: 'muted',
     }
   }
 
-  const k = computeMarketingKpis(edition, row)
+  const k = q.kpis
   const closing = k.closingRate.ok
     ? `${formatPercent(k.closingRate.value)} de cierre`
     : 'más reservas que mensajes'
   const perReservation = k.costPerReservationUsd.ok
     ? ` · ${formatUsd(k.costPerReservationUsd.value)} por reserva`
     : ''
+  // El costo por mensaje va en la línea (02/10): el cuadro «Conversión» se
+  // exporta tal cual, y la planilla lo trae por fecha.
+  const perMessage = k.costPerMessageUsd.ok ? ` a ${formatUsd(k.costPerMessageUsd.value)}` : ''
   return {
-    text: `Pauta ${spend} · ${mensajes(messages)} · ${closing}${perReservation}`,
+    text: `Pauta ${spend} · ${mensajes(q.messages)}${perMessage} · ${closing}${perReservation}`,
     tone: 'muted',
   }
 }

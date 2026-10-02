@@ -32,10 +32,12 @@ import {
   marketingStatusChip,
   monthMarketingToCsv,
   NIGHT_RESULT_DISCLAIMER,
+  nightHowItsCalculated,
   nightResultReport,
   noAdsResultLabel,
   type PoolItem,
   parseLocaleNumber,
+  pastEditionQuotients,
   phaseOf,
   pooledStripSummary,
   poolMarketing,
@@ -639,16 +641,19 @@ describe('nightResultReport', () => {
     )
   })
 
-  it('sin pauta, la facturación sola ya abre la cuenta (no hay «Retorno» que la muestre)', () => {
+  it('la facturación sola abre la cuenta, con o sin pauta (regla 13 del 02/10)', () => {
     const soloCaja = row({ adSpendUsdCents: 0, messages: null, revenueArsCents: 1_000_000_00 })
     expect(hasNightAccount(soloCaja)).toBe(true)
     const r = nightResultReport(RATATOUILLE, soloCaja)
     expect(r?.headline).toBe(nb('El ingreso de la noche fue $ 1.000.000.'))
     expect(r?.missing).toBe('Falta el costo por persona para sacar el resultado de la noche.')
-    // Con pauta, la facturación sola sigue siendo del «Retorno» (las fechas viejas no cambian).
-    expect(hasNightAccount(row({ revenueArsCents: 1_000_000_00, usdArsRate: 1450 }))).toBe(false)
-    // Marcada «No tuvo pauta» y nada más: no hay cuenta.
+    // Con pauta también, desde el 02/10: la caja está siempre en la ficha, y una
+    // facturación cargada que no aparece en la cuenta sería un dato escondido.
+    expect(hasNightAccount(row({ revenueArsCents: 1_000_000_00, usdArsRate: 1450 }))).toBe(true)
+    // Marcada «No tuvo pauta» y nada más: no hay cuenta (la caja dice «Sin cargar»).
     expect(hasNightAccount(row({ adSpendUsdCents: 0, messages: null }))).toBe(false)
+    // El dólar solo no es un dato de la noche.
+    expect(hasNightAccount(row({ usdArsRate: 1450 }))).toBe(false)
   })
 
   it('a medio cargar: dice lo que ya da y qué falta', () => {
@@ -673,13 +678,13 @@ describe('nightResultReport', () => {
     expect(nightResultReport(RAMEN, row({ costPerGuestArsCents: 15_000_00 }))).not.toBeNull()
   })
 
-  it('una fecha vieja —facturación y dólar— se sigue viendo como se veía', () => {
-    // Las doce fechas que ya estaban cargadas cuando llegó esta pantalla no
-    // tienen ingreso ni costo por persona. Si la facturación sola prendiera la
-    // sección, a las doce les aparecería una cuenta que repite la facturación
-    // que «Retorno» ya muestra y que encima reclama en ámbar un dato que nadie
-    // les pidió.
-    expect(nightResultReport(ASTRAL, ASTRAL_FULL)).toBeNull()
+  it('una fecha con facturación y dólar, sin los por persona, muestra la cuenta hasta donde da', () => {
+    // Reemplaza a «una fecha vieja se sigue viendo como se veía» (regla 13 del
+    // 19/09): desde el 02/10 la cuenta está SIEMPRE, con la misma estructura.
+    const r = nightResultReport(ASTRAL, ASTRAL_FULL)
+    expect(r?.headline).toBe(nb('El ingreso de la noche fue $ 2.480.000.'))
+    expect(r?.missing).toBe('Falta el costo por persona para sacar el resultado de la noche.')
+    // «¿Cómo se calcula?» de la pauta habla solo de la pauta: la cuenta tiene el suyo.
     expect(howItsCalculated(ASTRAL_FULL).some((b) => b.startsWith('Resultado de la noche'))).toBe(
       false,
     )
@@ -766,15 +771,21 @@ describe('nightResultReport', () => {
     expect(futura?.headline).toBe(nb('Por ahora la noche va $ 341.127 abajo.'))
   })
 
-  it('«¿Cómo se calcula?» explica la cuenta solo cuando hay algo que explicar', () => {
+  it('«¿Cómo se calcula?» está partido en dos: la pauta y la cuenta (02/10)', () => {
+    // El de la pauta nunca habla de la cuenta: la cuenta tiene su caja y su desplegable.
     expect(howItsCalculated(row()).some((b) => b.startsWith('Resultado de la noche'))).toBe(false)
-    const bullets = howItsCalculated(RAMEN_ROW)
+    expect(howItsCalculated(RAMEN_ROW).some((b) => b.startsWith('Resultado de la noche'))).toBe(
+      false,
+    )
+    const bullets = nightHowItsCalculated(RAMEN_ROW)
     expect(bullets.some((b) => b.startsWith('Resultado de la noche'))).toBe(true)
     expect(bullets).toContain(NIGHT_RESULT_DISCLAIMER)
     // Y avisa que la gente de la cuenta no es la que divide la pauta.
     expect(bullets.some((b) => b.includes('puede no coincidir con las personas reservadas'))).toBe(
       true,
     )
+    // Sin nada cargado («Sin cargar») también explica qué se carga.
+    expect(nightHowItsCalculated(null)[0]).toMatch(/^Resultado de la noche: .*si hubo pauta\.$/)
   })
 })
 
@@ -913,9 +924,14 @@ describe('returnSentence y returnDetails', () => {
       value: nb('$ 91.852'),
       after: ' por cada una de las 27 personas que consumieron',
     })
-    // Y el bullet que explica qué gente es aparece aunque no haya cuenta.
+    // El bullet del «Retorno» nombra esa gente; la caja de la cuenta la explica.
     expect(
       howItsCalculated(ASTRAL_FULL).some((b) =>
+        b.includes('la misma gente que la cuenta de la noche'),
+      ),
+    ).toBe(true)
+    expect(
+      nightHowItsCalculated(ASTRAL_FULL).some((b) =>
         b.includes('puede no coincidir con las personas reservadas'),
       ),
     ).toBe(true)
@@ -1078,7 +1094,7 @@ describe('previewLines', () => {
     )
   })
 
-  it('la cuenta de la noche aparece recién cuando se toca uno de los dos campos', () => {
+  it('la cuenta de la noche aparece cuando hay algún número de la noche (regla 13)', () => {
     const sinTocar = previewLines(RAMEN, {
       adSpendUsd: 175.26,
       messages: 51,
@@ -1088,8 +1104,8 @@ describe('previewLines', () => {
     })
     expect(sinTocar).toHaveLength(3)
 
-    // Ni siquiera con la facturación cargada: es la regla 13, y la decide
-    // `nightResultReport`, no una copia de la condición acá adentro.
+    // La facturación sola también la abre (02/10), igual que en la ficha: la
+    // decide `nightResultReport`, no una copia de la condición acá adentro.
     const conFacturacion = previewLines(RAMEN, {
       adSpendUsd: 175.26,
       messages: 51,
@@ -1097,7 +1113,12 @@ describe('previewLines', () => {
       revenueArs: 2_480_000,
       usdArsRate: 1450,
     })
-    expect(conFacturacion).toHaveLength(3)
+    expect(conFacturacion).toHaveLength(4)
+    expect(conFacturacion[3]?.text).toBe(
+      nb(
+        'facturación $ 2.480.000 · Falta el costo por persona para sacar el resultado de la noche.',
+      ),
+    )
 
     const completa = previewLines(RAMEN, {
       adSpendUsd: 175.26,
@@ -1184,7 +1205,7 @@ describe('previewLines', () => {
     ])
   })
 
-  it('con Gastado vacío, la facturación sola no abre la cuenta (no se sabe si hubo pauta)', () => {
+  it('con Gastado vacío, la facturación sola ya muestra la línea y no desaparece al tipear el gasto', () => {
     const lines = previewLines(RAMEN, {
       adSpendUsd: null,
       messages: null,
@@ -1192,7 +1213,21 @@ describe('previewLines', () => {
       revenueArs: 2_480_000,
       usdArsRate: null,
     })
-    expect(lines).toHaveLength(3)
+    expect(lines).toHaveLength(4)
+    // Sin «Gastado», la cuenta no dice «sin pauta» (no se sabe) y nombra lo que falta.
+    expect(lines[3]?.text).toBe(
+      nb(
+        'facturación $ 2.480.000 · Falta el costo por persona para sacar el resultado de la noche.',
+      ),
+    )
+    const conGasto = previewLines(RAMEN, {
+      adSpendUsd: 175.26,
+      messages: null,
+      reach: null,
+      revenueArs: 2_480_000,
+      usdArsRate: null,
+    })
+    expect(conGasto).toHaveLength(4)
   })
 
   it('en una fecha que todavía no pasó, la previa habla como la ficha', () => {
@@ -1235,8 +1270,12 @@ describe('previewLines', () => {
 
 describe('editionMarketingLine (§9)', () => {
   it('cada estado de la tabla', () => {
+    // El costo por mensaje va en la línea (02/10): es lo que trae la planilla
+    // de «Conversión» por fecha (pantalla = CSV).
     expect(editionMarketingLine(ASTRAL, row(), 'past')).toEqual({
-      text: nb('Pauta US$ 175,26 · 51 mensajes · 21,6 % de cierre · US$ 15,93 por reserva'),
+      text: nb(
+        'Pauta US$ 175,26 · 51 mensajes a US$ 3,44 · 21,6 % de cierre · US$ 15,93 por reserva',
+      ),
       tone: 'muted',
     })
     expect(
@@ -1246,7 +1285,9 @@ describe('editionMarketingLine (§9)', () => {
         'past',
       ),
     ).toEqual({
-      text: nb('Pauta US$ 80,00 · 9 mensajes · más reservas que mensajes · US$ 5,71 por reserva'),
+      text: nb(
+        'Pauta US$ 80,00 · 9 mensajes a US$ 8,89 · más reservas que mensajes · US$ 5,71 por reserva',
+      ),
       tone: 'muted',
     })
     expect(
@@ -1283,6 +1324,29 @@ describe('editionMarketingLine (§9)', () => {
   it('hoy y lo futuro sin fila no dicen nada', () => {
     expect(editionMarketingLine(ASTRAL, null, 'future')).toBeNull()
     expect(editionMarketingLine(ASTRAL, null, 'tonight')).toBeNull()
+  })
+})
+
+// La línea y la planilla de «Conversión» deciden con esta función si dicen los
+// cocientes (02/10): antes la planilla traía el costo por reserva de una fecha
+// que en pantalla decía «faltan los mensajes».
+describe('pastEditionQuotients', () => {
+  it('sin los mensajes, con 0 o sin reservas en pie no hay cocientes, y dice por qué', () => {
+    expect(pastEditionQuotients(ASTRAL, row({ messages: null }))).toEqual({
+      kind: 'sin-mensajes',
+    })
+    expect(pastEditionQuotients(ASTRAL, row({ messages: 0 }))).toEqual({ kind: 'cero-mensajes' })
+    expect(
+      pastEditionQuotients({ reservations: 0, guests: 0, billableGuests: 0 }, row({ messages: 9 })),
+    ).toEqual({ kind: 'cero-reservas', messages: 9 })
+  })
+
+  it('con mensajes y reservas en pie, los de computeMarketingKpis', () => {
+    const q = pastEditionQuotients(ASTRAL, row())
+    expect(q.kind).toBe('cocientes')
+    if (q.kind !== 'cocientes') return
+    expect(q.messages).toBe(51)
+    expect(q.kpis).toEqual(computeMarketingKpis(ASTRAL, row()))
   })
 })
 
@@ -1664,11 +1728,20 @@ describe('CSV', () => {
       '1450',
       '9,76',
       '10,2',
-      // Sin ingreso ni costo por persona (ni bebida), esta fecha no tiene
-      // cuenta de la noche: las diez columnas van vacías. Escribir «Personas
-      // del cálculo» y «Pauta ARS» al lado de un «Margen ARS» vacío era invitar
-      // a restar en Excel dos celdas que no son la cuenta.
-      ...Array(10).fill(''),
+      // Desde el 02/10 la facturación sola abre la cuenta también con pauta
+      // (regla 13): sale la gente y el ingreso, y lo que falta va vacío, igual
+      // que en la caja. «Pauta ARS» sigue sin escribirse sin margen: sola, al
+      // lado de un «Margen ARS» vacío, invitaría a una resta que no es la cuenta.
+      '29',
+      '',
+      '',
+      '',
+      '',
+      '2480000',
+      '',
+      '',
+      '',
+      '',
       'Campaña de reels del 1/9 al 9/9',
     ])
   })
@@ -1678,10 +1751,12 @@ describe('CSV', () => {
     const to = MARKETING_EXPORT_HEADERS.indexOf('Nota')
     const night = (r: EventMarketingRow) => marketingCsvCells(ASTRAL, r).slice(from, to)
     const vacias = Array(10).fill('')
-    // Una fecha de las que ya estaban cargadas: facturación y dólar, nada más.
-    expect(night(ASTRAL_FULL)).toEqual(vacias)
-    // Y una pelada, que además tenía «Personas del cálculo» colgada sola.
+    // Facturación y dólar, nada más: desde el 02/10 ya hay cuenta (a medio hacer).
+    expect(night(ASTRAL_FULL)).not.toEqual(vacias)
+    // Una pelada (pauta sin nada de la noche) no: la caja dice «Sin cargar».
     expect(night(row())).toEqual(vacias)
+    // El dólar solo tampoco: es de la pauta, no de la noche.
+    expect(night(row({ usdArsRate: 1450 }))).toEqual(vacias)
     // Con un solo número por persona ya hay cuenta, aunque quede a medio hacer.
     expect(night(row({ revenuePerGuestArsCents: 27_000_00 }))).not.toEqual(vacias)
     expect(night(row({ costPerGuestArsCents: 15_000_00 }))).not.toEqual(vacias)
@@ -2169,10 +2244,11 @@ describe('buildMonthMarketingReport', () => {
       'Fecha;Evento;Estado;Personas;Reservas;Pauta USD;Mensajes;Alcance;Costo por mensaje USD;% de cierre;Costo por reserva USD;Costo por persona USD;Facturación ARS;Dólar;Retorno (USD facturados por USD de pauta);Pauta sobre facturación %;Personas del cálculo;Ingreso por persona ARS;Costo por persona ARS;Ingreso de bebida por persona ARS;Costo de bebida por persona ARS;Ingreso ARS;Costo ARS;Margen ARS;Pauta ARS;Resultado ARS;Nota',
     )
     expect(lines[1]).toBe('2026-09-07;Ramen;sin cargar;0;0;;;;;;;;;;;;;;;;;;;;;;')
-    // Ninguna fecha de este mes tiene ingreso ni costo por persona, así que las
-    // ocho columnas de la cuenta de la noche van vacías en todas las filas.
+    // Ninguna fecha de este mes tiene ingreso ni costo por persona. Noche Astral
+    // tiene la facturación, que desde el 02/10 abre la cuenta: salen la gente y
+    // el ingreso, y lo que falta va vacío (regla 13).
     expect(lines[2]).toBe(
-      '2026-09-09;Noche Astral;completa;29;11;175,26;51;8420;3,44;21,6;15,93;6,04;2480000;1450;9,76;10,2;;;;;;;;;;;Campaña de reels del 1/9 al 9/9',
+      '2026-09-09;Noche Astral;completa;29;11;175,26;51;8420;3,44;21,6;15,93;6,04;2480000;1450;9,76;10,2;29;;;;;2480000;;;;;Campaña de reels del 1/9 al 9/9',
     )
     expect(lines[3]).toBe('2026-09-10;Pizza libre;sin pauta;50;20;0,00;;;;;;;;;;;;;;;;;;;;;')
     expect(lines[4]).toBe('2026-09-12;Tapeo;completa;30;14;80,00;9;;8,89;;5,71;2,67;;;;;;;;;;;;;;;')
@@ -2573,7 +2649,9 @@ describe('la noche orgánica en el mes (regla 14)', () => {
   })
 
   it('«¿Cómo se calcula?» no habla de Meta en una noche sin pauta', () => {
-    const bullets = howItsCalculated(ORGANIC_ROW)
+    // El de la pauta queda vacío (y no se dibuja); el de la cuenta explica la noche.
+    expect(howItsCalculated(ORGANIC_ROW)).toEqual([])
+    const bullets = nightHowItsCalculated(ORGANIC_ROW)
     expect(bullets.some((b) => b.includes('mensaje'))).toBe(false)
     expect(bullets).toContain(
       'Resultado de la noche: la gente por el ingreso por persona (o la facturación real, si está cargada), menos esa misma gente por el costo por persona. Sin pauta no hay nada más que restar.',
