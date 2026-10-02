@@ -127,6 +127,7 @@ function scheduledEvent(over: Partial<ScheduledEventWithTemplate>): ScheduledEve
     full_bonus_active: true,
     attendance_points: 0,
     notes: null,
+    private_group: false,
     created_at: '',
     updated_at: '',
     template: {

@@ -56,6 +56,8 @@ export type ScheduledEventTemplateRow = {
   default_meal_type: MealType
   color_hex: string
   active: boolean
+  /** «Se usa para grupos privados»: las fechas NUEVAS nacen privadas. No toca las existentes. */
+  default_private_group: boolean
   created_at: string
   updated_at: string
 }
@@ -73,6 +75,8 @@ export type ScheduledEventRow = {
   full_bonus_active: boolean
   attendance_points: number
   notes: string | null
+  /** Grupo privado: ocupa cupo, pero no es un evento para «Cómo nos fue». */
+  private_group: boolean
   created_at: string
   updated_at: string
 }

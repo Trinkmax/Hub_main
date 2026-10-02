@@ -4023,6 +4023,7 @@ export type Database = {
           created_at: string
           default_capacity: number | null
           default_meal_type: Database["public"]["Enums"]["meal_type"]
+          default_private_group: boolean
           id: string
           name: string
           slug: string
@@ -4036,6 +4037,7 @@ export type Database = {
           created_at?: string
           default_capacity?: number | null
           default_meal_type?: Database["public"]["Enums"]["meal_type"]
+          default_private_group?: boolean
           id?: string
           name: string
           slug: string
@@ -4049,6 +4051,7 @@ export type Database = {
           created_at?: string
           default_capacity?: number | null
           default_meal_type?: Database["public"]["Enums"]["meal_type"]
+          default_private_group?: boolean
           id?: string
           name?: string
           slug?: string
@@ -4077,6 +4080,7 @@ export type Database = {
           meal_type: Database["public"]["Enums"]["meal_type"]
           name_override: string | null
           notes: string | null
+          private_group: boolean
           starts_at_local: string
           template_id: string
           tenant_id: string
@@ -4093,6 +4097,7 @@ export type Database = {
           meal_type: Database["public"]["Enums"]["meal_type"]
           name_override?: string | null
           notes?: string | null
+          private_group?: boolean
           starts_at_local: string
           template_id: string
           tenant_id: string
@@ -4109,6 +4114,7 @@ export type Database = {
           meal_type?: Database["public"]["Enums"]["meal_type"]
           name_override?: string | null
           notes?: string | null
+          private_group?: boolean
           starts_at_local?: string
           template_id?: string
           tenant_id?: string

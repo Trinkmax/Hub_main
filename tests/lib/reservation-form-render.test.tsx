@@ -54,6 +54,7 @@ const PIZZA: ScheduledEventWithTemplate = {
   full_bonus_active: false,
   attendance_points: 0,
   notes: null,
+  private_group: false,
   created_at: '',
   updated_at: '',
   template: {
