@@ -23,6 +23,7 @@ import {
   aggregateEditions,
   aggregateTemplateReport,
   type DayReport,
+  eventTitle,
   type ReportEventRow,
   type ReportReservationRow,
   type TemplateReport,
@@ -33,6 +34,7 @@ import {
   partySizePostgrestFilter,
 } from './party-size'
 import { computePeakWindow, type PeakWindow } from './peak'
+import type { WithPrivateGroups } from './private-groups'
 import type { ServiceRow } from './services'
 import type {
   CakeOptionRow,
@@ -590,7 +592,7 @@ export async function listScheduledEventsForDateRange(opts: {
   const { data, error } = await supabase
     .from('scheduled_events')
     .select(
-      'id, tenant_id, template_id, name_override, event_date, starts_at_local, ends_at_local, capacity, meal_type, full_bonus_active, attendance_points, notes, created_at, updated_at, template:scheduled_event_templates(id, name, slug, color_hex, default_capacity, consume_special_reservations)',
+      'id, tenant_id, template_id, name_override, event_date, starts_at_local, ends_at_local, capacity, meal_type, full_bonus_active, attendance_points, notes, private_group, created_at, updated_at, template:scheduled_event_templates(id, name, slug, color_hex, default_capacity, consume_special_reservations)',
     )
     .eq('tenant_id', opts.tenantId)
     .gte('event_date', opts.from)
@@ -1397,7 +1399,12 @@ export async function getDayReport(opts: {
   // sumar un hop en serie a la vista más usada.
   const eventsP = listScheduledEventsForDate({ tenantId: opts.tenantId, date: opts.day })
   const marketingP = eventsP.then((events) =>
-    listEventMarketing({ tenantId: opts.tenantId, eventIds: events.map((e) => e.id) }),
+    listEventMarketing({
+      tenantId: opts.tenantId,
+      // Un grupo privado no es un evento: su ficha no tiene pauta ni cuenta, así
+      // que su fila (si quedó una «No tuvo pauta» de antes) no viaja al cliente.
+      eventIds: events.filter((e) => !e.private_group).map((e) => e.id),
+    }),
   )
   const [events, res, marketing] = await Promise.all([
     eventsP,
@@ -1447,7 +1454,7 @@ export async function getTemplateReport(opts: {
   const evRes = await supabase
     .from('scheduled_events')
     .select(
-      'id, template_id, name_override, event_date, starts_at_local, capacity, template:scheduled_event_templates(id, name, color_hex)',
+      'id, template_id, name_override, event_date, starts_at_local, capacity, private_group, template:scheduled_event_templates(id, name, color_hex)',
     )
     .eq('tenant_id', opts.tenantId)
     .eq('template_id', opts.templateId)
@@ -1459,7 +1466,10 @@ export async function getTemplateReport(opts: {
     return { ...r, template: Array.isArray(t) ? (t[0] ?? null) : (t ?? null) }
   }) as unknown as ReportEventRow[]
 
-  const eventIds = events.map((e) => e.id)
+  // Los grupos privados del formato NO son ediciones (`aggregateTemplateReport`
+  // los cuenta en `privateEditions` y los descarta): ni sus reservas ni su
+  // pauta hacen falta.
+  const eventIds = events.filter((e) => e.private_group !== true).map((e) => e.id)
   // Reservas y pauta cuelgan de los mismos ids y no una de la otra: van juntas.
   const [rows, marketing] = await Promise.all([
     listReportRowsForEvents({ tenantId: opts.tenantId, eventIds }),
@@ -1515,6 +1525,10 @@ const YM_RE = /^(19|20|21)\d{2}-(0[1-9]|1[0-2])$/
  * multiplica el ingreso y el costo por persona sale del MISMO agregador que la
  * ficha de la noche. Armar acá un objeto más chico sería la manera de que las
  * dos pantallas dijeran números distintos para la misma fecha.
+ *
+ * Los grupos privados del mes (02/10/2026) NO son ediciones: no suman, no se
+ * piden en pendientes y no van a la planilla. Viajan aparte, en
+ * `privateGroups`, para nombrarlos al pie (`monthPrivateGroupsNote`).
  */
 export async function getMonthMarketingReport(opts: {
   tenantId: string
@@ -1522,7 +1536,7 @@ export async function getMonthMarketingReport(opts: {
   ym: string
   /** Hoy en el calendario del bar: define qué edición ya pasó. */
   today: string
-}): Promise<MonthMarketingReport> {
+}): Promise<WithPrivateGroups<MonthMarketingReport>> {
   if (!YM_RE.test(opts.ym)) throw new Error('invalid_ym')
   const year = Number(opts.ym.slice(0, 4))
   const month = Number(opts.ym.slice(5, 7))
@@ -1531,7 +1545,10 @@ export async function getMonthMarketingReport(opts: {
   const from = `${opts.ym}-01`
   const to = `${opts.ym}-${String(lastDay).padStart(2, '0')}`
 
-  const events = await listScheduledEventsForDateRange({ tenantId: opts.tenantId, from, to })
+  const all = await listScheduledEventsForDateRange({ tenantId: opts.tenantId, from, to })
+  // Un grupo privado no es una fecha de evento: ni sus reservas ni su pauta
+  // hacen falta. Se nombra al pie con `privateGroups`.
+  const events = all.filter((e) => !e.private_group)
   const eventIds = events.map((e) => e.id)
   const [rows, marketing] = await Promise.all([
     listReportRowsForEvents({ tenantId: opts.tenantId, eventIds }),
@@ -1543,13 +1560,19 @@ export async function getMonthMarketingReport(opts: {
     rows,
     today: opts.today,
   })
-  return buildMonthMarketingReport({
+  const report = buildMonthMarketingReport({
     ym: opts.ym,
     today: opts.today,
     editions,
     marketing,
     truncated: rows.length >= EVENTS_REPORT_MAX_ROWS,
   })
+  return {
+    ...report,
+    privateGroups: all
+      .filter((e) => e.private_group)
+      .map((e) => ({ eventId: e.id, date: e.event_date, title: eventTitle(e) })),
+  }
 }
 
 /** Ventana de lectura del atajo del calendario. */
@@ -1632,12 +1655,12 @@ export async function listEventTemplateOptions(opts: {
   const [tplRes, evRes, resRes] = await Promise.all([
     supabase
       .from('scheduled_event_templates')
-      .select('id, name, color_hex')
+      .select('id, name, color_hex, default_private_group')
       .eq('tenant_id', opts.tenantId)
       .order('name', { ascending: true }),
     supabase
       .from('scheduled_events')
-      .select('id, template_id, event_date')
+      .select('id, template_id, event_date, private_group')
       .eq('tenant_id', opts.tenantId)
       .limit(EVENTS_REPORT_MAX_ROWS),
     supabase
@@ -1657,11 +1680,18 @@ export async function listEventTemplateOptions(opts: {
   const editions = new Map<string, number>()
   const pastEditions = new Map<string, number>()
   const upcoming = new Map<string, number>()
+  const privateEditions = new Map<string, number>()
   for (const e of (evRes.data ?? []) as Array<{
     id: string
     template_id: string
     event_date: string
+    private_group: boolean
   }>) {
+    // Un grupo privado no es una fecha del evento: ni historia, ni lo que viene.
+    if (e.private_group) {
+      privateEditions.set(e.template_id, (privateEditions.get(e.template_id) ?? 0) + 1)
+      continue
+    }
     eventTemplate.set(e.id, e.template_id)
     editions.set(e.template_id, (editions.get(e.template_id) ?? 0) + 1)
     // Las fechas son `date` puro: se comparan como strings. Hoy NO es pasado —
@@ -1694,8 +1724,19 @@ export async function listEventTemplateOptions(opts: {
     (resRes.data ?? []).length >= EVENTS_REPORT_MAX_ROWS
 
   const options = (
-    (tplRes.data ?? []) as Array<{ id: string; name: string; color_hex: string | null }>
+    (tplRes.data ?? []) as Array<{
+      id: string
+      name: string
+      color_hex: string | null
+      default_private_group: boolean
+    }>
   )
+    // Un formato de grupos privados (o con TODAS sus fechas privadas) no es un
+    // evento: no se ofrece. Un formato nuevo sin fechas sí («sin fechas»).
+    .filter((t) => {
+      if ((editions.get(t.id) ?? 0) > 0) return true
+      return !t.default_private_group && (privateEditions.get(t.id) ?? 0) === 0
+    })
     .map((t) => ({
       id: t.id,
       name: t.name.replace(/\s+/g, ' ').trim(),

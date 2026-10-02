@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { CONVERSION_EXPORT_HEADERS, eventConversionToCsv } from '@/lib/salon/event-conversion'
 import { type EventMarketingRow, MARKETING_EXPORT_HEADERS } from '@/lib/salon/event-marketing'
 import {
   aggregateDayReport,
@@ -11,8 +12,6 @@ import {
   type ReportEventRow,
   type ReportReservationRow,
   reportExportFilename,
-  TEMPLATE_EXPORT_HEADERS,
-  templateReportToCsv,
 } from '@/lib/salon/events-report'
 
 const HOY = '2026-09-09'
@@ -584,7 +583,7 @@ describe('CSV', () => {
     expect(dayReportToCsv(report)).toContain(';5,0;')
   })
 
-  it('la planilla del evento distingue hoy de una fecha futura', () => {
+  it('la planilla de «Conversión» distingue hoy de una fecha que ya pasó', () => {
     const tpl = aggregateTemplateReport({
       templateId: 't',
       templateName: 'Ramen',
@@ -596,9 +595,10 @@ describe('CSV', () => {
         res({ scheduled_event_id: 'vieja', estimated_guests: 2 }),
       ],
     })
-    const lines = templateReportToCsv(tpl).split('\r\n')
-    expect(lines[1]?.endsWith(';es hoy')).toBe(true)
-    expect(lines[2]?.endsWith(';')).toBe(true)
+    const lines = eventConversionToCsv(tpl, {}).split('\r\n')
+    const estado = CONVERSION_EXPORT_HEADERS.indexOf('Estado')
+    expect(lines[1]?.split(';')[estado]).toBe('es hoy')
+    expect(lines[2]?.split(';')[estado]).toBe('ya pasó')
   })
 
   it('el nombre del evento lleva apóstrofo si Excel lo leería como fórmula', () => {
@@ -609,19 +609,9 @@ describe('CSV', () => {
       rows: [res({ scheduled_event_id: 'ev-ramen', estimated_guests: 2 })],
     })
     expect(dayReportToCsv(day).split('\r\n')[1]?.split(';')[1]).toBe("'=1+1")
-
-    const tpl = aggregateTemplateReport({
-      templateId: 't',
-      templateName: 'Ramen',
-      colorHex: null,
-      today: HOY,
-      events: [ev({ id: 'vieja', event_date: '2026-08-01', name_override: '-5 de descuento' })],
-      rows: [res({ scheduled_event_id: 'vieja', estimated_guests: 2 })],
-    })
-    expect(templateReportToCsv(tpl).split('\r\n')[1]?.split(';')[1]).toBe("'-5 de descuento")
   })
 
-  it('la planilla del evento marca las fechas que todavía no pasaron', () => {
+  it('la planilla de «Conversión» marca las fechas que todavía no pasaron', () => {
     const tpl = aggregateTemplateReport({
       templateId: 't',
       templateName: 'Ramen',
@@ -630,8 +620,10 @@ describe('CSV', () => {
       events: [ev({ id: 'z', event_date: '2026-09-28' })],
       rows: [res({ scheduled_event_id: 'z', estimated_guests: 2 })],
     })
-    const lines = templateReportToCsv(tpl).split('\r\n')
-    expect(lines[1]?.endsWith(';sí')).toBe(true)
+    const lines = eventConversionToCsv(tpl, {}).split('\r\n')
+    expect(lines[1]?.split(';')[CONVERSION_EXPORT_HEADERS.indexOf('Estado')]).toBe(
+      'todavía no pasó',
+    )
   })
 })
 
@@ -707,7 +699,7 @@ describe('CSV con pauta', () => {
     expect(nota[1]?.split(';').at(-1)).toBe("'=1+1")
   })
 
-  it('en la planilla del evento, hoy y lo futuro llevan lo cargado pero no los cocientes', () => {
+  it('en «Conversión», hoy y lo futuro llevan lo cargado pero no los cocientes', () => {
     const tpl = aggregateTemplateReport({
       templateId: 't',
       templateName: 'Ramen',
@@ -728,46 +720,18 @@ describe('CSV con pauta', () => {
       hoy: pauta({ scheduledEventId: 'hoy', adSpendUsdCents: 6_000, messages: 12 }),
       vieja: pauta({ scheduledEventId: 'vieja', adSpendUsdCents: 1_000, messages: 5 }),
     }
-    const lines = templateReportToCsv(tpl, marketing).split('\r\n')
-    // La columna del consolidado va entre «Todavía no pasó» y las de pauta.
-    const veredicto = (i: number) => lines[i]?.split(';')[TEMPLATE_EXPORT_HEADERS.length]
-    const pautaDe = (i: number) => lines[i]?.split(';').slice(TEMPLATE_EXPORT_HEADERS.length + 1)
-
-    expect(lines[0]?.replace('\uFEFF', '').split(';')).toEqual([
-      ...TEMPLATE_EXPORT_HEADERS,
-      '¿Dejó plata?',
-      ...MARKETING_EXPORT_HEADERS,
+    const lines = eventConversionToCsv(tpl, marketing).split('\r\n')
+    expect(lines[0]?.replace('\uFEFF', '').split(';')).toEqual([...CONVERSION_EXPORT_HEADERS])
+    // La tira: primero las que tuvieron reservas o pauta (hoy y la vieja), después las vacías.
+    expect(lines.slice(1, 5)).toEqual([
+      // Hoy: gasto y mensajes tal cual, sin cocientes («por ahora»).
+      `${HOY};es hoy;2;1;2,0;;;60,00;12;;;;por ahora`,
+      '2026-08-01;ya pasó;2;1;2,0;;;10,00;5;2,00;20,0;10,00;completa',
+      '2026-09-28;todavía no pasó;0;0;;;;;;;;;',
+      '2026-07-01;ya pasó;0;0;;;;;;;;;sin cargar',
     ])
-    expect([1, 2, 3, 4].map(veredicto)).toEqual([
-      'sin juzgar: todavía no pasó',
-      'sin juzgar: es hoy',
-      'sin juzgar: faltan ingreso, costo y dólar',
-      'sin juzgar: sin reservas ni pauta',
-    ])
-    // Una sola fecha que ya pasó y sin juzgar: no hay fila de total.
+    // Una sola fecha que ya pasó con mensajes: no hay total (con una, es esa fecha).
     expect(lines).toHaveLength(5)
-    expect(pautaDe(1)).toEqual(MARKETING_EXPORT_HEADERS.map(() => ''))
-    expect(pautaDe(2)).toEqual([
-      '60,00',
-      '12',
-      ...Array(MARKETING_EXPORT_HEADERS.length - 2).fill(''),
-    ])
-    expect(pautaDe(3)).toEqual([
-      '10,00',
-      '5',
-      '',
-      '2,00',
-      '20,0',
-      '10,00',
-      '5,00',
-      // La cuenta de la noche sale entera o no sale: esta fila no tiene ingreso
-      // ni costo por persona, así que sus ocho columnas van vacías —también
-      // «Personas del cálculo», que sin cuenta es un número colgado.
-      ...Array(MARKETING_EXPORT_HEADERS.length - 7).fill(''),
-    ])
-    expect(pautaDe(4)).toEqual(MARKETING_EXPORT_HEADERS.map(() => ''))
-    // Las columnas de siempre no se mueven.
-    expect(lines[2]?.split(';')[TEMPLATE_EXPORT_HEADERS.length - 1]).toBe('es hoy')
   })
 })
 

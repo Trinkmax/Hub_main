@@ -9,7 +9,9 @@
  *
  * 1. **Un cumple = una reserva `kind = 'birthday'` en pie** (sin canceladas ni
  *    las que no vinieron). Entran TODAS, también las reservadas dentro de un
- *    evento: un cumple es un cumple. Se dice cuántas fueron dentro de uno.
+ *    evento: un cumple es un cumple. Se dice cuántas fueron dentro de uno. Un
+ *    grupo privado (02/10) NO es un evento: sus cumples cuentan como cualquier
+ *    otro, pero no «dentro de un evento».
  * 2. **La pauta se mide contra los cumples RESERVADOS en el mes**
  *    (`created_at` en el calendario del bar), sean para la fecha que sean. Es
  *    lo que producen los mensajes de ese mes: de los 58 festejados en
@@ -59,6 +61,11 @@ export type BirthdayReservationRow = {
   estimated_guests: number | string | null
   actual_guests: number | string | null
   scheduled_event_id: string | null
+  /**
+   * Su fecha está marcada «Grupo privado» (02/10): no es un evento, así que no
+   * cuenta «dentro de un evento». Opcional: sin el dato, la fecha es evento.
+   */
+  in_private_group?: boolean | null
 }
 
 /** Una fila de `birthday_marketing`, ya en unidades (salvo los centavos, que dicen serlo). */
@@ -432,7 +439,7 @@ export function birthdayPautaReport(
 // ─── El mes ──────────────────────────────────────────────────────────────────
 
 export const BIRTHDAYS_HOW_ITS_CALCULATED: readonly string[] = [
-  'Cumpleaños: reservas marcadas como cumpleaños que siguen en pie (sin las canceladas ni las que no vinieron). Entran también las que están dentro de un evento.',
+  'Cumpleaños: reservas marcadas como cumpleaños que siguen en pie (sin las canceladas ni las que no vinieron). Entran también las que están dentro de un evento o de un grupo privado; un grupo privado no cuenta como evento.',
   'El calendario y los totales van por el día del festejo.',
   'Personas: las contadas al cerrar cada mesa; si la mesa no se cerró, las reservadas.',
   'La pauta se compara con los cumpleaños RESERVADOS en el mes, sean para la fecha que sean: es lo que producen los mensajes de ese mes. Por eso puede no coincidir con los festejados.',
@@ -487,7 +494,9 @@ export function buildMonthBirthdayReport(input: {
     cell.birthdays += 1
     cell.guests += billable(row)
     reservedGuests += toInt(row.estimated_guests)
-    if (row.scheduled_event_id) cell.inEvents += 1
+    // Un grupo privado no es un evento (02/10): el cumple cuenta igual, pero no
+    // «dentro de un evento».
+    if (row.scheduled_event_id && row.in_private_group !== true) cell.inEvents += 1
   }
 
   const days = dayList.map((d) => byDay.get(d) as BirthdayDay)

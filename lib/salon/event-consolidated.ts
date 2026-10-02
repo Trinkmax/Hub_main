@@ -29,15 +29,20 @@
  *     ninguna usa la caja). Las noches sin pauta SÍ suman: es el total del
  *     evento, no de la pauta (la pestaña «Pauta» no las suma, regla 14).
  * C7. **Negativo en palabras** («$ X abajo»), nunca «-$». En la planilla, con signo.
- * C8. **Pantalla = CSV**: el veredicto y el total de la planilla del evento
- *     salen de acá.
+ * C8. **Pantalla = CSV**: el cuadro se llama «Rentabilidad» (02/10, C4 de los
+ *     socios) y su planilla (`eventProfitabilityToCsv`) es EXACTAMENTE lo que
+ *     muestra: sus filas, su total y sus notas, con el desglose de cada fecha
+ *     en columnas para rehacer la cuenta en Excel.
  *
  * Puro: sin DB ni React ni `Intl` (se dibuja en el server y en el cliente). De
  * `events-report.ts` se importan SOLO tipos.
  */
 
+import { rowsToCsv } from '@/lib/stats/csv'
+import { EVENT_CUADROS } from './event-cuadros'
 import {
   computeMarketingKpis,
+  csvFormulaGuard,
   decimalEsAr,
   type EventMarketingRow,
   formatArs,
@@ -47,6 +52,8 @@ import {
   formatUsd,
   hasDrinks,
   hasNightAccount,
+  MARKETING_EXPORT_HEADERS,
+  marketingCsvCells,
   NIGHT_RESULT_DISCLAIMER,
   type NightInput,
   type NightMathStep,
@@ -177,6 +184,8 @@ export type ConsolidatedTotal = {
 
 export type EventConsolidated = {
   title: string
+  /** Debajo del título: qué responde el cuadro. */
+  subtitle: string
   /** `<caption>` sr-only y `aria-label` de la lista. */
   caption: string
   /** `Dejó plata en ` + **`2 de 3`** + ` fechas con la cuenta cerrada.` */
@@ -201,10 +210,8 @@ export type EventConsolidated = {
 
 // ─── Palabras ────────────────────────────────────────────────────────────────
 
-export const CONSOLIDATED_TITLE = 'Consolidado'
-
-/** La columna que suma la planilla del evento, entre «Todavía no pasó» y las de pauta. */
-export const CONSOLIDATED_CSV_HEADER = '¿Dejó plata?'
+/** El cuadro de la izquierda de «Por evento» (02/10: «con el cuadro de la izquierda, rentabilidad»). */
+export const CONSOLIDATED_TITLE = EVENT_CUADROS.rentabilidad.title
 
 /** El encabezado de la tabla: lo que se ve es el boceto del dueño; `srLabel`, lo que oye el lector. */
 export const CONSOLIDATED_COLUMNS = [
@@ -217,14 +224,15 @@ export const CONSOLIDATED_COLUMNS = [
 ] as const
 
 export const CONSOLIDATED_BASIS_NOTE =
-  'Personas: la gente de la cuenta, contada al cerrar cada mesa —lo reservado en las que quedaron sin cerrar—, así que puede no coincidir con «Todas las fechas».'
+  'Personas: la gente de la cuenta, contada al cerrar cada mesa —lo reservado en las que quedaron sin cerrar—, así que puede no coincidir con «Conversión».'
 export const CONSOLIDATED_CASH_NOTE =
   'Donde dice «caja», el ingreso es la facturación real de la caja, que ya trae la bebida.'
 export const CONSOLIDATED_NO_DRINKS_NOTE =
   'La bebida no está cargada en ninguna fecha: el resultado sale solo del ingreso y el costo por persona.'
 
 const HOW_TO_FIX = 'Se carga desde la ficha de esa noche.'
-const SIN_CARGAR_CORE = 'falta cargar la pauta y la plata de la noche'
+// Las mismas palabras que la caja «La cuenta de la noche» sin cargar (regla 13).
+const SIN_CARGAR_CORE = 'faltan la pauta, el ingreso y el costo por persona'
 const DASH = '—'
 
 const SHORT: Readonly<Record<NightInput, string>> = {
@@ -635,7 +643,8 @@ export function buildEventConsolidated(input: {
 
   return {
     title: CONSOLIDATED_TITLE,
-    caption: `Consolidado de ${input.templateName}: la cuenta de cada fecha que ya pasó, de la más nueva a la más vieja.`,
+    subtitle: EVENT_CUADROS.rentabilidad.subtitle,
+    caption: `${CONSOLIDATED_TITLE} de ${input.templateName}: la cuenta de cada fecha que ya pasó, de la más nueva a la más vieja.`,
     headline,
     unjudgedNote: n === 0 || unjudged === 0 ? null : `${fechas(unjudged)} sin juzgar.`,
     counts: { rows: rows.length, judged: n, positive, negative, even, unjudged },
@@ -793,17 +802,127 @@ function buildTotal(judged: readonly Judged[], positive: number): ConsolidatedTo
     csv: {
       label: `Total con la cuenta cerrada (${fechas(n)})`,
       verdict: `${formatCount(positive)} de ${formatCount(n)}`,
+      // Por nombre de columna de `PROFITABILITY_EXPORT_HEADERS`. Cierra:
+      // Ingreso − Costo = Margen y Margen − Pauta ARS = Resultado.
       cells: {
-        'Pauta USD': decimalEsAr(spendCents / 100, 2, false),
-        'Personas del cálculo': String(guests),
+        'Personas de la cuenta': String(guests),
         'Ingreso por persona ARS': allFood ? csvArs(food / guests) : '',
         'Ingreso de bebida por persona ARS': allDrink ? csvArs(drink / guests) : '',
         'Ingreso ARS': csvArs(revenueRead),
         'Costo ARS': csvArs(revenueRead - marginRead),
         'Margen ARS': csvArs(marginRead),
+        'Pauta USD': decimalEsAr(spendCents / 100, 2, false),
         'Pauta ARS': csvArs(marginRead - resultRead),
         'Resultado ARS': csvArs(resultRead),
       },
     },
   }
+}
+
+// ─── La planilla del cuadro «Rentabilidad» (02/10) ──────────────────────────
+
+/**
+ * Las columnas, en el orden de la cuenta (personas → precios → ingreso, costo,
+ * margen → pauta → resultado → veredicto): la fila se rehace de izquierda a
+ * derecha en Excel. Lo que el cuadro muestra (Fecha, Pers, Pauta, $/pers,
+ * Bebida/p, Resultado y ✓/✗) está todo; el resto es el desglose que se abre al
+ * tocar la fecha.
+ */
+export const PROFITABILITY_EXPORT_HEADERS: readonly string[] = [
+  'Fecha',
+  'Personas de la cuenta',
+  'Ingreso por persona ARS',
+  'Ingreso de bebida por persona ARS',
+  'Costo por persona ARS',
+  'Costo de bebida por persona ARS',
+  'Ingreso ARS',
+  'Costo ARS',
+  'Margen ARS',
+  'Pauta USD',
+  'Dólar',
+  'Pauta ARS',
+  'Resultado ARS',
+  '¿Dejó plata?',
+]
+
+const CAJA = 'caja'
+
+/** Una columna de la cuenta de `marketingCsvCells`, por nombre: mismo redondeo que el día y el mes. */
+function nightCell(cells: readonly string[], header: string): string {
+  return cells[MARKETING_EXPORT_HEADERS.indexOf(header)] ?? ''
+}
+
+function profitabilityRow(e: ConsolidatedEditionInput, row: EventMarketingRow | null): string[] {
+  const v = editionVerdict(e, row)
+  const verdict = editionVerdictCsv(v, e.reservations)
+  if (row === null) {
+    return [e.date, String(e.billableGuests), '', '', '', '', '', '', '', '', '', '', '', verdict]
+  }
+  const cells = marketingCsvCells(e, row)
+  // Como el cuadro: con la facturación real de la caja, los dos ingresos por
+  // persona dicen «caja» (el precio tipeado no hizo la cuenta).
+  const cash = row.revenueArsCents !== null
+  return [
+    e.date,
+    String(e.billableGuests),
+    cash ? CAJA : nightCell(cells, 'Ingreso por persona ARS'),
+    cash ? CAJA : nightCell(cells, 'Ingreso de bebida por persona ARS'),
+    nightCell(cells, 'Costo por persona ARS'),
+    nightCell(cells, 'Costo de bebida por persona ARS'),
+    nightCell(cells, 'Ingreso ARS'),
+    nightCell(cells, 'Costo ARS'),
+    nightCell(cells, 'Margen ARS'),
+    nightCell(cells, 'Pauta USD'),
+    nightCell(cells, 'Dólar'),
+    nightCell(cells, 'Pauta ARS'),
+    nightCell(cells, 'Resultado ARS'),
+    verdict,
+  ]
+}
+
+/**
+ * La planilla del cuadro «Rentabilidad»: EXACTAMENTE sus filas (las fechas que
+ * ya pasaron, desde la primera con la plata cargada; de la más nueva a la más
+ * vieja), su fila de total (solo si el cuadro la muestra: 2 fechas juzgadas o
+ * más) y sus notas al pie, cada una en su renglón. Pantalla = CSV (C8).
+ *
+ * El resultado negativo va con signo (Excel lo lee como número); en pantalla,
+ * «abajo» (C7). `privateNote` es la nota de los grupos privados del formato,
+ * si los tiene.
+ */
+export function eventProfitabilityToCsv(input: {
+  templateName: string
+  editions: ReadonlyArray<ConsolidatedEditionInput>
+  marketing: Readonly<Record<string, EventMarketingRow>>
+  privateNote?: string | null
+}): string {
+  const width = PROFITABILITY_EXPORT_HEADERS.length
+  const note = (text: string) => [
+    csvFormulaGuard(text),
+    ...Array.from({ length: width - 1 }, () => ''),
+  ]
+  const data = buildEventConsolidated(input)
+  const rows: string[][] = []
+  if (data === null) {
+    rows.push(note('Todavía no hay ninguna fecha que ya pasó con la plata cargada.'))
+  } else {
+    const byId = new Map(input.editions.map((e) => [e.eventId ?? e.key, e]))
+    for (const r of data.rows) {
+      const e = byId.get(r.eventId)
+      if (!e) continue
+      rows.push(profitabilityRow(e, input.marketing[r.eventId] ?? null))
+    }
+    if (data.total) {
+      const t = data.total.csv
+      rows.push(
+        PROFITABILITY_EXPORT_HEADERS.map((h, i) =>
+          i === 0 ? t.label : h === '¿Dejó plata?' ? t.verdict : (t.cells[h] ?? ''),
+        ),
+      )
+    }
+    if (data.notes.length > 0 || input.privateNote) rows.push(note(''))
+    for (const n of data.notes) rows.push(note(n))
+  }
+  if (input.privateNote) rows.push(note(input.privateNote))
+  return rowsToCsv([...PROFITABILITY_EXPORT_HEADERS], rows, { separator: ';', bom: true })
 }

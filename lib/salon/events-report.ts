@@ -29,6 +29,10 @@
  *   numerador está casi siempre incompleto (en el HUB, 20 de 24 mesas del Ramen
  *   del 7/9 quedaron sin cerrar) y el ratio real pasa de 100 (el 3/9 Pizza
  *   libre reservó 62 y se sentaron 65).
+ * - **Un grupo privado no es un evento** (02/10/2026, `private_group`; ver
+ *   `private-groups.ts`). En la noche va en su propia franja (`kind:
+ *   'private'`) y los totales lo cuentan; como edición no existe: ni en «Por
+ *   evento» ni en «Pauta».
  *
  * Puro: sin DB ni React. Las queries de `lib/salon/queries.ts` le pasan filas
  * crudas y acá se hacen todas las cuentas, así que se testea con fixtures.
@@ -36,18 +40,12 @@
 
 import { rowsToCsv } from '@/lib/stats/csv'
 import {
-  buildEventConsolidated,
-  CONSOLIDATED_CSV_HEADER,
-  editionVerdict,
-  editionVerdictCsv,
-} from './event-consolidated'
-import {
   csvFormulaGuard,
   type EventMarketingRow,
   MARKETING_EXPORT_HEADERS,
-  MARKETING_LIVE_BLANK_HEADERS,
   marketingCsvCells,
 } from './event-marketing'
+import { PRIVATE_GROUP_LABEL } from './private-groups'
 import type { SalonReservationStatus } from './types'
 
 /** Estados que NO cuentan: la reserva se cayó, esa gente no se sentó. */
@@ -93,6 +91,13 @@ export type ReportEventRow = {
   event_date: string
   starts_at_local: string
   capacity: number | string
+  /**
+   * Grupo privado (02/10/2026): la fecha ocupa cupo en el calendario pero NO es
+   * un evento para «Cómo nos fue». En «Por día» su gente se ve en un bloque
+   * propio (`kind: 'private'`); en «Por evento» y en «Pauta» no está.
+   * Opcional para que las filas viejas de los tests sigan siendo eventos.
+   */
+  private_group?: boolean | null
   template?: { id?: string; name?: string | null; color_hex?: string | null } | null
 }
 
@@ -118,7 +123,12 @@ export type TableChip = {
 export type ReportBlock = {
   /** `sin-evento` o el id del evento programado. */
   key: string
-  kind: 'event' | 'plain'
+  /**
+   * `event`: un evento de la noche (con pauta y cuenta). `private`: una fecha
+   * marcada «Grupo privado» — su gente es de la noche, pero no es un evento: sin
+   * pauta, sin cuenta, sin link a «Por evento». `plain`: las reservas sin evento.
+   */
+  kind: 'event' | 'private' | 'plain'
   title: string
   /** Color del template, para el borde de la ficha. `null` en "Sin evento". */
   colorHex: string | null
@@ -163,7 +173,10 @@ export type ReportBlock = {
 
 export type DayReport = {
   day: string
-  /** Eventos por hora de inicio, y al final SIEMPRE el bloque "Sin evento". */
+  /**
+   * Eventos por hora de inicio, después los grupos privados con gente (por hora)
+   * y al final SIEMPRE el bloque "Sin evento".
+   */
   blocks: ReportBlock[]
   totals: { guests: number; reservations: number }
   truncated: boolean
@@ -205,6 +218,11 @@ export type TemplateReport = {
   reference: { avgGuests: number; editions: number } | null
   /** Hay al menos una fecha que ya terminó, haya vendido o no. */
   hasPastEditions: boolean
+  /**
+   * Fechas del formato marcadas «Grupo privado»: NO están en `editions` (no son
+   * eventos), pero se cuentan para decirlo. Pizza libre: 14 de 16.
+   */
+  privateEditions: number
   truncated: boolean
 }
 
@@ -309,6 +327,11 @@ function seal(acc: Acc): ReportBlock {
  * El bloque "Sin evento" se devuelve SIEMPRE, aunque esté en cero: que una
  * noche haya sido íntegramente del evento es información, y esconder el bloque
  * dejaría al dueño sin saber si es cero o si la pantalla se lo comió.
+ *
+ * Un grupo privado (`private_group`) arma su propio bloque `private`, después de
+ * los eventos y antes de "Sin evento": su gente es de la noche (los totales la
+ * cuentan) pero no es un evento. Su reserva sigue atada a SU fecha: el corte
+ * sigue siendo `scheduled_event_id`, nunca la zona.
  */
 export function aggregateDayReport(input: {
   day: string
@@ -322,7 +345,7 @@ export function aggregateDayReport(input: {
       ev.id,
       newAcc({
         key: ev.id,
-        kind: 'event',
+        kind: ev.private_group === true ? 'private' : 'event',
         title: eventTitle(ev),
         colorHex: ev.template?.color_hex ?? null,
         startsAtLocal: ev.starts_at_local,
@@ -344,11 +367,18 @@ export function aggregateDayReport(input: {
     absorb(acc ?? plain, row)
   }
 
-  const eventBlocks = Array.from(byEvent.values())
-    .map(seal)
-    .sort((a, b) => (a.startsAtLocal ?? '').localeCompare(b.startsAtLocal ?? ''))
+  const byStart = (a: ReportBlock, b: ReportBlock) =>
+    (a.startsAtLocal ?? '').localeCompare(b.startsAtLocal ?? '')
+  const sealed = Array.from(byEvent.values()).map(seal)
+  const eventBlocks = sealed.filter((b) => b.kind === 'event').sort(byStart)
+  // Un grupo privado sin nadie (ni en pie ni caído) no es información de la
+  // noche: no se dibuja ni va a la planilla. Un evento vacío sí («Nadie
+  // reservó para este evento» es un dato).
+  const privateBlocks = sealed
+    .filter((b) => b.kind === 'private' && b.reservations + b.cancelled + b.noShow > 0)
+    .sort(byStart)
   const plainBlock = seal(plain)
-  const blocks = [...eventBlocks, plainBlock]
+  const blocks = [...eventBlocks, ...privateBlocks, plainBlock]
 
   return {
     day: input.day,
@@ -373,6 +403,10 @@ export function aggregateDayReport(input: {
  * Vive aparte de `aggregateTemplateReport` porque no le importa de qué template
  * son los eventos: la pestaña de pauta del mes junta ediciones de todos, y tiene
  * que contar la gente con exactamente la misma cuenta que la vista por evento.
+ *
+ * Un grupo privado NO es una edición: se descarta acá aunque llegue (las
+ * queries ya lo filtran; esto es la red, como el filtro de mes de la pestaña
+ * Pauta). Sus reservas quedan sin bloque y no cuentan.
  */
 export function aggregateEditions(input: {
   events: ReadonlyArray<ReportEventRow>
@@ -384,6 +418,7 @@ export function aggregateEditions(input: {
 }): EditionSummary[] {
   const byEvent = new Map<string, Acc>()
   for (const ev of input.events) {
+    if (ev.private_group === true) continue
     byEvent.set(
       ev.id,
       newAcc({
@@ -431,6 +466,7 @@ export function aggregateTemplateReport(input: {
   rows: ReadonlyArray<ReportReservationRow>
   truncated?: boolean
 }): TemplateReport {
+  const privateEditions = input.events.filter((e) => e.private_group === true).length
   const editions = aggregateEditions({
     events: input.events,
     rows: input.rows,
@@ -465,6 +501,7 @@ export function aggregateTemplateReport(input: {
     best,
     reference,
     hasPastEditions: concluidas.length > 0,
+    privateEditions,
     truncated: input.truncated ?? false,
   }
 }
@@ -519,10 +556,10 @@ export type ReportMarketingByEvent = Readonly<Record<string, EventMarketingRow>>
 /**
  * `;` + BOM: es lo que abre en columnas en Excel en español.
  *
- * Con `marketing`, cada bloque suma las columnas de pauta. "Sin evento" las
- * lleva vacías: la pauta es de una fecha de evento y la ficha de las reservas
- * normales no tiene sección de pauta. Sin `marketing` la planilla queda byte a
- * byte como antes.
+ * Con `marketing`, cada bloque suma las columnas de pauta. "Sin evento" y los
+ * grupos privados las llevan vacías: la pauta es de una fecha de EVENTO, y ni
+ * la ficha de las reservas normales ni la de un grupo privado tienen sección de
+ * pauta. Sin `marketing` la planilla queda byte a byte como antes.
  */
 export function dayReportToCsv(report: DayReport, marketing?: ReportMarketingByEvent): string {
   const headers: string[] = [...DAY_EXPORT_HEADERS]
@@ -533,8 +570,9 @@ export function dayReportToCsv(report: DayReport, marketing?: ReportMarketingByE
       const cells = [
         report.day,
         // El nombre lo escribe el staff: con `=` adelante Excel lo correría como
-        // fórmula. Misma guarda que la planilla del mes.
-        csvFormulaGuard(b.title),
+        // fórmula. Misma guarda que la planilla del mes. Un grupo privado se
+        // rotula igual que en pantalla: es gente de la noche, no un evento.
+        csvFormulaGuard(b.kind === 'private' ? `${b.title} (${PRIVATE_GROUP_LABEL})` : b.title),
         String(b.guests),
         String(b.reservations),
         avgCell(b.avg),
@@ -550,84 +588,6 @@ export function dayReportToCsv(report: DayReport, marketing?: ReportMarketingByE
     }),
     { separator: ';', bom: true },
   )
-}
-
-export const TEMPLATE_EXPORT_HEADERS = [
-  'Fecha',
-  'Evento',
-  'Personas',
-  'Reservas',
-  'Personas por reserva',
-  'Contadas',
-  'Mesas contadas',
-  'Canceladas',
-  'No vino',
-  'Todavía no pasó',
-] as const
-
-/** Lo que dice la columna de estado de la planilla del evento. */
-function editionWhen(e: { isFuture: boolean; isTonight: boolean }): string {
-  if (e.isFuture) return 'sí'
-  if (e.isTonight) return 'es hoy'
-  return ''
-}
-
-/**
- * Con `marketing`, cada edición suma «¿Dejó plata?» (el veredicto del
- * consolidado, también para las fechas que la pantalla no pone en la tabla) y
- * las columnas de pauta (vacías si no tiene fila); al final va la fila de total
- * del consolidado, si la pantalla la muestra. Sin `marketing` la planilla queda
- * byte a byte como antes.
- */
-export function templateReportToCsv(
-  report: TemplateReport,
-  marketing?: ReportMarketingByEvent,
-): string {
-  const headers: string[] = [...TEMPLATE_EXPORT_HEADERS]
-  if (marketing) headers.push(CONSOLIDATED_CSV_HEADER, ...MARKETING_EXPORT_HEADERS)
-  const rows = report.editions.map((e) => {
-    const cells = [
-      e.date,
-      csvFormulaGuard(e.title),
-      String(e.guests),
-      String(e.reservations),
-      avgCell(e.avg),
-      String(e.attendedGuests),
-      `${e.countedTables} de ${e.reservations}`,
-      String(e.cancelled),
-      String(e.noShow),
-      editionWhen(e),
-    ]
-    if (!marketing) return cells
-    const row = e.eventId ? (marketing[e.eventId] ?? null) : null
-    const pauta = marketingCsvCells(e, row)
-    const live = e.isFuture || e.isTonight
-    return [
-      ...cells,
-      editionVerdictCsv(editionVerdict(e, row), e.reservations),
-      ...(live
-        ? pauta.map((c, i) =>
-            MARKETING_LIVE_BLANK_HEADERS.has(MARKETING_EXPORT_HEADERS[i] ?? '') ? '' : c,
-          )
-        : pauta),
-    ]
-  })
-  if (marketing) {
-    const total = buildEventConsolidated({
-      templateName: report.templateName,
-      editions: report.editions,
-      marketing,
-    })?.total
-    if (total) {
-      rows.push([
-        total.csv.label,
-        ...TEMPLATE_EXPORT_HEADERS.slice(1).map(() => ''),
-        total.csv.verdict,
-        ...MARKETING_EXPORT_HEADERS.map((h) => total.csv.cells[h] ?? ''),
-      ])
-    }
-  }
-  return rowsToCsv(headers, rows, { separator: ';', bom: true })
 }
 
 /** `como-nos-fue-hub-2026-09-07.csv` / `como-nos-fue-hub-ramen.csv`. */

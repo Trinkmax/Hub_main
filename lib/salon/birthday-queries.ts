@@ -17,8 +17,21 @@ import { EVENTS_REPORT_MAX_ROWS, getManagerForUser } from './queries'
 
 const YM_RE = /^(19|20|21)\d{2}-(0[1-9]|1[0-2])$/
 
+// `scheduled_event(private_group)`: un cumple dentro de un grupo privado no es
+// «dentro de un evento» (02/10). La FK es simple (`scheduled_event_id`).
 const BIRTHDAY_ROW_SELECT =
-  'id, reservation_date, created_at, status, estimated_guests, actual_guests, scheduled_event_id'
+  'id, reservation_date, created_at, status, estimated_guests, actual_guests, scheduled_event_id, scheduled_event:scheduled_events(private_group)'
+
+/** La fila como la devuelve PostgREST, con la fecha embebida (objeto, o array en algún cliente). */
+type BirthdayDbRow = Omit<BirthdayReservationRow, 'in_private_group'> & {
+  scheduled_event?: { private_group: boolean } | Array<{ private_group: boolean }> | null
+}
+
+function toBirthdayRow(raw: BirthdayDbRow): BirthdayReservationRow {
+  const { scheduled_event: ev, ...row } = raw
+  const event = Array.isArray(ev) ? (ev[0] ?? null) : (ev ?? null)
+  return { ...row, in_private_group: event?.private_group === true }
+}
 
 /** `2026-09` → `2026-10`. */
 function nextYM(ym: string): string {
@@ -116,8 +129,8 @@ export async function getMonthBirthdayReport(opts: {
   if (celebratedRes.error) throw celebratedRes.error
   if (bookedRes.error) throw bookedRes.error
 
-  const celebrated = (celebratedRes.data ?? []) as BirthdayReservationRow[]
-  const booked = (bookedRes.data ?? []) as BirthdayReservationRow[]
+  const celebrated = ((celebratedRes.data ?? []) as unknown as BirthdayDbRow[]).map(toBirthdayRow)
+  const booked = ((bookedRes.data ?? []) as unknown as BirthdayDbRow[]).map(toBirthdayRow)
 
   return buildMonthBirthdayReport({
     ym: opts.ym,

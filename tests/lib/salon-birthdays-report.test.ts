@@ -84,6 +84,29 @@ function report(over: { today?: string; marketing?: BirthdayMarketingRow | null 
   })
 }
 
+describe('un grupo privado no es un evento (02/10)', () => {
+  it('su cumple cuenta como cualquiera, pero no «dentro de un evento»', () => {
+    const r = buildMonthBirthdayReport({
+      ym: '2026-09',
+      today: '2026-09-23',
+      celebrated: [
+        cumple({ reservation_date: '2026-09-18', scheduled_event_id: 'ev-sushi' }),
+        // Pizza libre del 18/09 marcada «Grupo privado»: el cumple sigue contando.
+        cumple({
+          reservation_date: '2026-09-18',
+          scheduled_event_id: 'ev-pizza-privada',
+          in_private_group: true,
+        }),
+      ],
+      bookedInMonth: [],
+      marketing: null,
+      truncated: false,
+    })
+    expect(r.totals).toMatchObject({ birthdays: 2, inEvents: 1 })
+    expect(r.notes).toContain('1 fue dentro de un evento.')
+  })
+})
+
 describe('buildMonthBirthdayReport — el mes', () => {
   const r = report()
 

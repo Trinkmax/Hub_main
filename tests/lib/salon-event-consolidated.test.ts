@@ -7,21 +7,16 @@ import {
   type ConsolidatedEditionInput,
   editionVerdict,
   editionVerdictCsv,
+  eventProfitabilityToCsv,
   missingShort,
+  PROFITABILITY_EXPORT_HEADERS,
 } from '@/lib/salon/event-consolidated'
 import {
   type EventMarketingRow,
-  MARKETING_EXPORT_HEADERS,
   NIGHT_RESULT_DISCLAIMER,
   nightResultReason,
   nightResultReport,
 } from '@/lib/salon/event-marketing'
-import {
-  type EditionSummary,
-  TEMPLATE_EXPORT_HEADERS,
-  type TemplateReport,
-  templateReportToCsv,
-} from '@/lib/salon/events-report'
 
 const HOY = '2026-09-30'
 
@@ -168,7 +163,7 @@ describe('consolidado: el 2x1 Burger Martes real', () => {
       [nb('$ 136.488'), 'abajo', 'abajo'],
     ])
     expect(c.rows.map((r) => r.result.sr)).toEqual([
-      'Sin juzgar: falta cargar la pauta y la plata de la noche.',
+      'Sin juzgar: faltan la pauta, el ingreso y el costo por persona.',
       'Sin juzgar: faltan el ingreso y el costo por persona, y el dólar del día.',
       nb('La noche dejó $ 355.979.'),
       nb('La noche dejó $ 194.515.'),
@@ -210,7 +205,7 @@ describe('consolidado: el 2x1 Burger Martes real', () => {
       nb('28 personas · pauta US$ 142,25 · $ 8.500 por persona · bebida sin cargar'),
     ])
     expect(c.rows.map((r) => r.reasonText)).toEqual([
-      'Para juzgarla falta cargar la pauta y la plata de la noche.',
+      'Para juzgarla faltan la pauta, el ingreso y el costo por persona.',
       'Para juzgarla faltan el ingreso y el costo por persona, y el dólar del día.',
       null,
       null,
@@ -292,13 +287,13 @@ describe('consolidado: el 2x1 Burger Martes real', () => {
       label: 'Total con la cuenta cerrada (3 fechas)',
       verdict: '2 de 3',
       cells: {
-        'Pauta USD': '301,48',
-        'Personas del cálculo': '152',
+        'Personas de la cuenta': '152',
         'Ingreso por persona ARS': '12230',
         'Ingreso de bebida por persona ARS': '',
         'Ingreso ARS': '1859000',
         'Costo ARS': '977700',
         'Margen ARS': '881300',
+        'Pauta USD': '301,48',
         'Pauta ARS': '467294',
         'Resultado ARS': '414006',
       },
@@ -339,7 +334,7 @@ describe('consolidado: el 2x1 Burger Martes real', () => {
       NIGHT_RESULT_DISCLAIMER,
     ])
     expect(c.caption).toBe(
-      'Consolidado de 2x1 Burger Martes: la cuenta de cada fecha que ya pasó, de la más nueva a la más vieja.',
+      'Rentabilidad de 2x1 Burger Martes: la cuenta de cada fecha que ya pasó, de la más nueva a la más vieja.',
     )
   })
 
@@ -911,65 +906,45 @@ describe('consolidado: los bordes', () => {
   })
 })
 
-describe('planilla del evento con el consolidado', () => {
-  function edition(e: ConsolidatedEditionInput, title: string): EditionSummary {
-    return {
-      ...e,
-      kind: 'event',
-      title,
-      colorHex: null,
-      startsAtLocal: '21:00',
-      capacity: null,
-      templateId: 't',
-      avg: e.reservations > 0 ? Math.round((e.guests / e.reservations) * 10) / 10 : null,
-      minParty: null,
-      maxParty: null,
-      tables: [],
-      countedTables: 0,
-      cancelled: 0,
-      noShow: 0,
-      fallenGuests: 0,
-    } as EditionSummary
-  }
-  const report: TemplateReport = {
-    templateId: 't',
+describe('planilla de «Rentabilidad» (02/10: exactamente el cuadro)', () => {
+  const lines = eventProfitabilityToCsv({
     templateName: '2x1 Burger Martes',
-    colorHex: null,
-    editions: BURGER_EDITIONS.map((e) => edition(e, '2x1 Burger Martes')),
-    latest: null,
-    best: null,
-    reference: null,
-    hasPastEditions: true,
-    truncated: false,
-  }
+    editions: BURGER_EDITIONS,
+    marketing: BURGER_MARKETING,
+  })
+    .replace('\ufeff', '')
+    .split('\r\n')
 
-  it('«¿Dejó plata?» por fecha y la fila de total, iguales a la pantalla', () => {
-    const lines = templateReportToCsv(report, BURGER_MARKETING).split('\r\n')
-    const at = TEMPLATE_EXPORT_HEADERS.length
-    expect(lines[0]?.replace('﻿', '').split(';')[at]).toBe('¿Dejó plata?')
-    expect(lines.slice(1, 10).map((l) => l.split(';')[at])).toEqual([
-      'sin juzgar: todavía no pasó',
-      'sin juzgar: todavía no pasó',
-      'sin juzgar: todavía no pasó',
-      'sin juzgar: todavía no pasó',
+  it('«¿Dejó plata?» por fila y la fila de total, iguales a la pantalla', () => {
+    const at = PROFITABILITY_EXPORT_HEADERS.indexOf('¿Dejó plata?')
+    expect(lines[0]?.split(';')[at]).toBe('¿Dejó plata?')
+    // Las mismas cinco filas del cuadro: ni las que vienen ni las vacías.
+    expect(lines.slice(1, 6).map((l) => l.split(';')[at])).toEqual([
       'sin juzgar: sin cargar',
       'sin juzgar: faltan ingreso, costo y dólar',
       'sí',
       'sí',
       'no',
     ])
-    expect(lines[10]).toBe(
-      `Total con la cuenta cerrada (3 fechas);;;;;;;;;;2 de 3;301,48;;;;;;;;;;;152;12230;;;;1859000;977700;881300;467294;414006;`,
+    expect(lines[6]).toBe(
+      'Total con la cuenta cerrada (3 fechas);152;12230;;;;1859000;977700;881300;301,48;;467294;414006;2 de 3',
     )
-    expect(lines[10]?.split(';')).toHaveLength(
-      TEMPLATE_EXPORT_HEADERS.length + 1 + MARKETING_EXPORT_HEADERS.length,
-    )
-    expect(lines).toHaveLength(11)
+    expect(lines[6]?.split(';')).toHaveLength(PROFITABILITY_EXPORT_HEADERS.length)
   })
 
-  it('sin marketing la planilla no cambia', () => {
-    const lines = templateReportToCsv(report).split('\r\n')
-    expect(lines[0]?.replace('﻿', '').split(';')).toEqual([...TEMPLATE_EXPORT_HEADERS])
-    expect(lines).toHaveLength(10)
+  it('el resultado negativo va con signo (en pantalla, «abajo»)', () => {
+    expect(lines[5]?.split(';')[PROFITABILITY_EXPORT_HEADERS.indexOf('Resultado ARS')]).toBe(
+      '-136488',
+    )
+  })
+
+  it('después del total, un renglón vacío y las notas del cuadro, en su orden', () => {
+    expect(lines.slice(7).map((l) => l.split(';')[0])).toEqual([
+      '',
+      'Las 4 fechas que vienen se juzgan cuando pasen.',
+      CONSOLIDATED_BASIS_NOTE,
+      CONSOLIDATED_NO_DRINKS_NOTE,
+      NIGHT_RESULT_DISCLAIMER,
+    ])
   })
 })
