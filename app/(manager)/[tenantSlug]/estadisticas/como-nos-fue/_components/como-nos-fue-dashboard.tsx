@@ -1,6 +1,6 @@
 'use client'
 
-import { CalendarDays, ChevronLeft, ChevronRight, Download, PartyPopper } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, Download, Lock, PartyPopper } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTransition } from 'react'
 import { Button } from '@/components/ui/button'
@@ -17,14 +17,23 @@ import {
 import { SlidingTabs } from '@/components/ui/sliding-tabs'
 import type { MonthBirthdayReport } from '@/lib/salon/birthdays-report'
 import { buildEventConsolidated } from '@/lib/salon/event-consolidated'
+import { cuadroExport } from '@/lib/salon/event-cuadros'
 import { type MonthMarketingReport, phaseOf } from '@/lib/salon/event-marketing'
 import type { DayReport, ReportMarketingByEvent, TemplateReport } from '@/lib/salon/events-report'
+import { eventMoneyShare } from '@/lib/salon/money-share'
+import {
+  PRIVATE_BLOCK_LINK,
+  privateEditionsNote,
+  privateOnlyTemplateState,
+  type WithPrivateGroups,
+} from '@/lib/salon/private-groups'
 import { legendFlags } from '@/lib/salon/tables-wall'
 import { cn } from '@/lib/utils'
 import { BirthdaysMonthView } from './birthdays-month-view'
 import { EditionsStrip } from './editions-strip'
 import { EventConsolidated } from './event-consolidated'
 import { MarketingMonthView } from './marketing-month-view'
+import { MoneyShareDonut } from './money-share-donut'
 import { NightCard } from './night-card'
 import { TablesWallLegend } from './tables-wall'
 
@@ -115,8 +124,8 @@ export function ComoNosFueDashboard({
   templatesTruncated: boolean
   templateId: string | null
   templateReport: TemplateReportWithMarketing | null
-  /** Solo en la pestaña «Pauta». */
-  monthReport: MonthMarketingReport | null
+  /** Solo en la pestaña «Pauta». Con sus grupos privados, que no son ediciones. */
+  monthReport: WithPrivateGroups<MonthMarketingReport> | null
   /** Solo en la pestaña «Cumpleaños». */
   birthdayReport: MonthBirthdayReport | null
   lastUsdArsRate: LastUsdArsRate
@@ -138,14 +147,14 @@ export function ComoNosFueDashboard({
   // evento elegido o el mes elegido. Nunca de los searchParams crudos, que
   // pueden no traer el default que la page resolvió.
   const exportBase = `/api/como-nos-fue/export?slug=${encodeURIComponent(tenantSlug)}`
-  const exportHref =
+  const exportHref: string | null =
     view === 'dia'
       ? `${exportBase}&vista=dia&dia=${day}`
       : view === 'pauta'
         ? `${exportBase}&vista=pauta&mes=${monthReport?.ym ?? ym}`
         : view === 'cumples'
           ? `${exportBase}&vista=cumples&mes=${birthdayReport?.ym ?? ym}`
-          : `${exportBase}&vista=evento&evento=${templateId ?? ''}`
+          : null
 
   const relativo = relativeLabel(day, today)
   // Las banderas de la leyenda salen de las MISMAS mesas que se dibujan.
@@ -155,13 +164,12 @@ export function ComoNosFueDashboard({
   // no tiene un solo chip en pantalla. Lo mismo vale para "silla vacía" y
   // "se sumó alguien": solo si hay una en pantalla. La pestaña «Pauta» no
   // dibuja ningún muro, así que tampoco lleva leyenda.
+  // «Por evento» ya no dibuja ningún muro (C3: sin «Última fecha»), así que
+  // solo «Por día» lleva leyenda.
   const chipsEnPantalla =
-    view === 'pauta' || view === 'cumples'
-      ? []
-      : [
-          ...(dayReport?.blocks.filter((b) => b.reservations > 0).flatMap((b) => b.tables) ?? []),
-          ...(templateReport?.latest?.tables ?? []),
-        ]
+    view === 'dia'
+      ? (dayReport?.blocks.filter((b) => b.reservations > 0).flatMap((b) => b.tables) ?? [])
+      : []
   const legend = legendFlags(chipsEnPantalla)
   const hayMuro = legend.counted || legend.open
 
@@ -180,12 +188,16 @@ export function ComoNosFueDashboard({
             { value: 'cumples', label: 'Cumpleaños' },
           ]}
         />
-        <Button asChild variant="outline" size="sm" className="gap-2">
-          <a href={exportHref} download title="Descargar planilla (Excel / Sheets)">
-            <Download className="size-4" />
-            <span className="sr-only sm:not-sr-only">Exportar</span>
-          </a>
-        </Button>
+        {/* En «Por evento» cada cuadro trae su propio «Exportar» (C4): la planilla
+            mezclada de antes ya no existe. */}
+        {view === 'evento' ? null : (
+          <Button asChild variant="outline" size="sm" className="gap-2">
+            <a href={exportHref ?? undefined} download title="Descargar planilla (Excel / Sheets)">
+              <Download className="size-4" />
+              <span className="sr-only sm:not-sr-only">Exportar</span>
+            </a>
+          </Button>
+        )}
       </div>
 
       {view === 'dia' ? (
@@ -324,12 +336,7 @@ export function ComoNosFueDashboard({
           </Select>
 
           {templateReport ? (
-            <EventView
-              report={templateReport}
-              tenantSlug={tenantSlug}
-              today={today}
-              lastUsdArsRate={lastUsdArsRate}
-            />
+            <EventView report={templateReport} tenantSlug={tenantSlug} />
           ) : (
             <EmptyState
               icon={PartyPopper}
@@ -370,6 +377,10 @@ function DayView({
   lastUsdArsRate: LastUsdArsRate
 }) {
   const eventos = report.blocks.filter((b) => b.kind === 'event')
+  // Grupos privados (C1, 02/10): su gente es de la noche, pero no son eventos.
+  // Van en su franja, después de los eventos y antes de «Sin evento» (el
+  // agregador ya dejó afuera los que no tuvieron a nadie).
+  const privados = report.blocks.filter((b) => b.kind === 'private')
   const plain = report.blocks.find((b) => b.kind === 'plain')
   const futura = report.day > today
   // Todas las fichas de evento de la noche comparten fecha, así que comparten
@@ -390,10 +401,12 @@ function DayView({
     )
   }
 
-  // "Sin evento" se promueve a protagonista cuando la noche no tuvo evento: es
-  // todo lo que pasó, no una nota al pie.
-  const plainTone = eventos.length === 0 ? 'event' : 'plain'
+  // "Sin evento" se promueve a protagonista cuando la noche no tuvo evento NI
+  // grupo privado: es todo lo que pasó, no una nota al pie.
+  const plainTone = eventos.length === 0 && privados.length === 0 ? 'event' : 'plain'
   const totalNoche = report.totals.guests
+  const share = (guests: number) =>
+    guests > 0 && guests < totalNoche ? `${guests} de las ${totalNoche} de la noche` : undefined
 
   return (
     <div className="space-y-4">
@@ -415,11 +428,7 @@ function DayView({
                   ? `/${tenantSlug}/estadisticas/como-nos-fue?vista=evento&evento=${b.templateId}`
                   : undefined
               }
-              dayShare={
-                b.guests > 0 && b.guests < totalNoche
-                  ? `${b.guests} de las ${totalNoche} de la noche`
-                  : undefined
-              }
+              dayShare={share(b.guests)}
               // La pauta cuelga de la edición: sin `eventId` no hay dónde
               // guardarla, así que tampoco hay sección.
               marketing={
@@ -438,6 +447,20 @@ function DayView({
         </div>
       ) : null}
 
+      {/* Un grupo privado no lleva pauta ni cuenta, ni link a «Por evento»: no
+          es un evento. Su link lleva a la fecha del calendario, que es donde se
+          cambia el tilde. */}
+      {privados.map((b) => (
+        <NightCard
+          key={b.key}
+          block={b}
+          tone="plain"
+          eventHref={b.eventId ? `/${tenantSlug}/eventos/programados/${b.eventId}` : undefined}
+          linkLabel={PRIVATE_BLOCK_LINK}
+          dayShare={share(b.guests)}
+        />
+      ))}
+
       {/* "Sin evento" nunca lleva pauta, ni siquiera cuando se promueve a
           protagonista: no hay una fecha de evento a la que atarla. */}
       {plain ? (
@@ -447,13 +470,9 @@ function DayView({
           // Solo cuando la noche se reparte de verdad: "12 de las 12 de la
           // noche" es una tautología, y pasa las 9 noches en que el evento
           // programado no vendió nada.
-          dayShare={
-            plain.guests > 0 && plain.guests < totalNoche
-              ? `${plain.guests} de las ${totalNoche} de la noche`
-              : undefined
-          }
+          dayShare={share(plain.guests)}
           emptyText={
-            eventos.some((e) => e.reservations > 0)
+            eventos.some((e) => e.reservations > 0) && !privados.some((p) => p.reservations > 0)
               ? 'No hubo reservas fuera del evento: toda la noche fue del evento.'
               : 'No hubo ninguna reserva normal esa noche.'
           }
@@ -463,17 +482,19 @@ function DayView({
   )
 }
 
-function EventView({
+export function EventView({
   report,
   tenantSlug,
-  today,
-  lastUsdArsRate,
 }: {
   report: TemplateReportWithMarketing
   tenantSlug: string
-  today: string
-  lastUsdArsRate: LastUsdArsRate
 }) {
+  if (report.editions.length === 0 && report.privateEditions > 0) {
+    // Un formato que solo tuvo grupos privados (el selector ya no lo ofrece;
+    // se llega por link): «todavía no le pusiste fecha» sería falso.
+    const state = privateOnlyTemplateState(report.templateName, report.privateEditions)
+    return <EmptyState icon={Lock} title={state.title} description={state.description} />
+  }
   if (report.editions.length === 0) {
     return (
       <EmptyState
@@ -489,72 +510,53 @@ function EventView({
     )
   }
 
-  const hero = report.latest
   // Lo que todavía no terminó incluye la fecha de HOY: la tira la lista, así que
   // el texto que la cuenta tiene que contarla igual.
   const porVenir = report.editions.filter((e) => e.isFuture || e.isTonight)
-  // Una fecha que está vendiendo ahora mismo no puede ser el hero (sus números
-  // se siguen moviendo), pero decir "ninguna tuvo reservas" con 53 personas
-  // anotadas justo abajo es peor: se la nombra.
   const vendiendo = porVenir.find((e) => e.reservations > 0)
-  const heroEventId = hero ? (hero.eventId ?? hero.key) : null
-  // El consolidado (30/09): la cuenta de cada fecha, al lado de la tira. Puro y
-  // O(fechas): no hace falta memo. `null` si ninguna fecha que ya pasó tiene
-  // plata cargada, y entonces la tira va a lo ancho, como antes.
+  // Sin «Última fecha» (C3): arriba van directo los dos cuadros. Esta oración
+  // queda solo cuando todavía no hay historia que mostrar (ninguna fecha que
+  // terminó con reservas), que es justo cuando los cuadros no la cuentan.
+  const sinHistoria =
+    report.latest !== null
+      ? null
+      : vendiendo
+        ? `Todavía no terminó ninguna fecha de ${report.templateName} con reservas. ${
+            vendiendo.isTonight ? 'La de esta noche va' : 'La que viene ya tiene'
+          } ${nf.format(vendiendo.guests)} ${vendiendo.guests === 1 ? 'persona' : 'personas'} en ${vendiendo.reservations} ${vendiendo.reservations === 1 ? 'reserva' : 'reservas'}.`
+        : report.hasPastEditions
+          ? `Ninguna fecha de ${report.templateName} tuvo reservas todavía.`
+          : `${report.templateName} todavía no se hizo nunca: ${
+              porVenir.length === 1
+                ? porVenir[0]?.isTonight
+                  ? 'la de esta noche está'
+                  : 'la fecha que viene está'
+                : `las ${porVenir.length} fechas que vienen están`
+            } más abajo.`
+
   const consolidated = buildEventConsolidated({
     templateName: report.templateName,
     editions: report.editions,
     marketing: report.marketing,
   })
+  // La dona (C5): las mismas fechas que el ✓ / ✗ de «Rentabilidad». `null` sin
+  // ninguna con la cuenta cerrada, y entonces no se dibuja nada en su lugar.
+  const share = eventMoneyShare({ editions: report.editions, marketing: report.marketing })
+  const exportInput = {
+    tenantSlug,
+    templateId: report.templateId,
+    templateName: report.templateName,
+  }
+  const privateNote = privateEditionsNote(report.privateEditions)
 
   return (
     <div className="space-y-4">
-      {hero && heroEventId ? (
-        <NightCard
-          block={hero}
-          tone="event"
-          eyebrow={
-            <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-              Última fecha ·
-            </span>
-          }
-          eventHref={`/${tenantSlug}/estadisticas/como-nos-fue?vista=dia&dia=${hero.date}`}
-          linkLabel="Ver esa noche entera"
-          // El hero es la última edición concluida, así que hoy siempre es
-          // `past`; se calcula igual para no depender de esa regla de otro
-          // archivo.
-          marketing={{
-            tenantSlug,
-            eventDate: hero.date,
-            phase: phaseOf(hero.date, today),
-            row: report.marketing[heroEventId] ?? null,
-            lastUsdArsRate,
-          }}
-        />
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          {vendiendo
-            ? `Todavía no terminó ninguna fecha de ${report.templateName} con reservas. ${
-                vendiendo.isTonight ? 'La de esta noche va' : 'La que viene ya tiene'
-              } ${nf.format(vendiendo.guests)} ${vendiendo.guests === 1 ? 'persona' : 'personas'} en ${vendiendo.reservations} ${vendiendo.reservations === 1 ? 'reserva' : 'reservas'}.`
-            : report.hasPastEditions
-              ? // Se hizo, pero ninguna de sus fechas vendió: decir "no se hizo
-                // nunca" contradiría la tira de fechas que está justo abajo.
-                `Ninguna fecha de ${report.templateName} tuvo reservas todavía.`
-              : `${report.templateName} todavía no se hizo nunca: ${
-                  porVenir.length === 1
-                    ? porVenir[0]?.isTonight
-                      ? 'la de esta noche está'
-                      : 'la fecha que viene está'
-                    : `las ${porVenir.length} fechas que vienen están`
-                } más abajo.`}
-        </p>
-      )}
+      {sinHistoria ? <p className="text-sm text-muted-foreground">{sinHistoria}</p> : null}
 
-      {/* Consolidado y tira, uno al lado del otro desde que el bloque mide
-          64rem (container query: plegar la barra lateral cambia el ancho sin
-          cambiar la pantalla). Más angosto van apilados, en el mismo orden del
-          DOM: el consolidado primero, que es lo que se vino a comparar. */}
+      {/* Los dos cuadros, lado a lado desde que el bloque mide 64rem (container
+          query: plegar la barra lateral cambia el ancho sin cambiar la
+          pantalla). A la izquierda «Rentabilidad» y debajo su dona; a la
+          derecha «Conversión». Más angosto van apilados en ese mismo orden. */}
       <div className="@container">
         <div
           className={cn(
@@ -563,15 +565,28 @@ function EventView({
           )}
         >
           {consolidated ? (
-            <EventConsolidated
-              key={report.templateId}
-              data={consolidated}
-              tenantSlug={tenantSlug}
-            />
+            <div className="grid min-w-0 gap-4">
+              <EventConsolidated
+                key={report.templateId}
+                data={consolidated}
+                tenantSlug={tenantSlug}
+                exportAction={cuadroExport('rentabilidad', exportInput)}
+              />
+              {share ? <MoneyShareDonut data={share} /> : null}
+            </div>
           ) : null}
-          <EditionsStrip report={report} marketing={report.marketing} tenantSlug={tenantSlug} />
+          <EditionsStrip
+            report={report}
+            marketing={report.marketing}
+            tenantSlug={tenantSlug}
+            exportAction={cuadroExport('conversion', exportInput)}
+          />
         </div>
       </div>
+
+      {/* Una sola vez, debajo de los dos cuadros: las fechas privadas del
+          formato no son ediciones (C1). Las dos planillas la repiten al final. */}
+      {privateNote ? <p className="text-xs text-muted-foreground">{privateNote}</p> : null}
     </div>
   )
 }

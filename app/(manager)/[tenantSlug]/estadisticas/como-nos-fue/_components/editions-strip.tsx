@@ -2,31 +2,26 @@
 
 import { TrendingDown, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
-import type { CSSProperties } from 'react'
+import { type CSSProperties, useId } from 'react'
+import { buildEventConversion } from '@/lib/salon/event-conversion'
 import { eventInk } from '@/lib/salon/event-ink'
-import {
-  type EventMarketingRow,
-  editionMarketingLine,
-  type MarketingPhase,
-  type PoolItem,
-  pooledStripSummary,
-} from '@/lib/salon/event-marketing'
-import {
-  type EditionSummary,
-  editionDelta,
-  type ReportMarketingByEvent,
-  type TemplateReport,
+import type {
+  EditionSummary,
+  ReportMarketingByEvent,
+  TemplateReport,
 } from '@/lib/salon/events-report'
 import { cn } from '@/lib/utils'
+import { CuadroExportButton } from './cuadro-export-button'
 
 /**
- * Todas las fechas de un evento, de la más nueva a la más vieja: la respuesta a
- * "¿este evento crece o se apaga?".
+ * «Conversión» (02/10, antes «Todas las fechas»): todas las fechas de un
+ * evento, de la más nueva a la más vieja, con la gente que trajo cada una y lo
+ * que costó traerla. La respuesta a "¿este evento crece o se apaga?".
  *
  * La barra usa SU propia unidad (`--u` = una persona), no la del muro de mesas.
- * Sale del ancho de la TIRA (container query), no de la pantalla: al lado del
- * consolidado la tira mide ~32rem en una pantalla de 1440, y con la unidad por
- * pantalla una fecha de 62 personas pisaba el texto de al lado. `--u` es el
+ * Sale del ancho de la TIRA (container query), no de la pantalla: al lado de
+ * «Rentabilidad» la tira mide ~32rem en una pantalla de 1440, y con la unidad
+ * por pantalla una fecha de 62 personas pisaba el texto de al lado. `--u` es el
  * menor entre 5px y lo que entra para la fecha más grande (`--max-guests`):
  * nunca se sale del renglón. Angosta (menos de 56rem), la barra baja a su
  * propio renglón. Dentro de la tira sigue siendo UNA sola unidad, así que un
@@ -34,9 +29,9 @@ import { cn } from '@/lib/utils'
  * proyección: con dos a siete ediciones, una recta es adivinación con estética
  * de dato.
  *
- * La pauta va como segunda línea de cada fecha, y el resumen agrupado arriba a
- * la derecha solo con 2 fechas o más con mensajes: con una sola, el "total" es
- * esa fecha con otro nombre. Todo el texto sale de `lib/salon/event-marketing`.
+ * Todo lo que se lee (filas, segunda línea de pauta, resumen agrupado, «la
+ * mejor», las colapsadas) sale de `buildEventConversion`, la misma función que
+ * arma su planilla (`eventConversionToCsv`): acá solo se dibuja.
  */
 
 const nf = new Intl.NumberFormat('es-AR')
@@ -53,19 +48,6 @@ function dayLabel(iso: string): string {
 function avgText(avg: number | null): string {
   if (avg === null) return '—'
   return avg.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
-}
-
-/**
- * La fase de pauta de una edición sale de las MISMAS banderas que la tira ya
- * usa para "es esta noche" / "todavía no pasó": las dos lecturas del mismo día
- * no pueden contradecirse en la misma fila.
- */
-function editionPhase(e: Pick<EditionSummary, 'isFuture' | 'isTonight'>): MarketingPhase {
-  return e.isTonight ? 'tonight' : e.isFuture ? 'future' : 'past'
-}
-
-function rowOf(e: EditionSummary, marketing: ReportMarketingByEvent): EventMarketingRow | null {
-  return marketing[e.eventId ?? e.key] ?? null
 }
 
 function Row({
@@ -174,74 +156,61 @@ export function EditionsStrip({
   report,
   marketing,
   tenantSlug,
+  exportAction,
 }: {
   report: TemplateReport
   /** Pauta por `scheduled_event_id`. Sin fila = «Sin cargar». */
   marketing: ReportMarketingByEvent
   tenantSlug: string
+  /** El «Exportar» del cuadro (`cuadroExport('conversion', …)`). */
+  exportAction: { href: string; label: string; ariaLabel: string; title: string }
 }) {
-  const conPauta = (e: EditionSummary) => (rowOf(e, marketing)?.adSpendUsdCents ?? 0) > 0
-  // Una fecha colapsa al pie solo si no tuvo reservas NI plata gastada: la pauta
-  // de una fecha que nadie reservó es justamente la que el dueño tiene que ver.
-  const listables = report.editions.filter((e) => e.reservations > 0 || conPauta(e))
-  const vacias = report.editions.filter((e) => e.reservations === 0 && !conPauta(e))
-  // Cuando TODAS están en cero no se colapsan: son todo lo que hay, y un cero
-  // es información distinta de un hueco.
-  const listadas = listables.length > 0 ? listables : report.editions
-  const colapsadas = listables.length > 0 ? vacias : []
-
-  // La segunda línea aparece solo si el evento tiene al menos una fila de pauta:
-  // un evento que nunca se pautó no tiene por qué llenarse de "Pauta sin cargar".
-  const hayPauta = report.editions.some((e) => rowOf(e, marketing) !== null)
-  const items: PoolItem[] = report.editions.map((e) => ({
-    phase: editionPhase(e),
-    reservations: e.reservations,
-    guests: e.guests,
-    // La gente con la que se multiplica la plata (ver `MarketingBlock`): la
-    // suma del mes la necesita para poder totalizar el resultado.
-    billableGuests: e.billableGuests,
-    row: rowOf(e, marketing),
-  }))
-  const resumen = hayPauta ? pooledStripSummary(items) : null
+  const titleId = useId()
+  // Filas, colapsadas, resumen y textos salen de `buildEventConversion`, la
+  // misma función que arma la planilla del cuadro: pantalla = CSV.
+  const data = buildEventConversion(report, marketing)
 
   // La tinta del template: el mismo tono que el muro de la ficha de arriba.
   const ink = eventInk(report.colorHex)
 
   return (
-    <div
+    <section
+      aria-labelledby={titleId}
       style={
         {
           ...(ink ? { '--ev-l': ink.light, '--ev-d': ink.dark } : {}),
-          '--max-guests': Math.max(1, ...listadas.map((e) => e.guests)),
+          '--max-guests': data.maxGuests,
         } as CSSProperties
       }
       className="ev-ink @container card-hairline min-w-0 rounded-xl border bg-card"
     >
-      <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border/60 px-4 py-3">
-        <h2 className="font-serif text-base font-semibold tracking-tight">
-          Todas las fechas
-          <span className="ml-2 text-xs font-normal text-muted-foreground">
-            {report.editions.length} en el calendario
-          </span>
-        </h2>
-        {report.best || resumen ? (
-          <div className="space-y-0.5 @xl:text-right">
-            {report.best ? (
-              <p className="text-[11px] text-muted-foreground">
-                La mejor: {dayLabel(report.best.date).slice(0, 5)} con{' '}
-                {nf.format(report.best.guests)} personas
-                {report.reference
-                  ? ` · promedio ${nf.format(report.reference.avgGuests)} en ${report.reference.editions} fechas`
-                  : ''}
-              </p>
+      {/* Cabecera (C4): igual que «Rentabilidad». Los dos resúmenes de
+          siempre (la mejor y la pauta agrupada) bajan debajo del subtítulo,
+          alineados a la izquierda: a la derecha va «Exportar». */}
+      <header className="border-b border-border/60 px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 id={titleId} className="font-serif text-base font-semibold tracking-tight">
+            {data.title}
+            {/* Entero o nada: a 360 px baja de renglón sin partirse. */}
+            <span className="ml-2 inline-block whitespace-nowrap text-xs font-normal text-muted-foreground">
+              {data.countLabel}
+            </span>
+          </h2>
+          <CuadroExportButton {...exportAction} />
+        </div>
+        <p className="mt-1 text-xs leading-snug text-muted-foreground">{data.subtitle}</p>
+        {data.bestText || data.summary ? (
+          <div className="mt-2 space-y-0.5">
+            {data.bestText ? (
+              <p className="text-[11px] text-muted-foreground">{data.bestText}</p>
             ) : null}
-            {resumen ? (
+            {data.summary ? (
               <p className="text-[11px] text-muted-foreground">
-                {resumen.text}
-                {resumen.pendingText ? (
+                {data.summary.text}
+                {data.summary.pendingText ? (
                   <>
                     {' · '}
-                    <span className="text-warning-text">{resumen.pendingText}</span>
+                    <span className="text-warning-text">{data.summary.pendingText}</span>
                   </>
                 ) : null}
               </p>
@@ -251,29 +220,23 @@ export function EditionsStrip({
       </header>
 
       <ul className="divide-y divide-border/60 [--u:min(5px,calc((100cqw_-_2rem)/var(--max-guests)))] @4xl:[--u:min(5px,calc((100cqw_-_36rem)/var(--max-guests)))]">
-        {listadas.map((e) => {
-          const index = report.editions.indexOf(e)
-          return (
-            <Row
-              key={e.eventId}
-              edition={e}
-              delta={editionDelta(report.editions, index)}
-              isBest={report.best?.date === e.date}
-              href={`/${tenantSlug}/estadisticas/como-nos-fue?vista=dia&dia=${e.date}`}
-              marketingLine={
-                hayPauta ? editionMarketingLine(e, rowOf(e, marketing), editionPhase(e)) : null
-              }
-            />
-          )
-        })}
+        {data.rows.map((r) => (
+          <Row
+            key={r.edition.eventId ?? r.edition.key}
+            edition={r.edition}
+            delta={r.delta}
+            isBest={r.isBest}
+            href={`/${tenantSlug}/estadisticas/como-nos-fue?vista=dia&dia=${r.edition.date}`}
+            marketingLine={r.marketingLine}
+          />
+        ))}
       </ul>
 
-      {colapsadas.length > 0 ? (
+      {data.collapsedText ? (
         <p className="border-t border-border/60 px-4 py-2.5 text-[11px] text-muted-foreground">
-          {colapsadas.length} {colapsadas.length === 1 ? 'fecha más' : 'fechas más'} sin ninguna
-          reserva: {colapsadas.map((e) => dayLabel(e.date).slice(0, 5)).join(' · ')}
+          {data.collapsedText}
         </p>
       ) : null}
-    </div>
+    </section>
   )
 }

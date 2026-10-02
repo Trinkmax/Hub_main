@@ -11,12 +11,14 @@ import {
   type EventConsolidated as Data,
 } from '@/lib/salon/event-consolidated'
 import { cn } from '@/lib/utils'
+import { CuadroExportButton } from './cuadro-export-button'
 import { MathStep } from './marketing-report'
 
 /**
- * «Consolidado»: la cuenta de cada fecha de un evento, al lado de «Todas las
- * fechas», para decir de un vistazo en cuál dejó plata y en cuál no (D1/D2 del
- * 30/09/2026).
+ * «Rentabilidad» (02/10, antes «Consolidado»): la cuenta de cada fecha de un
+ * evento, al lado de «Conversión», para decir de un vistazo en cuál dejó plata
+ * y en cuál no (D1/D2 del 30/09/2026). Su «Exportar» baja exactamente esta
+ * tabla (`eventProfitabilityToCsv`).
  *
  * Una sola pieza con dos formas, elegidas por el ancho de SU contenedor (no de
  * la pantalla): tarjetas debajo de 30rem (el celular) y la tabla del boceto del
@@ -142,7 +144,16 @@ function Detail({ row, id, tenantSlug }: { row: ConsolidatedRow; id: string; ten
   )
 }
 
-export function EventConsolidated({ data, tenantSlug }: { data: Data; tenantSlug: string }) {
+export function EventConsolidated({
+  data,
+  tenantSlug,
+  exportAction,
+}: {
+  data: Data
+  tenantSlug: string
+  /** El «Exportar» del cuadro (`cuadroExport('rentabilidad', …)`). */
+  exportAction: { href: string; label: string; ariaLabel: string; title: string }
+}) {
   const uid = useId()
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set())
   const toggle = (id: string) =>
@@ -160,11 +171,18 @@ export function EventConsolidated({ data, tenantSlug }: { data: Data; tenantSlug
       aria-labelledby={titleId}
       className="@container card-hairline min-w-0 rounded-xl border bg-card"
     >
+      {/* Cabecera (C4): título y «Exportar» en el renglón 1; el subtítulo a lo
+          ancho debajo (a 360 px no entra al lado del botón); el titular de
+          siempre abajo. */}
       <header className="border-b border-border/60 px-4 py-3">
-        <h2 id={titleId} className="font-serif text-base font-semibold tracking-tight">
-          {data.title}
-        </h2>
-        <p className="mt-1 text-sm leading-snug">
+        <div className="flex items-center justify-between gap-3">
+          <h2 id={titleId} className="font-serif text-base font-semibold tracking-tight">
+            {data.title}
+          </h2>
+          <CuadroExportButton {...exportAction} />
+        </div>
+        <p className="mt-1 text-xs leading-snug text-muted-foreground">{data.subtitle}</p>
+        <p className="mt-2 text-sm leading-snug">
           {data.headline.before}
           {data.headline.value ? (
             <span className="font-semibold tabular-nums">{data.headline.value}</span>

@@ -68,7 +68,7 @@ export default async function ComoNosFuePage({
 
   // Arranca ya y se espera al final: no depende de nada de lo que sigue. El
   // último dólar va en TODAS las vistas porque el formulario de pauta vive en la
-  // ficha del día, en el hero del evento y en los pendientes del mes. El
+  // ficha del día y en los pendientes del mes. El
   // `.catch` hace que nunca rechace, así que empezarla antes de esperarla no
   // deja una promesa rechazada sin manejar.
   const lastUsdArsRateP = getLastUsdArsRate({ tenantId }).catch((error: unknown) => {
