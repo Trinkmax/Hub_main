@@ -287,7 +287,7 @@ export function MesaScreen({
       {/* Glow sutil top */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-72 bg-gradient-to-b from-[--forest-glow] via-[--forest-glow]/40 to-transparent"
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-72 bg-gradient-to-b to-transparent"
       />
 
       <div className="mx-auto max-w-md px-4 pt-6">

@@ -1,42 +1,31 @@
 'use client'
 
-import { ArrowRight, Eye, EyeOff, KeyRound, Lock, Mail } from 'lucide-react'
+import { Mail } from 'lucide-react'
 import Link from 'next/link'
-import { useActionState, useEffect, useId, useRef, useState } from 'react'
-import { useFormStatus } from 'react-dom'
+import { useActionState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
-import { BrandWordmarkLarge } from '@/components/shell/brand-mark'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Callout } from '@/components/ui/callout'
+import { Field } from '@/components/ui/field'
+import { Input, InputAddon, InputGroup } from '@/components/ui/input'
+import { SubmitButton } from '@/components/ui/submit-button'
 import { type AuthState, signInWithPasswordAction } from '@/lib/auth/actions'
-import { cn } from '@/lib/utils'
+import { AuthCard } from '../_components/auth-card'
+import { PasswordInput } from '../_components/password-input'
 
 const initialState: AuthState = { status: 'idle' }
-
-function SubmitButton() {
-  const { pending } = useFormStatus()
-  return (
-    <Button type="submit" disabled={pending} className="h-10 w-full gap-2" size="lg">
-      <KeyRound className={cn('size-4 transition-transform', pending && 'animate-pulse')} />
-      {pending ? 'Ingresando…' : 'Ingresar'}
-      {!pending ? <ArrowRight className="size-3.5" /> : null}
-    </Button>
-  )
-}
 
 export function LoginForm({
   initialEmail,
   redirectTo,
+  notice,
 }: {
   initialEmail: string
   redirectTo: string
+  /** Por qué se volvió al login (link vencido, mail que no validó). */
+  notice?: string | null
 }) {
   const [state, formAction] = useActionState(signInWithPasswordAction, initialState)
-  const [showPassword, setShowPassword] = useState(false)
   const passwordRef = useRef<HTMLInputElement>(null)
-  const emailId = useId()
-  const passwordId = useId()
 
   useEffect(() => {
     if (state.status === 'error' && state.message) {
@@ -53,117 +42,48 @@ export function LoginForm({
   const passwordError = state.status === 'error' ? state.fieldErrors?.password : undefined
 
   return (
-    <div className="space-y-7 animate-in fade-in-0 slide-in-from-bottom-2 duration-500">
-      <div className="flex justify-center">
-        <BrandWordmarkLarge />
-      </div>
+    <AuthCard
+      title="Ingresá a tu bar"
+      description="Usá el email y la contraseña que te dio el dueño del bar."
+    >
+      {notice ? <Callout tone="warning">{notice}</Callout> : null}
 
-      <div className="card-hairline relative overflow-hidden rounded-2xl border border-border/70 bg-card/90 p-6 shadow-lg backdrop-blur-xl sm:p-8">
-        <div className="space-y-2 text-center">
-          <h1 className="font-serif text-2xl font-semibold tracking-tight">Ingresá a tu bar</h1>
-          <p className="text-sm text-muted-foreground text-balance">
-            Usá el email y la contraseña que te dio el dueño del bar.
-          </p>
+      <form action={formAction} className="flex flex-col gap-4" noValidate>
+        <Field label="Email" name="email" error={emailError} required>
+          <InputGroup size="lg">
+            <InputAddon>
+              <Mail aria-hidden="true" />
+            </InputAddon>
+            <Input
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              defaultValue={initialEmail}
+              placeholder="vos@bar.com"
+            />
+          </InputGroup>
+        </Field>
+
+        <div className="flex flex-col gap-2">
+          <Field label="Contraseña" name="password" error={passwordError} required>
+            <PasswordInput ref={passwordRef} autoComplete="current-password" />
+          </Field>
+          <Link
+            href="/forgot-password"
+            className="self-end type-small text-muted-foreground underline decoration-1 underline-offset-[3px] hover:text-foreground hover:decoration-2"
+          >
+            ¿Olvidaste tu contraseña?
+          </Link>
         </div>
 
-        <form action={formAction} className="mt-6 space-y-4" noValidate>
-          <div className="space-y-1.5">
-            <Label htmlFor={emailId} className="text-xs font-medium text-muted-foreground">
-              Email
-            </Label>
-            <div className="relative">
-              <Mail
-                aria-hidden
-                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70"
-              />
-              <Input
-                id={emailId}
-                name="email"
-                type="email"
-                required
-                inputMode="email"
-                autoComplete="email"
-                autoCapitalize="off"
-                autoCorrect="off"
-                spellCheck={false}
-                defaultValue={initialEmail}
-                placeholder="vos@bar.com"
-                aria-invalid={Boolean(emailError) || undefined}
-                aria-describedby={emailError ? `${emailId}-err` : undefined}
-                className={cn(
-                  'h-10 pl-9 transition-colors',
-                  emailError && 'border-destructive focus-visible:ring-destructive/40',
-                )}
-              />
-            </div>
-            {emailError ? (
-              <p
-                id={`${emailId}-err`}
-                className="text-xs text-destructive animate-in fade-in-0 slide-in-from-top-1"
-              >
-                {emailError}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <Label htmlFor={passwordId} className="text-xs font-medium text-muted-foreground">
-                Contraseña
-              </Label>
-              <Link
-                href="/forgot-password"
-                className="text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-                tabIndex={-1}
-              >
-                ¿Olvidaste tu contraseña?
-              </Link>
-            </div>
-            <div className="relative">
-              <Lock
-                aria-hidden
-                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70"
-              />
-              <Input
-                ref={passwordRef}
-                id={passwordId}
-                name="password"
-                type={showPassword ? 'text' : 'password'}
-                required
-                autoComplete="current-password"
-                placeholder="••••••••"
-                aria-invalid={Boolean(passwordError) || undefined}
-                aria-describedby={passwordError ? `${passwordId}-err` : undefined}
-                className={cn(
-                  'h-10 pl-9 pr-10 transition-colors',
-                  passwordError && 'border-destructive focus-visible:ring-destructive/40',
-                )}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                aria-pressed={showPassword}
-                className="absolute right-1 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground/80 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                tabIndex={-1}
-              >
-                {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-              </button>
-            </div>
-            {passwordError ? (
-              <p
-                id={`${passwordId}-err`}
-                className="text-xs text-destructive animate-in fade-in-0 slide-in-from-top-1"
-              >
-                {passwordError}
-              </p>
-            ) : null}
-          </div>
-
-          <input type="hidden" name="redirectTo" value={redirectTo} />
-          <SubmitButton />
-        </form>
-      </div>
-    </div>
+        <input type="hidden" name="redirectTo" value={redirectTo} />
+        <SubmitButton size="lg" className="mt-2 w-full" pendingText="Ingresando…">
+          Ingresar
+        </SubmitButton>
+      </form>
+    </AuthCard>
   )
 }

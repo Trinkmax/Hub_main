@@ -46,7 +46,7 @@ export function WaitingForWaiter({
       </div>
       <h1 className="mb-8 font-serif text-3xl font-semibold tracking-tight">{tableLabel}</h1>
 
-      <div className="mb-6 flex size-20 items-center justify-center rounded-full border border-primary/20 bg-[--cream-tint] text-primary shadow-2xs">
+      <div className="mb-6 flex size-20 items-center justify-center rounded-full border border-primary/20 text-primary shadow-2xs">
         <Clock className="size-9" aria-hidden />
       </div>
 

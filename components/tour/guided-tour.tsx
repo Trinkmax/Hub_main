@@ -235,7 +235,7 @@ function TourCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">
+          <p className="type-caption font-semibold text-primary">
             {step.kicker ?? `Paso ${index + 1} de ${total}`}
           </p>
           <h2 className="mt-1 font-serif text-lg font-semibold leading-snug">{step.title}</h2>

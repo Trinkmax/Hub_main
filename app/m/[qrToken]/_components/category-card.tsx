@@ -50,7 +50,7 @@ export function CategoryCard({
         </>
       ) : (
         <div aria-hidden className="absolute inset-0 bg-primary">
-          <div className="absolute -right-6 -top-6 size-28 rounded-full bg-[--forest-glow] blur-2xl" />
+          <div className="absolute -right-6 -top-6 size-28 rounded-full blur-2xl" />
         </div>
       )}
       <div className="relative flex w-full items-end justify-between p-4">

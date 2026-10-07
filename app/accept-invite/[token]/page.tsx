@@ -1,6 +1,7 @@
-import { Mail } from 'lucide-react'
-import { BrandWordmarkLarge } from '@/components/shell/brand-mark'
+import { Mail, MailX } from 'lucide-react'
+import { AuthCard, AuthFrame } from '@/app/(auth)/_components/auth-card'
 import { Badge } from '@/components/ui/badge'
+import { Callout } from '@/components/ui/callout'
 import { createClient } from '@/lib/supabase/server'
 import { roleLabel } from '@/lib/tenant/roles'
 import { AcceptInviteClient } from './accept-invite-client'
@@ -26,57 +27,40 @@ export default async function AcceptInvitePage({ params }: { params: Promise<{ t
   } = await supabase.auth.getUser()
 
   return (
-    <main className="bg-app-gradient relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 -top-32 mx-auto h-[480px] w-[680px] rounded-full bg-primary/15 blur-3xl"
-      />
-      <div className="relative w-full max-w-md space-y-7">
-        <div className="flex justify-center">
-          <BrandWordmarkLarge />
-        </div>
-
-        <div className="card-hairline relative overflow-hidden rounded-2xl border border-border/70 bg-card/90 p-6 shadow-lg backdrop-blur-xl sm:p-8">
-          <div className="text-center">
-            <div className="mx-auto flex size-14 items-center justify-center rounded-full border border-primary/20 bg-[--cream-tint] text-primary">
-              <Mail className="size-6" aria-hidden />
-            </div>
-            <h1 className="mt-5 font-serif text-2xl font-semibold tracking-tight">
-              {preview ? 'Tenés una invitación' : 'Invitación no encontrada'}
-            </h1>
-            {preview ? (
-              <p className="mt-2 text-sm text-muted-foreground text-pretty">
-                Te invitaron a unirte a{' '}
-                <strong className="text-foreground">{preview.tenant_name}</strong> como{' '}
-                <Badge variant="outline" className="ml-0.5">
-                  {roleLabel(preview.role)}
-                </Badge>
-              </p>
-            ) : (
-              <p className="mt-2 text-sm text-muted-foreground">
-                Esta invitación no existe o ya fue usada. Pedile al owner del bar que te genere una
-                nueva.
-              </p>
-            )}
-          </div>
-
-          {preview ? (
-            preview.expired ? (
-              <p className="mt-6 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-center text-sm text-warning">
-                La invitación expiró. Pedile al owner que genere una nueva.
-              </p>
-            ) : (
-              <div className="mt-6">
-                <AcceptInviteClient
-                  token={token}
-                  preview={preview}
-                  currentEmail={user?.email ?? null}
-                />
-              </div>
-            )
-          ) : null}
-        </div>
-      </div>
-    </main>
+    <AuthFrame width="md">
+      {preview ? (
+        <AuthCard
+          icon={Mail}
+          title="Tenés una invitación"
+          description={
+            <>
+              Te invitaron a unirte a{' '}
+              <strong className="font-semibold text-foreground">{preview.tenant_name}</strong> como{' '}
+              <Badge appearance="outline" className="align-middle">
+                {roleLabel(preview.role)}
+              </Badge>
+            </>
+          }
+        >
+          {preview.expired ? (
+            <Callout tone="warning" title="La invitación venció">
+              Pedile al dueño del bar que te genere una nueva.
+            </Callout>
+          ) : (
+            <AcceptInviteClient
+              token={token}
+              preview={preview}
+              currentEmail={user?.email ?? null}
+            />
+          )}
+        </AuthCard>
+      ) : (
+        <AuthCard
+          icon={MailX}
+          title="Invitación no encontrada"
+          description="Esta invitación no existe o ya fue usada. Pedile al dueño del bar que te genere una nueva."
+        />
+      )}
+    </AuthFrame>
   )
 }

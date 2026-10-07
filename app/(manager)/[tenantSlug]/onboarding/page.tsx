@@ -1,4 +1,5 @@
 import { notFound, redirect } from 'next/navigation'
+import { PageShell } from '@/components/ui/page-shell'
 import { getOnboardingState } from '@/lib/onboarding/actions'
 import {
   RoleRequiredError,
@@ -36,12 +37,13 @@ export default async function OnboardingPage({
   if (state.completed) redirect(`/${tenantSlug}`)
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-10">
+    // Sin <main> propio: lo pone el shell. Una columna angosta: es un asistente.
+    <PageShell width="compact">
       <OnboardingWizard
         tenantSlug={tenantSlug}
         tenantName={tenantName}
         initialSteps={state.steps}
       />
-    </main>
+    </PageShell>
   )
 }

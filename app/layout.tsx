@@ -39,9 +39,11 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
+  // El papel (claro) y el verde carbón (oscuro) del panel: el `--background` de
+  // cada tema. El salón fija el suyo en su layout.
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f5edd7' },
-    { media: '(prefers-color-scheme: dark)', color: '#0f2a20' },
+    { media: '(prefers-color-scheme: light)', color: '#f6f0e1' },
+    { media: '(prefers-color-scheme: dark)', color: '#05100b' },
   ],
   width: 'device-width',
   initialScale: 1,

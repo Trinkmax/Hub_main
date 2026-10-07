@@ -1,13 +1,13 @@
 'use client'
 
-import { ArrowRight, Eye, EyeOff, Lock, LogIn } from 'lucide-react'
+import { ArrowRight, LogIn } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { useId, useState, useTransition } from 'react'
+import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { PasswordInput } from '@/app/(auth)/_components/password-input'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { cn } from '@/lib/utils'
+import { Callout } from '@/components/ui/callout'
+import { Field } from '@/components/ui/field'
 import { acceptInvitation, acceptInvitationWithPassword } from './actions'
 
 type Preview = {
@@ -53,12 +53,12 @@ export function AcceptInviteClient({
 
   if (!emailMatches) {
     return (
-      <div className="space-y-3">
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive text-pretty">
-          Estás logueado como <strong className="font-mono">{currentEmail}</strong>, pero la
-          invitación es para <strong className="font-mono">{preview.email}</strong>.
-        </div>
-        <Button variant="outline" asChild className="w-full">
+      <div className="flex flex-col gap-4">
+        <Callout tone="danger" title="Es para otra cuenta">
+          Estás con la sesión de <strong className="font-medium">{currentEmail}</strong>, pero la
+          invitación es para <strong className="font-medium">{preview.email}</strong>.
+        </Callout>
+        <Button variant="secondary" size="lg" asChild className="w-full">
           <a href="/login">Cambiar de cuenta</a>
         </Button>
       </div>
@@ -66,9 +66,15 @@ export function AcceptInviteClient({
   }
 
   return (
-    <Button onClick={handleAccept} disabled={isPending} className="w-full gap-2" size="lg">
-      {isPending ? 'Aceptando…' : `Entrar a ${preview.tenant_name}`}
-      {!isPending ? <ArrowRight className="size-4" /> : null}
+    <Button
+      onClick={handleAccept}
+      loading={isPending}
+      loadingText="Aceptando…"
+      className="w-full"
+      size="lg"
+    >
+      {`Entrar a ${preview.tenant_name}`}
+      <ArrowRight aria-hidden="true" />
     </Button>
   )
 }
@@ -83,10 +89,8 @@ function PasswordSetupForm({
   onSuccess: (href: string) => void
 }) {
   const [password, setPassword] = useState('')
-  const [show, setShow] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
-  const passId = useId()
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -104,59 +108,40 @@ function PasswordSetupForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3" noValidate>
-      <div className="rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground text-balance">
-        <strong className="text-foreground">Tip:</strong> si ya tenés cuenta en HUB, ingresá tu
-        contraseña actual. Si es la primera vez, esta será tu contraseña permanente.
-      </div>
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+      <Callout tone="neutral" title="Tu contraseña">
+        Si ya tenés cuenta en HUB, ingresá tu contraseña actual. Si es la primera vez, esta va a ser
+        tu contraseña de acá en adelante.
+      </Callout>
 
-      <div className="space-y-1.5 text-left">
-        <Label htmlFor={passId} className="text-xs font-medium text-muted-foreground">
-          Contraseña para <span className="font-mono text-foreground">{email}</span>
-        </Label>
-        <div className="relative">
-          <Lock
-            aria-hidden
-            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70"
-          />
-          <Input
-            id={passId}
-            type={show ? 'text' : 'password'}
-            required
-            minLength={8}
-            maxLength={72}
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Mínimo 8 caracteres + número"
-            aria-invalid={Boolean(error) || undefined}
-            className={cn(
-              'h-10 pl-9 pr-10 transition-colors',
-              error && 'border-destructive focus-visible:ring-destructive/40',
-            )}
-          />
-          <button
-            type="button"
-            onClick={() => setShow((v) => !v)}
-            aria-label={show ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-            aria-pressed={show}
-            className="absolute right-1 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-            tabIndex={-1}
-          >
-            {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-          </button>
-        </div>
-        {error ? (
-          <p className="text-xs text-destructive animate-in fade-in-0 slide-in-from-top-1">
-            {error}
-          </p>
-        ) : null}
-      </div>
+      <Field
+        label={
+          <>
+            Contraseña para <span className="font-semibold">{email}</span>
+          </>
+        }
+        hint="Mínimo 8 caracteres, con al menos una letra y un número."
+        error={error}
+        required
+      >
+        <PasswordInput
+          minLength={8}
+          maxLength={72}
+          autoComplete="new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+      </Field>
 
-      <Button type="submit" disabled={isPending} className="w-full gap-2" size="lg">
-        <LogIn className={cn('size-4', isPending && 'animate-pulse')} />
-        {isPending ? 'Entrando…' : 'Aceptar y entrar'}
-        {!isPending ? <ArrowRight className="size-3.5" /> : null}
+      <Button
+        type="submit"
+        loading={isPending}
+        loadingText="Entrando…"
+        className="w-full"
+        size="lg"
+      >
+        <LogIn aria-hidden="true" />
+        Aceptar y entrar
       </Button>
     </form>
   )
