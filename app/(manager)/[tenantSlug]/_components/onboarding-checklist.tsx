@@ -1,5 +1,9 @@
-import { ArrowUpRight, CheckCircle2, Circle } from 'lucide-react'
+import { ChevronRight, Circle, CircleCheck } from 'lucide-react'
 import Link from 'next/link'
+import { Card } from '@/components/ui/card'
+import { Progress } from '@/components/ui/progress'
+import { Section } from '@/components/ui/section'
+import { cn } from '@/lib/utils'
 
 type Step = {
   done: boolean
@@ -7,6 +11,11 @@ type Step = {
   description: string
   href: string
   cta: string
+  /**
+   * El destino es el salón, otro workspace (su propio <html> y su Toaster): se
+   * entra recargando, con un <a> común y no con <Link> (kit §7.a.4, riesgo 19).
+   */
+  leavesPanel?: boolean
 }
 
 export type OnboardingSteps = {
@@ -16,6 +25,16 @@ export type OnboardingSteps = {
   firstReservationReady: boolean
   firstClosedReady: boolean
 }
+
+/**
+ * Fila-link de la lista (kit §3.0): hover `--hover` y presionado `--active` sin
+ * escala ni transición (es ancha), foco «adentro» porque va pegada a otras.
+ */
+const ROW_CLASSES = cn(
+  'flex min-h-11 items-start gap-3 px-4 py-3 sm:px-6',
+  'hover:bg-hover active:bg-active',
+  'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ring)',
+)
 
 export function OnboardingChecklist({
   tenantSlug,
@@ -29,23 +48,23 @@ export function OnboardingChecklist({
       done: steps.capacitiesReady,
       title: 'Definí la capacidad del salón',
       description:
-        'Cuántas personas entran en Planta Alta y Planta Baja. Es la base de las barras de capacidad en el panel operativo.',
+        'Cuántas personas entran en Planta Alta y en Planta Baja. Con eso se arman las barras de capacidad del operativo.',
       href: `/${tenantSlug}/configuracion/salon`,
       cta: 'Configurar capacidad',
     },
     {
       done: steps.templatesReady,
-      title: 'Creá los templates de eventos',
+      title: 'Creá los formatos de tus eventos',
       description:
-        'Sushi Libre, Pizza Libre, Ramen, etc. — el catálogo de formatos que después se programan en fechas concretas.',
+        'Sushi Libre, Pizza Libre, Ramen…: los formatos que después programás en fechas concretas.',
       href: `/${tenantSlug}/eventos/templates`,
-      cta: 'Crear templates',
+      cta: 'Crear formatos',
     },
     {
       done: steps.eventScheduledReady,
-      title: 'Programá el primer evento del mes',
+      title: 'Programá tu próximo evento',
       description:
-        'Elegí una fecha y un template (ej: Sushi Libre el sábado 27). Después las reservas pueden engancharse a ese evento.',
+        'Elegí una fecha y un formato (por ejemplo, Sushi Libre el sábado). Las reservas se pueden enganchar a ese evento.',
       href: `/${tenantSlug}/eventos/programados`,
       cta: 'Programar evento',
     },
@@ -53,80 +72,107 @@ export function OnboardingChecklist({
       done: steps.firstReservationReady,
       title: 'Cargá la primera reserva',
       description:
-        'Reemplaza al Google Form. Probá el flow completo de < 30 segundos con autocomplete + capacidad + comisión en vivo.',
+        'Se carga en menos de 30 segundos: el cliente se autocompleta y ves el cupo y la comisión mientras la cargás.',
       href: `/${tenantSlug}/reservas/nuevo`,
       cta: 'Nueva reserva',
     },
     {
+      // Se completa con la primera reserva que llegó (o que ya se sentó o cerró):
+      // desde el rediseño del panel de mozos, el salón solo marca «Llegó».
       done: steps.firstClosedReady,
-      title: 'Cerrá la primera mesa',
+      title: 'Recibí la primera reserva',
       description:
-        'Marcá Llegó → Sentar → Cerrar en el panel operativo. Eso genera la primera comisión y alimenta las estadísticas.',
+        'Cuando llegue, marcá «Llegó» en las reservas del salón: ahí queda registrada la comisión.',
       href: `/${tenantSlug}/salon/reservas-operativo`,
-      cta: 'Abrir panel',
+      cta: 'Ir al salón',
+      leavesPanel: true,
     },
   ]
 
   const completed = items.filter((s) => s.done).length
 
-  // Si está todo listo, no renderear el bloque
+  // Con todo listo, el bloque no se dibuja.
   if (completed === items.length) return null
 
   return (
-    <div className="card-hairline relative overflow-hidden rounded-xl border bg-card p-5">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -right-20 -top-20 size-64 rounded-full bg-primary/10 blur-3xl"
-      />
-      <div className="relative">
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-primary">
-              Empezá por acá
-            </p>
-            <h2 className="mt-1 font-display text-lg font-semibold tracking-tight">
-              Configurá tu bar en {items.length} pasos
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {completed} de {items.length} pasos completados
-            </p>
-          </div>
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border bg-card">
-            <span className="font-display text-lg font-semibold tabular-nums">
-              {Math.round((completed / items.length) * 100)}%
-            </span>
-          </div>
+    <Section title="Configurá tu bar" description="Cada paso te lleva a la pantalla donde se hace.">
+      <Card padding="none" className="gap-0 overflow-clip">
+        <div className="flex items-center gap-3 border-b border-border px-4 py-3 sm:px-6">
+          <Progress
+            value={(completed / items.length) * 100}
+            label="Configuración del bar"
+            valueText={`${completed} de ${items.length} pasos listos`}
+            className="flex-1"
+          />
+          <span
+            aria-hidden="true"
+            className="shrink-0 type-caption tabular-nums text-muted-foreground"
+          >
+            {completed} de {items.length} listos
+          </span>
         </div>
 
-        <ul className="mt-5 space-y-2">
-          {items.map((item) => (
-            <li key={item.title}>
-              <Link
-                href={item.href}
-                className="group flex items-start gap-3 rounded-lg border border-border/40 bg-background/40 p-3 transition-colors hover:border-border hover:bg-background/80"
-              >
+        <ol className="divide-y divide-border">
+          {items.map((item) => {
+            const content = (
+              <>
                 {item.done ? (
-                  <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-success" />
+                  <CircleCheck
+                    aria-hidden="true"
+                    className="mt-0.5 size-5 shrink-0 text-success-text"
+                  />
                 ) : (
-                  <Circle className="mt-0.5 size-5 shrink-0 text-muted-foreground/60" />
+                  <Circle
+                    aria-hidden="true"
+                    className="mt-0.5 size-5 shrink-0 text-subtle-foreground"
+                  />
                 )}
-                <div className="min-w-0 flex-1">
-                  <p
-                    className={`text-sm font-medium ${item.done ? 'text-muted-foreground line-through' : 'text-foreground'}`}
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span
+                    className={cn(
+                      'type-label text-pretty',
+                      item.done ? 'text-muted-foreground' : 'text-foreground',
+                    )}
                   >
+                    {item.done ? <span className="sr-only">Listo: </span> : null}
                     {item.title}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{item.description}</p>
-                </div>
-                <span className="hidden shrink-0 items-center gap-1 self-center text-xs font-medium text-primary group-hover:underline sm:inline-flex">
-                  {item.done ? 'Listo' : item.cta}
-                  <ArrowUpRight className="size-3" />
+                  </span>
+                  <span className="type-small text-pretty text-muted-foreground">
+                    {item.description}
+                  </span>
                 </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
+                {/* Refuerzo visual: el nombre del link ya lo dan el título y el «Listo:» de arriba. */}
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'hidden shrink-0 self-center type-label sm:inline',
+                    item.done ? 'text-muted-foreground' : 'text-primary',
+                  )}
+                >
+                  {item.done ? 'Listo' : item.cta}
+                </span>
+                <ChevronRight
+                  aria-hidden="true"
+                  className="size-4 shrink-0 self-center text-muted-foreground"
+                />
+              </>
+            )
+            return (
+              <li key={item.title}>
+                {item.leavesPanel ? (
+                  <a href={item.href} className={ROW_CLASSES}>
+                    {content}
+                  </a>
+                ) : (
+                  <Link href={item.href} className={ROW_CLASSES}>
+                    {content}
+                  </Link>
+                )}
+              </li>
+            )
+          })}
+        </ol>
+      </Card>
+    </Section>
   )
 }

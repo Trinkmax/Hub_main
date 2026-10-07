@@ -1,34 +1,27 @@
-import { ArrowRight, Receipt, UserPlus } from 'lucide-react'
+import { Receipt, UserPlus } from 'lucide-react'
 import Link from 'next/link'
-import type { TenantRole } from '@/lib/tenant/types'
+import { Button } from '@/components/ui/button'
 
-export function QuickActions({ tenantSlug, role }: { tenantSlug: string; role: TenantRole }) {
+/**
+ * Las acciones del encabezado del Resumen. La principal va última (kit §3.5):
+ * en escritorio queda a la derecha y en el celular, debajo del título.
+ * «Ver estadísticas» vive en la sección del gráfico, al lado de lo que amplía.
+ */
+export function QuickActions({ tenantSlug }: { tenantSlug: string }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Link
-        href={`/${tenantSlug}/visitas/nueva`}
-        className="group inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-[0_8px_24px_-12px_var(--ring)]"
-      >
-        <Receipt className="size-4" />
-        Cerrar mesa
-        <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
-      </Link>
-      <Link
-        href={`/${tenantSlug}/clientes/nuevo`}
-        className="inline-flex h-10 items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-4 text-sm font-medium text-foreground transition-colors hover:bg-card"
-      >
-        <UserPlus className="size-4" />
-        Nuevo cliente
-      </Link>
-      {role === 'owner' ? (
-        <Link
-          href={`/${tenantSlug}/estadisticas`}
-          className="hidden text-sm text-muted-foreground hover:text-foreground sm:inline-flex sm:items-center sm:gap-1"
-        >
-          Ver estadísticas completas
-          <ArrowRight className="size-3.5" />
+    <>
+      <Button asChild variant="secondary">
+        <Link href={`/${tenantSlug}/clientes/nuevo`}>
+          <UserPlus aria-hidden="true" />
+          Nuevo cliente
         </Link>
-      ) : null}
-    </div>
+      </Button>
+      <Button asChild>
+        <Link href={`/${tenantSlug}/visitas/nueva`}>
+          <Receipt aria-hidden="true" />
+          Cerrar mesa
+        </Link>
+      </Button>
+    </>
   )
 }
