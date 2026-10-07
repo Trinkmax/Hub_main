@@ -67,7 +67,9 @@ export function RotateHandle({ boxRef, onRotate, onRotateEnd }: RotateHandleProp
         onPointerDown={onPointerDown}
         aria-label="Rotar"
         title="Rotar (Shift = 15°)"
-        className="grid size-5 cursor-grab place-items-center rounded-full border border-primary bg-background text-primary shadow-sm transition-colors hover:bg-primary hover:text-primary-foreground active:cursor-grabbing"
+        // hit-area: dibuja 20 px pero responde en 24 con mouse y 44 con el dedo
+        // (queda arriba de la caja, así no le roba el arrastre al cuerpo).
+        className="relative grid size-5 cursor-grab place-items-center rounded-full border border-primary bg-background text-primary shadow-sm transition-colors outline-offset-2 outline-(--ring) hover:bg-primary hover:text-primary-foreground focus-visible:outline-2 active:cursor-grabbing hit-area"
         style={{ touchAction: 'none' }}
       >
         <RotateCw className="size-3" aria-hidden />

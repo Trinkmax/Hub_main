@@ -1,8 +1,12 @@
 'use client'
 
 import {
-  AlignHorizontalJustifyCenter,
-  AlignVerticalJustifyCenter,
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  AlignEndHorizontal,
+  AlignEndVertical,
+  AlignStartHorizontal,
+  AlignStartVertical,
   ArrowDownToLine,
   ArrowUpToLine,
   Copy,
@@ -10,8 +14,9 @@ import {
   RotateCw,
   Trash2,
 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { AlignKind } from '@/lib/floor-plan/snap'
-import { cn } from '@/lib/utils'
 
 export type ContextualToolbarProps = {
   count: number
@@ -26,6 +31,7 @@ export type ContextualToolbarProps = {
   onDelete: () => void
 }
 
+/** Botón de ícono de la barra: el tooltip nombra el ícono; el lector lo lee del `aria-label`. */
 function ToolBtn({
   onClick,
   label,
@@ -38,26 +44,31 @@ function ToolBtn({
   danger?: boolean
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      className={cn(
-        'grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-        danger && 'hover:bg-destructive/10 hover:text-destructive',
-      )}
-    >
-      {children}
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant={danger ? 'danger-ghost' : 'ghost'}
+          onClick={onClick}
+          aria-label={label}
+        >
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
   )
 }
 
-const Sep = () => <span aria-hidden className="mx-0.5 h-5 w-px bg-border" />
+const Sep = () => <span aria-hidden className="mx-0.5 h-5 w-px shrink-0 bg-border" />
 
 /**
  * Barra flotante de acciones sobre la selección (centrada arriba del lienzo).
- * 1 elemento → rotar/orden/duplicar/QR/eliminar. >1 → alinear + eliminar.
+ * 1 elemento → rotar/orden/duplicar/QR/quitar. >1 → alinear + quitar.
+ *
+ * Flota (popover + `shadow-float`, sin vidrio). Los íconos de alinear son los
+ * de lucide: Inter no tiene las flechas ⇤ ⇥ ⤒ ⤓ que se usaban antes.
  */
 export function ContextualToolbar({
   count,
@@ -74,59 +85,62 @@ export function ContextualToolbar({
   const multi = count > 1
 
   return (
-    <div className="-translate-x-1/2 absolute top-3 left-1/2 z-40 flex items-center gap-0.5 rounded-xl border border-border/60 bg-popover/95 p-1 shadow-lg backdrop-blur-sm">
+    <fieldset
+      aria-label={multi ? `Acciones para ${count} elementos` : 'Acciones del elemento'}
+      className="-translate-x-1/2 absolute top-3 left-1/2 z-40 flex max-w-[calc(100%-1.5rem)] items-center gap-0.5 overflow-x-auto rounded-xl border border-border bg-popover p-1 shadow-float pointer-coarse:gap-2"
+    >
       {multi ? (
         <>
-          <span className="px-2 text-xs font-medium text-muted-foreground tabular-nums">
-            {count} sel.
+          <span className="shrink-0 whitespace-nowrap px-2 type-caption font-medium text-muted-foreground tabular-nums">
+            {count} elegidos
           </span>
           <Sep />
-          <ToolBtn onClick={() => onAlign('left')} label="Alinear izquierda">
-            <span className="text-sm font-semibold">⇤</span>
+          <ToolBtn onClick={() => onAlign('left')} label="Alinear a la izquierda">
+            <AlignStartVertical aria-hidden />
           </ToolBtn>
-          <ToolBtn onClick={() => onAlign('hcenter')} label="Centrar horizontal">
-            <AlignHorizontalJustifyCenter className="size-4" aria-hidden />
+          <ToolBtn onClick={() => onAlign('hcenter')} label="Centrar en horizontal">
+            <AlignCenterVertical aria-hidden />
           </ToolBtn>
-          <ToolBtn onClick={() => onAlign('right')} label="Alinear derecha">
-            <span className="text-sm font-semibold">⇥</span>
+          <ToolBtn onClick={() => onAlign('right')} label="Alinear a la derecha">
+            <AlignEndVertical aria-hidden />
           </ToolBtn>
           <Sep />
           <ToolBtn onClick={() => onAlign('top')} label="Alinear arriba">
-            <span className="text-sm font-semibold">⤒</span>
+            <AlignStartHorizontal aria-hidden />
           </ToolBtn>
-          <ToolBtn onClick={() => onAlign('vcenter')} label="Centrar vertical">
-            <AlignVerticalJustifyCenter className="size-4" aria-hidden />
+          <ToolBtn onClick={() => onAlign('vcenter')} label="Centrar en vertical">
+            <AlignCenterHorizontal aria-hidden />
           </ToolBtn>
           <ToolBtn onClick={() => onAlign('bottom')} label="Alinear abajo">
-            <span className="text-sm font-semibold">⤓</span>
+            <AlignEndHorizontal aria-hidden />
           </ToolBtn>
         </>
       ) : (
         <>
           <ToolBtn onClick={onRotate90} label="Rotar 90°">
-            <RotateCw className="size-4" aria-hidden />
+            <RotateCw aria-hidden />
           </ToolBtn>
-          <ToolBtn onClick={onDuplicate} label="Duplicar (⌘D)">
-            <Copy className="size-4" aria-hidden />
+          <ToolBtn onClick={onDuplicate} label="Duplicar">
+            <Copy aria-hidden />
           </ToolBtn>
           {singleTable ? (
             <ToolBtn onClick={onQr} label="Imprimir QR">
-              <QrCode className="size-4" aria-hidden />
+              <QrCode aria-hidden />
             </ToolBtn>
           ) : null}
           <Sep />
           <ToolBtn onClick={onBringFront} label="Traer al frente">
-            <ArrowUpToLine className="size-4" aria-hidden />
+            <ArrowUpToLine aria-hidden />
           </ToolBtn>
           <ToolBtn onClick={onBringBack} label="Enviar al fondo">
-            <ArrowDownToLine className="size-4" aria-hidden />
+            <ArrowDownToLine aria-hidden />
           </ToolBtn>
         </>
       )}
       <Sep />
-      <ToolBtn onClick={onDelete} label={multi ? 'Eliminar seleccionados' : 'Eliminar'} danger>
-        <Trash2 className="size-4" aria-hidden />
+      <ToolBtn onClick={onDelete} label={multi ? 'Quitar los elegidos' : 'Quitar'} danger>
+        <Trash2 aria-hidden />
       </ToolBtn>
-    </div>
+    </fieldset>
   )
 }

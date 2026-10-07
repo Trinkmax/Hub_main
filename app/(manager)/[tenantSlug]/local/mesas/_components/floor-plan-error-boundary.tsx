@@ -1,7 +1,9 @@
 'use client'
 
-import { AlertTriangle } from 'lucide-react'
+import { RotateCcw } from 'lucide-react'
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { Button } from '@/components/ui/button'
+import { Callout } from '@/components/ui/callout'
 
 type FloorPlanErrorBoundaryProps = {
   fallback: ReactNode
@@ -16,6 +18,9 @@ type FloorPlanErrorBoundaryState = {
  * Si el editor visual de plano falla en render (p. ej. dnd-kit / geometría rara),
  * degradamos a la lista accesible en vez de romper toda la pantalla de mesas.
  * Sin react-error-boundary en el repo → class component con React.Component.
+ *
+ * «Reintentar» vuelve a montar el editor; si el error se repite, se vuelve a ver
+ * la lista.
  */
 export class FloorPlanErrorBoundary extends Component<
   FloorPlanErrorBoundaryProps,
@@ -32,20 +37,28 @@ export class FloorPlanErrorBoundary extends Component<
     console.error('[floor-plan.editor] render error', error.message, info.componentStack)
   }
 
+  private retry = (): void => {
+    this.setState({ hasError: false })
+  }
+
   render(): ReactNode {
     if (this.state.hasError) {
       return (
-        <div className="space-y-4">
-          <div
-            role="alert"
-            className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm"
+        <div className="flex flex-col gap-4">
+          <Callout
+            tone="warning"
+            announce="assertive"
+            title="No pudimos abrir el editor del plano"
+            action={
+              <Button type="button" size="sm" variant="secondary" onClick={this.retry}>
+                <RotateCcw aria-hidden />
+                Reintentar
+              </Button>
+            }
           >
-            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
-            <p>
-              No pudimos cargar el editor visual de plano. Te mostramos la lista de mesas, donde
-              podés hacer todo igual. Probá recargar la página para volver al editor.
-            </p>
-          </div>
+            Mientras tanto, te mostramos la lista de mesas: desde acá podés hacer lo mismo con cada
+            mesa y su QR.
+          </Callout>
           {this.props.fallback}
         </div>
       )

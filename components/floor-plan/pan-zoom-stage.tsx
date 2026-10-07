@@ -4,6 +4,7 @@ import { Maximize2, Minus, Plus } from 'lucide-react'
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { GRID, stagePointFromClient } from '@/lib/floor-plan/grid'
 
 type TransformRef = React.RefObject<ReactZoomPanPinchRef | null>
@@ -27,6 +28,28 @@ export type PanZoomStageProps = {
   children: React.ReactNode
 }
 
+/** Botón de zoom: nombra su ícono con un tooltip (el `aria-label` ya lo nombra para el lector). */
+function ZoomButton({
+  label,
+  onClick,
+  children,
+}: {
+  label: string
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button type="button" size="icon-sm" variant="ghost" onClick={onClick} aria-label={label}>
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="left">{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 /**
  * Wrapper compartido editor/live: `react-zoom-pan-pinch` (pan/zoom robusto) +
  * un único div "stage" de tamaño = área lógica con grilla CSS de fondo. Los hijos
@@ -38,6 +61,10 @@ export type PanZoomStageProps = {
  *
  * El scale vigente se lee con `readStageTransform(transformRef)` durante el drag
  * (sin re-render). Los controles +/−/fit usan `zoomIn/zoomOut/centerView` por ref.
+ *
+ * Kit HUB: el marco es una superficie quieta (cartulina + pelo, sin sombra) y los
+ * controles de zoom flotan (popover + `shadow-float`, sin vidrio). El dibujo de
+ * adentro (`.fp-canvas`, sillas, paredes) no se toca.
  */
 export function PanZoomStage({
   width,
@@ -65,7 +92,7 @@ export function PanZoomStage({
 
   return (
     <div className={className ?? 'relative w-full'}>
-      <div className="card-hairline relative h-[70vh] min-h-[420px] w-full overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm">
+      <div className="relative h-[70vh] min-h-[420px] w-full overflow-hidden rounded-xl border border-border bg-card">
         <TransformWrapper
           ref={transformRef}
           initialScale={1}
@@ -109,39 +136,22 @@ export function PanZoomStage({
         </TransformWrapper>
       </div>
 
-      {/* Controles de zoom/fit (fuera del stage → no se escalan). */}
-      <div className="absolute bottom-3 right-3 flex flex-col items-center gap-1 rounded-xl border border-border/60 bg-card/95 p-1 shadow-md backdrop-blur-sm">
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          className="size-8"
-          onClick={onZoomIn}
-          aria-label="Acercar"
-        >
-          <Plus className="size-4" aria-hidden />
-        </Button>
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          className="size-8"
-          onClick={onZoomOut}
-          aria-label="Alejar"
-        >
-          <Minus className="size-4" aria-hidden />
-        </Button>
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          className="size-8"
-          onClick={onFit}
-          aria-label="Ajustar a la pantalla"
-        >
-          <Maximize2 className="size-4" aria-hidden />
-        </Button>
-      </div>
+      {/* Controles de zoom/fit (fuera del stage → no se escalan). Flotan sobre el
+          lienzo. Un fieldset con nombre agrupa los tres para el lector de pantalla. */}
+      <fieldset
+        aria-label="Zoom del plano"
+        className="absolute right-3 bottom-3 flex flex-col items-center gap-1 rounded-xl border border-border bg-popover p-1 shadow-float pointer-coarse:gap-2"
+      >
+        <ZoomButton label="Acercar" onClick={onZoomIn}>
+          <Plus aria-hidden />
+        </ZoomButton>
+        <ZoomButton label="Alejar" onClick={onZoomOut}>
+          <Minus aria-hidden />
+        </ZoomButton>
+        <ZoomButton label="Ajustar a la pantalla" onClick={onFit}>
+          <Maximize2 aria-hidden />
+        </ZoomButton>
+      </fieldset>
     </div>
   )
 }

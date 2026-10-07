@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { saveGeometryAction } from '@/lib/floor-plan/actions'
 import type { ElementGeometry } from '@/lib/floor-plan/schemas'
 
@@ -77,5 +77,8 @@ export function useGeometryQueue(
     }
   }, [flushNow])
 
-  return { enqueue, flushNow }
+  // Misma referencia entre renders: el editor la usa en las dependencias de
+  // `onChanged`, `commitGeometry` y los gestos; un objeto nuevo por render los
+  // recreaba a todos y el `memo` de cada FloorElement nunca se salteaba.
+  return useMemo(() => ({ enqueue, flushNow }), [enqueue, flushNow])
 }

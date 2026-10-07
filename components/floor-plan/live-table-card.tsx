@@ -4,8 +4,13 @@ import { Receipt, Users } from 'lucide-react'
 import { type CSSProperties, memo } from 'react'
 import { bodyRadius, ChairsSvg } from '@/components/floor-plan/table-glyph'
 import type { LiveTable } from '@/lib/floor-plan/queries'
-import { ARSFormat } from '@/lib/salon/format'
+import { formatCents } from '@/lib/money/format'
 import { cn } from '@/lib/utils'
+
+/** El gasto de la mesa en pesos enteros, escrito a mano (sin `Intl`: el SSR y el navegador coinciden). */
+function totalLabel(cents: number): string {
+  return formatCents(cents, { decimals: 0 })
+}
 
 export type LiveTableCardProps = { table: LiveTable; onOpen: (table: LiveTable) => void }
 
@@ -66,8 +71,9 @@ function LiveTableCardImpl({ table, onOpen }: LiveTableCardProps) {
     <button
       type="button"
       onClick={() => onOpen(table)}
-      aria-label={`${title} — ${STATUS_LABEL[status]}${s ? ` · ${ARSFormat(s.total_cents)}` : ''}`}
-      className="group absolute outline-none transition-transform duration-[var(--duration-base)] ease-[var(--ease-out)] hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring/50"
+      aria-label={`${title} — ${STATUS_LABEL[status]}${s ? ` · ${totalLabel(s.total_cents)}` : ''}`}
+      // Quieta (kit §2.10): sin «float» al pasar el mouse. Foco «afuera», outline de 2 px.
+      className="group absolute outline-offset-2 outline-(--ring) focus-visible:outline-2"
       style={{
         left: table.x,
         top: table.y,
@@ -111,7 +117,7 @@ function LiveTableCardImpl({ table, onOpen }: LiveTableCardProps) {
           ) : null}
           {s?.kitchen === 'ready' ? (
             <span
-              className="size-2.5 animate-pulse rounded-full bg-success ring-2 ring-success/30"
+              className="size-2.5 animate-pulse rounded-full bg-success ring-2 ring-success/30 motion-reduce:animate-none"
               role="img"
               aria-label="Cocina: lista"
               title="Lista"
@@ -135,7 +141,7 @@ function LiveTableCardImpl({ table, onOpen }: LiveTableCardProps) {
                 {s.party_size}
               </span>
             ) : null}
-            {ARSFormat(s.total_cents)}
+            {totalLabel(s.total_cents)}
           </span>
         ) : (
           <span className="flex items-center gap-1 font-medium text-[10px] text-muted-foreground">

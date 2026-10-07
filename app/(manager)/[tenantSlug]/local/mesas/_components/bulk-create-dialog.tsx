@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -13,14 +14,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Field, FieldRow } from '@/components/ui/field'
+import { NumberField } from '@/components/ui/number-field'
 import { bulkCreateTablesAction } from '@/lib/floor-plan/actions'
-import { cn } from '@/lib/utils'
+import { type ShapePreset, TableShapeChips } from './table-shape-chips'
 
-type Preset = 'round' | 'square' | 'rect' | 'banquette'
-
-const PRESETS: { value: Preset; label: string }[] = [
+const PRESETS: { value: ShapePreset; label: string }[] = [
   { value: 'square', label: 'Cuadrada' },
   { value: 'round', label: 'Redonda' },
   { value: 'rect', label: 'Rectangular' },
@@ -37,17 +36,20 @@ export function BulkCreateDialog({
   onCreated: () => void
 }) {
   const [open, setOpen] = useState(false)
-  const [count, setCount] = useState(6)
-  const [capacity, setCapacity] = useState(4)
-  const [preset, setPreset] = useState<Preset>('square')
+  const [count, setCount] = useState<number | null>(6)
+  const [capacity, setCapacity] = useState<number | null>(4)
+  const [preset, setPreset] = useState<ShapePreset>('square')
   const [pending, start] = useTransition()
 
-  const submit = () => {
+  // El formulario ya validó (Cantidad obligatoria, rangos): acá solo se manda.
+  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (count === null) return
     start(async () => {
       const r = await bulkCreateTablesAction(slug, {
         area_id: areaId,
         count,
-        capacity: capacity > 0 ? capacity : null,
+        capacity: capacity !== null && capacity > 0 ? capacity : null,
         preset,
       })
       if (r.ok) {
@@ -62,83 +64,70 @@ export function BulkCreateDialog({
     })
   }
 
+  const confirmLabel =
+    count === null ? 'Crear mesas' : `Crear ${count} ${count === 1 ? 'mesa' : 'mesas'}`
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button type="button" variant="outline" size="sm" className="gap-1.5">
-          <Rows3 className="size-4" aria-hidden />
+        <Button type="button" variant="secondary" size="sm">
+          <Rows3 aria-hidden />
           Varias mesas
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="font-serif">Crear varias mesas</DialogTitle>
+          <DialogTitle>Crear varias mesas</DialogTitle>
           <DialogDescription>
-            Se crean en grilla, auto-numeradas desde el inicio del área, cada una con su propio QR.
+            Se crean en grilla, numeradas desde el número inicial del área y cada una con su QR.
             Después las acomodás arrastrando.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 py-2">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1.5">
-              <Label htmlFor="bulk-count">Cantidad</Label>
-              <Input
-                id="bulk-count"
-                type="number"
-                min={1}
-                max={50}
-                value={count}
-                onChange={(e) => setCount(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="bulk-capacity">Capacidad c/u</Label>
-              <Input
-                id="bulk-capacity"
-                type="number"
-                min={1}
-                max={50}
-                value={capacity}
-                onChange={(e) =>
-                  setCapacity(Math.max(0, Math.min(50, Number(e.target.value) || 0)))
-                }
-                placeholder="Sin definir"
-              />
-            </div>
-          </div>
+        {/* `contents`: el formulario no arma caja, así cuerpo y pie siguen siendo
+            hijos del diálogo (el cuerpo scrollea y el pie queda fijo). */}
+        <form className="contents" onSubmit={submit}>
+          <DialogBody className="flex flex-col gap-4">
+            {/* No controlados: el campo maneja lo tipeado (un número fuera de rango
+                queda escrito, con su error) y avisa el último valor válido. */}
+            <FieldRow>
+              <Field label="Cantidad" required>
+                <NumberField min={1} max={50} defaultValue={count} onValueChange={setCount} />
+              </Field>
+              <Field label="Personas por mesa" optional hint="Vacío: sin definir.">
+                <NumberField
+                  min={1}
+                  max={50}
+                  defaultValue={capacity}
+                  onValueChange={setCapacity}
+                  placeholder="Sin definir"
+                />
+              </Field>
+            </FieldRow>
+            <TableShapeChips
+              legend="Forma"
+              options={PRESETS}
+              value={preset}
+              onValueChange={setPreset}
+            />
+          </DialogBody>
 
-          <div className="grid gap-1.5">
-            <Label>Forma</Label>
-            <div className="grid grid-cols-4 gap-1 rounded-lg border border-border/60 bg-muted/40 p-0.5">
-              {PRESETS.map((p) => (
-                <button
-                  key={p.value}
-                  type="button"
-                  onClick={() => setPreset(p.value)}
-                  aria-pressed={preset === p.value}
-                  className={cn(
-                    'rounded-md px-2 py-1.5 text-center text-xs transition-colors',
-                    preset === p.value
-                      ? 'bg-card font-medium shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
-            Cancelar
-          </Button>
-          <Button type="button" onClick={submit} disabled={pending}>
-            {pending ? 'Creando…' : `Crear ${count} ${count === 1 ? 'mesa' : 'mesas'}`}
-          </Button>
-        </DialogFooter>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                if (!pending) setOpen(false)
+              }}
+              aria-disabled={pending || undefined}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" loading={pending} loadingText="Creando…">
+              {confirmLabel}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   )

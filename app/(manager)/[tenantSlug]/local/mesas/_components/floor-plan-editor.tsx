@@ -1,6 +1,15 @@
 'use client'
 
-import { ArrowRightLeft, Bell, CircleDot, QrCode, Receipt, Redo2, Undo2, Users } from 'lucide-react'
+import {
+  Activity,
+  ArrowRightLeft,
+  Keyboard,
+  List,
+  PencilRuler,
+  QrCode,
+  Redo2,
+  Undo2,
+} from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
@@ -12,26 +21,26 @@ import {
   readStageTransform,
   stagePointFromClient,
 } from '@/components/floor-plan/pan-zoom-stage'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
-import { Badge } from '@/components/ui/badge'
+import { LIVE_SIGNAL, liveSignals } from '@/components/floor-plan/status-meta'
+import { Amount } from '@/components/ui/amount'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { ConfirmDialog, type ConfirmResult } from '@/components/ui/confirm-dialog'
+import { EmptyState } from '@/components/ui/empty-state'
+import { InfoTip } from '@/components/ui/info-tip'
+import { KPI } from '@/components/ui/kpi'
 import {
   Sheet,
+  SheetBody,
   SheetContent,
   SheetDescription,
+  SheetFooter,
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import { StatusBadge } from '@/components/ui/status-badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   addDecorAction,
   createTableInPlanAction,
@@ -59,13 +68,15 @@ import type {
 } from '@/lib/floor-plan/queries'
 import type { ElementGeometry } from '@/lib/floor-plan/schemas'
 import { type AlignKind, alignBoxes, type Guide } from '@/lib/floor-plan/snap'
-import { ARSFormat, elapsedLabel } from '@/lib/salon/format'
+import { elapsedLabel } from '@/lib/salon/format'
 import { AreaManager } from './area-manager'
 import { BulkCreateDialog } from './bulk-create-dialog'
 import { ContextualToolbar } from './contextual-toolbar'
 import { DecorInspector } from './decor-inspector'
+import { KIND_WITH_ARTICLE } from './element-labels'
 import { ElementPalette } from './element-palette'
 import { FloorElement } from './floor-element'
+import { FLOOR_VIEW_PARAM, type FloorView, isFloorView } from './floor-view'
 import { TableInspector } from './table-inspector'
 import { TablesListFallback } from './tables-list-fallback'
 import { UnplacedTray } from './unplaced-tray'
@@ -78,10 +89,73 @@ export type FloorPlanEditorProps = {
   initial: FloorPlanData
   liveAreas: AreaRow[]
   initialLive: LiveFloorData | null
+  /** La pestaña con la que abre (`?vista=`): la lee la página en el server. */
+  initialView?: FloorView
 }
 
 type Kind = 'table' | 'wall' | 'pillar' | 'island' | 'bar' | 'door' | 'text' | 'stage'
-type Mode = 'editar' | 'vivo'
+
+/**
+ * Teclas que ya maneja el control enfocado (pestañas, segmentados, menús,
+ * comboboxes) o que caen adentro de un diálogo: los atajos del lienzo no las
+ * toman, así una flecha en las pestañas no mueve también la mesa elegida.
+ */
+const KEY_OWNER_SELECTOR =
+  '[role="dialog"], [role="alertdialog"], [role="tablist"], [role="radiogroup"], [role="listbox"], [role="menu"], [role="combobox"]'
+
+/** Qué dice la confirmación de «Quitar» según lo elegido: mesas vuelven a la bandeja, la decoración se borra. */
+function deleteCopy(els: ElementRow[]): {
+  title: string
+  description: string
+  confirmLabel: string
+  tone: 'default' | 'danger'
+} {
+  const tables = els.filter((e) => e.kind === 'table').length
+  const decor = els.length - tables
+  const only = els.length === 1 ? els[0] : undefined
+  if (only) {
+    if (only.kind === 'table') {
+      const label = only.table?.label ?? only.label ?? ''
+      return {
+        title: `¿Quitar la mesa «${label}» del plano?`,
+        description:
+          'Vuelve a «Mesas sin ubicar» y conserva su QR. La podés volver a colocar cuando quieras.',
+        confirmLabel: 'Quitar del plano',
+        tone: 'default',
+      }
+    }
+    return {
+      title: `¿Borrar ${KIND_WITH_ARTICLE[only.kind]}${only.label ? ` «${only.label}»` : ''}?`,
+      description: 'Se borra del plano. No se puede deshacer.',
+      confirmLabel: 'Borrar',
+      tone: 'danger',
+    }
+  }
+  if (decor === 0) {
+    return {
+      title: `¿Quitar ${tables} mesas del plano?`,
+      description: 'Vuelven a «Mesas sin ubicar» y conservan su QR.',
+      confirmLabel: 'Quitar del plano',
+      tone: 'default',
+    }
+  }
+  if (tables === 0) {
+    return {
+      title: `¿Borrar ${decor} elementos de decoración?`,
+      description: 'Se borran del plano. No se puede deshacer.',
+      confirmLabel: 'Borrar',
+      tone: 'danger',
+    }
+  }
+  return {
+    title: `¿Quitar ${els.length} elementos del plano?`,
+    description: `${tables === 1 ? 'La mesa vuelve' : `Las ${tables} mesas vuelven`} a «Mesas sin ubicar» con su QR. ${
+      decor === 1 ? 'La decoración se borra' : `Los ${decor} elementos de decoración se borran`
+    } y no se puede deshacer.`,
+    confirmLabel: 'Quitar y borrar',
+    tone: 'danger',
+  }
+}
 
 const FIT_TARGET_ID = 'fp-fit-target'
 
@@ -131,6 +205,7 @@ export function FloorPlanEditor({
   initial,
   liveAreas,
   initialLive,
+  initialView = 'editar',
 }: FloorPlanEditorProps) {
   const router = useRouter()
 
@@ -139,7 +214,8 @@ export function FloorPlanEditor({
 
   const [elements, setElements] = useState<ElementRow[]>(initial.elements)
   const [activeAreaId, setActiveAreaId] = useState<string>(initial.areas[0]?.id ?? '')
-  const [mode, setMode] = useState<Mode>('editar')
+  // Pestaña activa (Editar plano · En vivo · Lista). La URL la lleva `Tabs syncParam`.
+  const [view, setView] = useState<FloorView>(initialView)
 
   // Selección múltiple. El ref es la fuente de verdad sincrónica (gestos),
   // el estado es el espejo para render.
@@ -167,8 +243,10 @@ export function FloorPlanEditor({
   // Guías de alineación vivas.
   const [guides, setGuides] = useState<Guide[]>([])
 
-  // Confirmación de borrado.
+  // Confirmación de «Quitar»: lo elegido se guarda al abrir, así el texto del
+  // diálogo no cambia mientras se cierra.
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteTargets, setDeleteTargets] = useState<ElementRow[]>([])
 
   const [liveDetail, setLiveDetail] = useState<LiveTable | null>(null)
   const [showMoveLive, setShowMoveLive] = useState(false)
@@ -263,6 +341,15 @@ export function FloorPlanEditor({
   areaElementsRef.current = areaElements
   const activeAreaRef = useRef(activeArea)
   activeAreaRef.current = activeArea
+
+  const askDelete = useCallback(() => {
+    const els = [...selectedIdsRef.current]
+      .map((id) => elementsRef.current.find((e) => e.id === id))
+      .filter((e): e is ElementRow => !!e)
+    if (els.length === 0) return
+    setDeleteTargets(els)
+    setDeleteOpen(true)
+  }, [])
 
   const onChanged = useCallback(() => {
     clearSelection()
@@ -579,14 +666,12 @@ export function FloorPlanEditor({
     window.open(`/print/qr/${encodeURIComponent(token)}`, '_blank', 'width=600,height=800')
   }, [])
 
+  // Optimista: saca lo elegido del lienzo, cierra el diálogo y persiste atrás.
   const performDelete = useCallback(() => {
-    const ids = [...selectedIdsRef.current]
-    const els = ids
-      .map((id) => elementsRef.current.find((e) => e.id === id))
-      .filter((e): e is ElementRow => !!e)
+    const els = deleteTargets
+    const ids = els.map((e) => e.id)
     setElements((cur) => cur.filter((e) => !ids.includes(e.id)))
     clearSelection()
-    setDeleteOpen(false)
     void (async () => {
       for (const el of els) {
         const r =
@@ -602,19 +687,22 @@ export function FloorPlanEditor({
       await queue.flushNow()
       router.refresh()
     })()
-  }, [slug, router, clearSelection, queue])
+  }, [deleteTargets, slug, router, clearSelection, queue])
 
   // ── Teclado ────────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (mode !== 'editar') return
+    if (view !== 'editar') return
     function onKey(e: KeyboardEvent) {
+      // Ya la usó el control enfocado (Radix previene las flechas que maneja).
+      if (e.defaultPrevented) return
       const t = e.target as HTMLElement | null
       if (
         t &&
         (t.tagName === 'INPUT' ||
           t.tagName === 'TEXTAREA' ||
           t.tagName === 'SELECT' ||
-          t.isContentEditable)
+          t.isContentEditable ||
+          t.closest(KEY_OWNER_SELECTOR))
       ) {
         return
       }
@@ -642,7 +730,7 @@ export function FloorPlanEditor({
       if (selectedIdsRef.current.size === 0) return
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault()
-        setDeleteOpen(true)
+        askDelete()
         return
       }
       if (e.key === ']') {
@@ -673,7 +761,17 @@ export function FloorPlanEditor({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [mode, clearSelection, duplicateSelected, bringTo, rotate90, applyDelta, undo, redo])
+  }, [
+    view,
+    clearSelection,
+    duplicateSelected,
+    bringTo,
+    rotate90,
+    applyDelta,
+    undo,
+    redo,
+    askDelete,
+  ])
 
   // Centro lógico del área activa (fallback no-drag de la paleta).
   const areaCenter = useCallback(
@@ -800,17 +898,13 @@ export function FloorPlanEditor({
 
   // Borra una mesa de la bandeja de forma definitiva (mesa + QR). El RPC bloquea
   // si la mesa tuvo sesiones → mensaje "desactivala en su lugar".
+  // Devuelve el resultado al diálogo: si falla, el error se ve adentro y no se cierra.
   const onDeleteTrayTable = useCallback(
-    (tableId: string) => {
-      void (async () => {
-        const r = await deleteTablePermanentlyAction(slug, tableId)
-        if (r.ok) {
-          toast.success('Mesa eliminada.')
-          onChanged()
-        } else {
-          toast.error(r.message)
-        }
-      })()
+    async (tableId: string): Promise<ConfirmResult> => {
+      const r = await deleteTablePermanentlyAction(slug, tableId)
+      if (!r.ok) return { ok: false, error: r.message }
+      toast.success('Mesa borrada.')
+      onChanged()
     },
     [slug, onChanged],
   )
@@ -880,61 +974,35 @@ export function FloorPlanEditor({
 
   if (!activeArea) return null
 
+  const confirmCopy = deleteCopy(deleteTargets)
+  const liveSession = liveDetail?.session ?? null
+
   return (
     <>
-      <Tabs defaultValue="plano" className="gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <TabsList>
-            <TabsTrigger value="plano">Plano</TabsTrigger>
-            <TabsTrigger value="lista">Lista</TabsTrigger>
-          </TabsList>
+      <Tabs
+        syncParam={FLOOR_VIEW_PARAM}
+        defaultValue={initialView}
+        onValueChange={(value) => setView(isFloorView(value) ? value : 'editar')}
+        className="gap-6"
+      >
+        <TabsList aria-label="Vistas del plano">
+          <TabsTrigger value="editar" icon={PencilRuler}>
+            Editar plano
+          </TabsTrigger>
+          <TabsTrigger value="vivo" icon={Activity}>
+            En vivo
+          </TabsTrigger>
+          <TabsTrigger value="lista" icon={List}>
+            Lista de mesas
+          </TabsTrigger>
+        </TabsList>
 
-          <div className="inline-flex items-center rounded-lg border border-border/60 bg-card p-0.5">
-            <button
-              type="button"
-              onClick={() => setMode('editar')}
-              aria-pressed={mode === 'editar'}
-              className={
-                mode === 'editar'
-                  ? 'rounded-md bg-primary px-3 py-1 font-medium text-primary-foreground text-xs'
-                  : 'rounded-md px-3 py-1 font-medium text-muted-foreground text-xs'
-              }
-            >
-              Editar
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('vivo')}
-              aria-pressed={mode === 'vivo'}
-              className={
-                mode === 'vivo'
-                  ? 'rounded-md bg-primary px-3 py-1 font-medium text-primary-foreground text-xs'
-                  : 'rounded-md px-3 py-1 font-medium text-muted-foreground text-xs'
-              }
-            >
-              En vivo
-            </button>
-          </div>
-        </div>
-
-        <TabsContent value="plano">
-          {mode === 'vivo' ? (
-            initialLive ? (
-              <LiveFloor
-                slug={slug}
-                tenantId={tenantId}
-                areas={liveAreas}
-                activeAreaId={initialLive.area.id}
-                initial={initialLive}
-                onTableOpen={onLiveTableOpen}
-              />
-            ) : (
-              <p className="text-muted-foreground text-sm">
-                No hay áreas para mostrar en vivo. Creá un área en el modo Editar.
-              </p>
-            )
-          ) : (
-            <div className="grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)_18rem]">
+        <TabsContent value="editar">
+          {/* Angosto: todo en una columna (áreas, lienzo, panel). lg: lienzo +
+              panel, con las áreas arriba. xl: áreas · lienzo · panel. El orden
+              del DOM es el orden visual en todos los anchos. */}
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem] xl:grid-cols-[16rem_minmax(0,1fr)_18rem]">
+            <div className="min-w-0 lg:col-span-2 xl:col-span-1">
               <AreaManager
                 slug={slug}
                 areas={areas}
@@ -945,140 +1013,193 @@ export function FloorPlanEditor({
                 }}
                 onChanged={onChanged}
               />
+            </div>
 
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <ElementPalette
-                    onQuickAdd={handleQuickAdd}
-                    onChipPointerDown={onChipPointerDown}
-                    shouldSuppressClick={shouldSuppressClick}
-                  />
-                  <div className="flex shrink-0 items-center gap-2">
-                    <div className="flex items-center gap-0.5 rounded-lg border border-border/60 bg-card p-0.5">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-8"
-                        disabled={!canUndo}
-                        onClick={undo}
-                        aria-label="Deshacer"
-                        title="Deshacer (⌘Z)"
-                      >
-                        <Undo2 className="size-4" aria-hidden />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-8"
-                        disabled={!canRedo}
-                        onClick={redo}
-                        aria-label="Rehacer"
-                        title="Rehacer (⌘⇧Z)"
-                      >
-                        <Redo2 className="size-4" aria-hidden />
-                      </Button>
-                    </div>
-                    <BulkCreateDialog slug={slug} areaId={activeArea.id} onCreated={onChanged} />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5"
-                      disabled={!hasPlacedTables}
-                      title={
-                        hasPlacedTables ? undefined : 'Colocá mesas en el área para imprimir sus QR'
-                      }
-                      onClick={() =>
-                        window.open(`/print/qrs/${activeArea.id}`, '_blank', 'noopener')
-                      }
-                    >
-                      <QrCode className="size-4" aria-hidden />
-                      Imprimir QRs
-                    </Button>
+            <div className="flex min-w-0 flex-col gap-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <ElementPalette
+                  onQuickAdd={handleQuickAdd}
+                  onChipPointerDown={onChipPointerDown}
+                  shouldSuppressClick={shouldSuppressClick}
+                />
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-0.5 rounded-md border border-border bg-card p-0.5 pointer-coarse:gap-2">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={!canUndo}
+                          onClick={undo}
+                          aria-label="Deshacer"
+                        >
+                          <Undo2 aria-hidden />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Deshacer</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={!canRedo}
+                          onClick={redo}
+                          aria-label="Rehacer"
+                        >
+                          <Redo2 aria-hidden />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Rehacer</TooltipContent>
+                    </Tooltip>
                   </div>
-                </div>
-                <div ref={wrapperRef} className="relative">
-                  <ContextualToolbar
-                    count={selectedCount}
-                    singleTable={!!singleIsTable}
-                    onRotate90={rotate90}
-                    onBringFront={() => bringTo('front')}
-                    onBringBack={() => bringTo('back')}
-                    onDuplicate={duplicateSelected}
-                    onQr={printQrSelected}
-                    onAlign={alignSelected}
-                    onDelete={() => setDeleteOpen(true)}
-                  />
-                  <PanZoomStage
-                    width={activeArea.width}
-                    height={activeArea.height}
-                    transformRef={transformRef}
-                    interactive
-                    gridSize={GRID}
-                    fitTargetId={FIT_TARGET_ID}
-                    onBackgroundClick={clearSelection}
+                  <BulkCreateDialog slug={slug} areaId={activeArea.id} onCreated={onChanged} />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    // Enfocable aunque no haya mesas: al tocarlo explica por qué no imprime.
+                    aria-disabled={!hasPlacedTables || undefined}
+                    onClick={() => {
+                      if (!hasPlacedTables) {
+                        toast.info('Colocá al menos una mesa en esta área para imprimir sus QR.')
+                        return
+                      }
+                      window.open(`/print/qrs/${activeArea.id}`, '_blank', 'noopener')
+                    }}
                   >
-                    {fitBox ? (
-                      <div
-                        id={FIT_TARGET_ID}
-                        aria-hidden
-                        className="pointer-events-none absolute"
-                        style={{
-                          left: fitBox.x,
-                          top: fitBox.y,
-                          width: fitBox.width,
-                          height: fitBox.height,
-                        }}
-                      />
-                    ) : null}
-                    <SnapGuides guides={guides} />
-                    {areaElements.map((element) => (
-                      <FloorElement
-                        key={element.id}
-                        element={element}
-                        selected={selectedIds.has(element.id)}
-                        transformRef={transformRef}
-                        areaWidth={activeArea.width}
-                        areaHeight={activeArea.height}
-                        onSelect={onSelect}
-                        getSiblings={getSiblings}
-                        registerNode={registerNode}
-                        onMoveLive={onMoveLive}
-                        onMoveEnd={onMoveEnd}
-                        onResizeEnd={handleResizeEnd}
-                        onRotateEnd={handleRotateEnd}
-                        onGuides={setGuides}
-                        onDragStart={onDragStart}
-                        onDragEnd={onDragEnd}
-                      />
-                    ))}
-                  </PanZoomStage>
+                    <QrCode aria-hidden />
+                    Imprimir QRs
+                  </Button>
                 </div>
               </div>
-
-              <aside className="space-y-3">
-                {selectedSingle && selectedSingle.kind === 'table' ? (
-                  <TableInspector
-                    slug={slug}
-                    element={selectedSingle}
-                    allTables={allTables}
-                    onChanged={onChanged}
-                    onClose={clearSelection}
-                  />
-                ) : selectedSingle ? (
-                  <DecorInspector
-                    slug={slug}
-                    element={selectedSingle}
-                    onChanged={onChanged}
-                    onClose={clearSelection}
-                  />
-                ) : (
-                  <UnplacedTray tables={unplaced} onPlace={onPlace} onDelete={onDeleteTrayTable} />
-                )}
-              </aside>
+              <div className="flex items-start gap-2">
+                <p className="min-w-0 flex-1 text-pretty type-caption text-muted-foreground">
+                  Arrastrá un elemento al plano o tocalo para sumarlo en el centro. Tocá algo del
+                  plano para moverlo, rotarlo o editarlo.
+                </p>
+                <span className="flex shrink-0 items-center gap-1 type-caption text-muted-foreground">
+                  <Keyboard className="size-3.5" aria-hidden />
+                  Atajos
+                  <InfoTip label="Atajos de teclado del plano" side="bottom">
+                    <span className="flex flex-col gap-1">
+                      <span>Flechas: mover (con Shift, de a un casillero)</span>
+                      <span>Shift + clic: elegir varios</span>
+                      <span>R: rotar 90° (Shift al rotar: de a 15°)</span>
+                      <span>] y [: traer al frente y enviar al fondo</span>
+                      <span>Ctrl o Cmd + D: duplicar</span>
+                      <span>Ctrl o Cmd + Z: deshacer (con Shift, rehacer)</span>
+                      <span>Supr o Borrar: quitar lo elegido</span>
+                      <span>Alt al soltar: sin pegar a la grilla</span>
+                      <span>Esc: soltar lo elegido</span>
+                    </span>
+                  </InfoTip>
+                </span>
+              </div>
+              <div ref={wrapperRef} className="relative">
+                <ContextualToolbar
+                  count={selectedCount}
+                  singleTable={!!singleIsTable}
+                  onRotate90={rotate90}
+                  onBringFront={() => bringTo('front')}
+                  onBringBack={() => bringTo('back')}
+                  onDuplicate={duplicateSelected}
+                  onQr={printQrSelected}
+                  onAlign={alignSelected}
+                  onDelete={askDelete}
+                />
+                <PanZoomStage
+                  width={activeArea.width}
+                  height={activeArea.height}
+                  transformRef={transformRef}
+                  interactive
+                  gridSize={GRID}
+                  fitTargetId={FIT_TARGET_ID}
+                  onBackgroundClick={clearSelection}
+                >
+                  {fitBox ? (
+                    <div
+                      id={FIT_TARGET_ID}
+                      aria-hidden
+                      className="pointer-events-none absolute"
+                      style={{
+                        left: fitBox.x,
+                        top: fitBox.y,
+                        width: fitBox.width,
+                        height: fitBox.height,
+                      }}
+                    />
+                  ) : null}
+                  <SnapGuides guides={guides} />
+                  {areaElements.map((element) => (
+                    <FloorElement
+                      key={element.id}
+                      element={element}
+                      selected={selectedIds.has(element.id)}
+                      transformRef={transformRef}
+                      areaWidth={activeArea.width}
+                      areaHeight={activeArea.height}
+                      onSelect={onSelect}
+                      getSiblings={getSiblings}
+                      registerNode={registerNode}
+                      onMoveLive={onMoveLive}
+                      onMoveEnd={onMoveEnd}
+                      onResizeEnd={handleResizeEnd}
+                      onRotateEnd={handleRotateEnd}
+                      onGuides={setGuides}
+                      onDragStart={onDragStart}
+                      onDragEnd={onDragEnd}
+                    />
+                  ))}
+                </PanZoomStage>
+              </div>
             </div>
+
+            {/* Panel del costado: lo elegido, o las mesas sin ubicar. Se monta con
+                `key` por elemento para que cada uno arranque de cero. */}
+            <Card padding="sm" className="min-w-0 self-start">
+              {selectedSingle && selectedSingle.kind === 'table' ? (
+                <TableInspector
+                  key={selectedSingle.id}
+                  slug={slug}
+                  element={selectedSingle}
+                  allTables={allTables}
+                  onChanged={onChanged}
+                  onClose={clearSelection}
+                />
+              ) : selectedSingle ? (
+                <DecorInspector
+                  key={selectedSingle.id}
+                  slug={slug}
+                  element={selectedSingle}
+                  onChanged={onChanged}
+                  onClose={clearSelection}
+                />
+              ) : (
+                <UnplacedTray tables={unplaced} onPlace={onPlace} onDelete={onDeleteTrayTable} />
+              )}
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="vivo">
+          {initialLive ? (
+            <LiveFloor
+              slug={slug}
+              tenantId={tenantId}
+              areas={liveAreas}
+              activeAreaId={initialLive.area.id}
+              initial={initialLive}
+              onTableOpen={onLiveTableOpen}
+            />
+          ) : (
+            <EmptyState
+              size="sm"
+              title="Todavía no hay nada para ver en vivo"
+              description="Creá un área en «Editar plano» y ubicá sus mesas: acá vas a ver cuáles están ocupadas."
+            />
           )}
         </TabsContent>
 
@@ -1087,23 +1208,15 @@ export function FloorPlanEditor({
         </TabsContent>
       </Tabs>
 
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {selectedCount > 1 ? `Eliminar ${selectedCount} elementos` : 'Eliminar elemento'}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Las mesas vuelven a "Mesas sin ubicar" (conservan su QR). La decoración se elimina
-              definitivamente. ¿Continuar?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={performDelete}>Eliminar</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        tone={confirmCopy.tone}
+        title={confirmCopy.title}
+        description={confirmCopy.description}
+        confirmLabel={confirmCopy.confirmLabel}
+        onConfirm={performDelete}
+      />
 
       <Sheet
         open={liveDetail !== null}
@@ -1111,85 +1224,65 @@ export function FloorPlanEditor({
           if (!o) setLiveDetail(null)
         }}
       >
-        <SheetContent side="right" className="gap-0">
+        <SheetContent side="right">
           <SheetHeader>
-            <SheetTitle className="font-serif">
-              {liveDetail?.session?.alias ?? liveDetail?.label ?? 'Mesa'}
-            </SheetTitle>
+            <SheetTitle>{liveSession?.alias ?? `Mesa ${liveDetail?.label ?? ''}`}</SheetTitle>
             <SheetDescription>
-              {liveDetail?.session
-                ? 'Estado de la sesión en curso (solo lectura).'
-                : 'Mesa libre — no hay sesión abierta.'}
+              {liveSession
+                ? `${liveSession.alias ? `Mesa ${liveDetail?.label ?? ''} · ` : ''}Así viene la mesa ahora. Es solo para mirar.`
+                : 'Está libre en este momento.'}
             </SheetDescription>
           </SheetHeader>
 
-          {liveDetail?.session ? (
-            <div className="space-y-4 px-6 py-6">
-              <div className="flex items-baseline justify-between">
-                <span className="text-muted-foreground text-xs uppercase tracking-wider">
-                  Gasto acumulado
-                </span>
-                <span className="font-semibold font-serif text-2xl tabular-nums">
-                  {ARSFormat(liveDetail.session.total_cents)}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {liveDetail.session.party_size !== null ? (
-                  <Badge variant="secondary" className="gap-1">
-                    <Users className="size-3" aria-hidden />
-                    {liveDetail.session.party_size}{' '}
-                    {liveDetail.session.party_size === 1 ? 'comensal' : 'comensales'}
-                  </Badge>
+          <SheetBody className="flex flex-col gap-6">
+            {liveSession ? (
+              <>
+                <KPI
+                  label="Gasto acumulado"
+                  value={<Amount cents={liveSession.total_cents} decimals={0} />}
+                />
+                <p className="type-small text-muted-foreground">
+                  {liveSession.party_size !== null
+                    ? `${liveSession.party_size} ${liveSession.party_size === 1 ? 'comensal' : 'comensales'} · `
+                    : ''}
+                  Abierta hace {elapsedLabel(liveSession.opened_at)}
+                </p>
+                {liveSignals(liveSession).length > 0 ? (
+                  <ul aria-label="Avisos de la mesa" className="flex flex-wrap gap-2">
+                    {liveSignals(liveSession).map((signal) => (
+                      <li key={signal}>
+                        <StatusBadge status={signal} map={LIVE_SIGNAL} size="md" />
+                      </li>
+                    ))}
+                  </ul>
                 ) : null}
-                <Badge variant="outline" className="gap-1">
-                  <CircleDot className="size-3" aria-hidden />
-                  {elapsedLabel(liveDetail.session.opened_at)}
-                </Badge>
-                {liveDetail.session.kitchen === 'preparing' ? (
-                  <Badge variant="warning" className="gap-1">
-                    <Bell className="size-3" aria-hidden />
-                    Preparando
-                  </Badge>
-                ) : null}
-                {liveDetail.session.kitchen === 'ready' ? (
-                  <Badge variant="success" className="gap-1">
-                    <Bell className="size-3" aria-hidden />
-                    Lista
-                  </Badge>
-                ) : null}
-                {liveDetail.session.bill_requested ? (
-                  <Badge variant="destructive" className="gap-1">
-                    <Receipt className="size-3" aria-hidden />
-                    Cuenta pedida
-                  </Badge>
-                ) : null}
-              </div>
-              <Button
-                variant="outline"
-                className="w-full gap-2"
-                onClick={() => setShowMoveLive(true)}
-              >
-                <ArrowRightLeft className="size-4" aria-hidden />
-                Mover de mesa
+              </>
+            ) : (
+              <p className="type-body text-pretty text-muted-foreground">
+                Cuando un mozo la abra o alguien escanee su QR, acá vas a ver el gasto y los avisos
+                de la cocina.
+              </p>
+            )}
+          </SheetBody>
+
+          {liveSession ? (
+            <SheetFooter>
+              <Button type="button" variant="secondary" onClick={() => setShowMoveLive(true)}>
+                <ArrowRightLeft aria-hidden />
+                Cambiar de mesa
               </Button>
-              <p className="text-muted-foreground text-xs">
-                Cobrar y dividir se hacen desde el salón.
+              <p className="type-caption text-muted-foreground">
+                Cobrar y dividir la cuenta se hace desde el salón.
               </p>
-            </div>
-          ) : (
-            <div className="px-6 py-6">
-              <p className="text-muted-foreground text-sm">
-                Esta mesa no tiene una sesión abierta en este momento.
-              </p>
-            </div>
-          )}
+            </SheetFooter>
+          ) : null}
         </SheetContent>
       </Sheet>
 
-      {liveDetail?.session ? (
+      {liveSession && liveDetail ? (
         <MoveTableSheet
           slug={slug}
-          sessionId={liveDetail.session.id}
+          sessionId={liveSession.id}
           currentTableId={liveDetail.physical_table_id}
           currentLabel={liveDetail.label}
           open={showMoveLive}

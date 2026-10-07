@@ -8,6 +8,7 @@ import {
   decorSurfaceClass,
   decorSurfaceStyle,
 } from '@/components/floor-plan/table-glyph'
+import { SegmentedControl } from '@/components/ui/segmented-control'
 import { refreshLiveFloorAction } from '@/lib/floor-plan/live-actions'
 import type { AreaRow, LiveDecor, LiveFloorData, LiveTable } from '@/lib/floor-plan/queries'
 import { subscribeChanges } from '@/lib/realtime/subscribe'
@@ -29,6 +30,13 @@ export type LiveFloorProps = {
   initial: LiveFloorData
   onTableOpen: (table: LiveTable) => void
 }
+
+// Referencias del dibujo: los mismos colores que el cuerpo de cada mesa en vivo.
+const LEGEND = [
+  { label: 'Libre', dot: 'bg-success' },
+  { label: 'Ocupada', dot: 'bg-warning' },
+  { label: 'Pagada', dot: 'bg-info' },
+] as const
 
 // Decoración: "poche" sólido (mate, sin sombra) para leerla como base construida
 // fija; mismo lenguaje visual que el editor. El color del dueño tiene prioridad.
@@ -143,41 +151,46 @@ export function LiveFloor({
     [refresh],
   )
 
+  // Mismo criterio que el dibujo (LiveTableCard): abierta = ocupada, pagada =
+  // pagada; el resto (sin sesión, fusionada o abandonada) se ve libre.
   const occupied = data.tables.filter((t) => t.session?.status === 'open').length
+  const paid = data.tables.filter((t) => t.session?.status === 'paid').length
   const total = data.tables.length
-  const free = total - occupied
+  const free = total - occupied - paid
 
   return (
-    <div className="space-y-3">
-      {/* Resumen + selector de áreas. */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground tabular-nums">
-          {occupied} {occupied === 1 ? 'ocupada' : 'ocupadas'} · {free}{' '}
-          {free === 1 ? 'libre' : 'libres'} · {total} {total === 1 ? 'mesa' : 'mesas'}
-        </p>
+    <div className="flex flex-col gap-3">
+      {/* Resumen + referencias del dibujo + selector de áreas. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <p className="type-small text-muted-foreground tabular-nums">
+            {occupied} {occupied === 1 ? 'ocupada' : 'ocupadas'} · {free}{' '}
+            {free === 1 ? 'libre' : 'libres'}
+            {paid > 0 ? ` · ${paid} ${paid === 1 ? 'pagada' : 'pagadas'}` : ''} · {total}{' '}
+            {total === 1 ? 'mesa' : 'mesas'}
+          </p>
+          {/* Qué quiere decir cada color del dibujo: el color nunca va solo. */}
+          <ul
+            aria-label="Referencias del plano"
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 type-caption text-muted-foreground"
+          >
+            {LEGEND.map((item) => (
+              <li key={item.label} className="flex items-center gap-1.5">
+                <span aria-hidden className={cn('size-2 rounded-full', item.dot)} />
+                {item.label}
+              </li>
+            ))}
+          </ul>
+        </div>
         {areas.length > 1 ? (
-          <div className="flex flex-wrap gap-1" role="tablist" aria-label="Seleccionar área">
-            {areas.map((a) => {
-              const selected = a.id === activeAreaId
-              return (
-                <button
-                  key={a.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={selected}
-                  onClick={() => onSelectArea(a.id)}
-                  className={cn(
-                    'rounded-full border px-3 py-1 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50',
-                    selected
-                      ? 'border-primary bg-primary text-primary-foreground'
-                      : 'border-border/70 bg-card text-muted-foreground hover:bg-muted',
-                  )}
-                >
-                  {a.name}
-                </button>
-              )
-            })}
-          </div>
+          <SegmentedControl
+            aria-label="Área del plano"
+            size="sm"
+            items={areas.map((a) => ({ value: a.id, label: a.name }))}
+            value={activeAreaId}
+            onValueChange={onSelectArea}
+            className="max-w-full overflow-x-auto"
+          />
         ) : null}
       </div>
 
