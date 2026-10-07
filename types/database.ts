@@ -14,6 +14,62 @@ export type Database = {
   }
   public: {
     Tables: {
+      acc_access: {
+        Row: {
+          display_name: string
+          granted_at: string
+          granted_by: string | null
+          granted_by_name: string | null
+          id: string
+          is_admin: boolean
+          revoke_reason: string | null
+          revoked_at: string | null
+          revoked_by: string | null
+          source: string
+          tenant_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          display_name: string
+          granted_at?: string
+          granted_by?: string | null
+          granted_by_name?: string | null
+          id?: string
+          is_admin?: boolean
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          revoked_by?: string | null
+          source?: string
+          tenant_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          display_name?: string
+          granted_at?: string
+          granted_by?: string | null
+          granted_by_name?: string | null
+          id?: string
+          is_admin?: boolean
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          revoked_by?: string | null
+          source?: string
+          tenant_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "acc_access_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audiences: {
         Row: {
           created_at: string
@@ -5222,6 +5278,14 @@ export type Database = {
         Args: { p_allowed_roles: string[]; p_tenant_id: string }
         Returns: undefined
       }
+      acc_accountant_tenant_ids: { Args: never; Returns: string[] }
+      acc_admin_tenant_ids: { Args: never; Returns: string[] }
+      acc_isolation_gaps: { Args: never; Returns: string[] }
+      acc_member_is_protected: {
+        Args: { p_tenant_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      acc_rpc_isolation_gaps: { Args: never; Returns: string[] }
       accept_invitation: {
         Args: { p_token: string }
         Returns: {
@@ -5738,6 +5802,18 @@ export type Database = {
         Returns: string
       }
       set_active_tenant: { Args: { p_tenant: string }; Returns: undefined }
+      set_reservation_table_label: {
+        Args: {
+          p_reservation_id: string
+          p_table_label: string
+          p_tenant_id?: string
+        }
+        Returns: {
+          id: string
+          table_label: string
+          updated_at: string
+        }[]
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       split_session: {
@@ -6029,6 +6105,7 @@ export type Database = {
         | "kitchen"
         | "editor"
         | "host"
+        | "accountant"
       ticket_status:
         | "pending"
         | "accepted"
@@ -6268,7 +6345,15 @@ export const Constants = {
       ],
       session_status: ["open", "paid", "merged", "abandoned"],
       template_status: ["draft", "pending", "approved", "rejected", "disabled"],
-      tenant_role: ["owner", "cashier", "waiter", "kitchen", "editor", "host"],
+      tenant_role: [
+        "owner",
+        "cashier",
+        "waiter",
+        "kitchen",
+        "editor",
+        "host",
+        "accountant",
+      ],
       ticket_status: [
         "pending",
         "accepted",
