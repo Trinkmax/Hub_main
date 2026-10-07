@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { Amount } from '@/components/ui/amount'
 import { Button } from '@/components/ui/button'
-import { ConfirmDialog, type ConfirmFormState } from '@/components/ui/confirm-dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { DataTable, ExportButton } from '@/components/ui/data-table'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Field } from '@/components/ui/field'
@@ -40,15 +40,13 @@ export function ChurnCard({
   const [name, setName] = useState('Riesgo de churn')
   const ids = rows.map((r) => r.customer_id).join(',')
 
-  async function createAudience(
-    _prev: ConfirmFormState,
-    formData: FormData,
-  ): Promise<ConfirmFormState> {
+  async function createAudience(_prev: unknown, formData: FormData) {
     const result = await createAudienceFromList(tenantSlug, initial, formData)
-    if (!result.ok) return { ok: false, error: result.message }
-    toast.success('Audiencia creada.')
-    router.push(`/${tenantSlug}/mensajeria/audiencias/${result.id}`)
-    return { ok: true }
+    if (result.ok) {
+      toast.success('Audiencia creada.')
+      router.push(`/${tenantSlug}/mensajeria/audiencias/${result.id}`)
+    }
+    return result
   }
 
   return (

@@ -1,7 +1,6 @@
 'use client'
 
 import { Eye, Plus, QrCode, Tag, UtensilsCrossed } from 'lucide-react'
-import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
@@ -14,6 +13,7 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { ReloadLink } from '@/components/ui/reload-link'
 import type { listItemTags } from '@/lib/item-tags/queries'
 import type { listMenu } from '@/lib/menu/queries'
 import type { TenantRole } from '@/lib/tenant/types'
@@ -78,15 +78,10 @@ export function MenuHub(props: MenuHubProps): React.JSX.Element {
           <>
             <CartaTourButton role={role} />
             <Button asChild variant="secondary">
-              <Link
-                href={`/carta/${tenantSlug}`}
-                target="_blank"
-                rel="noopener"
-                data-tour="menu-ver-carta"
-              >
+              <ReloadLink href={`/carta/${tenantSlug}`} newTab data-tour="menu-ver-carta">
                 <Eye aria-hidden="true" />
                 Ver carta
-              </Link>
+              </ReloadLink>
             </Button>
             <TagsManagerDialog
               tenantSlug={tenantSlug}
@@ -104,10 +99,10 @@ export function MenuHub(props: MenuHubProps): React.JSX.Element {
               }
             />
             <Button asChild variant="secondary">
-              <Link href={`/print/carta/${tenantSlug}`} target="_blank" rel="noopener">
+              <ReloadLink href={`/print/carta/${tenantSlug}`} newTab>
                 <QrCode aria-hidden="true" />
                 QR de la carta
-              </Link>
+              </ReloadLink>
             </Button>
             <NewCategoryPopover
               tenantId={tenantId}

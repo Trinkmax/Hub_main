@@ -130,7 +130,7 @@ export function RateTiersEditor({
     const target = toDelete
     if (!target?.id) return
     const r = await removeRateTier(tenantSlug, target.id)
-    if (!r.ok) return { ok: false, error: r.message }
+    if (!r.ok) return r
     setTiers((prev) => prev.filter((x) => x._key !== target._key))
     toast.success('Tramo borrado.')
   }
@@ -249,11 +249,9 @@ function TierRow({
       onSubmit={handleSubmit}
       className="grid grid-cols-2 items-start gap-3 py-4 first:pt-0 last:pb-0 sm:grid-cols-[9rem_9rem_minmax(10rem,14rem)_minmax(0,1fr)]"
     >
-      {/* Sin `value`: con un número fuera de rango, el NumberField controlado
-          borraba lo tipeado. Lo que se escribe igual llega al borrador. */}
       <Field label="Desde" required>
         <NumberField
-          defaultValue={tier.min_guests ?? null}
+          value={tier.min_guests ?? null}
           onValueChange={(n) => onPatch('min_guests', n ?? undefined)}
           min={1}
           max={MAX_GUESTS}
@@ -262,7 +260,7 @@ function TierRow({
       </Field>
       <Field label="Hasta">
         <NumberField
-          defaultValue={tier.max_guests ?? null}
+          value={tier.max_guests ?? null}
           onValueChange={(n) => onPatch('max_guests', n)}
           min={1}
           max={MAX_GUESTS}

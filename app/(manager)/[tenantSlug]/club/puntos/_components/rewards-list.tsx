@@ -394,7 +394,7 @@ export function RewardsList({
         onConfirm={async () => {
           if (!toDelete) return
           const result = await deleteReward(tenantSlug, toDelete.id)
-          if (!result.ok) return { ok: false, error: result.message }
+          if (!result.ok) return result
         }}
       />
     </div>

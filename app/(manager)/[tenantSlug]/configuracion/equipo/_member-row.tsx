@@ -116,7 +116,7 @@ export function MemberRow({
       icon: UserMinus,
       onConfirm: async () => {
         const r = await removeMember(tenantSlug, member.id)
-        if (!r.ok) return { ok: false, error: r.message }
+        if (!r.ok) return r
         toast.success(`Quitamos a ${name} del equipo.`)
       },
     })

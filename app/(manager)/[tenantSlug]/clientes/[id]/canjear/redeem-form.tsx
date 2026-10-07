@@ -118,7 +118,7 @@ export function RedeemForm({
             customer_id: customerId,
             reward_id: confirming.id,
           })
-          if (!r.ok) return { ok: false, error: r.message }
+          if (!r.ok) return r
           toast.success(`Canje hecho · le quedan ${formatNumber(r.balance_after)} pts`)
           router.push(`/${tenantSlug}/clientes/${customerId}`)
           router.refresh()

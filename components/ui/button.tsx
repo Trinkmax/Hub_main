@@ -6,11 +6,7 @@ import { cn } from '@/lib/utils'
 
 /** Variantes del kit (§3.1). Un solo `primary` por vista o por formulario. */
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'danger-ghost' | 'link'
-/** @deprecated default→primary · outline→secondary · secondary→secondary · destructive→danger · success→primary */
-export type LegacyButtonVariant = 'default' | 'outline' | 'destructive' | 'success'
 export type ButtonSize = 'sm' | 'md' | 'lg' | 'icon-sm' | 'icon' | 'icon-lg'
-/** @deprecated default→md · xl→lg (lg pasa de 40 a 44 px) */
-export type LegacyButtonSize = 'default' | 'xl'
 
 const VARIANT: Record<ButtonVariant, string> = {
   primary: 'press bg-primary text-primary-foreground hover:bg-primary-hover',
@@ -50,10 +46,10 @@ const AUTO_SIZE = [
 ].join(' ')
 
 /**
- * Las clases del botón. Declara también las claves viejas como alias con las
- * mismas clases que su reemplazo: `contact-button.tsx` tipa sus props con
- * `VariantProps<typeof buttonVariants>` y usa `outline` por defecto, y
- * `alert-dialog.tsx` llama `buttonVariants({ variant: 'outline' })`.
+ * Las clases del botón, para dibujarlo sobre otro elemento
+ * (`buttonVariants({ variant: 'secondary', size: 'sm' })`). Las claves viejas
+ * (`default`, `outline`, `destructive`, `success`, `xl`) ya no existen: cada
+ * lote las pasó a las del kit.
  */
 const buttonVariants = cva(
   [
@@ -71,20 +67,8 @@ const buttonVariants = cva(
   ].join(' '),
   {
     variants: {
-      variant: {
-        ...VARIANT,
-        default: VARIANT.primary,
-        outline: VARIANT.secondary,
-        destructive: VARIANT.danger,
-        // Los «Llegó» del operativo: en oscuro se ven dorados, no verdes. Se
-        // revisa en el lote K.
-        success: VARIANT.primary,
-      } satisfies Record<ButtonVariant | LegacyButtonVariant, string>,
-      size: {
-        ...SIZE,
-        default: SIZE.md,
-        xl: SIZE.lg,
-      } satisfies Record<ButtonSize | LegacyButtonSize, string>,
+      variant: VARIANT,
+      size: SIZE,
     },
     compoundVariants: [
       // El link va en línea con el texto: sin alto fijo ni padding de botón.
@@ -98,13 +82,13 @@ const buttonVariants = cva(
 )
 
 export type ButtonProps = React.ComponentProps<'button'> & {
-  /** Default `primary`. Los nombres viejos se aceptan y se mapean (ver `LegacyButtonVariant`). */
-  variant?: ButtonVariant | LegacyButtonVariant | null
+  /** Default `primary`. */
+  variant?: ButtonVariant | null
   /**
    * Sin `size`, el del `ControlSizeProvider` más cercano o `md`. Alto con mouse
    * / con el dedo: sm 32/36 · md 36/44 · lg 44/48; los `icon*` son cuadrados.
    */
-  size?: ButtonSize | LegacyButtonSize | null
+  size?: ButtonSize | null
   /** Para `<Link>` o `<a>`: las props (data-tour incluido) pasan al hijo. */
   asChild?: boolean
   /**
@@ -118,7 +102,7 @@ export type ButtonProps = React.ComponentProps<'button'> & {
 }
 
 const ICON_SIZES = new Set<string>(['icon-sm', 'icon', 'icon-lg'])
-const LARGE_SIZES = new Set<string>(['lg', 'xl', 'icon-lg'])
+const LARGE_SIZES = new Set<string>(['lg', 'icon-lg'])
 
 /**
  * ¿Es un ícono el primer hijo? Un componente (los íconos de lucide son

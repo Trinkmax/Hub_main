@@ -222,9 +222,8 @@ export function SegmentOverridesEditor({
     : undefined
 
   function resetForm() {
-    // El reset del <form> vuelve los campos del kit (fecha, cupo, aviso) a vacío
-    // y ellos avisan el cambio; el servicio queda como estaba.
-    formRef.current?.reset()
+    // Todos los campos son controlados: vaciar el estado los vacía. El
+    // servicio queda como estaba.
     setDate('')
     setCapacity(null)
     setWarn(null)
@@ -326,7 +325,7 @@ export function SegmentOverridesEditor({
         segment: row.segment,
       }),
     )
-    if (!result.ok) return { ok: false, error: result.message }
+    if (!result.ok) return result
     setOverrides((prev) => prev.filter((r) => rowKey(r) !== rowKey(row)))
     // Si otro dueño ya lo había quitado, `previous` viene null: se restaura
     // lo que veíamos en pantalla.
@@ -388,10 +387,9 @@ export function SegmentOverridesEditor({
               </Select>
             </Field>
 
-            {/* Sin `value`: con un número fuera de rango, el NumberField controlado
-                borraba lo tipeado. El reset del form los vacía después de guardar. */}
             <Field label="Cupo" hint="0 = cerrado ese día." error={shown.capacity}>
               <NumberField
+                value={capacity}
                 onValueChange={(n) => {
                   setCapacity(n)
                   setFormError(null)
@@ -410,6 +408,7 @@ export function SegmentOverridesEditor({
               optional
             >
               <NumberField
+                value={warn}
                 onValueChange={(n) => {
                   setWarn(n)
                   setFormError(null)

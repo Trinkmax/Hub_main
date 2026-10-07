@@ -2,7 +2,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { Users } from 'lucide-react'
 import { Fragment, createElement as h, type ReactElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -13,12 +12,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Kbd } from '@/components/ui/kbd'
 import { KbdShortcut } from '@/components/ui/kbd-shortcut'
 import { KPI, KPIGroup } from '@/components/ui/kpi'
-import { NumberTicker } from '@/components/ui/number-ticker'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
 import { Section } from '@/components/ui/section'
 import { Separator } from '@/components/ui/separator'
-import { StatCard } from '@/components/ui/stat-card'
 import { formatNumber, formatNumberKind } from '@/lib/format/number-kind'
 
 /**
@@ -29,12 +26,11 @@ import { formatNumber, formatNumberKind } from '@/lib/format/number-kind'
  * 1. `Amount` formatea con `lib/money` (menos U+2212, espacio duro después del
  *    `$`, «D»/«A» con la palabra para el lector) y nunca dibuja `$ 0` por un
  *    faltante.
- * 2. `PageHeader` emite los `data-slot` que el `.wa` de Mensajería apunta, el
- *    eyebrow viejo se ve como contexto sin mayúsculas, y la descripción va en
- *    un `<div>` (los loaders le pasan `<Skeleton>`).
+ * 2. `PageHeader` emite los `data-slot` que el `.wa` de Mensajería apunta, la
+ *    línea de contexto va sin mayúsculas, y la descripción va en un `<div>`
+ *    (los loaders le pasan `<Skeleton>`).
  * 3. Los KPIs son pares `<dt>`/`<dd>` de un solo `<dl>` (nunca un `<dl>`
- *    adentro de otro) y quedan quietos: `StatCard` y `NumberTicker` dibujan el
- *    valor final, sin contar.
+ *    adentro de otro) y quedan quietos: el valor final, sin contar.
  * 4. Cada componente pasa `data-tour` a su raíz (los 46 anclajes de los tours).
  */
 
@@ -227,22 +223,21 @@ describe('PageHeader', () => {
     expect(html).not.toContain('text-[34px]')
   })
 
-  it('el eyebrow viejo se dibuja como contexto, sin mayúsculas ni tracking', () => {
-    const html = render(h(PageHeader, { eyebrow: 'Mensajería', title: 'Difusiones' }))
+  it('la línea de contexto va sin mayúsculas ni tracking (el .wa la esconde por su slot)', () => {
+    const html = render(h(PageHeader, { context: 'Buenas tardes, HUB', title: 'Resumen' }))
     const context = openTag(html, 'page-context')
     expect(classOf(context)).toContain('type-small')
+    // El slot de antes: el `.wa` de Mensajería lo esconde por ese nombre.
     expect(openTag(html, 'page-eyebrow')).toBeTruthy()
-    expect(readable(html)).toBe('MensajeríaDifusiones')
+    expect(readable(html)).toBe('Buenas tardes, HUBResumen')
     expect(html).not.toMatch(/\buppercase\b/)
     expect(html).not.toMatch(/tracking-\[/)
-    // `context` es el nombre nuevo de lo mismo.
-    expect(render(h(PageHeader, { context: 'Mensajería', title: 'Difusiones' }))).toBe(html)
   })
 
-  it('description y eyebrow aceptan un <div> (los loaders pasan Skeleton)', () => {
+  it('description y context aceptan un <div> (los loaders pasan Skeleton)', () => {
     const skeleton = h('div', { 'data-slot': 'skeleton', className: 'h-3 w-24' })
     const html = render(
-      h(PageHeader, { eyebrow: skeleton, title: 'Cargando', description: skeleton }),
+      h(PageHeader, { context: skeleton, title: 'Cargando', description: skeleton }),
     )
     expect(html).not.toContain('<p')
     expect(count(html, 'data-slot="skeleton"')).toBe(2)
@@ -452,78 +447,6 @@ describe('KPI y KPIGroup', () => {
   })
 })
 
-describe('StatCard (compatibilidad)', () => {
-  it('numberValue se formatea quieto: el valor final en el primer HTML', () => {
-    const html = render(
-      h(StatCard, {
-        label: 'Revenue 30d',
-        numberValue: 123_450_00,
-        numberFormatKind: 'currency-cents-ars',
-        ...tour('resumen-revenue'),
-      }),
-    )
-    const root = openTag(html, 'stat-card')
-    expect(root).toContain('data-tour="resumen-revenue"')
-    expect(classOf(root)).toEqual(expect.arrayContaining(['rounded-xl', 'border', 'bg-card']))
-    expect(visible(html)).toContain(`$${NBSP}123.450`)
-    expect(html).not.toContain('number-ticker')
-    expect(html).not.toMatch(/hover:-translate|hover:shadow/)
-    expect(visible(render(h(StatCard, { label: 'Reseñas', numberValue: 1234 })))).toContain('1.234')
-    expect(
-      visible(render(h(StatCard, { label: 'Prom.', numberValue: 2.345, numberDecimals: 1 }))),
-    ).toContain('2,3')
-  })
-
-  it('value, hint, delta con tono y sparkline siguen andando', () => {
-    const html = render(
-      h(StatCard, {
-        label: 'Visitas 30d',
-        value: '1.234',
-        hint: 'Promedio 41,1/día',
-        delta: '−8%',
-        deltaTone: 'negative',
-        sparkline: h('svg', { 'data-testid': 'spark' }),
-        className: 'border-primary/60 bg-primary/5',
-      }),
-    )
-    expect(classOf(openTag(html, 'kpi-delta'))).toContain('text-destructive-text')
-    expect(openTag(html, 'kpi-hint')).toBeTruthy()
-    expect(openTag(html, 'kpi-sparkline')).toBeTruthy()
-    const root = classOf(openTag(html, 'stat-card'))
-    expect(root).toEqual(expect.arrayContaining(['border-primary/60', 'bg-primary/5']))
-    expect(root).not.toContain('bg-card')
-    // default y muted pasan a neutro.
-    const muted = render(h(StatCard, { label: 'x', value: '1', delta: '0%' }))
-    expect(classOf(openTag(muted, 'kpi-delta'))).toContain('text-muted-foreground')
-  })
-
-  it('iconClassName se ignora, con un solo aviso en desarrollo', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const html = render(
-      h(StatCard, { label: 'Clientes', value: '1', icon: Users, iconClassName: 'text-primary' }),
-    )
-    render(h(StatCard, { label: 'Otra', value: '2', icon: Users, iconClassName: 'text-info' }))
-    expect(html).not.toContain('text-primary')
-    expect(html).toMatch(/<svg[^>]*aria-hidden="true"/)
-    expect(warn.mock.calls.length).toBeLessThanOrEqual(1)
-  })
-})
-
-describe('NumberTicker (quieto)', () => {
-  it('dibuja el valor final, sin motion', () => {
-    expect(visible(render(h(NumberTicker, { value: 1234, durationMs: 700 })))).toBe('1.234')
-    expect(visible(render(h(NumberTicker, { value: 45, formatKind: 'percent-100' })))).toBe(
-      `45${NBSP}%`,
-    )
-    expect(visible(render(h(NumberTicker, { value: -3, decimalPlaces: 1 })))).toBe(`${MINUS}3,0`)
-    expect(visible(render(h(NumberTicker, { value: 7, format: (n) => `${n} mesas` })))).toBe(
-      '7 mesas',
-    )
-    const tag = openTag(render(h(NumberTicker, { value: 1, ...tour('pulso') })), 'number-ticker')
-    expect(tag).toContain('data-tour="pulso"')
-  })
-})
-
 describe('Card, Section y PageShell', () => {
   it('Card: cartulina sin sombra, relleno pisable con className', () => {
     const html = render(
@@ -708,13 +631,13 @@ describe('reglas del kit en estos archivos (§2.13)', () => {
     'kbd',
     'kbd-shortcut',
     'kpi',
-    'number-ticker',
     'page-header',
     'page-shell',
     'scroll-area',
     'section',
     'separator',
-    'stat-card',
+    'disclosure',
+    'reload-link',
   ].map((name) => `components/ui/${name}.tsx`)
 
   it.each(FILES)('%s: sin -[--x], dark:, ring de foco, menos de 12 px ni float', (file) => {

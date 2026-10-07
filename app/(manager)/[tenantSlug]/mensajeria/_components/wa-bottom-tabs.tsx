@@ -22,6 +22,10 @@ import { MAIN_ITEMS, SETTINGS_ITEMS, UnreadBadge, unreadLabel, visibleFor } from
  * Piso de 12 px del kit: las etiquetas pasaron de 10 a 12 px y la cuenta de
  * sin leer de 9 a 12 (con su pastilla más grande). Para que entren cinco
  * tabs en 360 px, la etiqueta es corta («Automático») y se recorta si no entra.
+ *
+ * Su alto (8 + 28 + 2 + 16 + 8 px, el pelo y el área segura) es el
+ * `--form-actions-offset` del layout: la barra fija de un formulario queda
+ * arriba de estas pestañas. Si cambia el alto, cambia también allá.
  */
 export function WaBottomTabs({
   tenantSlug,

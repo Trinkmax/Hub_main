@@ -141,7 +141,6 @@ export function ReviewSettingsForm({
           ) : null}
         </div>
 
-        {/* Sin `value`: con un número fuera de rango, el NumberField controlado borraba lo tipeado. */}
         <Field
           label="Puntos por reseña"
           name="review_reward_points"
@@ -149,7 +148,7 @@ export function ReviewSettingsForm({
           className="sm:max-w-56"
         >
           <NumberField
-            defaultValue={settings.reviewRewardPoints}
+            value={rewardPoints}
             onValueChange={setRewardPoints}
             min={0}
             max={1_000_000}

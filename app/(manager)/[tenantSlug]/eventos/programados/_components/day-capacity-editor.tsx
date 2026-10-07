@@ -218,9 +218,9 @@ export function DayCapacityEditor({
                       <Label htmlFor={inputId} className="w-20 shrink-0">
                         {SEGMENT_LABELS[key]}
                       </Label>
-                      {/* Sin `max`: un número de más se rechaza al guardar con
-                          el mensaje del esquema, en vez de borrarse mientras se
-                          tipea. */}
+                      {/* Sin `max`: un número de más lo rechaza el esquema al
+                          guardar, con su mensaje en la fila (el campo va sin
+                          Field y no mostraría el suyo). */}
                       <NumberField
                         id={inputId}
                         size="sm"

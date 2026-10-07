@@ -48,10 +48,9 @@ export function TotalSeatsField({
       description="Cuántas personas entran cuando está lleno (barra, mesas y terraza). El panel del salón usa este número para mostrar cuántos lugares quedan libres en vivo. Dejalo vacío si preferís no mostrarlo."
     >
       <form onSubmit={save} className="flex max-w-sm flex-col gap-4">
-        {/* Sin `value`: con un número fuera de rango, el NumberField controlado borraba lo tipeado. */}
         <Field label="Personas">
           <NumberField
-            defaultValue={initialTotalSeats}
+            value={value}
             onValueChange={setValue}
             min={MIN_SEATS}
             max={MAX_SEATS}

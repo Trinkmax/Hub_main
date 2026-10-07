@@ -156,7 +156,6 @@ export function ActionsFamily() {
     <CatalogFamily id="acciones">
       <CatalogBlock
         id="button"
-        compat="Las variantes viejas (`default`, `outline`, `destructive`, `success`) y los tamaños `default` y `xl` se mapean solos; `buttonVariants` los declara como alias (`@deprecated`)."
         purpose="Toda acción. Un solo `primary` por vista o por formulario."
         yes="Para hacer algo («Guardar», «Borrar proveedor»). Como link con `asChild` cuando navega."
         no="Para un filtro (`FilterChip`, `SegmentedControl`) o para un link en medio de un texto (va subrayado, sin botón)."

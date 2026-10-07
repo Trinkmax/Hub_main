@@ -697,7 +697,7 @@ export function BenefitsEditor({
           if (!toDelete) return
           const target = toDelete
           const result = await deleteTierBenefit(tenantSlug, target.id)
-          if (!result.ok) return { ok: false, error: result.message }
+          if (!result.ok) return result
           await pruneImage(target.image_url, null)
           toast.success('Beneficio borrado.')
           if (form.editingId === target.id) resetForm()

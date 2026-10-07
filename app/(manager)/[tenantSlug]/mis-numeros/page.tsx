@@ -1,13 +1,4 @@
-import {
-  CalendarCheck,
-  ChevronDown,
-  CircleHelp,
-  Coins,
-  Link2Off,
-  UserRound,
-  Users,
-  Wallet,
-} from 'lucide-react'
+import { CalendarCheck, CircleHelp, Coins, Link2Off, UserRound, Users, Wallet } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import {
@@ -19,6 +10,7 @@ import { Amount } from '@/components/ui/amount'
 import { Button } from '@/components/ui/button'
 import { Callout } from '@/components/ui/callout'
 import { DataTable } from '@/components/ui/data-table'
+import { Disclosure } from '@/components/ui/disclosure'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FilterChip } from '@/components/ui/filter-chip'
 import { KPI, KPIGroup } from '@/components/ui/kpi'
@@ -261,18 +253,9 @@ export default async function MisNumerosPage({
       </KPIGroup>
 
       <Section title="Reserva por reserva">
-        {/* ¿Cómo se calcula? Ayuda que se abre cuando hace falta: el kit todavía
-            no tiene un desplegable, así que es un <details> con sus tokens. */}
-        <details className="group rounded-xl border border-border bg-card">
-          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl px-4 type-label outline-(--ring) -outline-offset-2 hover:bg-hover focus-visible:outline-2 [&::-webkit-details-marker]:hidden">
-            <CircleHelp className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-            ¿Cómo se calcula?
-            <ChevronDown
-              className="ml-auto size-4 shrink-0 text-muted-foreground group-open:rotate-180"
-              aria-hidden
-            />
-          </summary>
-          <ul className="list-disc space-y-1.5 px-4 pb-4 pl-9 type-body text-muted-foreground">
+        {/* ¿Cómo se calcula? Ayuda que se abre cuando hace falta. */}
+        <Disclosure title="¿Cómo se calcula?" icon={<CircleHelp />}>
+          <ul className="list-disc space-y-1.5 ps-5 type-body text-muted-foreground">
             <li>
               Cobrás una tarifa por persona, que depende de la franja (almuerzo o cena) y de cuánta
               gente trae la reserva.
@@ -284,7 +267,7 @@ export default async function MisNumerosPage({
               El dueño marca cada pago cuando te lo liquida: ahí pasa de «Pendiente» a «Pagado».
             </li>
           </ul>
-        </details>
+        </Disclosure>
 
         <DataTable
           data-tour="mis-numeros-lista"

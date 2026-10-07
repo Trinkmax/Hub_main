@@ -6,24 +6,25 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Callout } from '@/components/ui/callout'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ErrorState } from '@/components/ui/error-state'
+import { KPI, KPIGroup } from '@/components/ui/kpi'
 import { Progress } from '@/components/ui/progress'
 import {
-  CardGridSkeleton,
   ListSkeleton,
   Skeleton,
   SkeletonCardGrid,
   SkeletonKPIGroup,
   SkeletonPageHeader,
+  SkeletonSection,
   SkeletonStatus,
   SkeletonTable,
 } from '@/components/ui/skeleton'
-import * as SkeletonList from '@/components/ui/skeleton-list'
 
 /**
  * Kit HUB §3.4, la otra mitad del feedback: avisos en la página, progreso,
  * esqueletos, vacío y error, en el HTML del server. Fija la accesibilidad
- * (roles, nombres, foco) y la compatibilidad con los usos de antes
- * (`EmptyState` ×38, `ListSkeleton` y `CardGridSkeleton` ×5).
+ * (roles, nombres, foco), la compatibilidad con los usos de antes
+ * (`EmptyState` ×38) y que cada esqueleto caiga en la grilla de lo que
+ * reemplaza (los KPIs).
  */
 
 vi.mock('next/link', () => ({
@@ -221,16 +222,11 @@ describe('Skeleton y presets', () => {
     expect(cls).toContain('h-4')
   })
 
-  it('skeleton-list sigue exportando ListSkeleton y CardGridSkeleton', () => {
-    expect(SkeletonList.ListSkeleton).toBe(ListSkeleton)
-    expect(SkeletonList.CardGridSkeleton).toBe(CardGridSkeleton)
-    expect(CardGridSkeleton).toBe(SkeletonCardGrid)
-    const list = render(h(SkeletonList.ListSkeleton, { rows: 8 }))
+  it('ListSkeleton y SkeletonCardGrid: filas y tarjetas decorativas', () => {
+    const list = render(h(ListSkeleton, { rows: 8 }))
     expect(count(list, 'data-slot="skeleton"')).toBe(8 * 4)
     expect(slotAttrs(list, 'skeleton-list')['aria-hidden']).toBe('true')
-    expect(count(render(h(SkeletonList.CardGridSkeleton, { count: 3 })), 'rounded-xl border')).toBe(
-      3,
-    )
+    expect(count(render(h(SkeletonCardGrid, { count: 3 })), 'rounded-xl border')).toBe(3)
   })
 
   it('SkeletonTable: filas del alto de la densidad y tarjetas en el celular', () => {
@@ -250,10 +246,72 @@ describe('Skeleton y presets', () => {
     expect(count(html, 'h-(--control-md)')).toBe(2)
   })
 
-  it('SkeletonKPIGroup: con impares, el último completa la fila', () => {
-    const html = render(h(SkeletonKPIGroup, { count: 3 }))
-    expect(html).toContain('md:grid-cols-3')
-    expect(html).toContain('col-span-2 md:col-span-1')
+  it('SkeletonKPIGroup cae en la misma grilla que el KPIGroup que reemplaza', () => {
+    const kpis = (n: number, columns?: 2 | 3 | 4) =>
+      render(
+        h(
+          KPIGroup,
+          { columns },
+          Array.from({ length: n }, (_, i) => h(KPI, { key: i, label: `K${i}`, value: i })),
+        ),
+      )
+    for (const [n, columns] of [[2], [3], [4], [5], [7], [4, 2], [6, 3]] as const) {
+      const real = classesOf(kpis(n, columns), 'kpi-group')
+      const skeleton = classesOf(
+        render(h(SkeletonKPIGroup, { count: n, columns })),
+        'skeleton-kpi-group',
+      )
+      // Las mismas columnas en cada ancho y los mismos pelos por posición.
+      expect([...skeleton].sort(), `${n} KPIs`).toEqual([...real].sort())
+    }
+    // 4 KPIs: 2 × 2 hasta xl (con plata de 8 cifras, cuatro no entran antes).
+    expect(classesOf(render(h(SkeletonKPIGroup, { count: 4 })), 'skeleton-kpi-group')).toEqual(
+      new Set([...classesOf(kpis(4), 'kpi-group')]),
+    )
+    expect(
+      slotAttrs(render(h(SkeletonKPIGroup, { count: 4 })), 'skeleton-kpi-group'),
+    ).toMatchObject({ 'data-columns': '4', 'aria-hidden': 'true' })
+  })
+
+  it('SkeletonKPIGroup: cada celda con el aire y la altura de un KPI', () => {
+    const html = render(h(SkeletonKPIGroup, { count: 2 }))
+    expect(count(html, 'p-4 sm:p-6')).toBe(2)
+    expect(count(html, 'h-[1.125rem]')).toBe(2)
+    expect(count(html, '"flex h-8 items-center"')).toBe(2)
+    expect(count(render(h(SkeletonKPIGroup, { count: 2, size: 'lg' })), 'sm:h-9')).toBe(2)
+    expect(count(render(h(SkeletonKPIGroup, { count: 2, hint: false })), 'h-4 items-center')).toBe(
+      0,
+    )
+    // Sin marco: solo la grilla con pelos, como `KPIGroup framed={false}`.
+    expect(
+      classesOf(render(h(SkeletonKPIGroup, { framed: false })), 'skeleton-kpi-group'),
+    ).not.toContain('rounded-xl')
+  })
+
+  it('SkeletonSection: título, descripción, acciones y el contenido abajo', () => {
+    const html = render(
+      h(SkeletonSection, { actions: 2, ...TOUR }, h(SkeletonTable, { rows: 2, columns: 2 })),
+    )
+    const root = slotAttrs(html, 'skeleton-section')
+    expect(root['data-tour']).toBe('x')
+    expect(classesOf(html, 'skeleton-section')).toContain('gap-4')
+    // El encabezado es decorativo; el contenido trae su propio aria-hidden.
+    expect(html).toMatch(/data-slot="skeleton-section"[^>]*><div aria-hidden="true"/)
+    expect(html).toContain('h-7')
+    expect(count(html, 'h-(--control-sm)')).toBe(2)
+    expect(html).toContain('data-slot="skeleton-table"')
+    // h3: el título chico; divider: pelo arriba, como Section.
+    const small = render(h(SkeletonSection, { headingLevel: 3, divider: true, description: false }))
+    expect(small).toContain('h-6')
+    expect(small).not.toContain('h-7')
+    expect(classesOf(small, 'skeleton-section')).toContain('border-t')
+    expect(count(small, 'h-[1.125rem]')).toBe(0)
+    // Sin nada arriba, solo el contenido.
+    const bare = render(
+      h(SkeletonSection, { title: false, description: false }, h('p', null, 'contenido')),
+    )
+    expect(bare).not.toContain('aria-hidden')
+    expect(bare).toContain('<p>contenido</p>')
   })
 
   it('SkeletonStatus anuncia «Cargando…» una vez, para lectores de pantalla', () => {

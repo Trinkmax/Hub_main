@@ -49,7 +49,7 @@ export function LogoUploader({
   const handleDelete = async (): Promise<ConfirmResult> => {
     if (!logoUrl) return
     const result = await deleteTenantLogoAction(tenantSlug)
-    if (!result.ok) return { ok: false, error: result.message }
+    if (!result.ok) return result
     setLogoUrl(null)
     toast.success('Quitamos el logo.')
   }

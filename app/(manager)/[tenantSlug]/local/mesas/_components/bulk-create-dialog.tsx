@@ -88,17 +88,17 @@ export function BulkCreateDialog({
             hijos del diálogo (el cuerpo scrollea y el pie queda fijo). */}
         <form className="contents" onSubmit={submit}>
           <DialogBody className="flex flex-col gap-4">
-            {/* No controlados: el campo maneja lo tipeado (un número fuera de rango
-                queda escrito, con su error) y avisa el último valor válido. */}
+            {/* Un número fuera de rango queda escrito, con su error, y el estado
+                pasa a null (no hay número que valga). */}
             <FieldRow>
               <Field label="Cantidad" required>
-                <NumberField min={1} max={50} defaultValue={count} onValueChange={setCount} />
+                <NumberField min={1} max={50} value={count} onValueChange={setCount} />
               </Field>
               <Field label="Personas por mesa" optional hint="Vacío: sin definir.">
                 <NumberField
                   min={1}
                   max={50}
-                  defaultValue={capacity}
+                  value={capacity}
                   onValueChange={setCapacity}
                   placeholder="Sin definir"
                 />

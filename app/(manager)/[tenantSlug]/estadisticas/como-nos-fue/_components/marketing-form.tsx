@@ -16,6 +16,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Callout } from '@/components/ui/callout'
 import { ConfirmDialog, type ConfirmResult } from '@/components/ui/confirm-dialog'
+import { Disclosure } from '@/components/ui/disclosure'
 import { Field } from '@/components/ui/field'
 import { FormActions } from '@/components/ui/form-actions'
 import { Kbd } from '@/components/ui/kbd'
@@ -60,7 +61,6 @@ import {
   withoutMoney,
 } from '@/lib/salon/event-marketing-draft'
 import { cn } from '@/lib/utils'
-import { Disclosure } from './marketing-report'
 import { MoneyField, scrollIntoViewOnTouch } from './money-field'
 
 /**
@@ -462,7 +462,7 @@ export function MarketingForm({
       return
     }
     if (res.code === 'stale') router.refresh()
-    return { ok: false, error: res.message }
+    return res
   }
 
   const onFormKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
@@ -528,7 +528,7 @@ export function MarketingForm({
           </p>
         ) : null}
 
-        <Disclosure summary="¿Qué fechas filtro en Meta?" className="mt-2">
+        <Disclosure variant="inline" title="¿Qué fechas filtro en Meta?" className="mt-2">
           <p className="max-w-prose text-muted-foreground">
             Filtrá la campaña de esta fecha, desde que arrancó hasta el día del evento.
           </p>

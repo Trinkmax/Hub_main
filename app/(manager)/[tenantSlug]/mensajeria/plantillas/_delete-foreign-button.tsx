@@ -3,10 +3,9 @@
 import { Languages } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { ConfirmDialog, type ConfirmFormState } from '@/components/ui/confirm-dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import type { MetaActionState } from '@/lib/meta/actions'
 import { deleteForeignTemplatesAction } from '@/lib/meta/template-actions'
-import { toConfirmState } from '../_components/confirm-state'
 
 const initial: MetaActionState = { ok: true }
 
@@ -24,10 +23,10 @@ export function DeleteForeignTemplatesButton({
   tenantSlug: string
   names: string[]
 }) {
-  async function removeAll(_prev: ConfirmFormState, formData: FormData) {
+  async function removeAll(_prev: unknown, formData: FormData) {
     const result = await deleteForeignTemplatesAction(tenantSlug, initial, formData)
     if (result.ok && result.message) toast.success(result.message)
-    return toConfirmState(result)
+    return result
   }
 
   return (

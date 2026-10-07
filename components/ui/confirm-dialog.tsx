@@ -18,9 +18,13 @@ import { cn } from '@/lib/utils'
  *   `aria-disabled`. Ninguno se deshabilita de verdad: un botón `disabled`
  *   pierde el foco y el lector de pantalla queda en el `<body>`. Mientras
  *   espera, ni Esc ni «Cancelar» lo cierran. Adiós a los `e.preventDefault()`.
- * - **Si sale bien** (`void` u `{ ok: true }`), se cierra. **Si falla**
- *   (`{ ok: false, error }` o una excepción), queda abierto con el error
- *   adentro, los botones habilitados y el foco en el principal.
+ * - **Si sale bien** (`void` u `{ ok: true, … }`), se cierra. **Si falla**
+ *   (`{ ok: false, message }`, `{ ok: false, error }` o una excepción), queda
+ *   abierto con el error adentro, los botones habilitados y el foco en el
+ *   principal.
+ * - **El resultado de la casa entra tal cual.** Las Server Actions devuelven
+ *   `{ ok: true, … } | { ok: false, message }`: `onConfirm` y `formAction` las
+ *   aceptan sin adaptar (`if (!r.ok) return r`, o `formAction={accion}`).
  * - **Modo Server Action** (`formAction`): un `<form action>` con
  *   `useActionState`; se cierra cuando el estado vuelve con `ok`.
  * - **Foco:** al abrir, en «Cancelar» (lo menos destructivo). Al cerrar, al
@@ -31,13 +35,36 @@ import { cn } from '@/lib/utils'
  * menú antes de confirmar): ahí va `useConfirm()` en el `onSelect`.
  */
 
+/**
+ * Una confirmación que falló. `message` es el de las Server Actions de la casa
+ * (`{ ok: false, message }`); `error`, el de los formularios del kit. Sin
+ * ninguno de los dos, el diálogo dice el genérico.
+ */
+export type ConfirmFailure = { ok: false; error?: string | null; message?: string | null }
+
+/** Lo que resuelve una acción de confirmación: lo de la casa (`{ ok: true, … }`) o un fallo. */
+export type ConfirmActionState = { ok: true } | ConfirmFailure
+
 // `void` a propósito (no `undefined`): un `onConfirm` que no devuelve nada, o un
 // `() => Promise<void>` declarado en otro lado, tiene que entrar sin adaptarlo.
 // biome-ignore lint/suspicious/noConfusingVoidType: es el tipo de retorno de un callback, no un valor
-export type ConfirmResult = void | { ok: true } | { ok: false; error: string }
-export type ConfirmFormState = { ok: boolean; error?: string } | null
+export type ConfirmResult = void | ConfirmActionState
 
-export type ConfirmDialogProps = {
+/** El estado del modo `formAction` (`useActionState`): `null` hasta la primera respuesta. */
+export type ConfirmFormState = ConfirmActionState | null
+
+/**
+ * El mensaje de una confirmación que falló (`error` o `message`, el primero que
+ * diga algo; si no, el genérico), o `null` si no falló.
+ */
+export function confirmFailureMessage(
+  result: ConfirmResult | ConfirmFormState | undefined,
+): string | null {
+  if (!isFailure(result)) return null
+  return result.error?.trim() || result.message?.trim() || GENERIC_ERROR
+}
+
+export type ConfirmDialogProps<S extends ConfirmActionState = ConfirmActionState> = {
   /** Una pregunta con el objeto entre «»: «¿Borrar la regla «2x1 en tragos»?» */
   title: string
   /** La consecuencia, en concreto: «Deja de sumar puntos desde hoy.» */
@@ -56,10 +83,13 @@ export type ConfirmDialogProps = {
   trigger?: React.ReactElement
   open?: boolean
   onOpenChange?: (open: boolean) => void
-  /** Modo cliente. */
+  /** Modo cliente. Puede devolver el resultado de la Server Action tal cual. */
   onConfirm?: () => ConfirmResult | Promise<ConfirmResult>
-  /** Modo Server Action (`useActionState`). */
-  formAction?: (prev: ConfirmFormState, formData: FormData) => Promise<ConfirmFormState>
+  /**
+   * Modo Server Action (`useActionState`): el estado de la casa
+   * (`{ ok: true, … } | { ok: false, message }`) o `{ ok, error }`, sin adaptar.
+   */
+  formAction?: (prev: S | null, formData: FormData) => Promise<S>
   /** Inputs ocultos del modo formulario. */
   hiddenFields?: Record<string, string>
   /** Campos extra (el motivo de una cancelación); en modo formulario, adentro del `<form>`. */
@@ -79,7 +109,7 @@ type ConfirmCopy = Pick<
 /** Para una excepción no hay mensaje que mostrar: el detalle queda en la consola. */
 const GENERIC_ERROR = 'No se pudo completar. Probá de nuevo.'
 
-function isFailure(result: ConfirmResult | undefined): result is { ok: false; error: string } {
+function isFailure(result: ConfirmResult | ConfirmFormState | undefined): result is ConfirmFailure {
   return typeof result === 'object' && result !== null && result.ok === false
 }
 
@@ -95,7 +125,7 @@ function pageHeading(): HTMLElement | null {
   return heading
 }
 
-function ConfirmDialog({
+function ConfirmDialog<S extends ConfirmActionState = ConfirmActionState>({
   open: openProp,
   onOpenChange,
   trigger,
@@ -106,7 +136,7 @@ function ConfirmDialog({
   confirmDisabled = false,
   returnFocus,
   ...copy
-}: ConfirmDialogProps) {
+}: ConfirmDialogProps<S>) {
   const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false)
   const open = openProp ?? uncontrolledOpen
   // Lo marca el cuerpo mientras espera la acción. Ref y no estado: lo leen
@@ -231,8 +261,9 @@ function ConfirmClientBody({
     }
     busyRef.current = false
     setPending(false)
-    if (isFailure(result)) {
-      setError(result.error || GENERIC_ERROR)
+    const failure = confirmFailureMessage(result)
+    if (failure !== null) {
+      setError(failure)
       confirmRef.current?.focus()
       return
     }
@@ -254,7 +285,7 @@ function ConfirmClientBody({
   )
 }
 
-function ConfirmFormBody({
+function ConfirmFormBody<S extends ConfirmActionState>({
   copy,
   children,
   confirmDisabled,
@@ -263,14 +294,14 @@ function ConfirmFormBody({
   formAction,
   hiddenFields,
 }: BodyProps & {
-  formAction: NonNullable<ConfirmDialogProps['formAction']>
+  formAction: (prev: S | null, formData: FormData) => Promise<S>
   hiddenFields?: Record<string, string>
 }) {
-  const [state, dispatch, isPending] = React.useActionState(formAction, null)
+  const [state, dispatch, isPending] = React.useActionState<S | null, FormData>(formAction, null)
   const confirmRef = React.useRef<HTMLButtonElement>(null)
   // Cada respuesta se atiende una sola vez: `onDone` cambia de identidad con
   // los renders del que llama y el efecto vuelve a correr.
-  const handledRef = React.useRef<ConfirmFormState>(null)
+  const handledRef = React.useRef<S | null>(null)
 
   React.useEffect(() => {
     busyRef.current = isPending
@@ -283,7 +314,7 @@ function ConfirmFormBody({
     else confirmRef.current?.focus()
   }, [state, onDone])
 
-  const error = state && !state.ok ? state.error || GENERIC_ERROR : null
+  const error = confirmFailureMessage(state)
 
   return (
     <form

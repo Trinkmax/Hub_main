@@ -1,5 +1,13 @@
 import type * as React from 'react'
 import { cn } from '@/lib/utils'
+import {
+  KPI_CELL_PADDING,
+  KPI_GRID_CLASS,
+  KPI_GROUP_CLASS,
+  KPI_GROUP_FRAME_CLASS,
+  type KPIGroupColumns,
+  kpiGroupColumns,
+} from './kpi-grid'
 
 /**
  * Esqueletos de carga (kit HUB §3.4). Server-safe.
@@ -153,78 +161,142 @@ function SkeletonPageHeader({
 
 // ─── KPIs ────────────────────────────────────────────────────────────────────
 
-const KPI_COLUMNS: Readonly<Record<2 | 3 | 4, string>> = {
-  2: 'md:grid-cols-2',
-  3: 'md:grid-cols-3',
-  4: 'md:grid-cols-4',
-}
-const KPI_MD_SPAN: Readonly<Record<number, string>> = {
-  1: 'md:col-span-1',
-  2: 'md:col-span-2',
-  3: 'md:col-span-3',
-  4: 'md:col-span-4',
-}
-
 /**
- * El último KPI ocupa lo que sobra de su fila (si no, asoma el pelo de fondo
- * como un bloque gris): toda la fila en el celular si son impares, y el resto
- * de la última fila desde `md`.
- */
-function lastKpiSpan(count: number, cols: number): string {
-  const mobile = count % 2 === 1 ? 'col-span-2' : ''
-  const remainder = count % cols
-  const mdSpan = remainder === 0 ? 1 : cols - remainder + 1
-  return cn(mobile, (mobile || mdSpan > 1) && KPI_MD_SPAN[mdSpan])
-}
-
-/**
- * El `KPIGroup`: una sola tarjeta con pelos entre KPIs (grilla de 2 en el
- * celular), cada uno con `p-4 sm:p-6`, etiqueta de 13/18, número de
- * `type-kpi` (32 px de interlínea; 36 desde `sm`) y una línea de ayuda de 12/16.
+ * El `KPIGroup`, con su misma grilla (`kpi-grid.ts`): 2 × 2 o 1 × 3 en el
+ * celular, 3 desde `md`, 4 recién desde `xl`, y los pelos entre celdas por
+ * posición. Cada celda copia un KPI: `p-4 sm:p-6`, etiqueta de 13/18, 4 px, el
+ * número (`type-kpi`: 32 px de interlínea en `md`; 36 desde `sm` en `lg`) y,
+ * con `hint`, una línea de ayuda de 12/16.
  */
 function SkeletonKPIGroup({
   count = 4,
   columns,
+  framed = true,
+  size = 'md',
+  hint = true,
   className,
   ...props
 }: React.ComponentProps<'div'> & {
   count?: number
-  /** Columnas desde `md`. Default: tantas como KPIs, entre 2 y 4. */
-  columns?: 2 | 3 | 4
+  /** Las mismas de `KPIGroup`. Default: las que salen de la cantidad. */
+  columns?: KPIGroupColumns
+  /** Default `true`: una sola tarjeta, como el grupo. */
+  framed?: boolean
+  /** El `size` de los KPIs: `lg` crece a 36 px desde `sm`. Default `md`. */
+  size?: 'md' | 'lg'
+  /** La línea de ayuda debajo del número. Default `true`. */
+  hint?: boolean
 }) {
   const items = range(count)
-  const cols = columns ?? (Math.min(4, Math.max(2, items.length)) as 2 | 3 | 4)
+  const cols = columns ?? kpiGroupColumns(items.length)
   return (
     <div
       data-slot="skeleton-kpi-group"
+      data-columns={cols}
       aria-hidden="true"
-      // Los pelos son el fondo que asoma entre celdas (gap-px).
       className={cn(
-        'grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border',
-        KPI_COLUMNS[cols],
+        KPI_GROUP_CLASS,
+        KPI_GRID_CLASS[cols],
+        framed && KPI_GROUP_FRAME_CLASS,
         className,
       )}
       {...props}
     >
       {items.map((i) => (
-        <div
-          key={`kpi-${i.toString()}`}
-          className={cn(
-            'flex flex-col gap-2 bg-card p-4 sm:p-6',
-            i === items.length - 1 && lastKpiSpan(items.length, cols),
-          )}
-        >
+        <div key={`kpi-${i.toString()}`} className={cn('flex flex-col gap-1', KPI_CELL_PADDING)}>
           <div className="flex h-[1.125rem] items-center">
             <Skeleton className="h-3 w-24" />
           </div>
-          <div className="flex h-8 items-center sm:h-9">
+          <div className={cn('flex h-8 items-center', size === 'lg' && 'sm:h-9')}>
             <Skeleton className="h-7 w-32 max-w-full" />
           </div>
-          <div className="flex h-4 items-center">
-            <Skeleton className="h-2.5 w-20" />
-          </div>
+          {hint ? (
+            <div className="flex h-4 items-center">
+              <Skeleton className="h-2.5 w-20" />
+            </div>
+          ) : null}
         </div>
       ))}
+    </div>
+  )
+}
+
+// ─── Sección ─────────────────────────────────────────────────────────────────
+
+/**
+ * La `Section`: título (`type-section`, 20/28; con `headingLevel={3}`,
+ * `type-subtitle`, 16/24), descripción de una línea de 13/18, botones `sm`
+ * a la derecha y 16 px hasta el contenido, que va en `children` (otro preset:
+ * una tabla, un formulario, KPIs).
+ *
+ * ```tsx
+ * <SkeletonSection actions={1}>
+ *   <SkeletonTable rows={5} />
+ * </SkeletonSection>
+ * ```
+ */
+function SkeletonSection({
+  title = true,
+  description = true,
+  actions = 0,
+  headingLevel = 2,
+  divider = false,
+  className,
+  children,
+  ...props
+}: Omit<React.ComponentProps<'div'>, 'title'> & {
+  /** Default `true`. */
+  title?: boolean
+  /** Default `true`. */
+  description?: boolean
+  /** Cuántos botones a la derecha del título. Default 0. */
+  actions?: number
+  /** Como en `Section`: `3` es el título chico (16/24). Default 2. */
+  headingLevel?: 2 | 3
+  /** Como en `Section`: pelo arriba y 24 px de aire. */
+  divider?: boolean
+}) {
+  const hasHeader = title || description || actions > 0
+  return (
+    <div
+      data-slot="skeleton-section"
+      className={cn('flex flex-col gap-4', divider && 'border-t border-border pt-6', className)}
+      {...props}
+    >
+      {hasHeader ? (
+        <div
+          aria-hidden="true"
+          className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2"
+        >
+          {title || description ? (
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              {title ? (
+                <div className={cn('flex items-center', headingLevel === 3 ? 'h-6' : 'h-7')}>
+                  <Skeleton
+                    className={cn('max-w-full', headingLevel === 3 ? 'h-3.5 w-32' : 'h-4 w-44')}
+                  />
+                </div>
+              ) : null}
+              {description ? (
+                <div className="flex h-[1.125rem] items-center">
+                  <Skeleton className="h-3 w-72 max-w-full" />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {actions > 0 ? (
+            <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+              {range(actions).map((i) => (
+                <Skeleton
+                  key={`action-${i.toString()}`}
+                  className={cn('h-(--control-sm) rounded-md', i === actions - 1 ? 'w-28' : 'w-24')}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {children}
     </div>
   )
 }
@@ -447,17 +519,14 @@ function ListSkeleton({
   )
 }
 
-/** @deprecated Es `SkeletonCardGrid`. */
-const CardGridSkeleton = SkeletonCardGrid
-
 export {
-  CardGridSkeleton,
   ListSkeleton,
   Skeleton,
   SkeletonCardGrid,
   SkeletonForm,
   SkeletonKPIGroup,
   SkeletonPageHeader,
+  SkeletonSection,
   SkeletonStatus,
   SkeletonTable,
   SkeletonText,

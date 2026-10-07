@@ -5,9 +5,6 @@ import * as React from 'react'
 /** Los tres altos del kit: 32/36/44 px con mouse y 36/44/48 con el dedo (§2.2). */
 export type ControlSize = 'sm' | 'md' | 'lg'
 
-/** Nombres viejos que todavía llegan por compatibilidad (`default` de Button, Select y Switch; `xl` de Button). */
-type LegacyControlSize = 'default' | 'xl'
-
 const ControlSizeContext = React.createContext<ControlSize | undefined>(undefined)
 
 /**
@@ -74,20 +71,13 @@ function ControlSizeProvider({ size, children }: ControlSizeProviderProps) {
   )
 }
 
-/** Lleva los nombres viejos a la escala nueva: `default` → `md`, `xl` → `lg`. */
-function normalizeControlSize(size: ControlSize | LegacyControlSize | null | undefined) {
-  if (size === 'default') return 'md'
-  if (size === 'xl') return 'lg'
-  return size ?? undefined
-}
-
 /**
  * El tamaño de un control: el propio si vino, si no el del `ControlSizeProvider`
  * más cercano, si no `md`.
  */
-function useControlSize(own?: ControlSize | LegacyControlSize | null): ControlSize {
+function useControlSize(own?: ControlSize | null): ControlSize {
   const inherited = React.useContext(ControlSizeContext)
-  return normalizeControlSize(own) ?? inherited ?? 'md'
+  return own ?? inherited ?? 'md'
 }
 
-export { ControlSizeProvider, normalizeControlSize, useControlSize }
+export { ControlSizeProvider, useControlSize }

@@ -489,7 +489,7 @@ function SubcategoryRow({
       tone: 'danger',
       onConfirm: async () => {
         const r = await deleteCategory(tenantSlug, node.id)
-        if (!r.ok) return { ok: false, error: r.message }
+        if (!r.ok) return r
         toast.success(r.message ?? 'Categoría borrada.')
       },
     })

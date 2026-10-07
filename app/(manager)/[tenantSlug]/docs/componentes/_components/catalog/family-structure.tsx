@@ -1,6 +1,15 @@
 'use client'
 
-import { CalendarDays, ChevronRight, Info, Pencil, Plus, Users, Wallet } from 'lucide-react'
+import {
+  CalendarDays,
+  ChevronRight,
+  CircleHelp,
+  Info,
+  Pencil,
+  Plus,
+  Users,
+  Wallet,
+} from 'lucide-react'
 import Link from 'next/link'
 import { Amount } from '@/components/ui/amount'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -15,6 +24,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { Disclosure } from '@/components/ui/disclosure'
 import { DueStatus } from '@/components/ui/due-status'
 import { InfoTip } from '@/components/ui/info-tip'
 import { Kbd } from '@/components/ui/kbd'
@@ -125,6 +135,37 @@ function SectionDemo() {
           <InlineText text="`headingLevel={3}` para una sección adentro de otra; `divider` suma un pelo arriba." />
         </p>
       </Section>
+    </DemoStack>
+  )
+}
+
+function DisclosureDemo() {
+  return (
+    <DemoStack>
+      <Disclosure
+        data-tour={tourId('disclosure')}
+        title="Reglas avanzadas"
+        description="Puntos extra por un ítem o una categoría · 2 activas."
+      >
+        <p className="type-body text-muted-foreground">
+          Lo de adentro va debajo del título, con un pelo arriba. Cerrado, sale del árbol de
+          accesibilidad.
+        </p>
+      </Disclosure>
+      <Disclosure title="¿Cómo se calcula?" icon={<CircleHelp />} defaultOpen>
+        <ul className="list-disc space-y-1.5 ps-5 type-body text-muted-foreground">
+          <li>Una tarifa por persona, según la franja y el tamaño de la reserva.</li>
+          <li>Si el evento se llena, se suma un bonus por persona.</li>
+        </ul>
+      </Disclosure>
+      <div className="type-body text-muted-foreground">
+        <p>Un dato puesto en la ficha, con su ayuda chica abajo.</p>
+        <Disclosure variant="inline" title="¿Qué fechas filtro en Meta?" className="mt-2">
+          <p className="max-w-prose text-muted-foreground">
+            Desde que arrancó la campaña hasta el día del evento.
+          </p>
+        </Disclosure>
+      </div>
     </DemoStack>
   )
 }
@@ -326,7 +367,6 @@ export function StructureFamily() {
 
       <CatalogBlock
         id="page-header"
-        compat="`eyebrow` se dibuja como línea de contexto de 13 px, sin mayúsculas; si era un «volver», va `back` (`@deprecated`)."
         purpose="El encabezado de página: contexto (volver o migas), el único `h1`, acciones, descripción, datos clave y pestañas."
         yes="Toda página. `back` con el nombre de adonde se vuelve («← Proveedores»); `breadcrumbs` con dos niveles o más."
         no="Eyebrows en mayúsculas o el nombre de la sección arriba del título: el menú ya ubica."
@@ -385,8 +425,25 @@ export function StructureFamily() {
       </CatalogBlock>
 
       <CatalogBlock
+        id="disclosure"
+        purpose="Lo que se abre cuando hace falta: una ayuda («¿Cómo se calcula?») u opciones que no son para todos los días («Reglas avanzadas»)."
+        yes="Ayuda larga que estorba abierta y opciones avanzadas. `card` en la página; `inline` adentro de una ficha o un texto."
+        no="Secciones de una página (`Tabs`) ni contenido que hay que ver para decidir: ese va a la vista."
+        usage={`<Disclosure title="Reglas avanzadas" description="2 activas">
+  <NewPerItemForm … />
+</Disclosure>
+<Disclosure variant="inline" title="¿Cómo se calcula?">…</Disclosure>`}
+        a11y={[
+          'El título es un `<button>` con `aria-expanded` y `aria-controls` (el patrón «disclosure»): Enter y Espacio abren y cierran.',
+          'Abre en el lugar, sin animar el alto; el chevron gira en 150 ms (al instante con «reducir movimiento»).',
+          'En vez de `<details>`: el botón se anuncia igual en todos los lectores y el foco es el del kit.',
+        ]}
+      >
+        <DisclosureDemo />
+      </CatalogBlock>
+
+      <CatalogBlock
         id="kpi"
-        compat="`StatCard` dibuja un `KPI` en su propia tarjeta y `NumberTicker` dibuja el valor final, quieto (`@deprecated`)."
         purpose="Un número, después el trabajo: la fila de KPIs es una sola tarjeta con divisores, sin animar."
         yes="Los números del Resumen y el saldo de una ficha (`type-kpi`, Fraunces)."
         no="Un número que cambia en vivo o en una columna (Fraunces no tiene cifras tabulares): ahí va `type-amount`."

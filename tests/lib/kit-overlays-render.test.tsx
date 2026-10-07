@@ -18,7 +18,13 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command'
-import { ConfirmDialog, type ConfirmFormState, useConfirm } from '@/components/ui/confirm-dialog'
+import {
+  type ConfirmActionState,
+  ConfirmDialog,
+  type ConfirmResult,
+  confirmFailureMessage,
+  useConfirm,
+} from '@/components/ui/confirm-dialog'
 import {
   Dialog,
   DialogBody,
@@ -40,6 +46,7 @@ import {
   Sheet,
   SheetBody,
   SheetContent,
+  SheetFooter,
   SheetGrabber,
   SheetHeader,
   SheetTitle,
@@ -188,7 +195,7 @@ describe('ConfirmDialog', () => {
   })
 
   it('modo Server Action: un <form> con los campos ocultos, los extra y el submit', () => {
-    const formAction = async (): Promise<ConfirmFormState> => ({ ok: true })
+    const formAction = async (): Promise<ConfirmActionState> => ({ ok: true })
     const html = render(
       h(
         ConfirmDialog,
@@ -210,6 +217,51 @@ describe('ConfirmDialog', () => {
     expect(form).toMatch(/<button[^>]*type="submit"[^>]*>Cancelar reserva<\/button>/)
     // «Volver» no envía el formulario.
     expect(form).toMatch(/<button[^>]*type="button"[^>]*>Volver<\/button>/)
+  })
+
+  it('el resultado de la casa entra sin adaptar: { ok: false, message } es el error del diálogo', () => {
+    // El mismo mensaje sale de `message` (Server Actions de la casa) y de
+    // `error` (formularios del kit); sin ninguno, el genérico.
+    expect(confirmFailureMessage({ ok: false, message: 'Sin permisos.' })).toBe('Sin permisos.')
+    expect(confirmFailureMessage({ ok: false, error: 'Tiene mesas activas.' })).toBe(
+      'Tiene mesas activas.',
+    )
+    expect(confirmFailureMessage({ ok: false, error: '', message: 'Del server.' })).toBe(
+      'Del server.',
+    )
+    expect(confirmFailureMessage({ ok: false })).toBe('No se pudo completar. Probá de nuevo.')
+    expect(confirmFailureMessage({ ok: false, message: '   ' })).toBe(
+      'No se pudo completar. Probá de nuevo.',
+    )
+    // Lo que no es un fallo no tiene mensaje: el diálogo se cierra.
+    expect(confirmFailureMessage({ ok: true })).toBeNull()
+    expect(confirmFailureMessage(undefined)).toBeNull()
+    expect(confirmFailureMessage(null)).toBeNull()
+  })
+
+  it('formAction y onConfirm aceptan el ActionState de la casa tal cual', () => {
+    // El tipo de lib/<dominio>/actions.ts: { ok: true, … } | { ok: false, message }.
+    type HouseState = { ok: true; message?: string; id?: string } | { ok: false; message: string }
+    const houseAction = async (_prev: HouseState | null, formData: FormData) =>
+      formData.get('id')
+        ? ({ ok: true, id: 'a-1' } satisfies HouseState)
+        : ({ ok: false, message: 'Falta la audiencia.' } satisfies HouseState)
+    const remove = async (): Promise<HouseState> => ({ ok: false, message: 'Sin permisos.' })
+    const html = render(
+      h(ConfirmDialog<HouseState>, {
+        ...base,
+        formAction: houseAction,
+        hiddenFields: { id: 'a-1' },
+      }),
+    )
+    expect(html).toContain('data-slot="confirm-dialog-form"')
+    expect(html).toContain('<input type="hidden" name="id" value="a-1"/>')
+    // Modo cliente: el resultado de la acción se devuelve sin mapear.
+    const onConfirm = async (): Promise<ConfirmResult> => {
+      const r = await remove()
+      if (!r.ok) return r
+    }
+    expect(render(h(ConfirmDialog, { ...base, onConfirm }))).toContain('Borrar regla')
   })
 
   it('cerrado no dibuja nada; con trigger, dibuja solo el disparador', () => {
@@ -331,14 +383,14 @@ describe('Dialog', () => {
 // ─── Sheet ───────────────────────────────────────────────────────────────────
 
 describe('Sheet', () => {
-  it('showClose (deprecado) sigue apagando la X; la manija es decorativa', () => {
+  it('showCloseButton={false} apaga la X; la manija es decorativa', () => {
     const html = render(
       h(
         Sheet,
         { open: true },
         h(
           SheetContent,
-          { side: 'bottom', showClose: false, 'aria-describedby': undefined },
+          { side: 'bottom', showCloseButton: false, 'aria-describedby': undefined },
           h(SheetGrabber),
           h(SheetTitle, { className: 'sr-only' }, 'Reserva'),
         ),
@@ -348,6 +400,45 @@ describe('Sheet', () => {
     expect(classesOf(html, 'sheet-content')).toContain('rounded-t-2xl')
     expect(html).not.toContain('data-slot="sheet-close-button"')
     expect(slotAttrs(html, 'sheet-grabber')['aria-hidden']).toBe('true')
+  })
+
+  it('SheetFooter: apilado por defecto; inline en una fila a la derecha, parejo en el celular', () => {
+    const footer = (layout?: 'stack' | 'inline') =>
+      render(
+        h(
+          Sheet,
+          { open: true },
+          h(
+            SheetContent,
+            { 'aria-describedby': undefined },
+            h(SheetTitle, null, 'Gestor'),
+            h(
+              SheetFooter,
+              { layout, ...tour('pie') },
+              h('button', { type: 'button' }, 'Cancelar'),
+              h('button', { type: 'submit' }, 'Guardar'),
+            ),
+          ),
+        ),
+      )
+    const stack = footer()
+    expect(slotAttrs(stack, 'sheet-footer')['data-layout']).toBe('stack')
+    expect(slotAttrs(stack, 'sheet-footer')['data-tour']).toBe('pie')
+    expect(classesOf(stack, 'sheet-footer')).toContain('flex-col')
+    // React escapa `&` y `>` en los atributos: se leen como en el DOM.
+    const inline = new Set(
+      [...classesOf(footer('inline'), 'sheet-footer')].map((c) =>
+        c.replace(/&amp;/g, '&').replace(/&gt;/g, '>'),
+      ),
+    )
+    expect(inline).not.toContain('flex-col')
+    for (const c of ['flex-row', 'flex-wrap', 'justify-end', 'max-sm:[&>*]:flex-1']) {
+      expect(inline).toContain(c)
+    }
+    // El pelo y el área segura del iPhone, en los dos.
+    expect(inline).toContain('border-t')
+    expect(inline).toContain('pb-[max(1rem,env(safe-area-inset-bottom))]')
+    expect(buttonTexts(footer('inline')).slice(0, 2)).toEqual(['Cancelar', 'Guardar'])
   })
 
   it('lateral: ancho por size, X con «Cerrar», encabezado y cuerpo del kit', () => {

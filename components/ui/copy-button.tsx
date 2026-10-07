@@ -24,7 +24,7 @@ export type CopyButtonProps = Omit<
 /** El tamaño cuadrado que corresponde al `size` pedido cuando es solo ícono. */
 function iconSizeFor(size: ButtonProps['size']): ButtonProps['size'] {
   if (size === 'icon-sm' || size === 'icon' || size === 'icon-lg') return size
-  if (size === 'lg' || size === 'xl') return 'icon-lg'
+  if (size === 'lg') return 'icon-lg'
   // Como antes: sm (el default) y md dan el ícono de 36 px; achicarlo a 32
   // movería las filas donde ya se usa.
   return 'icon'

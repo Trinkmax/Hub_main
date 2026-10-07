@@ -140,7 +140,7 @@ export function ManagerCommissionsBreakdown({
       from: period.from,
       to: period.to,
     } as Record<string, unknown>)
-    if (!r.ok) return { ok: false as const, error: r.message }
+    if (!r.ok) return r
     // El mensaje puede avisar que quedaron pendientes: duración larga para
     // que no se lo lleve el toast antes de leerlo.
     toast.success(r.message ?? 'Listo.', { duration: 8000 })

@@ -4,10 +4,9 @@ import { Plug, RefreshCw, Unplug } from 'lucide-react'
 import { useActionState, useEffect } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { ConfirmDialog, type ConfirmFormState } from '@/components/ui/confirm-dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { SubmitButton } from '@/components/ui/submit-button'
 import { disconnectChannel, type MetaActionState, syncTemplatesAction } from '@/lib/meta/actions'
-import { toConfirmState } from '../_components/confirm-state'
 
 const initial: MetaActionState = { ok: true }
 
@@ -33,10 +32,10 @@ export function ChannelCardActions({
 
   // La confirmación espera la acción con el diálogo abierto: si Meta falla,
   // el motivo queda adentro en lugar de un aviso que se va.
-  async function disconnect(_prev: ConfirmFormState, formData: FormData) {
+  async function disconnect(_prev: unknown, formData: FormData) {
     const result = await disconnectChannel(tenantSlug, initial, formData)
     if (result.ok && result.message) toast.success(result.message)
-    return toConfirmState(result)
+    return result
   }
 
   return (

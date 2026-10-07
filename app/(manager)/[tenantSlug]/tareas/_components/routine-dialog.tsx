@@ -150,7 +150,7 @@ function DeleteRoutineButton({
       pendingLabel="Borrando…"
       onConfirm={async () => {
         const result = await deleteRoutine(tenantSlug, routine.id)
-        if (!result.ok) return { ok: false, error: result.message }
+        if (!result.ok) return result
         toast.success('Rutina borrada.')
         onDeleted()
       }}

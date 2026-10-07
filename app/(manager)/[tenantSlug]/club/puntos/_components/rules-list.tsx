@@ -143,7 +143,7 @@ export function RulesList({
         onConfirm={async () => {
           if (!toDelete) return
           const r = await deleteRule(tenantSlug, toDelete.id)
-          if (!r.ok) return { ok: false, error: r.message }
+          if (!r.ok) return r
         }}
       />
     </>

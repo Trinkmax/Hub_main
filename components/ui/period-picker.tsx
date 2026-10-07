@@ -469,7 +469,7 @@ function PeriodPickerView({
             {segmented}
             {body}
           </SheetBody>
-          <SheetFooter className="flex-row *:flex-1">
+          <SheetFooter layout="inline">
             <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
               Cancelar
             </Button>

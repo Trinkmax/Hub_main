@@ -563,7 +563,6 @@ export function FieldsFamily() {
 
       <CatalogBlock
         id="select"
-        compat="`size=&quot;default&quot;` es `md` (también en `Switch`) (`@deprecated`)."
         purpose="Una lista corta de opciones fijas, sobre Radix: el disparador es un campo."
         yes="Hasta 8 opciones fijas: condición frente al IVA, tipo de comprobante."
         no="Más de 8 opciones o algo que vive en la base: `Combobox`. Un filtro de una sola opción a la vista: `SegmentedControl`."

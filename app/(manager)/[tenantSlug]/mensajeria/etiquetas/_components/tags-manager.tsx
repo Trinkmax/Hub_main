@@ -4,7 +4,7 @@ import { Check, Pencil, Plus, Tags, Trash2 } from 'lucide-react'
 import { useActionState, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { ConfirmDialog, type ConfirmFormState } from '@/components/ui/confirm-dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { DataTable } from '@/components/ui/data-table'
 import {
   Dialog,
@@ -28,7 +28,6 @@ import {
 } from '@/lib/conversation-tags/actions'
 import type { ConversationTag } from '@/lib/conversation-tags/queries'
 import { TAG_COLORS } from '@/lib/conversation-tags/schemas'
-import { toConfirmState } from '../../_components/confirm-state'
 
 const INITIAL: ConversationTagActionState = { ok: true }
 
@@ -211,11 +210,11 @@ function TagActions({
   tag: ConversationTag
   onEdit: () => void
 }) {
-  async function remove(_prev: ConfirmFormState, formData: FormData) {
+  async function remove(_prev: unknown, formData: FormData) {
     const result = await deleteConversationTag(tenantSlug, INITIAL, formData)
     // En éxito, revalidatePath re-renderiza la lista y esta fila se va.
     if (result.ok) toast.success('Etiqueta borrada.')
-    return toConfirmState(result)
+    return result
   }
 
   return (

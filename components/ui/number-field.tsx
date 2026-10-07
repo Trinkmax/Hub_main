@@ -4,6 +4,7 @@ import { Minus, Plus } from 'lucide-react'
 import * as React from 'react'
 import { type ControlSize, useControlSize } from '@/components/ui/control-size'
 import {
+  formResetTarget,
   useField,
   useFieldErrorReporter,
   useFormReset,
@@ -128,6 +129,31 @@ export function checkNumberText(
   return { status: 'valid', value: parsed.value, error: null }
 }
 
+/**
+ * El número que vale de un texto, o `null` (vacío, ilegible o fuera de rango).
+ * Es lo que avisa `onValueChange` y lo que lleva el hidden.
+ */
+export function validNumberValue(text: string, rules: NumberRules = {}): number | null {
+  const check = checkNumberText(text, rules)
+  return check.status === 'valid' ? check.value : null
+}
+
+/**
+ * Controlado: el texto que corresponde a un `value` que llega de afuera, o
+ * `null` si lo tipeado se queda. Lo tipeado se queda cuando el `value` es su
+ * eco: el número que vale, o `null` si lo tipeado no vale todavía («50» con
+ * máximo 40, «abc»). Así un número fuera de rango queda escrito con su error al
+ * salir, en lugar de borrarse en la tecla.
+ */
+export function syncNumberText(
+  value: number | null,
+  text: string,
+  rules: NumberRules & { grouping?: boolean } = {},
+): string | null {
+  if (value === validNumberValue(text, rules)) return null
+  return value === null ? '' : formatNumberText(value, rules)
+}
+
 /** `n` dentro de `[min, max]`. */
 export function clampNumber(n: number, rules: Pick<NumberRules, 'min' | 'max'>): number {
   let out = n
@@ -207,11 +233,25 @@ export type NumberFieldProps = Omit<
  *
  * - `type="text"` + `role="spinbutton"` con `aria-valuenow/min/max` y
  *   `aria-valuetext` («4 personas»).
- * - ↑ ↓ de a `step`, RePág y AvPág de a `largeStep`, Inicio y Fin a min y max.
+ * - ↑ ↓ de a `step`, RePág y AvPág de a `largeStep`, Inicio y Fin a min y max:
+ *   esos sí quedan adentro del rango.
  * - Botones − y + del alto del campo, fuera del orden de Tab (el campo es una
  *   sola parada, patrón spinbutton) pero con nombre para el lector y el mouse.
  *   Se apagan en el límite; mantener apretado repite.
- * - Fuera de rango al salir: error, sin recortar en silencio.
+ * - **Lo tipeado se queda mientras se escribe**, también controlado: un número
+ *   fuera de rango («50» con máximo 40) avisa `null` (no hay número que valga)
+ *   y el `value={null}` que vuelve no lo borra (`syncNumberText`). Al salir se
+ *   valida: error («El máximo es 40»), sin recortar en silencio, y el
+ *   formulario no se envía hasta corregirlo.
+ * - Un `value` de afuera que no es el eco de lo tipeado reescribe el texto.
+ *   Para vaciar desde afuera un texto que no vale (el `value` ya es `null`),
+ *   remontalo con `key`.
+ *
+ * **Formularios y React 19** (ver `useFormReset` en `field.tsx`): después de
+ * un `<form action>`, React resetea el formulario. Sin `value`, el campo vuelve
+ * a su `defaultValue` (y, mientras nadie lo toque, sigue al `defaultValue` que
+ * cambie, como un `<input>` nativo). Controlado sin `defaultValue`, el reset no
+ * lo toca: el `value` manda.
  */
 function NumberField({
   name,
@@ -253,19 +293,34 @@ function NumberField({
   const rules = { min, max, decimals, grouping }
 
   const format = (n: number) => formatNumberText(n, { decimals, grouping })
-  const [text, setText] = React.useState(() => {
-    const initial = value ?? defaultValue ?? null
-    return initial === null ? '' : format(initial)
-  })
+  const textOf = (n: number | null | undefined) => (n === null || n === undefined ? '' : format(n))
+  const [text, setText] = React.useState(() => textOf(value ?? defaultValue))
   const check = checkNumberText(text, rules)
+  // Lo tipeado, aunque esté fuera de rango: la base de las flechas y del aria.
   const current = check.status === 'empty' ? null : check.value
+  // El número que vale (o null): lo que se avisa y lo que lleva el hidden.
+  const valid = check.status === 'valid' ? check.value : null
   const [localError, setLocalError] = React.useState<string | null>(null)
+  // Tocado desde que montó (o desde el último reset), como el «dirty» de un <input>.
+  const [edited, setEdited] = React.useState(false)
 
-  // Controlado: un cambio de afuera (que no es el eco de lo tipeado) reescribe el texto.
+  // Controlado: un `value` de afuera reescribe el texto, salvo que sea el eco de
+  // lo tipeado (también el `null` de un número fuera de rango).
   const [lastValue, setLastValue] = React.useState(value)
   if (value !== lastValue) {
     setLastValue(value)
-    if (value !== undefined && value !== current) setText(value === null ? '' : format(value))
+    if (value !== undefined) {
+      const synced = syncNumberText(value, text, rules)
+      if (synced !== null) setText(synced)
+    }
+  }
+
+  // No controlado y sin tocar: sigue al `defaultValue` que cambie (el dato que
+  // vuelve del server después de guardar), como un <input> nativo.
+  const [lastDefault, setLastDefault] = React.useState(defaultValue)
+  if (defaultValue !== lastDefault) {
+    setLastDefault(defaultValue)
+    if (value === undefined && !edited) setText(textOf(defaultValue))
   }
 
   function setError(message: string | null) {
@@ -280,17 +335,26 @@ function NumberField({
 
   useFormReset(localRef, () => {
     setError(null)
-    const resetValue = defaultValue ?? null
-    setText(resetValue === null ? '' : format(resetValue))
-    if (resetValue !== current) onValueChange?.(resetValue)
+    setEdited(false)
+    // Controlado sin `defaultValue`: el reset (también el de React 19 después
+    // de un `<form action>`) no borra lo que el `value` dice.
+    const target = formResetTarget(value, defaultValue)
+    if (target.keep) {
+      setText(textOf(value))
+      return
+    }
+    const resetValue = target.to ?? null
+    setText(textOf(resetValue))
+    if (resetValue !== valid) onValueChange?.(resetValue)
   })
 
   /** Pone un número (flechas o botones): el texto ya sale prolijo. */
   function commit(next: number) {
     const nextText = format(next)
     setText(nextText)
+    setEdited(true)
     if (localError !== null) setError(null)
-    if (next !== current) onValueChange?.(next)
+    if (next !== valid) onValueChange?.(next)
     localRef.current?.setCustomValidity(checkNumberText(nextText, rules).error ?? '')
   }
 
@@ -421,11 +485,13 @@ function NumberField({
             onChange={(event) => {
               const next = event.target.value
               setText(next)
+              setEdited(true)
               const nextCheck = checkNumberText(next, rules)
               event.currentTarget.setCustomValidity(nextCheck.error ?? '')
               if (localError !== null && nextCheck.error === null) setError(null)
+              // Solo un número que vale; fuera de rango avisa `null` y el texto queda.
               const nextValue = nextCheck.status === 'valid' ? nextCheck.value : null
-              if (nextValue !== current) onValueChange?.(nextValue)
+              if (nextValue !== valid) onValueChange?.(nextValue)
             }}
             onKeyDown={(event) => {
               onKeyDown?.(event)
@@ -486,7 +552,7 @@ function NumberField({
         <input
           type="hidden"
           name={hiddenName}
-          value={check.status === 'valid' ? numberSubmitValue(check.value, decimals) : ''}
+          value={numberSubmitValue(valid, decimals)}
           disabled={disabled}
           form={form}
         />

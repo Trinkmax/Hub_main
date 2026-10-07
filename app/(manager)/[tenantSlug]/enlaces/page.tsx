@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
+import { ReloadLink } from '@/components/ui/reload-link'
 import { getAppUrl } from '@/lib/app-url'
 import { getPublicLinkPage, listPublicLinks } from '@/lib/public-links/queries'
 import {
@@ -54,11 +55,10 @@ export default async function EnlacesPage({ params }: { params: Promise<{ tenant
         actions={
           <>
             <Button asChild variant="secondary">
-              <a href={`/l/${tenantSlug}`} target="_blank" rel="noopener noreferrer">
+              <ReloadLink href={`/l/${tenantSlug}`} newTab>
                 Ver página
                 <ArrowUpRight aria-hidden />
-                <span className="sr-only"> (se abre en otra pestaña)</span>
-              </a>
+              </ReloadLink>
             </Button>
             <CopyButton value={publicUrl} size="md" label="Copiar link" copiedLabel="¡Copiado!" />
           </>

@@ -221,9 +221,9 @@ export function FlowBuilder({
         </div>
       </FormSection>
 
-      {/* Adentro del marco de WhatsApp las acciones van en línea: una barra fija
-          abajo taparía las pestañas de Mensajería del celular. */}
-      <FormActions sticky={false}>
+      {/* En el celular, barra fija arriba de las pestañas de Mensajería (el
+          layout define --form-actions-offset). */}
+      <FormActions>
         <Button asChild variant="secondary">
           <Link href={`/${tenantSlug}/mensajeria/flows`}>Cancelar</Link>
         </Button>

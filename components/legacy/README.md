@@ -17,7 +17,7 @@ Las dos carpetas están fuera de Biome (son copias, no se lintan).
 | Copia congelada | Original (panel) | La usa |
 |---|---|---|
 | `reservations/cake-chip.tsx` | `components/reservations/cake-chip.tsx` | `salon/reservas-operativo/_components/reservation-card.tsx` |
-| `reservations/guest-count-stepper.tsx` | `components/reservations/guest-count-stepper.tsx` | `reservation-card.tsx` |
+| `reservations/guest-count-stepper.tsx` | `components/reservations/guest-count-stepper.tsx` (borrado: el panel no lo usaba) | `reservation-card.tsx` |
 | `reservations/service-alert-chips.tsx` | `components/reservations/service-alert-chips.tsx` | `reservation-card.tsx` |
 | `reservations/segment-meter.tsx` | `components/reservations/segment-meter.tsx` | `salon/reservas-operativo/_components/capacity-header.tsx` |
 | `loyalty/award-form.tsx` | `components/loyalty/award-form.tsx` | `salon/escanear/_components/scan-screen.tsx` |

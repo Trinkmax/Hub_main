@@ -15,6 +15,7 @@ import {
   DataTableHeader,
   DataTableRoot,
   DataTableRow,
+  DataTableRowAction,
   DataTableScroll,
   DataTableShell,
   DataTableToolbar,
@@ -22,15 +23,6 @@ import {
   useTableSort,
 } from '@/components/ui/data-table'
 import { Pagination } from '@/components/ui/pagination'
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { makePageHref } from '@/lib/table/pagination'
 import { makeSortHref } from '@/lib/table/sort'
 
@@ -46,8 +38,11 @@ import { makeSortHref } from '@/lib/table/sort'
  * 2. `overflow-clip` y `border-separate` (riesgos 13 y 27 del kit).
  * 3. `Pagination` segura con links: los extremos deshabilitados son un
  *    `<span aria-disabled>`, nunca un link.
- * 4. Compatibilidad: los primitivos de antes (9 archivos) y los nombres de
- *    shadcn (`table.tsx`, 1 archivo) siguen armando una tabla.
+ * 4. Compatibilidad: los primitivos de antes (9 archivos) siguen armando una
+ *    tabla.
+ * 5. La fila que abre algo (`onRowAction`) es un botón estirado, nunca un link
+ *    ni un `onClick` en el `<tr>`; tonos y clases por fila; etiquetas a la vista
+ *    en las tarjetas; el rótulo de los totales.
  */
 
 vi.mock('next/link', () => ({
@@ -243,13 +238,15 @@ describe('DataTable: fila-link y tarjetas del celular', () => {
 
   it('la fila-link es relative, pinta hover y presionado, y mide 44 px con el dedo', () => {
     const row = classesOf(html, 'data-table-row')
-    expect(row.has('has-[[data-slot=data-table-row-link]]:relative')).toBe(true)
-    expect(row.has('pointer-coarse:has-[[data-slot=data-table-row-link]]:h-11')).toBe(true)
+    // El gancho es `data-row-target`: lo llevan el link (y el botón de onRowAction).
+    expect(row.has('has-[[data-row-target]]:relative')).toBe(true)
+    expect(row.has('pointer-coarse:has-[[data-row-target]]:h-11')).toBe(true)
     expect(
       row.has(
-        'has-[[data-slot=data-table-row-link]]:active:[background-image:linear-gradient(var(--active),var(--active))]',
+        'has-[[data-row-target]]:active:[background-image:linear-gradient(var(--active),var(--active))]',
       ),
     ).toBe(true)
+    expect(slotAttrs(html, 'data-table-row-link')['data-row-target']).toBe('')
     // Nunca un onClick en el <tr>.
     expect(slotAttrs(html, 'data-table-row').onclick).toBeUndefined()
   })
@@ -270,6 +267,170 @@ describe('DataTable: fila-link y tarjetas del celular', () => {
     )
     expect(card).toContain('<span class="sr-only">Saldo $: </span>')
     expect(card).toContain('<span class="sr-only">Vence: </span>')
+  })
+})
+
+describe('DataTable: la fila que abre algo (onRowAction)', () => {
+  const html = render(
+    suppliersTable({
+      rowHref: undefined,
+      onRowAction: () => {},
+      rowActionLabel: (r) => `Ver la cuenta de ${r.name}`,
+    }),
+  )
+
+  it('un botón estirado en la celda principal (tabla y tarjeta), sin links ni onClick en el <tr>', () => {
+    const buttons = slotTags(html, 'data-table-row-action')
+    expect(buttons).toHaveLength(SUPPLIERS.length * 2)
+    expect(html).not.toContain('data-slot="data-table-row-link"')
+    const first = attrsOf(buttons[0] ?? '')
+    expect(buttons[0]?.startsWith('<button')).toBe(true)
+    expect(first.type).toBe('button')
+    expect(first['data-row-target']).toBe('')
+    // Un cajón también es un diálogo: el lector sabe que abre algo.
+    expect(first['aria-haspopup']).toBe('dialog')
+    expect(first['aria-label']).toBe('Ver la cuenta de Coca-Cola')
+    // Lo mismo que el link de fila: el ::after cubre la fila y el anillo va adentro.
+    expect(first.class).toContain('after:inset-0')
+    expect(first.class).toContain('focus-visible:after:-outline-offset-2')
+    expect(first.class).toContain('cursor-pointer')
+    expect(html).toMatch(/<td[^>]*font-medium[^>]*><button[^>]*>Coca-Cola<\/button><\/td>/)
+    expect(slotAttrs(html, 'data-table-row').onclick).toBeUndefined()
+  })
+
+  it('la fila toma el hover, el presionado y los 44 px por su data-row-target', () => {
+    const row = classesOf(html, 'data-table-row')
+    expect(row.has('has-[[data-row-target]]:relative')).toBe(true)
+    expect(row.has('pointer-coarse:has-[[data-row-target]]:h-11')).toBe(true)
+    expect(classesOf(html, 'data-table-card').has('has-[[data-row-target]]:relative')).toBe(false)
+    expect(classesOf(html, 'data-table-card').has('relative')).toBe(true)
+  })
+
+  it('sin rowActionLabel usa rowLabel; rowActionPopup={false} no anuncia nada', () => {
+    const plain = render(
+      suppliersTable({ rowHref: undefined, onRowAction: () => {}, rowActionPopup: false }),
+    )
+    const first = attrsOf(slotTags(plain, 'data-table-row-action')[0] ?? '')
+    expect(first['aria-label']).toBe('Coca-Cola')
+    expect(first['aria-haspopup']).toBeUndefined()
+  })
+
+  it('con rowHref gana el link: navegar es navegar', () => {
+    const both = render(suppliersTable({ onRowAction: () => {} }))
+    expect(both).not.toContain('data-slot="data-table-row-action"')
+    expect(slotTags(both, 'data-table-row-link')).toHaveLength(SUPPLIERS.length * 2)
+  })
+
+  it('primitivos: DataTableRow onAction y DataTableRowAction suelto', () => {
+    const row = render(
+      <table>
+        <tbody>
+          <DataTableRow onAction={() => {}} actionLabel="Editar «Ana Pérez»">
+            <DataTableCell>12/10</DataTableCell>
+            <DataTableCell primary>Ana Pérez</DataTableCell>
+          </DataTableRow>
+        </tbody>
+      </table>,
+    )
+    expect(row).toMatch(
+      /<td[^>]*font-medium[^>]*><button type="button" data-slot="data-table-row-action"[^>]*>Ana Pérez<\/button><\/td>/,
+    )
+    expect(count(row, 'data-slot="data-table-row-action"')).toBe(1)
+    expect(attrsOf(slotTags(row, 'data-table-row-action')[0] ?? '')['aria-label']).toBe(
+      'Editar «Ana Pérez»',
+    )
+    const loose = render(
+      <DataTableRowAction popup="menu" className="w-fit">
+        Título
+      </DataTableRowAction>,
+    )
+    const attrs = attrsOf(slotTags(loose, 'data-table-row-action')[0] ?? '')
+    expect(attrs['aria-haspopup']).toBe('menu')
+    expect(attrs.class).toContain('w-fit')
+  })
+})
+
+describe('DataTable: clases y tono por fila', () => {
+  const html = render(
+    suppliersTable({
+      rowClassName: (r) => (r.balanceCents < 0 ? 'italic' : undefined),
+      rowTone: (r) => (r.balanceCents < 0 ? 'danger' : r.id === 's2' ? 'muted' : null),
+    }),
+  )
+  const rows = slotTags(html, 'data-table-row').map(attrsOf)
+  const cards = slotTags(html, 'data-table-card').map(attrsOf)
+
+  it('rowClassName va a la fila y a su tarjeta', () => {
+    expect(rows[2]?.class).toContain('italic')
+    expect(cards[2]?.class).toContain('italic')
+    expect(rows[0]?.class).not.toContain('italic')
+  })
+
+  it('un tono de color es una franja de 3 px adelante, en la fila y en la tarjeta', () => {
+    expect(rows[2]?.['data-tone']).toBe('danger')
+    expect(rows[2]?.class).toContain('[&>:first-child]:shadow-[inset_3px_0_0_var(--destructive)]')
+    expect(cards[2]?.['data-tone']).toBe('danger')
+    expect(cards[2]?.class).toContain('shadow-[inset_3px_0_0_var(--destructive)]')
+    expect(rows[0]?.['data-tone']).toBeUndefined()
+  })
+
+  it('muted apaga el texto de las celdas, también el de la principal', () => {
+    expect(rows[1]?.['data-tone']).toBe('muted')
+    const row = html.slice(
+      html.indexOf('data-tone="muted"'),
+      html.indexOf('</tr>', html.indexOf('data-tone="muted"')),
+    )
+    const cells = [...row.matchAll(/<td[^>]*class="([^"]*)"/g)].map(([, c]) => c ?? '')
+    expect(cells.length).toBeGreaterThan(0)
+    for (const c of cells) expect(c).toContain('text-muted-foreground')
+    // La principal pierde el text-foreground (tailwind-merge deja el último).
+    expect(cells[0]).not.toMatch(/(^|\s)text-foreground(\s|$)/)
+    const card = html.slice(
+      html.lastIndexOf(
+        '<li',
+        html.indexOf('data-tone="muted"', html.indexOf('data-slot="data-table-cards"')),
+      ),
+    )
+    expect(card).toMatch(/type-body font-medium text-muted-foreground/)
+  })
+})
+
+describe('DataTable: etiquetas a la vista en las tarjetas y rótulo de los totales', () => {
+  const columns: DataTableColumn<Supplier>[] = [
+    ...COLUMNS.slice(0, 3),
+    { ...(COLUMNS[3] as DataTableColumn<Supplier>), mobileLabel: 'Saldo' },
+  ]
+
+  it('mobileLabels: «Vence: 15/10» se ve, no solo para el lector', () => {
+    const html = render(suppliersTable({ mobileLabels: true, columns }))
+    const card = html.slice(
+      html.indexOf('data-slot="data-table-card"'),
+      html.indexOf('</li>', html.indexOf('data-slot="data-table-card"')),
+    )
+    expect(card).toContain(
+      '<span data-slot="data-table-card-label" class="font-normal text-muted-foreground">Vence: </span>15/10',
+    )
+    // mobileLabel reemplaza al encabezado en la tarjeta («Saldo», no «Saldo $»).
+    expect(card).toContain('>Saldo: </span>')
+    expect(card).not.toContain('class="sr-only">Vence')
+  })
+
+  it('sin mobileLabels la etiqueta queda para el lector (y mobileLabel también vale)', () => {
+    const html = render(suppliersTable({ columns }))
+    const card = html.slice(html.indexOf('data-slot="data-table-card"'))
+    expect(card).toContain('<span class="sr-only">Saldo: </span>')
+    expect(card).not.toContain('data-table-card-label')
+  })
+
+  it('footerLabel cambia «Totales» en la tabla y en el celular', () => {
+    const html = render(suppliersTable({ footerLabel: 'Saldo al 30/09' }))
+    const tfoot = html.slice(html.indexOf('<tfoot'), html.indexOf('</tfoot>'))
+    expect(tfoot).toMatch(
+      /<th scope="row"[^>]*><span class="type-label">Saldo al 30\/09<\/span><\/th>/,
+    )
+    const totals = html.slice(html.indexOf('data-slot="data-table-cards-totals"'))
+    expect(totals).toContain('<p class="mb-1 type-label text-foreground">Saldo al 30/09</p>')
+    expect(html).not.toContain('>Totales<')
   })
 })
 
@@ -634,38 +795,5 @@ describe('Compatibilidad: los primitivos de antes', () => {
     expect(table).toContain('--indent:2')
     expect(table).toContain('<tfoot data-slot="data-table-foot"')
     expect(table).toContain('<caption class="sr-only">Plan de cuentas</caption>')
-  })
-})
-
-describe('Compatibilidad: los nombres de shadcn (table.tsx)', () => {
-  const html = render(
-    <Table>
-      <TableCaption>Lista accesible de todas las mesas físicas.</TableCaption>
-      <TableHeader>
-        <TableRow>
-          <TableHead scope="col">Mesa</TableHead>
-          <TableHead scope="col" className="text-right">
-            Acciones
-          </TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        <TableRow>
-          <TableCell className="font-medium">M1</TableCell>
-          <TableCell>
-            <button type="button">Imprimir QR</button>
-          </TableCell>
-        </TableRow>
-      </TableBody>
-    </Table>,
-  )
-
-  it('son los primitivos de DataTable con el caption visible abajo', () => {
-    expect(slotAttrs(html, 'table-container').class).toContain('overflow-x-auto')
-    expect(classesOf(html, 'data-table-root').has('caption-bottom')).toBe(true)
-    expect(html).toContain('Lista accesible de todas las mesas físicas.')
-    expect(slotAttrs(html, 'data-table-caption').class).toContain('type-small')
-    expect(headerCells(html).map((c) => c.text)).toEqual(['Mesa', 'Acciones'])
-    expect(html).toContain('Imprimir QR')
   })
 })

@@ -299,7 +299,7 @@ export function TiersList({
           if (!toDelete) return
           const target = toDelete
           const result = await deleteTier(tenantSlug, target.id)
-          if (!result.ok) return { ok: false, error: result.message }
+          if (!result.ok) return result
           toast.success(`Nivel «${target.name}» borrado.`)
         }}
       />

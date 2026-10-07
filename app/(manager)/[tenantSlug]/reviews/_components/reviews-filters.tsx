@@ -43,15 +43,13 @@ export function ReviewsFilters({
     })),
   ]
 
-  // Con seis opciones y sus cuentas no siempre entra en un celular: la fila scrollea.
+  // Con seis opciones y sus cuentas no siempre entra en un celular: el
+  // segmentado se desliza solo (overflow="scroll", el default).
   return (
-    <div className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden">
-      <SegmentedControl
-        aria-label="Filtrar reseñas por estrellas"
-        value={active ? String(active) : 'todas'}
-        items={items}
-        className="max-w-none"
-      />
-    </div>
+    <SegmentedControl
+      aria-label="Filtrar reseñas por estrellas"
+      value={active ? String(active) : 'todas'}
+      items={items}
+    />
   )
 }

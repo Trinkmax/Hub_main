@@ -2,7 +2,7 @@
 
 import { CalendarPlus, ScanLine } from 'lucide-react'
 import Link from 'next/link'
-import { type Ref, useImperativeHandle, useRef } from 'react'
+import type { Ref } from 'react'
 import { Button } from '@/components/ui/button'
 import { SearchField } from '@/components/ui/input'
 import { Kbd } from '@/components/ui/kbd'
@@ -54,10 +54,6 @@ export function ServiceBar({
   canAward: boolean
 }) {
   const searching = query.trim().length > 0
-  const searchWrap = useRef<HTMLDivElement>(null)
-  // El SearchField se queda con su propio ref (lo usa «Limpiar» para devolver
-  // el foco); al tablero se le pasa el <input> de adentro.
-  useImperativeHandle(ref, () => searchWrap.current?.querySelector('input') as HTMLInputElement, [])
   const railPct = Math.round(Math.min(1, Math.max(0, progress)) * 100)
 
   return (
@@ -78,8 +74,10 @@ export function ServiceBar({
       </div>
 
       <div className="flex items-center gap-2">
-        <div ref={searchWrap} className="relative min-w-0 flex-1">
+        <div className="relative min-w-0 flex-1">
+          {/* La ref llega al <input>: el SearchField la suma a la suya. */}
           <SearchField
+            ref={ref}
             name="buscar"
             value={query}
             onChange={(e) => onQuery(e.target.value)}
@@ -129,29 +127,27 @@ export function ServiceBar({
               : `${resultCount} ${resultCount === 1 ? 'coincidencia' : 'coincidencias'} · en todos los estados`}
           </p>
         ) : (
-          // Si los filtros no entran (celular angosto), la fila se desliza: nunca se cortan.
-          <div className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden">
-            <SegmentedControl<BoardFilter>
-              aria-label="Filtrar por estado"
-              value={filter}
-              onValueChange={onFilter}
-              className="max-w-none"
-              items={FILTERS.map((f) => ({
-                value: f,
-                label: (
-                  <>
-                    {BOARD_FILTER_LABELS[f]}
-                    <span className="type-caption type-amount">{formatNumber(counts[f])}</span>
-                    {f === 'waiting' && late > 0 ? (
-                      <span className="type-caption font-medium text-warning-text">
-                        · {late} tarde
-                      </span>
-                    ) : null}
-                  </>
-                ),
-              }))}
-            />
-          </div>
+          // Si los filtros no entran (celular angosto), el segmentado se desliza
+          // solo (overflow="scroll", el default): nunca se cortan.
+          <SegmentedControl<BoardFilter>
+            aria-label="Filtrar por estado"
+            value={filter}
+            onValueChange={onFilter}
+            items={FILTERS.map((f) => ({
+              value: f,
+              label: (
+                <>
+                  {BOARD_FILTER_LABELS[f]}
+                  <span className="type-caption type-amount">{formatNumber(counts[f])}</span>
+                  {f === 'waiting' && late > 0 ? (
+                    <span className="type-caption font-medium text-warning-text">
+                      · {late} tarde
+                    </span>
+                  ) : null}
+                </>
+              ),
+            }))}
+          />
         )}
       </div>
     </div>

@@ -295,7 +295,7 @@ export function TagsManagerDialog({
           if (!toDelete) return
           const target = toDelete
           const r = await deleteItemTag(tenantSlug, target.id)
-          if (!r.ok) return { ok: false, error: r.message }
+          if (!r.ok) return r
           toast.success(r.message ?? `Etiqueta «${target.name}» borrada.`)
         }}
       />

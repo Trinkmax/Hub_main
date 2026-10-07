@@ -3,14 +3,13 @@
 import { Ban, RotateCcw, Send } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { ConfirmDialog, type ConfirmFormState } from '@/components/ui/confirm-dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import {
   type BroadcastActionState,
   cancelBroadcast,
   resendFailedRecipients,
   sendBroadcastNow,
 } from '@/lib/broadcasts/actions'
-import { toConfirmState } from '../../../_components/confirm-state'
 
 const init: BroadcastActionState = { ok: true }
 
@@ -26,11 +25,11 @@ type BroadcastAction = (
  * error era un toast que se iba).
  */
 function confirmAction(tenantSlug: string, action: BroadcastAction, successMessage: string) {
-  return async (_prev: ConfirmFormState, formData: FormData) => {
+  return async (_prev: unknown, formData: FormData) => {
     const result = await action(tenantSlug, init, formData)
     // El mensaje del server es técnico («3 reencolados»): se avisa en criollo.
     if (result.ok) toast.success(successMessage)
-    return toConfirmState(result)
+    return result
   }
 }
 

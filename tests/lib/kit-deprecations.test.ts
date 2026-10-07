@@ -51,132 +51,51 @@ const DETAIL_ENV = 'KIT_DEPRECATIONS_DETAIL'
 
 /**
  * Exports deprecados, por módulo: cuenta cada referencia. `'*'`: todo lo que
- * exporta el módulo (la ruta entera es la vieja, como `skeleton-list`).
+ * exporta el módulo (la ruta entera es la vieja).
  */
-const DEPRECATED_EXPORTS: Readonly<Record<string, readonly string[] | '*'>> = {
-  'components/ui/stat-card': ['StatCard'],
-  'components/ui/sliding-tabs': ['SlidingTabs', 'SlidingTab'],
-  'components/ui/stepper': ['Stepper', 'StepperStep', 'StepperProps'],
-  'components/ui/filter-bar': ['FilterBar', 'FilterSearch'],
-  'components/ui/table': [
-    'Table',
-    'TableBody',
-    'TableCaption',
-    'TableCell',
-    'TableFooter',
-    'TableHead',
-    'TableHeader',
-    'TableRow',
-  ],
-  'components/ui/number-ticker': ['NumberTicker'],
-  'components/ui/skeleton': ['CardGridSkeleton'],
-  'components/ui/skeleton-list': '*',
-  'components/ui/page-header': ['Breadcrumb'],
-  'components/ui/badge': ['BadgeVariant'],
-  'components/ui/button': ['LegacyButtonVariant', 'LegacyButtonSize'],
-  'components/ui/select': ['LegacySelectSize'],
-  'components/ui/switch': ['LegacySwitchSize'],
-}
+type DeprecatedExports = Readonly<Record<string, readonly string[] | '*'>>
 
-/**
- * Los valores viejos de una prop vigente salen del tipo `@deprecated` del kit:
- * si el kit suma un alias, el contador lo ve sin tocar este archivo.
- */
-const LEGACY_VALUE_TYPES = {
-  buttonVariant: { file: 'components/ui/button.tsx', type: 'LegacyButtonVariant' },
-  buttonSize: { file: 'components/ui/button.tsx', type: 'LegacyButtonSize' },
-  selectSize: { file: 'components/ui/select.tsx', type: 'LegacySelectSize' },
-  switchSize: { file: 'components/ui/switch.tsx', type: 'LegacySwitchSize' },
-} as const satisfies Record<string, { file: string; type: string }>
-
-type LegacyValueKey = keyof typeof LEGACY_VALUE_TYPES
-type LegacyValues = Readonly<Record<LegacyValueKey, readonly string[]>>
+/** Los valores viejos de una prop vigente, por nombre de lista (`buttonVariant`). */
+type LegacyValues = Readonly<Record<string, readonly string[]>>
 
 type PropRule = {
   module: string
   /** Un componente (atributo JSX) o una función (propiedad del objeto del primer argumento). */
   target: string
   prop: string
-  /** Sin `values` la prop entera está deprecada; con `values`, solo esos valores. */
-  values?: LegacyValueKey
+  /** Sin `values` la prop entera está deprecada; con `values`, solo los de esa lista. */
+  values?: string
 }
 
-const PROP_RULES: readonly PropRule[] = [
-  { module: 'components/ui/page-header', target: 'PageHeader', prop: 'eyebrow' },
-  { module: 'components/ui/badge', target: 'Badge', prop: 'variant' },
-  { module: 'components/ui/badge', target: 'badgeVariants', prop: 'variant' },
-  { module: 'components/ui/sheet', target: 'SheetContent', prop: 'showClose' },
-  { module: 'components/ui/data-table', target: 'DataTableRow', prop: 'onClick' },
-  { module: 'components/ui/button', target: 'Button', prop: 'variant', values: 'buttonVariant' },
-  { module: 'components/ui/button', target: 'Button', prop: 'size', values: 'buttonSize' },
-  {
-    module: 'components/ui/button',
-    target: 'buttonVariants',
-    prop: 'variant',
-    values: 'buttonVariant',
-  },
-  { module: 'components/ui/button', target: 'buttonVariants', prop: 'size', values: 'buttonSize' },
-  {
-    module: 'components/ui/submit-button',
-    target: 'SubmitButton',
-    prop: 'variant',
-    values: 'buttonVariant',
-  },
-  {
-    module: 'components/ui/submit-button',
-    target: 'SubmitButton',
-    prop: 'size',
-    values: 'buttonSize',
-  },
-  {
-    module: 'components/ui/copy-button',
-    target: 'CopyButton',
-    prop: 'variant',
-    values: 'buttonVariant',
-  },
-  { module: 'components/ui/copy-button', target: 'CopyButton', prop: 'size', values: 'buttonSize' },
-  {
-    module: 'components/ui/alert-dialog',
-    target: 'AlertDialogAction',
-    prop: 'variant',
-    values: 'buttonVariant',
-  },
-  {
-    module: 'components/ui/data-table',
-    target: 'ExportButton',
-    prop: 'size',
-    values: 'buttonSize',
-  },
-  { module: 'components/ui/select', target: 'SelectTrigger', prop: 'size', values: 'selectSize' },
-  { module: 'components/ui/switch', target: 'Switch', prop: 'size', values: 'switchSize' },
-  // Envoltorio de dominio que tipa sus props con `VariantProps<typeof
-  // buttonVariants>` (§3.9): un valor viejo que se le pasa llega igual a Button.
-  {
-    module: 'components/messaging/contact-button',
-    target: 'ContactButton',
-    prop: 'variant',
-    values: 'buttonVariant',
-  },
-  {
-    module: 'components/messaging/contact-button',
-    target: 'ContactButton',
-    prop: 'size',
-    values: 'buttonSize',
-  },
-]
+type Registry = {
+  exports: DeprecatedExports
+  props: readonly PropRule[]
+  /**
+   * De dónde salen las listas de valores viejos: un tipo `@deprecated` del kit
+   * (`type LegacyButtonVariant = 'default' | 'outline'`). Si el kit suma un
+   * alias, el contador lo ve sin tocar este archivo.
+   */
+  legacyValueTypes: Readonly<Record<string, { file: string; type: string }>>
+  /** Props `@deprecated` de componentes que ya cuentan enteros (cada uso del componente es la deuda). */
+  coveredByComponent: ReadonlySet<string>
+}
 
-/** Lo que se sigue de los imports: el kit entero y los envoltorios de las reglas. */
-const TRACKED_MODULES = new Set(PROP_RULES.map((rule) => rule.module))
-const isTracked = (module: string) =>
-  module.startsWith('components/ui/') || TRACKED_MODULES.has(module)
-
-/** Props `@deprecated` de componentes que ya cuentan enteros (cada uso del componente es la deuda). */
-const COVERED_BY_COMPONENT = new Set([
-  'components/ui/stat-card#StatCardProps.iconClassName',
-  'components/ui/number-ticker#NumberTickerProps.durationMs',
-  'components/ui/number-ticker#NumberTickerProps.startOnView',
-  'components/ui/number-ticker#NumberTickerProps.delayMs',
-])
+/**
+ * Lo deprecado del kit HOY: nada. Los shims de compatibilidad de la ola 0
+ * (variantes y tamaños viejos de Button, Select y Switch, `StatCard`,
+ * `NumberTicker`, `SlidingTabs`, `Stepper`, `FilterBar` y `FilterSearch`,
+ * `table.tsx`, `skeleton-list`, `CardGridSkeleton`, el `variant` sólido de
+ * Badge, `eyebrow` de PageHeader, `showClose` de Sheet y el `onClick` de
+ * `DataTableRow`) se borraron cuando la cuenta llegó a cero en todo el panel
+ * (07/10/2026). Lo que se deprece de acá en adelante se registra acá, y el
+ * último test exige que cada `@deprecated` de `components/ui` lo esté.
+ */
+const KIT_REGISTRY: Registry = {
+  exports: {},
+  props: [],
+  legacyValueTypes: {},
+  coveredByComponent: new Set(),
+}
 
 // ─── El contador ─────────────────────────────────────────────────────────────
 
@@ -240,14 +159,23 @@ function isReference(id: ts.Identifier): boolean {
   return true
 }
 
-function isDeprecatedExport(ref: Ref): boolean {
-  const names = DEPRECATED_EXPORTS[ref.module]
+function isDeprecatedExport(ref: Ref, registry: Registry): boolean {
+  const names = registry.exports[ref.module]
   return names === '*' || (names?.includes(ref.name) ?? false)
 }
 
 /** Los usos deprecados del kit en un archivo. */
-function scanSource(file: string, source: string, legacy: LegacyValues): Hit[] {
+function scanSource(
+  file: string,
+  source: string,
+  legacy: LegacyValues,
+  registry: Registry = KIT_REGISTRY,
+): Hit[] {
   const sf = parse(file, source)
+  // Lo que se sigue de los imports: el kit entero y los envoltorios de las reglas.
+  const trackedModules = new Set(registry.props.map((rule) => rule.module))
+  const isTracked = (module: string) =>
+    module.startsWith('components/ui/') || trackedModules.has(module)
 
   // Lo que el archivo importa del kit (y de los envoltorios): nombre local → módulo y export.
   const bindings = new Map<string, Binding>()
@@ -389,14 +317,14 @@ function scanSource(file: string, source: string, legacy: LegacyValues): Hit[] {
     site: ts.Node,
     call: boolean,
   ) => {
-    for (const rule of PROP_RULES) {
+    for (const rule of registry.props) {
       if (rule.module !== ref.module || rule.target !== ref.name || rule.prop !== prop) continue
       if (!rule.values) {
         hit(site, call ? `${ref.name}({ ${prop} })` : `${ref.name} ${prop}`)
         continue
       }
       if (!value) continue
-      for (const literal of legacyLiterals(value, legacy[rule.values])) {
+      for (const literal of legacyLiterals(value, legacy[rule.values] ?? [])) {
         hit(
           literal,
           call
@@ -415,7 +343,7 @@ function scanSource(file: string, source: string, legacy: LegacyValues): Hit[] {
         !ts.isJsxClosingElement(node.parent))
     if (isRefSite) {
       const ref = resolveRef(node)
-      if (ref && isDeprecatedExport(ref)) hit(node, ref.name)
+      if (ref && isDeprecatedExport(ref, registry)) hit(node, ref.name)
     }
     // 2. Props de un componente del kit: `<PageHeader eyebrow>`, `<Button variant="outline">`.
     if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
@@ -476,15 +404,13 @@ function literalUnion(file: string, typeName: string): string[] {
   return []
 }
 
-function readLegacyValues(): LegacyValues {
-  const read = (key: LegacyValueKey) =>
-    literalUnion(LEGACY_VALUE_TYPES[key].file, LEGACY_VALUE_TYPES[key].type)
-  return {
-    buttonVariant: read('buttonVariant'),
-    buttonSize: read('buttonSize'),
-    selectSize: read('selectSize'),
-    switchSize: read('switchSize'),
-  }
+function readLegacyValues(registry: Registry): LegacyValues {
+  return Object.fromEntries(
+    Object.entries(registry.legacyValueTypes).map(([key, { file, type }]) => [
+      key,
+      literalUnion(file, type),
+    ]),
+  )
 }
 
 function listSourceFiles(dir: string, out: string[] = []): string[] {
@@ -506,13 +432,18 @@ function folderOf(file: string): string {
 
 type FolderReport = { total: number; byLabel: Map<string, number>; byFile: Map<string, number> }
 
-function countPanel(legacy: LegacyValues): Map<string, FolderReport> {
+function countPanel(legacy: LegacyValues, registry: Registry): Map<string, FolderReport> {
   const folders = new Map<string, FolderReport>()
   for (const file of listSourceFiles(PANEL_DIR)) {
     const folder = folderOf(file)
     const report = folders.get(folder) ?? { total: 0, byLabel: new Map(), byFile: new Map() }
     folders.set(folder, report)
-    for (const { label } of scanSource(file, readFileSync(join(ROOT, file), 'utf8'), legacy)) {
+    for (const { label } of scanSource(
+      file,
+      readFileSync(join(ROOT, file), 'utf8'),
+      legacy,
+      registry,
+    )) {
       report.total += 1
       report.byLabel.set(label, (report.byLabel.get(label) ?? 0) + 1)
       const short = file.slice(PANEL_DIR.length + 1)
@@ -586,17 +517,68 @@ function describeFolder(folder: string, report: FolderReport, base: number): str
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
-const LEGACY = readLegacyValues()
+const LEGACY = readLegacyValues(KIT_REGISTRY)
+
+/**
+ * Para probar el contador sin depender de lo que esté deprecado hoy: parte de
+ * los registros de la ola 0, tal cual eran (los shims ya no existen; el
+ * contador solo lee texto).
+ */
+const FIXTURE_REGISTRY: Registry = {
+  exports: {
+    'components/ui/stat-card': ['StatCard'],
+    'components/ui/sliding-tabs': ['SlidingTabs', 'SlidingTab'],
+  },
+  props: [
+    { module: 'components/ui/page-header', target: 'PageHeader', prop: 'eyebrow' },
+    { module: 'components/ui/badge', target: 'Badge', prop: 'variant' },
+    { module: 'components/ui/badge', target: 'badgeVariants', prop: 'variant' },
+    { module: 'components/ui/button', target: 'Button', prop: 'variant', values: 'buttonVariant' },
+    { module: 'components/ui/button', target: 'Button', prop: 'size', values: 'buttonSize' },
+    {
+      module: 'components/ui/button',
+      target: 'buttonVariants',
+      prop: 'variant',
+      values: 'buttonVariant',
+    },
+    {
+      module: 'components/ui/button',
+      target: 'buttonVariants',
+      prop: 'size',
+      values: 'buttonSize',
+    },
+    { module: 'components/ui/select', target: 'SelectTrigger', prop: 'size', values: 'selectSize' },
+    // Un envoltorio de dominio: un valor viejo que se le pasa llega igual a Button.
+    {
+      module: 'components/messaging/contact-button',
+      target: 'ContactButton',
+      prop: 'variant',
+      values: 'buttonVariant',
+    },
+  ],
+  legacyValueTypes: {},
+  coveredByComponent: new Set(),
+}
+
+const FIXTURE_LEGACY: LegacyValues = {
+  buttonVariant: ['default', 'outline', 'destructive', 'success'],
+  buttonSize: ['default', 'xl'],
+  selectSize: ['default'],
+}
 
 describe('el contador de usos deprecados', () => {
-  it('lee los valores viejos de los tipos @deprecated del kit', () => {
-    expect(LEGACY.buttonVariant).toEqual(
-      expect.arrayContaining(['default', 'outline', 'destructive', 'success']),
-    )
-    expect(LEGACY.buttonVariant).not.toContain('secondary')
-    expect(LEGACY.buttonSize).toEqual(expect.arrayContaining(['default', 'xl']))
-    expect(LEGACY.selectSize).toEqual(['default'])
-    expect(LEGACY.switchSize).toEqual(['default'])
+  it('hoy el kit no declara alias viejos: no hay listas de valores que leer', () => {
+    expect(Object.keys(KIT_REGISTRY.legacyValueTypes)).toEqual([])
+    expect(LEGACY).toEqual({})
+    // Los tipos `Legacy*` de la ola 0 ya no existen en el kit.
+    for (const [file, type] of [
+      ['components/ui/button.tsx', 'LegacyButtonVariant'],
+      ['components/ui/button.tsx', 'LegacyButtonSize'],
+      ['components/ui/select.tsx', 'LegacySelectSize'],
+      ['components/ui/switch.tsx', 'LegacySwitchSize'],
+    ] as const) {
+      expect(literalUnion(file, type), `${file}#${type}`).toEqual([])
+    }
   })
 
   it('cuenta lo deprecado del kit, y solo eso', () => {
@@ -642,7 +624,7 @@ describe('el contador de usos deprecados', () => {
       '}',
     ].join('\n')
     const file = `${PANEL_DIR}/fixture/fixture.tsx`
-    const hits = scanSource(file, fixture, LEGACY)
+    const hits = scanSource(file, fixture, FIXTURE_LEGACY, FIXTURE_REGISTRY)
     expect(hits.map((h) => h.label).sort()).toEqual(
       [
         'SlidingTab',
@@ -666,6 +648,8 @@ describe('el contador de usos deprecados', () => {
     expect(hits.find((h) => h.label === 'StatCard')?.line).toBe(lineOf('<StatCard label'))
     // El valor por defecto cuenta una vez, en su línea, aunque lo usen varios botones.
     expect(hits.filter((h) => h.line === lineOf('export function Fixture'))).toHaveLength(1)
+    // Con el registro de hoy (vacío), el mismo archivo no cuenta nada.
+    expect(scanSource(file, fixture, LEGACY)).toEqual([])
   })
 
   it('cada @deprecated de components/ui está registrado en el contador', () => {
@@ -694,29 +678,30 @@ describe('el contador de usos deprecados', () => {
           host = `${ownerTypeName(node)}.${node.name.text}`
         }
         if (host !== null) {
-          const exportsOf = DEPRECATED_EXPORTS[module]
+          const exportsOf = KIT_REGISTRY.exports[module]
           const prop = host.includes('.') ? host.slice(host.indexOf('.') + 1) : null
           const registered =
             exportsOf === '*' ||
             (prop === null
               ? (exportsOf?.includes(host) ?? false)
-              : PROP_RULES.some((r) => r.module === module && r.prop === prop && !r.values) ||
-                COVERED_BY_COMPONENT.has(`${module}#${host}`))
+              : KIT_REGISTRY.props.some(
+                  (r) => r.module === module && r.prop === prop && !r.values,
+                ) || KIT_REGISTRY.coveredByComponent.has(`${module}#${host}`))
           if (!registered) unregistered.push(`${module}#${host}`)
         }
         ts.forEachChild(node, visit)
       }
       visit(sf)
     }
-    // Si esto falla: sumá lo nuevo a DEPRECATED_EXPORTS, PROP_RULES o
-    // COVERED_BY_COMPONENT (arriba en este archivo) para que se cuente.
+    // Si esto falla: sumá lo nuevo a KIT_REGISTRY (arriba en este archivo) para
+    // que se cuente.
     expect(unregistered).toEqual([])
   })
 })
 
 describe('usos deprecados del kit por carpeta del panel: solo pueden bajar', () => {
   it('ninguna carpeta supera su línea de base', () => {
-    const folders = countPanel(LEGACY)
+    const folders = countPanel(LEGACY, KIT_REGISTRY)
     const baseline = readBaseline()
     const summary = describeCounts(folders, baseline)
     console.log(summary)

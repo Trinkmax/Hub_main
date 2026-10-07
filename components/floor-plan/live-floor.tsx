@@ -189,7 +189,6 @@ export function LiveFloor({
             items={areas.map((a) => ({ value: a.id, label: a.name }))}
             value={activeAreaId}
             onValueChange={onSelectArea}
-            className="max-w-full overflow-x-auto"
           />
         ) : null}
       </div>

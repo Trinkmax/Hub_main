@@ -5,11 +5,11 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useTransition } from 'react'
 import { SegmentChip } from '@/components/reservations/segment-meter'
 import { Button } from '@/components/ui/button'
+import { DatePicker } from '@/components/ui/date-picker'
 import { addDays } from '@/lib/dates/civil'
 import { capitalizeFirst, formatDayMonth, weekdayName } from '@/lib/dates/format'
 import type { SegmentLoad } from '@/lib/salon/segments'
 import { segmentAriaLabel } from '@/lib/salon/segments-copy'
-import { CommitDatePicker } from './commit-date-picker'
 
 /** `'2026-09-10'` → `'Jueves 10/09'`. A mano, sin `Intl` (hidratación). */
 function formatDayLong(day: string): string {
@@ -88,8 +88,10 @@ export function DayNavigator({
 
       <div className="flex items-center gap-2">
         {/* `key`: al cambiar de día por las flechas, el campo arranca limpio
-            con la fecha nueva (sin arrastrar un texto a medio tipear). */}
-        <CommitDatePicker
+            con la fecha nueva (sin arrastrar un texto a medio tipear).
+            `onCommit`: tipeando, navega al salir del campo o con Enter (no a
+            medio tipear); del calendario, en el momento. */}
+        <DatePicker
           key={day}
           defaultValue={day}
           size="sm"

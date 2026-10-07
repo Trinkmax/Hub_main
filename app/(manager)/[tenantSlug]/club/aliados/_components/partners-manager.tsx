@@ -921,7 +921,7 @@ function PartnerCard({
           if (!toDelete) return
           const target = toDelete
           const result = await deletePartnerBenefit(tenantSlug, target.id)
-          if (!result.ok) return { ok: false, error: result.message }
+          if (!result.ok) return result
           if (target.image_url && isStorageUrl(target.image_url)) {
             try {
               await deleteMenuImageByUrl(target.image_url)
@@ -1041,7 +1041,7 @@ export function PartnersManager({
           if (!toDelete) return
           const target = toDelete
           const result = await deletePartner(tenantSlug, target.id)
-          if (!result.ok) return { ok: false, error: result.message }
+          if (!result.ok) return result
           toast.success(`Marca «${target.name}» borrada.`)
         }}
       />

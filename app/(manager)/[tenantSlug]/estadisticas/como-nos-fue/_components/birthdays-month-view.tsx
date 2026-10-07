@@ -4,6 +4,7 @@ import { Cake, Megaphone, Pencil } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Disclosure } from '@/components/ui/disclosure'
 import { PeriodPicker } from '@/components/ui/period-picker'
 import {
   type BirthdayDay,
@@ -15,7 +16,6 @@ import {
 } from '@/lib/salon/birthdays-report'
 import { cn } from '@/lib/utils'
 import { BirthdayMarketingForm } from './birthday-marketing-form'
-import { Disclosure } from './marketing-report'
 
 /**
  * La pestaña «Cumpleaños»: cuántos cumples tuvo el mes, día por día, con
@@ -240,7 +240,7 @@ export function BirthdaysMonthView({
               </p>
             ) : null}
 
-            <Disclosure summary="¿Cómo se calcula?" className="mt-3">
+            <Disclosure variant="inline" title="¿Cómo se calcula?" className="mt-3">
               <ul className="max-w-prose list-disc space-y-1 pl-4 leading-relaxed text-muted-foreground">
                 {report.howItsCalculated.map((b) => (
                   <li key={b}>{b}</li>

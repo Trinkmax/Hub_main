@@ -7,7 +7,9 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { KPI, KPIGroup } from '@/components/ui/kpi'
+import { ReloadLink } from '@/components/ui/reload-link'
 import { Section } from '@/components/ui/section'
+import { StatusBadge } from '@/components/ui/status-badge'
 import { capitalizeFirst, monthName, parseIsoDay, weekdayName } from '@/lib/dates'
 import { formatNumber } from '@/lib/format/number-kind'
 import type { TodaySalonOverview as Overview } from '@/lib/salon/queries'
@@ -21,8 +23,9 @@ const STATUS_ORDER: TodayStatus[] = ['pending', 'arrived', 'seated', 'closed']
 
 /**
  * El desglose de hoy dice la cuenta con la palabra en plural («3 pendientes»),
- * así que el texto va acá; el tono y lo que significa cada estado salen del
- * mapa compartido de reservas, el mismo de la lista y la vista rápida.
+ * así que la palabra va acá; el tono, el punto y lo que significa cada estado
+ * salen del mapa compartido de reservas (`StatusBadge` con `count`), el mismo
+ * de la lista y la vista rápida.
  */
 const STATUS_WORDS: Readonly<Record<TodayStatus, { one: string; many: string }>> = {
   pending: { one: 'pendiente', many: 'pendientes' },
@@ -61,12 +64,12 @@ export function TodaySalonOverview({
       description={formatDayTitle(date)}
       actions={
         // El salón es otro workspace (su propio <html> y su Toaster): se entra
-        // recargando, con un <a> común y no con <Link> (kit §7.a.4, riesgo 19).
+        // recargando, con ReloadLink y no con <Link> (kit §7.a.4, riesgo 19).
         <Button asChild variant="secondary" size="sm">
-          <a href={`/${tenantSlug}/salon/reservas-operativo?date=${date}`}>
+          <ReloadLink href={`/${tenantSlug}/salon/reservas-operativo?date=${date}`}>
             Ver en el salón
             <ArrowRight aria-hidden="true" />
-          </a>
+          </ReloadLink>
         </Button>
       }
     >
@@ -81,12 +84,12 @@ export function TodaySalonOverview({
                   <ul aria-label="Por estado" className="flex flex-wrap gap-1.5">
                     {activeStatuses.map((status) => {
                       const words = STATUS_WORDS[status]
-                      const meta = RESERVATION_STATUS[status]
+                      const count = byStatus[status]
                       return (
                         <li key={status}>
-                          <Badge tone={meta.tone} dot title={meta.description}>
-                            {plural(byStatus[status], words.one, words.many)}
-                          </Badge>
+                          <StatusBadge status={status} map={RESERVATION_STATUS} count={count}>
+                            {count === 1 ? words.one : words.many}
+                          </StatusBadge>
                         </li>
                       )
                     })}

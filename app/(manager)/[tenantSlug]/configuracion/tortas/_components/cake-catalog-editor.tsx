@@ -195,7 +195,7 @@ export function CakeCatalogEditor({
     if (!d.id) return
     const id = d.id
     const r = await deleteCakeOption(tenantSlug, id)
-    if (!r.ok) return { ok: false, error: r.message }
+    if (!r.ok) return r
     setDrafts((prev) => prev.filter((x) => x.key !== d.key))
     setSaved((prev) => prev.filter((p) => p.id !== id))
     toast.success('Torta borrada.')

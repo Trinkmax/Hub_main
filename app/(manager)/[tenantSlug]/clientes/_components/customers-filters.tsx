@@ -123,25 +123,23 @@ export function CustomersFilters({
         </form>
       </search>
 
-      {/* En un celular angosto las tres opciones con sus cuentas pueden no entrar: la fila scrollea. */}
-      <div className="max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <SegmentedControl
-          aria-label="Programa de puntos"
-          value={programa}
-          className="max-w-none"
-          items={PROGRAMA_OPTIONS.map((option) => ({
-            value: option.value,
-            label: (
-              <>
-                {option.label}
-                <span className="sr-only"> ({option.hint})</span>
-              </>
-            ),
-            count: programaCounts[option.value],
-            href: hrefWith('programa', option.value === 'all' ? null : option.value),
-          }))}
-        />
-      </div>
+      {/* En un celular angosto las tres opciones con sus cuentas pueden no
+          entrar: el segmentado se desliza solo (overflow="scroll", el default). */}
+      <SegmentedControl
+        aria-label="Programa de puntos"
+        value={programa}
+        items={PROGRAMA_OPTIONS.map((option) => ({
+          value: option.value,
+          label: (
+            <>
+              {option.label}
+              <span className="sr-only"> ({option.hint})</span>
+            </>
+          ),
+          count: programaCounts[option.value],
+          href: hrefWith('programa', option.value === 'all' ? null : option.value),
+        }))}
+      />
 
       {tags.length > 0 ? (
         <Combobox

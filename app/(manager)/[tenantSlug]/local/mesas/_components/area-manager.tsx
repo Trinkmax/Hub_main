@@ -49,8 +49,6 @@ export function AreaManager({
   const [newName, setNewName] = useState('')
   const [newNameError, setNewNameError] = useState<string | null>(null)
   const [newStart, setNewStart] = useState<number | null>(1)
-  // Vuelve a montar el campo de numeración (no controlado) para dejarlo en 1 tras crear.
-  const [createKey, setCreateKey] = useState(0)
   // Edición en línea de un área
   const [editingId, setEditingId] = useState<string | null>(null)
 
@@ -70,7 +68,6 @@ export function AreaManager({
         toast.success('Área creada.')
         setNewName('')
         setNewStart(1)
-        setCreateKey((k) => k + 1)
         onChanged()
       } else {
         toast.error(r.message)
@@ -209,13 +206,7 @@ export function AreaManager({
               required
               hint="Las mesas nuevas de esta área arrancan en este número."
             >
-              <NumberField
-                key={createKey}
-                min={0}
-                max={100000}
-                defaultValue={1}
-                onValueChange={setNewStart}
-              />
+              <NumberField min={0} max={100000} value={newStart} onValueChange={setNewStart} />
             </Field>
             <Button
               type="submit"
@@ -261,7 +252,7 @@ function AreaEditor({
   const [pending, start] = useTransition()
   const [name, setName] = useState(area.name)
   const [nameError, setNameError] = useState<string | null>(null)
-  // Los números llegan del campo (no controlado): el último valor válido, o null.
+  // El último número que vale de cada campo, o null.
   const [width, setWidth] = useState<number | null>(area.width)
   const [height, setHeight] = useState<number | null>(area.height)
   const [numberStart, setNumberStart] = useState<number | null>(area.number_start)
@@ -311,7 +302,7 @@ function AreaEditor({
   // Espera con el diálogo abierto y, si el server no deja (tiene mesas, es la única), muestra por qué.
   const onDelete = async (): Promise<ConfirmResult> => {
     const r = await deleteAreaAction(slug, area.id)
-    if (!r.ok) return { ok: false, error: r.message }
+    if (!r.ok) return r
     toast.success('Área borrada.')
     if (area.id === activeAreaId) {
       const next = areas.find((a) => a.id !== area.id)
@@ -345,7 +336,7 @@ function AreaEditor({
               min={200}
               max={6000}
               steppers={false}
-              defaultValue={area.width}
+              value={width}
               onValueChange={setWidth}
             />
           </Field>
@@ -354,7 +345,7 @@ function AreaEditor({
               min={200}
               max={6000}
               steppers={false}
-              defaultValue={area.height}
+              value={height}
               onValueChange={setHeight}
             />
           </Field>
@@ -368,12 +359,7 @@ function AreaEditor({
         required
         hint="Por ejemplo, 101 para que la planta alta empiece en la mesa 101."
       >
-        <NumberField
-          min={0}
-          max={100000}
-          defaultValue={area.number_start}
-          onValueChange={setNumberStart}
-        />
+        <NumberField min={0} max={100000} value={numberStart} onValueChange={setNumberStart} />
       </Field>
       <div className="flex flex-wrap items-center gap-2">
         <Button type="submit" size="sm" loading={pending} loadingText="Guardando…">

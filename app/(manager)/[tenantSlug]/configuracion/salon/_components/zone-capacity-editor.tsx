@@ -79,12 +79,11 @@ export function ZoneCapacityEditor({
       }
     >
       <form onSubmit={save} className="flex max-w-sm flex-col gap-4">
-        {/* Sin `value`: con un número fuera de rango, el NumberField controlado borraba lo tipeado. */}
         {/* Dos números cortos: lado a lado también en el celular. */}
         <FieldRow className="grid-cols-2">
           <Field label={ZONE_LABELS.planta_alta}>
             <NumberField
-              defaultValue={defaults.planta_alta}
+              value={pa}
               onValueChange={setPA}
               min={0}
               max={MAX_PER_ZONE}
@@ -94,7 +93,7 @@ export function ZoneCapacityEditor({
           </Field>
           <Field label={ZONE_LABELS.planta_baja}>
             <NumberField
-              defaultValue={defaults.planta_baja}
+              value={pb}
               onValueChange={setPB}
               min={0}
               max={MAX_PER_ZONE}

@@ -6,6 +6,7 @@ import { useState, useTransition } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DataTableToolbar } from '@/components/ui/data-table'
+import { DatePicker } from '@/components/ui/date-picker'
 import { Field } from '@/components/ui/field'
 import { SearchField } from '@/components/ui/input'
 import {
@@ -26,7 +27,6 @@ import {
 } from '@/components/ui/sheet'
 import { UNPLACED_LABEL } from '@/lib/salon/event-floor'
 import { STATUS_LABELS, ZONE_LABELS } from '@/lib/salon/types'
-import { CommitDatePicker } from './commit-date-picker'
 
 type Defaults = {
   q?: string
@@ -186,14 +186,14 @@ export function ReservationsFilters({
               </Select>
             </Field>
             <Field label="Desde">
-              <CommitDatePicker
+              <DatePicker
                 defaultValue={defaults.dateFrom ?? null}
                 clearable
                 onCommit={(iso) => pushQuery({ from: iso })}
               />
             </Field>
             <Field label="Hasta">
-              <CommitDatePicker
+              <DatePicker
                 defaultValue={defaults.dateTo ?? null}
                 clearable
                 onCommit={(iso) => pushQuery({ to: iso })}

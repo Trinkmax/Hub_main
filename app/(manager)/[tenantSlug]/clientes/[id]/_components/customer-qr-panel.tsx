@@ -2,13 +2,13 @@
 
 import { ExternalLink, Printer, RefreshCw } from 'lucide-react'
 import Image from 'next/image'
-import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { CopyButton } from '@/components/ui/copy-button'
+import { ReloadLink } from '@/components/ui/reload-link'
 import { Spinner } from '@/components/ui/spinner'
 import { rotateQrToken } from '@/lib/customers/actions'
 
@@ -96,16 +96,16 @@ export function CustomerQrPanel({
 
           <div className="flex flex-wrap gap-2">
             <Button asChild size="sm" variant="secondary">
-              <Link href={`/c/${qrToken}`} target="_blank" rel="noopener">
+              <ReloadLink href={`/c/${qrToken}`} newTab>
                 <ExternalLink aria-hidden="true" />
                 Ver como el cliente
-              </Link>
+              </ReloadLink>
             </Button>
             <Button asChild size="sm" variant="secondary">
-              <Link href={`/print/c-qr/${qrToken}`} target="_blank" rel="noopener">
+              <ReloadLink href={`/print/c-qr/${qrToken}`} newTab>
                 <Printer aria-hidden="true" />
                 Imprimir
-              </Link>
+              </ReloadLink>
             </Button>
             {isOwner ? (
               <ConfirmDialog
@@ -122,7 +122,7 @@ export function CustomerQrPanel({
                 }
                 onConfirm={async () => {
                   const r = await rotateQrToken(tenantSlug, customerId)
-                  if (!r.ok) return { ok: false, error: r.message }
+                  if (!r.ok) return r
                   setQrToken(r.token)
                   toast.success('QR regenerado.')
                 }}

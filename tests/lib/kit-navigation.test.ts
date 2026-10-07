@@ -197,8 +197,7 @@ describe('reglas del kit en los archivos de navegación (§2.13 y §3.0)', () =>
     'components/ui/segmented-control.tsx',
     'components/ui/filter-chip.tsx',
     'components/ui/steps.tsx',
-    'components/ui/stepper.tsx',
-    'components/ui/sliding-tabs.tsx',
+    'components/ui/disclosure.tsx',
   ]
 
   it.each(FILES)('%s: sin -[--x], sin dark:, foco con outline, sin texto de 9–11 px', (file) => {
@@ -215,7 +214,6 @@ describe('reglas del kit en los archivos de navegación (§2.13 y §3.0)', () =>
       'components/ui/tabs-nav.tsx',
       'components/ui/section-nav.tsx',
       'components/ui/steps.tsx',
-      'components/ui/stepper.tsx',
     ]) {
       expect(readFileSync(join(ROOT, file), 'utf8').startsWith("'use client'"), file).toBe(false)
     }

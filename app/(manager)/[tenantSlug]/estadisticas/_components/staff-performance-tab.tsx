@@ -10,7 +10,6 @@ import { Section } from '@/components/ui/section'
 import { formatNumber } from '@/lib/format/number-kind'
 import type { DateRangePreset } from '@/lib/staff-performance/date-range'
 import type { StaffSummaryRow } from '@/lib/staff-performance/queries'
-import { RowButton } from './row-button'
 import { StaffDrawer } from './staff-drawer'
 import { StaffRangePicker } from './staff-range-picker'
 
@@ -77,17 +76,15 @@ export function StaffPerformanceTab({
           rows={summaries}
           getRowId={(s) => s.user_id}
           rowLabel={(s) => s.full_name ?? s.email}
+          // Toda la fila abre el cajón del mozo: un botón estirado, no un link.
+          onRowAction={(s) => setSelected(s)}
+          rowActionLabel={(s) => `Ver las mesas de ${s.full_name ?? s.email}`}
           columns={[
             {
               id: 'mozo',
               header: 'Mozo',
               cell: (s) => (
-                <RowButton
-                  onClick={() => setSelected(s)}
-                  aria-haspopup="dialog"
-                  aria-label={`Ver las mesas de ${s.full_name ?? s.email}`}
-                  className="flex min-w-0 flex-col"
-                >
+                <span className="flex min-w-0 flex-col">
                   <span className="font-medium text-foreground">{s.full_name ?? s.email}</span>
                   {s.full_name ? (
                     <span className="type-small font-normal text-muted-foreground">{s.email}</span>
@@ -98,7 +95,7 @@ export function StaffPerformanceTab({
                     {formatNumber(s.sessions_count)} {s.sessions_count === 1 ? 'mesa' : 'mesas'} ·{' '}
                     {formatNumber(Math.round(s.party_size_share))} comensales
                   </span>
-                </RowButton>
+                </span>
               ),
             },
             {

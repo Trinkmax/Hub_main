@@ -2,11 +2,7 @@
 
 import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog'
 import type * as React from 'react'
-import {
-  type ButtonVariant,
-  buttonVariants,
-  type LegacyButtonVariant,
-} from '@/components/ui/button'
+import { type ButtonVariant, buttonVariants } from '@/components/ui/button'
 import {
   DIALOG_OVERLAY_CLASS,
   type DialogSize,
@@ -137,7 +133,7 @@ function AlertDialogAction({
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Action> & {
   /** Default `primary`. */
-  variant?: ButtonVariant | LegacyButtonVariant
+  variant?: ButtonVariant
 }) {
   return (
     <AlertDialogPrimitive.Action

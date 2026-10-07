@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { type ControlSize, useControlSize } from '@/components/ui/control-size'
 import {
+  formResetTarget,
   useField,
   useFieldErrorReporter,
   useFieldLabelId,
@@ -154,6 +155,12 @@ export type MoneyFieldProps = Omit<
  *   visible; `className`, a la caja.
  * - 16 px con el dedo (`--control-font`), y al tomar foco se centra en la
  *   pantalla: el teclado tapa la mitad de abajo.
+ *
+ * **Formularios y React 19** (ver `useFormReset` en `field.tsx`): después de
+ * un `<form action>`, React resetea el formulario. Sin `cents` ni `value`,
+ * vuelve a `defaultCents` (y, mientras nadie lo toque, sigue al `defaultCents`
+ * que cambie, como un `<input>` nativo). Controlado sin `defaultCents`, el
+ * reset no lo toca.
  */
 function MoneyField({
   name,
@@ -201,6 +208,8 @@ function MoneyField({
   const text = textControlled ? value : innerText
   const state = readMoneyText(text, textOptions)
   const [localError, setLocalError] = React.useState<string | null>(null)
+  // Tocado desde que montó (o desde el último reset), como el «dirty» de un <input>.
+  const [edited, setEdited] = React.useState(false)
 
   // Controlado numérico: un cambio de afuera (que no es el eco de lo tipeado)
   // reescribe el texto. Mientras lo tipeado no se lee, un `null` de afuera no
@@ -210,6 +219,15 @@ function MoneyField({
     setLastCents(cents)
     if (!textControlled && cents !== undefined && cents !== state.cents) {
       setInnerText(centsToMoneyText(cents, decimals))
+    }
+  }
+
+  // No controlado y sin tocar: sigue al `defaultCents` que cambie, como un <input> nativo.
+  const [lastDefault, setLastDefault] = React.useState(defaultCents)
+  if (defaultCents !== lastDefault) {
+    setLastDefault(defaultCents)
+    if (!textControlled && cents === undefined && !edited) {
+      setInnerText(centsToMoneyText(defaultCents ?? null, decimals))
     }
   }
 
@@ -233,8 +251,16 @@ function MoneyField({
 
   useFormReset(localRef, () => {
     setError(null)
+    setEdited(false)
     if (textControlled) return
-    const resetText = centsToMoneyText(defaultCents ?? null, decimals)
+    // Controlado numérico sin `defaultCents`: el reset (también el de React 19
+    // después de un `<form action>`) no borra lo que `cents` dice.
+    const target = formResetTarget<CentsValue>(cents, defaultCents)
+    if (target.keep) {
+      setInnerText(centsToMoneyText(cents ?? null, decimals))
+      return
+    }
+    const resetText = centsToMoneyText(target.to ?? null, decimals)
     setInnerText(resetText)
     const resetState = readMoneyText(resetText, textOptions)
     onCentsChange?.(resetState.cents, resetState.parse)
@@ -283,6 +309,7 @@ function MoneyField({
             onChange={(event) => {
               const next = event.target.value
               setText(next)
+              setEdited(true)
               const nextState = readMoneyText(next, textOptions)
               event.currentTarget.setCustomValidity(nextState.error ?? '')
               // Mientras se escribe no aparecen errores nuevos; si había uno y

@@ -618,7 +618,6 @@ export function OverlaysFamily() {
 
       <CatalogBlock
         id="sheet"
-        compat="`showClose` es `showCloseButton`, el mismo nombre que en `Dialog` (`@deprecated`)."
         sample
         purpose="Para ver o editar sin perder la lista de atrás: lateral por defecto, abajo en el celular."
         yes="El detalle de una fila, un formulario mediano, el cajón del menú en el celular."

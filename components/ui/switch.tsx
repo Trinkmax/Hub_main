@@ -6,12 +6,9 @@ import { useFieldControl } from '@/components/ui/field'
 import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
 
-/** @deprecated default→md */
-export type LegacySwitchSize = 'default'
-
 export type SwitchProps = React.ComponentProps<typeof SwitchPrimitive.Root> & {
-  /** Default `md`. `default` está deprecado: es `md`. */
-  size?: 'sm' | 'md' | LegacySwitchSize
+  /** Default `md`. */
+  size?: 'sm' | 'md'
   /** Optimistas: spinner de 10 px dentro de la perilla + `aria-busy`. */
   pending?: boolean
   /** Solo lectura: se ve y se enfoca, pero no cambia (rol Contabilidad). */

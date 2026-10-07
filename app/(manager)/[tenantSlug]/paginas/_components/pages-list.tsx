@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { EmptyState } from '@/components/ui/empty-state'
+import { ReloadLink } from '@/components/ui/reload-link'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatNumber } from '@/lib/format/number-kind'
 import { deleteLandingPage, duplicateLandingPage } from '@/lib/landings/actions'
@@ -98,7 +99,7 @@ export function PagesList({
       pendingLabel: 'Borrando…',
       onConfirm: async () => {
         const result = await deleteLandingPage(tenantSlug, { id: page.id })
-        if (!result.ok) return { ok: false, error: result.message }
+        if (!result.ok) return result
       },
     })
     if (ok) {
@@ -190,10 +191,10 @@ export function PagesList({
               </DropdownMenuItem>
               {page.published ? (
                 <DropdownMenuItem asChild>
-                  <a href={publicUrl} target="_blank" rel="noopener noreferrer">
+                  <ReloadLink href={publicUrl} newTab>
                     <Eye aria-hidden />
                     Ver publicada
-                  </a>
+                  </ReloadLink>
                 </DropdownMenuItem>
               ) : null}
               <DropdownMenuItem onSelect={() => duplicate(page)} disabled={pending}>

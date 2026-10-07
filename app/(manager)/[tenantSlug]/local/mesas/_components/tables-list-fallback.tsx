@@ -60,14 +60,14 @@ export function TablesListFallback({ slug, tables }: TablesListFallbackProps) {
   // falla, muestra el error adentro en vez de cerrarse.
   const handleRegenerate = async (table: FallbackTable): Promise<ConfirmResult> => {
     const result = await regenerateQrToken(slug, table.id)
-    if (!result.ok) return { ok: false, error: result.message }
+    if (!result.ok) return result
     toast.success(`QR de «${table.label}» regenerado.`)
     router.refresh()
   }
 
   const handleDeletePermanently = async (table: FallbackTable): Promise<ConfirmResult> => {
     const result = await deleteTablePermanentlyAction(slug, table.id)
-    if (!result.ok) return { ok: false, error: result.message }
+    if (!result.ok) return result
     toast.success(`Mesa «${table.label}» borrada.`)
     router.refresh()
   }

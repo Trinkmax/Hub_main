@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  ArrowRight,
   Building2,
   CalendarDays,
   Coins,
@@ -14,6 +15,7 @@ import Link from 'next/link'
 import * as React from 'react'
 import { Button } from '@/components/ui/button'
 import { ChipGroup, FilterChip } from '@/components/ui/filter-chip'
+import { ReloadLink } from '@/components/ui/reload-link'
 import { SectionNav } from '@/components/ui/section-nav'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { Steps } from '@/components/ui/steps'
@@ -155,6 +157,38 @@ function SegmentedDemo() {
           ]}
         />
       </DemoRow>
+      <DemoRow label="Muchas opciones en poco ancho: se desliza, con fundido en el borde que tiene más">
+        <div className="w-full max-w-60">
+          <SegmentedControl
+            aria-label="Estrellas"
+            size="sm"
+            defaultValue="3"
+            items={[
+              { value: 'todas', label: 'Todas', count: 1204 },
+              { value: '5', label: '5 estrellas', count: 830 },
+              { value: '4', label: '4 estrellas', count: 210 },
+              { value: '3', label: '3 estrellas', count: 98 },
+              { value: '2', label: '2 estrellas', count: 41 },
+            ]}
+          />
+        </div>
+      </DemoRow>
+      <DemoRow label="overflow=&quot;wrap&quot;: las opciones bajan de fila" stack>
+        <div className="w-full max-w-60">
+          <SegmentedControl
+            aria-label="Planta"
+            size="sm"
+            overflow="wrap"
+            defaultValue="alta"
+            items={[
+              { value: 'todo', label: 'Todo' },
+              { value: 'alta', label: 'Planta alta' },
+              { value: 'baja', label: 'Planta baja' },
+              { value: 'sin', label: 'Sin ubicar' },
+            ]}
+          />
+        </div>
+      </DemoRow>
       <DemoRow label="Modo link: cada opción es un <a> (filtros por URL)">
         <SegmentedControl
           aria-label="Reseñas"
@@ -242,6 +276,36 @@ function StepsDemo() {
   )
 }
 
+// ─── ReloadLink ──────────────────────────────────────────────────────────────
+
+function ReloadLinkDemo() {
+  const { tenantSlug } = useCatalog()
+  return (
+    <DemoStack>
+      <DemoRow label="Al salón, con recarga (en la misma pestaña)">
+        <Button asChild variant="secondary" size="sm">
+          <ReloadLink
+            href={`/${tenantSlug}/salon/reservas-operativo`}
+            data-tour={tourId('reload-link')}
+          >
+            Ver en el salón
+            <ArrowRight aria-hidden="true" />
+          </ReloadLink>
+        </Button>
+      </DemoRow>
+      <DemoRow label="A lo público, en otra pestaña (el lector oye que se abre aparte)">
+        <ReloadLink
+          href={`/l/${tenantSlug}`}
+          newTab
+          className="type-body text-primary underline decoration-1 underline-offset-[3px] hover:decoration-2"
+        >
+          Ver el link de Instagram
+        </ReloadLink>
+      </DemoRow>
+    </DemoStack>
+  )
+}
+
 export function NavigationFamily() {
   return (
     <CatalogFamily id="navegacion">
@@ -293,7 +357,6 @@ export function NavigationFamily() {
 
       <CatalogBlock
         id="segmented-control"
-        compat="`SlidingTabs` sigue andando como envoltorio de `SegmentedControl`, con `aria-label` «Vista» por defecto (`@deprecated`)."
         purpose="Un filtro de una sola opción a la vista: «Todos · Con deuda · Vencidos»."
         yes="Filtros chicos de una lista, en modo radio o, con `href` en cada ítem, en modo link (filtros por URL)."
         no="Secciones de una página: `Tabs`. Filtros que se suman: `FilterChip`."
@@ -307,6 +370,7 @@ export function NavigationFamily() {
           '`role="radiogroup"`: Tab entra en la elegida y las flechas mueven y eligen.',
           'La elegida: cartulina con contorno de 1 px `--primary` (8,54:1 contra la pista).',
           'Si elegir cambia la URL, va `router.replace` (no `push`): cada flecha dejaría una entrada en el historial.',
+          'Si no entra, `overflow="scroll"` (el default) la desliza sin barra, con la elegida a la vista; `wrap` la baja de fila. Sin envoltorios con `overflow-x-auto`.',
         ]}
       >
         <SegmentedDemo />
@@ -331,7 +395,6 @@ export function NavigationFamily() {
 
       <CatalogBlock
         id="steps"
-        compat="`Stepper` es `Steps` con otro nombre: mismas props (`@deprecated`)."
         purpose="Los pasos de un asistente: dónde estoy y cuánto falta."
         yes="Asistentes de 3 a 6 pasos (difusiones, alta de comprobante en pasos)."
         no="Navegar entre secciones: `Tabs`."
@@ -344,6 +407,23 @@ export function NavigationFamily() {
         ]}
       >
         <StepsDemo />
+      </CatalogBlock>
+
+      <CatalogBlock
+        id="reload-link"
+        purpose="Un link que sale del panel con recarga completa: al salón o a lo público (carta, wallet, links, landings, impresión)."
+        yes="Todo link del panel a `/{slug}/salon/…` o a una ruta pública, suelto o con `<Button asChild>`."
+        no="Adentro del panel: `<Link>`. Un sitio de afuera (WhatsApp, un archivo) ya recarga solo."
+        usage={`<Button asChild variant="secondary" size="sm">
+  <ReloadLink href={\`/\${slug}/salon/reservas-operativo\`}>Ver en el salón</ReloadLink>
+</Button>
+<ReloadLink href={\`/carta/\${slug}\`} newTab>Ver carta</ReloadLink>`}
+        a11y={[
+          'Es un `<a>` común: el salón y lo público tienen su propio `<html>` y su Toaster, y con `<Link>` llegaban con los del panel. Tampoco precarga otro workspace.',
+          'Con `newTab`, `rel="noopener noreferrer"` y «(se abre en otra pestaña)» para el lector, salvo que el link ya traiga su `aria-label`.',
+        ]}
+      >
+        <ReloadLinkDemo />
       </CatalogBlock>
     </CatalogFamily>
   )

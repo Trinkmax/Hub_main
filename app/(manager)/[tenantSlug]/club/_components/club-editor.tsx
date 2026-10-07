@@ -1,13 +1,15 @@
 'use client'
 
-import { ChevronDown, Eye, Gift, Handshake, Sparkles, Stamp, Star, Wallet } from 'lucide-react'
+import { Eye, Gift, Handshake, Sparkles, Stamp, Star, Wallet } from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Callout } from '@/components/ui/callout'
+import { Disclosure } from '@/components/ui/disclosure'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
+import { ReloadLink } from '@/components/ui/reload-link'
 import { Section } from '@/components/ui/section'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { getCapturePromptConfig } from '@/lib/capture-prompt/queries'
@@ -133,10 +135,10 @@ export function ClubEditor(props: ClubEditorProps): React.JSX.Element {
             <>
               <ClubTourButton />
               <Button asChild variant="secondary">
-                <Link href={`/carta/${tenantSlug}`} target="_blank" rel="noopener">
+                <ReloadLink href={`/carta/${tenantSlug}`} newTab>
                   <Eye aria-hidden="true" />
                   Ver carta
-                </Link>
+                </ReloadLink>
               </Button>
               <Button asChild variant="secondary">
                 <Link href={`/${tenantSlug}/club/simular`} data-tour="club-simular">
@@ -171,31 +173,24 @@ export function ClubEditor(props: ClubEditorProps): React.JSX.Element {
             description="Cuánto suma cada consumo. Es la base de todo el club."
           >
             <NewPerAmountForm tenantSlug={tenantSlug} />
-            <details className="group rounded-xl border border-border bg-card">
-              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-4 py-3 outline-offset-2 outline-(--ring) hover:bg-hover focus-visible:outline-2 [&::-webkit-details-marker]:hidden">
-                <span className="grid gap-0.5">
-                  <span className="type-label text-foreground">Reglas avanzadas</span>
-                  <span className="type-small text-muted-foreground">
-                    Puntos extra por un ítem o una categoría
-                    {activePerItem > 0
-                      ? ` · ${activePerItem} ${activePerItem === 1 ? 'activa' : 'activas'}`
-                      : ''}
-                    .
-                  </span>
-                </span>
-                <ChevronDown
-                  className="size-4 shrink-0 text-muted-foreground group-open:rotate-180"
-                  aria-hidden="true"
-                />
-              </summary>
-              <div className="border-t border-border p-4">
-                <NewPerItemForm
-                  tenantSlug={tenantSlug}
-                  items={menu.items}
-                  categories={menu.categories}
-                />
-              </div>
-            </details>
+            <Disclosure
+              title="Reglas avanzadas"
+              description={
+                <>
+                  Puntos extra por un ítem o una categoría
+                  {activePerItem > 0
+                    ? ` · ${activePerItem} ${activePerItem === 1 ? 'activa' : 'activas'}`
+                    : ''}
+                  .
+                </>
+              }
+            >
+              <NewPerItemForm
+                tenantSlug={tenantSlug}
+                items={menu.items}
+                categories={menu.categories}
+              />
+            </Disclosure>
             <RulesList tenantSlug={tenantSlug} rules={rules} menu={menu} />
           </Section>
 

@@ -243,7 +243,7 @@ export function BirthdayMarketingForm({
       return
     }
     if (res.code === 'stale') router.refresh()
-    return { ok: false, error: res.message }
+    return res
   }
 
   const onFormKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {

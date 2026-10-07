@@ -38,7 +38,7 @@ export function DeleteButton({
       }
       onConfirm={async () => {
         const result = await softDeleteCustomer(tenantSlug, customerId)
-        if (!result.ok) return { ok: false, error: result.message }
+        if (!result.ok) return result
         toast.success('Cliente borrado.')
         router.push(`/${tenantSlug}/clientes`)
       }}

@@ -633,7 +633,9 @@ describe('ZoneFilterControl', () => {
     const html = control(null)
     expect(html).toContain('flex w-full')
     expect(html).toContain('sm:inline-flex sm:w-auto')
-    expect(html).not.toContain('overflow-x')
+    // Entra en 360 px sin envoltorio con scroll a mano: el grupo es la raíz. Si un
+    // rótulo no entrara, el segmentado del kit se desliza solo (overflow="scroll").
+    expect(html).toMatch(/^<div role="radiogroup"[^>]*data-overflow="scroll"/)
     expect(html).toContain('whitespace-nowrap')
   })
 })

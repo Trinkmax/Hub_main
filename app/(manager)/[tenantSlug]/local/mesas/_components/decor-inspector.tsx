@@ -82,7 +82,7 @@ export function DecorInspector({ slug, element, onChanged, onClose }: DecorInspe
   // Espera con el diálogo abierto y, si falla, muestra el error adentro.
   const onDelete = async (): Promise<ConfirmResult> => {
     const r = await deleteDecorAction(slug, element.id)
-    if (!r.ok) return { ok: false, error: r.message }
+    if (!r.ok) return r
     toast.success('Decoración borrada.')
     onChanged()
   }

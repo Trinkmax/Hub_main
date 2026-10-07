@@ -91,8 +91,6 @@ export type SheetContentProps = React.ComponentProps<typeof SheetPrimitive.Conte
   size?: SheetSize
   /** Default `true`: la X arriba a la derecha («Cerrar»). El mismo nombre que en `Dialog`. */
   showCloseButton?: boolean
-  /** @deprecated usar `showCloseButton` */
-  showClose?: boolean
   /** Default `false`: tocar un aviso (toast) no cierra la hoja (`keepOpenOnToast`). */
   closeOnToastClick?: boolean
 }
@@ -102,13 +100,11 @@ function SheetContent({
   children,
   side = 'right',
   size = 'sm',
-  showCloseButton,
-  showClose,
+  showCloseButton = true,
   closeOnToastClick = false,
   onInteractOutside,
   ...props
 }: SheetContentProps) {
-  const withClose = showCloseButton ?? showClose ?? true
   return (
     <SheetPortal>
       <SheetOverlay />
@@ -128,7 +124,7 @@ function SheetContent({
         {...props}
       >
         {children}
-        {withClose ? (
+        {showCloseButton ? (
           <SheetPrimitive.Close asChild>
             <Button
               type="button"
@@ -195,13 +191,30 @@ function SheetBody({ className, ...props }: React.ComponentProps<'div'>) {
   )
 }
 
+export type SheetFooterProps = React.ComponentProps<'div'> & {
+  /**
+   * `stack` (default): una acción por fila, a lo ancho, en el orden del DOM
+   * (también una nota debajo del botón). `inline`: en una fila, a la derecha
+   * y en el orden «secundario, principal»; en el celular las dos miden lo
+   * mismo y se reparten la fila, como el pie de un diálogo.
+   */
+  layout?: 'stack' | 'inline'
+}
+
+const SHEET_FOOTER_LAYOUT: Readonly<Record<'stack' | 'inline', string>> = {
+  stack: 'flex-col',
+  inline: 'flex-row flex-wrap items-center justify-end max-sm:[&>*]:flex-1',
+}
+
 /** Pie fijo con un pelo arriba; suma el safe-area del iPhone. */
-function SheetFooter({ className, ...props }: React.ComponentProps<'div'>) {
+function SheetFooter({ layout = 'stack', className, ...props }: SheetFooterProps) {
   return (
     <div
       data-slot="sheet-footer"
+      data-layout={layout}
       className={cn(
-        'mt-auto flex shrink-0 flex-col gap-2 border-t border-border p-4 pb-[max(1rem,env(safe-area-inset-bottom))]',
+        'mt-auto flex shrink-0 gap-2 border-t border-border p-4 pb-[max(1rem,env(safe-area-inset-bottom))]',
+        SHEET_FOOTER_LAYOUT[layout],
         className,
       )}
       {...props}

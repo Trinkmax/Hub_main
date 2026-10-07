@@ -25,8 +25,8 @@ const ICON_SIZES = new Set(['icon', 'icon-sm', 'icon-lg'])
  * tuviera al lado — en las listas de reservas se comía la cantidad de personas.
  * El nombre accesible queda en el `aria-label`.
  *
- * Kit HUB: `secondary` por defecto (antes `outline`, que el kit sigue
- * aceptando como alias). Las variantes viejas se mapean solas.
+ * Kit HUB: `secondary` por defecto (antes `outline`) y las variantes y los
+ * tamaños del kit.
  */
 export function ContactButton({
   tenantSlug,

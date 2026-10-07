@@ -2,6 +2,7 @@ import { ChevronRight, Circle, CircleCheck } from 'lucide-react'
 import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
+import { ReloadLink } from '@/components/ui/reload-link'
 import { Section } from '@/components/ui/section'
 import { cn } from '@/lib/utils'
 
@@ -13,7 +14,7 @@ type Step = {
   cta: string
   /**
    * El destino es el salón, otro workspace (su propio <html> y su Toaster): se
-   * entra recargando, con un <a> común y no con <Link> (kit §7.a.4, riesgo 19).
+   * entra recargando, con ReloadLink y no con <Link> (kit §7.a.4, riesgo 19).
    */
   leavesPanel?: boolean
 }
@@ -160,9 +161,9 @@ export function OnboardingChecklist({
             return (
               <li key={item.title}>
                 {item.leavesPanel ? (
-                  <a href={item.href} className={ROW_CLASSES}>
+                  <ReloadLink href={item.href} className={ROW_CLASSES}>
                     {content}
-                  </a>
+                  </ReloadLink>
                 ) : (
                   <Link href={item.href} className={ROW_CLASSES}>
                     {content}

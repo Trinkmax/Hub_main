@@ -35,7 +35,11 @@ export default async function MensajeriaLayout({
 
   return (
     // Alto: la pantalla menos el topbar del panel (--topbar-h), nunca 56 px a mano.
-    <div className="wa flex h-[calc(100dvh-var(--topbar-h))] w-full overflow-hidden bg-(--wa-app)">
+    // --form-actions-offset: en el celular las pestañas de abajo (WaBottomTabs)
+    // miden 3,875 rem + el pelo + el área segura; la barra fija de FormActions
+    // arranca arriba de ellas en vez de taparlas. Si cambia el alto de las
+    // pestañas, cambia acá.
+    <div className="wa flex h-[calc(100dvh-var(--topbar-h))] w-full overflow-hidden bg-(--wa-app) max-md:[--form-actions-offset:calc(3.875rem+1px+env(safe-area-inset-bottom))]">
       <WaRail tenantSlug={tenantSlug} role={access.role} unreadTotal={unreadTotal} />
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="min-w-0 flex-1 overflow-y-auto overscroll-contain bg-background">

@@ -23,6 +23,7 @@ import { FormActions } from '@/components/ui/form-actions'
 import { Label } from '@/components/ui/label'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
+import { ReloadLink } from '@/components/ui/reload-link'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -475,15 +476,14 @@ export function LandingEditor({
 
               {published ? (
                 <Button asChild variant="secondary">
-                  <a
+                  <ReloadLink
                     href={publicUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    newTab
                     aria-label="Ver la página publicada (se abre en otra pestaña)"
                   >
                     <span className="max-sm:hidden">Ver</span>
                     <ArrowUpRight aria-hidden />
-                  </a>
+                  </ReloadLink>
                 </Button>
               ) : null}
 

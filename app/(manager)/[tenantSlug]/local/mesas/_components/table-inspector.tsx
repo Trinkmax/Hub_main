@@ -106,7 +106,7 @@ export function TableInspector({
   // Confirmaciones: esperan con el diálogo abierto y, si fallan, muestran el error adentro.
   const onRegenerate = async (): Promise<ConfirmResult> => {
     const r = await regenerateQrToken(slug, tableId)
-    if (!r.ok) return { ok: false, error: r.message }
+    if (!r.ok) return r
     toast.success('QR regenerado.')
     onChanged()
   }
@@ -114,7 +114,7 @@ export function TableInspector({
   const onMerge = async (): Promise<ConfirmResult> => {
     if (!mergeTarget) return
     const r = await mergeTablesAction(slug, tableId, mergeTarget)
-    if (!r.ok) return { ok: false, error: r.message }
+    if (!r.ok) return r
     toast.success('Mesas combinadas.')
     // `onChanged` suelta la selección y este panel se desmonta: no hace falta limpiar la elegida.
     onChanged()
@@ -122,7 +122,7 @@ export function TableInspector({
 
   const onRemove = async (): Promise<ConfirmResult> => {
     const r = await removeFromPlanAction(slug, element.id)
-    if (!r.ok) return { ok: false, error: r.message }
+    if (!r.ok) return r
     toast.success('Mesa quitada del plano.')
     onChanged()
   }

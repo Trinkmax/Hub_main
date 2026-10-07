@@ -49,12 +49,9 @@ function SelectValue(props: React.ComponentProps<typeof SelectPrimitive.Value>) 
   return <SelectPrimitive.Value data-slot="select-value" {...props} />
 }
 
-/** @deprecated default→md */
-export type LegacySelectSize = 'default'
-
 export type SelectTriggerProps = React.ComponentProps<typeof SelectPrimitive.Trigger> & {
-  /** Default `md` (o el del `ControlSizeProvider`). `default` está deprecado: es `md`. */
-  size?: ControlSize | LegacySelectSize
+  /** Default `md` (o el del `ControlSizeProvider`). */
+  size?: ControlSize
   /** Atajo de `aria-invalid`. */
   invalid?: boolean
 }

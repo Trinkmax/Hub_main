@@ -24,14 +24,19 @@ export function firstInvalidTarget(root: Pick<ParentNode, 'querySelector'>): HTM
  * Celular con alto suficiente (≥ 480 px): barra fija abajo. Con menos alto
  * (apaisado, zoom de 200 %) deja de ser fija: dos barras fijas taparían el
  * formulario (WCAG 1.4.10).
+ *
+ * Arranca `--form-actions-offset` arriba del borde de la pantalla (default 0):
+ * lo pone un layout que tiene su propia barra fija abajo (las pestañas de
+ * Mensajería), así la de acciones queda encima y no la tapa. Ahí el área
+ * segura del iPhone ya la cubre esa barra: el relleno de abajo la descuenta.
  */
 const MOBILE_FIXED = [
   'max-sm:[@media(min-height:30rem)]:fixed max-sm:[@media(min-height:30rem)]:inset-x-0',
-  'max-sm:[@media(min-height:30rem)]:bottom-0 max-sm:[@media(min-height:30rem)]:z-40',
+  'max-sm:[@media(min-height:30rem)]:bottom-(--form-actions-offset,0px) max-sm:[@media(min-height:30rem)]:z-40',
   'max-sm:[@media(min-height:30rem)]:border-t max-sm:[@media(min-height:30rem)]:border-border',
   'max-sm:[@media(min-height:30rem)]:bg-background max-sm:[@media(min-height:30rem)]:px-4',
   'max-sm:[@media(min-height:30rem)]:pt-3',
-  'max-sm:[@media(min-height:30rem)]:pb-[max(0.75rem,env(safe-area-inset-bottom))]',
+  'max-sm:[@media(min-height:30rem)]:pb-[max(0.75rem,calc(env(safe-area-inset-bottom)-var(--form-actions-offset,0px)))]',
 ].join(' ')
 
 /**
@@ -68,11 +73,16 @@ const STICKY_DESKTOP =
  *   acciones como máximo. Si el encabezado tiene `back`, «Cancelar» sale de la
  *   barra con `className="max-sm:hidden"` (el `back` ya cancela). En
  *   escritorio va en línea a la derecha.
- * - **`--sticky-actions-h`:** mientras la barra está fija escribe su alto en
- *   `<html>` (y lo borra al desmontarse o al dejar de ser fija): una variable
- *   puesta en la barra no le llegaría al Toaster ni al `scroll-padding-bottom`
- *   del documento, que están arriba en el árbol. El envoltorio usa esa misma
- *   variable como alto, así el final del formulario no queda tapado.
+ * - **`--sticky-actions-h`:** mientras la barra está fija escribe en `<html>`
+ *   cuánto tapa desde el borde de abajo de la pantalla: su alto más el
+ *   `--form-actions-offset` (y lo borra al desmontarse o al dejar de ser
+ *   fija). Una variable puesta en la barra no le llegaría al Toaster ni al
+ *   `scroll-padding-bottom` del documento, que están arriba en el árbol. El
+ *   envoltorio reserva el alto de la barra (eso menos el offset), así el final
+ *   del formulario no queda tapado.
+ * - **`--form-actions-offset`:** un layout con su propia barra fija abajo lo
+ *   define con el alto de esa barra (Mensajería, con sus pestañas del
+ *   celular). La barra de acciones queda arriba de la otra, sin `sticky={false}`.
  * - **Foco al primer error:** la barra vive adentro del `<form>`, así que
  *   `useFormStatus()` sabe cuándo terminó el envío sin que cada página cablee
  *   el estado. Cuando el `<form action>` deja de estar pendiente enfoca el
@@ -104,8 +114,11 @@ function FormActions({
     if (!bar) return
     const root = document.documentElement
     const update = () => {
-      if (getComputedStyle(bar).position === 'fixed') {
-        root.style.setProperty('--sticky-actions-h', `${bar.offsetHeight}px`)
+      const style = getComputedStyle(bar)
+      if (style.position === 'fixed') {
+        // Lo que tapa desde el borde: la barra y, si está levantada, lo de abajo.
+        const offset = Number.parseFloat(style.bottom) || 0
+        root.style.setProperty('--sticky-actions-h', `${bar.offsetHeight + offset}px`)
       } else {
         root.style.removeProperty('--sticky-actions-h')
       }
@@ -138,7 +151,12 @@ function FormActions({
   return (
     <div
       data-slot="form-actions"
-      className={cn(sticky !== false && 'max-sm:h-(--sticky-actions-h)')}
+      // Sin `--sticky-actions-h` (la barra no está fija) el calc no vale y el
+      // alto queda en auto: la barra ocupa su lugar en el flujo.
+      className={cn(
+        sticky !== false &&
+          'max-sm:h-[calc(var(--sticky-actions-h)-var(--form-actions-offset,0px))]',
+      )}
       {...props}
     >
       <div

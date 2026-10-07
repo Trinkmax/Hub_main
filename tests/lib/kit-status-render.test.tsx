@@ -2,13 +2,7 @@
 import { createElement as h, type ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import {
-  BADGE_VARIANT_MAP,
-  Badge,
-  type BadgeVariant,
-  badgeVariants,
-  resolveBadgeLook,
-} from '@/components/ui/badge'
+import { Badge, type BadgeTone, badgeVariants } from '@/components/ui/badge'
 import { DueStatus, formatDueStatus, getDueStatus } from '@/components/ui/due-status'
 import { StatusBadge, type StatusMap } from '@/components/ui/status-badge'
 import { dueBucket, dueLabel } from '@/lib/accounting/aging'
@@ -18,9 +12,11 @@ import { dueBucket, dueLabel } from '@/lib/accounting/aging'
  * vencimientos, en el HTML del server (los tres son server-safe).
  *
  * Lo que se fija:
- * 1. Los 8 `variant` viejos (68 usos al congelar) siguen compilando y se
- *    dibujan suaves según la tabla de mapeo; ninguno queda en relleno sólido.
- * 2. `DueStatus` dice siempre el estado en palabras (punto + texto, nunca solo
+ * 1. Las etiquetas son suaves por tono (los rellenos sólidos de antes quedan
+ *    para el sello dorado y la cuenta de sin leer).
+ * 2. `StatusBadge` toma tono, punto y descripción del mapa, también con una
+ *    cuenta o un texto propio («3 pendientes»).
+ * 3. `DueStatus` dice siempre el estado en palabras (punto + texto, nunca solo
  *    color) y el punto no le llega al lector de pantalla.
  */
 
@@ -63,60 +59,40 @@ const TOUR = { 'data-tour': 'x' } as const
 
 // ─── Badge ───────────────────────────────────────────────────────────────────
 
-type Want = { tone: string; appearance: string; classes: string[] }
+type Want = { classes: string[] }
 
-describe('Badge: los variant viejos pasan a suaves', () => {
-  const expected: Record<BadgeVariant, Want> = {
-    default: { tone: 'brand', appearance: 'soft', classes: ['bg-brand-soft', 'text-brand-text'] },
-    secondary: {
-      tone: 'neutral',
-      appearance: 'soft',
-      classes: ['bg-secondary', 'text-muted-foreground'],
-    },
-    muted: {
-      tone: 'neutral',
-      appearance: 'soft',
-      classes: ['bg-secondary', 'text-muted-foreground'],
-    },
-    destructive: {
-      tone: 'danger',
-      appearance: 'soft',
-      classes: ['bg-destructive-soft', 'text-destructive-text'],
-    },
-    success: {
-      tone: 'success',
-      appearance: 'soft',
-      classes: ['bg-success-soft', 'text-success-text'],
-    },
-    warning: {
-      tone: 'warning',
-      appearance: 'soft',
-      classes: ['bg-warning-soft', 'text-warning-text'],
-    },
-    info: { tone: 'info', appearance: 'soft', classes: ['bg-info-soft', 'text-info-text'] },
-    outline: {
-      tone: 'neutral',
-      appearance: 'outline',
-      classes: ['border-border-strong', 'text-muted-foreground'],
-    },
+describe('Badge: suaves por tono, sin los rellenos de antes', () => {
+  const expected: Record<BadgeTone, Want> = {
+    neutral: { classes: ['bg-secondary', 'text-muted-foreground'] },
+    brand: { classes: ['bg-brand-soft', 'text-brand-text'] },
+    success: { classes: ['bg-success-soft', 'text-success-text'] },
+    warning: { classes: ['bg-warning-soft', 'text-warning-text'] },
+    danger: { classes: ['bg-destructive-soft', 'text-destructive-text'] },
+    info: { classes: ['bg-info-soft', 'text-info-text'] },
+    gold: { classes: ['bg-gold-soft', 'text-gold-text'] },
   }
 
-  for (const [variant, want] of Object.entries(expected) as [BadgeVariant, Want][]) {
-    it(`${variant} → ${want.tone} ${want.appearance}`, () => {
-      expect(BADGE_VARIANT_MAP[variant]).toEqual({ tone: want.tone, appearance: want.appearance })
-      const html = render(h(Badge, { variant }, 'Estado'))
+  for (const [tone, want] of Object.entries(expected) as [BadgeTone, Want][]) {
+    it(`${tone} → suave`, () => {
+      const html = render(h(Badge, { tone }, 'Estado'))
       const attrs = slotAttrs(html, 'badge')
-      expect(attrs['data-tone']).toBe(want.tone)
-      expect(attrs['data-appearance']).toBe(want.appearance)
+      expect(attrs['data-tone']).toBe(tone)
+      expect(attrs['data-appearance']).toBe('soft')
       const cls = classesOf(html, 'badge')
       for (const c of want.classes) expect(cls).toContain(c)
-      // Ningún relleno sólido de antes: bg-primary, bg-destructive, bg-success…
+      // Ningún relleno sólido: bg-primary, bg-destructive, bg-success…
       for (const solid of ['bg-primary', 'bg-destructive', 'bg-success', 'bg-warning', 'bg-info']) {
         expect(cls).not.toContain(solid)
       }
       expect(readable(html)).toBe('Estado')
     })
   }
+
+  it('el contorno es neutro con pelo fuerte', () => {
+    const cls = classesOf(render(h(Badge, { appearance: 'outline' }, 'x')), 'badge')
+    expect(cls).toContain('border-border-strong')
+    expect(cls).toContain('text-muted-foreground')
+  })
 
   it('sin nada es neutra y suave, de 20 px, en type-caption', () => {
     const cls = classesOf(render(h(Badge, null, 'Borrador')), 'badge')
@@ -126,20 +102,12 @@ describe('Badge: los variant viejos pasan a suaves', () => {
     expect(classesOf(render(h(Badge, { size: 'md' }, 'x')), 'badge')).toContain('h-6')
   })
 
-  it('tone y appearance explícitos ganan sobre el variant viejo', () => {
-    expect(resolveBadgeLook({ variant: 'destructive', tone: 'info' })).toEqual({
-      tone: 'info',
-      appearance: 'soft',
-    })
-    expect(resolveBadgeLook({ variant: 'outline', appearance: 'soft' })).toEqual({
-      tone: 'neutral',
-      appearance: 'soft',
-    })
-    const html = render(h(Badge, { variant: 'success', tone: 'gold', appearance: 'solid' }, 'Oro'))
+  it('sólida: el sello dorado', () => {
+    const html = render(h(Badge, { tone: 'gold', appearance: 'solid' }, 'Oro'))
     const cls = classesOf(html, 'badge')
     expect(cls).toContain('bg-gold')
     expect(cls).toContain('text-gold-foreground')
-    expect(cls).not.toContain('bg-success-soft')
+    expect(cls).not.toContain('bg-gold-soft')
   })
 
   it('el punto es decorativo: aria-hidden y el texto sigue ahí', () => {
@@ -172,10 +140,13 @@ describe('Badge: los variant viejos pasan a suaves', () => {
     expect(html).toMatch(/<a [^>]*>(<span[^>]*data-slot="badge-dot"[^>]*><\/span>)Ver<\/a>/)
   })
 
-  it('badgeVariants sigue aceptando el variant viejo', () => {
-    const cls = badgeVariants({ variant: 'outline' }).split(' ')
-    expect(cls).toContain('border-border-strong')
+  it('badgeVariants: las mismas clases para dibujarla sobre otro elemento', () => {
+    expect(badgeVariants().split(' ')).toContain('bg-secondary')
+    expect(badgeVariants({ appearance: 'outline' }).split(' ')).toContain('border-border-strong')
     expect(badgeVariants({ tone: 'danger' }).split(' ')).toContain('bg-destructive-soft')
+    expect(badgeVariants({ size: 'md', className: 'z-10' }).split(' ')).toEqual(
+      expect.arrayContaining(['h-6', 'z-10']),
+    )
   })
 })
 
@@ -211,6 +182,35 @@ describe('StatusBadge: un mapa por dominio', () => {
     )
     expect(slotAttrs(html, 'badge')['data-tone']).toBe('neutral')
     expect(readable(html)).toBe('archived')
+  })
+
+  it('con count y texto propio dice «3 pendientes», en el tono del mapa', () => {
+    const html = render(h(StatusBadge<Demo>, { status: 'failed', map: MAP, count: 3 }, 'fallidas'))
+    const attrs = slotAttrs(html, 'badge')
+    // El tono, el punto y la descripción siguen siendo los del estado.
+    expect(attrs['data-tone']).toBe('danger')
+    expect(attrs['data-status']).toBe('failed')
+    expect(attrs.title).toBe('Meta rechazó el envío')
+    expect(classesOf(html, 'badge-dot')).toContain('bg-destructive')
+    expect(readable(html)).toBe('3 fallidas')
+    // La cuenta va con el formato de la casa y en cifras tabulares.
+    expect(classesOf(html, 'status-badge-count')).toContain('tabular-nums')
+    const many = render(h(StatusBadge<Demo>, { status: 'sent', map: MAP, count: 1250 }, 'enviadas'))
+    expect(readable(many)).toBe('1.250 enviadas')
+  })
+
+  it('con count y sin texto propio: la etiqueta del mapa y la cuenta', () => {
+    const html = render(h(StatusBadge<Demo>, { status: 'draft', map: MAP, count: 2 }))
+    expect(readable(html)).toBe('Borrador 2')
+    expect(html).toMatch(/<span aria-hidden="true">·<\/span>/)
+    expect(slotAttrs(html, 'badge')['data-tone']).toBe('neutral')
+  })
+
+  it('con texto propio y sin count: el texto en lugar de la etiqueta', () => {
+    const html = render(h(StatusBadge<Demo>, { status: 'sent', map: MAP }, 'Enviada hoy'))
+    expect(readable(html)).toBe('Enviada hoy')
+    expect(slotAttrs(html, 'badge')['data-tone']).toBe('success')
+    expect(html).not.toContain('status-badge-count')
   })
 })
 

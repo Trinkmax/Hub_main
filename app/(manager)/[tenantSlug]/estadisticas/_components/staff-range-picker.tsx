@@ -17,9 +17,9 @@ import { type DateRangePreset, labelForPreset, PRESETS } from '@/lib/staff-perfo
  * Todavía no es el `PeriodPicker` del kit a propósito: el cajón de cada mozo le
  * pide sus mesas a `/api/staff/sessions` con el `preset` solo, y un rango a
  * mano (`preset=custom&from&to`) haría que la tabla y el cajón miraran períodos
- * distintos. Además el camino `custom` lee `yyyy-MM-dd` como medianoche UTC y
- * en Córdoba arranca un día antes. Cuando eso se arregle en
- * `lib/staff-performance`, este selector pasa al `PeriodPicker`.
+ * distintos. El server ya lee bien un rango a mano (`yyyy-MM-dd` como días de
+ * Córdoba, ver `cordobaDayFromParam` en `lib/staff-performance`): cuando el
+ * cajón mande también `from` y `to`, este selector pasa al `PeriodPicker`.
  */
 export function StaffRangePicker({ currentPreset }: { currentPreset: DateRangePreset }) {
   const router = useRouter()

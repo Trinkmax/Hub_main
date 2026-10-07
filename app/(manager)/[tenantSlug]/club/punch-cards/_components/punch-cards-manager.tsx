@@ -1016,7 +1016,7 @@ export function PunchCardsManager({
           if (!toDelete) return
           const target = toDelete
           const r = await deletePunchCard(tenantSlug, target.id)
-          if (!r.ok) return { ok: false, error: r.message }
+          if (!r.ok) return r
           toast.success(`Tarjeta «${target.name}» borrada.`)
         }}
       />

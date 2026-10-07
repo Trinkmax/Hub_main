@@ -15,6 +15,7 @@ import { Amount } from '@/components/ui/amount'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Callout } from '@/components/ui/callout'
+import { DatePicker } from '@/components/ui/date-picker'
 import { Field, FieldRow, FormSection } from '@/components/ui/field'
 import { FilterChip } from '@/components/ui/filter-chip'
 import { FormActions } from '@/components/ui/form-actions'
@@ -100,7 +101,6 @@ import {
   type ScheduledEventTemplateRow,
 } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
-import { CommitDatePicker } from './commit-date-picker'
 import { OverCapacityConfirm } from './over-capacity-confirm'
 import { QuickTemplateDialog } from './quick-template-dialog'
 import { SegmentPicker } from './segment-picker'
@@ -905,7 +905,7 @@ export function ReservationForm({
           {/* Tipeando, la fecha se aplica al salir del campo (o con Enter): si no,
               «15/10» pasaba por el 1 de enero y pedía el cupo de cada fecha a
               medio tipear. Del calendario, en el momento. */}
-          <CommitDatePicker
+          <DatePicker
             value={values.reservation_date || null}
             today={today}
             onCommit={(iso) =>

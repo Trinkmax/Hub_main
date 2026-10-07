@@ -12,6 +12,7 @@ import { KPI, KPIGroup } from '@/components/ui/kpi'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
 import { ListEmptyState } from '@/components/ui/page-templates'
+import { ReloadLink } from '@/components/ui/reload-link'
 import { formatRange } from '@/lib/dates/format'
 import { formatNumber } from '@/lib/format/number-kind'
 import {
@@ -431,17 +432,16 @@ export default async function ReservasPage({
             ) : null}
             <ExportButton href={exportHref} title="Descargar planilla (Excel / Sheets)" />
             <Button asChild variant="secondary">
-              {/* <a> y pestaña nueva: el panel operativo es del salón (otro
-                  tema), se abre siempre con recarga. */}
-              <a
+              {/* Pestaña nueva y con recarga: el panel operativo es del salón
+                  (otro workspace, otro tema). */}
+              <ReloadLink
                 href={`/${tenantSlug}/salon/reservas-operativo`}
-                target="_blank"
-                rel="noopener"
+                newTab
                 data-tour="reservas-operativo-link"
               >
                 <MonitorSmartphone aria-hidden />
                 Panel operativo
-              </a>
+              </ReloadLink>
             </Button>
             <Button asChild>
               {/* Sin ?volver: al guardar vuelve a esta lista, en el día de la reserva. */}

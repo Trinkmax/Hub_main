@@ -303,7 +303,10 @@ function Highlighted({ text, range }: { text: string; range: [number, number] | 
  *
  * **Formulario:** `<input type="hidden" name>` con el valor (uno por valor si
  * es múltiple). Con `required`, un envío sin elegir se frena con «Elegí una
- * opción.» en el Field.
+ * opción.» en el Field. Con el reset del formulario (también el de React 19
+ * después de un `<form action>`, ver `useFormReset`): sin `value` vuelve a su
+ * `defaultValue`; controlado, no se toca. Para que arranque de cero con otro
+ * registro, `key`.
  *
  * Las props sueltas (`data-tour`, `aria-*`) van al disparador; `className`, a
  * la caja.

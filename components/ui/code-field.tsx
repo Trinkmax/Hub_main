@@ -2,12 +2,14 @@
 
 import * as React from 'react'
 import {
+  formResetTarget,
   useField,
   useFieldErrorReporter,
   useFormReset,
   WithoutFieldName,
 } from '@/components/ui/field'
 import { Input, type InputProps } from '@/components/ui/input'
+import { mergeRefs } from '@/lib/dom/form-control'
 import {
   CUIT_MESSAGES,
   formatCuit,
@@ -127,6 +129,14 @@ export type CodeFieldProps = Omit<
  *   el hidden canónico.
  * - El error, como todos, aparece al salir del campo (y se va apenas el valor
  *   vuelve a ser válido). Adentro de un `Field` lo muestra el Field.
+ * - La `ref` del que llama se suma a la propia (no la reemplaza: con ella el
+ *   campo escucha el reset del formulario).
+ *
+ * **Formularios y React 19** (ver `useFormReset` en `field.tsx`): después de
+ * un `<form action>`, React resetea el formulario. Sin `value`, vuelve a su
+ * `defaultValue` (y, mientras nadie lo toque, sigue al `defaultValue` que
+ * cambie, como un `<input>` nativo). Controlado sin `defaultValue`, el reset no
+ * lo toca.
  */
 function CodeField({
   kind,
@@ -138,16 +148,20 @@ function CodeField({
   onBlur,
   className,
   invalid,
+  ref,
   ...props
 }: CodeFieldProps) {
   const field = useField()
   const reportError = useFieldErrorReporter()
   const inputRef = React.useRef<HTMLInputElement>(null)
+  const mergedRef = React.useMemo(() => mergeRefs(inputRef, ref), [ref])
   const hiddenName = name ?? field?.name
   const disabled = props.disabled ?? field?.disabled
   const [text, setText] = React.useState(() => displayCode(kind, value ?? defaultValue ?? '', pad))
   const [localError, setLocalError] = React.useState<string | null>(null)
   const canonical = canonicalCode(kind, text, pad)
+  // Tocado desde que montó (o desde el último reset), como el «dirty» de un <input>.
+  const [edited, setEdited] = React.useState(false)
 
   // Controlado: un cambio de afuera (que no es el eco de lo que se tipeó)
   // reemplaza el texto. Si el valor ya es el canónico de lo tipeado, el texto
@@ -160,21 +174,32 @@ function CodeField({
     }
   }
 
+  // No controlado y sin tocar: sigue al `defaultValue` que cambie, como un <input> nativo.
+  const [lastDefault, setLastDefault] = React.useState(defaultValue)
+  if (defaultValue !== lastDefault) {
+    setLastDefault(defaultValue)
+    if (value === undefined && !edited) setText(displayCode(kind, defaultValue ?? '', pad))
+  }
+
   function setError(message: string | null) {
     setLocalError(message)
     reportError(message)
   }
 
   useFormReset(inputRef, () => {
-    setText(displayCode(kind, defaultValue ?? '', pad))
     setError(null)
+    setEdited(false)
+    // Controlado sin `defaultValue`: el reset (también el de React 19 después
+    // de un `<form action>`) no borra lo que el `value` dice.
+    const target = formResetTarget(value, defaultValue)
+    setText(displayCode(kind, (target.keep ? value : target.to) ?? '', pad))
   })
 
   return (
     <>
       <WithoutFieldName>
         <Input
-          ref={inputRef}
+          ref={mergedRef}
           type="text"
           inputMode="numeric"
           autoComplete="off"
@@ -185,6 +210,7 @@ function CodeField({
           onChange={(event) => {
             const next = sanitizeCodeInput(kind, event.target.value)
             setText(next)
+            setEdited(true)
             // Mientras se escribe no aparecen errores nuevos; si había uno y el
             // valor ya es válido, se va.
             if (localError !== null && validateCode(kind, next) === null) setError(null)

@@ -18,6 +18,7 @@ import {
   DataTableHeader,
   DataTableRoot,
   DataTableRow,
+  DataTableRowAction,
   DataTableScroll,
   DataTableShell,
 } from '@/components/ui/data-table'
@@ -39,23 +40,11 @@ import { isTaskStatus, TASK_STATUS_META } from './task-status'
 const COLUMN_COUNT = 5
 
 /**
- * Toda la fila abre la tarea: el botón del título estira su `::after` sobre la
- * fila (el patrón «fila-link» de la DataTable, con un botón porque abre un
- * diálogo y no navega). Una sola parada de Tab por fila; el menú de estado y el
- * link al archivo quedan arriba (`relative z-10`). Hover y presionado van como
- * capa (`background-image`), sin transición, igual que en la tabla del kit.
+ * Toda la fila abre la tarea: el título es el botón estirado de la fila del
+ * kit (`DataTableRowAction`, un botón porque abre un diálogo y no navega). Una
+ * sola parada de Tab por fila; la fila toma el hover, el presionado y los 44 px
+ * con el dedo, y el menú de estado y el link al archivo quedan arriba solos.
  */
-const ROW_CLASSES = [
-  'relative',
-  'hover:[background-image:linear-gradient(var(--hover),var(--hover))]',
-  'active:[background-image:linear-gradient(var(--active),var(--active))]',
-].join(' ')
-
-const OPEN_BUTTON_CLASSES = [
-  'w-fit max-w-full text-start font-medium text-foreground text-pretty outline-none',
-  'after:absolute after:inset-0',
-  'focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-(--ring)',
-].join(' ')
 
 export type TaskGroup = { bucket: DateBucket; items: MarketingTaskRow[] }
 
@@ -193,20 +182,18 @@ function TaskRow({
   const done = task.status === 'done'
 
   return (
-    <DataTableRow className={ROW_CLASSES}>
+    <DataTableRow>
       <DataTableCell primary>
         <div className="flex min-w-0 flex-col gap-1">
-          <button
-            type="button"
+          <DataTableRowAction
             onClick={() => onEdit(task)}
-            aria-haspopup="dialog"
             className={cn(
-              OPEN_BUTTON_CLASSES,
+              'w-fit max-w-full text-pretty',
               done && 'text-muted-foreground line-through decoration-subtle-foreground',
             )}
           >
             {task.title}
-          </button>
+          </DataTableRowAction>
           {task.specifications ? (
             <p className="line-clamp-2 max-w-prose type-small font-normal text-pretty text-muted-foreground">
               {task.specifications}

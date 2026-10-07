@@ -140,6 +140,39 @@ function WithoutFieldName({ children }: { children: React.ReactNode }) {
  * `form.reset()`: los controles compuestos (los que guardan el valor en un
  * `<input type="hidden">` o lo formatean) escuchan el `reset` del `<form>` y
  * vuelven a su `defaultValue`. `ref` es cualquier elemento adentro del form.
+ *
+ * **React 19 resetea solo el formulario después de un `<form action={fn}>`**
+ * (también con `useActionState`), salga bien o mal la acción: es el mismo
+ * reset nativo, así que lo escuchan los campos del kit como los `<input>`
+ * comunes. Lo que hace cada control del kit (NumberField, MoneyField,
+ * DatePicker, TimeField, DateTimeField, CodeField, Combobox, SearchField):
+ *
+ * - **No controlado** (`defaultValue`): vuelve a su `defaultValue`. Los de un
+ *   solo valor (NumberField, MoneyField, DatePicker, TimeField, CodeField),
+ *   mientras nadie los toque, además siguen al `defaultValue` que cambie, como
+ *   un `<input>` nativo: el dato que vuelve del server después de guardar se ve
+ *   solo. Combobox, SearchField y DateTimeField no: para que arranquen de cero
+ *   con otro dato, `key`.
+ * - **Controlado** (`value`) **sin `defaultValue`**: el reset no lo toca; manda
+ *   el `value` (solo se borra el error local). Ver `formResetTarget`.
+ * - Controlado **con** `defaultValue`: el `defaultValue` es a dónde vuelve con
+ *   el reset, y lo avisa por `onValueChange` (así arma su reset DateTimeField).
+ *
+ * El patrón, según lo que tenga que pasar con lo tipeado:
+ *
+ * ```tsx
+ * // 1. Que no se pierda si la acción falla: controlado (el estado es del form)…
+ * const [seats, setSeats] = useState<number | null>(initial)
+ * <NumberField value={seats} onValueChange={setSeats} />
+ * // …o el defaultValue sale de lo que se mandó (la acción lo devuelve en el estado).
+ * <NumberField defaultValue={state.values?.seats ?? saved.seats} />
+ *
+ * // 2. Que arranque de cero cuando cambia el registro (otra mesa, otro mes):
+ * <NumberField key={table.id} defaultValue={table.capacity} />
+ *
+ * // 3. Sin reset automático: onSubmit + startTransition en vez de action.
+ * <form onSubmit={(e) => { e.preventDefault(); startTransition(() => save(new FormData(e.currentTarget))) }}>
+ * ```
  */
 function useFormReset(ref: React.RefObject<HTMLElement | null>, onReset: () => void) {
   const handleReset = React.useEffectEvent(onReset)
@@ -152,6 +185,19 @@ function useFormReset(ref: React.RefObject<HTMLElement | null>, onReset: () => v
     form.addEventListener('reset', listener)
     return () => form.removeEventListener('reset', listener)
   }, [ref])
+}
+
+export type FormResetTarget<T> = { keep: true } | { keep: false; to: T | undefined }
+
+/**
+ * A qué vuelve un control compuesto con el reset del formulario (ver
+ * `useFormReset`): controlado y sin `defaultValue`, se queda con lo que dice el
+ * `value` (`keep`); si no, vuelve a su `defaultValue` (que puede no estar).
+ */
+function formResetTarget<T>(value: T | undefined, defaultValue: T | undefined): FormResetTarget<T> {
+  return value !== undefined && defaultValue === undefined
+    ? { keep: true }
+    : { keep: false, to: defaultValue }
 }
 
 /**
@@ -467,6 +513,7 @@ export {
   FieldRow,
   FormError,
   FormSection,
+  formResetTarget,
   useField,
   useFieldControl,
   useFieldErrorReporter,

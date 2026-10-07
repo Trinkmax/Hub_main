@@ -255,7 +255,6 @@ export function WalletSimulator({ config }: { config: SimConfig }): React.JSX.El
             <SegmentedControl
               aria-label="Saltar al comienzo de un nivel"
               size="sm"
-              className="max-w-full overflow-x-auto"
               items={sorted.map((t) => ({ value: t.id, label: t.name }))}
               value={currentTierId}
               onValueChange={(id) => {

@@ -29,6 +29,7 @@ import { Fragment } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Callout } from '@/components/ui/callout'
 import { DataTable } from '@/components/ui/data-table'
+import { ReloadLink } from '@/components/ui/reload-link'
 import { Section } from '@/components/ui/section'
 import { ROLE_DESCRIPTIONS, ROLE_LABELS, roleLabel } from '@/lib/tenant/roles'
 import { TENANT_ROLES, type TenantRole } from '@/lib/tenant/types'
@@ -216,14 +217,9 @@ function ExternalDocLink({
   children: React.ReactNode
 }) {
   return (
-    <a
-      href={href}
-      className={LINK_CLASS}
-      {...(newTab ? { target: '_blank', rel: 'noreferrer' } : {})}
-    >
+    <ReloadLink href={href} newTab={newTab} className={LINK_CLASS}>
       {children}
-      {newTab ? <span className="sr-only"> (se abre en otra pestaña)</span> : null}
-    </a>
+    </ReloadLink>
   )
 }
 

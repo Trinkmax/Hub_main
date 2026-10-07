@@ -62,14 +62,21 @@ import { cn } from '@/lib/utils'
  * />
  * ```
  *
+ * **La fila entera hace algo**, con una sola parada de Tab y sin `onClick` en
+ * el `<tr>` (no anda con teclado): `rowHref` si navega (un link estirado) y
+ * `onRowAction` si abre algo en la misma pantalla, como un cajón o un diálogo
+ * (un botón estirado, con `aria-haspopup`; no un link a `?id=` para abrirlo).
+ *
  * **Reglas que el componente no puede chequear solo**
  * - Con campos de formulario en las celdas (el importe a aplicar de una orden
  *   de pago), `mobile="scroll"` o una vista propia: `cards` dibuja cada celda
  *   dos veces y un `<input>` escondido con `display: none` igual se envía, así
  *   que el `FormData` llegaría con cada valor duplicado.
  * - Funciones como props no cruzan a un componente cliente: `onSortChange`,
- *   `selection.onSelectedChange` y `error.onRetry` sirven solo si la tabla se
- *   renderiza adentro de un componente cliente.
+ *   `onRowAction`, `selection.onSelectedChange` y `error.onRetry` sirven solo
+ *   si la tabla se renderiza adentro de un componente cliente.
+ * - Con `onRowAction`, el contenido de la celda principal va adentro de un
+ *   `<button>`: texto y `<span>`, sin links ni botones propios.
  * - Un `thead` fijo no se pega al viewport adentro de un scroll horizontal:
  *   `stickyHeader="page"` saca el scroll horizontal de escritorio (usá
  *   `hideBelow` para que entren las columnas); las tablas anchas usan
@@ -87,6 +94,14 @@ export type DataTableBreakpoint = 'sm' | 'md' | 'lg'
 export type DataTableStickyHeader = 'container' | 'page' | false
 /** Dónde va la columna en la tarjeta del celular (`mobile="cards"`). */
 export type DataTableMobilePlacement = 'primary' | 'secondary' | 'value' | 'meta' | 'hidden'
+/**
+ * El tono de una fila (`rowTone`): `muted` apaga el texto (pausadas, dadas de
+ * baja); los demás dibujan una franja de 3 px del color del tono en el borde de
+ * adelante. Acompaña a un estado escrito (una `StatusBadge`), nunca lo reemplaza.
+ */
+export type DataTableRowTone = 'muted' | 'info' | 'success' | 'warning' | 'danger'
+/** El `aria-haspopup` del botón de la fila (`onRowAction`). */
+export type DataTableRowActionPopup = 'dialog' | 'menu' | false
 
 export type DataTableColumn<Row> = {
   id: string
@@ -111,6 +126,11 @@ export type DataTableColumn<Row> = {
   hideBelow?: DataTableBreakpoint
   /** Columna de acciones: el encabezado queda solo para lectores de pantalla. */
   headerHidden?: boolean
+  /**
+   * La etiqueta del dato en la tarjeta del celular, si no es el encabezado («Saldo»
+   * en vez de «Saldo $»). Se ve con `mobileLabels`; si no, es solo para el lector.
+   */
+  mobileLabel?: React.ReactNode
   /** Va en el encabezado y en las celdas. */
   className?: string
 }
@@ -142,6 +162,21 @@ export type DataTableProps<Row> = Omit<React.ComponentProps<'div'>, 'children'> 
   rowHref?: (row: Row) => string | undefined
   /** El nombre de la fila («Coca-Cola»): etiqueta del link y de la casilla («Elegir Coca-Cola»). */
   rowLabel?: (row: Row) => string
+  /**
+   * La fila abre algo (un cajón, un diálogo) en vez de navegar: un botón
+   * estirado sobre la fila, en la celda principal, con el hover, el
+   * presionado, el foco «adentro» y los 44 px táctiles de la fila-link. Solo
+   * desde un componente cliente (es una función). Con `rowHref`, gana el link.
+   */
+  onRowAction?: (row: Row) => void
+  /** El nombre del botón de la fila («Ver las mesas de Ana»). Default: `rowLabel`. */
+  rowActionLabel?: (row: Row) => string
+  /** `aria-haspopup` del botón de la fila. Default `dialog` (un cajón también es un diálogo). */
+  rowActionPopup?: DataTableRowActionPopup
+  /** Clases propias de una fila (y de su tarjeta en el celular). */
+  rowClassName?: (row: Row, index: number) => string | undefined
+  /** El tono de una fila (ver `DataTableRowTone`). */
+  rowTone?: (row: Row) => DataTableRowTone | null | undefined
   /** El orden actual, leído de `searchParams` con `parseSort`. */
   sort?: SortState
   /** Orden por link (server): `makeSortHref(pathname, searchParams)`. Gana sobre `onSortChange`. */
@@ -157,6 +192,8 @@ export type DataTableProps<Row> = Omit<React.ComponentProps<'div'>, 'children'> 
    * columna; si estas también hacen falta ahí, `mobile="scroll"`.
    */
   footerRows?: React.ReactNode
+  /** El rótulo de la fila de los `footer` por columna. Default «Totales» («Subtotal», «Saldo al 30/09»). */
+  footerLabel?: React.ReactNode
   /** Default `<EmptyState size="sm" title="Sin resultados" />`. Distinguí «sin datos todavía» de «sin resultados para el filtro». */
   empty?: React.ReactNode
   loading?: boolean
@@ -173,6 +210,13 @@ export type DataTableProps<Row> = Omit<React.ComponentProps<'div'>, 'children'> 
   pagination?: React.ReactNode
   /** Default `cards` (listas): tarjetas debajo de `md`. `scroll` (libros): scroll horizontal y la primera columna fija. */
   mobile?: 'cards' | 'scroll'
+  /**
+   * En las tarjetas del celular, cada dato con su etiqueta a la vista
+   * («Vence: 15/10») en vez de solo para el lector (salvo la columna de
+   * acciones). Para datos que sin nombre no se entienden (dos fechas, dos
+   * importes). Default `false`.
+   */
+  mobileLabels?: boolean
 }
 
 // ─── Clases compartidas ──────────────────────────────────────────────────────
@@ -211,24 +255,29 @@ const BODY_CELL_CLASSES =
 /** Sangría por nivel (`indent`): 12 px cada uno, como `AccountPicker`. */
 const INDENT_CLASSES = 'ps-[calc(var(--cell-px,1rem)+var(--indent,0)*0.75rem)]'
 
-/** Los controles de una fila-link quedan arriba del link estirado. */
-const ABOVE_ROW_LINK =
-  '[&:has([data-slot=data-table-row-link])_:is(a[href],button,input,select,textarea,[role=button],[role=checkbox]):not([data-slot=data-table-row-link])]:relative [&:has([data-slot=data-table-row-link])_:is(a[href],button,input,select,textarea,[role=button],[role=checkbox]):not([data-slot=data-table-row-link])]:z-10'
+/**
+ * Lo que hace la fila entera (el link de `rowHref` o el botón de
+ * `onRowAction`) lleva `data-row-target`: es el gancho de las clases de la
+ * fila. Los demás controles de la fila quedan arriba de lo estirado.
+ */
+const ABOVE_ROW_TARGET =
+  '[&:has([data-row-target])_:is(a[href],button,input,select,textarea,[role=button],[role=checkbox]):not([data-row-target])]:relative [&:has([data-row-target])_:is(a[href],button,input,select,textarea,[role=button],[role=checkbox]):not([data-row-target])]:z-10'
 
 /**
- * Fila. Hover (`--hover`) y presionado (`--active`) solo si la fila es link o
- * se puede elegir, sin transición; van como capa (`background-image`) para
- * sumarse al fondo de una fila elegida en vez de taparlo. La fila elegida es
- * `bg-selected`, por la prop `selected` o porque su casilla está marcada.
+ * Fila. Hover (`--hover`) y presionado (`--active`) solo si la fila hace algo
+ * (link, botón) o se puede elegir, sin transición; van como capa
+ * (`background-image`) para sumarse al fondo de una fila elegida en vez de
+ * taparlo. La fila elegida es `bg-selected`, por la prop `selected` o porque su
+ * casilla está marcada.
  */
 const ROW_CLASSES = [
   'group/row h-[var(--row-h,var(--row-comfortable))]',
-  'has-[[data-slot=data-table-row-link]]:relative',
-  'pointer-coarse:has-[[data-slot=data-table-row-link]]:h-11',
-  ABOVE_ROW_LINK,
-  'has-[[data-slot=data-table-row-link]]:hover:[background-image:linear-gradient(var(--hover),var(--hover))]',
+  'has-[[data-row-target]]:relative',
+  'pointer-coarse:has-[[data-row-target]]:h-11',
+  ABOVE_ROW_TARGET,
+  'has-[[data-row-target]]:hover:[background-image:linear-gradient(var(--hover),var(--hover))]',
   'data-[interactive]:hover:[background-image:linear-gradient(var(--hover),var(--hover))]',
-  'has-[[data-slot=data-table-row-link]]:active:[background-image:linear-gradient(var(--active),var(--active))]',
+  'has-[[data-row-target]]:active:[background-image:linear-gradient(var(--active),var(--active))]',
   'data-[selected]:bg-selected has-[[data-row-select][aria-checked=true]]:bg-selected',
 ].join(' ')
 
@@ -243,6 +292,31 @@ const ROW_CLASSES = [
 const ROW_LINK_CLASSES =
   'outline-none after:absolute after:inset-0 focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-(--ring)'
 
+/** El botón estirado (`onRowAction`): lo mismo que el link, con cursor de botón y el texto a la izquierda. */
+const ROW_ACTION_CLASSES = cn(ROW_LINK_CLASSES, 'cursor-pointer text-start')
+
+/**
+ * Los tonos de fila (`rowTone`). La franja va como sombra interior de la
+ * primera celda (en la tarjeta, del `<li>`): no suma ancho ni mueve nada, y en
+ * alto contraste se va, por eso el estado también va escrito. `muted` no lleva
+ * franja: apaga el texto de las celdas (lo resuelve cada celda).
+ */
+const ROW_TONE: Readonly<Record<DataTableRowTone, string>> = {
+  muted: '',
+  info: '[&>:first-child]:shadow-[inset_3px_0_0_var(--info)]',
+  success: '[&>:first-child]:shadow-[inset_3px_0_0_var(--success)]',
+  warning: '[&>:first-child]:shadow-[inset_3px_0_0_var(--warning)]',
+  danger: '[&>:first-child]:shadow-[inset_3px_0_0_var(--destructive)]',
+}
+
+const CARD_TONE: Readonly<Record<DataTableRowTone, string>> = {
+  muted: '',
+  info: 'shadow-[inset_3px_0_0_var(--info)]',
+  success: 'shadow-[inset_3px_0_0_var(--success)]',
+  warning: 'shadow-[inset_3px_0_0_var(--warning)]',
+  danger: 'shadow-[inset_3px_0_0_var(--destructive)]',
+}
+
 /** Columna de la casilla: 40 px. */
 const SELECT_COLUMN_CLASSES = 'w-10 min-w-10 max-w-10 px-3'
 
@@ -250,7 +324,7 @@ const SELECT_COLUMN_CLASSES = 'w-10 min-w-10 max-w-10 px-3'
 const STICKY_BODY_CLASSES = [
   'sticky z-20 bg-card',
   'group-data-[interactive]/row:group-hover/row:[background-image:linear-gradient(var(--hover),var(--hover))]',
-  'group-has-[[data-slot=data-table-row-link]]/row:group-hover/row:[background-image:linear-gradient(var(--hover),var(--hover))]',
+  'group-has-[[data-row-target]]/row:group-hover/row:[background-image:linear-gradient(var(--hover),var(--hover))]',
   'group-data-[selected]/row:[background-image:linear-gradient(var(--selected),var(--selected))]',
   'group-has-[[data-row-select][aria-checked=true]]/row:[background-image:linear-gradient(var(--selected),var(--selected))]',
 ].join(' ')
@@ -545,58 +619,124 @@ export type DataTableRowProps = Omit<React.ComponentProps<'tr'>, 'onClick'> & {
   href?: string
   /** Nombre accesible del link, si el contenido de la celda no alcanza. */
   linkLabel?: string
+  /**
+   * La fila abre algo (un cajón, un diálogo): el botón estirado va en la celda
+   * `primary` (o en la primera). Solo desde un componente cliente. Con `href`
+   * gana el link. (Un `onClick` en el `<tr>` no anda con teclado: no se acepta.)
+   */
+  onAction?: () => void
+  /** Nombre accesible del botón, si el contenido de la celda no alcanza. */
+  actionLabel?: string
+  /** `aria-haspopup` del botón. Default `dialog`. */
+  actionPopup?: DataTableRowActionPopup
   /** Elegida: `bg-selected`. Con `DataTable selection` no hace falta (lo lee de la casilla). */
   selected?: boolean
-  /** Hover aunque no sea link (filas que se eligen). */
+  /** Hover aunque no haga nada sola (filas que se eligen). */
   interactive?: boolean
-  /**
-   * @deprecated Un `onClick` en un `<tr>` no anda con teclado. Usá `href`
-   * (fila-link) o un botón en una celda. Sigue andando por compatibilidad.
-   */
-  onClick?: React.MouseEventHandler<HTMLTableRowElement>
+  /** Ver `DataTableRowTone`. Con `muted`, apagar el texto de las celdas queda a cargo de quien arma la fila. */
+  tone?: DataTableRowTone | null
 }
 
-/** Pone el link de la fila en su celda principal (o en la primera). */
-function withRowLink(children: React.ReactNode, href: string, linkLabel?: string): React.ReactNode {
+type RowTarget =
+  | { kind: 'link'; href: string; linkLabel?: string }
+  | {
+      kind: 'action'
+      onAction: () => void
+      actionLabel?: string
+      actionPopup?: DataTableRowActionPopup
+    }
+
+/** Pone el link (o el botón) de la fila en su celda principal (o en la primera). */
+function withRowTarget(children: React.ReactNode, target: RowTarget): React.ReactNode {
   const items = React.Children.toArray(children)
   const isCell = (node: React.ReactNode): node is React.ReactElement<DataTableCellProps> =>
     React.isValidElement(node) && node.type === DataTableCell
-  let target = items.findIndex((node) => isCell(node) && node.props.primary === true)
-  if (target === -1) target = items.findIndex(isCell)
-  if (target === -1) {
+  let index = items.findIndex((node) => isCell(node) && node.props.primary === true)
+  if (index === -1) index = items.findIndex(isCell)
+  if (index === -1) {
     if (process.env.NODE_ENV !== 'production') {
       console.warn(
-        '[DataTableRow] `href` necesita una DataTableCell hija directa para poner el link de la fila.',
+        '[DataTableRow] `href` y `onAction` necesitan una DataTableCell hija directa para la celda principal.',
       )
     }
     return children
   }
-  return items.map((node, index) =>
-    index === target && isCell(node) ? React.cloneElement(node, { href, linkLabel }) : node,
+  const cellProps: Partial<DataTableCellProps> =
+    target.kind === 'link'
+      ? { href: target.href, linkLabel: target.linkLabel }
+      : {
+          onAction: target.onAction,
+          actionLabel: target.actionLabel,
+          actionPopup: target.actionPopup,
+        }
+  return items.map((node, i) =>
+    i === index && isCell(node) ? React.cloneElement(node, cellProps) : node,
   )
 }
 
 function DataTableRow({
   href,
   linkLabel,
+  onAction,
+  actionLabel,
+  actionPopup,
   selected = false,
   interactive = false,
-  onClick,
+  tone,
   className,
   children,
   ...props
 }: DataTableRowProps) {
+  let content: React.ReactNode = children
+  if (href !== undefined) content = withRowTarget(children, { kind: 'link', href, linkLabel })
+  else if (onAction !== undefined) {
+    content = withRowTarget(children, { kind: 'action', onAction, actionLabel, actionPopup })
+  }
   return (
     <tr
       data-slot="data-table-row"
       data-selected={selected ? '' : undefined}
-      data-interactive={interactive || onClick ? '' : undefined}
-      onClick={onClick}
-      className={cn(ROW_CLASSES, onClick && 'cursor-pointer', className)}
+      data-interactive={interactive ? '' : undefined}
+      data-tone={tone ?? undefined}
+      className={cn(ROW_CLASSES, tone && ROW_TONE[tone], className)}
       {...props}
     >
-      {href !== undefined ? withRowLink(children, href, linkLabel) : children}
+      {content}
     </tr>
+  )
+}
+
+export type DataTableRowActionProps = React.ComponentProps<'button'> & {
+  /** `aria-haspopup`. Default `dialog`: un cajón también es un diálogo. */
+  popup?: DataTableRowActionPopup
+}
+
+/**
+ * El botón estirado de una fila que abre algo en la misma pantalla (un cajón,
+ * un diálogo): su `::after` cubre la fila, así toda la fila responde con una
+ * sola parada de Tab, Enter y Espacio, sin `onClick` en el `<tr>`. La fila
+ * (`DataTableRow`) toma el hover, el presionado y los 44 px táctiles por su
+ * `data-row-target`.
+ *
+ * `DataTable` lo pone solo con `onRowAction`; suelto, va como contenido de la
+ * celda principal de una tabla armada a mano (y la fila, `relative`). Adentro,
+ * texto y `<span>`: un botón no lleva links ni otros botones.
+ */
+function DataTableRowAction({
+  popup = 'dialog',
+  type = 'button',
+  className,
+  ...props
+}: DataTableRowActionProps) {
+  return (
+    <button
+      type={type}
+      data-slot="data-table-row-action"
+      data-row-target=""
+      aria-haspopup={popup || undefined}
+      className={cn(ROW_ACTION_CLASSES, className)}
+      {...props}
+    />
   )
 }
 
@@ -611,6 +751,10 @@ export type DataTableCellProps = Omit<React.ComponentProps<'td'>, 'align'> & {
   /** El contenido pasa a ser el link estirado de la fila. */
   href?: string
   linkLabel?: string
+  /** El contenido pasa a ser el botón estirado de la fila (`DataTableRowAction`). */
+  onAction?: () => void
+  actionLabel?: string
+  actionPopup?: DataTableRowActionPopup
 }
 
 function DataTableCell({
@@ -620,6 +764,9 @@ function DataTableCell({
   indent,
   href,
   linkLabel,
+  onAction,
+  actionLabel,
+  actionPopup,
   className,
   style,
   children,
@@ -647,11 +794,16 @@ function DataTableCell({
         <Link
           href={href}
           data-slot="data-table-row-link"
+          data-row-target=""
           aria-label={linkLabel}
           className={ROW_LINK_CLASSES}
         >
           {children}
         </Link>
+      ) : onAction !== undefined ? (
+        <DataTableRowAction onClick={onAction} aria-label={actionLabel} popup={actionPopup}>
+          {children}
+        </DataTableRowAction>
       ) : (
         children
       )}
@@ -881,11 +1033,28 @@ function placementOf<Row>(
   return column.numeric || column.headerHidden ? 'value' : 'secondary'
 }
 
-/** La celda en la tarjeta: con el encabezado solo para lectores, así «$ 1.234» no queda suelto. */
-function CardItem({ header, children }: { header: React.ReactNode; children: React.ReactNode }) {
+/**
+ * La celda en la tarjeta, con su etiqueta: solo para lectores (así «$ 1.234» no
+ * queda suelto) o, con `mobileLabels`, a la vista: «Vence: 15/10».
+ */
+function CardItem({
+  label,
+  visible,
+  children,
+}: {
+  label: React.ReactNode
+  visible: boolean
+  children: React.ReactNode
+}) {
   return (
-    <span className="min-w-0">
-      <span className="sr-only">{header}: </span>
+    <span data-slot="data-table-card-item" className="min-w-0">
+      {visible ? (
+        <span data-slot="data-table-card-label" className="font-normal text-muted-foreground">
+          {label}:{' '}
+        </span>
+      ) : (
+        <span className="sr-only">{label}: </span>
+      )}
       {children}
     </span>
   )
@@ -902,10 +1071,10 @@ function CardLine({ items }: { items: Array<{ key: string; node: React.ReactNode
 
 const CARD_CLASSES = [
   'relative flex items-start gap-3 px-4 py-3',
-  ABOVE_ROW_LINK,
-  'has-[[data-slot=data-table-row-link]]:hover:[background-image:linear-gradient(var(--hover),var(--hover))]',
+  ABOVE_ROW_TARGET,
+  'has-[[data-row-target]]:hover:[background-image:linear-gradient(var(--hover),var(--hover))]',
   'data-[interactive]:hover:[background-image:linear-gradient(var(--hover),var(--hover))]',
-  'has-[[data-slot=data-table-row-link]]:active:[background-image:linear-gradient(var(--active),var(--active))]',
+  'has-[[data-row-target]]:active:[background-image:linear-gradient(var(--active),var(--active))]',
   'has-[[data-row-select][aria-checked=true]]:bg-selected',
 ].join(' ')
 
@@ -924,12 +1093,18 @@ function DataTable<Row>({
   maxHeight,
   rowHref,
   rowLabel,
+  onRowAction,
+  rowActionLabel,
+  rowActionPopup = 'dialog',
+  rowClassName,
+  rowTone,
   sort,
   sortHref,
   onSortChange,
   selection,
   groupBy,
   footerRows,
+  footerLabel = 'Totales',
   empty,
   loading = false,
   error = null,
@@ -937,6 +1112,7 @@ function DataTable<Row>({
   toolbar,
   pagination,
   mobile = 'cards',
+  mobileLabels = false,
   className,
   ...props
 }: DataTableProps<Row>) {
@@ -1046,12 +1222,35 @@ function DataTable<Row>({
   const selectLabel = (row: Row, index: number) =>
     `Elegir ${rowLabel?.(row) ?? `la fila ${(index + 1).toString()}`}`
 
+  /** Lo que hace la fila entera: el link (gana) o el botón de `onRowAction`. */
+  const rowTarget = (row: Row): RowTarget | null => {
+    const href = rowHref?.(row)
+    if (href !== undefined) return { kind: 'link', href, linkLabel: rowLabel?.(row) }
+    if (!onRowAction) return null
+    return {
+      kind: 'action',
+      onAction: () => onRowAction(row),
+      actionLabel: rowActionLabel?.(row) ?? rowLabel?.(row),
+      actionPopup: rowActionPopup,
+    }
+  }
+
   const renderRow = ({ row, index }: RowEntry<Row>) => {
     const id = ids[index] ?? getRowId(row)
-    const href = rowHref?.(row)
-    const label = rowLabel?.(row)
+    const target = rowTarget(row)
+    const tone = rowTone?.(row) ?? null
     return (
-      <DataTableRow key={id} interactive={selectable}>
+      <DataTableRow
+        key={id}
+        interactive={selectable}
+        tone={tone}
+        className={rowClassName?.(row, index)}
+        href={target?.kind === 'link' ? target.href : undefined}
+        linkLabel={target?.kind === 'link' ? target.linkLabel : undefined}
+        onAction={target?.kind === 'action' ? target.onAction : undefined}
+        actionLabel={target?.kind === 'action' ? target.actionLabel : undefined}
+        actionPopup={target?.kind === 'action' ? target.actionPopup : undefined}
+      >
         {selectable ? (
           <td className={cn(BODY_CELL_CLASSES, SELECT_COLUMN_CLASSES, selectCellSticky('body'))}>
             <DataTableRowSelect rowId={id} label={selectLabel(row, index)} />
@@ -1063,11 +1262,10 @@ function DataTable<Row>({
             numeric={column.numeric}
             align={column.align}
             primary={columnIndex === primaryIndex}
-            href={columnIndex === primaryIndex ? href : undefined}
-            linkLabel={columnIndex === primaryIndex ? label : undefined}
             className={cn(
               column.hideBelow && HIDE_BELOW[column.hideBelow],
               stickyCellClass(columnIndex, 'body'),
+              tone === 'muted' && 'text-muted-foreground',
               column.className,
             )}
           >
@@ -1127,7 +1325,7 @@ function DataTable<Row>({
                   )}
                 >
                   {/* El span lleva su propio peso: el pie pone semibold a las cifras. */}
-                  <span className="type-label">Totales</span>
+                  <span className="type-label">{footerLabel}</span>
                 </th>
               )
             }
@@ -1181,8 +1379,8 @@ function DataTable<Row>({
 
   const renderCard = ({ row, index }: RowEntry<Row>) => {
     const id = ids[index] ?? getRowId(row)
-    const href = rowHref?.(row)
-    const label = rowLabel?.(row)
+    const target = rowTarget(row)
+    const tone = rowTone?.(row) ?? null
     const lines: Record<
       'primary' | 'secondary' | 'value' | 'meta',
       Array<{ key: string; node: React.ReactNode }>
@@ -1192,27 +1390,44 @@ function DataTable<Row>({
       if (placement === 'hidden') return
       const content = column.cell(row, index)
       if (placement === 'primary') {
-        lines.primary.push({
-          key: column.id,
-          node:
-            columnIndex === primaryIndex && href !== undefined ? (
-              <Link
-                href={href}
-                data-slot="data-table-row-link"
-                aria-label={label}
-                className={ROW_LINK_CLASSES}
-              >
-                {content}
-              </Link>
-            ) : (
-              content
-            ),
-        })
+        let node: React.ReactNode = content
+        if (columnIndex === primaryIndex && target?.kind === 'link') {
+          node = (
+            <Link
+              href={target.href}
+              data-slot="data-table-row-link"
+              data-row-target=""
+              aria-label={target.linkLabel}
+              className={ROW_LINK_CLASSES}
+            >
+              {content}
+            </Link>
+          )
+        } else if (columnIndex === primaryIndex && target?.kind === 'action') {
+          node = (
+            <DataTableRowAction
+              onClick={target.onAction}
+              aria-label={target.actionLabel}
+              popup={target.actionPopup}
+            >
+              {content}
+            </DataTableRowAction>
+          )
+        }
+        lines.primary.push({ key: column.id, node })
         return
       }
       lines[placement].push({
         key: column.id,
-        node: <CardItem header={column.header}>{content}</CardItem>,
+        node: (
+          <CardItem
+            label={column.mobileLabel ?? column.header}
+            // La columna de acciones no lleva rótulo a la vista: es para el lector.
+            visible={mobileLabels && !column.headerHidden}
+          >
+            {content}
+          </CardItem>
+        ),
       })
     })
     return (
@@ -1220,14 +1435,20 @@ function DataTable<Row>({
         key={id}
         data-slot="data-table-card"
         data-interactive={selectable ? '' : undefined}
-        className={CARD_CLASSES}
+        data-tone={tone ?? undefined}
+        className={cn(CARD_CLASSES, tone && CARD_TONE[tone], rowClassName?.(row, index))}
       >
         {selectable ? (
           <DataTableRowSelect rowId={id} label={selectLabel(row, index)} className="mt-0.5" />
         ) : null}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           {lines.primary.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-x-1.5 type-body font-medium text-foreground">
+            <div
+              className={cn(
+                'flex flex-wrap items-center gap-x-1.5 type-body font-medium',
+                tone === 'muted' ? 'text-muted-foreground' : 'text-foreground',
+              )}
+            >
               <CardLine items={lines.primary} />
             </div>
           ) : null}
@@ -1243,7 +1464,12 @@ function DataTable<Row>({
           ) : null}
         </div>
         {lines.value.length > 0 ? (
-          <div className="flex shrink-0 flex-col items-end gap-0.5 text-end type-amount font-medium text-foreground">
+          <div
+            className={cn(
+              'flex shrink-0 flex-col items-end gap-0.5 text-end type-amount font-medium',
+              tone === 'muted' ? 'text-muted-foreground' : 'text-foreground',
+            )}
+          >
             {lines.value.map((item) => (
               <React.Fragment key={item.key}>{item.node}</React.Fragment>
             ))}
@@ -1310,7 +1536,7 @@ function DataTable<Row>({
         data-slot="data-table-cards-totals"
         className="border-t border-t-rule border-b-[3px] border-b-rule px-4 py-3 [border-bottom-style:double] md:hidden"
       >
-        <p className="mb-1 type-label text-foreground">Totales</p>
+        <p className="mb-1 type-label text-foreground">{footerLabel}</p>
         <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1">
           {columns.map((column) =>
             column.footer === undefined ? null : (
@@ -1398,6 +1624,7 @@ export {
   DataTableLoading,
   DataTableRoot,
   DataTableRow,
+  DataTableRowAction,
   DataTableScroll,
   DataTableShell,
   DataTableToolbar,

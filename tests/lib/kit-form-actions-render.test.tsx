@@ -84,7 +84,9 @@ function actionsOf(markup: string): Array<{ text: string; classes: string[] }> {
 const ROW_CLASSES = ['max-sm:[&>*]:grow', 'max-sm:[&>*]:basis-[calc(50%-1rem)]']
 const TALL_BUTTONS = 'max-sm:[&>[data-slot=button]]:h-11'
 const FIXED = 'max-sm:[@media(min-height:30rem)]:fixed'
-const WRAPPER_HEIGHT = 'max-sm:h-(--sticky-actions-h)'
+const WRAPPER_HEIGHT = 'max-sm:h-[calc(var(--sticky-actions-h)-var(--form-actions-offset,0px))]'
+/** Arranca `--form-actions-offset` arriba del borde: lo define un layout con su propia barra abajo. */
+const LIFTED = 'max-sm:[@media(min-height:30rem)]:bottom-(--form-actions-offset,0px)'
 
 /** El caso de §5.4: el encabezado tiene `back`, así que «Cancelar» sale de la barra en el celular. */
 const withHiddenCancel = (
@@ -226,6 +228,26 @@ describe('FormActions: barra fija, props y clases', () => {
     expect(classesOf(out, 'form-actions-bar')).toContain(FIXED)
     expect(classesOf(out, 'form-actions')).toEqual([WRAPPER_HEIGHT])
     expect(classesOf(out, 'form-actions-bar')).toContain('justify-end')
+  })
+
+  it('fija arriba de la barra de abajo de un layout (Mensajería) con --form-actions-offset', () => {
+    const bar = classesOf(html(withHiddenCancel), 'form-actions-bar')
+    expect(bar).toContain(LIFTED)
+    expect(bar).not.toContain('max-sm:[@media(min-height:30rem)]:bottom-0')
+    // El área segura del iPhone ya la cubre la barra de abajo: se descuenta el offset.
+    expect(bar).toContain(
+      'max-sm:[@media(min-height:30rem)]:pb-[max(0.75rem,calc(env(safe-area-inset-bottom)-var(--form-actions-offset,0px)))]',
+    )
+  })
+
+  it('Tailwind genera el offset con 0 por defecto, y el alto reservado sin el offset', async () => {
+    const compiler = await compile(
+      '@theme { --breakpoint-sm: 40rem; --spacing: 0.25rem; }\n@tailwind utilities;',
+    )
+    const css = compiler.build([LIFTED, WRAPPER_HEIGHT]).replace(/\s+/g, '')
+    expect(css).toContain('bottom:var(--form-actions-offset,0px);')
+    // Sin --sticky-actions-h (la barra no está fija) el calc no vale y el alto queda en auto.
+    expect(css).toContain('height:calc(var(--sticky-actions-h)-var(--form-actions-offset,0px));')
   })
 
   it('sticky={false}: ni fija ni alto reservado; el reparto en filas sigue', () => {

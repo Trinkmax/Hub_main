@@ -902,7 +902,7 @@ export function FloorPlanEditor({
   const onDeleteTrayTable = useCallback(
     async (tableId: string): Promise<ConfirmResult> => {
       const r = await deleteTablePermanentlyAction(slug, tableId)
-      if (!r.ok) return { ok: false, error: r.message }
+      if (!r.ok) return r
       toast.success('Mesa borrada.')
       onChanged()
     },

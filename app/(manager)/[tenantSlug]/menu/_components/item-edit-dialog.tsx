@@ -467,7 +467,7 @@ export function ItemEditDialog({
                     }
                     onConfirm={async () => {
                       const r = await deleteMenuItem(tenantSlug, item.id)
-                      if (!r.ok) return { ok: false, error: r.message }
+                      if (!r.ok) return r
                       onDeleted?.(item.id)
                       toast.success('Ítem borrado.')
                       router.refresh()

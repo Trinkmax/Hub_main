@@ -4,9 +4,6 @@ import * as React from 'react'
 import { cn } from '@/lib/utils'
 import { type BreadcrumbItem, Breadcrumb as BreadcrumbNav, crumbLinkClass } from './breadcrumb'
 
-/** @deprecated usá `BreadcrumbItem` de `@/components/ui/breadcrumb`. */
-export type Breadcrumb = BreadcrumbItem
-
 export type PageHeaderBack = {
   href: string
   /** El nombre de adonde se vuelve: «Proveedores», no «Volver». */
@@ -33,11 +30,6 @@ export type PageHeaderProps = Omit<React.ComponentProps<'div'>, 'title'> & {
   meta?: React.ReactNode
   /** `<TabsNav>` o `<TabsList>` pegado abajo, con su pelo. */
   tabs?: React.ReactNode
-  /**
-   * @deprecated se dibuja como línea de contexto de 13 px sin mayúsculas (igual
-   * que `context`). Si era un «volver», usá `back`.
-   */
-  eyebrow?: React.ReactNode
 }
 
 /**
@@ -61,10 +53,8 @@ const ACTIONS_ROW_SPAN = ['sm:row-span-1', 'sm:row-span-2', 'sm:row-span-3'] as 
  *
  * Los `data-slot` son el gancho estable para el CSS (el `.wa` de Mensajería
  * achica el título y esconde el contexto por `data-slot`, no por clases) y
- * para los tests.
- *
- * Compatibilidad: `eyebrow` (83 usos) se sigue viendo, como contexto y sin
- * mayúsculas, hasta que cada lote lo pase a `back`, `breadcrumbs` o `context`.
+ * para los tests. La línea de `context` conserva el `data-slot="page-eyebrow"`
+ * de antes: el `.wa` la esconde por ese nombre.
  */
 export function PageHeader({
   title,
@@ -75,13 +65,12 @@ export function PageHeader({
   context,
   meta,
   tabs,
-  eyebrow,
   className,
   children,
   ...props
 }: PageHeaderProps) {
   const crumbs = breadcrumbs && breadcrumbs.length > 0 ? breadcrumbs : null
-  const contextLine = context ?? eyebrow
+  const contextLine = context
   const hasContext = Boolean(back || crumbs || contextLine)
   const metaItems = meta === undefined || meta === null ? [] : React.Children.toArray(meta)
   // Misma regla que antes: un `description` vacío o falso no deja una fila en blanco.
@@ -114,7 +103,7 @@ export function PageHeader({
               <BreadcrumbNav items={crumbs} className={cn(back && 'max-sm:hidden')} />
             ) : null}
             {contextLine ? (
-              // div y no p/span: los loaders pasan <Skeleton> (un div) como eyebrow.
+              // div y no p/span: los loaders pasan <Skeleton> (un div) como contexto.
               <div data-slot="page-eyebrow" className="min-w-0 text-pretty">
                 {contextLine}
               </div>

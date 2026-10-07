@@ -1,12 +1,18 @@
 // @vitest-environment node
+import { createElement as h } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { formResetTarget } from '@/components/ui/field'
 import { centsToMoneyText, moneyBlurText, readMoneyText } from '@/components/ui/money-field'
 import {
   checkNumberText,
   formatNumberText,
+  NumberField,
   numberSubmitValue,
   parseNumberText,
   stepNumberValue,
+  syncNumberText,
+  validNumberValue,
 } from '@/components/ui/number-field'
 
 /**
@@ -166,5 +172,96 @@ describe('NumberField: flechas y botones', () => {
 
   it('fuera de rango, la flecha lo trae al borde', () => {
     expect(stepNumberValue(45, 1, { max: 40 })).toBe(40)
+  })
+})
+
+describe('NumberField controlado: lo tipeado se queda mientras se escribe', () => {
+  const rules = { min: 1, max: 40 }
+
+  /**
+   * El ida y vuelta de un campo controlado, tecla por tecla: el campo avisa el
+   * número que vale (o `null`), el padre lo guarda y lo devuelve como `value`, y
+   * el campo decide si reescribe el texto (`syncNumberText`).
+   */
+  function typeInto(texts: string[], max: { min?: number; max?: number } = rules) {
+    let parent: number | null = 4
+    let text = '4'
+    for (const typed of texts) {
+      text = typed
+      parent = validNumberValue(text, max)
+      const synced = syncNumberText(parent, text, max)
+      if (synced !== null) text = synced
+    }
+    return { text, parent }
+  }
+
+  it('un número fuera de rango queda escrito: el padre recibe null, no se borra', () => {
+    expect(validNumberValue('50', rules)).toBeNull()
+    expect(syncNumberText(null, '50', rules)).toBeNull()
+    expect(typeInto(['5', '50'])).toEqual({ text: '50', parent: null })
+    // Y al corregirlo, vuelve el número.
+    expect(typeInto(['5', '50', '5'])).toEqual({ text: '5', parent: 5 })
+  })
+
+  it('lo que no se lee tampoco se borra («abc», «1a2»)', () => {
+    expect(typeInto(['abc'])).toEqual({ text: 'abc', parent: null })
+    expect(typeInto(['1a2'])).toEqual({ text: '1a2', parent: null })
+  })
+
+  it('el eco de lo tipeado no reformatea a mitad de camino (tipeando «1.200»)', () => {
+    // «1.2» y «1.20» se leen con decimales (no valen en un entero): avisan null
+    // y el texto queda; «1.200» es mil doscientos.
+    expect(typeInto(['1', '1.', '1.2', '1.20', '1.200'], { max: 5000 })).toEqual({
+      text: '1.200',
+      parent: 1200,
+    })
+    expect(syncNumberText(null, '1.2', { max: 5000 })).toBeNull()
+    expect(syncNumberText(12500, '12500', {})).toBeNull()
+    expect(syncNumberText(2.5, '2,5', { decimals: 1 })).toBeNull()
+  })
+
+  it('un value de afuera que no es el eco reescribe el texto, ya prolijo', () => {
+    expect(syncNumberText(7, '50', rules)).toBe('7')
+    expect(syncNumberText(12500, '', {})).toBe('12.500')
+    expect(syncNumberText(12500, '', { grouping: false })).toBe('12500')
+    // Vaciar desde afuera un número que valía.
+    expect(syncNumberText(null, '12', rules)).toBe('')
+  })
+
+  it('al salir, lo de fuera de rango es un error (no se recorta en silencio)', () => {
+    expect(checkNumberText('50', rules)).toEqual({
+      status: 'invalid',
+      value: 50,
+      error: 'El máximo es 40',
+    })
+  })
+
+  it('el primer HTML: el texto del value, el aria del número y el hidden vacío si no vale', () => {
+    const out = renderToStaticMarkup(
+      h(NumberField, { name: 'personas', value: 50, max: 40, 'aria-label': 'Personas' }),
+    )
+    expect(out).toMatch(/<input[^>]*role="spinbutton"[^>]*value="50"/)
+    expect(out).toMatch(/aria-valuenow="50"/)
+    expect(out).toContain('<input type="hidden" name="personas" value=""/>')
+    const ok = renderToStaticMarkup(h(NumberField, { name: 'personas', value: 12, max: 40 }))
+    expect(ok).toContain('<input type="hidden" name="personas" value="12"/>')
+  })
+})
+
+describe('Reset del formulario (React 19 resetea después de un <form action>)', () => {
+  it('controlado sin defaultValue: se queda con su value', () => {
+    expect(formResetTarget(12, undefined)).toEqual({ keep: true })
+    expect(formResetTarget<number | null>(null, undefined)).toEqual({ keep: true })
+    expect(formResetTarget('2026-10-07', undefined)).toEqual({ keep: true })
+  })
+
+  it('no controlado: vuelve a su defaultValue (o a vacío)', () => {
+    expect(formResetTarget(undefined, 4)).toEqual({ keep: false, to: 4 })
+    expect(formResetTarget<number>(undefined, undefined)).toEqual({ keep: false, to: undefined })
+  })
+
+  it('controlado con defaultValue: el defaultValue es a dónde vuelve (DateTimeField)', () => {
+    expect(formResetTarget('21:30', '20:00')).toEqual({ keep: false, to: '20:00' })
+    expect(formResetTarget<string | null>('21:30', null)).toEqual({ keep: false, to: null })
   })
 })

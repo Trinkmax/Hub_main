@@ -5,6 +5,7 @@ import * as React from 'react'
 import { type ControlSize, useControlSize } from '@/components/ui/control-size'
 import { DatePicker } from '@/components/ui/date-picker'
 import {
+  formResetTarget,
   useField,
   useFieldErrorReporter,
   useFieldLabelId,
@@ -70,6 +71,12 @@ export type TimeFieldProps = Omit<
  * - Con `suggestions` es un combobox: la lista se abre al tomar foco o con
  *   Alt + ↓, las flechas recorren los horarios y un click elige.
  * - El hidden se actualiza apenas se lee una hora; **Enter no se intercepta**.
+ *
+ * **Formularios y React 19** (ver `useFormReset` en `field.tsx`): después de
+ * un `<form action>`, React resetea el formulario. Sin `value`, vuelve a su
+ * `defaultValue` (y, mientras nadie lo toque, sigue al `defaultValue` que
+ * cambie, como un `<input>` nativo). Controlado sin `defaultValue`, el reset no
+ * lo toca.
  */
 function TimeField({
   name,
@@ -121,12 +128,22 @@ function TimeField({
   const hasList = options.length > 0
   const canList = hasList && !disabled && !readOnly
 
+  // Tocado desde que montó (o desde el último reset), como el «dirty» de un <input>.
+  const [edited, setEdited] = React.useState(false)
+
   // Controlado: un cambio de afuera (que no es el eco de lo tipeado) reescribe el texto.
   const [lastValue, setLastValue] = React.useState(value)
   if (value !== lastValue) {
     setLastValue(value)
     const normalized = normalizeTime(value)
     if (value !== undefined && (normalized || null) !== time) setText(normalized)
+  }
+
+  // No controlado y sin tocar: sigue al `defaultValue` que cambie, como un <input> nativo.
+  const [lastDefault, setLastDefault] = React.useState(defaultValue)
+  if (defaultValue !== lastDefault) {
+    setLastDefault(defaultValue)
+    if (value === undefined && !edited) setText(normalizeTime(defaultValue))
   }
 
   function setError(message: string | null) {
@@ -142,7 +159,15 @@ function TimeField({
 
   useFormReset(localRef, () => {
     setError(null)
-    const resetTime = normalizeTime(defaultValue)
+    setEdited(false)
+    // Controlado sin `defaultValue`: el reset (también el de React 19 después
+    // de un `<form action>`) no borra lo que el `value` dice.
+    const target = formResetTarget(value, defaultValue)
+    if (target.keep) {
+      setText(normalizeTime(value))
+      return
+    }
+    const resetTime = normalizeTime(target.to)
     setText(resetTime)
     if ((resetTime || null) !== time) onValueChange?.(resetTime || null)
   })
@@ -150,6 +175,7 @@ function TimeField({
   /** Pone una hora (flechas o lista): el texto ya sale como `HH:mm`. */
   function commit(next: string) {
     setText(next)
+    setEdited(true)
     if (localError !== null) setError(null)
     localRef.current?.setCustomValidity(checkTimeText(next, rules).error ?? '')
     if (next !== time) onValueChange?.(next)
@@ -224,6 +250,7 @@ function TimeField({
                     input.selectionStart === raw.length && input.selectionEnd === raw.length
                   const next = atEnd ? maskTimeTyping(raw, text) : raw
                   setText(next)
+                  setEdited(true)
                   const nextCheck = checkTimeText(next, rules)
                   input.setCustomValidity(nextCheck.error ?? '')
                   if (localError !== null && nextCheck.error === null) setError(null)
@@ -435,8 +462,12 @@ function DateTimeField({
 
   const timeId = `${field?.id ?? autoId}-time`
   const combined = joinDateTime(date, time)
-  // Para `form.reset()`: cada control vuelve a su parte del valor de arranque.
-  const resetParts = splitDateTime(defaultValue)
+  // Para `form.reset()` (también el de React 19 después de un `<form action>`):
+  // cada control vuelve a su parte del valor de arranque, o se vacía. Los dos
+  // van controlados, así que esa parte les llega como su `defaultValue`.
+  // Controlado y sin `defaultValue`, el reset no toca nada (`undefined`).
+  const resetParts =
+    value === undefined || defaultValue !== undefined ? splitDateTime(defaultValue) : undefined
 
   return (
     <div
@@ -447,7 +478,7 @@ function DateTimeField({
       <WithoutFieldName>
         <DatePicker
           value={date}
-          defaultValue={resetParts.date}
+          defaultValue={resetParts?.date}
           onValueChange={(next) => update(next, time)}
           min={minDate}
           max={maxDate}
@@ -459,7 +490,7 @@ function DateTimeField({
         <TimeField
           id={timeId}
           value={time}
-          defaultValue={resetParts.time}
+          defaultValue={resetParts?.time}
           onValueChange={(next) => update(date, next)}
           step={step}
           size={size}

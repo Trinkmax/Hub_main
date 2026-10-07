@@ -20,35 +20,6 @@ export type BadgeTone = 'neutral' | 'brand' | 'success' | 'warning' | 'danger' |
 export type BadgeAppearance = 'soft' | 'solid' | 'outline'
 export type BadgeSize = 'sm' | 'md'
 
-/** @deprecated Los rellenos sólidos de antes. Usá `tone` + `appearance` (ver `BADGE_VARIANT_MAP`). */
-export type BadgeVariant =
-  | 'default'
-  | 'secondary'
-  | 'destructive'
-  | 'success'
-  | 'warning'
-  | 'info'
-  | 'outline'
-  | 'muted'
-
-/**
- * Cómo se lee cada `variant` viejo (68 usos al congelar): todos pasan a
- * suaves; `outline` es el neutro con contorno. Exportado para el catálogo y
- * los tests, que fijan el mapeo.
- */
-export const BADGE_VARIANT_MAP: Readonly<
-  Record<BadgeVariant, { tone: BadgeTone; appearance: BadgeAppearance }>
-> = {
-  default: { tone: 'brand', appearance: 'soft' },
-  secondary: { tone: 'neutral', appearance: 'soft' },
-  muted: { tone: 'neutral', appearance: 'soft' },
-  destructive: { tone: 'danger', appearance: 'soft' },
-  success: { tone: 'success', appearance: 'soft' },
-  warning: { tone: 'warning', appearance: 'soft' },
-  info: { tone: 'info', appearance: 'soft' },
-  outline: { tone: 'neutral', appearance: 'outline' },
-}
-
 /** El sólido de cada tono: el punto de la etiqueta y el de `DueStatus`. */
 export const BADGE_DOT_CLASS: Readonly<Record<BadgeTone, string>> = {
   // Sobre `secondary` el apoyo da 4,33:1: el punto (decorativo) igual pasa 3:1.
@@ -130,37 +101,26 @@ const badgeStyles = cva(
   },
 )
 
-type BadgeLookInput = {
-  tone?: BadgeTone | null
-  appearance?: BadgeAppearance | null
-  /** @deprecated Usá `tone` y `appearance`. */
-  variant?: BadgeVariant | null
-}
-
 /**
- * Resuelve tono y aspecto: lo explícito gana; si no, lo que diga el `variant`
- * viejo; si no, neutra y suave.
- */
-export function resolveBadgeLook({ tone, appearance, variant }: BadgeLookInput): {
-  tone: BadgeTone
-  appearance: BadgeAppearance
-} {
-  const legacy = variant ? BADGE_VARIANT_MAP[variant] : undefined
-  return {
-    tone: tone ?? legacy?.tone ?? 'neutral',
-    appearance: appearance ?? legacy?.appearance ?? 'soft',
-  }
-}
-
-/**
- * Las clases de la etiqueta, para dibujarla sobre otro elemento. Acepta el
- * `variant` viejo como antes (`badgeVariants({ variant: 'outline' })`).
+ * Las clases de la etiqueta, para dibujarla sobre otro elemento (el disparador
+ * de un menú con aspecto de etiqueta): neutra y suave si no se dice otra cosa.
  */
 function badgeVariants(
-  options: BadgeLookInput & { size?: BadgeSize | null; className?: string } = {},
+  options: {
+    tone?: BadgeTone | null
+    appearance?: BadgeAppearance | null
+    size?: BadgeSize | null
+    className?: string
+  } = {},
 ): string {
-  const { tone, appearance } = resolveBadgeLook(options)
-  return cn(badgeStyles({ tone, appearance, size: options.size }), options.className)
+  return cn(
+    badgeStyles({
+      tone: options.tone ?? 'neutral',
+      appearance: options.appearance ?? 'soft',
+      size: options.size,
+    }),
+    options.className,
+  )
 }
 
 export type BadgeProps = React.ComponentProps<'span'> & {
@@ -175,19 +135,12 @@ export type BadgeProps = React.ComponentProps<'span'> & {
   size?: BadgeSize
   /** Dibuja la etiqueta sobre el hijo (por ejemplo un `<Link>`). El punto y el ícono van adentro. */
   asChild?: boolean
-  /**
-   * @deprecated Usá `tone` y `appearance`. Todos pasan a suaves:
-   * `default` → `brand` · `secondary` y `muted` → `neutral` · `destructive` → `danger` ·
-   * `success`, `warning` e `info` → el mismo tono · `outline` → `neutral` con contorno.
-   */
-  variant?: BadgeVariant | null
 }
 
 function Badge({
   className,
-  tone: toneProp,
-  appearance: appearanceProp,
-  variant,
+  tone = 'neutral',
+  appearance = 'soft',
   dot = false,
   icon: Icon,
   size = 'sm',
@@ -195,11 +148,6 @@ function Badge({
   children,
   ...props
 }: BadgeProps) {
-  const { tone, appearance } = resolveBadgeLook({
-    tone: toneProp,
-    appearance: appearanceProp,
-    variant,
-  })
   const Comp = asChild ? Slot : 'span'
 
   return (

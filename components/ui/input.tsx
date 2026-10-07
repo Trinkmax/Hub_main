@@ -4,6 +4,7 @@ import { Search, X } from 'lucide-react'
 import * as React from 'react'
 import { type ControlSize, useControlSize } from '@/components/ui/control-size'
 import { useFieldControl, useFormReset } from '@/components/ui/field'
+import { mergeRefs } from '@/lib/dom/form-control'
 import { cn } from '@/lib/utils'
 
 export type InputProps = Omit<React.ComponentProps<'input'>, 'size'> & {
@@ -148,6 +149,9 @@ export type SearchFieldProps = Omit<InputProps, 'type'> & {
  * Buscador (§3.2): lupa, botón «Limpiar» y Esc limpia. `name="q"` por defecto,
  * así sirve tal cual en filtros por GET; con `onDebouncedChange` filtra en el
  * cliente (200 ms por defecto).
+ *
+ * La `ref` (al `<input>`) se suma a la propia, no la reemplaza: con la propia
+ * «Limpiar» devuelve el foco y el campo escucha el reset del formulario.
  */
 function SearchField({
   className,
@@ -161,9 +165,11 @@ function SearchField({
   onDebouncedChange,
   name = 'q',
   placeholder = 'Buscar…',
+  ref,
   ...props
 }: SearchFieldProps) {
   const inputRef = React.useRef<HTMLInputElement>(null)
+  const mergedRef = React.useMemo(() => mergeRefs(inputRef, ref), [ref])
   const isControlled = value !== undefined
   const [inner, setInner] = React.useState(() => String(defaultValue ?? ''))
   const current = isControlled ? String(value ?? '') : inner
@@ -201,7 +207,7 @@ function SearchField({
         <Search aria-hidden />
       </InputAddon>
       <Input
-        ref={inputRef}
+        ref={mergedRef}
         type="search"
         name={name}
         placeholder={placeholder}

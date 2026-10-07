@@ -67,14 +67,7 @@ describe('Button: variantes y tamaños', () => {
     expect(out).toContain('>Guardar</button>')
   })
 
-  it('las variantes viejas caen en las nuevas', () => {
-    expect(buttonVariants({ variant: 'default' })).toBe(buttonVariants({ variant: 'primary' }))
-    expect(buttonVariants({ variant: 'outline' })).toBe(buttonVariants({ variant: 'secondary' }))
-    expect(buttonVariants({ variant: 'destructive' })).toBe(buttonVariants({ variant: 'danger' }))
-    expect(buttonVariants({ variant: 'success' })).toBe(buttonVariants({ variant: 'primary' }))
-    expect(buttonVariants({ size: 'default' })).toBe(buttonVariants({ size: 'md' }))
-    expect(buttonVariants({ size: 'xl' })).toBe(buttonVariants({ size: 'lg' }))
-    // alert-dialog llama buttonVariants() sin nada: primary md.
+  it('sin nada es primary md (alert-dialog llama buttonVariants() así)', () => {
     expect(buttonVariants()).toBe(buttonVariants({ variant: 'primary', size: 'md' }))
   })
 
@@ -119,7 +112,7 @@ describe('Button: variantes y tamaños', () => {
   it('data-tour llega al botón y, con asChild, al hijo', () => {
     expect(html(<Button data-tour="nuevo">Nuevo</Button>)).toContain('data-tour="nuevo"')
     const link = html(
-      <Button asChild variant="outline" data-tour="ver">
+      <Button asChild variant="secondary" data-tour="ver">
         <a href="/x">Ver</a>
       </Button>,
     )
@@ -431,10 +424,10 @@ describe('Select', () => {
     expect(trigger.class).toContain('h-(--control-md)')
   })
 
-  it('suelto queda w-fit (compatibilidad) y size="default" es md', () => {
+  it('suelto queda w-fit (compatibilidad) y sin size es md', () => {
     const out = html(
       <Select>
-        <SelectTrigger size="default">
+        <SelectTrigger>
           <SelectValue />
         </SelectTrigger>
       </Select>,
@@ -459,8 +452,8 @@ describe('Checkbox y Switch', () => {
     expect(box.class).toContain('hit-area')
   })
 
-  it('Switch: md por defecto, `default` es md, pending marca ocupado', () => {
-    const out = html(<Switch size="default" pending data-tour="activo" aria-label="Activo" />)
+  it('Switch: md por defecto, pending marca ocupado', () => {
+    const out = html(<Switch pending data-tour="activo" aria-label="Activo" />)
     const root = attrsOf(out, /<button[^>]*>/)
     expect(root['data-size']).toBe('md')
     expect(root['aria-busy']).toBe('true')

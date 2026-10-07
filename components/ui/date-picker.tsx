@@ -12,6 +12,7 @@ import {
 import { type ControlSize, useControlSize } from '@/components/ui/control-size'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
+  formResetTarget,
   useField,
   useFieldErrorReporter,
   useFormReset,
@@ -46,6 +47,20 @@ export type DatePickerProps = Omit<
   defaultValue?: string | null
   /** Con la fecha cada vez que el texto pasa a ser (o deja de ser) una fecha válida. */
   onValueChange?: (iso: string | null) => void
+  /**
+   * Con la fecha cuando la persona la da por elegida (para filtros que navegan
+   * o piden datos: tipeando «15/10» se pasa por el 1 de enero y eso no tiene
+   * que navegar):
+   * - en el momento al elegir en el calendario, con un atajo o con «Borrar
+   *   fecha»;
+   * - tipeando, al salir del campo o con Enter. Ese Enter aplica la fecha y no
+   *   envía el formulario; el siguiente, sí. Con un texto que no es una fecha
+   *   avisa `null` (no hay fecha), y el error queda a la vista.
+   *
+   * Solo si cambió desde la última vez (o desde el `value` que llegó de
+   * afuera). El reset del formulario no lo llama.
+   */
+  onCommit?: (iso: string | null) => void
   /** ISO inclusivo. */
   min?: string
   /** ISO inclusivo. */
@@ -87,6 +102,11 @@ function isoToText(iso: string | null | undefined): string {
   return iso && isRealIsoDay(iso) ? formatIsoDay(iso) : ''
 }
 
+/** Una fecha civil que existe, o `null`. */
+function realIsoOrNull(iso: string | null | undefined): string | null {
+  return iso && isRealIsoDay(iso) ? iso : null
+}
+
 const ICON_BUTTON_CLASS = cn(
   'relative hit-area -me-1 flex size-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground',
   'outline-offset-2 outline-(--ring) hover:bg-hover hover:text-foreground focus-visible:outline-2',
@@ -108,6 +128,14 @@ const ICON_BUTTON_CLASS = cn(
  * campo. El foco entra en el día elegido (o en hoy). En pantallas táctiles es
  * un diálogo centrado con celdas de 44 px.
  *
+ * **Filtros que navegan:** `onCommit` en vez de `onValueChange` (ver la prop).
+ *
+ * **Formularios y React 19** (ver `useFormReset` en `field.tsx`): después de
+ * un `<form action>`, React resetea el formulario. Sin `value`, vuelve a su
+ * `defaultValue` (y, mientras nadie lo toque, sigue al `defaultValue` que
+ * cambie, como un `<input>` nativo). Controlado sin `defaultValue`, el reset no
+ * lo toca.
+ *
  * Las props sueltas (`data-tour`, `aria-*`, manejadores) van al `<input>`
  * visible; `className`, a la caja.
  */
@@ -116,6 +144,7 @@ function DatePicker({
   value,
   defaultValue,
   onValueChange,
+  onCommit,
   min,
   max,
   isDateDisabled,
@@ -165,12 +194,29 @@ function DatePicker({
   const [localError, setLocalError] = React.useState<string | null>(null)
   const check = checkDateText(text, rules)
   const iso = check.status === 'valid' ? check.iso : null
+  // Tocado desde que montó (o desde el último reset), como el «dirty» de un <input>.
+  const [edited, setEdited] = React.useState(false)
+  // La última fecha que se dio por elegida (`onCommit`): solo se avisa si cambia.
+  const [committed, setCommitted] = React.useState(() => realIsoOrNull(value ?? defaultValue))
 
   // Controlado: un cambio de afuera (que no es el eco de lo tipeado) reescribe el texto.
   const [lastValue, setLastValue] = React.useState(value)
   if (value !== lastValue) {
     setLastValue(value)
-    if (value !== undefined && value !== iso) setText(isoToText(value))
+    if (value !== undefined && value !== iso) {
+      setText(isoToText(value))
+      setCommitted(realIsoOrNull(value))
+    }
+  }
+
+  // No controlado y sin tocar: sigue al `defaultValue` que cambie, como un <input> nativo.
+  const [lastDefault, setLastDefault] = React.useState(defaultValue)
+  if (defaultValue !== lastDefault) {
+    setLastDefault(defaultValue)
+    if (value === undefined && !edited) {
+      setText(isoToText(defaultValue))
+      setCommitted(realIsoOrNull(defaultValue))
+    }
   }
 
   function setError(message: string | null) {
@@ -186,25 +232,45 @@ function DatePicker({
 
   useFormReset(localRef, () => {
     setError(null)
-    const resetIso = defaultValue && isRealIsoDay(defaultValue) ? defaultValue : null
+    setEdited(false)
+    // Controlado sin `defaultValue`: el reset (también el de React 19 después
+    // de un `<form action>`) no borra lo que el `value` dice.
+    const target = formResetTarget(value, defaultValue)
+    if (target.keep) {
+      setText(isoToText(value))
+      return
+    }
+    const resetIso = realIsoOrNull(target.to)
     setText(isoToText(resetIso))
+    setCommitted(resetIso)
     if (resetIso !== iso) onValueChange?.(resetIso)
   })
+
+  /** Avisa la fecha elegida (`onCommit`) si cambió desde la última vez. */
+  function commit(next: string | null) {
+    if (next === committed) return
+    setCommitted(next)
+    onCommit?.(next)
+  }
 
   /** Una fecha elegida en el calendario o con un atajo. */
   function choose(next: string) {
     setText(formatIsoDay(next))
+    setEdited(true)
     setError(null)
     localRef.current?.setCustomValidity('')
     if (next !== iso) onValueChange?.(next)
+    commit(next)
     setOpen(false)
   }
 
   function clear() {
     setText('')
+    setEdited(true)
     setError(null)
     localRef.current?.setCustomValidity('')
     if (iso !== null) onValueChange?.(null)
+    commit(null)
     localRef.current?.focus()
   }
 
@@ -298,6 +364,7 @@ function DatePicker({
                     input.selectionStart === raw.length && input.selectionEnd === raw.length
                   const next = atEnd ? maskDateTyping(raw, text) : raw
                   setText(next)
+                  setEdited(true)
                   const nextCheck = checkDateText(next, rules)
                   input.setCustomValidity(nextCheck.error ?? '')
                   if (localError !== null && nextCheck.error === null) setError(null)
@@ -310,6 +377,18 @@ function DatePicker({
                   if (event.altKey && event.key === 'ArrowDown' && canOpen) {
                     event.preventDefault()
                     setOpen(true)
+                    return
+                  }
+                  // Con `onCommit`, el Enter de una fecha tipeada sin aplicar la
+                  // aplica (y no envía); sin nada pendiente, Enter envía como siempre.
+                  if (event.key === 'Enter' && onCommit && iso !== committed) {
+                    event.preventDefault()
+                    if (check.iso) {
+                      const tidy = formatIsoDay(check.iso)
+                      if (tidy !== text) setText(tidy)
+                    }
+                    setError(check.error)
+                    commit(iso)
                   }
                 }}
                 onFocus={(event) => {
@@ -328,6 +407,7 @@ function DatePicker({
                       if (tidy !== text) setText(tidy)
                     }
                     setError(check.error)
+                    commit(iso)
                   }
                   onBlur?.(event)
                 }}

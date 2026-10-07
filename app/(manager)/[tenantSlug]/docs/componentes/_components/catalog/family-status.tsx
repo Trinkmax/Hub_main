@@ -29,6 +29,7 @@ import {
   SkeletonForm,
   SkeletonKPIGroup,
   SkeletonPageHeader,
+  SkeletonSection,
   SkeletonTable,
   SkeletonText,
 } from '@/components/ui/skeleton'
@@ -117,6 +118,12 @@ function BadgeDemo() {
             data-tour={index === 0 ? tourId('status-badge') : undefined}
           />
         ))}
+      </DemoRow>
+      <DemoRow label="Con una cuenta: el tono del mapa y el texto propio («3 pendientes»)">
+        <StatusBadge status="pending" map={RESERVATION_STATUS} count={3}>
+          pendientes
+        </StatusBadge>
+        <StatusBadge status="arrived" map={RESERVATION_STATUS} count={12} />
       </DemoRow>
     </DemoStack>
   )
@@ -267,9 +274,12 @@ function SkeletonDemo() {
           <SkeletonText lines={2} className="flex-1" />
         </div>
       </DemoRow>
-      <DemoRow label="Encabezado y KPIs" stack>
+      <DemoRow label="Encabezado, KPIs (la misma grilla que KPIGroup) y una sección" stack>
         <SkeletonPageHeader actions={1} />
         <SkeletonKPIGroup count={4} />
+        <SkeletonSection actions={1}>
+          <SkeletonText lines={2} />
+        </SkeletonSection>
       </DemoRow>
       <DemoRow label={`Tabla (densidad ${density === 'compact' ? 'compacta' : 'cómoda'})`} stack>
         <SkeletonTable
@@ -484,7 +494,6 @@ export function StatusFamily() {
     <CatalogFamily id="estado">
       <CatalogBlock
         id="badge"
-        compat="El `variant` viejo se lee como `tone` + `appearance`: `default` → marca, `destructive` → peligro, `outline` → neutra con contorno (`@deprecated`)."
         purpose="Etiqueta de estado: suave por defecto, con el texto siempre (nunca solo color)."
         yes="Estados de un registro (`StatusBadge` con el mapa del dominio en `lib/<dominio>/status-meta.ts`) y marcas chicas («Nuevo»)."
         no="Para una acción (`Button`) o un filtro (`FilterChip`). Sólida solo para el sello dorado y la cuenta de sin leer."
@@ -555,7 +564,6 @@ export const RESERVATION_STATUS: StatusMap<Status> = {
 
       <CatalogBlock
         id="skeleton"
-        compat="`skeleton-list` y `CardGridSkeleton` son alias de los presets de `skeleton.tsx` (`@deprecated`)."
         purpose="Esqueletos que copian los altos finales: nada salta al cargar."
         yes="Cada `loading.tsx` es `PageShell` + presets, con `aria-busy` y un solo «Cargando…» (`SkeletonStatus`)."
         no="Una espera corta dentro de un control: `Spinner`."

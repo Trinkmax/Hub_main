@@ -3,7 +3,17 @@ import Link from 'next/link'
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 import { Amount, type AmountProps, amountText } from './amount'
+import {
+  KPI_CELL_PADDING,
+  KPI_GRID_CLASS,
+  KPI_GROUP_CLASS,
+  KPI_GROUP_FRAME_CLASS,
+  type KPIGroupColumns,
+  kpiGroupColumns,
+} from './kpi-grid'
 import { Skeleton } from './skeleton'
+
+export type { KPIGroupColumns } from './kpi-grid'
 
 export type KPIDeltaDirection = 'up' | 'down' | 'flat'
 export type KPITone = 'positive' | 'negative' | 'neutral'
@@ -166,17 +176,22 @@ function KPIDeltaLine({
 }
 
 /**
- * Lo que comparten `KPI` y el `StatCard` de compatibilidad. `deltaNode` y
- * `sparkline` existen solo para `StatCard`: un KPI nuevo usa `delta`.
+ * Un número con su nombre (§3.5): etiqueta en `type-label`, valor en
+ * `type-kpi` (Fraunces, cifras proporcionales), unidad, variación y ayuda.
+ * Server-safe. Quieto: sin conteo, sin «float».
  *
- * @internal
+ * Semántica de lista de definiciones: en un `KPIGroup` es un `<div>` con
+ * `<dt>` (etiqueta) y `<dd>` (valor); suelto abre su propio `<dl>`. El lector
+ * de pantalla lee pares etiqueta-valor en vez de números sueltos.
+ *
+ * Con `href`, el link va adentro del `<dd>` y se estira a todo el KPI;
+ * presionar pinta `--active` (sin escala) y el foco se dibuja adentro.
  */
-export function KPIBase({
+export function KPI({
   label,
   value,
   unit,
   delta,
-  deltaNode,
   hint,
   status,
   href,
@@ -184,10 +199,9 @@ export function KPIBase({
   size = 'md',
   loading = false,
   grouped = false,
-  sparkline,
   className,
   ...props
-}: KPIProps & { deltaNode?: React.ReactNode; sparkline?: React.ReactNode }) {
+}: KPIProps) {
   const labelId = React.useId()
   const valueId = `${labelId}valor`
   const linked = Boolean(href) && !loading
@@ -241,17 +255,10 @@ export function KPIBase({
             label={delta.label}
           />
         ) : null}
-        {!loading && deltaNode ? deltaNode : null}
         {!loading && status ? <div data-slot="kpi-status">{status}</div> : null}
         {hint ? (
           <div data-slot="kpi-hint" className="text-pretty type-caption text-muted-foreground">
             {hint}
-          </div>
-        ) : null}
-        {sparkline ? (
-          // Debajo del valor, sin capturar el mouse (la tarjeta entera puede ser un link).
-          <div data-slot="kpi-sparkline" className="pointer-events-none mt-2 min-h-8 w-full">
-            {sparkline}
           </div>
         ) : null}
       </dd>
@@ -261,7 +268,7 @@ export function KPIBase({
   const rootClass = cn(
     // El KPI es contenedor de consultas: la cifra se mide contra su ancho (FIT_CLASS).
     'relative @container flex min-w-0 flex-col gap-1',
-    grouped && 'p-4 sm:p-6',
+    grouped && KPI_CELL_PADDING,
     linked && [
       'transition-colors duration-(--duration-quick) ease-(--ease-ui) motion-reduce:transition-none',
       'hover:bg-hover has-[a:active]:bg-active',
@@ -287,49 +294,11 @@ export function KPIBase({
   )
 }
 
-/**
- * Un número con su nombre (§3.5): etiqueta en `type-label`, valor en
- * `type-kpi` (Fraunces, cifras proporcionales), unidad, variación y ayuda.
- * Server-safe. Quieto: sin conteo, sin «float».
- *
- * Semántica de lista de definiciones: en un `KPIGroup` es un `<div>` con
- * `<dt>` (etiqueta) y `<dd>` (valor); suelto abre su propio `<dl>`. El lector
- * de pantalla lee pares etiqueta-valor en vez de números sueltos.
- *
- * Con `href`, el link va adentro del `<dd>` y se estira a todo el KPI;
- * presionar pinta `--active` (sin escala) y el foco se dibuja adentro.
- */
-export function KPI(props: KPIProps) {
-  return <KPIBase {...props} />
-}
-
-export type KPIGroupColumns = 2 | 3 | 4
-
 export type KPIGroupProps = React.ComponentProps<'dl'> & {
   /** Columnas en escritorio. Sin el dato, salen de la cantidad de KPIs. */
   columns?: KPIGroupColumns
   /** Una sola tarjeta con divisores (default). `false`: solo la grilla con pelos. */
   framed?: boolean
-}
-
-/**
- * Grilla y divisores por cantidad de columnas. Celular: 2 × 2 para 2 o 4 KPIs
- * y 1 × 3 para 3 (§5.1 y §5.3). Escritorio: 3 desde `md`; 4 recién desde `xl`,
- * porque con plata de 8 cifras cuatro celdas no entran antes. Los pelos se
- * dibujan por posición (`nth-child`), así una fila incompleta no deja una
- * línea suelta. Clases enteras para que Tailwind las genere.
- */
-const GRID_CLASS: Readonly<Record<1 | KPIGroupColumns, string>> = {
-  1: 'grid-cols-1 [&>*+*]:border-t',
-  2: 'grid-cols-2 [&>*:nth-child(2n)]:border-l [&>*:nth-child(n+3)]:border-t',
-  3: 'grid-cols-1 max-md:[&>*+*]:border-t md:grid-cols-3 md:[&>*:not(:nth-child(3n+1))]:border-l md:[&>*:nth-child(n+4)]:border-t',
-  4: 'grid-cols-2 max-xl:[&>*:nth-child(2n)]:border-l max-xl:[&>*:nth-child(n+3)]:border-t xl:grid-cols-4 xl:[&>*:not(:nth-child(4n+1))]:border-l xl:[&>*:nth-child(n+5)]:border-t',
-}
-
-function defaultColumns(count: number): 1 | KPIGroupColumns {
-  if (count <= 1) return 1
-  if (count <= 4) return count as KPIGroupColumns
-  return count <= 6 ? 3 : 4
 }
 
 /**
@@ -346,7 +315,7 @@ function groupChildren(children: React.ReactNode): { nodes: React.ReactNode; cou
         return visit((child.props as { children?: React.ReactNode }).children)
       }
       count += 1
-      if (child.type === KPI || child.type === KPIBase) {
+      if (child.type === KPI) {
         return React.cloneElement(child as React.ReactElement<KPIProps>, { grouped: true })
       }
       return child
@@ -362,15 +331,15 @@ function groupChildren(children: React.ReactNode): { nodes: React.ReactNode; cou
  */
 export function KPIGroup({ columns, framed = true, className, children, ...props }: KPIGroupProps) {
   const { nodes, count } = groupChildren(children)
-  const cols = columns ?? defaultColumns(count)
+  const cols = columns ?? kpiGroupColumns(count)
   return (
     <dl
       data-slot="kpi-group"
       data-columns={cols}
       className={cn(
-        'grid [&>*]:border-border',
-        GRID_CLASS[cols],
-        framed && 'overflow-hidden rounded-xl border border-border bg-card text-card-foreground',
+        KPI_GROUP_CLASS,
+        KPI_GRID_CLASS[cols],
+        framed && KPI_GROUP_FRAME_CLASS,
         className,
       )}
       {...props}

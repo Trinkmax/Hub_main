@@ -307,7 +307,6 @@ export function DataFamily() {
 
       <CatalogBlock
         id="data-table"
-        compat="`table.tsx` re-exporta los primitivos con los nombres de shadcn, y `FilterBar` y `FilterSearch` son `DataTableToolbar` y `SearchField`. `DataTableRow onClick` no anda con teclado (`@deprecated`)."
         wide
         sample
         purpose="La tabla del panel: un solo aspecto, declarativa por columnas o con primitivos, ordenada y paginada por URL."
@@ -334,6 +333,8 @@ export function DataFamily() {
         a11y={[
           '`<table>` real con `<caption>`; el encabezado ordenable lleva `aria-sort` y su flecha cambia al instante.',
           'Fila-link: una sola parada de Tab por fila, con el anillo en toda la fila. Nunca `onClick` en un `<tr>`.',
+          'Si la fila abre un cajón o un diálogo, `onRowAction`: un botón estirado con `aria-haspopup`, no un link a `?id=`.',
+          '`rowTone` acompaña a un estado escrito (franja de 3 px o texto apagado), nunca lo reemplaza; `mobileLabels` pone «Vence: 15/10» a la vista en las tarjetas.',
           'Selección: «Elegir Distribuidora del Centro SA» en cada casilla, Mayús + click elige un rango y la barra anuncia «3 elegidos».',
           'En el celular las filas pasan a tarjetas (y la barra de lo elegido queda fija abajo); los totales siguen con la regla contable.',
         ]}

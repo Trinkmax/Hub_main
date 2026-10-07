@@ -6,9 +6,11 @@ import { renderToString } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChipGroup, FilterChip } from '@/components/ui/filter-chip'
 import { SectionNav } from '@/components/ui/section-nav'
-import { SegmentedControl } from '@/components/ui/segmented-control'
-import { SlidingTabs } from '@/components/ui/sliding-tabs'
-import { Stepper } from '@/components/ui/stepper'
+import {
+  SegmentedControl,
+  segmentedFade,
+  segmentedRevealLeft,
+} from '@/components/ui/segmented-control'
 import { Steps } from '@/components/ui/steps'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TabsNav } from '@/components/ui/tabs-nav'
@@ -17,8 +19,8 @@ import { TabsNav } from '@/components/ui/tabs-nav'
  * Kit HUB, navegación dentro de una página (§3.3): lo que sale en el primer
  * HTML. Roles y ARIA (tablist/tab/tabpanel, radiogroup/radio, nav con
  * aria-current, aria-pressed, aria-current="step"), `data-tour` que llega al
- * DOM (los anclajes de los tours) y las compatibilidades: `SlidingTabs` y
- * `Stepper` siguen andando con sus props de siempre.
+ * DOM (los anclajes de los tours) y el segmentado que no entra (se desliza
+ * con fundidos o baja de fila).
  */
 
 // usePathname afuera de Next devuelve null: se fija uno por test.
@@ -304,43 +306,91 @@ describe('SegmentedControl: filtro de una sola opción', () => {
   })
 })
 
-describe('SlidingTabs: compatibilidad (envoltorio de SegmentedControl)', () => {
-  it('mismas props de siempre; aria-label por defecto «Vista»', () => {
-    const out = html(
-      <SlidingTabs
-        size="sm"
-        className="max-w-full overflow-x-auto"
-        value="evento"
-        onChange={() => {}}
-        tabs={[
-          { value: 'dia', label: 'Por día' },
-          { value: 'evento', label: 'Por evento' },
-        ]}
-      />,
-    )
+describe('SegmentedControl: cuando las opciones no entran', () => {
+  const many = [
+    { value: 'all', label: 'Todas', count: 1204 },
+    { value: '5', label: '5 estrellas', count: 830 },
+    { value: '4', label: '4 estrellas', count: 210 },
+    { value: '3', label: '3 estrellas', count: 98 },
+    { value: '2', label: '2 estrellas', count: 41 },
+    { value: '1', label: '1 estrella', count: 25 },
+  ]
+
+  it('scroll por defecto: la pista se desliza sin barra y sin arrastrar la página', () => {
+    const out = html(<SegmentedControl aria-label="Estrellas" items={many} value="3" />)
     const group = only(out, /<div[^>]*role="radiogroup"[^>]*>/)
-    expect(group['aria-label']).toBe('Vista')
-    expect(group.class?.split(/\s+/)).toContain('overflow-x-auto')
-    const checked = tags(out, /<button[^>]*role="radio"[^>]*>/).filter(
-      (r) => r['aria-checked'] === 'true',
+    expect(group['data-overflow']).toBe('scroll')
+    const cls = group.class?.split(/\s+/) ?? []
+    expect(cls).toEqual(
+      expect.arrayContaining([
+        'overflow-x-auto',
+        'overscroll-x-contain',
+        '[scrollbar-width:none]',
+        '[&::-webkit-scrollbar]:hidden',
+        'max-w-full',
+        'h-(--control-md)',
+      ]),
     )
-    expect(checked.map((r) => r.value)).toEqual(['evento'])
-    expect(out).not.toContain('role="tablist"')
+    // El fundido lo pone data-fade (medido en el cliente): en el server, ninguno.
+    expect(group['data-fade']).toBeUndefined()
+    expect(cls).toContain(
+      'data-[fade=both]:[mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%-1.5rem),transparent)]',
+    )
+    expect(cls).toContain(
+      'data-[fade=end]:[mask-image:linear-gradient(to_left,transparent,#000_1.5rem)]',
+    )
   })
 
-  it('acepta otro nombre y pasa data-*', () => {
+  it('wrap: las opciones bajan de fila y cada una conserva su alto', () => {
     const out = html(
-      <SlidingTabs
-        aria-label="Nivel"
-        data-tour="club-tabs"
-        value="a"
-        onChange={() => {}}
-        tabs={[{ value: 'a', label: 'A' }]}
-      />,
+      <SegmentedControl aria-label="Estrellas" items={many} overflow="wrap" size="sm" />,
     )
     const group = only(out, /<div[^>]*role="radiogroup"[^>]*>/)
-    expect(group['aria-label']).toBe('Nivel')
-    expect(group['data-tour']).toBe('club-tabs')
+    expect(group['data-overflow']).toBe('wrap')
+    const cls = group.class?.split(/\s+/) ?? []
+    expect(cls).toEqual(expect.arrayContaining(['flex-wrap', 'h-auto', 'min-h-(--control-sm)']))
+    expect(cls).not.toContain('h-(--control-sm)')
+    expect(cls).not.toContain('overflow-x-auto')
+    const option = tags(out, /<button[^>]*role="radio"[^>]*>/)[0]?.class?.split(/\s+/) ?? []
+    expect(option).toContain('min-h-[calc(var(--control-sm)-0.25rem)]')
+  })
+
+  it('modo link: el mismo desplazamiento en el <nav>', () => {
+    const out = html(
+      <SegmentedControl
+        aria-label="Estrellas"
+        value="all"
+        items={many.map((m) => ({ ...m, href: `/hub/reviews?rating=${m.value}` }))}
+      />,
+    )
+    const navTag = only(out, /<nav[^>]*>/)
+    expect(navTag['data-overflow']).toBe('scroll')
+    expect(navTag.class?.split(/\s+/)).toContain('overflow-x-auto')
+  })
+
+  it('segmentedFade: el borde que esconde opciones, con 1 px de tolerancia', () => {
+    expect(segmentedFade({ scrollLeft: 0, scrollWidth: 300, clientWidth: 300 })).toBeNull()
+    expect(segmentedFade({ scrollLeft: 0, scrollWidth: 300.6, clientWidth: 300 })).toBeNull()
+    expect(segmentedFade({ scrollLeft: 0, scrollWidth: 500, clientWidth: 300 })).toBe('end')
+    expect(segmentedFade({ scrollLeft: 120, scrollWidth: 500, clientWidth: 300 })).toBe('both')
+    expect(segmentedFade({ scrollLeft: 200, scrollWidth: 500, clientWidth: 300 })).toBe('start')
+    // RTL: Chrome cuenta el desplazamiento en negativo.
+    expect(segmentedFade({ scrollLeft: -200, scrollWidth: 500, clientWidth: 300 })).toBe('start')
+  })
+
+  it('segmentedRevealLeft: la elegida queda a la vista, lejos del fundido', () => {
+    const view = { scrollLeft: 0, clientWidth: 300 }
+    // Ya se ve entera (con 24 px de aire): no se mueve nada.
+    expect(segmentedRevealLeft(view, { start: 40, end: 120 })).toBeNull()
+    // Se corta a la derecha: se corre lo justo, más el aire.
+    expect(segmentedRevealLeft(view, { start: 320, end: 400 })).toBe(124)
+    // Se corta a la izquierda: vuelve hasta su comienzo menos el aire, nunca negativo.
+    expect(
+      segmentedRevealLeft({ scrollLeft: 200, clientWidth: 300 }, { start: 210, end: 260 }),
+    ).toBe(186)
+    expect(segmentedRevealLeft({ scrollLeft: 50, clientWidth: 300 }, { start: 10, end: 60 })).toBe(
+      0,
+    )
   })
 })
 
@@ -403,7 +453,7 @@ describe('FilterChip y ChipGroup: filtros que se suman', () => {
   })
 })
 
-describe('Steps y Stepper: pasos de un asistente', () => {
+describe('Steps: pasos de un asistente', () => {
   const steps = [
     { label: 'Cliente', description: 'Buscá o creá' },
     { label: 'Consumo', description: 'Cargá los ítems' },
@@ -429,11 +479,5 @@ describe('Steps y Stepper: pasos de un asistente', () => {
     expect(done?.class?.split(/\s+/)).toContain('hidden')
     expect(current?.class?.split(/\s+/)).not.toContain('hidden')
     expect(upcoming?.class?.split(/\s+/)).toContain('hidden')
-  })
-
-  it('Stepper es Steps con otro nombre: mismo HTML', () => {
-    expect(html(<Stepper steps={steps} current={2} />)).toBe(
-      html(<Steps steps={steps} current={2} />),
-    )
   })
 })

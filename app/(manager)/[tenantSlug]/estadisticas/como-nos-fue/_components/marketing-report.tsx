@@ -1,5 +1,4 @@
-import { ChevronRight } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { Disclosure } from '@/components/ui/disclosure'
 import {
   computeMarketingKpis,
   type EventMarketingRow,
@@ -88,36 +87,6 @@ export function MathStep({ step }: { step: NightMathStep }) {
       <span className="font-medium tabular-nums text-foreground">{step.value}</span>
       {step.after}
     </>
-  )
-}
-
-/** Un `<details>` de la casa: chevron que gira, sin el triángulo nativo. */
-export function Disclosure({
-  summary,
-  children,
-  className,
-}: {
-  summary: string
-  children: ReactNode
-  className?: string
-}) {
-  return (
-    <details className={cn('group text-xs', className)}>
-      <summary
-        className={cn(
-          'inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-muted-foreground',
-          'outline-offset-2 outline-(--ring) hover:text-foreground focus-visible:outline-2',
-          'pointer-coarse:min-h-11 [&::-webkit-details-marker]:hidden',
-        )}
-      >
-        <ChevronRight
-          aria-hidden
-          className="size-3.5 transition-transform duration-(--duration-quick) ease-(--ease-ui) group-open:rotate-90 motion-reduce:transition-none"
-        />
-        {summary}
-      </summary>
-      <div className="mt-2 pl-[1.125rem]">{children}</div>
-    </details>
   )
 }
 
@@ -242,7 +211,7 @@ function MarketingNote({ notes }: { notes: string }) {
 export function HowItsCalculated({ bullets }: { bullets: string[] }) {
   if (bullets.length === 0) return null
   return (
-    <Disclosure summary="¿Cómo se calcula?" className="mt-3">
+    <Disclosure variant="inline" title="¿Cómo se calcula?" className="mt-3">
       <ul className="max-w-prose list-disc space-y-1 pl-4 leading-relaxed text-muted-foreground">
         {bullets.map((b) => (
           <li key={b}>{b}</li>

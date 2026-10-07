@@ -98,13 +98,14 @@ export const CATALOG_FAMILIES: readonly CatalogFamilyMeta[] = [
   {
     id: 'navegacion',
     label: 'Navegación',
-    summary: 'Pestañas, segmentados, chips y pasos.',
+    summary: 'Pestañas, segmentados, chips, pasos y links que salen del panel.',
     blocks: [
       { id: 'tabs', name: 'Tabs y TabsNav', probes: ['tabs-list', 'tabs-content', 'tabs-nav'] },
       { id: 'section-nav', name: 'SectionNav', probes: ['section-nav'] },
       { id: 'segmented-control', name: 'SegmentedControl', probes: ['segmented-control'] },
       { id: 'filter-chip', name: 'FilterChip y ChipGroup', probes: ['filter-chip', 'chip-group'] },
       { id: 'steps', name: 'Steps', probes: ['steps'] },
+      { id: 'reload-link', name: 'ReloadLink', probes: ['reload-link'] },
     ],
   },
   {
@@ -125,12 +126,13 @@ export const CATALOG_FAMILIES: readonly CatalogFamilyMeta[] = [
   {
     id: 'estructura',
     label: 'Estructura',
-    summary: 'Página, encabezado, secciones, tarjetas y KPIs.',
+    summary: 'Página, encabezado, secciones, tarjetas, desplegables y KPIs.',
     blocks: [
       { id: 'page-shell', name: 'PageShell', probes: ['page-shell'] },
       { id: 'page-header', name: 'PageHeader y Breadcrumb', probes: ['page-header', 'breadcrumb'] },
       { id: 'section', name: 'Section', probes: ['section'] },
       { id: 'card', name: 'Card', probes: ['card'] },
+      { id: 'disclosure', name: 'Disclosure', probes: ['disclosure'] },
       { id: 'kpi', name: 'KPI y KPIGroup', probes: ['kpi-group', 'kpi'] },
       {
         id: 'separator',

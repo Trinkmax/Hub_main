@@ -19,7 +19,6 @@ import {
 import { formatNumber } from '@/lib/format/number-kind'
 import type { StaffSessionSummary, StaffSummaryRow } from '@/lib/staff-performance/queries'
 import { elapsed, shortDateTime } from './format'
-import { RowButton } from './row-button'
 import { StaffSessionDetailDrawer } from './staff-session-detail-drawer'
 
 function tableName(s: Pick<StaffSessionSummary, 'alias' | 'table_label'>): string {
@@ -121,6 +120,8 @@ export function StaffDrawer({
                     caption={`Mesas atendidas por ${name}`}
                     rows={sessions}
                     getRowId={(s) => s.session_id}
+                    // Toda la fila abre el detalle de la mesa (otro cajón).
+                    onRowAction={(s) => setDetailSession(s.session_id)}
                     loading={loading}
                     error={
                       error ? { message: error, onRetry: () => setAttempt((n) => n + 1) } : null
@@ -130,11 +131,7 @@ export function StaffDrawer({
                         id: 'mesa',
                         header: 'Mesa',
                         cell: (s) => (
-                          <RowButton
-                            onClick={() => setDetailSession(s.session_id)}
-                            aria-haspopup="dialog"
-                            className="flex min-w-0 flex-col"
-                          >
+                          <span className="flex min-w-0 flex-col">
                             <span className="truncate font-medium text-foreground">
                               {tableName(s)}
                             </span>
@@ -143,7 +140,7 @@ export function StaffDrawer({
                               <span className="type-amount">{shortDateTime(s.paid_at)}</span>
                               {s.paid_at ? ` · ${elapsed(s.opened_at, s.paid_at)}` : null}
                             </span>
-                          </RowButton>
+                          </span>
                         ),
                       },
                       {
