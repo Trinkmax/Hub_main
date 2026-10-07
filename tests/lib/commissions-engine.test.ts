@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   type CommissionInput,
   calculateCommission,
+  formatARS,
   pickRateTier,
   type RateTier,
 } from '@/lib/commissions/calculate'
@@ -381,13 +382,32 @@ describe('calculateCommission — edge cases', () => {
     expect(r[0]?.payable_cents).toBe(0)
   })
 
-  it('formato ARS — 45000 cents = $450', () => {
-    // Verifica que formatARS no rompe y respeta locale.
-    // (Se hace import lazy para no obligar al motor a tener Intl en todos los runtimes.)
-    return import('@/lib/commissions/calculate').then(({ formatARS }) => {
-      // 45000 cents = 450 pesos
-      expect(formatARS(45000)).toContain('450')
-    })
+  it('formato ARS — 45000 cents = $ 450', () => {
+    // Pesos enteros, `$` + espacio duro (U+00A0) y punto de miles: el mismo
+    // texto que daba `Intl.NumberFormat('es-AR', { style: 'currency' })`.
+    expect(formatARS(45000)).toBe('$ 450')
+    expect(formatARS(0)).toBe('$ 0')
+    expect(formatARS(123456789)).toBe('$ 1.234.568')
+    // La mitad redondea hacia arriba, como el `Math.round(cents / 100)` de antes.
+    expect(formatARS(45050)).toBe('$ 451')
+    expect(formatARS(45049)).toBe('$ 450')
+    expect(formatARS(149)).toBe('$ 1')
+    expect(formatARS(150)).toBe('$ 2')
+  })
+
+  it('formato ARS sin Intl: mismo string en Node (Vercel) y en el navegador', () => {
+    vi.stubGlobal('Intl', undefined)
+    const boom = () => {
+      throw new Error('no se usa toLocale*')
+    }
+    vi.spyOn(Number.prototype, 'toLocaleString').mockImplementation(boom)
+    try {
+      expect(formatARS(45000)).toBe('$ 450')
+      expect(formatARS(1_250_000)).toBe('$ 12.500')
+    } finally {
+      vi.unstubAllGlobals()
+      vi.restoreAllMocks()
+    }
   })
 })
 

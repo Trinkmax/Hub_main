@@ -7,15 +7,14 @@ import { capitalizeFirst, formatWeekdayDayMonth, monthName, weekdayName } from '
  * dan las mismas cadenas («sáb.» contra «sáb») y eso rompía la hidratación.
  * Las fechas son civiles (`yyyy-MM-dd`), así que no hay zona horaria que
  * corra un día.
- *
- * TODO(kit §2.12): `formatDayLabel` de `lib/salon/date-presets` todavía usa
- * `Intl`; cuando `lib/salon` pase por su lote, estas pueden mudarse allá.
  */
 
-/** `'2026-07-31'` → `'Vie 31/07'`: encabezados de día y barras de rango. */
-export function dayLabel(iso: string): string {
-  return capitalizeFirst(formatWeekdayDayMonth(iso))
-}
+/**
+ * `'2026-07-31'` → `'Vie 31/07'`: encabezados de día y barras de rango. Es
+ * `formatDayLabel` de `lib/dates` (la misma del tablero de señas y del contador
+ * del día), con el nombre que ya usa la agenda.
+ */
+export { formatDayLabel as dayLabel } from '@/lib/dates/format'
 
 /** `'2026-07-31'` → `'vie 31/07'`: para meterlo en una frase («Almuerzo del vie 31/07»). */
 export function dayLabelInline(iso: string): string {

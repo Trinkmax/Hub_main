@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { capitalizeFirst, formatWeekdayDayMonth, MONTH_NAMES_SHORT } from '@/lib/dates/format'
+import { formatDayLabel, MONTH_NAMES_SHORT } from '@/lib/dates/format'
 import { formatNumber } from '@/lib/format/number-kind'
 import { formatCents } from '@/lib/money/format'
 import type { DepositDay } from '@/lib/salon/deposits'
@@ -27,12 +27,11 @@ function money(cents: number): string {
 }
 
 /**
- * `'2026-09-09'` → `'Mié 09/09'`, armado a mano: el `Intl` del server y el del
- * navegador no siempre dan la misma abreviatura y rompían la hidratación.
+ * `'2026-09-09'` → `'Mié 09/09'`: `formatDayLabel` de `lib/dates` (armada a
+ * mano, sin `Intl`, la misma de la agenda de reservas). Se reexporta con este
+ * nombre para el tablero, que la usa en el día pico y en la tabla.
  */
-export function dayLabel(iso: string): string {
-  return capitalizeFirst(formatWeekdayDayMonth(iso)) || iso
-}
+export { formatDayLabel as dayLabel }
 
 /** `'2026-09-01'` → `'sep'`. */
 function monthTick(iso: string): string {
@@ -84,7 +83,7 @@ export function DepositsBarChart({
       <figcaption className="flex min-h-9 items-center type-small">
         {hovered ? (
           <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-            <span className="font-medium text-foreground">{dayLabel(hovered.day)}</span>
+            <span className="font-medium text-foreground">{formatDayLabel(hovered.day)}</span>
             <span className="type-amount font-semibold text-foreground">
               {money(hovered.total_cents)}
             </span>
@@ -132,7 +131,7 @@ export function DepositsBarChart({
             <button
               key={d.day}
               type="button"
-              aria-label={`${dayLabel(d.day)}: ${money(d.total_cents)}`}
+              aria-label={`${formatDayLabel(d.day)}: ${money(d.total_cents)}`}
               onMouseEnter={() => setActive(d.day)}
               onFocus={() => setActive(d.day)}
               onBlur={() => setActive(null)}

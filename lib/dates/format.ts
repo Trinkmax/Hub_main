@@ -156,6 +156,17 @@ export function formatWeekdayDayMonth(iso: string): string {
 }
 
 /**
+ * `'2026-07-31'` → `'Vie 31/07'`: la etiqueta de un día en encabezados, barras
+ * de rango y tooltips (agenda de reservas, tablero de señas, contador del día).
+ * Es la única: `dayLabel` de `components/reservations/day-labels`, la del
+ * gráfico de señas y `formatDayLabel` de `lib/salon/date-presets` son esta misma
+ * función. Vacío si no es un día real.
+ */
+export function formatDayLabel(iso: string): string {
+  return capitalizeFirst(formatWeekdayDayMonth(iso))
+}
+
+/**
  * Un rango civil, inclusivo:
  * - un solo día → `'15/09/2026'`
  * - mismo año → `'01/09 – 30/09/2026'`

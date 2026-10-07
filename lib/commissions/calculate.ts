@@ -25,6 +25,7 @@
  * Aritmética entera (cents). Sin floats.
  */
 
+import { formatCentsShort } from '@/lib/money/format'
 import type { MealType } from '@/lib/salon/types'
 
 export type RateTier = {
@@ -172,12 +173,14 @@ export function calculateCommission(
 // Utilidades de formato (display sólo)
 // ──────────────────────────────────────────────────────────
 
-const ARS = new Intl.NumberFormat('es-AR', {
-  style: 'currency',
-  currency: 'ARS',
-  maximumFractionDigits: 0,
-})
-
+/**
+ * Centavos → pesos enteros: `45000` → `'$ 450'` (espacio duro después del `$`).
+ * Es `formatCentsShort` de `lib/money`, armado a mano: el `Intl.NumberFormat`
+ * de antes dependía del ICU de cada runtime (Node en Vercel contra el
+ * navegador). Para montos ≥ 0, que es lo único que suma una comisión, da el
+ * mismo texto que daba `Intl` en es-AR; un negativo sale con el menos
+ * tipográfico (`−$ 450`) como el resto de la plata de la app.
+ */
 export function formatARS(cents: number): string {
-  return ARS.format(Math.round(cents / 100))
+  return formatCentsShort(cents)
 }

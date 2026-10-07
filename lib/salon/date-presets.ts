@@ -144,13 +144,11 @@ export function eachIsoDayInclusive(from: string, to: string): string[] {
   return days
 }
 
-/** `2026-07-31` → `Vie 31/07` (para subheaders y barras de rango). */
-export function formatDayLabel(iso: string): string {
-  const d = parseIsoDay(iso)
-  const weekday = new Intl.DateTimeFormat('es-AR', { weekday: 'short', timeZone: 'UTC' })
-    .format(d)
-    .replace('.', '')
-  const day = String(d.getUTCDate()).padStart(2, '0')
-  const month = String(d.getUTCMonth() + 1).padStart(2, '0')
-  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${day}/${month}`
-}
+/**
+ * `2026-07-31` → `Vie 31/07` (para subheaders y barras de rango). Vive en
+ * `lib/dates`, armada a mano: con `Intl` el ICU del server y el del navegador
+ * no siempre daban la misma abreviatura del día y eso rompía la hidratación. Se
+ * reexporta acá para los que ya la importan de este módulo. Un día que no
+ * existe da `''` (antes `Intl` tiraba `RangeError`).
+ */
+export { formatDayLabel } from '@/lib/dates/format'

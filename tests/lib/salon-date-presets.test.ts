@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   cordobaDayStartUtc,
   detectPreset,
@@ -129,6 +129,22 @@ describe('formatDayLabel', () => {
   it('devuelve el día de semana abreviado y capitalizado + dd/MM', () => {
     expect(formatDayLabel('2026-07-31')).toBe('Vie 31/07')
     expect(formatDayLabel('2026-08-02')).toBe('Dom 02/08')
+    expect(formatDayLabel('2026-07-29')).toBe('Mié 29/07')
+    expect(formatDayLabel('2026-08-01')).toBe('Sáb 01/08')
+  })
+
+  it('es la de lib/dates, armada a mano: no depende de Intl', () => {
+    vi.stubGlobal('Intl', undefined)
+    try {
+      expect(formatDayLabel('2026-07-31')).toBe('Vie 31/07')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('un día que no existe da vacío (antes Intl tiraba RangeError)', () => {
+    expect(formatDayLabel('2026-02-30')).toBe('')
+    expect(formatDayLabel('cualquiera')).toBe('')
   })
 })
 
