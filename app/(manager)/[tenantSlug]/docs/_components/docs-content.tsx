@@ -18,6 +18,8 @@ import {
   Zap,
 } from 'lucide-react'
 import { useState } from 'react'
+import { ROLE_DESCRIPTIONS, ROLE_LABELS, roleLabel } from '@/lib/tenant/roles'
+import { TENANT_ROLES, type TenantRole } from '@/lib/tenant/types'
 import { cn } from '@/lib/utils'
 
 type Section = {
@@ -116,7 +118,7 @@ export function DocsContent({ tenantSlug, role }: { tenantSlug: string; role: st
           ))}
         </ul>
         <p className="mt-4 px-2.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-          Tu rol: {role}
+          Tu rol: {roleLabel(role)}
         </p>
       </nav>
 
@@ -216,11 +218,25 @@ function SectionInicio() {
   )
 }
 
+/**
+ * Dónde arranca cada rol (el home de `homePathForRole`). El `satisfies` obliga a
+ * sumar acá cada rol nuevo: la tabla de la guía no se puede quedar atrás.
+ */
+const ROLE_HOME_SCREEN = {
+  owner: 'Resumen y todas las páginas.',
+  cashier: 'Salón, desde el celular.',
+  waiter: 'Salón, desde el celular.',
+  kitchen: 'Cocina (KDS).',
+  editor: 'Carta.',
+  host: 'Reservas y calendario de eventos.',
+  accountant: 'Administración.',
+} satisfies Record<TenantRole, string>
+
 function SectionRoles() {
   return (
     <div>
       <H2>Roles y permisos</H2>
-      <P>HUB tiene 4 roles, cada uno con su panel y sus permisos:</P>
+      <P>HUB tiene {TENANT_ROLES.length} roles, cada uno con su panel y sus permisos:</P>
 
       <div className="mt-4 overflow-x-auto">
         <table className="w-full text-sm">
@@ -232,33 +248,21 @@ function SectionRoles() {
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b">
-              <td className="py-3 pr-3 font-medium">Owner</td>
-              <td className="py-3 pr-3">Todo. Configuración, equipo, finanzas, marketing.</td>
-              <td className="py-3">Resumen, todas las páginas.</td>
-            </tr>
-            <tr className="border-b">
-              <td className="py-3 pr-3 font-medium">Mozo</td>
-              <td className="py-3 pr-3">Sesiones abiertas, confirmar comandas, cobrar.</td>
-              <td className="py-3">Sesiones.</td>
-            </tr>
-            <tr className="border-b">
-              <td className="py-3 pr-3 font-medium">Cocina</td>
-              <td className="py-3 pr-3">Avanzar comandas en cocina, marcar sin stock.</td>
-              <td className="py-3">Cocina (KDS).</td>
-            </tr>
-            <tr>
-              <td className="py-3 pr-3 font-medium">Cajero</td>
-              <td className="py-3 pr-3">Cobrar mesas (rol legacy, casi-mozo).</td>
-              <td className="py-3">Sesiones, cerrar mesa legacy.</td>
-            </tr>
+            {TENANT_ROLES.map((role) => (
+              <tr key={role} className="border-b last:border-b-0">
+                <td className="py-3 pr-3 font-medium">{ROLE_LABELS[role]}</td>
+                <td className="py-3 pr-3">{ROLE_DESCRIPTIONS[role]}</td>
+                <td className="py-3">{ROLE_HOME_SCREEN[role]}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
 
       <Note>
         El sidebar lateral se filtra automáticamente: cada rol solo ve las pantallas a las que tiene
-        permiso.
+        permiso. El rol «{ROLE_LABELS.accountant}» solo lo puede dar quien administra los accesos de
+        Administración.
       </Note>
     </div>
   )

@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { createClient } from '@/lib/supabase/server'
 import {
+  canManageAccountant,
   RoleRequiredError,
   requireRole,
   requireTenantAccess,
@@ -38,6 +39,9 @@ export default async function EquipoPage({ params }: { params: Promise<{ tenantS
 
   const supabase = await createClient()
   const user = access.user
+  // «Contabilidad» solo aparece para quien administra los accesos de
+  // Administración con el módulo prendido (las actions y la base lo exigen igual).
+  const accountantAllowed = canManageAccountant(access.accounting)
 
   const { data: rows, error } = await supabase.rpc('get_tenant_members', {
     p_tenant: access.tenant.id,
@@ -75,7 +79,7 @@ export default async function EquipoPage({ params }: { params: Promise<{ tenantS
           </p>
         </div>
         <div className="p-5">
-          <CreateMemberForm tenantSlug={tenantSlug} />
+          <CreateMemberForm tenantSlug={tenantSlug} canManageAccountant={accountantAllowed} />
         </div>
       </div>
 
@@ -96,6 +100,7 @@ export default async function EquipoPage({ params }: { params: Promise<{ tenantS
               member={m}
               tenantSlug={tenantSlug}
               isCurrentUser={user?.id === m.user_id}
+              canManageAccountant={accountantAllowed}
             />
           ))}
         </div>

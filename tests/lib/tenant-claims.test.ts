@@ -47,6 +47,21 @@ describe('readTenantClaims', () => {
       { id: 't2', slug: 'otro', role: 'waiter' },
     ])
   })
+
+  it('conserva el claim de la contadora (un rol que se descartara rutearía mal)', () => {
+    const claims = readTenantClaims({
+      tenants: [
+        { id: 't1', slug: 'hub', role: 'accountant' },
+        { id: 't2', slug: 'otro', role: 'owner' },
+      ],
+    })
+    expect(claims).toEqual([
+      { id: 't1', slug: 'hub', role: 'accountant' },
+      { id: 't2', slug: 'otro', role: 'owner' },
+    ])
+    if (!claims) throw new Error('unreachable')
+    expect(roleForSlug(claims, 'hub')).toBe('accountant')
+  })
 })
 
 describe('readActiveTenantId', () => {

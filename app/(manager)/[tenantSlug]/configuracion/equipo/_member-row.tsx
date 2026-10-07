@@ -41,7 +41,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ROLE_LABELS } from '@/lib/tenant/roles'
+import { assignableRoles, ROLE_LABELS } from '@/lib/tenant/roles'
 import type { TenantRole } from '@/lib/tenant/types'
 import { cn } from '@/lib/utils'
 import { removeMember, setMemberPassword, updateMemberRole } from './actions'
@@ -70,13 +70,21 @@ export function MemberRow({
   member,
   tenantSlug,
   isCurrentUser,
+  canManageAccountant,
 }: {
   member: Member
   tenantSlug: string
   isCurrentUser: boolean
+  /** «Contabilidad» solo se ofrece a quien administra los accesos de Administración. */
+  canManageAccountant: boolean
 }) {
   const [isPending, startTransition] = useTransition()
   const [role, setRole] = useState<TenantRole>(member.role)
+  // El rol actual siempre está en la lista (si no, el select queda en blanco).
+  // A la contadora solo la cambia quien administra los accesos: para el resto
+  // el select queda trabado (la action y la base lo frenan igual).
+  const roleOptions = assignableRoles(canManageAccountant, member.role)
+  const roleLocked = member.role === 'accountant' && !canManageAccountant
   const [removeOpen, setRemoveOpen] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
 
@@ -133,20 +141,23 @@ export function MemberRow({
         </div>
         <p className="truncate text-xs text-muted-foreground font-mono">{member.email}</p>
       </div>
-      <Select value={role} onValueChange={handleRoleChange} disabled={isPending}>
+      <Select value={role} onValueChange={handleRoleChange} disabled={isPending || roleLocked}>
         <SelectTrigger
-          className="h-8 w-[120px] text-sm transition-shadow data-[state=open]:ring-2 data-[state=open]:ring-ring/40"
+          className={cn(
+            'h-8 text-sm transition-shadow data-[state=open]:ring-2 data-[state=open]:ring-ring/40',
+            // «Contabilidad» no entra en 120 px: solo se ensancha si está en la lista.
+            roleOptions.includes('accountant') ? 'w-[140px]' : 'w-[120px]',
+          )}
           aria-label={`Rol de ${member.email}`}
         >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="owner">Dueño</SelectItem>
-          <SelectItem value="cashier">Cajero</SelectItem>
-          <SelectItem value="waiter">Mozo</SelectItem>
-          <SelectItem value="kitchen">Cocina</SelectItem>
-          <SelectItem value="editor">Contenido</SelectItem>
-          <SelectItem value="host">Anfitrión</SelectItem>
+          {roleOptions.map((option) => (
+            <SelectItem key={option} value={option}>
+              {ROLE_LABELS[option]}
+            </SelectItem>
+          ))}
         </SelectContent>
       </Select>
 

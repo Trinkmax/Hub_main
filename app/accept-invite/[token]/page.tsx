@@ -2,13 +2,15 @@ import { Mail } from 'lucide-react'
 import { BrandWordmarkLarge } from '@/components/shell/brand-mark'
 import { Badge } from '@/components/ui/badge'
 import { createClient } from '@/lib/supabase/server'
+import { roleLabel } from '@/lib/tenant/roles'
 import { AcceptInviteClient } from './accept-invite-client'
 
 export const metadata = { title: 'Aceptar invitación' }
 
 type Preview = {
   email: string
-  role: 'owner' | 'cashier' | 'waiter'
+  /** Rol de la invitación tal como lo devuelve la base (cualquier valor de tenant_role). */
+  role: string
   tenant_name: string
   expired: boolean
 }
@@ -46,8 +48,8 @@ export default async function AcceptInvitePage({ params }: { params: Promise<{ t
               <p className="mt-2 text-sm text-muted-foreground text-pretty">
                 Te invitaron a unirte a{' '}
                 <strong className="text-foreground">{preview.tenant_name}</strong> como{' '}
-                <Badge variant="outline" className="ml-0.5 capitalize">
-                  {preview.role}
+                <Badge variant="outline" className="ml-0.5">
+                  {roleLabel(preview.role)}
                 </Badge>
               </p>
             ) : (

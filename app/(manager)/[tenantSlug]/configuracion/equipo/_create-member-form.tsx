@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ROLE_LABELS } from '@/lib/tenant/roles'
+import { assignableRoles, ROLE_DESCRIPTIONS, ROLE_LABELS } from '@/lib/tenant/roles'
 import type { TenantRole } from '@/lib/tenant/types'
 import { cn } from '@/lib/utils'
 import { type CreateMemberState, createMemberWithPassword } from './actions'
@@ -66,8 +66,16 @@ function SubmitButton() {
 
 const initial: CreateMemberState | null = null
 
-export function CreateMemberForm({ tenantSlug }: { tenantSlug: string }) {
+export function CreateMemberForm({
+  tenantSlug,
+  canManageAccountant,
+}: {
+  tenantSlug: string
+  /** «Contabilidad» solo se ofrece a quien administra los accesos de Administración. */
+  canManageAccountant: boolean
+}) {
   const action = createMemberWithPassword.bind(null, tenantSlug)
+  const roleOptions = assignableRoles(canManageAccountant)
   const [state, formAction] = useActionState(action, initial)
   const [showPassword, setShowPassword] = useState(true)
   const [password, setPassword] = useState(() => generatePassword())
@@ -83,6 +91,7 @@ export function CreateMemberForm({ tenantSlug }: { tenantSlug: string }) {
   const emailId = useId()
   const passId = useId()
   const roleId = useId()
+  const roleHintId = useId()
   const nameId = useId()
 
   // Wrapper para capturar la password justo antes de mandar al server.
@@ -258,30 +267,34 @@ export function CreateMemberForm({ tenantSlug }: { tenantSlug: string }) {
             Rol
           </Label>
           <Select name="role" value={role} onValueChange={(v) => setRole(v as TenantRole)}>
-            <SelectTrigger id={roleId}>
+            <SelectTrigger
+              id={roleId}
+              className="w-full"
+              aria-describedby={roleHintId}
+              aria-invalid={Boolean(fieldErr('role')) || undefined}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="owner">
-                <span className="font-medium">Dueño</span> — control total
-              </SelectItem>
-              <SelectItem value="cashier">
-                <span className="font-medium">Cajero</span> — cierra mesas
-              </SelectItem>
-              <SelectItem value="waiter">
-                <span className="font-medium">Mozo</span> — registra clientes
-              </SelectItem>
-              <SelectItem value="kitchen">
-                <span className="font-medium">Cocina</span> — pantalla KDS
-              </SelectItem>
-              <SelectItem value="editor">
-                <span className="font-medium">Contenido</span> — edita la carta
-              </SelectItem>
-              <SelectItem value="host">
-                <span className="font-medium">Anfitrión</span> — reservas y eventos
-              </SelectItem>
+              {roleOptions.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {ROLE_LABELS[option]}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
+          {fieldErr('role') ? (
+            <p
+              id={roleHintId}
+              className="text-xs text-destructive animate-in fade-in-0 slide-in-from-top-1"
+            >
+              {fieldErr('role')}
+            </p>
+          ) : (
+            <p id={roleHintId} className="text-[11px] text-muted-foreground text-pretty">
+              {ROLE_DESCRIPTIONS[role]}
+            </p>
+          )}
         </div>
 
         <div className="flex items-center justify-end sm:col-span-2">
