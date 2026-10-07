@@ -12,7 +12,9 @@ import {
   useTransition,
 } from 'react'
 import { toast } from 'sonner'
-import { Sheet, SheetContent, SheetGrabber, SheetTitle } from '@/components/ui/sheet'
+import { PageShell } from '@/components/ui/page-shell'
+import { Sheet, SheetBody, SheetContent, SheetGrabber, SheetTitle } from '@/components/ui/sheet'
+import { toastUndo } from '@/components/ui/toast'
 import { awardPointsByAmount } from '@/lib/points/actions'
 import type { EarnRate } from '@/lib/points/earn-rate'
 import type { RecentQrAward } from '@/lib/points/queries'
@@ -70,7 +72,6 @@ import { useIsDesktop } from './use-is-desktop'
 // Realtime es el camino principal; esto es la red de seguridad.
 const SAFETY_NET_INTERVAL_MS = 60_000
 const FILTER_STORAGE_KEY = 'hub_operativo_filter'
-const UNDO_MS = 6000
 
 export type AwardsByCustomer = Record<string, RecentQrAward>
 
@@ -132,8 +133,9 @@ function readStoredFilter(): BoardFilter {
  *    array vivo, que Realtime mantiene al día;
  *  - cada acción es OPTIMISTA: la fila cambia al toque, la Server Action
  *    confirma con `data.row`, y si falla se vuelve atrás con un toast;
- *  - las acciones reversibles no piden confirmación: tienen "Deshacer" 6 s.
- *    Solo "volver a pendiente" desde llegó (liquida comisión) confirma.
+ *  - las acciones reversibles no piden confirmación: tienen "Deshacer"
+ *    (`toastUndo` del kit, el mismo tiempo en toda la app). Solo "volver a
+ *    pendiente" desde llegó (liquida comisión) confirma.
  */
 export function OperativoBoard({
   tenantSlug,
@@ -462,6 +464,12 @@ export function OperativoBoard({
       clock.minutes,
     )
   }, [groups, clock.minutes, searching])
+  // El nombre del evento que se está filtrando, para que el aviso diga cuál.
+  const eventFilterLabel = useMemo(() => {
+    if (!eventFilter) return null
+    const ev = events.find((e) => e.id === eventFilter)
+    return ev ? (ev.name_override ?? ev.template?.name ?? null) : null
+  }, [eventFilter, events])
 
   const selected = selectedId ? (reservations.find((r) => r.id === selectedId) ?? null) : null
 
@@ -497,17 +505,10 @@ export function OperativoBoard({
     [patchRow],
   )
 
+  // Mismo id por reserva: un cambio nuevo sobre la misma fila reemplaza al aviso
+  // anterior en vez de apilar dos «Deshacer» que se contradicen.
   const undoToast = useCallback((id: string, message: string, undo: () => Promise<void>) => {
-    toast(message, {
-      id: `op-${id}`,
-      duration: UNDO_MS,
-      action: {
-        label: 'Deshacer',
-        onClick: () => {
-          void undo()
-        },
-      },
-    })
+    toastUndo(message, { id: `op-${id}`, onUndo: undo })
   }, [])
 
   const actions = useMemo<BoardActions>(() => {
@@ -812,7 +813,8 @@ export function OperativoBoard({
 
   return (
     <MotionConfig reducedMotion="user">
-      <div className="mx-auto w-full max-w-screen-2xl px-4 pb-16 pt-4 sm:px-6 sm:pt-6 lg:px-8">
+      {/* `pb-16`: el último renglón no queda abajo de los avisos («Deshacer»). */}
+      <PageShell width="wide" className="pb-16 sm:pb-16">
         <DayNav
           date={date}
           today={today}
@@ -822,7 +824,7 @@ export function OperativoBoard({
           canAward={canAward}
         />
 
-        <div className="mt-4 lg:grid lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start lg:gap-6">
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start lg:gap-6">
           <div className="min-w-0">
             <PulseCard
               pulse={pulse}
@@ -862,7 +864,9 @@ export function OperativoBoard({
                 searching={searching}
                 query={deferredQuery}
                 filter={filter}
+                onShowAll={() => setFilter('all')}
                 eventFilter={eventFilter}
+                eventFilterLabel={eventFilterLabel}
                 onClearEventFilter={() => setEventFilter(null)}
                 partySize={partySize}
                 partyTally={partyTally}
@@ -898,15 +902,16 @@ export function OperativoBoard({
             </LayoutGroup>
           </div>
 
-          {/* Desktop: el detalle vive al lado, pegado bajo el topbar. */}
-          <aside className="hidden lg:block lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)] lg:overflow-y-auto">
+          {/* Desktop: el detalle vive al lado, pegado bajo el topbar (`--topbar-h`
+              + 24 px de aire, y nunca más alto que lo que queda de pantalla). */}
+          <aside className="hidden lg:sticky lg:top-[calc(var(--topbar-h)+1.5rem)] lg:block lg:max-h-[calc(100dvh-var(--topbar-h)-2.5rem)] lg:overflow-y-auto">
             <AnimatePresence mode="wait" initial={false}>
               {panel && isDesktop ? (
                 <div
                   key={selected?.id}
                   className={cn(
-                    'card-hairline rounded-2xl border bg-card shadow-xs',
-                    'animate-in fade-in-0 slide-in-from-right-2 duration-(--duration-base) motion-reduce:animate-none',
+                    'rounded-xl border border-border bg-card',
+                    'animate-in fade-in-0 slide-in-from-right-2 duration-(--duration-overlay) ease-(--ease-ui) motion-reduce:animate-none',
                   )}
                 >
                   {panel}
@@ -927,29 +932,23 @@ export function OperativoBoard({
             </AnimatePresence>
           </aside>
         </div>
-      </div>
+      </PageShell>
 
-      {/* Mobile / tablet: el mismo panel, en un sheet desde abajo. */}
+      {/* Mobile / tablet: el mismo panel, en una hoja desde abajo. */}
       <Sheet
         open={sheetOpen && Boolean(selected) && !isDesktop}
         onOpenChange={(open) => {
           if (!open) closePanel()
         }}
       >
-        <SheetContent
-          side="bottom"
-          showClose={false}
-          aria-describedby={undefined}
-          className="max-h-[92dvh] gap-0 px-0 pt-0 data-[state=closed]:duration-(--duration-base) data-[state=open]:duration-(--duration-slow)"
-        >
+        <SheetContent side="bottom" showCloseButton={false} aria-describedby={undefined}>
           <SheetGrabber />
           <SheetTitle className="sr-only">
             {selected ? `Reserva de ${selected.guest_name}` : 'Reserva'}
           </SheetTitle>
-          {/* El scroll vive adentro: el grabber y el borde redondeado quedan fijos. */}
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pt-3">
-            {isDesktop ? null : panel}
-          </div>
+          {/* El scroll vive adentro: la manija y el borde redondeado quedan fijos.
+              La «X» la pone el panel (es la misma pieza que en el escritorio). */}
+          <SheetBody className="px-0 pt-3 pb-0">{isDesktop ? null : panel}</SheetBody>
         </SheetContent>
       </Sheet>
     </MotionConfig>

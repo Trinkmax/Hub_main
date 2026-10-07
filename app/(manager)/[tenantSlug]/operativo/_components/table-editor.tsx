@@ -2,6 +2,9 @@
 
 import { Armchair, X } from 'lucide-react'
 import { useEffect, useMemo, useRef } from 'react'
+import { useField } from '@/components/ui/field'
+import { ChipGroup, FilterChip } from '@/components/ui/filter-chip'
+import { Input, InputAddon, InputGroup } from '@/components/ui/input'
 import { normalizeText, splitTableLabel, toggleTableInLabel } from '@/lib/salon/operativo'
 import { TABLE_LABEL_MAX } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
@@ -10,12 +13,15 @@ import { cn } from '@/lib/utils'
 const QUICK_TABLES = ['Barra']
 
 /**
- * El campo de mesa: un input grande y libre ("12", "12+13", "Barra") con
- * atajos de las mesas que ya se usaron esta noche. Tocar un atajo suma o saca
- * esa mesa de la etiqueta (las mesas se juntan para los grupos grandes).
+ * El campo de mesa: un input libre ("12", "12+13", "Barra") con atajos de las
+ * mesas que ya se usaron esta noche. Tocar un atajo suma o saca esa mesa de la
+ * etiqueta (las mesas se juntan para los grupos grandes).
  *
  * Si otra reserva ya está sentada en esa mesa, avisa — pero NO bloquea: a
  * veces se comparte, a veces se juntaron y no se anotó.
+ *
+ * Adentro de un `Field` del kit toma de ahí la etiqueta, la ayuda y el id;
+ * suelto se nombra solo («Mesa asignada»).
  */
 export function TableEditor({
   value,
@@ -38,6 +44,7 @@ export function TableEditor({
   onSubmit?: () => void
   compact?: boolean
 }) {
+  const field = useField()
   const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     if (!autoFocus) return
@@ -74,15 +81,15 @@ export function TableEditor({
   }, [usedToday])
 
   return (
-    <div>
-      <div className="relative">
-        <Armchair
-          className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground"
-          aria-hidden
-        />
-        <input
+    <div className="flex flex-col gap-2">
+      <InputGroup size={compact ? 'md' : 'lg'}>
+        <InputAddon>
+          <Armchair aria-hidden="true" />
+        </InputAddon>
+        <Input
           ref={inputRef}
-          id={`table-${currentId}`}
+          id={field ? undefined : `table-${currentId}`}
+          aria-label={field ? undefined : 'Mesa asignada'}
           type="text"
           inputMode="text"
           autoCapitalize="characters"
@@ -90,8 +97,7 @@ export function TableEditor({
           enterKeyHint="done"
           maxLength={TABLE_LABEL_MAX}
           value={value}
-          placeholder="Mesa"
-          aria-label="Mesa asignada"
+          placeholder="12, 12+13 o Barra"
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
@@ -99,28 +105,27 @@ export function TableEditor({
               onSubmit?.()
             }
           }}
-          className={cn(
-            'w-full rounded-2xl border border-border/70 bg-card pl-12 pr-11 text-center font-serif font-semibold tracking-tight shadow-xs outline-none transition-[box-shadow,border-color] duration-(--duration-fast) placeholder:font-sans placeholder:text-base placeholder:font-normal placeholder:text-muted-foreground/60 focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-ring/40',
-            compact ? 'h-12 text-xl' : 'h-14 text-2xl',
-          )}
+          className="font-semibold"
         />
         {value ? (
-          <button
-            type="button"
-            aria-label="Quitar mesa"
-            onClick={() => {
-              onChange('')
-              inputRef.current?.focus()
-            }}
-            className="absolute right-2 top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-          >
-            <X className="size-4" aria-hidden />
-          </button>
+          <InputAddon side="end">
+            <button
+              type="button"
+              aria-label="Quitar mesa"
+              onClick={() => {
+                onChange('')
+                inputRef.current?.focus()
+              }}
+              className="relative hit-area -me-1 flex size-6 items-center justify-center rounded-sm text-subtle-foreground outline-(--ring) outline-offset-2 hover:bg-hover hover:text-foreground focus-visible:outline-2"
+            >
+              <X className="size-4" aria-hidden="true" />
+            </button>
+          </InputAddon>
         ) : null}
-      </div>
+      </InputGroup>
 
       {conflicts.length > 0 ? (
-        <p className="mt-1.5 text-xs text-warning-text" role="status">
+        <p className="type-caption text-warning-text" role="status">
           {conflicts.length === 1
             ? `La ${conflicts[0]?.table} la tiene ${conflicts[0]?.by}.`
             : `Ocupadas: ${conflicts.map((c) => `${c.table} (${c.by})`).join(', ')}.`}{' '}
@@ -129,38 +134,31 @@ export function TableEditor({
       ) : null}
 
       {chips.length > 0 ? (
-        <ul aria-label="Mesas de esta noche" className="mt-2 flex flex-wrap gap-1.5">
+        <ChipGroup aria-label="Mesas de esta noche">
           {chips.map((chip) => {
             const key = normalizeText(chip)
             const active = parts.includes(key)
             const busy = occupied.has(key)
             return (
-              <li key={chip}>
-                <button
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => onChange(toggleTableInLabel(value || null, chip))}
-                  className={cn(
-                    'inline-flex h-11 min-w-11 items-center justify-center gap-1 rounded-full border px-3 font-mono text-sm tabular-nums transition-[background-color,color,border-color] duration-(--duration-fast) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    active
-                      ? 'border-foreground bg-foreground text-background'
-                      : busy
-                        ? 'border-border/60 bg-secondary/60 text-muted-foreground'
-                        : 'border-border/70 bg-card hover:bg-(--cream-tint)',
-                  )}
-                  title={busy ? `La tiene ${occupied.get(key)}` : undefined}
-                >
-                  {chip}
-                  {busy && !active ? (
-                    <span className="max-w-[5rem] truncate font-sans text-[10px]">
-                      {occupied.get(key)?.split(' ')[0]}
-                    </span>
-                  ) : null}
-                </button>
-              </li>
+              <FilterChip
+                key={chip}
+                size="md"
+                pressed={active}
+                onPressedChange={() => onChange(toggleTableInLabel(value || null, chip))}
+                title={busy ? `La tiene ${occupied.get(key)}` : undefined}
+                // Ocupada por otra reserva: relleno visible, sigue tocable (no bloquea).
+                className={cn('min-w-11 type-amount', busy && !active && 'bg-secondary')}
+              >
+                {chip}
+                {busy && !active ? (
+                  <span className="max-w-[5rem] truncate type-caption">
+                    {occupied.get(key)?.split(' ')[0]}
+                  </span>
+                ) : null}
+              </FilterChip>
             )
           })}
-        </ul>
+        </ChipGroup>
       ) : null}
     </div>
   )

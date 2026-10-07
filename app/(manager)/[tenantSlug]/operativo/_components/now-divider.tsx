@@ -1,12 +1,16 @@
 'use client'
 
 import { motion } from 'motion/react'
+import { Badge } from '@/components/ui/badge'
 
 /**
  * La línea de "ahora" en la lista: lo de arriba ya tendría que haber llegado,
  * lo de abajo viene. Estática a propósito (nada late acá: el único punto que
  * respira en la pantalla es el de "en vivo"). Es un `motion.li` para poder
  * convivir con las filas dentro del mismo AnimatePresence.
+ *
+ * La etiqueta es la marca sólida del kit (`brand` sólida): es el «estás acá»
+ * en el tiempo.
  */
 export function NowDivider({ label }: { label: string | null }) {
   return (
@@ -20,14 +24,11 @@ export function NowDivider({ label }: { label: string | null }) {
       className="relative my-1 flex items-center gap-2 py-1"
       data-now-marker
     >
-      <span
-        aria-hidden
-        className="size-2 shrink-0 rounded-full bg-primary ring-4 ring-primary/15"
-      />
-      <span aria-hidden className="h-0.5 flex-1 rounded-full bg-primary/70" />
-      <span className="rounded-full bg-primary px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-primary-foreground tabular-nums">
-        ahora{label ? ` · ${label}` : ''}
-      </span>
+      <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-primary" />
+      <span aria-hidden="true" className="h-0.5 flex-1 rounded-full bg-primary" />
+      <Badge tone="brand" appearance="solid" className="type-amount">
+        Ahora{label ? ` · ${label}` : ''}
+      </Badge>
     </motion.li>
   )
 }

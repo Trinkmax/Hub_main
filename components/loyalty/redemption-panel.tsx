@@ -1,21 +1,28 @@
 'use client'
 
 import {
-  AlertTriangle,
   BadgeCheck,
-  CheckCircle2,
+  CircleCheck,
   Clock3,
-  Loader2,
+  type LucideIcon,
   PackageCheck,
   RotateCcw,
+  TriangleAlert,
   User2,
   XCircle,
 } from 'lucide-react'
 import { useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { StorageImage } from '@/components/media/storage-image'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { emptyStateParts } from '@/components/ui/empty-state'
+import { Skeleton, SkeletonText } from '@/components/ui/skeleton'
+import { formatDateTime } from '@/lib/dates'
+import { formatNumber } from '@/lib/format/number-kind'
 import { deliverRedemption, lookupRedemption, type RedemptionView } from '@/lib/redemptions/actions'
+import { cn } from '@/lib/utils'
 
 // Pantalla de validación de un canje: qué hay que entregar, a quién, y el botón
 // de entregar. Los puntos se descuentan RECIÉN acá (lo hace la RPC), así que
@@ -23,58 +30,47 @@ import { deliverRedemption, lookupRedemption, type RedemptionView } from '@/lib/
 //
 // El caso "ya entregado" no va por toast: es la trampa clásica del mostrador
 // (alguien vuelve con el mismo código) y tiene que gritar en rojo, con la hora y
-// el nombre de quién lo entregó, para que el mozo no dude.
+// el nombre de quién lo entregó, para que el que atiende no dude.
 //
-// Compartida entre la caja (/acreditar) y el salón (/salon/escanear): el mozo y
-// el cajero validan igual.
+// La usa la caja del panel (/acreditar). El salón tiene su copia congelada en
+// `components/legacy/loyalty`.
 
-const DATE_FMT = new Intl.DateTimeFormat('es-AR', {
-  timeZone: 'America/Argentina/Cordoba',
-  day: '2-digit',
-  month: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-})
+const FRAME_TONE = {
+  danger: {
+    box: 'border-destructive bg-destructive-soft',
+    text: 'text-destructive-text',
+  },
+  warning: {
+    box: 'border-warning bg-warning-soft',
+    text: 'text-warning-text',
+  },
+} as const
 
-function formatWhen(iso: string): string {
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '—' : DATE_FMT.format(d).replace(', ', ' ')
-}
-
+/**
+ * El cartel de un canje que no se puede entregar. Más grande que un `Callout`
+ * a propósito: es el único aviso del flujo que tiene que frenar al que atiende.
+ * Fondo suave + ícono + título del tono, sin mayúsculas gritonas.
+ */
 function Frame({
   tone,
   icon: Icon,
   title,
   children,
 }: {
-  tone: 'danger' | 'warning'
-  icon: typeof AlertTriangle
+  tone: keyof typeof FRAME_TONE
+  icon: LucideIcon
   title: string
   children: React.ReactNode
 }) {
-  const danger = tone === 'danger'
+  const styles = FRAME_TONE[tone]
   return (
     <div
-      className={
-        danger
-          ? 'rounded-2xl border-2 border-destructive/60 bg-destructive/10 p-6 text-center'
-          : 'rounded-2xl border-2 border-amber-500/60 bg-amber-500/10 p-6 text-center'
-      }
+      role="alert"
+      className={cn('flex flex-col items-center rounded-xl border p-6 text-center', styles.box)}
     >
-      <Icon
-        className={danger ? 'mx-auto size-10 text-destructive' : 'mx-auto size-10 text-amber-600'}
-        aria-hidden="true"
-      />
-      <h2
-        className={
-          danger
-            ? 'mt-3 font-display text-xl font-bold uppercase tracking-wide text-destructive'
-            : 'mt-3 font-display text-xl font-bold uppercase tracking-wide text-amber-700'
-        }
-      >
-        {title}
-      </h2>
-      <div className="mt-2 text-sm text-foreground/80">{children}</div>
+      <Icon className={cn('size-10', styles.text)} strokeWidth={1.75} aria-hidden="true" />
+      <h2 className={cn('mt-3 type-section', styles.text)}>{title}</h2>
+      <div className="mt-2 max-w-sm type-body text-pretty text-foreground">{children}</div>
     </div>
   )
 }
@@ -131,12 +127,12 @@ export function RedemptionPanel({
 
   if (error) {
     return (
-      <div className="space-y-4">
-        <Frame tone="warning" icon={AlertTriangle} title="No pudimos leerlo">
-          <p className="text-balance">{error}</p>
+      <div className="flex flex-col gap-4">
+        <Frame tone="warning" icon={TriangleAlert} title="No pudimos leerlo">
+          <p>{error}</p>
         </Frame>
-        <Button onClick={onReset} className="h-12 w-full gap-2">
-          <RotateCcw className="size-4" />
+        <Button size="lg" onClick={onReset} className="w-full">
+          <RotateCcw aria-hidden="true" />
           Escanear otro código
         </Button>
       </div>
@@ -145,26 +141,37 @@ export function RedemptionPanel({
 
   if (delivered) {
     return (
-      <div className="card-hairline rounded-2xl border bg-card p-6 text-center">
-        <CheckCircle2 className="mx-auto size-12 text-success" aria-hidden="true" />
-        <h2 className="mt-3 font-display text-2xl font-semibold tracking-tight">Entregado</h2>
-        <p className="mt-1 text-sm text-muted-foreground text-balance">
-          {delivered.rewardName ?? 'El beneficio'} para {delivered.customerName}.
-        </p>
-        <Button onClick={onReset} className="mt-6 h-12 w-full gap-2">
-          <RotateCcw className="size-4" />
+      <Card padding="lg" className="items-center text-center" role="status">
+        <div className={cn(emptyStateParts.disc, 'mb-0 bg-success-soft text-success-text')}>
+          <CircleCheck className={emptyStateParts.icon} strokeWidth={1.75} aria-hidden="true" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <h2 className={emptyStateParts.title}>Entregado</h2>
+          <p className="max-w-sm type-body text-pretty text-muted-foreground">
+            {delivered.rewardName ?? 'El beneficio'} para {delivered.customerName}.
+          </p>
+        </div>
+        <Button size="lg" onClick={onReset} className="w-full">
+          <RotateCcw aria-hidden="true" />
           Validar otro
         </Button>
-      </div>
+      </Card>
     )
   }
 
   if (!view) {
     return (
-      <div className="flex items-center justify-center gap-2 rounded-2xl border border-dashed p-10 text-sm text-muted-foreground">
-        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-        Leyendo el código…
-      </div>
+      <Card padding="none" className="gap-0 overflow-hidden" aria-busy="true">
+        <span role="status" className="sr-only">
+          Leyendo el código…
+        </span>
+        <Skeleton aria-hidden="true" className="aspect-video w-full rounded-none" />
+        <div aria-hidden="true" className="flex flex-col gap-3 p-4 sm:p-6">
+          <Skeleton className="h-3 w-28" />
+          <Skeleton className="h-6 w-56 max-w-full" />
+          <SkeletonText lines={2} />
+        </div>
+      </Card>
     )
   }
 
@@ -178,81 +185,81 @@ export function RedemptionPanel({
       : null
 
   return (
-    <div className="space-y-4">
-      <div className="card-hairline overflow-hidden rounded-2xl border bg-card">
-        <div className="relative aspect-[16/9] w-full overflow-hidden bg-secondary/40">
+    <div className="flex flex-col gap-4">
+      <Card padding="none" className="gap-0 overflow-hidden">
+        <div className="relative aspect-video w-full overflow-hidden bg-muted">
           {view.rewardImageUrl ? (
             <StorageImage src={view.rewardImageUrl} sizes="(max-width: 640px) 100vw, 576px" />
           ) : (
             <div className="grid size-full place-items-center">
-              <PackageCheck className="size-12 text-muted-foreground/40" aria-hidden="true" />
+              <PackageCheck
+                className="size-12 text-subtle-foreground"
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
             </div>
           )}
         </div>
-        <div className="space-y-3 p-5">
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-              Hay que entregar
-            </p>
-            <h2 className="font-display text-xl font-semibold leading-tight tracking-tight">
-              {view.rewardName ?? 'Beneficio'}
-            </h2>
+        <div className="flex flex-col gap-3 p-4 sm:p-6">
+          <div className="flex flex-col gap-1">
+            <p className="type-label text-muted-foreground">Hay que entregar</p>
+            <h2 className="type-section text-balance">{view.rewardName ?? 'Beneficio'}</h2>
           </div>
 
-          <div className="flex items-center gap-3 rounded-xl bg-secondary/40 p-3">
-            <User2 className="size-5 shrink-0 text-primary" aria-hidden="true" />
+          <div className="flex items-center gap-3 rounded-lg bg-muted p-3">
+            <User2 className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium leading-tight">{view.customerName}</p>
-              <p className="text-xs tabular-nums text-muted-foreground">
-                {view.customerPointsBalance.toLocaleString('es-AR')} pts disponibles
+              <p className="truncate type-body font-medium">{view.customerName}</p>
+              <p className="type-caption text-muted-foreground">
+                <span className="type-amount">{formatNumber(view.customerPointsBalance)}</span> pts
+                disponibles
               </p>
             </div>
-            <span className="shrink-0 rounded-full bg-card px-2.5 py-1 text-xs font-bold tabular-nums shadow-sm">
-              −{view.pointsSpent.toLocaleString('es-AR')} pts
-            </span>
+            <Badge tone="gold" size="md" className="type-amount">
+              −{formatNumber(view.pointsSpent)} pts
+            </Badge>
           </div>
 
-          {view.notes ? <p className="text-xs text-muted-foreground">{view.notes}</p> : null}
+          {view.notes ? (
+            <p className="type-small text-pretty text-muted-foreground">{view.notes}</p>
+          ) : null}
         </div>
-      </div>
+      </Card>
 
       {blocked === 'delivered' ? (
         <Frame tone="danger" icon={XCircle} title="Ya entregado">
-          <p className="font-semibold tabular-nums">
-            {view.deliveredAt ? formatWhen(view.deliveredAt) : 'Sin fecha'}
+          <p className="font-semibold">
+            <span className="type-amount">
+              {view.deliveredAt ? formatDateTime(view.deliveredAt) || 'Sin fecha' : 'Sin fecha'}
+            </span>
             {view.deliveredByName ? ` · por ${view.deliveredByName}` : ''}
           </p>
-          <p className="mt-1 text-balance">No lo entregues de nuevo.</p>
+          <p className="mt-1">No lo entregues de nuevo.</p>
         </Frame>
       ) : blocked === 'cancelled' ? (
         <Frame tone="warning" icon={XCircle} title="Canje cancelado">
-          <p className="text-balance">El socio lo canceló. Que lo genere de nuevo si lo quiere.</p>
+          <p>El socio lo canceló. Que lo genere de nuevo si lo quiere.</p>
         </Frame>
       ) : blocked === 'expired' ? (
         <Frame tone="warning" icon={Clock3} title="Código vencido">
-          <p className="text-balance">
-            Pedile al socio que toque "Generar otro código" en su billetera.
-          </p>
+          <p>Pedile al socio que toque «Generar otro código» en su billetera.</p>
         </Frame>
       ) : (
         <Button
           type="button"
-          size="xl"
+          size="lg"
           onClick={onDeliver}
-          disabled={busy}
-          className="h-16 w-full gap-2 text-base"
+          loading={busy}
+          loadingText="Entregando…"
+          className="w-full"
         >
-          {busy ? (
-            <Loader2 className="size-5 animate-spin" aria-hidden="true" />
-          ) : (
-            <BadgeCheck className="size-5" aria-hidden="true" />
-          )}
-          {busy ? 'Entregando…' : 'Entregar'}
+          <BadgeCheck aria-hidden="true" />
+          Entregar
         </Button>
       )}
 
-      <Button variant="ghost" onClick={onReset} className="h-11 w-full gap-2">
-        <RotateCcw className="size-4" />
+      <Button variant="ghost" onClick={onReset} className="w-full">
+        <RotateCcw aria-hidden="true" />
         Escanear otro código
       </Button>
     </div>

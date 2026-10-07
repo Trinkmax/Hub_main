@@ -4,7 +4,10 @@ import { Cake, PartyPopper, Sparkles, TrendingUp } from 'lucide-react'
 import { useInView } from 'motion/react'
 import { Fragment, useEffect, useMemo, useRef } from 'react'
 import { SEGMENT_TONE_CLASSES, SegmentChip } from '@/components/reservations/segment-meter'
-import { NumberTicker } from '@/components/ui/number-ticker'
+import { Badge } from '@/components/ui/badge'
+import { Card } from '@/components/ui/card'
+import { FilterChip } from '@/components/ui/filter-chip'
+import { formatNumber } from '@/lib/format/number-kind'
 import type { DayHighlight } from '@/lib/salon/day-highlights'
 import { type BoardFilter, type NightPulse, serviceMinutes } from '@/lib/salon/operativo'
 import { type DaySegments, SEGMENT_KEYS, type SegmentKey } from '@/lib/salon/segments'
@@ -81,7 +84,11 @@ function occupancySlots(rows: ReservationWithJoins[], peakStart: number | null):
  * tortas, cumples). Todo sale del array vivo, así que late con el salón.
  *
  * Las píldoras de la leyenda son el alias de los filtros de la lista: tocar
- * "Por llegar" acá es lo mismo que el chip de abajo.
+ * "Por llegar" acá es lo mismo que el filtro de abajo.
+ *
+ * Los números NO se animan (kit: quieto por defecto) y van en Inter tabular:
+ * cambian en vivo con Realtime, y las cifras proporcionales de Fraunces
+ * bailarían a cada llegada.
  *
  * El cupo se lee POR SERVICIO (el del reloj adelante: "Cena 119/120"), nunca
  * "usado/total del salón": sumar el almuerzo y la cena contra PA + PB daba
@@ -116,6 +123,8 @@ export function PulseCard({
   onInViewChange: (inView: boolean) => void
 }) {
   const ref = useRef<HTMLElement>(null)
+  // El margen es el alto del topbar (`--topbar-h`, 56 px): lo que queda abajo
+  // de él ya no se ve, aunque esté en el viewport.
   const inView = useInView(ref, { margin: '-56px 0px 0px 0px' })
   useEffect(() => onInViewChange(inView), [inView, onInViewChange])
 
@@ -153,6 +162,10 @@ export function PulseCard({
   const events = highlights.filter((h) => h.kind === 'event')
   const cakes = highlights.filter((h) => h.kind !== 'event' && h.cakeCount > 0)
   const birthdays = highlights.filter((h) => h.kind === 'birthday')
+  const cakeTotal = cakes.reduce((acc, c) => acc + (c.kind !== 'event' ? c.cakeCount : 0), 0)
+  // Como `CakeChip`: ámbar mientras falte elegir alguna (es una tarea del bar).
+  const pendingCakes = cakes.some((c) => c.kind !== 'event' && !c.cakeOptionId)
+  const hasSpecial = highlights.some((h) => h.kind === 'special')
 
   // El servicio en foco va siempre (aunque esté vacío dice cuánto entra); los
   // otros solo si tienen algo, en chico: "Alm 19 · Mer 33".
@@ -168,236 +181,228 @@ export function PulseCard({
   const focusAlert = focusTone === 'warn' || focusTone === 'over'
 
   return (
-    <section
-      ref={ref}
-      aria-label="Pulso de la noche"
-      className="card-hairline relative overflow-hidden rounded-2xl border bg-card p-4 shadow-xs sm:p-5"
-    >
-      <div className="grid gap-5 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] md:items-end">
-        {/* Héroe: cuánta gente ya entró. */}
-        <div>
-          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            {isToday ? 'Adentro ahora' : 'Cubiertos'}
-          </p>
-          <div className="mt-1 flex items-baseline gap-2">
-            <span className="font-serif text-5xl font-semibold leading-none tracking-tight tabular-nums sm:text-6xl">
-              <NumberTicker value={isToday ? pulse.insideCovers : pulse.covers} durationMs={700} />
-            </span>
-            {isToday ? (
-              <span className="font-serif text-2xl text-muted-foreground tabular-nums">
-                / <NumberTicker value={pulse.covers} durationMs={700} />
+    <Card asChild padding="none" className="relative gap-0 overflow-hidden p-4 sm:p-5">
+      <section ref={ref} aria-label="Pulso de la noche">
+        <div className="grid gap-5 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] md:items-end">
+          {/* Héroe: cuánta gente ya entró. */}
+          <div>
+            <p className="type-label text-muted-foreground">
+              {isToday ? 'Adentro ahora' : 'Cubiertos'}
+            </p>
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="text-5xl leading-none font-semibold tracking-tight type-amount sm:text-6xl">
+                {formatNumber(isToday ? pulse.insideCovers : pulse.covers)}
               </span>
+              {isToday ? (
+                <span className="text-2xl font-medium text-muted-foreground type-amount">
+                  / {formatNumber(pulse.covers)}
+                </span>
+              ) : null}
+              <span className="type-body text-muted-foreground">
+                {isToday ? 'cubiertos' : 'reservados'}
+              </span>
+            </div>
+            {isToday && pulse.closedCovers > 0 ? (
+              <p className="mt-1 type-caption text-muted-foreground tabular-nums">
+                {vinieron} vinieron en total · {pulse.closedCovers} ya se fueron
+              </p>
             ) : null}
-            <span className="text-sm text-muted-foreground">
-              {isToday ? 'cubiertos' : 'reservados'}
-            </span>
-          </div>
-          {isToday && pulse.closedCovers > 0 ? (
-            <p className="mt-1 text-xs text-muted-foreground tabular-nums">
-              {vinieron} vinieron en total · {pulse.closedCovers} ya se fueron
-            </p>
-          ) : null}
 
-          {/* Barra apilada en cubiertos: adentro · atrasados · por llegar · no vinieron. */}
-          <div
-            className="mt-4 flex h-3 w-full overflow-hidden rounded-full bg-secondary"
-            role="img"
-            aria-label={`${pulse.insideCovers} adentro, ${pulse.closedCovers} ya se fueron, ${
-              pulse.waitingCovers
-            } por llegar${lateCovers > 0 ? ` (${lateCovers} atrasados)` : ''}, ${
-              pulse.noShowCovers
-            } no vinieron`}
-          >
-            <Segment width={pct(pulse.insideCovers)} className="bg-success" />
-            <Segment width={pct(pulse.closedCovers)} className="bg-success/45" />
-            <Segment width={pct(lateCovers)} className="bg-warning" hatched />
-            <Segment width={pct(onTimeWaiting)} className="bg-muted-foreground/25" />
-            <Segment width={pct(pulse.noShowCovers)} className="bg-destructive/70" />
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            <LegendPill
-              active={filter === 'inside'}
-              onClick={() => onFilter(filter === 'inside' ? 'all' : 'inside')}
-              dot="bg-success"
-              label="Adentro"
-              count={pulse.inside}
-              covers={pulse.insideCovers}
-            />
-            <LegendPill
-              active={filter === 'waiting'}
-              onClick={() => onFilter(filter === 'waiting' ? 'all' : 'waiting')}
-              dot={pulse.late > 0 ? 'bg-warning' : 'bg-muted-foreground/40'}
-              label="Por llegar"
-              count={pulse.waiting}
-              covers={pulse.waitingCovers}
-              hint={pulse.late > 0 ? `${pulse.late} atrasada${pulse.late === 1 ? '' : 's'}` : null}
-            />
-            {pulse.noShow > 0 || pulse.closed > 0 ? (
-              <LegendPill
-                active={filter === 'done'}
-                onClick={() => onFilter(filter === 'done' ? 'all' : 'done')}
-                dot="bg-destructive/70"
-                label={pulse.noShow > 0 && pulse.closed === 0 ? 'No vinieron' : 'Terminadas'}
-                count={pulse.noShow + pulse.closed}
-                covers={pulse.noShowCovers + pulse.closedCovers}
-              />
-            ) : null}
-          </div>
-        </div>
-
-        {/* Pico + sparkline. */}
-        <div className="min-w-0">
-          <div className="flex items-baseline justify-between gap-3">
-            <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-              <TrendingUp className="size-3.5" aria-hidden />
-              Pico
-            </p>
-            {showFocus ? (
-              <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1">
-                <SegmentChip segment={focusLoad} label="short" emphasized />
-                {others.length > 0 ? (
-                  <p className="text-[11px] tabular-nums text-muted-foreground">
-                    {others.map((s, i) => {
-                      const tone = segmentTone(s)
-                      return (
-                        <Fragment key={s.key}>
-                          {i > 0 ? ' · ' : null}
-                          <span
-                            title={segmentAriaLabel(s, '')}
-                            className={
-                              tone === 'warn' || tone === 'over'
-                                ? SEGMENT_TONE_CLASSES[tone].text
-                                : undefined
-                            }
-                          >
-                            {`${SEGMENT_SHORT_LABELS[s.key]} ${s.people}`}
-                          </span>
-                        </Fragment>
-                      )
-                    })}
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-          {showFocus && focusAlert ? (
-            <p
-              className={cn(
-                'mt-1 text-right text-[11px]',
-                SEGMENT_TONE_CLASSES[focusTone].text,
-                overCapacity && 'font-semibold',
-              )}
+            {/* Barra apilada en cubiertos: adentro · atrasados · por llegar · no vinieron. */}
+            <div
+              className="mt-4 flex h-3 w-full overflow-hidden rounded-full bg-secondary"
+              role="img"
+              aria-label={`${pulse.insideCovers} adentro, ${pulse.closedCovers} ya se fueron, ${
+                pulse.waitingCovers
+              } por llegar${lateCovers > 0 ? ` (${lateCovers} atrasados)` : ''}, ${
+                pulse.noShowCovers
+              } no vinieron`}
             >
-              {segmentStatusLine(focusLoad)}
-            </p>
-          ) : null}
-          {peak ? (
-            <p className="mt-1 text-sm">
-              <strong className="font-mono font-semibold tabular-nums">
-                {clockLabel(peak.start)}–{clockLabel(peak.start + 60)}
-              </strong>{' '}
-              <span className="text-muted-foreground">con</span>{' '}
-              <strong className="tabular-nums">{peak.guests}</strong>{' '}
-              <span className="text-muted-foreground">personas a la vez</span>
-            </p>
-          ) : (
-            <p className="mt-1 text-sm text-muted-foreground">Sin reservas todavía.</p>
-          )}
-          <Sparkline slots={slots} now={isToday ? clock.minutes : null} />
-        </div>
-      </div>
+              <Segment width={pct(pulse.insideCovers)} className="bg-success" />
+              <Segment width={pct(pulse.closedCovers)} className="bg-success/45" />
+              <Segment width={pct(lateCovers)} className="bg-warning" hatched />
+              <Segment width={pct(onTimeWaiting)} className="bg-muted-foreground/25" />
+              <Segment width={pct(pulse.noShowCovers)} className="bg-destructive/70" />
+            </div>
 
-      {/* Hitos: lo que no es una mesa más. */}
-      {events.length > 0 || cakes.length > 0 || birthdays.length > 0 ? (
-        <ul
-          aria-label="Hitos del día"
-          className="-mx-4 mt-4 flex snap-x gap-2 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] sm:-mx-5 sm:px-5 [&::-webkit-scrollbar]:hidden"
-        >
-          {events.map((e) => {
-            if (e.kind !== 'event') return null
-            const active = eventFilter === e.id
-            const full = e.capacity > 0 && e.used >= e.capacity
-            return (
-              <li key={e.key} className="shrink-0 snap-start">
-                <button
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => onEventFilter(active ? null : e.id)}
-                  className={cn(
-                    'flex h-11 items-center gap-2 rounded-full border px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    active
-                      ? 'border-foreground bg-foreground text-background'
-                      : 'border-border/70 bg-card hover:bg-(--cream-tint)',
-                  )}
-                  title={`${e.title} · ${e.time} · ${e.used}/${e.capacity} cubiertos${
-                    full ? ' · lleno' : ''
-                  }`}
-                >
-                  <span
-                    aria-hidden
-                    className="size-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: e.colorHex }}
-                  />
-                  <span className="max-w-[10rem] truncate font-medium">{e.title}</span>
-                  <span className="font-mono text-xs tabular-nums opacity-80">{e.time}</span>
-                  <span
-                    className={cn(
-                      'rounded-full px-1.5 py-0.5 font-mono text-[11px] tabular-nums',
-                      active ? 'bg-background/20' : full ? 'bg-warning/20' : 'bg-secondary',
-                    )}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <LegendChip
+                active={filter === 'inside'}
+                onClick={() => onFilter(filter === 'inside' ? 'all' : 'inside')}
+                dot="bg-success"
+                label="Adentro"
+                count={pulse.inside}
+                covers={pulse.insideCovers}
+              />
+              <LegendChip
+                active={filter === 'waiting'}
+                onClick={() => onFilter(filter === 'waiting' ? 'all' : 'waiting')}
+                dot={pulse.late > 0 ? 'bg-warning' : 'bg-muted-foreground/40'}
+                label="Por llegar"
+                count={pulse.waiting}
+                covers={pulse.waitingCovers}
+                hint={
+                  pulse.late > 0 ? `${pulse.late} atrasada${pulse.late === 1 ? '' : 's'}` : null
+                }
+              />
+              {pulse.noShow > 0 || pulse.closed > 0 ? (
+                <LegendChip
+                  active={filter === 'done'}
+                  onClick={() => onFilter(filter === 'done' ? 'all' : 'done')}
+                  dot="bg-destructive/70"
+                  label={pulse.noShow > 0 && pulse.closed === 0 ? 'No vinieron' : 'Terminadas'}
+                  count={pulse.noShow + pulse.closed}
+                  covers={pulse.noShowCovers + pulse.closedCovers}
+                />
+              ) : null}
+            </div>
+          </div>
+
+          {/* Pico + sparkline. */}
+          <div className="min-w-0">
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="flex items-center gap-1.5 type-label text-muted-foreground">
+                <TrendingUp className="size-3.5" aria-hidden="true" />
+                Pico
+              </p>
+              {showFocus ? (
+                <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1">
+                  <SegmentChip segment={focusLoad} label="short" emphasized />
+                  {others.length > 0 ? (
+                    <p className="type-caption text-muted-foreground tabular-nums">
+                      {others.map((s, i) => {
+                        const tone = segmentTone(s)
+                        return (
+                          <Fragment key={s.key}>
+                            {i > 0 ? ' · ' : null}
+                            <span
+                              title={segmentAriaLabel(s, '')}
+                              className={
+                                tone === 'warn' || tone === 'over'
+                                  ? SEGMENT_TONE_CLASSES[tone].text
+                                  : undefined
+                              }
+                            >
+                              {`${SEGMENT_SHORT_LABELS[s.key]} ${s.people}`}
+                            </span>
+                          </Fragment>
+                        )
+                      })}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            {showFocus && focusAlert ? (
+              <p
+                className={cn(
+                  'mt-1 text-right type-caption',
+                  SEGMENT_TONE_CLASSES[focusTone].text,
+                  overCapacity && 'font-semibold',
+                )}
+              >
+                {segmentStatusLine(focusLoad)}
+              </p>
+            ) : null}
+            {peak ? (
+              <p className="mt-1 type-body">
+                <strong className="font-semibold type-amount">
+                  {clockLabel(peak.start)}–{clockLabel(peak.start + 60)}
+                </strong>{' '}
+                <span className="text-muted-foreground">con</span>{' '}
+                <strong className="font-semibold type-amount">{peak.guests}</strong>{' '}
+                <span className="text-muted-foreground">personas a la vez</span>
+              </p>
+            ) : (
+              <p className="mt-1 type-body text-muted-foreground">Sin reservas todavía.</p>
+            )}
+            <Sparkline slots={slots} now={isToday ? clock.minutes : null} />
+          </div>
+        </div>
+
+        {/* Hitos: lo que no es una mesa más. Los eventos filtran la lista (chips);
+            tortas, cumples y especiales son datos (etiquetas, no se tocan). */}
+        {events.length > 0 || cakes.length > 0 || birthdays.length > 0 || hasSpecial ? (
+          <ul
+            aria-label="Hitos del día"
+            className="-mx-4 mt-4 flex snap-x items-center gap-2 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] sm:-mx-5 sm:px-5 [&::-webkit-scrollbar]:hidden"
+          >
+            {events.map((e) => {
+              if (e.kind !== 'event') return null
+              const active = eventFilter === e.id
+              const full = e.capacity > 0 && e.used >= e.capacity
+              return (
+                <li key={e.key} className="shrink-0 snap-start">
+                  <FilterChip
+                    size="md"
+                    pressed={active}
+                    onPressedChange={() => onEventFilter(active ? null : e.id)}
+                    title={`${e.title} · ${e.time} · ${e.used}/${e.capacity} cubiertos${
+                      full ? ' · lleno' : ''
+                    }`}
                   >
-                    {e.used}/{e.capacity}
-                  </span>
-                </button>
+                    <span
+                      aria-hidden="true"
+                      className="size-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: e.colorHex }}
+                    />
+                    <span className="max-w-[10rem] truncate">{e.title}</span>
+                    <span className="type-amount text-muted-foreground">{e.time}</span>
+                    <span
+                      className={cn(
+                        'type-caption type-amount',
+                        full ? 'font-medium text-warning-text' : 'text-muted-foreground',
+                      )}
+                    >
+                      {e.used}/{e.capacity}
+                      {full ? ' · lleno' : ''}
+                    </span>
+                  </FilterChip>
+                </li>
+              )
+            })}
+            {cakes.length > 0 ? (
+              <li className="shrink-0 snap-start">
+                <Badge
+                  tone={pendingCakes ? 'warning' : 'brand'}
+                  size="md"
+                  icon={Cake}
+                  title={cakes
+                    .map((c) => (c.kind !== 'event' ? `${c.time} ${c.title}` : ''))
+                    .join(' · ')}
+                >
+                  <span className="type-amount">{formatNumber(cakeTotal)}</span>
+                  {cakeTotal === 1 ? 'torta' : 'tortas'}
+                  {pendingCakes ? ' · falta elegir' : null}
+                </Badge>
               </li>
-            )
-          })}
-          {cakes.length > 0 ? (
-            <li className="shrink-0 snap-start">
-              <span
-                className="flex h-11 items-center gap-2 rounded-full border border-warning/40 bg-warning/10 px-3 text-sm"
-                title={cakes
-                  .map((c) => (c.kind !== 'event' ? `${c.time} ${c.title}` : ''))
-                  .join(' · ')}
-              >
-                <Cake className="size-4 text-warning" aria-hidden />
-                <span className="font-medium tabular-nums">
-                  {cakes.reduce((acc, c) => acc + (c.kind !== 'event' ? c.cakeCount : 0), 0)}{' '}
-                  {cakes.length === 1 ? 'torta' : 'tortas'}
-                </span>
-                {cakes.some((c) => c.kind !== 'event' && !c.cakeOptionId) ? (
-                  <span className="text-[11px] text-muted-foreground">· falta elegir</span>
-                ) : null}
-              </span>
-            </li>
-          ) : null}
-          {birthdays.length > 0 ? (
-            <li className="shrink-0 snap-start">
-              <span
-                className="flex h-11 items-center gap-2 rounded-full border border-border/70 bg-card px-3 text-sm"
-                title={birthdays
-                  .map((b) => (b.kind !== 'event' ? `${b.time} ${b.title}` : ''))
-                  .join(' · ')}
-              >
-                <PartyPopper className="size-4 text-primary" aria-hidden />
-                <span className="font-medium tabular-nums">
-                  {birthdays.length} {birthdays.length === 1 ? 'cumple' : 'cumples'}
-                </span>
-              </span>
-            </li>
-          ) : null}
-          {highlights.some((h) => h.kind === 'special') ? (
-            <li className="shrink-0 snap-start">
-              <span className="flex h-11 items-center gap-2 rounded-full border border-border/70 bg-card px-3 text-sm">
-                <Sparkles className="size-4 text-primary" aria-hidden />
-                <span className="font-medium">Reserva especial</span>
-              </span>
-            </li>
-          ) : null}
-        </ul>
-      ) : null}
-    </section>
+            ) : null}
+            {birthdays.length > 0 ? (
+              <li className="shrink-0 snap-start">
+                <Badge
+                  tone="brand"
+                  size="md"
+                  icon={PartyPopper}
+                  title={birthdays
+                    .map((b) => (b.kind !== 'event' ? `${b.time} ${b.title}` : ''))
+                    .join(' · ')}
+                >
+                  <span className="type-amount">{formatNumber(birthdays.length)}</span>
+                  {birthdays.length === 1 ? 'cumple' : 'cumples'}
+                </Badge>
+              </li>
+            ) : null}
+            {hasSpecial ? (
+              <li className="shrink-0 snap-start">
+                <Badge tone="info" size="md" icon={Sparkles}>
+                  Reserva especial
+                </Badge>
+              </li>
+            ) : null}
+          </ul>
+        ) : null}
+      </section>
+    </Card>
   )
 }
 
@@ -412,9 +417,9 @@ function Segment({
 }) {
   return (
     <span
-      aria-hidden
+      aria-hidden="true"
       className={cn(
-        'h-full transition-[width] duration-(--duration-slower) ease-(--ease-out)',
+        'h-full transition-[width] duration-220 ease-ui motion-reduce:transition-none',
         className,
       )}
       style={{
@@ -430,7 +435,12 @@ function Segment({
   )
 }
 
-function LegendPill({
+/**
+ * Una entrada de la leyenda que además filtra la lista (es el alias del
+ * filtro de estado de la barra): el chip del kit, con el punto del color de su
+ * tramo de la barra.
+ */
+function LegendChip({
   active,
   onClick,
   dot,
@@ -448,34 +458,20 @@ function LegendPill({
   hint?: string | null
 }) {
   return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={cn(
-        'inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        active
-          ? 'border-foreground bg-foreground text-background'
-          : 'border-border/70 bg-card text-foreground hover:bg-(--cream-tint)',
-      )}
-    >
-      <span aria-hidden className={cn('size-2 rounded-full', active ? 'bg-background' : dot)} />
-      <span className="font-medium">{label}</span>
-      <span className="font-mono tabular-nums opacity-80">
+    <FilterChip pressed={active} onPressedChange={onClick}>
+      <span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', dot)} />
+      {label}
+      <span className="type-amount text-muted-foreground">
         {count} · {covers}p
       </span>
-      {hint ? (
-        <span className={cn('font-medium', active ? 'opacity-80' : 'text-warning-text')}>
-          · {hint}
-        </span>
-      ) : null}
-    </button>
+      {hint ? <span className="text-warning-text">· {hint}</span> : null}
+    </FilterChip>
   )
 }
 
 function Sparkline({ slots, now }: { slots: Slot[]; now: number | null }) {
   if (slots.length === 0) {
-    return <div className="mt-3 h-14 rounded-lg bg-secondary/50" aria-hidden />
+    return <div className="mt-3 h-14 rounded-lg bg-secondary" aria-hidden="true" />
   }
   const max = Math.max(1, ...slots.map((s) => s.covers))
   const first = slots[0]?.start ?? 0
@@ -491,12 +487,12 @@ function Sparkline({ slots, now }: { slots: Slot[]; now: number | null }) {
           {slots.map((s) => (
             <div
               key={s.start}
-              className="group relative flex h-full flex-1 items-end"
+              className="relative flex h-full flex-1 items-end"
               title={`${s.label} · ${s.covers} personas`}
             >
               <div
                 className={cn(
-                  'w-full rounded-t-sm transition-[height] duration-(--duration-slower) ease-(--ease-out)',
+                  'w-full rounded-t-sm transition-[height] duration-220 ease-ui motion-reduce:transition-none',
                   s.peak ? 'bg-primary' : 'bg-primary/25',
                 )}
                 style={{ height: `${Math.max(4, (s.covers / max) * 100)}%` }}
@@ -506,7 +502,7 @@ function Sparkline({ slots, now }: { slots: Slot[]; now: number | null }) {
         </div>
         {nowPct !== null ? (
           <div
-            aria-hidden
+            aria-hidden="true"
             className="pointer-events-none absolute inset-y-0 w-px bg-foreground/70"
             style={{ left: `${nowPct}%` }}
           >
@@ -514,7 +510,7 @@ function Sparkline({ slots, now }: { slots: Slot[]; now: number | null }) {
           </div>
         ) : null}
       </div>
-      <div className="mt-1 flex justify-between font-mono text-[10px] tabular-nums text-muted-foreground">
+      <div className="mt-1 flex justify-between type-caption text-muted-foreground tabular-nums">
         {slots.map((s, i) => (
           <span key={s.start} className="flex-1 text-left">
             {i % labelEvery === 0 ? s.label : ''}
