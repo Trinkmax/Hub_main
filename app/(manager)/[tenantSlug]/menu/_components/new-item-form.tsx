@@ -2,26 +2,20 @@
 
 import { Plus } from 'lucide-react'
 import { useActionState, useEffect, useRef, useState } from 'react'
-import { useFormStatus } from 'react-dom'
 import { toast } from 'sonner'
 import { MenuImageUploader } from '@/components/media/image-uploader'
-import { Button } from '@/components/ui/button'
+import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { MoneyField } from '@/components/ui/money-field'
+import { NumberField } from '@/components/ui/number-field'
+import { SubmitButton } from '@/components/ui/submit-button'
 import { createMenuItem, type MenuActionState } from '@/lib/menu/actions'
 import { MenuVideoUploader } from './video-uploader'
 
 const initial: MenuActionState = { ok: true }
 
-function SubmitBtn() {
-  const { pending } = useFormStatus()
-  return (
-    <Button type="submit" disabled={pending} size="sm" className="gap-1.5">
-      <Plus className="size-3.5" />
-      {pending ? 'Creando…' : 'Agregar ítem'}
-    </Button>
-  )
-}
+/** La carta muestra precios sin centavos: se cargan en pesos enteros. */
+export const WHOLE_PESOS_MESSAGE = 'Escribí el precio en pesos, sin centavos.'
 
 export function NewItemForm({
   tenantSlug,
@@ -41,8 +35,9 @@ export function NewItemForm({
   const formRef = useRef<HTMLFormElement>(null)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
-  // Input en pesos (entero); el hidden mirror manda centavos al action.
-  const [pricePesos, setPricePesos] = useState('')
+  // El precio se ve en pesos y viaja en centavos (`price_cents`, hidden del MoneyField).
+  const [priceCents, setPriceCents] = useState<number | null>(null)
+  const [priceError, setPriceError] = useState<string | null>(null)
 
   useEffect(() => {
     if (state.ok && state.message) {
@@ -50,90 +45,64 @@ export function NewItemForm({
       formRef.current?.reset()
       setImageUrl(null)
       setVideoUrl(null)
-      setPricePesos('')
+      setPriceError(null)
       onCreated?.()
     } else if (!state.ok) {
       toast.error(state.message)
     }
   }, [state, onCreated])
 
-  const pesosParsed = Number.parseInt(pricePesos, 10)
-  const priceCents = Number.isFinite(pesosParsed) && pesosParsed >= 0 ? pesosParsed * 100 : ''
-
   return (
     <form
       ref={formRef}
       action={formAction}
-      className="grid gap-3 rounded-lg border border-dashed border-border/60 bg-background/30 p-3"
+      // Antes de mandar: el precio va en pesos enteros, como lo muestra la carta.
+      onSubmit={(event) => {
+        if (priceCents !== null && priceCents % 100 !== 0) {
+          event.preventDefault()
+          setPriceError(WHOLE_PESOS_MESSAGE)
+        }
+      }}
+      className="grid gap-4"
     >
       <input type="hidden" name="category_id" value={categoryId} />
       <input type="hidden" name="image_url" value={imageUrl ?? ''} />
       <input type="hidden" name="video_url" value={videoUrl ?? ''} />
-      <input type="hidden" name="price_cents" value={priceCents} />
 
-      <div className="grid gap-2 sm:grid-cols-[1fr_120px_120px_auto] sm:items-end">
-        <div className="grid gap-1">
-          <Label
-            htmlFor={`name-${categoryId}`}
-            className="text-[11px] uppercase tracking-wider text-muted-foreground"
-          >
-            Nombre
-          </Label>
-          <Input
-            id={`name-${categoryId}`}
-            name="name"
-            required
-            maxLength={80}
-            placeholder="Fernet con cola"
+      <Field label="Nombre" name="name" required>
+        <Input maxLength={80} placeholder="Fernet con cola" autoComplete="off" />
+      </Field>
+      <div className="grid items-start gap-4 sm:grid-cols-2">
+        <Field label="Precio" name="price_cents" required error={priceError}>
+          <MoneyField
+            decimals="auto"
+            placeholder="15.500"
+            onCentsChange={(cents) => {
+              setPriceCents(cents)
+              if (priceError) setPriceError(null)
+            }}
           />
-        </div>
-        <div className="grid gap-1">
-          <Label
-            htmlFor={`price-${categoryId}`}
-            className="text-[11px] uppercase tracking-wider text-muted-foreground"
-          >
-            Precio
-          </Label>
-          <div className="relative">
-            <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-              $
-            </span>
-            <Input
-              id={`price-${categoryId}`}
-              type="number"
-              required
-              min={0}
-              step={1}
-              inputMode="numeric"
-              value={pricePesos}
-              onChange={(e) => setPricePesos(e.target.value)}
-              placeholder="15500"
-              className="pl-6 tabular-nums"
-            />
-          </div>
-        </div>
-        <div className="grid gap-1">
-          <Label
-            htmlFor={`pts-${categoryId}`}
-            className="text-[11px] uppercase tracking-wider text-muted-foreground"
-          >
-            Pts override
-          </Label>
-          <Input
-            id={`pts-${categoryId}`}
-            name="points_override"
-            type="number"
-            step={1}
-            placeholder="opcional"
-            className="tabular-nums"
-          />
-        </div>
-        <SubmitBtn />
+        </Field>
+        <Field
+          label="Puntos extra"
+          name="points_override"
+          optional
+          hint="Se suman cuando alguien pide este ítem."
+        >
+          <NumberField min={0} steppers={false} placeholder="—" />
+        </Field>
       </div>
 
       <MenuImageUploader tenantId={tenantId} value={imageUrl} onChange={setImageUrl} />
 
       <MenuVideoUploader tenantId={tenantId} value={videoUrl} onChange={setVideoUrl} />
+
+      <div className="flex justify-end">
+        <SubmitButton pendingText="Agregando…">
+          <Plus aria-hidden="true" />
+          Agregar ítem
+        </SubmitButton>
+      </div>
     </form>
   )
 }

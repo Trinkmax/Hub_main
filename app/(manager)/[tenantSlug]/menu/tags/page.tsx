@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
-import { Section } from '@/components/ui/section'
+import { PageShell } from '@/components/ui/page-shell'
 import { listItemTags, listMenuItemsWithTags } from '@/lib/item-tags/queries'
 import { MENU_EDIT_ROLES, requireTenantAccess } from '@/lib/tenant'
 import type { TenantRole } from '@/lib/tenant/types'
@@ -25,15 +25,13 @@ export default async function TagsPage({ params }: { params: Promise<{ tenantSlu
   const [tags, items] = await Promise.all([listItemTags(tenantId), listMenuItemsWithTags(tenantId)])
 
   return (
-    <div className="space-y-6">
+    <PageShell width="comfortable">
       <PageHeader
-        eyebrow="Carta · Etiquetas"
+        back={{ href: `/${tenantSlug}/menu`, label: 'Carta' }}
         title="Tags de carta"
-        description="Etiquetá ítems para usar en punch cards (#cafe, #vegano, etc.)"
+        description="Etiquetá ítems para usarlos en las punch cards (#cafe, #vegano, etc.)."
       />
-      <Section>
-        <TagsManager tenantSlug={tenantSlug} initialTags={tags} initialItems={items} />
-      </Section>
-    </div>
+      <TagsManager tenantSlug={tenantSlug} initialTags={tags} initialItems={items} />
+    </PageShell>
   )
 }

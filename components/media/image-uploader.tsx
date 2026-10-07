@@ -1,10 +1,11 @@
 'use client'
 
-import { ImageIcon, Loader2, Upload, X } from 'lucide-react'
+import { ImageIcon, Upload, X } from 'lucide-react'
 import Image from 'next/image'
-import { useRef, useState, useTransition } from 'react'
+import { useId, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import { uploadMenuImage } from '@/lib/menu/upload-image'
 import { cn } from '@/lib/utils'
 
@@ -27,6 +28,15 @@ function pickImageFile(items: DataTransferItemList | null | undefined): File | n
   return null
 }
 
+/**
+ * Foto de un ítem, una categoría, una recompensa o un aliado (kit HUB): soltar
+ * o tocar «Subir foto», se optimiza sola en el navegador y se sube a Storage.
+ * Con foto cargada muestra la miniatura con «Cambiar» y «Quitar».
+ *
+ * La misma API de siempre (`tenantId`, `value`, `onChange`, `label`): la URL
+ * vive en el estado de quien la usa y viaja como prefiera (input hidden o en
+ * la llamada a la acción).
+ */
 export function MenuImageUploader({
   tenantId,
   value,
@@ -38,6 +48,7 @@ export function MenuImageUploader({
   onChange: (url: string | null) => void
   label?: string
 }) {
+  const labelId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
   const [stage, setStage] = useState<Stage>('idle')
   const [dragging, setDragging] = useState(false)
@@ -52,7 +63,7 @@ export function MenuImageUploader({
   const onFile = (file: File | undefined) => {
     if (!file) return
     if (!file.type.startsWith('image/')) {
-      toast.error('Eso no parece una imagen.')
+      toast.error('Eso no parece una imagen. Subí una foto JPG, PNG o WebP.')
       return
     }
     setStage('optimizing')
@@ -117,33 +128,44 @@ export function MenuImageUploader({
   const dnd = { onDragEnter, onDragOver, onDragLeave, onDrop }
 
   return (
-    <div className="grid gap-1.5">
-      <span className="text-xs text-muted-foreground">{label}</span>
+    <fieldset
+      aria-labelledby={labelId}
+      aria-busy={busy || undefined}
+      data-slot="image-uploader"
+      className="grid min-w-0 gap-2"
+    >
+      <span id={labelId} className="type-label text-foreground">
+        {label}
+      </span>
+      {/* Fuera del orden de Tab: lo abre el botón de abajo (una sola parada). */}
       <input
         ref={inputRef}
         type="file"
         accept="image/png,image/jpeg,image/webp,image/avif,image/heic,image/heif"
         className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
         onChange={(e) => onFile(e.target.files?.[0])}
       />
 
       {value ? (
         <div
           {...dnd}
+          data-dragging={dragging || undefined}
           className={cn(
-            'relative flex items-center gap-3 rounded-lg border bg-card/40 p-2 transition-colors',
-            dragging ? 'border-primary bg-primary/5 ring-2 ring-primary/40' : 'border-border/60',
+            'flex items-center gap-3 rounded-lg border p-2 transition-colors duration-(--duration-quick)',
+            dragging ? 'border-primary bg-selected' : 'border-border bg-card',
           )}
         >
           <div className="relative size-16 shrink-0 overflow-hidden rounded-md bg-secondary">
             <Image src={value} alt="Vista previa" fill sizes="64px" className="object-cover" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-medium">
+            <p className="type-label text-foreground">
               {dragging ? 'Soltá para reemplazar' : 'Foto cargada'}
             </p>
-            <p className="text-[10px] text-muted-foreground">
-              {dragging ? ' ' : 'Arrastrá otra imagen para reemplazarla'}
+            <p className="type-caption text-muted-foreground">
+              {dragging ? '\u00a0' : 'Tocá «Cambiar» o arrastrá otra imagen.'}
             </p>
           </div>
           <Button
@@ -151,21 +173,21 @@ export function MenuImageUploader({
             variant="ghost"
             size="sm"
             onClick={onPick}
-            disabled={busy}
-            className="gap-1.5"
+            loading={busy}
+            loadingText={stageLabel}
           >
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
-            {busy ? stageLabel : 'Cambiar'}
+            <Upload aria-hidden="true" />
+            Cambiar
           </Button>
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            size="icon-sm"
             onClick={() => onChange(null)}
             disabled={busy}
-            aria-label="Quitar imagen"
+            aria-label="Quitar la foto"
           >
-            <X className="size-3.5" />
+            <X aria-hidden="true" />
           </Button>
         </div>
       ) : (
@@ -173,35 +195,40 @@ export function MenuImageUploader({
           type="button"
           onClick={onPick}
           disabled={busy}
+          data-dragging={dragging || undefined}
           {...dnd}
           className={cn(
-            'flex flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed px-3 py-6 text-xs transition-colors',
+            'flex min-h-24 flex-col items-center justify-center gap-1 rounded-lg border border-dashed px-3 py-5 text-center',
+            'transition-colors duration-(--duration-quick) outline-offset-2 outline-(--ring) focus-visible:outline-2',
+            'disabled:cursor-not-allowed',
             dragging
-              ? 'border-primary bg-primary/10 text-foreground ring-2 ring-primary/40'
-              : 'border-border/70 bg-background/30 text-muted-foreground hover:border-primary/50 hover:text-foreground',
+              ? 'border-primary bg-selected text-foreground'
+              : 'border-border-strong bg-card text-muted-foreground hover:bg-hover hover:text-foreground',
           )}
         >
           {busy ? (
-            <span className="flex items-center gap-2">
-              <Loader2 className="size-3.5 animate-spin" />
+            <span className="flex items-center gap-2 type-label">
+              <Spinner size={16} aria-hidden />
               {stageLabel}
             </span>
           ) : dragging ? (
-            <span className="flex items-center gap-2 font-medium">
-              <Upload className="size-3.5" />
+            <span className="flex items-center gap-2 type-label">
+              <Upload className="size-4" aria-hidden="true" />
               Soltá para subir
             </span>
           ) : (
             <>
-              <span className="flex items-center gap-2">
-                <ImageIcon className="size-3.5" />
-                Subir foto (opcional)
+              <span className="flex items-center gap-2 type-label">
+                <ImageIcon className="size-4" aria-hidden="true" />
+                Subir foto
               </span>
-              <span className="text-[10px] text-muted-foreground/80">o arrastrá una imagen</span>
+              <span className="type-caption text-subtle-foreground">
+                o arrastrá una imagen · se optimiza sola
+              </span>
             </>
           )}
         </button>
       )}
-    </div>
+    </fieldset>
   )
 }

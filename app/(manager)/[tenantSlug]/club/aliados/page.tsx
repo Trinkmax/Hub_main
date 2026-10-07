@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 
-// Marcas aliadas se unificó en /menu (Club → "Aliados").
+// Link viejo: Marcas aliadas vive en /club, pestaña «Aliados».
 export default async function AliadosRedirect({
   params,
 }: {

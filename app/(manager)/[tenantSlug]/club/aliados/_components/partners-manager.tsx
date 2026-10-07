@@ -16,39 +16,28 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 import {
-  Camera,
   ChevronDown,
   ExternalLink,
-  GripVertical,
   Handshake,
-  Loader2,
   Pencil,
   Plus,
   Tag,
   Trash2,
   TriangleAlert,
 } from 'lucide-react'
-import { useActionState, useEffect, useRef, useState, useTransition } from 'react'
-import { useFormStatus } from 'react-dom'
+import { useActionState, useEffect, useId, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { TierBadge } from '@/components/loyalty/tier-badge'
 import { MenuImageUploader } from '@/components/media/image-uploader'
+import { PhotoButton } from '@/components/media/photo-button'
 import { StorageImage } from '@/components/media/storage-image'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Callout } from '@/components/ui/callout'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -56,8 +45,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
+import { Field, FieldRow, useFocusFirstInvalid } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { NumberField } from '@/components/ui/number-field'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { SubmitButton } from '@/components/ui/submit-button'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { isStorageUrl } from '@/lib/menu/media-urls'
@@ -79,6 +72,14 @@ import { type PartnerBenefit, tiersWithoutPartnerBenefit } from '@/lib/points/be
 import type { Partner } from '@/lib/points/queries'
 import { type LoyaltyTier, sortedActiveTiers } from '@/lib/points/tiers'
 import { cn } from '@/lib/utils'
+import { PARTNER_STATUS } from '../../_components/club-status'
+import {
+  DRAGGING_ROW_CLASSES,
+  DragHandle,
+  ROW_LIST_CLASSES,
+  sortableStyle,
+  TierToggleChips,
+} from '../../_components/club-ui'
 
 const initial: LoyaltyActionState = { ok: true }
 
@@ -101,76 +102,17 @@ function contentSignature(list: readonly PartnerBenefit[]): string {
     .join('|')
 }
 
-// ── Avatar del aliado ───────────────────────────────────────
-function PartnerLogo({ partner }: { partner: Partner }) {
-  if (partner.logo_url) {
-    return (
-      <span className="relative flex size-12 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-background">
-        <StorageImage src={partner.logo_url} alt="" sizes="48px" />
-      </span>
-    )
-  }
+/** Aviso chico en línea («no lo ve nadie»): ícono + texto de aviso legible. */
+function InlineWarning({ children }: { children: React.ReactNode }) {
   return (
-    <span className="flex size-12 items-center justify-center rounded-full bg-(--cream-tint) text-base font-semibold text-muted-foreground">
-      {partner.name.charAt(0).toUpperCase()}
-    </span>
-  )
-}
-
-/** Chip con el color del nivel. Tocable: es el selector múltiple del beneficio. */
-function TierChip({
-  tier,
-  selected,
-  onToggle,
-}: {
-  tier: LoyaltyTier
-  selected: boolean
-  onToggle?: () => void
-}) {
-  const accent = tier.color ?? undefined
-  const style = selected
-    ? { backgroundColor: accent, borderColor: accent, color: accent ? '#fff' : undefined }
-    : { borderColor: accent, color: accent }
-
-  if (!onToggle) {
-    return (
-      <span
-        style={style}
-        className="inline-flex h-7 items-center rounded-full border px-2.5 text-[11px] font-medium"
-      >
-        {tier.name}
-      </span>
-    )
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-pressed={selected}
-      style={style}
-      className={cn(
-        'inline-flex h-11 items-center rounded-full border px-3.5 text-xs font-medium transition-colors',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
-        !selected && 'bg-background hover:bg-secondary/60',
-      )}
-    >
-      {tier.name}
-    </button>
+    <p className="inline-flex items-start gap-1.5 type-caption text-pretty text-warning-text">
+      <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+      <span>{children}</span>
+    </p>
   )
 }
 
 // ── Form de creación de marca ───────────────────────────────
-function SubmitBtn() {
-  const { pending } = useFormStatus()
-  return (
-    <Button type="submit" disabled={pending} size="sm" className="h-10 gap-1.5">
-      <Plus className="size-3.5" />
-      {pending ? 'Agregando…' : 'Agregar marca'}
-    </Button>
-  )
-}
-
 function NewPartnerForm({ tenantSlug, tenantId }: { tenantSlug: string; tenantId: string }) {
   const formRef = useRef<HTMLFormElement>(null)
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
@@ -202,37 +144,28 @@ function NewPartnerForm({ tenantSlug, tenantId }: { tenantSlug: string; tenantId
     <form
       ref={formRef}
       action={formAction}
-      className="card-hairline rounded-xl border bg-card p-4 space-y-3"
+      aria-labelledby="partner-new-title"
+      className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:p-6"
     >
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+      <h3 id="partner-new-title" className="type-subtitle text-foreground">
         Nueva marca aliada
       </h3>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="grid gap-1.5">
-          <Label htmlFor="pn-name" className="text-[11px] text-muted-foreground">
-            Nombre
-          </Label>
-          <Input id="pn-name" name="name" required maxLength={80} placeholder="Guapa estética" />
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="pn-category" className="text-[11px] text-muted-foreground">
-            Rubro
-          </Label>
-          <Input id="pn-category" name="category" maxLength={40} placeholder="Estética" />
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="pn-url" className="text-[11px] text-muted-foreground">
-            Sitio o Instagram (opcional)
-          </Label>
-          <Input id="pn-url" name="url" type="url" maxLength={500} placeholder="https://…" />
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="pn-sort" className="text-[11px] text-muted-foreground">
-            Orden
-          </Label>
-          <Input id="pn-sort" name="sort" type="number" defaultValue={0} className="tabular-nums" />
-        </div>
-      </div>
+      <FieldRow>
+        <Field label="Nombre" name="name" required>
+          <Input maxLength={80} placeholder="Guapa estética" />
+        </Field>
+        <Field label="Rubro" name="category" optional>
+          <Input maxLength={40} placeholder="Estética" />
+        </Field>
+      </FieldRow>
+      <FieldRow>
+        <Field label="Sitio o Instagram" name="url" optional>
+          <Input type="url" maxLength={500} placeholder="https://…" />
+        </Field>
+        <Field label="Orden" name="sort" hint="Las de número más bajo se ven primero.">
+          <NumberField min={0} defaultValue={0} />
+        </Field>
+      </FieldRow>
       {/* El logo se sube como cualquier foto de la carta — nada de pegar URLs. */}
       <input type="hidden" name="logo_url" value={logoUrl ?? ''} />
       <MenuImageUploader
@@ -242,10 +175,13 @@ function NewPartnerForm({ tenantSlug, tenantId }: { tenantSlug: string; tenantId
         label="Logo (opcional)"
       />
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-[11px] text-muted-foreground text-pretty">
-          Se agrega oculta. Cargale los descuentos y activala cuando esté lista.
+        <p className="max-w-prose type-caption text-pretty text-muted-foreground">
+          Se agrega oculta: cargale los beneficios y prendela cuando esté lista.
         </p>
-        <SubmitBtn />
+        <SubmitButton pendingText="Agregando…">
+          <Plus aria-hidden="true" />
+          Agregar marca
+        </SubmitButton>
       </div>
     </form>
   )
@@ -278,8 +214,11 @@ function PartnerEditDialog({
     setError(null)
   }
 
-  const handleSubmit = (formData: FormData) => {
+  // onSubmit y no `action`: si el server rechaza, lo tipeado queda.
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
     if (!partner) return
+    const formData = new FormData(event.currentTarget)
     const name = String(formData.get('name') ?? '').trim()
     if (!name) {
       setError('Poné un nombre.')
@@ -319,92 +258,58 @@ function PartnerEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle className="font-serif">Editar marca</DialogTitle>
+          <DialogTitle>Editar marca</DialogTitle>
           <DialogDescription>
-            Los datos de la marca. Los descuentos se cargan abajo, en su lista de beneficios: cada
-            uno elige a qué niveles llega.
+            Los datos de la marca. Los descuentos se cargan en su lista de beneficios: cada uno
+            elige a qué niveles llega.
           </DialogDescription>
         </DialogHeader>
 
         {partner ? (
-          <form action={handleSubmit} className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="grid gap-1.5">
-                <Label htmlFor="pn-edit-name" className="text-xs text-muted-foreground">
-                  Nombre
-                </Label>
-                <Input
-                  id="pn-edit-name"
-                  name="name"
-                  required
-                  maxLength={80}
-                  defaultValue={partner.name}
-                  aria-invalid={error ? true : undefined}
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="pn-edit-category" className="text-xs text-muted-foreground">
-                  Rubro
-                </Label>
-                <Input
-                  id="pn-edit-category"
-                  name="category"
-                  maxLength={40}
-                  defaultValue={partner.category ?? ''}
-                  placeholder="Estética"
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="pn-edit-url" className="text-xs text-muted-foreground">
-                  Sitio o Instagram (opcional)
-                </Label>
-                <Input
-                  id="pn-edit-url"
-                  name="url"
-                  type="url"
-                  maxLength={500}
-                  defaultValue={partner.url ?? ''}
-                  placeholder="https://…"
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="pn-edit-sort" className="text-xs text-muted-foreground">
-                  Orden
-                </Label>
-                <Input
-                  id="pn-edit-sort"
-                  name="sort"
-                  type="number"
-                  defaultValue={partner.sort}
-                  className="tabular-nums"
-                />
-              </div>
-            </div>
+          <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col gap-4">
+            <DialogBody className="grid gap-4">
+              <FieldRow>
+                <Field label="Nombre" name="name" required error={error}>
+                  <Input maxLength={80} defaultValue={partner.name} />
+                </Field>
+                <Field label="Rubro" name="category" optional>
+                  <Input
+                    maxLength={40}
+                    defaultValue={partner.category ?? ''}
+                    placeholder="Estética"
+                  />
+                </Field>
+              </FieldRow>
+              <FieldRow>
+                <Field label="Sitio o Instagram" name="url" optional>
+                  <Input
+                    type="url"
+                    maxLength={500}
+                    defaultValue={partner.url ?? ''}
+                    placeholder="https://…"
+                  />
+                </Field>
+                <Field label="Orden" name="sort" hint="Las de número más bajo se ven primero.">
+                  <NumberField min={0} defaultValue={partner.sort} />
+                </Field>
+              </FieldRow>
 
-            <MenuImageUploader
-              tenantId={tenantId}
-              value={logoUrl}
-              onChange={setLogoUrl}
-              label="Logo"
-            />
-
-            {error ? <p className="text-xs text-destructive">{error}</p> : null}
+              <MenuImageUploader
+                tenantId={tenantId}
+                value={logoUrl}
+                onChange={setLogoUrl}
+                label="Logo"
+              />
+            </DialogBody>
 
             <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+              <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={pending} className="min-w-[140px]">
-                {pending ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" />
-                    Guardando…
-                  </>
-                ) : (
-                  'Guardar cambios'
-                )}
+              <Button type="submit" loading={pending} loadingText="Guardando…">
+                Guardar cambios
               </Button>
             </DialogFooter>
           </form>
@@ -418,21 +323,21 @@ function PartnerEditDialog({
 type BenefitDraft = {
   id: string | null
   label: string
-  discountPct: string
+  discountPct: number | null
   description: string
   imageUrl: string | null
   tierIds: string[]
 }
 
 function emptyDraft(): BenefitDraft {
-  return { id: null, label: '', discountPct: '', description: '', imageUrl: null, tierIds: [] }
+  return { id: null, label: '', discountPct: null, description: '', imageUrl: null, tierIds: [] }
 }
 
 function draftFrom(b: PartnerBenefit): BenefitDraft {
   return {
     id: b.id,
     label: b.label,
-    discountPct: b.discount_pct === null ? '' : String(b.discount_pct),
+    discountPct: b.discount_pct,
     description: b.description ?? '',
     imageUrl: b.image_url,
     tierIds: b.tier_ids,
@@ -458,6 +363,9 @@ function BenefitDialog({
 }) {
   const [pending, startTransition] = useTransition()
   const [form, setForm] = useState<BenefitDraft>(draft ?? emptyDraft())
+  const [labelError, setLabelError] = useState<string | null>(null)
+  const formRef = useRef<HTMLFormElement>(null)
+  useFocusFirstInvalid(formRef, labelError)
 
   // Un dialog por marca reutilizado para crear y editar: al cambiar el draft
   // (otro beneficio, o "nuevo") hay que resincronizar el form.
@@ -466,6 +374,7 @@ function BenefitDialog({
   if (key !== prevKey) {
     setPrevKey(key)
     setForm(draft ?? emptyDraft())
+    setLabelError(null)
   }
 
   const set = <K extends keyof BenefitDraft>(k: K, v: BenefitDraft[K]) =>
@@ -481,19 +390,21 @@ function BenefitDialog({
 
   const previousImage = draft?.imageUrl ?? null
 
-  const handleSubmit = () => {
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
     const label = form.label.trim()
     if (!label) {
-      toast.error('Poné el beneficio (ej: 10% off).')
+      setLabelError('Poné el beneficio (ej: 10% off).')
       return
     }
+    setLabelError(null)
 
     const input = {
       ...(form.id ? { id: form.id } : {}),
       partner_id: partner.id,
       label,
       description: form.description.trim() || null,
-      discount_pct: form.discountPct.trim() === '' ? null : Number(form.discountPct),
+      discount_pct: form.discountPct,
       image_url: form.imageUrl,
       active: true,
       tier_ids: form.tierIds,
@@ -525,119 +436,97 @@ function BenefitDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle className="font-serif">
+          <DialogTitle>
             {form.id ? 'Editar beneficio' : 'Nuevo beneficio'} · {partner.name}
           </DialogTitle>
           <DialogDescription>
-            El socio ve sólo el beneficio de SU nivel. Si esta marca da 10% a Select y Gold y 30% a
+            El socio ve solo el beneficio de SU nivel. Si esta marca da 10% a Select y Gold y 30% a
             Black, cargá dos beneficios distintos.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-[1fr_7rem]">
-            <div className="grid gap-1.5">
-              <Label htmlFor="pb-label" className="text-xs text-muted-foreground">
-                Beneficio
-              </Label>
-              <Input
-                id="pb-label"
-                value={form.label}
-                onChange={(e) => set('label', e.target.value)}
-                maxLength={80}
-                placeholder="10% off"
-              />
+        <form ref={formRef} onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col gap-4">
+          <DialogBody className="grid gap-4">
+            <div className="grid items-start gap-4 sm:grid-cols-[minmax(0,1fr)_9rem]">
+              <Field label="Beneficio" error={labelError}>
+                <Input
+                  value={form.label}
+                  onChange={(e) => {
+                    set('label', e.target.value)
+                    if (labelError) setLabelError(null)
+                  }}
+                  maxLength={80}
+                  placeholder="10% off"
+                />
+              </Field>
+              <Field label="Descuento" optional>
+                <NumberField
+                  min={0}
+                  max={100}
+                  decimals={2}
+                  suffix="%"
+                  steppers={false}
+                  placeholder="10"
+                  value={form.discountPct}
+                  onValueChange={(n) => set('discountPct', n)}
+                />
+              </Field>
             </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="pb-pct" className="text-xs text-muted-foreground">
-                % (opcional)
-              </Label>
-              <Input
-                id="pb-pct"
-                type="number"
-                min={0}
-                max={100}
-                value={form.discountPct}
-                onChange={(e) => set('discountPct', e.target.value)}
-                className="tabular-nums"
-                placeholder="10"
-              />
-            </div>
-          </div>
 
-          <div className="grid gap-1.5">
-            <Label htmlFor="pb-desc" className="text-xs text-muted-foreground">
-              Detalle (opcional)
-            </Label>
-            <Textarea
-              id="pb-desc"
-              value={form.description}
-              onChange={(e) => set('description', e.target.value)}
-              maxLength={200}
-              rows={2}
-              className="resize-none"
-              placeholder="Cómo se usa, qué incluye, restricciones."
+            <Field label="Detalle" optional>
+              <Textarea
+                value={form.description}
+                onChange={(e) => set('description', e.target.value)}
+                maxLength={200}
+                showCount
+                rows={2}
+                placeholder="Cómo se usa, qué incluye, restricciones."
+              />
+            </Field>
+
+            {/* Selector múltiple de niveles — set arbitrario, no "de tal para arriba". */}
+            <div className="grid gap-2">
+              <p className="type-label text-foreground">¿Qué niveles lo reciben?</p>
+              {tiers.length === 0 ? (
+                <p className="type-caption text-muted-foreground">
+                  Todavía no hay niveles cargados. Crealos en Puntos y niveles.
+                </p>
+              ) : (
+                <>
+                  <TierToggleChips
+                    tiers={tiers}
+                    selected={form.tierIds}
+                    onToggle={toggleTier}
+                    aria-label="Niveles que reciben el beneficio"
+                  />
+                  {noTiers ? (
+                    <InlineWarning>
+                      Sin niveles elegidos, este beneficio no lo ve nadie.
+                    </InlineWarning>
+                  ) : null}
+                </>
+              )}
+            </div>
+
+            <MenuImageUploader
+              tenantId={tenantId}
+              value={form.imageUrl}
+              onChange={(url) => set('imageUrl', url)}
+              label="Foto del beneficio (opcional)"
             />
-          </div>
+          </DialogBody>
 
-          {/* Selector múltiple de niveles — set arbitrario, no "de tal para arriba". */}
-          <fieldset className="grid gap-2 rounded-lg border border-border/60 bg-background/40 p-3">
-            <legend className="px-1 text-xs font-medium text-muted-foreground">
-              ¿Qué niveles lo reciben?
-            </legend>
-            {tiers.length === 0 ? (
-              <p className="text-[11px] text-muted-foreground">
-                Todavía no hay niveles cargados. Creá los niveles en Puntos y niveles.
-              </p>
-            ) : (
-              <>
-                <div className="flex flex-wrap gap-2">
-                  {tiers.map((t) => (
-                    <TierChip
-                      key={t.id}
-                      tier={t}
-                      selected={form.tierIds.includes(t.id)}
-                      onToggle={() => toggleTier(t.id)}
-                    />
-                  ))}
-                </div>
-                {noTiers ? (
-                  <p className="inline-flex items-start gap-1.5 text-[11px] text-warning">
-                    <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
-                    Sin niveles elegidos este beneficio no lo ve nadie.
-                  </p>
-                ) : null}
-              </>
-            )}
-          </fieldset>
-
-          <MenuImageUploader
-            tenantId={tenantId}
-            value={form.imageUrl}
-            onChange={(url) => set('imageUrl', url)}
-            label="Foto del beneficio (opcional)"
-          />
-        </div>
-
-        <DialogFooter>
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
-          <Button type="button" onClick={handleSubmit} disabled={pending} className="min-w-[150px]">
-            {pending ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                Guardando…
-              </>
-            ) : form.id ? (
-              'Guardar cambios'
-            ) : (
-              'Agregar beneficio'
-            )}
-          </Button>
-        </DialogFooter>
+          <DialogFooter>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" loading={pending} loadingText="Guardando…">
+              {form.id ? 'Guardar cambios' : 'Agregar beneficio'}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   )
@@ -667,87 +556,75 @@ function BenefitRow({
   return (
     <li
       ref={setNodeRef}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.55 : 1,
-      }}
-      className={cn(
-        'flex items-start gap-2 bg-card px-2 py-2.5',
-        !benefit.active && 'opacity-60',
-        isDragging && 'relative z-10 shadow-md',
-      )}
+      style={sortableStyle(transform, transition, isDragging)}
+      className={cn('flex items-start gap-2 bg-card px-2 py-2', isDragging && DRAGGING_ROW_CLASSES)}
     >
-      <button
-        {...attributes}
-        {...listeners}
-        type="button"
-        aria-label={`Reordenar ${benefit.label}`}
-        // touch-none: sin esto el gesto de arrastre en tablet scrollea la página.
-        className="size-11 shrink-0 cursor-grab touch-none rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground active:cursor-grabbing"
-      >
-        <GripVertical className="mx-auto size-4" />
-      </button>
+      <DragHandle
+        label={`Reordenar ${benefit.label}`}
+        attributes={attributes}
+        listeners={listeners}
+        className="mt-1"
+      />
 
-      <span className="mt-0.5 flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-md bg-secondary/60">
+      <span className="relative mt-0.5 flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-md bg-secondary">
         {benefit.image_url ? (
           <StorageImage src={benefit.image_url} alt="" sizes="44px" />
         ) : (
-          <Tag className="size-4 text-muted-foreground/70" aria-hidden />
+          <Tag className="size-4 text-subtle-foreground" aria-hidden="true" />
         )}
       </span>
 
-      <div className="min-w-0 flex-1 space-y-1.5 py-0.5">
-        <p className="truncate text-sm font-medium">{benefit.label}</p>
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5 py-0.5">
+        <p
+          className={cn(
+            'truncate type-body font-medium',
+            !benefit.active && 'text-muted-foreground',
+          )}
+        >
+          {benefit.label}
+        </p>
         {benefit.description ? (
-          <p className="truncate text-[11px] text-muted-foreground">{benefit.description}</p>
+          <p className="truncate type-caption text-muted-foreground">{benefit.description}</p>
         ) : null}
         <div className="flex flex-wrap items-center gap-1">
           {linked.length === 0 ? (
-            <span className="inline-flex items-center gap-1 text-[11px] text-warning">
-              <TriangleAlert className="size-3" aria-hidden />
-              Sin niveles: no lo ve nadie
-            </span>
+            <InlineWarning>Sin niveles: no lo ve nadie</InlineWarning>
           ) : (
-            linked.map((t) => <TierChip key={t.id} tier={t} selected />)
+            linked.map((t) => <TierBadge key={t.id} tier={t} />)
           )}
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-0.5">
-        <Button
-          size="icon"
-          variant="ghost"
-          className="size-11 text-muted-foreground hover:text-foreground"
-          onClick={onEdit}
-          aria-label={`Editar ${benefit.label}`}
-        >
-          <Pencil className="size-4" />
-        </Button>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="size-11 text-muted-foreground hover:text-destructive"
-          onClick={onDelete}
-          aria-label={`Borrar ${benefit.label}`}
-        >
-          <Trash2 className="size-4" />
-        </Button>
-      </div>
-
-      <div className="flex shrink-0 items-center pt-3">
+      <div className="flex shrink-0 items-center gap-1 pt-1">
         <Switch
           checked={benefit.active}
           onCheckedChange={onToggle}
           disabled={pending}
-          aria-label={benefit.active ? `Pausar ${benefit.label}` : `Activar ${benefit.label}`}
+          aria-label={`${benefit.label} activo`}
+          className="mr-1"
         />
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          onClick={onEdit}
+          aria-label={`Editar ${benefit.label}`}
+        >
+          <Pencil aria-hidden="true" />
+        </Button>
+        <Button
+          size="icon-sm"
+          variant="danger-ghost"
+          onClick={onDelete}
+          aria-label={`Borrar ${benefit.label}`}
+        >
+          <Trash2 aria-hidden="true" />
+        </Button>
       </div>
     </li>
   )
 }
 
-// ── Card de una marca con su lista de beneficios ────────────
+// ── Una marca con su lista de beneficios ────────────────────
 function PartnerCard({
   tenantSlug,
   tenantId,
@@ -765,11 +642,13 @@ function PartnerCard({
   onEditPartner: () => void
   onDeletePartner: () => void
 }) {
+  const switchId = useId()
   const [pending, startTransition] = useTransition()
   const [expanded, setExpanded] = useState(false)
   const [benefitDraft, setBenefitDraft] = useState<BenefitDraft | null>(null)
   const [benefitOpen, setBenefitOpen] = useState(false)
-  const [pendingDelete, setPendingDelete] = useState<PartnerBenefit | null>(null)
+  const [toDelete, setToDelete] = useState<PartnerBenefit | null>(null)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   // Orden optimista de los beneficios (el drag no espera al server).
   const [order, setOrder] = useState<PartnerBenefit[]>(() => sortBenefits(benefits))
@@ -812,7 +691,7 @@ function PartnerCard({
       const result = await togglePartner(tenantSlug, partner.id, next)
       if (result.ok) {
         toast.success(
-          next ? `"${partner.name}" ya se ve en la billetera.` : `"${partner.name}" ocultada.`,
+          next ? `«${partner.name}» ya se ve en la billetera.` : `«${partner.name}» quedó oculta.`,
         )
       } else {
         toast.error(result.message)
@@ -827,31 +706,10 @@ function PartnerCard({
     })
   }
 
-  const onConfirmDeleteBenefit = () => {
-    if (!pendingDelete) return
-    const target = pendingDelete
-    startTransition(async () => {
-      const result = await deletePartnerBenefit(tenantSlug, target.id)
-      if (result.ok) {
-        if (target.image_url && isStorageUrl(target.image_url)) {
-          try {
-            await deleteMenuImageByUrl(target.image_url)
-          } catch {
-            // huérfano tolerable
-          }
-        }
-        toast.success('Beneficio eliminado.')
-      } else {
-        toast.error(result.message)
-      }
-      setPendingDelete(null)
-    })
-  }
-
   const onClearLegacy = () => {
     startTransition(async () => {
       const result = await clearPartnerLegacyDiscount(tenantSlug, partner.id)
-      if (result.ok) toast.success(result.message ?? 'Descuento viejo eliminado.')
+      if (result.ok) toast.success(result.message ?? 'Descuento viejo quitado.')
       else toast.error(result.message)
     })
   }
@@ -862,132 +720,124 @@ function PartnerCard({
   return (
     <li
       className={cn(
-        'card-hairline overflow-hidden rounded-xl border bg-card',
-        !partner.active && 'border-dashed bg-card/60',
+        'overflow-clip rounded-xl border bg-card',
+        partner.active ? 'border-border' : 'border-dashed border-border-strong',
       )}
     >
-      <div className="flex flex-wrap items-center gap-3 p-3 sm:flex-nowrap">
-        <button
-          type="button"
+      <div className="flex flex-wrap items-center gap-3 p-3 sm:flex-nowrap sm:p-4">
+        <PhotoButton
+          src={partner.logo_url}
+          sizes="48px"
+          shape="circle"
+          fallbackIcon={Handshake}
+          fallback={
+            <span className="type-subtitle text-muted-foreground" aria-hidden="true">
+              {partner.name.charAt(0).toUpperCase()}
+            </span>
+          }
+          label={`Cambiar el logo de ${partner.name}`}
           onClick={onEditPartner}
-          aria-label={`Editar logo de ${partner.name}`}
-          title="Logo del aliado"
-          className="group/foto relative shrink-0 overflow-hidden rounded-full transition-shadow hover:ring-2 hover:ring-primary/50"
-        >
-          <PartnerLogo partner={partner} />
-          <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 opacity-0 transition-opacity group-hover/foto:opacity-100">
-            <Camera className="size-4 text-white" aria-hidden />
-          </span>
-        </button>
+        />
 
-        <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="truncate font-medium text-foreground">{partner.name}</span>
-            {partner.active ? null : (
-              <Badge variant="warning" className="gap-1">
-                Oculta · no se ve en la billetera
-              </Badge>
-            )}
+            <span className="truncate type-body font-medium text-foreground">{partner.name}</span>
+            {partner.active ? null : <StatusBadge status="hidden" map={PARTNER_STATUS} />}
           </div>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 type-small text-muted-foreground">
             {partner.category ? <span>{partner.category}</span> : null}
+            {partner.category ? <span aria-hidden="true">·</span> : null}
             <span>
               {activeCount === 0
                 ? 'Sin beneficios activos'
                 : `${activeCount} ${activeCount === 1 ? 'beneficio' : 'beneficios'}`}
             </span>
             {partner.url ? (
-              <a
-                href={partner.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 hover:text-foreground"
-              >
-                <ExternalLink className="size-3" aria-hidden />
-                Ver
-              </a>
+              <>
+                <span aria-hidden="true">·</span>
+                <a
+                  href={partner.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 underline decoration-1 underline-offset-[3px] hover:text-foreground hover:decoration-2"
+                >
+                  Ver sitio
+                  <ExternalLink className="size-3" aria-hidden="true" />
+                </a>
+              </>
             ) : null}
           </div>
         </div>
 
         {/* Visible/oculta: un toque, sin entrar a ningún dialog. */}
-        <div className="flex shrink-0 items-center gap-2 rounded-lg px-2 py-2.5">
+        <div className="flex shrink-0 items-center gap-2">
           <Switch
-            id={`partner-active-${partner.id}`}
+            id={switchId}
             checked={partner.active}
             onCheckedChange={onTogglePartner}
             disabled={pending}
-            aria-label={partner.active ? `Ocultar ${partner.name}` : `Mostrar ${partner.name}`}
+            aria-label={`${partner.name} visible en la billetera`}
           />
+          {/* El texto dice el estado; el nombre del interruptor queda fijo (aria-label). */}
           <Label
-            htmlFor={`partner-active-${partner.id}`}
-            className="cursor-pointer text-xs text-muted-foreground"
+            htmlFor={switchId}
+            aria-hidden="true"
+            className="min-w-12 cursor-pointer text-muted-foreground"
           >
             {partner.active ? 'Visible' : 'Oculta'}
           </Label>
         </div>
 
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className="flex shrink-0 items-center gap-1">
           <Button
-            size="icon"
+            size="icon-sm"
             variant="ghost"
-            className="size-11 text-muted-foreground hover:text-foreground"
             onClick={onEditPartner}
             aria-label={`Editar ${partner.name}`}
           >
-            <Pencil className="size-4" />
+            <Pencil aria-hidden="true" />
           </Button>
           <Button
-            size="icon"
-            variant="ghost"
-            className="size-11 text-muted-foreground hover:text-destructive"
+            size="icon-sm"
+            variant="danger-ghost"
             onClick={onDeletePartner}
             aria-label={`Borrar ${partner.name}`}
           >
-            <Trash2 className="size-4" />
+            <Trash2 aria-hidden="true" />
           </Button>
           <Button
-            size="icon"
+            size="icon-sm"
             variant="ghost"
-            className="size-11 text-muted-foreground hover:text-foreground"
             onClick={() => setExpanded((v) => !v)}
             aria-expanded={expanded}
             aria-controls={panelId}
-            aria-label={
-              expanded
-                ? `Ocultar beneficios de ${partner.name}`
-                : `Ver beneficios de ${partner.name}`
-            }
+            aria-label={`Beneficios de ${partner.name}`}
           >
-            <ChevronDown className={cn('size-4 transition-transform', expanded && 'rotate-180')} />
+            <ChevronDown className={cn(expanded && 'rotate-180')} aria-hidden="true" />
           </Button>
         </div>
       </div>
 
       {expanded ? (
-        <div id={panelId} className="space-y-3 border-t border-border/60 bg-background/40 p-3">
+        <div id={panelId} className="flex flex-col gap-3 border-t border-border p-3 sm:p-4">
           {/* Legacy: el texto viejo no sabía a qué nivel aplicaba. Solo lectura. */}
           {partner.discount_label ? (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-border/70 px-3 py-2">
-              <p className="text-[11px] text-muted-foreground text-pretty">
-                Descuento viejo:{' '}
-                <strong className="text-foreground">{partner.discount_label}</strong> — no sabía a
-                qué nivel aplicaba. Ya lo pasamos a beneficio; borralo cuando lo veas duplicado.
-              </p>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-10"
-                onClick={onClearLegacy}
-                disabled={pending}
-              >
-                Quitar
-              </Button>
-            </div>
+            <Callout
+              tone="neutral"
+              title={`Descuento viejo: ${partner.discount_label}`}
+              action={
+                <Button size="sm" variant="secondary" onClick={onClearLegacy} disabled={pending}>
+                  Quitar
+                </Button>
+              }
+            >
+              No sabía a qué nivel aplicaba. Ya lo pasamos a beneficio: quitalo cuando lo veas
+              duplicado.
+            </Callout>
           ) : null}
 
           {order.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-border/70 px-3 py-4 text-center text-xs text-muted-foreground text-pretty">
+            <p className="rounded-lg border border-dashed border-border-strong px-3 py-4 text-center type-small text-pretty text-muted-foreground">
               Esta marca todavía no tiene beneficios. Cargá el primero: podés dar 10% a Select y
               Gold, y 30% a Black.
             </p>
@@ -1002,7 +852,7 @@ function PartnerCard({
                 items={order.map((b) => b.id)}
                 strategy={verticalListSortingStrategy}
               >
-                <ul className="card-hairline divide-y divide-border/60 overflow-hidden rounded-xl border">
+                <ul className={ROW_LIST_CLASSES} aria-label={`Beneficios de ${partner.name}`}>
                   {order.map((b) => (
                     <BenefitRow
                       key={b.id}
@@ -1014,7 +864,10 @@ function PartnerCard({
                         setBenefitOpen(true)
                       }}
                       onToggle={() => onToggleBenefit(b)}
-                      onDelete={() => setPendingDelete(b)}
+                      onDelete={() => {
+                        setToDelete(b)
+                        setDeleteOpen(true)
+                      }}
                     />
                   ))}
                 </ul>
@@ -1023,22 +876,21 @@ function PartnerCard({
           )}
 
           {uncovered.length > 0 && order.length > 0 ? (
-            <p className="inline-flex items-start gap-1.5 text-[11px] text-warning text-pretty">
-              <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
+            <InlineWarning>
               Los socios {uncovered.map((t) => t.name).join(', ')} no van a ver nada de esta marca.
-            </p>
+            </InlineWarning>
           ) : null}
 
           <Button
             type="button"
-            variant="outline"
-            className="h-11 w-full gap-1.5"
+            variant="secondary"
+            className="w-full"
             onClick={() => {
               setBenefitDraft(null)
               setBenefitOpen(true)
             }}
           >
-            <Plus className="size-4" />
+            <Plus aria-hidden="true" />
             Agregar beneficio de {partner.name}
           </Button>
         </div>
@@ -1057,34 +909,29 @@ function PartnerCard({
         }}
       />
 
-      <AlertDialog
-        open={pendingDelete !== null}
-        onOpenChange={(next) => {
-          if (!next) setPendingDelete(null)
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        tone="danger"
+        title={`¿Borrar «${toDelete?.label ?? ''}»?`}
+        description="Los socios de los niveles asignados dejan de verlo. No se puede deshacer."
+        confirmLabel="Borrar beneficio"
+        pendingLabel="Borrando…"
+        onConfirm={async () => {
+          if (!toDelete) return
+          const target = toDelete
+          const result = await deletePartnerBenefit(tenantSlug, target.id)
+          if (!result.ok) return { ok: false, error: result.message }
+          if (target.image_url && isStorageUrl(target.image_url)) {
+            try {
+              await deleteMenuImageByUrl(target.image_url)
+            } catch {
+              // huérfano tolerable
+            }
+          }
+          toast.success('Beneficio borrado.')
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Borrar "{pendingDelete?.label}"?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Los socios de los niveles asignados dejan de verlo. Esta acción no se puede deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={(e) => {
-                e.preventDefault()
-                onConfirmDeleteBenefit()
-              }}
-              disabled={pending}
-            >
-              {pending ? 'Borrando…' : 'Borrar'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      />
     </li>
   )
 }
@@ -1104,9 +951,9 @@ export function PartnersManager({
   tiers: LoyaltyTier[]
   partnerBenefits: PartnerBenefit[]
 }) {
-  const [pending, startTransition] = useTransition()
   const [editing, setEditing] = useState<Partner | null>(null)
-  const [pendingDelete, setPendingDelete] = useState<Partner | null>(null)
+  const [toDelete, setToDelete] = useState<Partner | null>(null)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   // Sólo niveles activos y en orden de escalera: un nivel apagado no tiene
   // socios, así que ni se ofrece como destino ni dispara el aviso de "no ven nada".
@@ -1121,52 +968,37 @@ export function PartnersManager({
 
   const hiddenCount = partners.filter((p) => !p.active).length
 
-  const onConfirmDelete = () => {
-    if (!pendingDelete) return
-    const target = pendingDelete
-    startTransition(async () => {
-      const result = await deletePartner(tenantSlug, target.id)
-      if (result.ok) toast.success(`Marca "${target.name}" eliminada.`)
-      else toast.error(result.message)
-      setPendingDelete(null)
-    })
-  }
-
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-6">
       <NewPartnerForm tenantSlug={tenantSlug} tenantId={tenantId} />
 
       {partners.length === 0 ? (
         <EmptyState
           icon={Handshake}
           title="Todavía no hay marcas aliadas"
-          description="Sumá comercios amigos que ofrezcan descuentos a tus socios. Cargá el primero con el formulario de arriba."
+          description="Sumá comercios amigos que les den descuentos a tus socios. Cargá el primero con el formulario de arriba."
         />
       ) : (
-        <>
+        <div className="flex flex-col gap-3">
           {/* El estado oculto es el motivo #1 de "no se ve nada en la billetera". */}
           {hiddenCount > 0 ? (
-            <div className="flex items-start gap-2.5 rounded-xl border border-warning/40 bg-warning/10 p-3 text-xs text-pretty">
-              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
-              <p className="text-muted-foreground">
-                <strong className="text-foreground">
-                  {hiddenCount} {hiddenCount === 1 ? 'marca oculta' : 'marcas ocultas'}
-                </strong>{' '}
-                de {partners.length}.{' '}
-                {hiddenCount === partners.length
-                  ? 'La sección "Nuestros Aliados" no aparece en la billetera del socio.'
-                  : 'No se ven en la billetera del socio.'}{' '}
-                Prendé el switch de cada una para publicarlas.
-              </p>
-            </div>
+            <Callout
+              tone="warning"
+              title={`${hiddenCount} ${hiddenCount === 1 ? 'marca oculta' : 'marcas ocultas'} de ${partners.length}`}
+            >
+              {hiddenCount === partners.length
+                ? 'La sección «Nuestros Aliados» no aparece en la billetera del socio.'
+                : 'No se ven en la billetera del socio.'}{' '}
+              Prendé el interruptor de cada una para publicarla.
+            </Callout>
           ) : (
-            <p className="text-sm text-muted-foreground">
+            <p className="type-small text-muted-foreground">
               {partners.length} {partners.length === 1 ? 'marca visible' : 'marcas visibles'} para
               tus socios.
             </p>
           )}
 
-          <ul className="space-y-3">
+          <ul className="flex flex-col gap-3" aria-label="Marcas aliadas">
             {partners.map((partner) => (
               <PartnerCard
                 key={partner.id}
@@ -1176,11 +1008,14 @@ export function PartnersManager({
                 benefits={byPartner.get(partner.id) ?? []}
                 tiers={ladder}
                 onEditPartner={() => setEditing(partner)}
-                onDeletePartner={() => setPendingDelete(partner)}
+                onDeletePartner={() => {
+                  setToDelete(partner)
+                  setDeleteOpen(true)
+                }}
               />
             ))}
           </ul>
-        </>
+        </div>
       )}
 
       {/* Dialog de edición controlado: una sola instancia para todas las filas */}
@@ -1194,36 +1029,22 @@ export function PartnersManager({
         }}
       />
 
-      {/* Confirmación de borrado de la marca */}
-      <AlertDialog
-        open={pendingDelete !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingDelete(null)
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        tone="danger"
+        title={`¿Borrar la marca «${toDelete?.name ?? ''}»?`}
+        description="Se borran también sus beneficios. Si solo querés sacarla de la billetera, ocultala con el interruptor. No se puede deshacer."
+        confirmLabel="Borrar marca"
+        pendingLabel="Borrando…"
+        onConfirm={async () => {
+          if (!toDelete) return
+          const target = toDelete
+          const result = await deletePartner(tenantSlug, target.id)
+          if (!result.ok) return { ok: false, error: result.message }
+          toast.success(`Marca «${target.name}» borrada.`)
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Borrar la marca "{pendingDelete?.name}"?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Se borran también sus beneficios. Si sólo querés sacarla de la billetera, ocultala con
-              el switch. Esta acción no se puede deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={(e) => {
-                e.preventDefault()
-                onConfirmDelete()
-              }}
-              disabled={pending}
-            >
-              {pending ? 'Borrando…' : 'Borrar'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      />
     </div>
   )
 }

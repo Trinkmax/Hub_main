@@ -1,21 +1,15 @@
 'use client'
 
-import {
-  Eye,
-  Gift,
-  Handshake,
-  Info,
-  type LucideIcon,
-  Sparkles,
-  Stamp,
-  Star,
-  Wallet,
-} from 'lucide-react'
+import { ChevronDown, Eye, Gift, Handshake, Sparkles, Stamp, Star, Wallet } from 'lucide-react'
 import Link from 'next/link'
-import { usePathname, useSearchParams } from 'next/navigation'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Callout } from '@/components/ui/callout'
 import { EmptyState } from '@/components/ui/empty-state'
-import { SlidingTabs } from '@/components/ui/sliding-tabs'
+import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
+import { Section } from '@/components/ui/section'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { getCapturePromptConfig } from '@/lib/capture-prompt/queries'
 import type { listItemTags } from '@/lib/item-tags/queries'
 import type { listMenu } from '@/lib/menu/queries'
@@ -30,7 +24,7 @@ import type {
 } from '@/lib/points/queries'
 import type { listPunchCardTemplates } from '@/lib/punch-cards/queries'
 import type { getWelcomeRewardConfig } from '@/lib/welcome-reward/queries'
-import { PartnersManager as PartnersManagerReal } from '../aliados/_components/partners-manager'
+import { PartnersManager } from '../aliados/_components/partners-manager'
 import { CapturePromptForm } from '../bienvenida/_components/capture-prompt-form'
 import { WelcomeRewardForm } from '../bienvenida/_components/welcome-reward-form'
 import { PunchCardsManager } from '../punch-cards/_components/punch-cards-manager'
@@ -46,7 +40,11 @@ import { TiersList } from './tiers-list'
 // 'programa' fusiona lo que antes eran dos tabs (Niveles + Puntos y recompensas)
 // en un solo flujo vertical: ganar → niveles → canjear.
 export type ClubTab = 'programa' | 'aliados' | 'bienvenida' | 'punch'
-const CLUB_TAB_VALUES = new Set<ClubTab>(['programa', 'aliados', 'bienvenida', 'punch'])
+const CLUB_TAB_VALUES = new Set<string>(['programa', 'aliados', 'bienvenida', 'punch'])
+
+function isClubTab(value: string): value is ClubTab {
+  return CLUB_TAB_VALUES.has(value)
+}
 
 type Rule = {
   id: string
@@ -77,83 +75,12 @@ export type ClubEditorProps = {
   initialTab?: ClubTab
 }
 
-function InfoBanner({ children }: { children: React.ReactNode }) {
+/** El número de la etapa del programa (ganar → niveles → canjear) delante del título. */
+function StepTitle({ step, children }: { step: number; children: React.ReactNode }) {
   return (
-    <div className="card-hairline flex items-start gap-3 rounded-xl border border-border/70 bg-primary/5 p-4 text-sm">
-      <Info className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
-      <div className="text-xs text-muted-foreground text-pretty">{children}</div>
-    </div>
-  )
-}
-
-const CLUB_TABS: { value: ClubTab; label: React.ReactNode }[] = [
-  {
-    value: 'programa',
-    label: (
-      <span className="inline-flex items-center gap-1.5">
-        <Sparkles className="size-3.5" />
-        Puntos y niveles
-      </span>
-    ),
-  },
-  {
-    value: 'aliados',
-    label: (
-      <span className="inline-flex items-center gap-1.5">
-        <Handshake className="size-3.5" />
-        Aliados
-      </span>
-    ),
-  },
-  {
-    value: 'bienvenida',
-    label: (
-      <span className="inline-flex items-center gap-1.5">
-        <Star className="size-3.5" />
-        Bienvenida
-      </span>
-    ),
-  },
-  {
-    value: 'punch',
-    label: (
-      <span className="inline-flex items-center gap-1.5">
-        <Stamp className="size-3.5" />
-        Punch cards
-      </span>
-    ),
-  },
-]
-
-/** Encabezado de una de las tres etapas del programa (ganar → niveles → canjear). */
-function ProgramaSection({
-  step,
-  icon: Icon,
-  title,
-  hint,
-  children,
-}: {
-  step: number
-  icon: LucideIcon
-  title: string
-  hint: string
-  children: React.ReactNode
-}) {
-  return (
-    <section className="space-y-4">
-      <header className="flex items-start gap-3">
-        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
-          <Icon className="size-4" aria-hidden />
-        </span>
-        <div className="space-y-0.5">
-          <h2 className="font-display text-lg font-semibold tracking-tight">
-            <span className="tabular-nums text-muted-foreground/50">{step}.</span> {title}
-          </h2>
-          <p className="max-w-prose text-xs text-muted-foreground">{hint}</p>
-        </div>
-      </header>
-      <div className="space-y-4">{children}</div>
-    </section>
+    <>
+      <span className="type-amount text-subtle-foreground">{step}.</span> {children}
+    </>
   )
 }
 
@@ -177,167 +104,160 @@ export function ClubEditor(props: ClubEditorProps): React.JSX.Element {
     initialTab,
   } = props
 
-  // La URL (?tab=) es la ÚNICA fuente de verdad del tab activo. No hay estado
-  // local: así el resaltado del sidebar (que lee la URL) y el contenido nunca se
-  // desincronizan, y los deep-links del sidebar funcionan sin remontar la página.
-  const pathname = usePathname()
-  const rawTab = useSearchParams().get('tab')
-  const clubTab: ClubTab =
-    rawTab && CLUB_TAB_VALUES.has(rawTab as ClubTab)
-      ? (rawTab as ClubTab)
-      : (initialTab ?? 'programa')
-
-  // Cambiar de tab escribe la URL con la History API nativa (Next la sincroniza con
-  // useSearchParams): es instantáneo, sin round-trip al server ni re-fetch de los
-  // datos del club. SIEMPRE con ?tab= explícito: si 'programa' fuera sin query,
-  // rawTab quedaría null y el fallback a initialTab (prop congelada del server,
-  // p. ej. 'aliados' tras un deep-link) dejaría ese tab inalcanzable.
-  const handleTabChange = (next: ClubTab) => {
-    window.history.replaceState(null, '', `${pathname}?tab=${next}`)
-  }
+  // La pestaña vive en la URL (?tab=): `Tabs syncParam` la escribe con
+  // history.replaceState (sin pedirle nada al server) y sigue a los links del
+  // menú lateral que apuntan a ?tab=…. El estado propio está para poder
+  // mandar a otra pestaña desde un estado vacío («Ir a Puntos y niveles»).
+  const defaultTab = initialTab ?? 'programa'
+  const [tab, setTab] = useState<ClubTab>(defaultTab)
+  const goToProgram = () => setTab('programa')
 
   const perItemRules = (rules as Rule[]).filter((r) => r.type === 'per_item')
+  const activePerItem = perItemRules.filter((r) => r.active).length
 
   return (
-    <div className="space-y-6">
-      {/* CABECERA */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-            Fidelización
-          </p>
-          <h1 className="mt-0.5 font-serif text-3xl font-semibold tracking-tight">
-            Club de beneficios
-          </h1>
-          <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-            Niveles, puntos, recompensas, aliados y punch cards — todo el sistema de fidelización de
-            tu bar.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <ClubTourButton />
-          <Button asChild variant="outline" size="sm" className="gap-1.5">
-            <Link href={`/carta/${tenantSlug}`} target="_blank" rel="noopener">
-              <Eye className="size-4" />
-              Ver carta
-            </Link>
-          </Button>
-          <Button asChild variant="outline" size="sm" className="gap-1.5">
-            <Link href={`/${tenantSlug}/club/simular`} data-tour="club-simular">
-              <Wallet className="size-4" />
-              Simular wallet
-            </Link>
-          </Button>
-        </div>
-      </div>
-
-      <div data-tour="club-tabs" className="w-fit max-w-full">
-        <SlidingTabs
-          size="sm"
-          className="max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          value={clubTab}
-          onChange={handleTabChange}
-          tabs={CLUB_TABS}
-        />
-      </div>
-
-      <div
-        key={clubTab}
-        className="animate-in fade-in slide-in-from-bottom-1 duration-[var(--duration-base)]"
+    <PageShell width="comfortable">
+      <Tabs
+        syncParam="tab"
+        value={tab}
+        defaultValue={defaultTab}
+        onValueChange={(next) => {
+          if (isClubTab(next)) setTab(next)
+        }}
+        className="gap-8"
       >
-        {clubTab === 'programa' ? (
-          <div className="space-y-10">
-            {/* ① CÓMO GANAN — reglas de puntos (compacto, full-width). */}
-            <ProgramaSection
-              step={1}
-              icon={Star}
-              title="Cómo ganan puntos"
-              hint="Cuánto suma cada consumo. Es la base de todo el club."
-            >
-              <NewPerAmountForm tenantSlug={tenantSlug} />
-              <details className="card-hairline group rounded-xl border bg-card/60 p-4">
-                <summary className="cursor-pointer list-none text-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="font-medium">Reglas avanzadas</p>
-                      <p className="text-xs text-muted-foreground">
-                        Bonificar puntos extra por ítem o categoría
-                        {perItemRules.length > 0 ? ` · ${perItemRules.length} activa(s)` : ''}.
-                      </p>
-                    </div>
-                    <span className="text-xs text-muted-foreground group-open:hidden">Mostrar</span>
-                    <span className="hidden text-xs text-muted-foreground group-open:inline">
-                      Ocultar
-                    </span>
-                  </div>
-                </summary>
-                <div className="mt-4">
-                  <NewPerItemForm
-                    tenantSlug={tenantSlug}
-                    items={menu.items}
-                    categories={menu.categories}
-                  />
-                </div>
-              </details>
-              <RulesList tenantSlug={tenantSlug} rules={rules} menu={menu} />
-            </ProgramaSection>
+        <PageHeader
+          title="Club de beneficios"
+          description="Niveles, puntos, recompensas, aliados y punch cards: todo el sistema de fidelización de tu bar."
+          actions={
+            <>
+              <ClubTourButton />
+              <Button asChild variant="secondary">
+                <Link href={`/carta/${tenantSlug}`} target="_blank" rel="noopener">
+                  <Eye aria-hidden="true" />
+                  Ver carta
+                </Link>
+              </Button>
+              <Button asChild variant="secondary">
+                <Link href={`/${tenantSlug}/club/simular`} data-tour="club-simular">
+                  <Wallet aria-hidden="true" />
+                  Simular wallet
+                </Link>
+              </Button>
+            </>
+          }
+          tabs={
+            <TabsList data-tour="club-tabs" aria-label="Áreas del club">
+              <TabsTrigger value="programa" icon={Sparkles}>
+                Puntos y niveles
+              </TabsTrigger>
+              <TabsTrigger value="aliados" icon={Handshake}>
+                Aliados
+              </TabsTrigger>
+              <TabsTrigger value="bienvenida" icon={Star}>
+                Bienvenida
+              </TabsTrigger>
+              <TabsTrigger value="punch" icon={Stamp}>
+                Punch cards
+              </TabsTrigger>
+            </TabsList>
+          }
+        />
 
-            {/* ② NIVELES — la escalera + sus beneficios. */}
-            <ProgramaSection
-              step={2}
-              icon={Sparkles}
-              title="Niveles"
-              hint="Se alcanzan por puntos de categoría (lo ganado en los últimos 4 meses): suben con la actividad y bajan si el cliente deja de venir. Cada nivel desbloquea beneficios desde Beneficios en su fila."
-            >
-              <TiersList
-                tenantSlug={tenantSlug}
-                tenantId={tenantId}
-                tiers={tiers}
-                benefitsByTier={benefitsByTier}
-                rewards={activeRewards}
-                partners={partners}
-              />
-            </ProgramaSection>
+        <TabsContent value="programa" className="flex flex-col gap-10">
+          {/* ① CÓMO GANAN — reglas de puntos. */}
+          <Section
+            title={<StepTitle step={1}>Cómo ganan puntos</StepTitle>}
+            description="Cuánto suma cada consumo. Es la base de todo el club."
+          >
+            <NewPerAmountForm tenantSlug={tenantSlug} />
+            <details className="group rounded-xl border border-border bg-card">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-4 py-3 outline-offset-2 outline-(--ring) hover:bg-hover focus-visible:outline-2 [&::-webkit-details-marker]:hidden">
+                <span className="grid gap-0.5">
+                  <span className="type-label text-foreground">Reglas avanzadas</span>
+                  <span className="type-small text-muted-foreground">
+                    Puntos extra por un ítem o una categoría
+                    {activePerItem > 0
+                      ? ` · ${activePerItem} ${activePerItem === 1 ? 'activa' : 'activas'}`
+                      : ''}
+                    .
+                  </span>
+                </span>
+                <ChevronDown
+                  className="size-4 shrink-0 text-muted-foreground group-open:rotate-180"
+                  aria-hidden="true"
+                />
+              </summary>
+              <div className="border-t border-border p-4">
+                <NewPerItemForm
+                  tenantSlug={tenantSlug}
+                  items={menu.items}
+                  categories={menu.categories}
+                />
+              </div>
+            </details>
+            <RulesList tenantSlug={tenantSlug} rules={rules} menu={menu} />
+          </Section>
 
-            {/* ③ CÓMO CANJEAN — pagar con puntos + catálogo visual con fotos. */}
-            <ProgramaSection
-              step={3}
-              icon={Gift}
-              title="Cómo canjean sus puntos"
-              hint="Lo que ve el cliente en la carta. Cargá una foto en cada recompensa para que se vea rica."
-            >
-              <RedemptionConfigForm tenantSlug={tenantSlug} initial={redemptionConfig} />
-              <NewRewardForm tenantSlug={tenantSlug} tenantId={tenantId} tiers={tiers} />
-              <RewardsList
-                tenantSlug={tenantSlug}
-                tenantId={tenantId}
-                rewards={rewards}
-                tiers={tiers}
-              />
-            </ProgramaSection>
-          </div>
-        ) : clubTab === 'aliados' ? (
-          <div className="space-y-5">
-            <InfoBanner>
-              Cada marca tiene su propia lista de beneficios y cada beneficio elige a qué niveles
-              llega: Guapa estética puede dar 10% a Select y Gold, y 30% a Black. El socio ve sólo
-              el beneficio de SU nivel, no la suma de los de abajo.
-            </InfoBanner>
-            <PartnersManagerReal
+          {/* ② NIVELES — la escalera y sus beneficios. */}
+          <Section
+            divider
+            title={<StepTitle step={2}>Niveles</StepTitle>}
+            description="Se alcanzan con los puntos de categoría (lo ganado en los últimos 4 meses): suben con la actividad y bajan si el cliente deja de venir. Lo que desbloquea cada nivel se carga desde «Beneficios», en su fila."
+          >
+            <TiersList
               tenantSlug={tenantSlug}
               tenantId={tenantId}
-              partners={partners}
               tiers={tiers}
-              partnerBenefits={partnerBenefits}
+              benefitsByTier={benefitsByTier}
+              rewards={activeRewards}
+              partners={partners}
             />
-          </div>
-        ) : clubTab === 'bienvenida' ? (
-          <div className="space-y-6">
+          </Section>
+
+          {/* ③ CÓMO CANJEAN — pagar con puntos y el catálogo con fotos. */}
+          <Section
+            divider
+            title={<StepTitle step={3}>Cómo canjean sus puntos</StepTitle>}
+            description="Lo que ve el cliente en la carta. Cargá una foto en cada recompensa para que se vea rica."
+          >
+            <RedemptionConfigForm tenantSlug={tenantSlug} initial={redemptionConfig} />
+            <NewRewardForm tenantSlug={tenantSlug} tenantId={tenantId} tiers={tiers} />
+            <RewardsList
+              tenantSlug={tenantSlug}
+              tenantId={tenantId}
+              rewards={rewards}
+              tiers={tiers}
+            />
+          </Section>
+        </TabsContent>
+
+        <TabsContent value="aliados" className="flex flex-col gap-6">
+          <Callout tone="info">
+            Cada marca tiene su propia lista de beneficios y cada beneficio elige a qué niveles
+            llega: Guapa estética puede dar 10% a Select y Gold, y 30% a Black. El socio ve solo el
+            beneficio de SU nivel, no la suma de los de abajo.
+          </Callout>
+          <PartnersManager
+            tenantSlug={tenantSlug}
+            tenantId={tenantId}
+            partners={partners}
+            tiers={tiers}
+            partnerBenefits={partnerBenefits}
+          />
+        </TabsContent>
+
+        <TabsContent value="bienvenida" className="flex flex-col gap-10">
+          <Section
+            title="Regalo de bienvenida"
+            description="Lo que recibe cada cliente la primera vez que se suma al club escaneando el QR."
+          >
             {activeRewards.length === 0 ? (
               <EmptyState
                 icon={Gift}
                 title="Todavía no tenés recompensas"
-                description="Creá una recompensa en Puntos y niveles para usarla como regalo de bienvenida."
+                description="El regalo de bienvenida es una de tus recompensas. Creá la primera en Puntos y niveles y volvé acá a elegirla."
+                action={<Button onClick={goToProgram}>Ir a Puntos y niveles</Button>}
               />
             ) : (
               <WelcomeRewardForm
@@ -346,12 +266,17 @@ export function ClubEditor(props: ClubEditorProps): React.JSX.Element {
                 availableRewards={activeRewards}
               />
             )}
-            <section className="space-y-3">
-              <h2 className="font-serif text-xl font-semibold tracking-tight">Captura de datos</h2>
-              <CapturePromptForm tenantSlug={tenantSlug} config={capturePrompt} />
-            </section>
-          </div>
-        ) : (
+          </Section>
+          <Section
+            divider
+            title="Captura de datos"
+            description="La invitación a registrarse que ve el comensal al escanear el QR de la mesa."
+          >
+            <CapturePromptForm tenantSlug={tenantSlug} config={capturePrompt} />
+          </Section>
+        </TabsContent>
+
+        <TabsContent value="punch">
           <PunchCardsManager
             tenantSlug={tenantSlug}
             tenantId={tenantId}
@@ -361,9 +286,10 @@ export function ClubEditor(props: ClubEditorProps): React.JSX.Element {
             tags={tags}
             rewards={rewards.map((r) => ({ id: r.id, name: r.name }))}
             tiers={tiers}
+            onGoToRewards={goToProgram}
           />
-        )}
-      </div>
-    </div>
+        </TabsContent>
+      </Tabs>
+    </PageShell>
   )
 }

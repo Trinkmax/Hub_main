@@ -9,40 +9,17 @@ import {
   useSensors,
 } from '@dnd-kit/core'
 import { arrayMove, rectSortingStrategy, SortableContext, useSortable } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import {
-  Beer,
-  Camera,
-  Coffee,
-  EyeOff,
-  Gift,
-  GripVertical,
-  Lock,
-  Pause,
-  Pencil,
-  Play,
-  Ticket,
-  Trash2,
-  UtensilsCrossed,
-} from 'lucide-react'
+import { Camera, Gift, Lock, Pause, Pencil, Play, Trash2 } from 'lucide-react'
 import { useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { MenuImageUploader } from '@/components/media/image-uploader'
 import { StorageImage } from '@/components/media/storage-image'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -50,10 +27,20 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
+import { Field, FieldRow } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { NumberField } from '@/components/ui/number-field'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { StatusBadge } from '@/components/ui/status-badge'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { formatNumber } from '@/lib/format/number-kind'
 import {
   deleteReward,
   type LoyaltyActionState,
@@ -64,30 +51,13 @@ import type { Reward } from '@/lib/points/queries'
 import { REWARD_CATEGORIES } from '@/lib/points/schemas'
 import type { LoyaltyTier } from '@/lib/points/tiers'
 import { cn } from '@/lib/utils'
+import { REWARD_FLAG } from '../../_components/club-status'
+import { DRAGGING_ROW_CLASSES, DragHandle, sortableStyle } from '../../_components/club-ui'
+import { DEFAULT_REWARD_ICON, REWARD_CATEGORY_ICON, REWARD_CATEGORY_LABELS } from './reward-options'
 import { StockField } from './stock-field'
 
-const SELECT_CLASS =
-  'border-input h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
-
-/** Etiquetas legibles para las categorías canónicas del catálogo. */
-const CATEGORY_LABELS: Record<string, string> = {
-  desayuno: 'Desayuno y merienda',
-  almuerzo: 'Almuerzo',
-  cena: 'Cena',
-  evento: 'Eventos',
-}
-
-/** Ícono + degradado del fallback "emplatado" para recompensas sin foto (por daypart). */
-const CATEGORY_FALLBACK: Record<
-  string,
-  { icon: typeof Coffee; from: string; to: string; ink: string }
-> = {
-  desayuno: { icon: Coffee, from: '#f4ead6', to: '#e7d3ab', ink: '#7a6338' },
-  almuerzo: { icon: UtensilsCrossed, from: '#eadfce', to: '#d8c39c', ink: '#6f5a34' },
-  cena: { icon: Beer, from: '#e4dcc9', to: '#cdbf9a', ink: '#5f5330' },
-  evento: { icon: Ticket, from: '#e9dcc6', to: '#d6bd93', ink: '#6b5423' },
-}
-const DEFAULT_FALLBACK = { icon: Gift, from: '#e9e2d2', to: '#d5cbb2', ink: '#6b6145' }
+/** «Ninguna»: Radix Select no admite el valor vacío. */
+const NONE = '__none__'
 
 /** Orden de las secciones de la lista agrupada. */
 const CATEGORY_ORDER = ['desayuno', 'almuerzo', 'cena', 'evento'] as const
@@ -100,7 +70,7 @@ function groupRewards(rewards: Reward[]): RewardGroup[] {
   const groups: RewardGroup[] = []
   for (const key of CATEGORY_ORDER) {
     const items = rewards.filter((r) => r.category === key)
-    if (items.length > 0) groups.push({ key, label: CATEGORY_LABELS[key] ?? key, items })
+    if (items.length > 0) groups.push({ key, label: REWARD_CATEGORY_LABELS[key] ?? key, items })
   }
   const otras = rewards.filter((r) => !r.category || !KNOWN_CATEGORIES.has(r.category))
   if (otras.length > 0) groups.push({ key: '__otras', label: 'Otras', items: otras })
@@ -108,21 +78,22 @@ function groupRewards(rewards: Reward[]): RewardGroup[] {
 }
 
 /**
- * Marco visual de la recompensa: foto real, o "emplatado" (degradado + glifo).
- * Toda el área es un botón que abre el editor — la foto se sube tocándola,
- * igual que las categorías de la carta.
+ * La foto de la recompensa (o su dibujo por momento del día). Toda el área es
+ * el botón que abre el editor: la foto se sube tocándola, igual que en la
+ * carta. Con foto, un sello de cámara chico avisa que se puede tocar (con el
+ * dedo no hay hover).
  */
 function RewardMedia({ reward, onEdit }: { reward: Reward; onEdit: () => void }) {
-  const fb = (reward.category && CATEGORY_FALLBACK[reward.category]) || DEFAULT_FALLBACK
-  const Icon = fb.icon
+  const Icon = (reward.category && REWARD_CATEGORY_ICON[reward.category]) || DEFAULT_REWARD_ICON
+  const soldOut = reward.stock !== null && reward.stock <= 0
   return (
     <button
       type="button"
       onClick={onEdit}
       aria-label={
-        reward.image_url ? `Cambiar foto de ${reward.name}` : `Subir foto de ${reward.name}`
+        reward.image_url ? `Cambiar la foto de ${reward.name}` : `Subir una foto de ${reward.name}`
       }
-      className="group/foto relative block aspect-[4/3] w-full overflow-hidden bg-secondary text-left"
+      className="group/foto relative block aspect-[4/3] w-full overflow-hidden bg-secondary text-left -outline-offset-2 outline-(--ring) focus-visible:outline-2"
     >
       {reward.image_url ? (
         <>
@@ -132,43 +103,32 @@ function RewardMedia({ reward, onEdit }: { reward: Reward; onEdit: () => void })
             sizes="(max-width: 640px) 50vw, 240px"
             className={cn(!reward.active && 'opacity-60 saturate-[0.6]')}
           />
-          <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover/foto:opacity-100">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-background/90 px-2.5 py-1 text-[11px] font-medium text-foreground">
-              <Camera className="size-3.5" aria-hidden />
-              Cambiar foto
-            </span>
+          <span
+            aria-hidden="true"
+            className="absolute right-2 bottom-2 grid size-6 place-items-center rounded-full border-2 border-card bg-primary text-primary-foreground group-hover/foto:bg-primary-hover"
+          >
+            <Camera className="size-3.5" />
           </span>
         </>
       ) : (
-        <span
-          className="grid size-full place-items-center"
-          style={{ background: `linear-gradient(140deg, ${fb.from}, ${fb.to})` }}
-        >
-          <Icon className="size-8 opacity-45" style={{ color: fb.ink }} aria-hidden />
-          <span className="absolute bottom-1.5 left-2 inline-flex items-center gap-1 rounded-full bg-background/85 px-2 py-0.5 text-[10px] font-medium text-foreground shadow-sm backdrop-blur-sm transition-colors group-hover/foto:bg-background">
-            <Camera className="size-3" aria-hidden />
+        <span className="grid size-full place-items-center">
+          <Icon className="size-8 text-subtle-foreground" aria-hidden="true" />
+          <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5 type-caption font-medium text-foreground group-hover/foto:border-border-strong">
+            <Camera className="size-3" aria-hidden="true" />
             Subir foto
           </span>
         </span>
       )}
-      {/* Costo — chip legible sobre cualquier imagen. */}
-      <span className="absolute left-2 top-2 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-foreground shadow-sm backdrop-blur-sm">
-        {reward.cost_points} pts
+      {/* Costo: el sello dorado del club, legible sobre cualquier foto. */}
+      <Badge tone="gold" appearance="solid" className="absolute top-2 left-2 type-amount">
+        {formatNumber(reward.cost_points)} pts
+      </Badge>
+      {/* Estado (pausada, oculta, sin stock) — arriba a la derecha. */}
+      <span className="absolute top-2 right-2 flex flex-col items-end gap-1">
+        {!reward.active ? <StatusBadge status="paused" map={REWARD_FLAG} /> : null}
+        {!reward.visible_in_catalog ? <StatusBadge status="hidden" map={REWARD_FLAG} /> : null}
+        {soldOut ? <StatusBadge status="sold-out" map={REWARD_FLAG} /> : null}
       </span>
-      {/* Estado (pausada / oculta) — arriba a la derecha. */}
-      <div className="absolute right-2 top-2 flex flex-col items-end gap-1">
-        {!reward.active ? (
-          <Badge variant="outline" className="bg-background/85 backdrop-blur-sm">
-            Pausada
-          </Badge>
-        ) : null}
-        {!reward.visible_in_catalog ? (
-          <Badge variant="muted" className="gap-1 bg-background/85 backdrop-blur-sm">
-            <EyeOff className="size-3" aria-hidden />
-            Oculta
-          </Badge>
-        ) : null}
-      </div>
     </button>
   )
 }
@@ -187,7 +147,7 @@ function contentSignature(list: readonly Reward[]): string {
     .join('|')
 }
 
-/** Card arrastrable del catálogo. El grip es el único activador del drag. */
+/** Tarjeta arrastrable del catálogo. El asa es el único activador del drag. */
 function RewardCard({
   reward,
   lockedTier,
@@ -208,85 +168,76 @@ function RewardCard({
   })
 
   return (
-    <div
+    <article
       ref={setNodeRef}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.55 : 1,
-      }}
+      style={sortableStyle(transform, transition, isDragging)}
+      aria-label={reward.name}
       className={cn(
-        'card-hairline group flex flex-col overflow-hidden rounded-xl border bg-card',
-        isDragging && 'relative z-10 shadow-lg',
+        'flex flex-col overflow-clip rounded-xl border border-border bg-card',
+        isDragging && DRAGGING_ROW_CLASSES,
       )}
     >
       <RewardMedia reward={reward} onEdit={onEdit} />
-      <div className="flex flex-1 flex-col gap-1.5 p-2.5">
-        <p className="truncate text-sm font-medium leading-tight" title={reward.name}>
+      <div className="flex flex-1 flex-col gap-1 p-2">
+        <p
+          className={cn(
+            'truncate type-body font-medium',
+            !reward.active && 'text-muted-foreground',
+          )}
+          title={reward.name}
+        >
           {reward.name}
         </p>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 type-caption text-muted-foreground">
           {reward.stock === null ? (
-            <span>stock: ∞</span>
-          ) : reward.stock <= 0 ? (
-            <Badge variant="warning" className="px-1.5 py-0 text-[10px]">
-              Sin stock
-            </Badge>
-          ) : (
-            <span>stock: {reward.stock}</span>
-          )}
+            <span>Stock ilimitado</span>
+          ) : reward.stock > 0 ? (
+            <span className="type-amount">Quedan {formatNumber(reward.stock)}</span>
+          ) : null}
           {lockedTier ? (
-            <span className="inline-flex items-center gap-0.5 normal-case tracking-normal">
-              <Lock className="size-3" aria-hidden />
-              {lockedTier}
+            <span className="inline-flex items-center gap-1">
+              <Lock className="size-3" aria-hidden="true" />
+              Desde {lockedTier}
             </span>
           ) : null}
         </div>
         {/* Acciones — siempre visibles (el dueño usa tablet). */}
         <div className="mt-auto flex items-center justify-between gap-0.5 pt-1">
-          <button
-            {...attributes}
-            {...listeners}
-            type="button"
-            aria-label={`Reordenar ${reward.name}`}
-            // touch-none: sin esto el gesto de arrastre en tablet scrollea la página.
-            className="size-9 shrink-0 cursor-grab touch-none rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground active:cursor-grabbing"
-          >
-            <GripVertical className="mx-auto size-3.5" />
-          </button>
+          <DragHandle
+            label={`Reordenar ${reward.name}`}
+            attributes={attributes}
+            listeners={listeners}
+          />
           <div className="flex items-center gap-0.5">
             <Button
-              size="icon"
+              size="icon-sm"
               variant="ghost"
-              className="size-9 text-muted-foreground hover:text-foreground"
               onClick={onEdit}
               aria-label={`Editar ${reward.name}`}
             >
-              <Pencil className="size-3.5" />
+              <Pencil aria-hidden="true" />
             </Button>
             <Button
-              size="icon"
+              size="icon-sm"
               variant="ghost"
-              className="size-9 text-muted-foreground hover:text-foreground"
               onClick={onToggle}
               disabled={pending}
-              aria-label={reward.active ? 'Pausar' : 'Activar'}
+              aria-label={reward.active ? `Pausar ${reward.name}` : `Reactivar ${reward.name}`}
             >
-              {reward.active ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+              {reward.active ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
             </Button>
             <Button
-              size="icon"
-              variant="ghost"
-              className="size-9 text-muted-foreground hover:text-destructive"
+              size="icon-sm"
+              variant="danger-ghost"
               onClick={onDelete}
               aria-label={`Borrar ${reward.name}`}
             >
-              <Trash2 className="size-3.5" />
+              <Trash2 aria-hidden="true" />
             </Button>
           </div>
         </div>
       </div>
-    </div>
+    </article>
   )
 }
 
@@ -302,7 +253,8 @@ export function RewardsList({
   tiers: LoyaltyTier[]
 }) {
   const [pending, start] = useTransition()
-  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+  const [toDelete, setToDelete] = useState<Reward | null>(null)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const [editing, setEditing] = useState<Reward | null>(null)
 
   // Orden optimista: el drag no espera al server. `rewards` ya viene ordenado
@@ -318,7 +270,7 @@ export function RewardsList({
     .slice()
     .sort((a, b) => a.min_category_points - b.min_category_points || a.sort - b.sort)
   const tierName = (id: string | null): string | null =>
-    id ? (tiers.find((t) => t.id === id)?.name ?? 'Nivel eliminado') : null
+    id ? (tiers.find((t) => t.id === id)?.name ?? 'un nivel borrado') : null
 
   // Toggle activo/pausado. Importante: reenviamos los campos existentes (incl. la
   // foto) para NO perderlos al pausar/activar.
@@ -340,22 +292,12 @@ export function RewardsList({
     })
   }
 
-  const onConfirmDelete = () => {
-    if (!pendingDelete) return
-    const id = pendingDelete
-    start(async () => {
-      const result = await deleteReward(tenantSlug, id)
-      if (!result.ok) toast.error(result.message)
-      setPendingDelete(null)
-    })
-  }
-
   if (rewards.length === 0) {
     return (
       <EmptyState
         icon={Gift}
-        title="Sin recompensas"
-        description="Creá una recompensa arriba para que tus clientes empiecen a canjear sus puntos."
+        title="Todavía no hay recompensas"
+        description="Creá una con el formulario de arriba: es lo que tus clientes canjean con sus puntos."
       />
     )
   }
@@ -390,13 +332,18 @@ export function RewardsList({
   }
 
   return (
-    <div className="space-y-5">
-      <p className="text-xs text-muted-foreground">
-        Arrastrá desde el asa para cambiar el orden en que se ven en la carta.
+    <div className="flex flex-col gap-6">
+      <p className="type-small text-muted-foreground">
+        Arrastrá desde el asa para cambiar el orden en que se ven en la carta. Tocá la foto para
+        cambiarla.
       </p>
       {groups.map((group) => (
-        <div key={group.key} className="space-y-2.5">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <section
+          key={group.key}
+          aria-labelledby={`rewards-group-${group.key}`}
+          className="flex flex-col gap-3"
+        >
+          <h3 id={`rewards-group-${group.key}`} className="type-label text-muted-foreground">
             {group.label}
           </h3>
           <DndContext
@@ -406,7 +353,7 @@ export function RewardsList({
             onDragEnd={onDragEnd(group.key)}
           >
             <SortableContext items={group.items.map((r) => r.id)} strategy={rectSortingStrategy}>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+              <div className="grid grid-cols-1 gap-3 min-[25rem]:grid-cols-2 sm:grid-cols-3 xl:grid-cols-4">
                 {group.items.map((r) => (
                   <RewardCard
                     key={r.id}
@@ -415,13 +362,16 @@ export function RewardsList({
                     pending={pending}
                     onEdit={() => setEditing(r)}
                     onToggle={() => onToggle(r)}
-                    onDelete={() => setPendingDelete(r.id)}
+                    onDelete={() => {
+                      setToDelete(r)
+                      setDeleteOpen(true)
+                    }}
                   />
                 ))}
               </div>
             </SortableContext>
           </DndContext>
-        </div>
+        </section>
       ))}
 
       {/* Diálogo de edición de recompensa */}
@@ -430,38 +380,23 @@ export function RewardsList({
         tenantId={tenantId}
         reward={editing}
         tiers={sortedTiers}
-        selectClass={SELECT_CLASS}
         onClose={() => setEditing(null)}
       />
 
-      <AlertDialog
-        open={pendingDelete !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingDelete(null)
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        tone="danger"
+        title={`¿Borrar «${toDelete?.name ?? ''}»?`}
+        description="Los clientes ya no van a poder canjearla. No se puede deshacer: si solo querés sacarla un tiempo, pausala."
+        confirmLabel="Borrar recompensa"
+        pendingLabel="Borrando…"
+        onConfirm={async () => {
+          if (!toDelete) return
+          const result = await deleteReward(tenantSlug, toDelete.id)
+          if (!result.ok) return { ok: false, error: result.message }
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Borrar esta recompensa?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Los clientes ya no podrán canjearla. Esta acción no se puede deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={(e) => {
-                e.preventDefault()
-                onConfirmDelete()
-              }}
-              disabled={pending}
-            >
-              {pending ? 'Borrando…' : 'Borrar'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      />
     </div>
   )
 }
@@ -471,43 +406,41 @@ function EditRewardDialog({
   tenantId,
   reward,
   tiers,
-  selectClass,
   onClose,
 }: {
   tenantSlug: string
   tenantId: string
   reward: Reward | null
   tiers: LoyaltyTier[]
-  selectClass: string
   onClose: () => void
 }) {
   const [pending, start] = useTransition()
-  const [minTierId, setMinTierId] = useState<string>('')
-  const [category, setCategory] = useState<string>('')
+  const [minTierId, setMinTierId] = useState<string>(NONE)
+  const [category, setCategory] = useState<string>(NONE)
   const [visible, setVisible] = useState(true)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [unlimitedStock, setUnlimitedStock] = useState(true)
-  const [stock, setStock] = useState('')
+  const [stock, setStock] = useState<number | null>(null)
 
   // Sincronizamos los controlados cada vez que cambia la recompensa.
   useEffect(() => {
-    setMinTierId(reward?.min_tier_id ?? '')
-    setCategory(reward?.category ?? '')
+    setMinTierId(reward?.min_tier_id ?? NONE)
+    setCategory(reward?.category ?? NONE)
     setVisible(reward?.visible_in_catalog ?? true)
     setImageUrl(reward?.image_url ?? null)
     const current = reward?.stock ?? null
     setUnlimitedStock(current === null)
-    setStock(current === null ? '' : String(current))
+    setStock(current)
   }, [reward])
 
-  const handleSubmit = (formData: FormData) => {
+  // onSubmit y no `action`: si el server rechaza, lo tipeado queda.
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
     if (!reward) return
+    const formData = new FormData(event.currentTarget)
     const name = String(formData.get('name') ?? '').trim()
     const description = String(formData.get('description') ?? '').trim()
     const costPoints = Number(formData.get('cost_points') ?? 0)
-    // El switch es la fuente de verdad del ilimitado; el input sólo existe
-    // cuando está apagado (y es `required`, así que no llega vacío).
-    const parsedStock = Number.parseInt(stock, 10)
 
     start(async () => {
       const result: LoyaltyActionState = await updateReward(tenantSlug, {
@@ -515,11 +448,13 @@ function EditRewardDialog({
         name,
         description: description.length > 0 ? description : null,
         cost_points: costPoints,
-        stock: unlimitedStock ? null : Number.isFinite(parsedStock) ? parsedStock : 0,
+        // El switch es la fuente de verdad del ilimitado; el campo solo existe
+        // cuando está apagado (y es obligatorio, así que no llega vacío).
+        stock: unlimitedStock ? null : (stock ?? 0),
         active: reward.active,
-        category: category.length > 0 ? category : null,
+        category: category === NONE ? null : category,
         visible_in_catalog: visible,
-        min_tier_id: minTierId.length > 0 ? minTierId : null,
+        min_tier_id: minTierId === NONE ? null : minTierId,
         image_url: imageUrl,
       })
       if (result.ok) {
@@ -538,132 +473,99 @@ function EditRewardDialog({
         if (!open) onClose()
       }}
     >
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
+      <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle className="font-serif">Editar recompensa</DialogTitle>
+          <DialogTitle>Editar recompensa</DialogTitle>
           <DialogDescription>
             Cambiá la foto, el detalle, el costo en puntos o a qué nivel del club queda reservada.
           </DialogDescription>
         </DialogHeader>
 
         {reward ? (
-          <form action={handleSubmit} className="space-y-3">
-            <MenuImageUploader
-              tenantId={tenantId}
-              value={imageUrl}
-              onChange={setImageUrl}
-              label="Foto de la recompensa"
-            />
-            <div className="grid gap-1.5">
-              <Label htmlFor="edit-rw-name" className="text-[11px] text-muted-foreground">
-                Nombre
-              </Label>
-              <Input
-                id="edit-rw-name"
-                name="name"
-                required
-                maxLength={80}
-                defaultValue={reward.name}
+          <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col gap-4">
+            <DialogBody className="grid gap-4">
+              <MenuImageUploader
+                tenantId={tenantId}
+                value={imageUrl}
+                onChange={setImageUrl}
+                label="Foto de la recompensa"
               />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="edit-rw-desc" className="text-[11px] text-muted-foreground">
-                Descripción
-              </Label>
-              <Textarea
-                id="edit-rw-desc"
-                name="description"
-                maxLength={300}
-                rows={2}
-                className="resize-none"
-                defaultValue={reward.description ?? ''}
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="edit-rw-category" className="text-[11px] text-muted-foreground">
-                Categoría
-              </Label>
-              <select
-                id="edit-rw-category"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className={selectClass}
-              >
-                <option value="">Sin categoría</option>
-                {REWARD_CATEGORIES.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {CATEGORY_LABELS[cat] ?? cat}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <div className="grid gap-1.5">
-                <Label htmlFor="edit-rw-cost" className="text-[11px] text-muted-foreground">
-                  Costo (puntos)
-                </Label>
-                <Input
-                  id="edit-rw-cost"
-                  name="cost_points"
-                  type="number"
-                  min={1}
-                  required
-                  defaultValue={reward.cost_points}
-                  className="tabular-nums"
+              <Field label="Nombre" name="name" required>
+                <Input maxLength={80} defaultValue={reward.name} />
+              </Field>
+              <Field label="Descripción" name="description" optional>
+                <Textarea
+                  maxLength={300}
+                  showCount
+                  rows={2}
+                  defaultValue={reward.description ?? ''}
                 />
-              </div>
-              <StockField
-                idPrefix="edit-rw"
-                unlimited={unlimitedStock}
-                onUnlimitedChange={setUnlimitedStock}
-                value={stock}
-                onValueChange={setStock}
-              />
-            </div>
+              </Field>
+              <FieldRow>
+                <Field label="Costo" name="cost_points" required>
+                  <NumberField min={1} step={10} suffix="pts" defaultValue={reward.cost_points} />
+                </Field>
+                <StockField
+                  idPrefix="edit-rw"
+                  unlimited={unlimitedStock}
+                  onUnlimitedChange={setUnlimitedStock}
+                  value={stock}
+                  onValueChange={setStock}
+                />
+              </FieldRow>
+              <FieldRow>
+                <Field label="Categoría" optional>
+                  <Select value={category} onValueChange={setCategory}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>Sin categoría</SelectItem>
+                      {REWARD_CATEGORIES.map((cat) => (
+                        <SelectItem key={cat} value={cat}>
+                          {REWARD_CATEGORY_LABELS[cat] ?? cat}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                {tiers.length > 0 ? (
+                  <Field
+                    label="Disponibilidad por nivel"
+                    hint="Con un nivel elegido, solo la canjean los clientes que lo alcanzaron."
+                  >
+                    <Select value={minTierId} onValueChange={setMinTierId}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE}>Disponible para todos</SelectItem>
+                        {tiers.map((tier) => (
+                          <SelectItem key={tier.id} value={tier.id}>
+                            Desde {tier.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                ) : null}
+              </FieldRow>
 
-            {tiers.length > 0 ? (
-              <div className="grid gap-1.5">
-                <Label htmlFor="edit-rw-tier" className="text-[11px] text-muted-foreground">
-                  Disponibilidad por nivel
-                </Label>
-                <select
-                  id="edit-rw-tier"
-                  name="min_tier_id"
-                  value={minTierId}
-                  onChange={(e) => setMinTierId(e.target.value)}
-                  className={selectClass}
-                >
-                  <option value="">Disponible para todos</option>
-                  {tiers.map((tier) => (
-                    <option key={tier.id} value={tier.id}>
-                      Desde {tier.name}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-[11px] text-muted-foreground">
-                  Si elegís un nivel, solo los clientes que lo hayan alcanzado podrán canjearla.
-                </p>
-              </div>
-            ) : null}
-
-            <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2">
-              <div className="grid gap-0.5">
-                <Label htmlFor="edit-rw-visible" className="text-xs font-medium">
-                  Mostrar en el catálogo de canje
-                </Label>
-                <p className="text-[11px] text-muted-foreground">
-                  Si la ocultás, sigue vigente pero no aparece en la carta pública.
-                </p>
-              </div>
-              <Switch id="edit-rw-visible" checked={visible} onCheckedChange={setVisible} />
-            </div>
+              <Field
+                label="Mostrar en el catálogo de canje"
+                layout="toggle"
+                hint="Si la ocultás, sigue vigente pero no aparece en la carta pública."
+              >
+                <Switch checked={visible} onCheckedChange={setVisible} />
+              </Field>
+            </DialogBody>
 
             <DialogFooter>
-              <Button type="button" variant="ghost" onClick={onClose}>
+              <Button type="button" variant="secondary" onClick={onClose}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={pending} className="min-w-[120px]">
-                {pending ? 'Guardando…' : 'Guardar'}
+              <Button type="submit" loading={pending} loadingText="Guardando…">
+                Guardar cambios
               </Button>
             </DialogFooter>
           </form>

@@ -1,9 +1,10 @@
 'use client'
 
-import { Film, Loader2, Upload, X } from 'lucide-react'
-import { useRef, useState, useTransition } from 'react'
+import { Film, Upload, X } from 'lucide-react'
+import { useId, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import { posterUrlFor } from '@/lib/menu/media-urls'
 import { uploadMenuVideo } from '@/lib/menu/upload-video'
 import { cn } from '@/lib/utils'
@@ -64,6 +65,7 @@ export function MenuVideoUploader({
   onChange: (url: string | null) => void
   label?: string
 }) {
+  const labelId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -128,33 +130,44 @@ export function MenuVideoUploader({
   const dnd = { onDragEnter, onDragOver, onDragLeave, onDrop }
 
   return (
-    <div className="grid gap-1.5">
-      <span className="text-xs text-muted-foreground">{label}</span>
+    <fieldset
+      aria-labelledby={labelId}
+      aria-busy={busy || undefined}
+      data-slot="video-uploader"
+      className="grid min-w-0 gap-2"
+    >
+      <span id={labelId} className="type-label text-foreground">
+        {label}
+      </span>
+      {/* Fuera del orden de Tab: lo abre el botón de abajo (una sola parada). */}
       <input
         ref={inputRef}
         type="file"
         accept="video/mp4,video/webm,video/quicktime"
         className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
         onChange={(e) => onFile(e.target.files?.[0])}
       />
 
       {value ? (
         <div
           {...dnd}
+          data-dragging={dragging || undefined}
           className={cn(
-            'relative flex items-center gap-3 rounded-lg border bg-card/40 p-2 transition-colors',
-            dragging ? 'border-primary bg-primary/5 ring-2 ring-primary/40' : 'border-border/60',
+            'flex items-center gap-3 rounded-lg border p-2 transition-colors duration-(--duration-quick)',
+            dragging ? 'border-primary bg-selected' : 'border-border bg-card',
           )}
         >
           <div className="relative size-16 shrink-0 overflow-hidden rounded-md bg-secondary">
             <PosterThumb videoUrl={value} />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-medium">
+            <p className="type-label text-foreground">
               {dragging ? 'Soltá para reemplazar' : 'Video cargado'}
             </p>
-            <p className="text-[10px] text-muted-foreground">
-              {dragging ? ' ' : 'Arrastrá otro video para reemplazarlo'}
+            <p className="type-caption text-muted-foreground">
+              {dragging ? '\u00a0' : 'Tocá «Cambiar» o arrastrá otro video.'}
             </p>
           </div>
           <Button
@@ -162,21 +175,21 @@ export function MenuVideoUploader({
             variant="ghost"
             size="sm"
             onClick={onPick}
-            disabled={busy}
-            className="gap-1.5"
+            loading={busy}
+            loadingText="Subiendo…"
           >
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
-            {busy ? 'Subiendo…' : 'Cambiar'}
+            <Upload aria-hidden="true" />
+            Cambiar
           </Button>
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            size="icon-sm"
             onClick={() => onChange(null)}
             disabled={busy}
-            aria-label="Quitar video"
+            aria-label="Quitar el video"
           >
-            <X className="size-3.5" />
+            <X aria-hidden="true" />
           </Button>
         </div>
       ) : (
@@ -184,38 +197,41 @@ export function MenuVideoUploader({
           type="button"
           onClick={onPick}
           disabled={busy}
+          data-dragging={dragging || undefined}
           {...dnd}
           className={cn(
-            'flex flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed px-3 py-6 text-xs transition-colors',
+            'flex min-h-24 flex-col items-center justify-center gap-1 rounded-lg border border-dashed px-3 py-5 text-center',
+            'transition-colors duration-(--duration-quick) outline-offset-2 outline-(--ring) focus-visible:outline-2',
+            'disabled:cursor-not-allowed',
             dragging
-              ? 'border-primary bg-primary/10 text-foreground ring-2 ring-primary/40'
-              : 'border-border/70 bg-background/30 text-muted-foreground hover:border-primary/50 hover:text-foreground',
+              ? 'border-primary bg-selected text-foreground'
+              : 'border-border-strong bg-card text-muted-foreground hover:bg-hover hover:text-foreground',
           )}
         >
           {busy ? (
-            <span className="flex items-center gap-2">
-              <Loader2 className="size-3.5 animate-spin" />
+            <span className="flex items-center gap-2 type-label">
+              <Spinner size={16} aria-hidden />
               Subiendo…
             </span>
           ) : dragging ? (
-            <span className="flex items-center gap-2 font-medium">
-              <Upload className="size-3.5" />
+            <span className="flex items-center gap-2 type-label">
+              <Upload className="size-4" aria-hidden="true" />
               Soltá para subir
             </span>
           ) : (
             <>
-              <span className="flex items-center gap-2">
-                <Film className="size-3.5" />
-                Subir video (opcional)
+              <span className="flex items-center gap-2 type-label">
+                <Film className="size-4" aria-hidden="true" />
+                Subir video
               </span>
-              <span className="text-[10px] text-muted-foreground/80">
-                o arrastrá un video · máx. 55 MB y 90 s · MP4 recomendado (los .mov de iPhone pueden
+              <span className="max-w-sm type-caption text-pretty text-subtle-foreground">
+                o arrastrá un video · hasta 55 MB y 90 s · mejor en MP4 (los .mov de iPhone pueden
                 no verse en Android)
               </span>
             </>
           )}
         </button>
       )}
-    </div>
+    </fieldset>
   )
 }

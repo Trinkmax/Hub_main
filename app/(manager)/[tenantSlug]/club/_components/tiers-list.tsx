@@ -1,23 +1,28 @@
 'use client'
 
-import { Gift, Handshake, Pencil, Percent, Plus, Sparkles, Trash2, Trophy } from 'lucide-react'
-import { type ComponentType, useState, useTransition } from 'react'
-import { toast } from 'sonner'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+  Gift,
+  Handshake,
+  type LucideIcon,
+  Pencil,
+  Percent,
+  Plus,
+  Sparkles,
+  Trash2,
+  Trophy,
+} from 'lucide-react'
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { ICON_LABELS, resolveIcon } from '@/components/icons/curated-lucide'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { DialogTrigger } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
-import { deleteTier, type LoyaltyActionState } from '@/lib/points/actions'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { formatNumber } from '@/lib/format/number-kind'
+import { deleteTier } from '@/lib/points/actions'
 import {
   BENEFIT_KIND_META,
   groupBenefitsByKind,
@@ -25,16 +30,17 @@ import {
   type TierBenefitKind,
 } from '@/lib/points/benefits'
 import type { LoyaltyTier } from '@/lib/points/tiers'
-import { cn } from '@/lib/utils'
 import { BenefitsEditor } from './benefits-editor'
+import { TIER_STATUS } from './club-status'
+import { ROW_LIST_CLASSES, readableTextOn } from './club-ui'
 import { TierForm } from './tier-form'
 
 const DEFAULT_COLOR = '#8a6d3b'
 
 type IdName = { id: string; name: string }
 
-/** Icono Lucide por tipo de beneficio (espejo de BENEFIT_KIND_META[k].icon). */
-const KIND_ICON: Record<TierBenefitKind, ComponentType<{ className?: string }>> = {
+/** Ícono por tipo de beneficio (espejo de BENEFIT_KIND_META[k].icon). */
+const KIND_ICON: Record<TierBenefitKind, LucideIcon> = {
   recurring_reward: Gift,
   discount: Percent,
   perk: Sparkles,
@@ -50,25 +56,24 @@ const STARTER_TIERS: Array<{ name: string; color: string; min: number }> = [
 
 function BenefitChips({ benefits }: { benefits: TierBenefit[] }) {
   const groups = groupBenefitsByKind(benefits)
-  if (groups.length === 0) return null
+  if (groups.length === 0) {
+    return (
+      <p className="type-caption text-subtle-foreground">
+        Todavía no desbloquea nada: cargale beneficios.
+      </p>
+    )
+  }
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {groups.map(({ kind, items }) => {
-        const Icon = KIND_ICON[kind]
-        return (
-          <span
-            key={kind}
-            className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-secondary/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
-          >
-            <Icon className="size-3" aria-hidden />
+    <ul className="flex flex-wrap items-center gap-1.5" aria-label="Beneficios del nivel">
+      {groups.map(({ kind, items }) => (
+        <li key={kind}>
+          <Badge icon={KIND_ICON[kind]}>
             {BENEFIT_KIND_META[kind].label}
-            {items.length > 1 ? (
-              <span className="tabular-nums text-foreground">·{items.length}</span>
-            ) : null}
-          </span>
-        )
-      })}
-    </div>
+            {items.length > 1 ? <span className="type-amount"> · {items.length}</span> : null}
+          </Badge>
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -91,45 +96,33 @@ export function TiersList({
   /** Marcas aliadas (para el beneficio `partner`). */
   partners: IdName[]
 }) {
-  const [pending, startTransition] = useTransition()
   const [editing, setEditing] = useState<LoyaltyTier | null>(null)
-  const [pendingDelete, setPendingDelete] = useState<LoyaltyTier | null>(null)
+  // El nivel a borrar queda guardado mientras el diálogo se cierra: así el
+  // título no se vacía durante la animación de salida.
+  const [toDelete, setToDelete] = useState<LoyaltyTier | null>(null)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   // Orden visual: por umbral asc, desempate por sort asc.
   const ordered = tiers
     .slice()
     .sort((a, b) => a.min_category_points - b.min_category_points || a.sort - b.sort)
 
-  const onConfirmDelete = () => {
-    if (!pendingDelete) return
-    const target = pendingDelete
-    startTransition(async () => {
-      const result: LoyaltyActionState = await deleteTier(tenantSlug, target.id)
-      if (result.ok) {
-        toast.success(`Nivel "${target.name}" eliminado.`)
-      } else {
-        toast.error(result.message)
-      }
-      setPendingDelete(null)
-    })
-  }
-
-  // ── Empty state ───────────────────────────────────────────
+  // ── Vacío ─────────────────────────────────────────────────
   if (ordered.length === 0) {
     return (
-      <div className="space-y-5">
+      <div className="flex flex-col gap-4">
         <EmptyState
           icon={Trophy}
           title="Todavía no hay niveles"
-          description="Los niveles convierten a tus clientes habituales en VIPs: cuantos más puntos de categoría suman (los ganados en los últimos 4 meses), más beneficios desbloquean. Empezá creando el primero o usá el arranque rápido."
+          description="Los niveles convierten a tus clientes habituales en VIPs: cuantos más puntos de categoría suman (los ganados en los últimos 4 meses), más beneficios desbloquean. Creá el primero o usá el arranque rápido."
           action={
             <TierForm
               tenantSlug={tenantSlug}
               trigger={
                 <DialogTrigger asChild>
                   <Button>
-                    <Plus className="size-4" />
-                    Crear primer nivel
+                    <Plus aria-hidden="true" />
+                    Crear el primer nivel
                   </Button>
                 </DialogTrigger>
               }
@@ -137,29 +130,25 @@ export function TiersList({
           }
         />
 
-        {/* Sugerencia de 3 niveles starter */}
-        <div className="card-hairline rounded-xl border border-border/70 bg-card/85 p-5">
-          <h3 className="font-serif text-base font-semibold tracking-tight">
-            Arranque rápido sugerido
-          </h3>
-          <p className="mt-1 text-sm text-muted-foreground text-pretty">
-            Un esquema clásico de tres niveles. Creá cada uno con el botón y ajustá los umbrales de
-            puntos de categoría a tu medida.
-          </p>
-          <ol className="mt-4 space-y-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Arranque rápido sugerido</CardTitle>
+            <CardDescription>
+              Un esquema clásico de tres niveles. Creá cada uno con su botón y después ajustá los
+              puntos de categoría a tu medida.
+            </CardDescription>
+          </CardHeader>
+          <ol className="divide-y divide-border">
             {STARTER_TIERS.map((s) => (
-              <li
-                key={s.name}
-                className="flex items-center gap-3 rounded-lg border border-border/60 bg-background/40 px-3 py-2.5"
-              >
+              <li key={s.name} className="flex min-h-12 items-center gap-3 py-2">
                 <span
-                  className="size-6 shrink-0 rounded-full border border-black/10 shadow-2xs"
+                  className="size-6 shrink-0 rounded-full border border-border-strong"
                   style={{ backgroundColor: s.color }}
-                  aria-hidden
+                  aria-hidden="true"
                 />
-                <span className="flex-1 font-medium">{s.name}</span>
-                <span className="text-xs tabular-nums text-muted-foreground">
-                  desde {s.min.toLocaleString('es-AR')} pts
+                <span className="flex-1 type-body font-medium">{s.name}</span>
+                <span className="type-small type-amount text-muted-foreground">
+                  desde {formatNumber(s.min)} pts
                 </span>
                 <TierForm
                   tenantSlug={tenantSlug}
@@ -173,7 +162,7 @@ export function TiersList({
                   }}
                   trigger={
                     <DialogTrigger asChild>
-                      <Button size="sm" variant="outline">
+                      <Button size="sm" variant="secondary" aria-label={`Crear el nivel ${s.name}`}>
                         Crear
                       </Button>
                     </DialogTrigger>
@@ -182,24 +171,24 @@ export function TiersList({
               </li>
             ))}
           </ol>
-        </div>
+        </Card>
       </div>
     )
   }
 
-  // ── Ladder de niveles ─────────────────────────────────────
+  // ── La escalera de niveles ────────────────────────────────
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="type-small text-muted-foreground">
           {ordered.length} {ordered.length === 1 ? 'nivel configurado' : 'niveles configurados'}
         </p>
         <TierForm
           tenantSlug={tenantSlug}
           trigger={
             <DialogTrigger asChild>
-              <Button size="sm">
-                <Plus className="size-4" />
+              <Button variant="secondary">
+                <Plus aria-hidden="true" />
                 Nuevo nivel
               </Button>
             </DialogTrigger>
@@ -207,97 +196,81 @@ export function TiersList({
         />
       </div>
 
-      <ol className="space-y-3">
+      <ol className={ROW_LIST_CLASSES} aria-label="Niveles, de menor a mayor">
         {ordered.map((tier, index) => {
           const swatch = tier.color ?? DEFAULT_COLOR
           const tierBenefits = benefitsByTier[tier.id] ?? []
+          const BadgeIcon = tier.badge_icon ? resolveIcon(tier.badge_icon, Sparkles) : null
           return (
-            <li
-              key={tier.id}
-              className={cn(
-                'card-hairline relative rounded-xl border border-border/70 bg-card/85 p-4 transition-shadow hover:shadow-sm',
-                !tier.active && 'opacity-70',
-              )}
-            >
-              {/* Banda de color a la izquierda */}
+            <li key={tier.id} className="flex flex-wrap items-start gap-3 p-4 sm:flex-nowrap">
+              {/* Escalón: el color del nivel con su número en la escalera. */}
               <span
-                className="absolute inset-y-3 left-0 w-1 rounded-full"
-                style={{ backgroundColor: swatch }}
-                aria-hidden
-              />
-              <div className="flex flex-wrap items-start gap-3 pl-2">
-                {/* Swatch + escalón */}
-                <div className="flex shrink-0 flex-col items-center gap-1">
-                  <span
-                    className="flex size-10 items-center justify-center rounded-full border border-black/10 text-xs font-semibold tabular-nums text-white shadow-2xs"
-                    style={{ backgroundColor: swatch }}
-                  >
-                    {index + 1}
-                  </span>
-                </div>
+                className="flex size-10 shrink-0 items-center justify-center rounded-full border border-border-strong type-label type-amount"
+                style={{ backgroundColor: swatch, color: readableTextOn(swatch) }}
+                aria-hidden="true"
+              >
+                {index + 1}
+              </span>
 
-                {/* Info principal */}
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-serif text-lg font-semibold tracking-tight leading-none">
-                      {tier.name}
-                    </h3>
-                    {tier.active ? (
-                      <Badge variant="success">Activo</Badge>
-                    ) : (
-                      <Badge variant="outline">Inactivo</Badge>
-                    )}
-                    {tier.badge_icon ? (
-                      <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                        {tier.badge_icon}
-                      </span>
-                    ) : null}
-                  </div>
-
-                  <p className="text-sm text-muted-foreground">
-                    Desde{' '}
-                    <span className="font-semibold tabular-nums text-foreground">
-                      {tier.min_category_points.toLocaleString('es-AR')}
-                    </span>{' '}
-                    pts de categoría
-                  </p>
-
-                  {tier.perks ? (
-                    <p className="text-xs text-muted-foreground text-pretty">{tier.perks}</p>
+              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="type-subtitle text-foreground">
+                    <span className="sr-only">Nivel {index + 1}: </span>
+                    {tier.name}
+                  </h3>
+                  <StatusBadge status={tier.active ? 'active' : 'inactive'} map={TIER_STATUS} />
+                  {BadgeIcon && tier.badge_icon ? (
+                    <Badge icon={BadgeIcon}>
+                      {ICON_LABELS[tier.badge_icon] ?? tier.badge_icon}
+                    </Badge>
                   ) : null}
-
-                  <BenefitChips benefits={tierBenefits} />
                 </div>
 
-                {/* Acciones */}
-                <div className="flex shrink-0 items-center gap-1">
-                  <BenefitsEditor
-                    tenantSlug={tenantSlug}
-                    tenantId={tenantId}
-                    tier={{ id: tier.id, name: tier.name }}
-                    benefits={tierBenefits}
-                    rewards={rewards}
-                    partners={partners}
-                  />
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="size-8 text-muted-foreground hover:text-foreground"
-                    onClick={() => setEditing(tier)}
-                    aria-label={`Editar nivel ${tier.name}`}
-                  >
-                    <Pencil className="size-4" />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="size-8 text-muted-foreground hover:text-destructive"
-                    onClick={() => setPendingDelete(tier)}
-                    aria-label={`Borrar nivel ${tier.name}`}
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
+                <p className="type-small text-muted-foreground">
+                  Desde{' '}
+                  <span className="type-amount font-semibold text-foreground">
+                    {formatNumber(tier.min_category_points)}
+                  </span>{' '}
+                  pts de categoría
+                </p>
+
+                {tier.perks ? (
+                  <p className="max-w-prose type-small text-pretty text-muted-foreground">
+                    {tier.perks}
+                  </p>
+                ) : null}
+
+                <BenefitChips benefits={tierBenefits} />
+              </div>
+
+              <div className="ml-auto flex shrink-0 items-center gap-1">
+                <BenefitsEditor
+                  tenantSlug={tenantSlug}
+                  tenantId={tenantId}
+                  tier={{ id: tier.id, name: tier.name }}
+                  benefits={tierBenefits}
+                  rewards={rewards}
+                  partners={partners}
+                />
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => setEditing(tier)}
+                  aria-label={`Editar el nivel ${tier.name}`}
+                >
+                  <Pencil aria-hidden="true" />
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="danger-ghost"
+                  onClick={() => {
+                    setToDelete(tier)
+                    setDeleteOpen(true)
+                  }}
+                  aria-label={`Borrar el nivel ${tier.name}`}
+                >
+                  <Trash2 aria-hidden="true" />
+                </Button>
               </div>
             </li>
           )
@@ -314,36 +287,22 @@ export function TiersList({
         }}
       />
 
-      {/* Confirmación de borrado */}
-      <AlertDialog
-        open={pendingDelete !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingDelete(null)
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        tone="danger"
+        title={`¿Borrar el nivel «${toDelete?.name ?? ''}»?`}
+        description="Los clientes de este nivel pasan al de abajo según sus puntos de categoría y se borran también sus beneficios. No se puede deshacer."
+        confirmLabel="Borrar nivel"
+        pendingLabel="Borrando…"
+        onConfirm={async () => {
+          if (!toDelete) return
+          const target = toDelete
+          const result = await deleteTier(tenantSlug, target.id)
+          if (!result.ok) return { ok: false, error: result.message }
+          toast.success(`Nivel «${target.name}» borrado.`)
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Borrar el nivel "{pendingDelete?.name}"?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Los clientes que estaban en este nivel pasarán al nivel inferior según sus puntos de
-              categoría. Se borran también sus beneficios. Esta acción no se puede deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={(e) => {
-                e.preventDefault()
-                onConfirmDelete()
-              }}
-              disabled={pending}
-            >
-              {pending ? 'Borrando…' : 'Borrar'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      />
     </div>
   )
 }

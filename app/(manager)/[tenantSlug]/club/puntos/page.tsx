@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 
-// Puntos y recompensas se unificó en /menu (Club → "Puntos y niveles").
+// Link viejo: puntos y recompensas viven en /club, pestaña «Puntos y niveles».
 export default async function PuntosRedirect({
   params,
 }: {

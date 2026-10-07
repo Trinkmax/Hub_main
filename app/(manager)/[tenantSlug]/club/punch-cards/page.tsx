@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 
-// Punch cards se unificó en /menu (Club → "Punch cards").
+// Link viejo: las punch cards viven en /club, pestaña «Punch cards».
 export default async function PunchCardsRedirect({
   params,
 }: {

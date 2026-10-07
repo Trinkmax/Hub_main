@@ -79,10 +79,10 @@ const CARTA_TOUR: TourDefinition = {
         </ul>
       ),
       demo: (
-        <div className="flex flex-col items-center gap-1.5 rounded-lg border border-dashed border-primary/50 bg-card px-4 py-5 text-center">
-          <ImageIcon className="size-5 text-primary" />
-          <span className="text-xs font-medium">Soltá la foto acá, o tocá «Subir foto»</span>
-          <span className="text-[11px] text-muted-foreground">
+        <div className="flex flex-col items-center gap-1.5 rounded-lg border border-dashed border-border-strong bg-card px-4 py-5 text-center">
+          <ImageIcon className="size-5 text-primary" aria-hidden />
+          <span className="type-label">Soltá la foto acá, o tocá «Subir foto»</span>
+          <span className="type-caption text-muted-foreground">
             4,2 MB → 180 KB · se optimiza sola ✨
           </span>
         </div>
@@ -102,10 +102,10 @@ const CARTA_TOUR: TourDefinition = {
       demo: (
         <div className="flex items-center justify-center gap-3 rounded-lg bg-card px-4 py-3">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-            <Play className="size-4 fill-current" />
+            <Play className="size-4 fill-current" aria-hidden />
           </span>
-          <span className="text-left text-[11px] leading-snug text-muted-foreground">
-            <span className="block text-xs font-medium text-foreground">clip-del-item.mp4</span>
+          <span className="text-left type-caption text-muted-foreground">
+            <span className="block type-label text-foreground">clip-del-item.mp4</span>
             hasta 90 s · 55 MB · en el detalle se reproduce solo, sin sonido
           </span>
         </div>

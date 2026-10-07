@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 
-// Niveles se unificó en /menu (Club → "Puntos y niveles", sección Niveles).
+// Link viejo: los niveles viven en /club, pestaña «Puntos y niveles».
 export default async function NivelesRedirect({
   params,
 }: {

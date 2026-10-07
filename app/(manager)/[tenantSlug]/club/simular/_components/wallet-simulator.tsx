@@ -2,11 +2,16 @@
 
 import { RotateCcw, Ticket, TrendingDown } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { formatPoints } from '@/app/c/[token]/_components/wallet-format'
 import { WalletShell } from '@/app/c/[token]/_components/wallet-shell'
 import { BrandAccent } from '@/components/theme/brand-accent-provider'
 import { Button } from '@/components/ui/button'
-import { SlidingTabs } from '@/components/ui/sliding-tabs'
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Field } from '@/components/ui/field'
+import { NumberField } from '@/components/ui/number-field'
+import { PortalContainerProvider } from '@/components/ui/portal-container'
+import { SegmentedControl } from '@/components/ui/segmented-control'
+import { Switch } from '@/components/ui/switch'
+import { formatNumber } from '@/lib/format/number-kind'
 import { wouldDropTier } from '@/lib/points/category'
 import { progressToNext, resolveTier, sortedActiveTiers } from '@/lib/points/tiers'
 import {
@@ -161,48 +166,7 @@ function clampPts(n: number): number {
   return Math.max(0, Math.min(100000, Math.round(n)))
 }
 
-function Stepper({
-  label,
-  value,
-  onChange,
-  accent,
-}: {
-  label: string
-  value: number
-  onChange: (n: number) => void
-  accent?: boolean
-}) {
-  const steps = [-100, -10, 10, 100]
-  return (
-    <div className="space-y-2">
-      <div className="flex items-baseline justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          {label}
-        </span>
-        <span
-          className={`font-display text-2xl font-semibold tabular-nums ${accent ? 'text-primary' : 'text-foreground'}`}
-        >
-          {formatPoints(value)}
-          <span className="ml-1 text-xs font-medium text-muted-foreground">pts</span>
-        </span>
-      </div>
-      <div className="grid grid-cols-4 gap-1.5">
-        {steps.map((d) => (
-          <Button
-            key={d}
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => onChange(clampPts(value + d))}
-            className="tabular-nums"
-          >
-            {d > 0 ? `+${d}` : d}
-          </Button>
-        ))}
-      </div>
-    </div>
-  )
-}
+const MAX_POINTS = 100000
 
 export function WalletSimulator({ config }: { config: SimConfig }): React.JSX.Element {
   const sorted = useMemo(() => sortedActiveTiers(config.tiers), [config.tiers])
@@ -215,6 +179,9 @@ export function WalletSimulator({ config }: { config: SimConfig }): React.JSX.El
   })
   // Fecha de vencimiento fija por sesión (evita recomputar en cada render).
   const expiresAt = useMemo(() => new Date(Date.now() + 25 * 86400000).toISOString(), [])
+  // La vista previa congelada (.force-light): los overlays del kit que se
+  // abran adentro se portalizan ahí y no en el <body> del panel.
+  const [previewRoot, setPreviewRoot] = useState<HTMLDivElement | null>(null)
 
   const wallet = useMemo(() => buildWallet(config, state, expiresAt), [config, state, expiresAt])
   const currentTierId = wallet.tier.current?.id ?? sorted[0]?.id ?? ''
@@ -228,6 +195,9 @@ export function WalletSimulator({ config }: { config: SimConfig }): React.JSX.El
   }, [state.categoryPoints, config.tiers])
 
   const affordable = wallet.rewards.filter((r) => r.affordable && !r.tierLocked)
+  const expiryDrops =
+    state.expiryPoints > 0 &&
+    wouldDropTier(state.categoryPoints, state.expiryPoints, config.tiers).drops
 
   function set(patch: Partial<SimState>) {
     setState((s) => ({ ...s, ...patch }))
@@ -253,31 +223,42 @@ export function WalletSimulator({ config }: { config: SimConfig }): React.JSX.El
   }
 
   return (
-    <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+    <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
       {/* PANEL DE CONTROL */}
-      <div className="w-full space-y-5 rounded-2xl border bg-card p-5 shadow-sm lg:w-[380px] lg:shrink-0">
-        <div>
-          <h2 className="font-serif text-lg font-semibold tracking-tight">Controles</h2>
-          <p className="text-sm text-muted-foreground">
-            Ajustá el estado y mirá la tarjeta a la derecha. No toca datos reales.
-          </p>
-        </div>
+      <Card className="w-full gap-0 lg:w-[380px] lg:shrink-0">
+        <CardHeader>
+          <CardTitle>Controles</CardTitle>
+          <CardDescription>
+            Ajustá el estado y mirá la tarjeta al lado. No toca datos reales.
+          </CardDescription>
+        </CardHeader>
 
         {/* Nivel por puntos de categoría */}
-        <div className="space-y-3 border-t pt-4">
-          <Stepper
+        <div className="mt-4 grid gap-3 border-t border-border pt-4">
+          <Field
             label="Puntos de categoría"
-            value={state.categoryPoints}
-            onChange={(n) => set({ categoryPoints: n })}
-            accent
-          />
+            hint="Definen el nivel: lo ganado en los últimos 4 meses."
+          >
+            <NumberField
+              min={0}
+              max={MAX_POINTS}
+              step={10}
+              largeStep={100}
+              suffix="pts"
+              value={state.categoryPoints}
+              onValueChange={(n) => {
+                if (n !== null) set({ categoryPoints: clampPts(n) })
+              }}
+            />
+          </Field>
           {sorted.length > 1 ? (
-            <SlidingTabs
+            <SegmentedControl
+              aria-label="Saltar al comienzo de un nivel"
               size="sm"
-              className="max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-              tabs={sorted.map((t) => ({ value: t.id, label: t.name }))}
+              className="max-w-full overflow-x-auto"
+              items={sorted.map((t) => ({ value: t.id, label: t.name }))}
               value={currentTierId}
-              onChange={(id) => {
+              onValueChange={(id) => {
                 const t = sorted.find((x) => x.id === id)
                 if (t) set({ categoryPoints: t.min_category_points })
               }}
@@ -286,88 +267,89 @@ export function WalletSimulator({ config }: { config: SimConfig }): React.JSX.El
         </div>
 
         {/* Puntos canjeables */}
-        <div className="border-t pt-4">
-          <Stepper
-            label="Puntos canjeables"
-            value={state.pointsBalance}
-            onChange={(n) => set({ pointsBalance: n })}
-          />
+        <div className="mt-4 border-t border-border pt-4">
+          <Field label="Puntos canjeables" hint="El saldo que puede gastar en recompensas.">
+            <NumberField
+              min={0}
+              max={MAX_POINTS}
+              step={10}
+              largeStep={100}
+              suffix="pts"
+              value={state.pointsBalance}
+              onValueChange={(n) => {
+                if (n !== null) set({ pointsBalance: clampPts(n) })
+              }}
+            />
+          </Field>
         </div>
 
         {/* Vencimiento */}
-        <div className="space-y-2 border-t pt-4">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              Vencimiento
-            </span>
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-              <TrendingDown className="size-3.5" aria-hidden="true" />
-              {state.expiryPoints > 0
-                ? wouldDropTier(state.categoryPoints, state.expiryPoints, config.tiers).drops
-                  ? 'bajaría de nivel'
-                  : 'mantiene nivel'
-                : 'sin aviso'}
-            </span>
-          </div>
-          <div className="flex gap-1.5">
-            <Button
-              type="button"
-              variant={state.expiryPoints > 0 ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => set({ expiryPoints: state.expiryPoints > 0 ? 0 : suggestedExpiry })}
-            >
-              {state.expiryPoints > 0 ? 'Quitar aviso' : 'Simular vencimiento'}
-            </Button>
-            {state.expiryPoints > 0 ? (
-              <span className="flex items-center text-sm text-muted-foreground tabular-nums">
-                {formatPoints(state.expiryPoints)} pts por vencer
-              </span>
-            ) : null}
-          </div>
+        <div className="mt-4 border-t border-border pt-4">
+          <Field
+            label="Simular vencimiento"
+            layout="toggle"
+            hint={
+              state.expiryPoints > 0 ? (
+                <span className="inline-flex items-center gap-1">
+                  <TrendingDown className="size-3.5 shrink-0" aria-hidden="true" />
+                  {formatNumber(state.expiryPoints)} pts por vencer ·{' '}
+                  {expiryDrops ? 'bajaría de nivel' : 'mantiene el nivel'}
+                </span>
+              ) : (
+                'Muestra el aviso «volvé para no bajar de nivel».'
+              )
+            }
+          >
+            <Switch
+              checked={state.expiryPoints > 0}
+              onCheckedChange={(on) => set({ expiryPoints: on ? suggestedExpiry : 0 })}
+            />
+          </Field>
         </div>
 
         {/* Simular canjes */}
-        <div className="space-y-2 border-t pt-4">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-            Simular canje
-          </span>
+        <div className="mt-4 grid gap-2 border-t border-border pt-4">
+          <p className="type-label text-foreground">Simular canje</p>
           {affordable.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="type-small text-muted-foreground">
               Sumá puntos canjeables para poder canjear algo.
             </p>
           ) : (
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-2">
               {affordable.slice(0, 8).map((r) => (
-                <button
+                <Button
                   key={r.id}
                   type="button"
+                  variant="secondary"
+                  size="sm"
                   onClick={() => redeem(r)}
-                  className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-secondary/50 px-2.5 py-1 text-xs font-medium transition-colors hover:border-primary/40 hover:bg-secondary"
+                  aria-label={`Canjear ${r.name} por ${formatNumber(r.costPoints)} puntos`}
                 >
-                  <Ticket className="size-3 text-primary" aria-hidden="true" />
-                  {r.name}{' '}
-                  <span className="text-muted-foreground tabular-nums">−{r.costPoints}</span>
-                </button>
+                  <Ticket aria-hidden="true" />
+                  {r.name}
+                  <span className="type-amount text-muted-foreground">
+                    −{formatNumber(r.costPoints)}
+                  </span>
+                </Button>
               ))}
             </div>
           )}
           {state.pending.length > 0 ? (
-            <ul className="mt-1 space-y-1">
+            <ul className="mt-1 divide-y divide-border rounded-lg border border-border">
               {state.pending.map((p) => {
                 const cost = config.rewards.find((r) => p.id.startsWith(r.id))?.costPoints ?? 0
                 return (
-                  <li
-                    key={p.id}
-                    className="flex items-center justify-between gap-2 rounded-lg bg-secondary/40 px-2.5 py-1.5 text-xs"
-                  >
-                    <span className="truncate font-medium">{p.name}</span>
-                    <button
+                  <li key={p.id} className="flex min-h-11 items-center justify-between gap-2 px-3">
+                    <span className="truncate type-small font-medium">{p.name}</span>
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="sm"
                       onClick={() => unredeem(p.id, cost)}
-                      className="shrink-0 font-medium text-primary hover:underline"
+                      aria-label={`Descanjear ${p.name}`}
                     >
                       Descanjear
-                    </button>
+                    </Button>
                   </li>
                 )
               })}
@@ -375,11 +357,10 @@ export function WalletSimulator({ config }: { config: SimConfig }): React.JSX.El
           ) : null}
         </div>
 
-        <div className="border-t pt-4">
+        <div className="mt-4 border-t border-border pt-4">
           <Button
             type="button"
             variant="ghost"
-            size="sm"
             className="w-full"
             onClick={() =>
               setState({
@@ -390,21 +371,24 @@ export function WalletSimulator({ config }: { config: SimConfig }): React.JSX.El
               })
             }
           >
-            <RotateCcw className="size-4" aria-hidden="true" />
+            <RotateCcw aria-hidden="true" />
             Reiniciar
           </Button>
         </div>
-      </div>
+      </Card>
 
-      {/* PREVIEW — la wallet real, en un marco de teléfono */}
+      {/* PREVIEW — la wallet real (pública y congelada), en un marco de teléfono.
+          No se reestila: es la billetera tal cual la ve el socio. */}
       <div className="flex flex-1 justify-center">
-        <div className="force-light w-full max-w-[400px]">
-          <BrandAccent
-            accent={config.tenant.brandAccent}
-            className="bg-app-gradient h-[760px] max-h-[80vh] overflow-y-auto overscroll-contain rounded-[2.25rem] border-[6px] border-foreground/80 shadow-2xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
-            <WalletShell data={wallet} qrDataUrl={DUMMY_QR} embedded />
-          </BrandAccent>
+        <div ref={setPreviewRoot} className="force-light w-full max-w-[400px]">
+          <PortalContainerProvider container={previewRoot}>
+            <BrandAccent
+              accent={config.tenant.brandAccent}
+              className="bg-app-gradient h-[760px] max-h-[80vh] overflow-y-auto overscroll-contain rounded-[2.25rem] border-[6px] border-foreground/80 shadow-2xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
+              <WalletShell data={wallet} qrDataUrl={DUMMY_QR} embedded />
+            </BrandAccent>
+          </PortalContainerProvider>
         </div>
       </div>
     </div>
