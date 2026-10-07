@@ -134,12 +134,19 @@ export function ComoNosFueDashboard({
   const searchParams = useSearchParams()
   const [pending, startTransition] = useTransition()
 
-  /** Mergea, no reemplaza: ir y volver entre vistas no pierde la selección. */
-  function push(next: Record<string, string>) {
+  /**
+   * Mergea, no reemplaza: ir y volver entre vistas no pierde la selección.
+   * `replace` para el interruptor de vista: SlidingTabs ahora es un radiogroup
+   * y las flechas eligen en cada tecla, así que con push cada una dejaba una
+   * entrada en el historial (kit §3.3). Los días y el evento siguen con push.
+   */
+  function push(next: Record<string, string>, mode: 'push' | 'replace' = 'push') {
     const params = new URLSearchParams(searchParams.toString())
     for (const [k, v] of Object.entries(next)) params.set(k, v)
+    const href = `?${params.toString()}`
     startTransition(() => {
-      router.push(`?${params.toString()}`, { scroll: false })
+      if (mode === 'replace') router.replace(href, { scroll: false })
+      else router.push(href, { scroll: false })
     })
   }
 
@@ -180,7 +187,7 @@ export function ComoNosFueDashboard({
         <SlidingTabs
           size="sm"
           value={view}
-          onChange={(v) => push({ vista: v })}
+          onChange={(v) => push({ vista: v }, 'replace')}
           tabs={[
             { value: 'dia', label: 'Por día' },
             { value: 'evento', label: 'Por evento' },

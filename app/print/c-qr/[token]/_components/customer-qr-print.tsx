@@ -2,7 +2,7 @@
 
 import { Printer } from 'lucide-react'
 import Image from 'next/image'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/components/ui-legacy/button'
 
 export function CustomerQrPrint({
   tenantName,

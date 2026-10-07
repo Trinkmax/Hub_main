@@ -2,6 +2,7 @@
 
 import { type CSSProperties, memo, useCallback, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
+import { readStageTransform } from '@/components/floor-plan/pan-zoom-stage'
 import {
   bodyRadius,
   ChairsSvg,
@@ -13,7 +14,6 @@ import { clampToAreaRotated, freeDragPosition, snapToGrid } from '@/lib/floor-pl
 import type { ElementRow } from '@/lib/floor-plan/queries'
 import { type Box, computeSnap, type Guide } from '@/lib/floor-plan/snap'
 import { cn } from '@/lib/utils'
-import { readStageTransform } from './pan-zoom-stage'
 import { ResizeHandles } from './resize-handles'
 import { RotateHandle } from './rotate-handle'
 

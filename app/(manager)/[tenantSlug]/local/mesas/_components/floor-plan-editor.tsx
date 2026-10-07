@@ -5,7 +5,13 @@ import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
 import { toast } from 'sonner'
+import { LiveFloor } from '@/components/floor-plan/live-floor'
 import { MoveTableSheet } from '@/components/floor-plan/move-table-sheet'
+import {
+  PanZoomStage,
+  readStageTransform,
+  stagePointFromClient,
+} from '@/components/floor-plan/pan-zoom-stage'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -60,8 +66,6 @@ import { ContextualToolbar } from './contextual-toolbar'
 import { DecorInspector } from './decor-inspector'
 import { ElementPalette } from './element-palette'
 import { FloorElement } from './floor-element'
-import { LiveFloor } from './live-floor'
-import { PanZoomStage, readStageTransform, stagePointFromClient } from './pan-zoom-stage'
 import { TableInspector } from './table-inspector'
 import { TablesListFallback } from './tables-list-fallback'
 import { UnplacedTray } from './unplaced-tray'

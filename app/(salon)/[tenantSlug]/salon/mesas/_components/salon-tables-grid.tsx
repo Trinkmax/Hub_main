@@ -2,8 +2,8 @@
 
 import { Bell, CircleDot, Receipt, Users } from 'lucide-react'
 import Link from 'next/link'
-import { Badge } from '@/components/ui/badge'
-import { EmptyState } from '@/components/ui/empty-state'
+import { Badge } from '@/components/ui-legacy/badge'
+import { EmptyState } from '@/components/ui-legacy/empty-state'
 import { ARSFormat, elapsedLabel } from '@/lib/salon/format'
 import type { SalonTableRow } from '@/lib/sessions-waiter/queries'
 import { cn } from '@/lib/utils'

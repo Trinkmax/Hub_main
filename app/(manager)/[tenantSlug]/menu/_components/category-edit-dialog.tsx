@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { MenuImageUploader } from '@/components/media/image-uploader'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -15,7 +16,6 @@ import { Label } from '@/components/ui/label'
 import { updateCategory } from '@/lib/menu/actions'
 import type { MenuCategory } from '@/lib/menu/queries'
 import { deleteMenuImageByUrl } from '@/lib/menu/upload-image'
-import { MenuImageUploader } from './image-uploader'
 
 export function CategoryEditDialog({
   category,

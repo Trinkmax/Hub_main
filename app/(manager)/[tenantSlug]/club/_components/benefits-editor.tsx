@@ -33,6 +33,7 @@ import {
 } from 'lucide-react'
 import { type ComponentType, type ReactNode, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { MenuImageUploader } from '@/components/media/image-uploader'
 import { StorageImage } from '@/components/media/storage-image'
 import {
   AlertDialog,
@@ -83,7 +84,6 @@ import {
   type TierBenefitKind,
 } from '@/lib/points/benefits'
 import { cn } from '@/lib/utils'
-import { MenuImageUploader } from '../../menu/_components/image-uploader'
 
 type IdName = { id: string; name: string }
 

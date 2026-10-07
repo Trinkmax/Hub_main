@@ -4,18 +4,18 @@ import { ImageOff, Minus, Plus, Search, Send, ShoppingBag, Trash2, X } from 'luc
 import Image from 'next/image'
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui-legacy/badge'
+import { Button } from '@/components/ui-legacy/button'
+import { Input } from '@/components/ui-legacy/input'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
-import { Skeleton } from '@/components/ui/skeleton'
+} from '@/components/ui-legacy/select'
+import { Sheet, SheetContent } from '@/components/ui-legacy/sheet'
+import { Skeleton } from '@/components/ui-legacy/skeleton'
 import { addStaffTicketAction } from '@/lib/sessions-waiter/actions'
 import {
   buildCartLines,

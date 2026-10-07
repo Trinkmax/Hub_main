@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { RevenueChart } from '@/components/charts/revenue-chart'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -43,7 +44,6 @@ import {
 } from '@/lib/tenant'
 import { ChurnCard } from './_components/churn-card'
 import { Heatmap } from './_components/heatmap'
-import { RevenueChart } from './_components/revenue-chart'
 import { StaffPerformanceTab } from './_components/staff-performance-tab'
 
 export const metadata = { title: 'Estadísticas' }

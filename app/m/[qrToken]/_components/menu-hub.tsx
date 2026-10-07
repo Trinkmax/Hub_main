@@ -2,7 +2,7 @@
 
 import { ChevronRight, Home, Search, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { Input } from '@/components/ui/input'
+import { Input } from '@/components/ui-legacy/input'
 import type { ActiveSessionStateData } from '@/lib/m-session/actions'
 import { searchMenuItems } from '@/lib/m-session/menu-search'
 import { CategoryCard } from './category-card'

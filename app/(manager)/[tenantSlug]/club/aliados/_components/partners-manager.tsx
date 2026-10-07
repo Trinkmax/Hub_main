@@ -33,6 +33,7 @@ import {
 import { useActionState, useEffect, useRef, useState, useTransition } from 'react'
 import { useFormStatus } from 'react-dom'
 import { toast } from 'sonner'
+import { MenuImageUploader } from '@/components/media/image-uploader'
 import { StorageImage } from '@/components/media/storage-image'
 import {
   AlertDialog,
@@ -78,7 +79,6 @@ import { type PartnerBenefit, tiersWithoutPartnerBenefit } from '@/lib/points/be
 import type { Partner } from '@/lib/points/queries'
 import { type LoyaltyTier, sortedActiveTiers } from '@/lib/points/tiers'
 import { cn } from '@/lib/utils'
-import { MenuImageUploader } from '../../../menu/_components/image-uploader'
 
 const initial: LoyaltyActionState = { ok: true }
 

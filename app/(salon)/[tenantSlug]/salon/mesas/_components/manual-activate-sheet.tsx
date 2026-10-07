@@ -1,14 +1,14 @@
 'use client'
 
 import { CircleDot } from 'lucide-react'
-import { EmptyState } from '@/components/ui/empty-state'
+import { EmptyState } from '@/components/ui-legacy/empty-state'
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from '@/components/ui/sheet'
+} from '@/components/ui-legacy/sheet'
 import type { SalonTableRow } from '@/lib/sessions-waiter/queries'
 
 export function ManualActivateSheet({

@@ -3,7 +3,7 @@
 import { LayoutDashboard, LogOut } from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/components/ui-legacy/button'
 import {
   Sheet,
   SheetContent,
@@ -11,7 +11,7 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from '@/components/ui/sheet'
+} from '@/components/ui-legacy/sheet'
 import { ROLE_LABELS } from '@/lib/tenant/roles'
 import type { TenantRole } from '@/lib/tenant/types'
 

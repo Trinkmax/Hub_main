@@ -4,7 +4,7 @@ import { CalendarPlus, CalendarX2, ChevronLeft, ChevronRight } from 'lucide-reac
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/components/ui-legacy/button'
 import { type AnyRealtimePayload, mergeRow } from '@/lib/realtime/optimistic-merge'
 import { subscribeChanges } from '@/lib/realtime/subscribe'
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'

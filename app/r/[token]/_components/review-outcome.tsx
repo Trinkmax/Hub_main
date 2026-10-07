@@ -12,9 +12,9 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useState, useTransition } from 'react'
-import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
+import { Button } from '@/components/ui-legacy/button'
+import { Label } from '@/components/ui-legacy/label'
+import { Textarea } from '@/components/ui-legacy/textarea'
 import { attachReviewComment } from '@/lib/reviews/actions'
 
 // Pantalla posterior al envío de la reseña. Tres salidas posibles:

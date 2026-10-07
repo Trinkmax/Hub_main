@@ -1,18 +1,18 @@
 import { ArrowDownRight, ArrowUpRight, Banknote, Receipt, Sparkles, Users } from 'lucide-react'
 import { redirect } from 'next/navigation'
+import { RevenueChart } from '@/components/charts/revenue-chart'
 import { Sparkline } from '@/components/charts/sparkline'
 import { PageHeader } from '@/components/ui/page-header'
 import { StatCard } from '@/components/ui/stat-card'
 import { getTodaySalonOverview } from '@/lib/salon/queries'
 import { getDailyMetrics, getKpis, getTopCustomersBySpent } from '@/lib/stats/queries'
 import { createClient } from '@/lib/supabase/server'
-import { requireTenantAccess } from '@/lib/tenant'
+import { homePathForRole, requireTenantAccess } from '@/lib/tenant'
 import type { TenantRole } from '@/lib/tenant/types'
 import { OnboardingChecklist } from './_components/onboarding-checklist'
 import { QuickActions } from './_components/quick-actions'
 import { TodaySalonOverview } from './_components/today-salon-overview'
 import { TopCustomersCard } from './_components/top-customers-card'
-import { RevenueChart } from './estadisticas/_components/revenue-chart'
 
 function todayCordoba(): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -115,6 +115,10 @@ export default async function TenantHomePage({
 }) {
   const { tenantSlug } = await params
   const { tenant, role } = await requireTenantAccess(tenantSlug)
+  // El Resumen es del dueño. El layout y la página se renderizan en paralelo,
+  // así que el gate va acá también: cada rol vuelve a su home (la contadora a
+  // Administración, el staff al salón) sin ver los números del bar.
+  if (role !== 'owner') redirect(homePathForRole(role, tenantSlug))
   const isOwner = role === 'owner'
 
   // Si el owner no completó el onboarding wizard, redirigirlo allí.

@@ -2,9 +2,9 @@
 
 import { useRef } from 'react'
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
+import { readStageTransform } from '@/components/floor-plan/pan-zoom-stage'
 import { RESIZE_MIN, snapToGrid } from '@/lib/floor-plan/grid'
 import { cn } from '@/lib/utils'
-import { readStageTransform } from './pan-zoom-stage'
 
 type TransformRef = React.RefObject<ReactZoomPanPinchRef | null>
 

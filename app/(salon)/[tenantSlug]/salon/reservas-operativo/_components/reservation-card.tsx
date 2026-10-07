@@ -15,17 +15,17 @@ import {
 import { motion } from 'motion/react'
 import { useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { CakeChip } from '@/components/reservations/cake-chip'
-import { GuestCountStepper } from '@/components/reservations/guest-count-stepper'
-import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
-import { Button } from '@/components/ui/button'
+import { CakeChip } from '@/components/legacy/reservations/cake-chip'
+import { GuestCountStepper } from '@/components/legacy/reservations/guest-count-stepper'
+import { ServiceAlertChips } from '@/components/legacy/reservations/service-alert-chips'
+import { Button } from '@/components/ui-legacy/button'
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from '@/components/ui/sheet'
+} from '@/components/ui-legacy/sheet'
 import {
   markArrived,
   markNoShow,

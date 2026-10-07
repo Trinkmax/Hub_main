@@ -2,7 +2,7 @@
 
 import { Minus, Plus, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/components/ui-legacy/button'
 
 export function PartySizeStepper({
   value,

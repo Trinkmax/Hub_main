@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { MenuImageUploader } from '@/components/media/image-uploader'
 import { StorageImage } from '@/components/media/storage-image'
 import {
   AlertDialog,
@@ -63,7 +64,6 @@ import type { Reward } from '@/lib/points/queries'
 import { REWARD_CATEGORIES } from '@/lib/points/schemas'
 import type { LoyaltyTier } from '@/lib/points/tiers'
 import { cn } from '@/lib/utils'
-import { MenuImageUploader } from '../../../menu/_components/image-uploader'
 import { StockField } from './stock-field'
 
 const SELECT_CLASS =

@@ -4,10 +4,10 @@ import { Plus } from 'lucide-react'
 import { useActionState, useEffect, useRef, useState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { toast } from 'sonner'
+import { MenuImageUploader } from '@/components/media/image-uploader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { createCategory, type MenuActionState } from '@/lib/menu/actions'
-import { MenuImageUploader } from './image-uploader'
 
 const initial: MenuActionState = { ok: true }
 

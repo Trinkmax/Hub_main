@@ -6,8 +6,8 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Button } from '@/components/ui-legacy/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui-legacy/tabs'
 import {
   type ActiveSessionStateData,
   joinSession,

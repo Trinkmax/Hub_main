@@ -4,7 +4,8 @@ import { ScanLine, SquarePlus } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
+import { LiveFloor } from '@/components/legacy/floor-plan/live-floor'
+import { Button } from '@/components/ui-legacy/button'
 import {
   Sheet,
   SheetContent,
@@ -12,8 +13,8 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-} from '@/components/ui/sheet'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+} from '@/components/ui-legacy/sheet'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui-legacy/tabs'
 import type { AreaRow, LiveFloorData, LiveTable } from '@/lib/floor-plan/queries'
 import { subscribeChanges } from '@/lib/realtime/subscribe'
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'
@@ -21,7 +22,6 @@ import { useVisibleInterval } from '@/lib/realtime/use-visible-interval'
 import { activateTableByIdAction, activateTableByQrAction } from '@/lib/sessions-waiter/actions'
 import type { SalonOccupancy, SalonTableRow } from '@/lib/sessions-waiter/queries'
 import { filterTables } from '@/lib/sessions-waiter/table-search'
-import { LiveFloor } from '../../../../../(manager)/[tenantSlug]/local/mesas/_components/live-floor'
 import { ManualActivateSheet } from './manual-activate-sheet'
 import { OccupancyBanner } from './occupancy-banner'
 import { PartySizeStepper } from './party-size-stepper'

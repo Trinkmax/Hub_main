@@ -31,6 +31,7 @@ import {
 } from 'lucide-react'
 import { useActionState, useEffect, useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { MenuImageUploader } from '@/components/media/image-uploader'
 import { StorageImage } from '@/components/media/storage-image'
 import {
   AlertDialog,
@@ -81,7 +82,6 @@ import type { PunchCardTemplateRow } from '@/lib/punch-cards/queries'
 import { PUNCH_TRIGGER_TYPES, type PunchTriggerType } from '@/lib/punch-cards/schemas'
 import { formatRequiredTiers } from '@/lib/punch-cards/tier-gate'
 import { cn } from '@/lib/utils'
-import { MenuImageUploader } from '../../../menu/_components/image-uploader'
 
 const initial: PunchCardActionState = { ok: false, message: '' }
 

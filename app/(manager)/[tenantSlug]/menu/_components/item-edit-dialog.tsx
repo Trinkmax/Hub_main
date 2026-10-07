@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { MenuImageUploader } from '@/components/media/image-uploader'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,7 +38,6 @@ import type { MenuCategory, MenuItem } from '@/lib/menu/queries'
 import { deleteMenuImageByUrl } from '@/lib/menu/upload-image'
 import { deleteMenuVideoByUrl } from '@/lib/menu/upload-video'
 import { CategoryTreePicker } from './category-tree-picker'
-import { MenuImageUploader } from './image-uploader'
 import { MenuVideoUploader } from './video-uploader'
 
 const NEW_TAG_DEFAULT_COLOR = '#94a3b8'

@@ -2,7 +2,7 @@
 
 import { CheckCircle2 } from 'lucide-react'
 import { type ReactNode, useEffect, useRef } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/components/ui-legacy/button'
 
 export function OrderConfirmation({
   children,

@@ -2,20 +2,13 @@ import { LogOut, Settings2, ShieldCheck } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { signOutAction } from '@/components/shell/sign-out-action'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { PageHeader } from '@/components/ui/page-header'
+import { Button } from '@/components/ui-legacy/button'
+import { Card } from '@/components/ui-legacy/card'
+import { PageHeader } from '@/components/ui-legacy/page-header'
 import { requireFeature } from '@/lib/platform/guards'
-import { requireTenantAccess, TenantNotFoundError } from '@/lib/tenant'
+import { ROLE_LABELS, requireTenantAccess, TenantNotFoundError } from '@/lib/tenant'
 
 export const metadata = { title: 'Salón · Mi turno' }
-
-const ROLE_LABEL: Record<string, string> = {
-  owner: 'Owner',
-  cashier: 'Cajero',
-  waiter: 'Mozo',
-  kitchen: 'Cocina',
-}
 
 export default async function MiTurnoPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
   const { tenantSlug } = await params
@@ -49,7 +42,7 @@ export default async function MiTurnoPage({ params }: { params: Promise<{ tenant
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">{email}</p>
             <p className="text-xs text-muted-foreground">
-              {ROLE_LABEL[access.role] ?? access.role} · {access.tenant.name}
+              {ROLE_LABELS[access.role]} · {access.tenant.name}
             </p>
           </div>
         </div>

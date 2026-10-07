@@ -72,11 +72,17 @@ export function DepositsDashboard({
     `/api/senas/export?slug=${encodeURIComponent(tenantSlug)}` +
     `&from=${report.from}&to=${report.to}&fecha=${porCarga ? 'carga' : 'reserva'}`
 
-  function push(next: Record<string, string>) {
+  // `replace` para el selector de fecha: SlidingTabs ahora es un radiogroup y
+  // las flechas eligen en cada tecla, así que con push cada una dejaba una
+  // entrada en el historial (kit §3.3). Los botones de mes siguen con push:
+  // «atrás» vuelve al mes anterior, como siempre.
+  function push(next: Record<string, string>, mode: 'push' | 'replace' = 'push') {
     const params = new URLSearchParams(searchParams.toString())
     for (const [key, value] of Object.entries(next)) params.set(key, value)
+    const href = `?${params.toString()}`
     startTransition(() => {
-      router.push(`?${params.toString()}`, { scroll: false })
+      if (mode === 'replace') router.replace(href, { scroll: false })
+      else router.push(href, { scroll: false })
     })
   }
 
@@ -136,7 +142,7 @@ export function DepositsDashboard({
           <SlidingTabs
             size="sm"
             value={porCarga ? 'carga' : 'reserva'}
-            onChange={(value) => push({ fecha: value })}
+            onChange={(value) => push({ fecha: value }, 'replace')}
             tabs={[
               { value: 'reserva', label: 'Día de la reserva' },
               { value: 'carga', label: 'Día de carga' },

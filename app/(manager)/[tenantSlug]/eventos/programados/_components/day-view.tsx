@@ -4,8 +4,8 @@ import { CalendarPlus, ChevronLeft, ChevronRight, Clock4, Loader2, X } from 'luc
 import Link from 'next/link'
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { RollCallDialog } from '@/app/(manager)/[tenantSlug]/reservas/_components/roll-call-dialog'
 import { keepOpenOnToast } from '@/components/reservations/reservation-quick-view'
+import { RollCallDialog } from '@/components/reservations/roll-call-dialog'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,

@@ -2,7 +2,7 @@
 
 import { RotateCcw, TriangleAlert } from 'lucide-react'
 import { useEffect } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/components/ui-legacy/button'
 
 /**
  * Error boundary del salón. Sin esto, cualquier excepción en el turno le tira

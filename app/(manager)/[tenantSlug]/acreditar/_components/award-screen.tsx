@@ -6,6 +6,8 @@ import { useCallback, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { AwardForm, type AwardResultData } from '@/components/loyalty/award-form'
 import { CustomerHeader } from '@/components/loyalty/customer-header'
+import { PunchStamper } from '@/components/loyalty/punch-stamper'
+import { RedemptionPanel } from '@/components/loyalty/redemption-panel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,8 +15,6 @@ import type { CustomerByQr } from '@/lib/customers/queries'
 import { lookupCustomerByQr } from '@/lib/points/actions'
 import type { EarnRate } from '@/lib/points/earn-rate'
 import { parseScannedCode } from '@/lib/redemptions/scan'
-import { PunchStamper } from './punch-stamper'
-import { RedemptionPanel } from './redemption-panel'
 
 // Un solo escáner para los dos QR que circulan por el bar (ver
 // lib/redemptions/scan.ts): el personal del socio (/c/…) acredita puntos y sella

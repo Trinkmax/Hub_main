@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { PageHeader } from '@/components/ui/page-header'
+import { PageHeader } from '@/components/ui-legacy/page-header'
 import { getSessionForWaiter } from '@/lib/sessions-waiter/queries'
 import { requireTenantAccess } from '@/lib/tenant'
 import {

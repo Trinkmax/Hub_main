@@ -18,16 +18,16 @@ import { useActionState, useEffect, useRef, useState } from 'react'
 import { useFormStatus } from 'react-dom'
 import PhoneInput from 'react-phone-number-input'
 import 'react-phone-number-input/style.css'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Button } from '@/components/ui-legacy/button'
+import { Input } from '@/components/ui-legacy/input'
+import { Label } from '@/components/ui-legacy/label'
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetGrabber,
   SheetTitle,
-} from '@/components/ui/sheet'
+} from '@/components/ui-legacy/sheet'
 import { type CaptureActionState, submitCapture } from '@/lib/capture/actions'
 import {
   type ClubLoginState,

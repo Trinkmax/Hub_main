@@ -2,8 +2,8 @@
 
 import { ClipboardList, X } from 'lucide-react'
 import { useTransition } from 'react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui-legacy/badge'
+import { Button } from '@/components/ui-legacy/button'
 import { type ActiveSessionStateData, cancelTicket } from '@/lib/m-session/actions'
 
 type Ticket = ActiveSessionStateData['my_tickets'][number]

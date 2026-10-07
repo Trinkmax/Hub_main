@@ -1,7 +1,7 @@
 import { Cake, ChevronRight, Clock3, Crown, TrendingDown } from 'lucide-react'
 import Image from 'next/image'
 import type { CSSProperties } from 'react'
-import { NumberTicker } from '@/components/ui/number-ticker'
+import { NumberTicker } from '@/components/ui-legacy/number-ticker'
 import type { WalletData } from '@/lib/wallet/queries'
 import { LucideByName } from './benefit-icon'
 import { cardInk, isHexColor } from './tier-accent'

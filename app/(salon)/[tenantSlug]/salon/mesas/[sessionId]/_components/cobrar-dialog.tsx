@@ -3,8 +3,8 @@
 import { Sparkles } from 'lucide-react'
 import { useCallback, useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui-legacy/badge'
+import { Button } from '@/components/ui-legacy/button'
 import {
   Dialog,
   DialogContent,
@@ -12,8 +12,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
+} from '@/components/ui-legacy/dialog'
+import { Input } from '@/components/ui-legacy/input'
 import {
   computeRedemption,
   maxRedeemablePoints,

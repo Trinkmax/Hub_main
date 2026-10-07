@@ -3,13 +3,13 @@
 import { Check, Loader2, Sparkles, Stamp, TriangleAlert, UserPlus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { PunchStamper } from '@/components/loyalty/punch-stamper'
 import { Button } from '@/components/ui/button'
 import { formatPhoneForDisplay } from '@/lib/phone'
 import type { EarnRate } from '@/lib/points/earn-rate'
 import { describeEarnRate, pesosToCents, previewPoints } from '@/lib/points/preview'
 import type { RecentQrAward } from '@/lib/points/queries'
 import type { ReservationWithJoins } from '@/lib/salon/types'
-import { PunchStamper } from '../../acreditar/_components/punch-stamper'
 import type { BoardActions } from './operativo-board'
 
 function fmtPesos(cents: number): string {
