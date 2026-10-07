@@ -1,22 +1,13 @@
 'use client'
 
-import { Crown, KeyRound, MoreHorizontal, Trash2 } from 'lucide-react'
-import { useState, useTransition } from 'react'
+import { Crown, KeyRound, MoreHorizontal, UserMinus } from 'lucide-react'
+import { type FormEvent, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { DataTableCell, DataTableRow } from '@/components/ui/data-table'
 import {
   Dialog,
   DialogContent,
@@ -32,8 +23,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -41,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { assignableRoles, ROLE_LABELS } from '@/lib/tenant/roles'
+import { assignableRoles, ROLE_DESCRIPTIONS, ROLE_LABELS } from '@/lib/tenant/roles'
 import type { TenantRole } from '@/lib/tenant/types'
 import { cn } from '@/lib/utils'
 import { removeMember, setMemberPassword, updateMemberRole } from './actions'
@@ -66,6 +57,16 @@ function initials(member: Member): string {
   return source.slice(0, 2).toUpperCase()
 }
 
+/** El nombre que se muestra: el cargado o, si no hay, lo de antes de la @. */
+function displayName(member: Member): string {
+  return member.full_name?.trim() || member.email.split('@')[0] || member.email
+}
+
+/**
+ * Una fila de la tabla de miembros: persona, rol (se cambia ahí mismo) y el
+ * menú con «Cambiar contraseña» y «Quitar del equipo». Va adentro del
+ * `DataTableBody` que arma la página.
+ */
 export function MemberRow({
   member,
   tenantSlug,
@@ -85,8 +86,10 @@ export function MemberRow({
   // el select queda trabado (la action y la base lo frenan igual).
   const roleOptions = assignableRoles(canManageAccountant, member.role)
   const roleLocked = member.role === 'accountant' && !canManageAccountant
-  const [removeOpen, setRemoveOpen] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
+  const confirm = useConfirm()
+  const name = displayName(member)
+  const isOwner = member.role === 'owner'
 
   const handleRoleChange = (next: string) => {
     const nextRole = next as TenantRole
@@ -97,139 +100,124 @@ export function MemberRow({
         toast.error(r.message)
         setRole(member.role)
       } else {
-        toast.success('Rol actualizado.')
+        toast.success('Rol actualizado.', { description: `${name}: ${ROLE_LABELS[nextRole]}.` })
       }
     })
   }
 
-  const handleRemove = () => {
-    startTransition(async () => {
-      const r = await removeMember(tenantSlug, member.id)
-      if (!r.ok) toast.error(r.message)
-      else {
-        toast.success('Miembro removido.')
-        setRemoveOpen(false)
-      }
+  const askRemove = () => {
+    void confirm({
+      title: `¿Quitar a ${name} del equipo?`,
+      description:
+        'Pierde el acceso al bar. Su cuenta de HUB queda intacta: la podés volver a sumar cuando quieras.',
+      confirmLabel: 'Quitar del equipo',
+      pendingLabel: 'Quitando…',
+      tone: 'danger',
+      icon: UserMinus,
+      onConfirm: async () => {
+        const r = await removeMember(tenantSlug, member.id)
+        if (!r.ok) return { ok: false, error: r.message }
+        toast.success(`Quitamos a ${name} del equipo.`)
+      },
     })
   }
+
+  // El mismo selector va en dos lugares: en su columna desde `sm` y debajo del
+  // nombre en el celular (a 360 px, la columna dejaba el nombre en tres letras).
+  // Los dos leen y escriben el mismo estado; por CSS se ve uno solo.
+  const roleSelect = (className: string) => (
+    <Select value={role} onValueChange={handleRoleChange} disabled={isPending || roleLocked}>
+      <SelectTrigger size="sm" className={className} aria-label={`Rol de ${name}`}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent align="end" className="max-w-80">
+        {roleOptions.map((option) => (
+          <SelectItem key={option} value={option} description={ROLE_DESCRIPTIONS[option]}>
+            {ROLE_LABELS[option]}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+  // «Contabilidad» no entra en el ancho chico: solo se ensancha si está en la lista.
+  const roleWidth = roleOptions.includes('accountant') ? 'w-36' : 'w-32'
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/30">
-      <Avatar className="size-9 ring-1 ring-border/60">
-        <AvatarFallback
-          className={cn(
-            'text-xs font-semibold',
-            member.role === 'owner'
-              ? 'bg-primary/15 text-primary'
-              : 'bg-secondary text-foreground/80',
-          )}
-        >
-          {initials(member)}
-        </AvatarFallback>
-      </Avatar>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <p className="truncate text-sm font-medium">
-            {member.full_name?.trim() || member.email.split('@')[0]}
-          </p>
-          {isCurrentUser ? (
-            <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-              vos
-            </Badge>
-          ) : null}
-          {member.role === 'owner' ? <Crown aria-hidden className="size-3 text-primary" /> : null}
+    <DataTableRow>
+      {/* w-full + max-w-0: la columna se queda con el resto del ancho y el texto se corta con «…» en vez de ensanchar la tabla. */}
+      <DataTableCell className="w-full max-w-0">
+        <div className="flex min-w-0 items-start gap-3">
+          <Avatar size="sm" className="mt-0.5">
+            <AvatarFallback className={cn(isOwner && 'bg-brand-soft text-brand-text')}>
+              {initials(member)}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate font-medium text-foreground">{name}</span>
+              {isOwner ? (
+                <Crown aria-hidden className="size-3.5 shrink-0 text-primary" strokeWidth={1.75} />
+              ) : null}
+              {isCurrentUser ? (
+                <Badge appearance="outline" className="shrink-0">
+                  vos
+                </Badge>
+              ) : null}
+            </div>
+            <div className="truncate type-small text-muted-foreground">{member.email}</div>
+            <div className="mt-2 sm:hidden">{roleSelect(cn(roleWidth, 'max-w-full'))}</div>
+          </div>
         </div>
-        <p className="truncate text-xs text-muted-foreground font-mono">{member.email}</p>
-      </div>
-      <Select value={role} onValueChange={handleRoleChange} disabled={isPending || roleLocked}>
-        <SelectTrigger
-          className={cn(
-            'h-8 text-sm transition-shadow data-[state=open]:ring-2 data-[state=open]:ring-ring/40',
-            // «Contabilidad» no entra en 120 px: solo se ensancha si está en la lista.
-            roleOptions.includes('accountant') ? 'w-[140px]' : 'w-[120px]',
-          )}
-          aria-label={`Rol de ${member.email}`}
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {roleOptions.map((option) => (
-            <SelectItem key={option} value={option}>
-              {ROLE_LABELS[option]}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      </DataTableCell>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={isPending}
-            className="size-8 p-0"
-            aria-label="Más acciones"
-          >
-            <MoreHorizontal className="size-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem
-            onSelect={(e) => {
-              e.preventDefault()
-              setResetOpen(true)
-            }}
-            className="gap-2"
-          >
-            <KeyRound className="size-3.5" />
-            Resetear contraseña
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            disabled={isCurrentUser}
-            onSelect={(e) => {
-              e.preventDefault()
-              if (!isCurrentUser) setRemoveOpen(true)
-            }}
-            className="gap-2 text-destructive focus:text-destructive"
-          >
-            <Trash2 className="size-3.5" />
-            Remover del bar
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <DataTableCell className="max-sm:hidden">{roleSelect(roleWidth)}</DataTableCell>
 
-      <ResetPasswordDialog
-        open={resetOpen}
-        onOpenChange={setResetOpen}
-        member={member}
-        tenantSlug={tenantSlug}
-        roleLabel={ROLE_LABELS[member.role]}
-      />
-
-      <AlertDialog open={removeOpen} onOpenChange={setRemoveOpen}>
-        <AlertDialogTrigger className="hidden" />
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remover a {member.email}</AlertDialogTitle>
-            <AlertDialogDescription>
-              Pierde el acceso al bar. Su cuenta de email queda intacta — podés volver a invitarlo
-              después.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleRemove}
+      <DataTableCell align="end">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
               disabled={isPending}
-              className="bg-destructive text-white hover:bg-destructive/90"
+              aria-label={`Más acciones para ${name}`}
             >
-              Remover
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
+              <MoreHorizontal aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault()
+                setResetOpen(true)
+              }}
+            >
+              <KeyRound aria-hidden />
+              Cambiar contraseña
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={isCurrentUser}
+              onSelect={() => {
+                if (!isCurrentUser) askRemove()
+              }}
+            >
+              <UserMinus aria-hidden />
+              {isCurrentUser ? 'No te podés quitar a vos' : 'Quitar del equipo'}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <ResetPasswordDialog
+          open={resetOpen}
+          onOpenChange={setResetOpen}
+          member={member}
+          name={name}
+          tenantSlug={tenantSlug}
+          roleLabel={ROLE_LABELS[member.role]}
+        />
+      </DataTableCell>
+    </DataTableRow>
   )
 }
 
@@ -237,27 +225,32 @@ function ResetPasswordDialog({
   open,
   onOpenChange,
   member,
+  name,
   tenantSlug,
   roleLabel,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   member: Member
+  name: string
   tenantSlug: string
   roleLabel: string
 }) {
   const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
+    setError(null)
     startTransition(async () => {
       const r = await setMemberPassword(tenantSlug, member.id, password)
       if (!r.ok) {
-        toast.error(r.message)
+        // El error queda al lado del campo: el diálogo sigue abierto para corregir.
+        setError(r.message)
       } else {
-        toast.success('Contraseña actualizada.', {
-          description: `Compartile la nueva contraseña a ${member.email} en privado.`,
+        toast.success('Contraseña cambiada.', {
+          description: `Pasásela a ${name} en privado.`,
         })
         onOpenChange(false)
         setPassword('')
@@ -269,48 +262,58 @@ function ResetPasswordDialog({
     <Dialog
       open={open}
       onOpenChange={(v) => {
+        if (isPending) return
         onOpenChange(v)
-        if (!v) setPassword('')
+        if (!v) {
+          setPassword('')
+          setError(null)
+        }
       }}
     >
-      <DialogContent className="max-w-sm">
+      <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle>Resetear contraseña</DialogTitle>
+          <DialogTitle>Cambiar contraseña</DialogTitle>
           <DialogDescription>
-            Para <span className="font-mono">{member.email}</span> ({roleLabel}). El miembro puede
-            cambiarla después desde su perfil.
+            De {member.email} ({roleLabel}). Después la puede cambiar desde su perfil.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="reset-pwd" className="text-xs text-muted-foreground">
-              Nueva contraseña
-            </Label>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <Field
+            label="Nueva contraseña"
+            hint="Mínimo 8 caracteres, con al menos una letra y un número."
+            error={error}
+            required
+          >
             <Input
-              id="reset-pwd"
               type="text"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value)
+                if (error) setError(null)
+              }}
               minLength={8}
               maxLength={72}
-              required
-              autoFocus
               autoComplete="off"
-              className="font-mono text-sm"
-              placeholder="Mínimo 8 caracteres + número"
+              spellCheck={false}
+              className="font-mono"
             />
-          </div>
+          </Field>
           <DialogFooter>
             <Button
               type="button"
-              variant="ghost"
+              variant="secondary"
               onClick={() => onOpenChange(false)}
               disabled={isPending}
             >
               Cancelar
             </Button>
-            <Button type="submit" disabled={isPending || password.length < 8}>
-              {isPending ? 'Guardando…' : 'Cambiar contraseña'}
+            <Button
+              type="submit"
+              loading={isPending}
+              loadingText="Guardando…"
+              disabled={!isPending && password.length < 8}
+            >
+              Cambiar contraseña
             </Button>
           </DialogFooter>
         </form>

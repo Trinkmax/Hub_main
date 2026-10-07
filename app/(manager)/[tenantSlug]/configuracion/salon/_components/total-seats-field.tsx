@@ -1,12 +1,17 @@
 'use client'
 
-import { Users } from 'lucide-react'
-import { useState, useTransition } from 'react'
+import { type FormEvent, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Field } from '@/components/ui/field'
+import { FormActions } from '@/components/ui/form-actions'
+import { NumberField } from '@/components/ui/number-field'
+import { Section } from '@/components/ui/section'
 import { updateTotalSeatsAction } from '@/lib/tenant/actions'
+
+/** Lo que acepta la action (`totalSeatsSchema`). */
+const MIN_SEATS = 1
+const MAX_SEATS = 2000
 
 export function TotalSeatsField({
   tenantSlug,
@@ -15,18 +20,19 @@ export function TotalSeatsField({
   tenantSlug: string
   initialTotalSeats: number | null
 }) {
-  const [value, setValue] = useState<string>(
-    initialTotalSeats !== null ? String(initialTotalSeats) : '',
-  )
+  const [value, setValue] = useState<number | null>(initialTotalSeats)
   const [pending, startTransition] = useTransition()
 
-  const save = () => {
+  // Un número que no se entiende o fuera de rango frena el envío antes de
+  // llegar acá: el campo muestra por qué. Vacío borra el número, como antes.
+  const save = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
     startTransition(async () => {
-      const result = await updateTotalSeatsAction(tenantSlug, value === '' ? null : value)
+      const result = await updateTotalSeatsAction(tenantSlug, value === null ? null : String(value))
       if (result.ok) {
         toast.success(
           result.totalSeats === null
-            ? 'Capacidad total borrada — el panel del salón no mostrará el ratio.'
+            ? 'Borramos la capacidad total: el panel del salón no va a mostrar cuántos lugares quedan.'
             : `Capacidad total: ${result.totalSeats} personas.`,
         )
       } else {
@@ -36,38 +42,30 @@ export function TotalSeatsField({
   }
 
   return (
-    <section className="card-hairline rounded-xl border border-border/70 bg-card/85 p-5">
-      <div className="mb-3 flex items-center gap-2">
-        <Users className="size-4 text-primary" aria-hidden />
-        <h2 className="font-serif text-lg font-semibold">Capacidad total del bar</h2>
-      </div>
-      <p className="mb-4 text-sm text-muted-foreground">
-        Cuántas personas entran cuando está lleno (incluye barra, mesas, terraza). El panel del
-        salón usa este número para calcular cuántos lugares quedan libres en tiempo real. Dejalo
-        vacío si preferís no mostrar ratio.
-      </p>
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="grow">
-          <Label htmlFor="total-seats" className="text-xs uppercase tracking-wider">
-            Personas
-          </Label>
-          <Input
-            id="total-seats"
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={2000}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
+    <Section
+      divider
+      title="Capacidad total del bar"
+      description="Cuántas personas entran cuando está lleno (barra, mesas y terraza). El panel del salón usa este número para mostrar cuántos lugares quedan libres en vivo. Dejalo vacío si preferís no mostrarlo."
+    >
+      <form onSubmit={save} className="flex max-w-sm flex-col gap-4">
+        {/* Sin `value`: con un número fuera de rango, el NumberField controlado borraba lo tipeado. */}
+        <Field label="Personas">
+          <NumberField
+            defaultValue={initialTotalSeats}
+            onValueChange={setValue}
+            min={MIN_SEATS}
+            max={MAX_SEATS}
+            steppers={false}
             placeholder="Ej: 80"
-            className="mt-1 max-w-[10rem] tabular-nums"
             disabled={pending}
           />
-        </div>
-        <Button onClick={save} disabled={pending}>
-          {pending ? 'Guardando…' : 'Guardar'}
-        </Button>
-      </div>
-    </section>
+        </Field>
+        <FormActions sticky={false}>
+          <Button type="submit" loading={pending} loadingText="Guardando…">
+            Guardar capacidad total
+          </Button>
+        </FormActions>
+      </form>
+    </Section>
   )
 }

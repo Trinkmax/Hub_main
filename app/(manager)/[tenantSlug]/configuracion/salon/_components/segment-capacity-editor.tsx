@@ -1,12 +1,26 @@
 'use client'
 
-import { CalendarRange, Copy, Loader2, Repeat, Save } from 'lucide-react'
+import { CircleAlert, Copy, Repeat, Save } from 'lucide-react'
 import { useId, useMemo, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Callout } from '@/components/ui/callout'
+import { Card } from '@/components/ui/card'
+import {
+  DataTableBody,
+  DataTableCell,
+  DataTableHead,
+  DataTableHeader,
+  DataTableRoot,
+  DataTableRow,
+  DataTableScroll,
+  DataTableShell,
+} from '@/components/ui/data-table'
+import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Section } from '@/components/ui/section'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { TimeField } from '@/components/ui/time-field'
 import { saveSegmentConfig } from '@/lib/salon/segment-actions'
 import {
   type SegmentActionResult,
@@ -249,8 +263,7 @@ export function SegmentCapacityEditor({
   fallbackTotal: number
 }) {
   const baseId = useId()
-  const titleId = `${baseId}-title`
-  const containerRef = useRef<HTMLElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
   const [saved, setSaved] = useState<Draft>(() => normalizeDraft(buildDraft(weekly, settings)))
   const [draft, setDraft] = useState<Draft>(() => buildDraft(weekly, settings))
@@ -364,10 +377,13 @@ export function SegmentCapacityEditor({
     const capErrId = `${baseId}-${view}-${segment}-${dow}-cap`
     const warnErrId = `${baseId}-${view}-${segment}-${dow}-warn`
     const closed = cell.capacity.trim() !== '' && toNumber(cell.capacity) === 0
-    const compact = view === 'd'
+    // En la tabla de escritorio, controles chicos (32 px); en el celular, los
+    // de siempre (44 px con el dedo).
+    const size = view === 'd' ? 'sm' : 'md'
     return {
       capacity: (
         <Input
+          size={size}
           type="text"
           inputMode="numeric"
           pattern="[0-9]*"
@@ -380,15 +396,16 @@ export function SegmentCapacityEditor({
           aria-invalid={errors?.capacity ? true : undefined}
           aria-describedby={errors?.capacity ? capErrId : undefined}
           className={cn(
-            'px-1 text-center font-semibold tabular-nums placeholder:font-normal',
-            compact ? 'h-9 text-base md:text-base' : 'h-10 text-base',
+            'px-1 text-center font-semibold type-amount placeholder:font-normal',
+            // Vacío = usa el cupo general: el borde punteado lo dice sin texto.
             cell.capacity === '' && 'border-dashed',
-            closed && 'bg-muted/60 text-muted-foreground',
+            closed && 'bg-muted text-muted-foreground',
           )}
         />
       ),
       warn: (
         <Input
+          size={size}
           type="text"
           inputMode="numeric"
           pattern="[0-9]*"
@@ -400,10 +417,7 @@ export function SegmentCapacityEditor({
           aria-label={`Aviso de ${label}, ${day}`}
           aria-invalid={errors?.warn ? true : undefined}
           aria-describedby={errors?.warn ? warnErrId : undefined}
-          className={cn(
-            'px-1 text-center tabular-nums',
-            compact ? 'h-7 text-xs md:text-xs' : 'h-10 text-base',
-          )}
+          className="px-1 text-center type-amount"
         />
       ),
       capErrId,
@@ -412,79 +426,46 @@ export function SegmentCapacityEditor({
     }
   }
 
-  function segmentExtras(segment: SegmentKey, view: 'd' | 'm') {
+  function segmentExtras(segment: SegmentKey) {
     const setting = draft.settings[segment]
     const errors = validation.settings[segment]
     const label = SEGMENT_LABELS[segment]
-    const prefix = `${baseId}-${view}-${segment}`
     const mondayEmpty = draft.cells[segment][1].capacity.trim() === ''
-    // Container query: la misma pieza va en una columna angosta (tabla de
-    // escritorio con 3 servicios lado a lado, pestaña del celu) y en una ancha
+    // Container query: la misma pieza va en una columna angosta (las tres
+    // tarjetas de escritorio lado a lado, la pestaña del celu) y en una ancha
     // (escritorio mediano). Con lugar, hora y nota van en la misma fila.
     return (
-      <div className="@container space-y-3">
-        <div className="grid gap-3 @md:grid-cols-[8rem_minmax(0,1fr)]">
-          <div className="space-y-1.5">
-            <Label
-              htmlFor={`${prefix}-time`}
-              className="text-[11px] uppercase tracking-wide text-muted-foreground"
-            >
-              Hora al reservar
-            </Label>
-            <Input
-              id={`${prefix}-time`}
-              type="time"
-              step={900}
-              value={setting.time}
-              onChange={(e) => setSetting(segment, 'time', e.target.value)}
-              aria-invalid={errors.time ? true : undefined}
-              aria-describedby={errors.time ? `${prefix}-time-err` : `${prefix}-time-help`}
-              className="h-10 w-32 tabular-nums"
+      <div className="@container flex flex-col gap-4">
+        <div className="grid gap-4 @md:grid-cols-[9rem_minmax(0,1fr)]">
+          <Field
+            label="Hora al reservar"
+            hint={`Viene cargada al tocar «Nueva reserva» en ${SEGMENT_WITH_ARTICLE[segment]}.`}
+            error={errors.time}
+          >
+            <TimeField
+              value={setting.time || null}
+              onValueChange={(hhmm) => setSetting(segment, 'time', hhmm ?? '')}
             />
-            {errors.time ? (
-              <p id={`${prefix}-time-err`} className="text-xs text-destructive">
-                {errors.time}
-              </p>
-            ) : (
-              <p id={`${prefix}-time-help`} className="text-[11px] text-muted-foreground">
-                Viene cargada al tocar «Nueva reserva» en {SEGMENT_WITH_ARTICLE[segment]}.
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label
-              htmlFor={`${prefix}-note`}
-              className="text-[11px] uppercase tracking-wide text-muted-foreground"
-            >
-              Nota del aviso
-            </Label>
+          </Field>
+          <Field
+            label="Nota del aviso"
+            hint={`Se muestra cuando ${SEGMENT_WITH_ARTICLE[segment]} llega al aviso.`}
+            error={errors.note}
+            optional
+          >
             <Input
-              id={`${prefix}-note`}
               value={setting.note}
               maxLength={80}
               onChange={(e) => setSetting(segment, 'note', e.target.value)}
               placeholder="Conviene abrir la terraza"
-              aria-invalid={errors.note ? true : undefined}
-              aria-describedby={errors.note ? `${prefix}-note-err` : `${prefix}-note-help`}
-              className="h-10"
             />
-            {errors.note ? (
-              <p id={`${prefix}-note-err`} className="text-xs text-destructive">
-                {errors.note}
-              </p>
-            ) : (
-              <p id={`${prefix}-note-help`} className="text-[11px] text-muted-foreground">
-                Se muestra cuando {SEGMENT_WITH_ARTICLE[segment]} llega al aviso.
-              </p>
-            )}
-          </div>
+          </Field>
         </div>
 
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
-            variant="outline"
+            variant="secondary"
             size="sm"
             disabled={mondayEmpty}
             aria-label={`Copiar lunes a lun–vie (${label})`}
@@ -501,7 +482,7 @@ export function SegmentCapacityEditor({
           </Button>
           <Button
             type="button"
-            variant="outline"
+            variant="secondary"
             size="sm"
             disabled={mondayEmpty}
             aria-label={`Igual toda la semana (${label})`}
@@ -517,7 +498,7 @@ export function SegmentCapacityEditor({
     )
   }
 
-  // Errores de la tabla de escritorio: en una celda de 80 px el mensaje no
+  // Errores de la tabla de escritorio: en una celda angosta el mensaje no
   // entra, así que la celda se marca en rojo y el texto va en esta lista (y
   // queda atado al input con aria-describedby).
   const desktopErrors = SEGMENT_KEYS.flatMap((segment) =>
@@ -537,203 +518,225 @@ export function SegmentCapacityEditor({
   )
 
   return (
-    <section
-      ref={containerRef}
-      aria-labelledby={titleId}
-      className="card-hairline min-w-0 space-y-5 rounded-xl border border-border/70 bg-card/85 p-4 sm:p-5"
-    >
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-2">
-          <CalendarRange className="size-4 text-primary" aria-hidden />
-          <h2 id={titleId} className="font-serif text-lg font-semibold">
-            Cupos por servicio
-          </h2>
-        </div>
-        <p className="text-sm text-muted-foreground">
+    <Section
+      title="Cupos por servicio"
+      description={
+        <>
           Personas por servicio. En la cena, el cupo de un evento se descuenta de este número (cena
           120 con Sushi libre de 70 → quedan 50 para reservas normales). 0 = cerrado ese día.{' '}
           {emptyMeaning}
-        </p>
-      </div>
+        </>
+      }
+    >
+      <div ref={containerRef} className="flex min-w-0 flex-col gap-5">
+        {/* ── Escritorio: tabla servicio × día ── */}
+        <div className="hidden md:flex md:flex-col md:gap-4">
+          <DataTableShell>
+            <DataTableScroll>
+              <DataTableRoot
+                density="compact"
+                caption="Cupo y aviso de personas por servicio y día de la semana"
+                className="min-w-[38rem] table-fixed"
+              >
+                <colgroup>
+                  <col className="w-28" />
+                  {ISO_DOWS.map((dow) => (
+                    <col key={dow} />
+                  ))}
+                </colgroup>
+                <DataTableHead>
+                  <tr>
+                    <DataTableHeader>
+                      <span className="sr-only">Servicio</span>
+                    </DataTableHeader>
+                    {ISO_DOWS.map((dow) => (
+                      <DataTableHeader key={dow} align="center">
+                        <abbr title={DOW_LONG[dow]} className="no-underline">
+                          {DOW_SHORT[dow]}
+                        </abbr>
+                      </DataTableHeader>
+                    ))}
+                  </tr>
+                </DataTableHead>
+                <DataTableBody>
+                  {SEGMENT_KEYS.map((segment) => (
+                    <DataTableRow key={segment}>
+                      <th
+                        scope="row"
+                        className="px-[var(--cell-px,1rem)] py-[var(--cell-py,0.5rem)] text-start align-top font-normal"
+                      >
+                        <span className="block font-semibold text-foreground">
+                          {SEGMENT_LABELS[segment]}
+                        </span>
+                        <span className="type-caption type-amount text-muted-foreground">
+                          {draft.settings[segment].time || '—'}
+                        </span>
+                      </th>
+                      {ISO_DOWS.map((dow) => {
+                        const inputs = cellInputs(segment, dow, 'd')
+                        return (
+                          <DataTableCell key={dow} className="px-1 align-top">
+                            <div className="flex flex-col gap-1">
+                              {inputs.capacity}
+                              {inputs.warn}
+                            </div>
+                          </DataTableCell>
+                        )
+                      })}
+                    </DataTableRow>
+                  ))}
+                </DataTableBody>
+              </DataTableRoot>
+            </DataTableScroll>
+          </DataTableShell>
 
-      {/* ── Escritorio: tabla servicio × día ── */}
-      <div className="hidden space-y-4 md:block">
-        <table className="w-full table-fixed border-separate border-spacing-1">
-          <caption className="sr-only">
-            Cupo y aviso de personas por servicio y día de la semana
-          </caption>
-          <colgroup>
-            <col className="w-28" />
-            {ISO_DOWS.map((dow) => (
-              <col key={dow} />
-            ))}
-          </colgroup>
-          <thead>
-            <tr>
-              <td />
-              {ISO_DOWS.map((dow) => (
-                <th
-                  key={dow}
-                  scope="col"
-                  className="pb-1 text-center text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
-                >
-                  <abbr title={DOW_LONG[dow]} className="no-underline">
-                    {DOW_SHORT[dow]}
-                  </abbr>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {SEGMENT_KEYS.map((segment) => (
-              <tr key={segment}>
-                <th scope="row" className="pr-2 pt-1.5 text-left align-top font-normal">
-                  <span className="block text-sm font-semibold">{SEGMENT_LABELS[segment]}</span>
-                  <span className="text-[11px] text-muted-foreground tabular-nums">
-                    {draft.settings[segment].time || '—'}
-                  </span>
-                </th>
-                {ISO_DOWS.map((dow) => {
-                  const inputs = cellInputs(segment, dow, 'd')
-                  return (
-                    <td key={dow} className="align-top">
-                      <div className="flex flex-col gap-1">
-                        {inputs.capacity}
-                        {inputs.warn}
-                      </div>
-                    </td>
-                  )
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+          <div aria-live="polite">
+            {desktopErrors.length > 0 ? (
+              <Callout tone="danger" title="Revisá estos cupos">
+                <ul className="flex flex-col gap-0.5">
+                  {desktopErrors.map((e) => (
+                    <li key={e.id} id={e.id}>
+                      {e.text}
+                    </li>
+                  ))}
+                </ul>
+              </Callout>
+            ) : null}
+          </div>
 
-        {desktopErrors.length > 0 ? (
-          <ul className="space-y-0.5 text-xs text-destructive" aria-live="polite">
-            {desktopErrors.map((e) => (
-              <li key={e.id} id={e.id}>
-                {e.text}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-
-        <div className="grid gap-3 xl:grid-cols-3">
-          {SEGMENT_KEYS.map((segment) => (
-            <fieldset
-              key={segment}
-              className="min-w-0 space-y-3 rounded-lg border border-border/60 p-3"
-            >
-              <legend className="px-1 text-sm font-semibold">{SEGMENT_LABELS[segment]}</legend>
-              {segmentExtras(segment, 'd')}
-            </fieldset>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Celu: una pestaña por servicio, 7 filas ── */}
-      <div className="md:hidden">
-        <Tabs
-          value={tab}
-          onValueChange={(v) => {
-            if (isSegmentKey(v)) setTab(v)
-          }}
-        >
-          <TabsList className="grid w-full grid-cols-3">
+          <div className="grid gap-4 xl:grid-cols-3">
             {SEGMENT_KEYS.map((segment) => {
-              const hasErrors = segmentHasErrors(validation, segment)
+              const headingId = `${baseId}-d-${segment}-extras`
               return (
-                <TabsTrigger key={segment} value={segment} className="gap-1">
-                  {SEGMENT_LABELS[segment]}
-                  {hasErrors ? (
-                    <>
-                      <span aria-hidden className="size-1.5 rounded-full bg-destructive" />
-                      <span className="sr-only">(con errores)</span>
-                    </>
-                  ) : null}
-                </TabsTrigger>
+                <Card
+                  key={segment}
+                  role="group"
+                  aria-labelledby={headingId}
+                  padding="sm"
+                  className="min-w-0 gap-3 sm:p-4"
+                >
+                  <h3 id={headingId} className="type-label text-foreground">
+                    {SEGMENT_LABELS[segment]}
+                  </h3>
+                  {segmentExtras(segment)}
+                </Card>
               )
             })}
-          </TabsList>
+          </div>
+        </div>
 
-          {SEGMENT_KEYS.map((segment) => (
-            <TabsContent key={segment} value={segment} className="space-y-5 pt-2">
-              <div>
-                <div
-                  aria-hidden
-                  className="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem] gap-2 px-0.5 pb-1 text-[11px] uppercase tracking-wide text-muted-foreground"
-                >
-                  <span>Día</span>
-                  <span className="text-center">Cupo</span>
-                  <span className="text-center">Aviso</span>
-                </div>
-                <ul className="divide-y divide-border/50">
-                  {ISO_DOWS.map((dow) => {
-                    const inputs = cellInputs(segment, dow, 'm')
-                    const cell = draft.cells[segment][dow]
-                    const caption =
-                      cell.capacity.trim() === ''
-                        ? 'cupo general'
-                        : toNumber(cell.capacity) === 0
-                          ? 'cerrado'
-                          : null
-                    return (
-                      <li key={dow} className="py-1.5">
-                        <div className="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem] items-center gap-2">
-                          <div className="min-w-0">
-                            <span className="block truncate text-sm font-medium">
-                              {DOW_LONG[dow]}
-                            </span>
-                            {caption ? (
-                              <span className="block text-[11px] text-muted-foreground">
-                                {caption}
+        {/* ── Celu: una pestaña por servicio, 7 filas ── */}
+        <div className="md:hidden">
+          <Tabs
+            value={tab}
+            onValueChange={(v) => {
+              if (isSegmentKey(v)) setTab(v)
+            }}
+          >
+            <TabsList aria-label="Servicios">
+              {SEGMENT_KEYS.map((segment) => {
+                const hasErrors = segmentHasErrors(validation, segment)
+                return (
+                  <TabsTrigger key={segment} value={segment}>
+                    {SEGMENT_LABELS[segment]}
+                    {hasErrors ? (
+                      <>
+                        <span aria-hidden className="size-1.5 rounded-full bg-destructive" />
+                        <span className="sr-only">(con errores)</span>
+                      </>
+                    ) : null}
+                  </TabsTrigger>
+                )
+              })}
+            </TabsList>
+
+            {SEGMENT_KEYS.map((segment) => (
+              <TabsContent key={segment} value={segment} className="flex flex-col gap-5 pt-2">
+                <div>
+                  <div
+                    aria-hidden
+                    className="grid grid-cols-[minmax(0,1fr)_5rem_5rem] gap-2 pb-1 type-caption text-muted-foreground"
+                  >
+                    <span>Día</span>
+                    <span className="text-center">Cupo</span>
+                    <span className="text-center">Aviso</span>
+                  </div>
+                  <ul className="divide-y divide-border">
+                    {ISO_DOWS.map((dow) => {
+                      const inputs = cellInputs(segment, dow, 'm')
+                      const cell = draft.cells[segment][dow]
+                      const caption =
+                        cell.capacity.trim() === ''
+                          ? 'cupo general'
+                          : toNumber(cell.capacity) === 0
+                            ? 'cerrado'
+                            : null
+                      return (
+                        <li key={dow} className="py-2">
+                          <div className="grid grid-cols-[minmax(0,1fr)_5rem_5rem] items-center gap-2">
+                            <div className="min-w-0">
+                              <span className="block truncate font-medium text-foreground">
+                                {DOW_LONG[dow]}
                               </span>
-                            ) : null}
+                              {caption ? (
+                                <span className="block type-caption text-muted-foreground">
+                                  {caption}
+                                </span>
+                              ) : null}
+                            </div>
+                            {inputs.capacity}
+                            {inputs.warn}
                           </div>
-                          {inputs.capacity}
-                          {inputs.warn}
-                        </div>
-                        {inputs.errors?.capacity ? (
-                          <p id={inputs.capErrId} className="pt-1 text-xs text-destructive">
-                            {inputs.errors.capacity}
-                          </p>
-                        ) : null}
-                        {inputs.errors?.warn ? (
-                          <p id={inputs.warnErrId} className="pt-1 text-xs text-destructive">
-                            {inputs.errors.warn}
-                          </p>
-                        ) : null}
-                      </li>
-                    )
-                  })}
-                </ul>
-              </div>
-              {segmentExtras(segment, 'm')}
-            </TabsContent>
-          ))}
-        </Tabs>
-      </div>
+                          {inputs.errors?.capacity ? (
+                            <CellError id={inputs.capErrId}>{inputs.errors.capacity}</CellError>
+                          ) : null}
+                          {inputs.errors?.warn ? (
+                            <CellError id={inputs.warnErrId}>{inputs.errors.warn}</CellError>
+                          ) : null}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+                {segmentExtras(segment)}
+              </TabsContent>
+            ))}
+          </Tabs>
+        </div>
 
-      <div className="flex flex-col-reverse gap-3 border-t border-border/50 pt-4 sm:flex-row sm:items-center sm:justify-end">
-        <p
-          className={cn(
-            'text-xs sm:mr-auto',
-            saveError ? 'text-destructive' : 'text-muted-foreground',
-          )}
-          aria-live="polite"
-        >
-          {saveError ?? (dirty ? 'Tenés cambios sin guardar.' : 'Todo guardado.')}
-        </p>
-        <Button type="button" onClick={save} disabled={pending || !dirty} className="gap-2">
-          {pending ? (
-            <Loader2 className="size-4 animate-spin" aria-hidden />
-          ) : (
-            <Save className="size-4" aria-hidden />
-          )}
-          {pending ? 'Guardando…' : 'Guardar cupos'}
-        </Button>
+        <div className="flex flex-col-reverse gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-end">
+          <p
+            className={cn(
+              'type-small sm:me-auto',
+              saveError ? 'text-destructive-text' : 'text-muted-foreground',
+            )}
+            aria-live="polite"
+          >
+            {saveError ?? (dirty ? 'Tenés cambios sin guardar.' : 'Todo guardado.')}
+          </p>
+          <Button
+            type="button"
+            onClick={save}
+            disabled={!dirty && !pending}
+            loading={pending}
+            loadingText="Guardando…"
+            className="max-sm:w-full"
+          >
+            <Save aria-hidden />
+            Guardar cupos
+          </Button>
+        </div>
       </div>
-    </section>
+    </Section>
+  )
+}
+
+/** El error de una celda en el celular, con la misma cara que el de un `Field`. */
+function CellError({ id, children }: { id: string; children: React.ReactNode }) {
+  return (
+    <p id={id} className="flex items-start gap-1 pt-1 type-caption text-destructive-text">
+      <CircleAlert aria-hidden className="mt-px size-3.5 shrink-0" />
+      <span>{children}</span>
+    </p>
   )
 }

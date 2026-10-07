@@ -1,16 +1,19 @@
 'use client'
 
-import { AlertTriangle, MapPin, MessageCircle } from 'lucide-react'
-import { useState, useTransition } from 'react'
+import { MapPin, MessageCircle } from 'lucide-react'
+import { type FormEvent, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Callout } from '@/components/ui/callout'
+import { Card } from '@/components/ui/card'
+import { Field } from '@/components/ui/field'
+import { FormActions } from '@/components/ui/form-actions'
+import { Input, InputAddon, InputGroup } from '@/components/ui/input'
+import { NumberField } from '@/components/ui/number-field'
 import { Switch } from '@/components/ui/switch'
 import { formatPhoneForDisplay } from '@/lib/phone'
 import { updateReviewSettingsAction } from '@/lib/reviews/actions'
 import type { ReviewSettings } from '@/lib/reviews/queries'
-import { cn } from '@/lib/utils'
 
 export function ReviewSettingsForm({
   tenantSlug,
@@ -25,149 +28,141 @@ export function ReviewSettingsForm({
     settings.feedbackWhatsappPhone ? formatPhoneForDisplay(settings.feedbackWhatsappPhone) : '',
   )
   const [gating, setGating] = useState(settings.reviewGatingEnabled)
-  const [rewardPoints, setRewardPoints] = useState(String(settings.reviewRewardPoints))
+  const [rewardPoints, setRewardPoints] = useState<number | null>(settings.reviewRewardPoints)
   const [pending, startTransition] = useTransition()
 
-  function handleSubmit(e: React.FormEvent): void {
+  // Un número de puntos que no se entiende frena el envío antes de llegar acá
+  // (el campo muestra por qué); vacío cuenta como 0, igual que antes.
+  function handleSubmit(e: FormEvent<HTMLFormElement>): void {
     e.preventDefault()
     startTransition(async () => {
       const res = await updateReviewSettingsAction(tenantSlug, {
         google_maps_review_url: mapsUrl.trim() ? mapsUrl.trim() : null,
         feedback_whatsapp_phone: feedbackPhone.trim() ? feedbackPhone.trim() : null,
         review_gating_enabled: gating,
-        review_reward_points: Number(rewardPoints) || 0,
+        review_reward_points: rewardPoints ?? 0,
       })
       if (res.ok) toast.success(res.message ?? 'Configuración guardada.')
       else toast.error(res.message)
     })
   }
 
+  const missingMaps = !settings.googleMapsReviewUrl
+  const missingPhone = !settings.feedbackWhatsappPhone
+
   return (
-    <form onSubmit={handleSubmit} className="max-w-2xl space-y-6">
+    <form onSubmit={handleSubmit} className="flex max-w-2xl flex-col gap-6">
       {/* Sin estos dos datos el flujo público no tiene adónde mandar a nadie:
           lo decimos arriba de todo para que no haya que deducirlo. */}
-      {!settings.googleMapsReviewUrl || !settings.feedbackWhatsappPhone ? (
-        <div className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-          <div className="space-y-1 text-pretty">
-            <p className="font-medium">Faltan datos para que el flujo funcione.</p>
-            <p className="text-muted-foreground">
-              {!settings.googleMapsReviewUrl && !settings.feedbackWhatsappPhone
-                ? 'Sin el enlace de Google, las reseñas de 5★ no se derivan; sin el WhatsApp, el feedback de las demás queda sólo guardado acá.'
-                : !settings.googleMapsReviewUrl
-                  ? 'Sin el enlace de Google, las reseñas de 5★ no se derivan a tu ficha.'
-                  : 'Sin el WhatsApp, el feedback de las reseñas que no son 5★ queda sólo guardado acá.'}
-            </p>
-          </div>
-        </div>
+      {missingMaps || missingPhone ? (
+        <Callout tone="warning" title="Faltan datos para que el flujo funcione">
+          {missingMaps && missingPhone
+            ? 'Sin el enlace de Google, las reseñas de 5★ no se derivan; sin el WhatsApp, el feedback de las demás queda solo guardado acá.'
+            : missingMaps
+              ? 'Sin el enlace de Google, las reseñas de 5★ no se derivan a tu ficha.'
+              : 'Sin el WhatsApp, el feedback de las reseñas que no son 5★ queda solo guardado acá.'}
+        </Callout>
       ) : null}
 
-      <div className="card-hairline space-y-5 rounded-xl border bg-card p-5">
-        <div className="grid gap-1.5">
-          <Label htmlFor="maps-url" className="flex items-center gap-1.5">
-            <MapPin className="size-3.5 text-muted-foreground" aria-hidden="true" />
-            Enlace de reseña en Google Maps
-          </Label>
-          <Input
-            id="maps-url"
-            name="google_maps_review_url"
-            type="url"
-            inputMode="url"
-            value={mapsUrl}
-            onChange={(e) => setMapsUrl(e.target.value)}
-            placeholder="https://g.page/r/…/review"
-            maxLength={500}
-          />
-          <p className="text-xs text-muted-foreground text-pretty">
-            Buscá tu bar en Google Maps → botón <strong>Compartir</strong> de la ficha → copiá el
-            enlace y pegalo acá. Si lo dejás vacío, ninguna reseña se deriva a Maps.
-          </p>
-        </div>
+      <Card>
+        <Field
+          label="Enlace de reseña en Google Maps"
+          name="google_maps_review_url"
+          hint={
+            <>
+              Buscá tu bar en Google Maps → botón <strong>Compartir</strong> de la ficha → copiá el
+              enlace y pegalo acá. Si lo dejás vacío, ninguna reseña se deriva a Maps.
+            </>
+          }
+        >
+          <InputGroup>
+            <InputAddon>
+              <MapPin aria-hidden />
+            </InputAddon>
+            <Input
+              type="url"
+              inputMode="url"
+              value={mapsUrl}
+              onChange={(e) => setMapsUrl(e.target.value)}
+              placeholder="https://g.page/r/…/review"
+              maxLength={500}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </InputGroup>
+        </Field>
 
-        <div className="grid gap-1.5">
-          <Label htmlFor="feedback-phone" className="flex items-center gap-1.5">
-            <MessageCircle className="size-3.5 text-muted-foreground" aria-hidden="true" />
-            WhatsApp de feedback
-          </Label>
-          <Input
-            id="feedback-phone"
-            name="feedback_whatsapp_phone"
-            type="tel"
-            inputMode="tel"
-            autoComplete="tel"
-            value={feedbackPhone}
-            onChange={(e) => setFeedbackPhone(e.target.value)}
-            placeholder="351 283 9101"
-            maxLength={30}
-            className="max-w-[18rem]"
-          />
-          <p className="text-xs text-muted-foreground text-pretty">
-            Acá te llega el feedback de los que <strong>no</strong> puntúan 5★: se les abre WhatsApp
-            con el mensaje ya escrito (nombre, puntaje y comentario). Podés escribirlo como quieras,
-            lo guardamos en formato internacional. Vacío = no mostramos el botón.
-          </p>
-        </div>
+        <Field
+          label="WhatsApp de feedback"
+          name="feedback_whatsapp_phone"
+          hint={
+            <>
+              Acá te llega el feedback de los que <strong>no</strong> puntúan 5★: se les abre
+              WhatsApp con el mensaje ya escrito (nombre, puntaje y comentario). Escribilo como
+              quieras: lo guardamos en formato internacional. Vacío = no mostramos el botón.
+            </>
+          }
+        >
+          <InputGroup className="sm:max-w-72">
+            <InputAddon>
+              <MessageCircle aria-hidden />
+            </InputAddon>
+            <Input
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              value={feedbackPhone}
+              onChange={(e) => setFeedbackPhone(e.target.value)}
+              placeholder="351 283 9101"
+              maxLength={30}
+            />
+          </InputGroup>
+        </Field>
 
-        <div className="flex items-start justify-between gap-4 rounded-lg border bg-background/50 p-4">
-          <div className="space-y-0.5">
-            <Label htmlFor="gating" className="text-sm font-medium">
-              Derivar solo las de 5 estrellas
-            </Label>
-            <p className="text-xs text-muted-foreground text-pretty">
-              Si está activo, solo las reseñas de 5★ van a Google Maps. Las demás quedan como
-              feedback privado y se derivan al WhatsApp de arriba.
-            </p>
-          </div>
-          <Switch
-            id="gating"
-            checked={gating}
-            onCheckedChange={setGating}
-            aria-describedby="gating-warning"
-          />
-        </div>
-
-        {/* Advertencia de políticas de Google — el gating es desaconsejado. */}
-        {gating ? (
-          <div
-            id="gating-warning"
-            role="alert"
-            className={cn(
-              'flex items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 p-3',
-              'text-sm text-foreground',
-            )}
+        <div className="flex flex-col gap-3 border-y border-border py-3">
+          <Field
+            layout="toggle"
+            label="Derivar solo las de 5 estrellas"
+            hint="Si está activo, solo las reseñas de 5★ van a Google Maps. Las demás quedan como feedback privado y se derivan al WhatsApp de arriba."
           >
-            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-            <p className="text-pretty">
+            <Switch
+              checked={gating}
+              onCheckedChange={setGating}
+              aria-describedby={gating ? 'gating-warning' : undefined}
+            />
+          </Field>
+
+          {/* Advertencia de políticas de Google — el gating es desaconsejado. */}
+          {gating ? (
+            <Callout id="gating-warning" tone="warning" announce="polite">
               Filtrar solo 5★ a Google viola las políticas de Google y puede penalizar tu ficha. Si
               lo apagás, todas las reseñas van a Maps.
-            </p>
-          </div>
-        ) : null}
-
-        <div className="grid gap-1.5">
-          <Label htmlFor="reward-points">Puntos por reseña</Label>
-          <Input
-            id="reward-points"
-            name="review_reward_points"
-            type="number"
-            inputMode="numeric"
-            min={0}
-            step={1}
-            value={rewardPoints}
-            onChange={(e) => setRewardPoints(e.target.value)}
-            className="max-w-[10rem]"
-          />
-          <p className="text-xs text-muted-foreground text-pretty">
-            0 = ninguno. Se otorga una sola vez por cliente.
-          </p>
+            </Callout>
+          ) : null}
         </div>
-      </div>
 
-      <div className="flex justify-end">
-        <Button type="submit" size="lg" disabled={pending}>
-          {pending ? 'Guardando…' : 'Guardar'}
+        {/* Sin `value`: con un número fuera de rango, el NumberField controlado borraba lo tipeado. */}
+        <Field
+          label="Puntos por reseña"
+          name="review_reward_points"
+          hint="0 = ninguno. Se dan una sola vez por cliente."
+          className="sm:max-w-56"
+        >
+          <NumberField
+            defaultValue={settings.reviewRewardPoints}
+            onValueChange={setRewardPoints}
+            min={0}
+            max={1_000_000}
+            suffix="puntos"
+          />
+        </Field>
+      </Card>
+
+      <FormActions>
+        <Button type="submit" loading={pending} loadingText="Guardando…">
+          Guardar
         </Button>
-      </div>
+      </FormActions>
     </form>
   )
 }

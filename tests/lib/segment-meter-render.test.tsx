@@ -224,7 +224,8 @@ describe('SegmentChip', () => {
     expect(out.startsWith('<button')).toBe(true)
     expect(out).toContain('type="button"')
     expect(out).toContain('aria-label="Cena: 133 de 120 personas. Te pasaste por 13.')
-    expect(out).toContain('focus-visible:ring-[3px]')
+    // Foco del kit: contorno de 2 px (nunca box-shadow, que se borra en alto contraste).
+    expect(out).toContain('focus-visible:outline-2')
   })
 
   it('con href es un link y respeta el aria-label que le pasan', () => {
