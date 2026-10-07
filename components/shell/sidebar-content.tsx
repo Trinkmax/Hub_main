@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { Suspense } from 'react'
 import type { TenantFeatures } from '@/lib/platform/features'
-import { ROLE_LABELS } from '@/lib/tenant/roles'
+import { homePathForRole, ROLE_LABELS } from '@/lib/tenant/roles'
 import type { AccountingAccess, Tenant, TenantRole } from '@/lib/tenant/types'
 import { resolveNavGroups } from './nav-config'
 import { SidebarNav } from './sidebar-nav'
@@ -29,8 +29,9 @@ export function SidebarContent({
   return (
     <>
       <div className="flex items-center justify-center px-4 pt-5 pb-4">
+        {/* El home de cada rol: la contadora o el editor no pueden abrir el inicio del dueño. */}
         <Link
-          href={`/${tenant.slug}`}
+          href={homePathForRole(role, tenant.slug)}
           onClick={onNavigate}
           className="flex items-center justify-center rounded-md outline-none transition-opacity hover:opacity-85 focus-visible:opacity-85"
           aria-label={`Ir al inicio de ${tenant.name}`}

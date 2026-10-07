@@ -1,8 +1,10 @@
 import { ArrowLeft, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { getAccountingDesignation } from '@/lib/platform/accounting-actions'
 import { featuresByGroup, getTenantFeatures } from '@/lib/platform/features'
 import { createClient } from '@/lib/supabase/server'
+import { AccountingDesignationCard } from '../_components/accounting-designation-card'
 import { FeatureToggleGrid } from '../_components/feature-toggle-grid'
 
 export const dynamic = 'force-dynamic'
@@ -33,6 +35,9 @@ export default async function PlatformTenantPage({
 
   const features = getTenantFeatures(tenant)
   const groups = featuresByGroup()
+  // Quién configura Administración: solo con el flag prendido. Al prenderlo desde la
+  // grilla, la action revalida esta página y la tarjeta aparece sola.
+  const designation = features.accounting ? await getAccountingDesignation(tenant.id) : null
 
   return (
     <div className="space-y-6">
@@ -50,6 +55,8 @@ export default async function PlatformTenantPage({
       </div>
 
       <FeatureToggleGrid tenantId={tenant.id} initialFeatures={features} groups={groups} />
+
+      {designation ? <AccountingDesignationCard tenantId={tenant.id} result={designation} /> : null}
 
       <div className="space-y-2 rounded-xl border border-border/60 bg-card/60 p-4">
         <p className="text-sm font-medium">Abrir paneles ocultos</p>
