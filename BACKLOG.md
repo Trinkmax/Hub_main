@@ -7,7 +7,8 @@ Hallazgos fuera del scope de la tarea en curso, anotados para retomar
   en `/mensajeria`. Cualquier excepción no atrapada en `(manager)` se lleva
   puesto el layout entero y muestra la pantalla de error por defecto de Next. Es
   lo que convirtió un 416 de paginación en una caída total; se parchó el caso
-  puntual, pero falta el boundary.
+  puntual, pero falta el boundary. **Resuelto (07/10/2026):** la ola 0 del kit
+  sumó `app/(manager)/[tenantSlug]/error.tsx` y `not-found.tsx`.
 
 ## Mobile del calendario de eventos — lo que queda (03/09/2026)
 
@@ -18,6 +19,9 @@ Hallazgos fuera del scope de la tarea en curso, anotados para retomar
   problema es de la primitiva y lo tienen TODOS los diálogos de la app. El fix
   correcto es `max-h-[85dvh] overflow-y-auto` en el componente base, revisando
   los que ya traen su propio `ScrollArea` para no anidar dos scrolls.
+  **Resuelto (07/10/2026):** el `DialogContent` del kit trae
+  `max-h-[min(85dvh,760px)]` con `overflow-y-auto` (salvo que el que llama pase
+  un `h-*`).
 - **La fila del diálogo del día mete 5 datos en una línea sin wrap**: con un
   nombre largo, el cliente se comprime y el estado queda cortado.
 - **Desde el celular no se puede MOVER un evento de fecha.** En desktop se
@@ -1179,3 +1183,82 @@ Hay que ver si son fallas reales contra el stack local (deriva entre lo aplicado
 al remoto por MCP y lo que reconstruyen las migraciones) o interferencia entre
 archivos al correr los 30 en paralelo contra la misma base. Hasta resolverlo, el
 check de CI queda en rojo aunque el job de lint/typecheck/tests esté verde.
+
+## Kit HUB ola 0 + Administración fase 0: lo que quedó para los lotes (07/10/2026)
+
+Al integrar la ola el árbol quedó verde (tsc, Biome, Vitest y `next build`).
+Esto no rompe nada hoy, pero queda pendiente:
+
+**Kit (panel)**
+
+- **Pestañas con clases de la caja vieja.** `estadisticas/page.tsx` (`TAB_CLASS`
+  y `bg-secondary/40`), `clientes/[id]/page.tsx` e `items-step.tsx` le pasan a
+  las pestañas subrayadas el fondo y la sombra de la caja: se ven mitad caja,
+  mitad subrayado hasta que su lote las limpie. `items-step` además usa
+  `flex-wrap` (varias filas de pestañas): decidir si pasa a scroll horizontal.
+- **`.wa [data-slot="page-context"]` esconde toda la fila de contexto**, como
+  dice el spec (§3.5). Cuando una pantalla de Mensajería use `back` o
+  `breadcrumbs` (lote H), esconder solo `[data-slot="page-eyebrow"]` o el volver
+  desaparece.
+- **`FormActions` en el celular cuenta a «Cancelar» aunque esté oculto.** La
+  regla `[&>:last-child:nth-child(3)]` (field.tsx) no ve el `max-sm:hidden` que
+  la misma doc recomienda: con [Cancelar oculto, Guardar y pagar, Guardar] el
+  principal ocupa la fila entera y el otro queda a la mitad. Hoy no lo usa
+  ninguna pantalla; arreglarlo antes del primer formulario con tres acciones.
+- **Dos `FormActions`:** el base en `field.tsx` y el que enfoca el primer error
+  en `form-actions.tsx`. Dejar uno solo (el base adentro de `form-actions.tsx` y
+  re-exportado desde `field.tsx` no arma ciclo).
+- **⌘K «Catálogo de componentes»** apunta a `/[slug]/docs/componentes`, que
+  todavía no existe (404 para el dueño) hasta la tarea del catálogo.
+- **5 `<main>` anidados** debajo del `<main id="contenido">` del shell:
+  `docs/loading`, `local/mesas/loading`, `menu/tags/loading`, `onboarding/page`
+  y `reviews/page`.
+- **Lo que depende de los 56 px del topbar sigue fijo** en lugar de
+  `--topbar-h`: `mensajeria/layout` (`h-[calc(100dvh-3.5rem)]`), la barra del
+  operativo (`service-bar`, `top-14`) y `docs-content` (su `lg:top-6` queda
+  abajo del topbar). Hoy no se rompe porque `--topbar-h` vale 3.5rem.
+- **`viewport.themeColor`** (app/layout.tsx) sigue con la paleta vieja; toca
+  también al salón y a lo público.
+- **Paginadores a mano:** `reservations-table.tsx` envuelve el `Link` en
+  `Button asChild disabled` (el link deshabilitado se puede tocar);
+  `clientes/page.tsx` y `mensajeria/flows/[id]/registros/page.tsx` tienen el
+  suyo. Pasar a `<Pagination>`.
+- **Quedan 25 clases con corchetes que en v4.2 no pintan nada**
+  (`bg-[--cream-tint]`, `[--forest-glow]`; todas de antes de la ola):
+  `grep -rnoE '[a-z:-]*-\[--[a-zA-Z0-9-]+\]' app components`. Las del panel van
+  al barrido global (`bg-(--x)`). Las de lo congelado (`m/`, `r/`) hoy no se ven:
+  arreglarlas cambia cómo se ve el salón o lo público, así que se deciden aparte.
+- Falta la nota en `components.json` para no correr `shadcn add` sobre
+  `components/ui`, y el test que cuenta usos deprecados por carpeta (§3.0).
+- `components/theme/theme-toggle.tsx` quedó sin uso (el tema pasó al menú de
+  usuario).
+- **Parámetro del período en los reportes:** el kit (§5.5) dice `?periodo=` y la
+  spec contable (H.1) `?mes=`. Elegir uno antes de armar `/libros`.
+
+**Administración**
+
+- **La cadena de migraciones contables sigue (#8 en adelante).** Cada clave
+  nueva de `raise exception` necesita su copy en `lib/accounting/errors.ts`: el
+  test de paridad (`accounting-errors.test.ts`) falla a propósito si falta. Las
+  7 de la #8 ya están.
+- **`types/database.ts` no tiene lo de las migraciones #4 a #8** (tablas `acc_*`,
+  `acc_my_access`, las RPC de setup). Regenerar antes de la primera consulta
+  desde TS.
+- **Signo del saldo de la tarjeta de la empresa:** `TreasuryRef.balanceCents`
+  está documentado en el sentido normal de la cuenta (la deuda en positivo),
+  pero el builder de ajuste, `validate.ts` y la base usan Debe − Haber. El
+  `context.ts` (o la UI) tiene que dar vuelta contado y esperado en las tarjetas.
+- **`reconcileFiscal` del gasto bancario** solo concilia las columnas del 21 %:
+  uno al Libro IVA con otra alícuota falla con `fiscal_mismatch`.
+- **`acc_post_bundle`:** en el bundle `[collection, treasury_adjustment]` el
+  control de `stale_balance` del segundo documento tiene que incluir el primero
+  (los controles van encadenados).
+- **`loadPostingContext`** tiene que traer las partidas abiertas de
+  `vat_credit_pending` del partícipe para las facturas de comisiones del mes.
+- **RLS sin correr:** `tests/rls/accountant-isolation` y
+  `security-rpc-hardening` (11 `it.todo` para cuando existan las tablas #4–#11)
+  y el smoke manual de la fase 0 (§I.6).
+- Con la clave `accounting` ya viva en `get_tenant_access`: revisar
+  `ROLE_DESCRIPTIONS.owner` («Acceso total…»), sumar la línea de la contadora al
+  mail de credenciales (fase 4) y que `accept-invite` redirija con
+  `homePathForRole`.
