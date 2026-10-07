@@ -1,10 +1,16 @@
 'use client'
 
-import { Loader2, Plus, Users, X } from 'lucide-react'
+import { Plus, Users, X } from 'lucide-react'
+import Link from 'next/link'
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Callout } from '@/components/ui/callout'
+import { Card } from '@/components/ui/card'
+import { Field, FormSection } from '@/components/ui/field'
+import { FormActions } from '@/components/ui/form-actions'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { MoneyField } from '@/components/ui/money-field'
+import { NumberField } from '@/components/ui/number-field'
 import {
   Select,
   SelectContent,
@@ -14,6 +20,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Spinner } from '@/components/ui/spinner'
+import { SubmitButton } from '@/components/ui/submit-button'
 import type { AudienceBuilderOptions } from '@/lib/audiences/queries'
 import {
   type AudienceFilter,
@@ -21,6 +29,7 @@ import {
   type ConditionOp,
   EMPTY_FILTER,
 } from '@/lib/audiences/schemas'
+import { formatNumber } from '@/lib/format/number-kind'
 import {
   CHANNEL_OPTIONS,
   FIELD_ORDER,
@@ -143,8 +152,11 @@ type BuilderProps = {
   initialName?: string
   initialFilters?: AudienceFilter
   hiddenIdField?: string
+  /** El verbo del botón: «Crear audiencia», «Guardar cambios». */
   submitLabel: string
   submitName?: string
+  /** Adónde vuelve «Cancelar». */
+  cancelHref: string
 }
 
 export function AudienceBuilder({
@@ -155,6 +167,7 @@ export function AudienceBuilder({
   hiddenIdField,
   submitLabel,
   submitName,
+  cancelHref,
 }: BuilderProps) {
   const [name, setName] = useState(initialName)
   const [root, setRoot] = useState<Group>(toFlatGroup(initialFilters))
@@ -236,19 +249,23 @@ export function AudienceBuilder({
   }
 
   const total = preview?.total ?? null
+  const missingName = !name.trim()
 
   return (
-    <div className="space-y-6">
+    <>
       <input type="hidden" name="filters" value={filtersJson} />
       {hiddenIdField ? <input type="hidden" name="id" value={hiddenIdField} /> : null}
 
       {/* Nombre del grupo */}
-      <div className="grid gap-1.5">
-        <Label htmlFor="audience-name" className="text-sm font-medium">
-          ¿Cómo querés llamar a este grupo?
-        </Label>
+      <Field
+        label="¿Cómo querés llamar a este grupo?"
+        hint={
+          missingName
+            ? 'Ponele un nombre para poder guardarlo. Si tocás un grupo listo, te sugerimos uno.'
+            : 'Es solo para vos: tus clientes no lo ven.'
+        }
+      >
         <Input
-          id="audience-name"
           name="name"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -257,16 +274,12 @@ export function AudienceBuilder({
           required
           className="sm:max-w-md"
         />
-      </div>
+      </Field>
 
-      {/* Grupos listos */}
-      <div className="space-y-2.5">
-        <div>
-          <h2 className="text-sm font-semibold tracking-tight">¿A quiénes querés llegar?</h2>
-          <p className="text-xs text-muted-foreground">
-            Tocá un grupo listo y, si querés, ajustalo abajo.
-          </p>
-        </div>
+      <FormSection
+        title="¿A quiénes querés llegar?"
+        description="Tocá un grupo listo y, si querés, ajustalo abajo."
+      >
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {PRESETS.map((p) => (
             <PresetCard
@@ -277,26 +290,22 @@ export function AudienceBuilder({
             />
           ))}
         </div>
-      </div>
 
-      {/* Armado a medida */}
-      <div className="space-y-3">
-        <div className="flex items-center gap-3">
+        {/* Armado a medida */}
+        <div className="flex items-center gap-3 pt-2">
           <div className="h-px flex-1 bg-border" />
-          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            o armá el tuyo
-          </span>
+          <span className="type-small text-muted-foreground">o armá el tuyo</span>
           <div className="h-px flex-1 bg-border" />
         </div>
 
         {conditions.length >= 2 ? (
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span>Entran los clientes que cumplan</span>
+          <div className="flex flex-wrap items-center gap-2 type-body">
+            <span id="audience-op-label">Entran los clientes que cumplan</span>
             <Select
               value={root.op}
               onValueChange={(v) => setRoot({ ...root, op: v as 'AND' | 'OR' })}
             >
-              <SelectTrigger className="h-8 w-auto gap-1 font-medium">
+              <SelectTrigger size="sm" aria-labelledby="audience-op-label" className="font-medium">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -308,81 +317,76 @@ export function AudienceBuilder({
         ) : null}
 
         {conditions.length === 0 ? (
-          <div className="rounded-xl border border-dashed bg-secondary/20 px-4 py-6 text-center">
-            <p className="text-sm text-muted-foreground">
-              Elegí un grupo de arriba, o agregá una condición a medida.
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground/70">
-              Sin condiciones, el grupo son todos tus clientes.
-            </p>
-          </div>
+          <Callout
+            tone="neutral"
+            title="Elegí un grupo de arriba, o agregá una condición a medida."
+          >
+            Sin condiciones, el grupo son todos tus clientes.
+          </Callout>
         ) : (
-          <div className="space-y-2">
+          <ol className="flex flex-col gap-2" aria-label="Condiciones">
             {conditions.map((c, i) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: la condición no tiene id estable
               <Fragment key={i}>
                 {i > 0 ? (
-                  <div className="flex items-center pl-4" aria-hidden>
-                    <span className="rounded-full border bg-secondary px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <li className="flex items-center ps-4" aria-hidden>
+                    <span className="rounded-full border border-border bg-secondary px-2.5 py-0.5 type-caption font-medium text-muted-foreground">
                       {root.op === 'AND' ? 'y' : 'o'}
                     </span>
-                  </div>
+                  </li>
                 ) : null}
-                <ConditionRow
-                  condition={c}
-                  options={options}
-                  onChange={(next) => updateCondition(i, next)}
-                  onRemove={() => removeCondition(i)}
-                />
+                <li>
+                  <ConditionRow
+                    condition={c}
+                    options={options}
+                    onChange={(next) => updateCondition(i, next)}
+                    onRemove={() => removeCondition(i)}
+                  />
+                </li>
               </Fragment>
             ))}
-          </div>
+          </ol>
         )}
 
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          onClick={addCondition}
-        >
-          <Plus className="size-3.5" aria-hidden />
-          {conditions.length === 0 ? 'Agregar una condición' : 'Agregar otra condición'}
-        </Button>
-      </div>
+        <div>
+          <Button type="button" variant="secondary" size="sm" onClick={addCondition}>
+            <Plus aria-hidden />
+            {conditions.length === 0 ? 'Agregar una condición' : 'Agregar otra condición'}
+          </Button>
+        </div>
+      </FormSection>
 
-      {/* Conteo en vivo — a quién le va a llegar */}
-      <div
-        className="space-y-3 rounded-xl border border-primary/30 bg-primary/5 p-4 sm:p-5"
-        aria-live="polite"
-      >
+      {/* Conteo en vivo: a quién le va a llegar. Cifra en Inter tabular (cambia
+          mientras se arma: Fraunces no tiene cifras tabulares). */}
+      <Card aria-live="polite" className="gap-3">
         <div className="flex items-center gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-primary">
             <Users className="size-5" aria-hidden />
           </span>
           {previewError ? (
             <div className="min-w-0">
-              <p className="text-sm font-medium text-destructive">
-                No se pudo calcular cuántos clientes entran.
+              <p className="type-label text-destructive-text">
+                No pudimos calcular cuántos clientes entran.
               </p>
-              <p className="text-xs text-muted-foreground">
-                Revisá las condiciones o esperá un momento y probá de nuevo.
+              <p className="type-small text-muted-foreground">
+                Revisá las condiciones o esperá un momento: se vuelve a calcular solo al cambiarlas.
               </p>
             </div>
           ) : (
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-              <span className="font-display text-3xl font-semibold leading-none tabular-nums">
-                {total !== null ? total.toLocaleString('es-AR') : '—'}
+              <span className="text-3xl font-semibold leading-none tabular-nums text-foreground">
+                {total !== null ? formatNumber(total) : '—'}
               </span>
-              <span className="text-sm text-muted-foreground">
+              <span className="type-body text-muted-foreground">
                 {total === 1
                   ? 'cliente entra hoy en este grupo'
                   : 'clientes entran hoy en este grupo'}
               </span>
               {isPreviewing ? (
-                <Loader2
-                  className="size-4 self-center animate-spin text-muted-foreground"
-                  aria-hidden
+                <Spinner
+                  size={16}
+                  label="Calculando…"
+                  className="self-center text-muted-foreground"
                 />
               ) : null}
             </div>
@@ -391,50 +395,48 @@ export function AudienceBuilder({
 
         {!previewError && preview && preview.sample.length > 0 ? (
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs text-muted-foreground">Por ejemplo:</span>
+            <span className="type-small text-muted-foreground">Por ejemplo:</span>
             {preview.sample.slice(0, 8).map((person, i) => (
               <span
                 // biome-ignore lint/suspicious/noArrayIndexKey: muestra de solo lectura; puede haber homónimos
                 key={`${person}-${i}`}
-                className="rounded-full bg-secondary px-2 py-0.5 text-[11px] text-foreground"
+                className="rounded-full bg-secondary px-2 py-0.5 type-caption text-foreground"
               >
                 {person}
               </span>
             ))}
             {total !== null && total > preview.sample.length ? (
-              <span className="text-[11px] text-muted-foreground">
-                +{(total - preview.sample.length).toLocaleString('es-AR')} más
+              <span className="type-caption text-muted-foreground">
+                +{formatNumber(total - preview.sample.length)} más
               </span>
             ) : null}
           </div>
         ) : null}
 
         {!previewError && preview && total === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="type-small text-muted-foreground">
             {conditions.length > 0
               ? 'Ningún cliente cumple estas condiciones todavía. Probá con condiciones menos estrictas.'
               : 'Todavía no tenés clientes cargados en tu bar.'}
           </p>
         ) : null}
-      </div>
+      </Card>
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-        <Button
-          type="submit"
+      {/* Adentro del marco de WhatsApp las acciones van en línea: una barra fija
+          abajo taparía las pestañas de Mensajería del celular. */}
+      <FormActions sticky={false}>
+        <Button asChild variant="secondary">
+          <Link href={cancelHref}>Cancelar</Link>
+        </Button>
+        <SubmitButton
           name={submitName ?? undefined}
-          size="lg"
-          className="w-full sm:w-auto"
-          disabled={!name.trim()}
+          pendingText="Guardando…"
+          disabled={missingName}
         >
           {submitLabel}
-        </Button>
-        {!name.trim() ? (
-          <p className="text-xs text-muted-foreground">
-            Ponele un nombre al grupo para poder guardarlo.
-          </p>
-        ) : null}
-      </div>
-    </div>
+        </SubmitButton>
+      </FormActions>
+    </>
   )
 }
 
@@ -451,17 +453,29 @@ function PresetCard({
     <button
       type="button"
       onClick={onClick}
-      className="group flex items-start gap-3 rounded-xl border bg-card p-3.5 text-left transition-colors hover:border-primary/50 hover:bg-secondary/30"
+      className="flex min-h-14 items-start gap-3 rounded-lg border border-border-strong bg-card p-3 text-left transition-colors outline-(--ring) outline-offset-2 hover:bg-muted focus-visible:outline-2"
     >
       <span className="text-xl leading-none" aria-hidden>
         {preset.emoji}
       </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold">{preset.label}</p>
-        <p className="truncate text-xs text-muted-foreground">{preset.hint}</p>
-      </div>
-      <span className="shrink-0 text-xs font-medium tabular-nums text-muted-foreground">
-        {count === undefined ? '···' : count === null ? '—' : count.toLocaleString('es-AR')}
+      <span className="min-w-0 flex-1">
+        <span className="block type-label text-foreground">{preset.label}</span>
+        <span className="block truncate type-small text-muted-foreground">{preset.hint}</span>
+      </span>
+      <span className="shrink-0 type-small font-medium tabular-nums text-muted-foreground">
+        {count === undefined ? (
+          <>
+            <Spinner size={14} aria-hidden />
+            <span className="sr-only">contando clientes</span>
+          </>
+        ) : count === null ? (
+          '—'
+        ) : (
+          <>
+            {formatNumber(count)}
+            <span className="sr-only"> {count === 1 ? 'cliente' : 'clientes'}</span>
+          </>
+        )}
       </span>
     </button>
   )
@@ -486,13 +500,13 @@ function ConditionRow({
   const showOp = cfg.ops.length > 1 || (cfg.ops[0]?.label ?? '') !== ''
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-2.5 text-sm">
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card p-2.5 type-body">
       {/* El "qué" — arranca la frase */}
       <Select
         value={condition.field}
         onValueChange={(v) => onChange(defaultForField(v as ConditionField, options))}
       >
-        <SelectTrigger className="h-9 w-auto min-w-[10rem] font-medium">
+        <SelectTrigger aria-label="Qué mirar del cliente" className="min-w-40 font-medium">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -515,7 +529,7 @@ function ConditionRow({
           value={condition.op}
           onValueChange={(v) => onChange({ ...condition, op: v as ConditionOp })}
         >
-          <SelectTrigger className="h-9 w-auto min-w-[6rem]">
+          <SelectTrigger aria-label="Cómo comparar" className="min-w-24">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -540,11 +554,11 @@ function ConditionRow({
         type="button"
         size="sm"
         variant="ghost"
-        className="ml-auto h-8 shrink-0 gap-1 px-2 text-muted-foreground hover:text-destructive"
+        className="ml-auto"
         onClick={onRemove}
         aria-label="Quitar condición"
       >
-        <X className="size-3.5" aria-hidden />
+        <X aria-hidden />
         <span className="hidden sm:inline">Quitar</span>
       </Button>
     </div>
@@ -572,11 +586,11 @@ function ConditionValue({
     emptyHint: string,
   ) => {
     if (items.length === 0) {
-      return <span className="text-xs text-muted-foreground">{emptyHint}</span>
+      return <span className="type-small text-muted-foreground">{emptyHint}</span>
     }
     return (
       <Select value={current} onValueChange={setValue}>
-        <SelectTrigger className="h-9 w-auto min-w-[9rem]">
+        <SelectTrigger aria-label={placeholder} className="min-w-36">
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
@@ -610,9 +624,9 @@ function ConditionValue({
         'Todavía no hay eventos en el calendario.',
       )
     case 'channel':
-      return optionSelect(CHANNEL_OPTIONS, 'Elegí', '')
+      return optionSelect(CHANNEL_OPTIONS, 'Elegí por dónde', '')
     case 'source':
-      return optionSelect(SOURCE_OPTIONS, 'Elegí', '')
+      return optionSelect(SOURCE_OPTIONS, 'Elegí de dónde', '')
     case 'month':
       return optionSelect(
         MONTHS.map((m, i) => ({ value: String(i + 1), label: m })),
@@ -620,38 +634,33 @@ function ConditionValue({
         '',
       )
     case 'pesos': {
+      // Plata con el campo del kit: se tipea en pesos («1.500»), viaja en centavos.
       const cents = Number(condition.value)
-      const pesos = Number.isFinite(cents) && cents > 0 ? String(Math.round(cents / 100)) : ''
       return (
-        <div className="relative w-32">
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-            $
-          </span>
-          <Input
-            type="number"
-            inputMode="numeric"
-            min={0}
-            className="h-9 w-full pl-7"
-            value={pesos}
-            onChange={(e) => {
-              const p = e.target.value
-              setValue(p === '' ? 0 : Math.max(0, Math.round(Number(p) * 100)))
-            }}
-            placeholder="0"
-          />
-        </div>
+        <MoneyField
+          aria-label="Monto"
+          decimals="auto"
+          align="start"
+          className="w-40"
+          cents={Number.isFinite(cents) && cents > 0 ? cents : null}
+          onCentsChange={(next) => setValue(next ?? 0)}
+          placeholder="Ej: 15.000"
+        />
       )
     }
-    default:
+    default: {
+      // Conteos (visitas, días, puntos): sin negativos, de a uno con las flechas.
+      const numeric = current === '' ? null : Number(current)
       return (
-        <Input
-          type="number"
-          inputMode="numeric"
-          className="h-9 w-20"
-          value={current}
-          onChange={(e) => setValue(e.target.value === '' ? '' : Number(e.target.value))}
+        <NumberField
+          aria-label="Cantidad"
+          className="w-36"
+          min={0}
+          value={numeric !== null && Number.isFinite(numeric) ? numeric : null}
+          onValueChange={(next) => setValue(next ?? '')}
           placeholder={config.placeholder ?? 'valor'}
         />
       )
+    }
   }
 }

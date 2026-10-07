@@ -1,3 +1,4 @@
+import type { StatusMap } from '@/components/ui/status-badge'
 import type { TemplateStatus } from '@/types/database'
 
 /**
@@ -6,38 +7,36 @@ import type { TemplateStatus } from '@/types/database'
  * contratos: el `name` técnico que viaja a Meta nunca se transforma al enviar.
  */
 
-export type StatusMeta = {
-  label: string
-  variant: 'success' | 'warning' | 'destructive' | 'muted'
-  /** Explicación corta para el dueño. `null` cuando el badge alcanza. */
-  hint: string | null
-}
-
-export const STATUS_META: Record<TemplateStatus, StatusMeta> = {
+/**
+ * Estado de una plantilla para `StatusBadge`. La `description` es la
+ * explicación corta para el dueño: la tarjeta la muestra debajo del mensaje
+ * (y el badge la lleva como `title`). Vive acá hasta que exista
+ * `lib/meta/status-meta.ts` (el lote no toca `lib/`).
+ */
+export const TEMPLATE_STATUS: StatusMap<TemplateStatus> = {
   approved: {
     label: 'Aprobada',
-    variant: 'success',
-    hint: null,
+    tone: 'success',
   },
   pending: {
     label: 'En revisión',
-    variant: 'warning',
-    hint: 'WhatsApp la está revisando. Suele tardar entre unos minutos y 24 horas.',
+    tone: 'warning',
+    description: 'WhatsApp la está revisando. Suele tardar entre unos minutos y 24 horas.',
   },
   rejected: {
     label: 'Rechazada',
-    variant: 'destructive',
-    hint: 'WhatsApp no la aprobó. Ajustá el texto y creá una versión nueva.',
+    tone: 'danger',
+    description: 'WhatsApp no la aprobó. Ajustá el texto y creá una versión nueva.',
   },
   draft: {
     label: 'Borrador',
-    variant: 'muted',
-    hint: 'Todavía no se mandó a revisión de WhatsApp.',
+    tone: 'neutral',
+    description: 'Todavía no se mandó a revisión de WhatsApp.',
   },
   disabled: {
     label: 'Pausada',
-    variant: 'muted',
-    hint: 'WhatsApp la pausó y por ahora no se puede usar.',
+    tone: 'neutral',
+    description: 'WhatsApp la pausó y por ahora no se puede usar.',
   },
 }
 

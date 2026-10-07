@@ -1,18 +1,22 @@
 'use client'
 
-import { ArrowLeft, Loader2, Search, Send } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Send } from 'lucide-react'
 import { useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { WhatsAppBubble } from '@/components/messaging/whatsapp-bubble'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
+import { Field } from '@/components/ui/field'
+import { Input, SearchField } from '@/components/ui/input'
 import {
   countBodyVariables,
   fillTemplateBody,
@@ -22,6 +26,7 @@ import {
   type TemplateLite,
 } from '@/lib/bandeja/template-view'
 import { sendTemplateMessage } from '@/lib/meta/actions'
+import { waActionClass } from '../../_components/wa-classes'
 
 /**
  * Diálogo para mandar un "mensaje aprobado" (plantilla de WhatsApp) con
@@ -93,25 +98,30 @@ export function TemplateDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="wa max-h-[85dvh] gap-0 overflow-hidden p-0 sm:max-w-md">
-        <DialogHeader className="border-b px-4 py-3">
-          <DialogTitle className="flex items-center gap-2 text-base">
+      <DialogContent size="sm" className="wa">
+        <DialogHeader>
+          {/* «Volver» afuera del título, así no se cuela en el nombre del diálogo. */}
+          <div className="flex items-center gap-2">
             {selected ? (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="-ml-1.5 shrink-0"
                 onClick={() => {
                   setSelected(null)
                   setVariables([])
                 }}
-                aria-label="Volver a la lista"
-                className="-ml-1 flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                aria-label="Volver a la lista de mensajes"
               >
-                <ArrowLeft className="size-4" aria-hidden />
-              </button>
+                <ArrowLeft aria-hidden />
+              </Button>
             ) : null}
-            {selected ? humanizeTemplateName(selected.name) : 'Mensajes aprobados'}
-          </DialogTitle>
-          <DialogDescription className="text-xs">
+            <DialogTitle className="min-w-0 truncate">
+              {selected ? humanizeTemplateName(selected.name) : 'Mensajes aprobados'}
+            </DialogTitle>
+          </div>
+          <DialogDescription>
             {selected
               ? 'Completá los datos y mirá cómo lo va a recibir el cliente.'
               : 'Son mensajes que WhatsApp ya aprobó: sirven para escribirle al cliente aunque hayan pasado más de 24 horas.'}
@@ -119,90 +129,105 @@ export function TemplateDialog({
         </DialogHeader>
 
         {!selected ? (
-          <div className="flex max-h-[60dvh] flex-col">
+          <>
             {templates.length > 5 ? (
-              <div className="relative border-b px-4 py-2">
-                <Search className="pointer-events-none absolute left-7 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Buscar mensaje…"
-                  className="h-9 pl-9"
-                />
-              </div>
+              <SearchField
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onClear={() => setQuery('')}
+                placeholder="Buscar mensaje…"
+                aria-label="Buscar mensaje aprobado"
+              />
             ) : null}
-            <div className="overflow-y-auto p-2">
+            <DialogBody>
               {filtered.length === 0 ? (
-                <p className="px-3 py-8 text-center text-sm text-muted-foreground">
+                <p className="px-3 py-8 text-center type-body text-muted-foreground">
                   {templates.length === 0
-                    ? 'Todavía no tenés mensajes aprobados por WhatsApp.'
-                    : 'No encontramos mensajes con ese texto.'}
+                    ? 'Todavía no tenés mensajes aprobados por WhatsApp. Se crean en Mensajería, en Plantillas.'
+                    : 'No encontramos mensajes con ese texto. Probá con otra palabra.'}
                 </p>
               ) : (
-                filtered.map((t) => {
-                  const body = getTemplateBodyText(t.components)
-                  const category = TEMPLATE_CATEGORY_LABEL[t.category.toUpperCase()] ?? null
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setSelected(t)}
-                      className="flex w-full flex-col gap-1 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-secondary/60"
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{humanizeTemplateName(t.name)}</span>
-                        {category ? (
-                          <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
-                            {category}
+                <ul className="flex flex-col gap-0.5">
+                  {filtered.map((t) => {
+                    const body = getTemplateBodyText(t.components)
+                    const category = TEMPLATE_CATEGORY_LABEL[t.category.toUpperCase()] ?? null
+                    return (
+                      <li key={t.id}>
+                        <button
+                          type="button"
+                          onClick={() => setSelected(t)}
+                          className="flex w-full items-center gap-3 rounded-md px-2 py-2.5 text-left outline-(--ring) -outline-offset-2 hover:bg-hover focus-visible:outline-2"
+                        >
+                          <span className="flex min-w-0 flex-1 flex-col gap-1">
+                            <span className="flex flex-wrap items-center gap-2">
+                              <span className="type-body font-medium text-foreground">
+                                {humanizeTemplateName(t.name)}
+                              </span>
+                              {category ? <Badge>{category}</Badge> : null}
+                            </span>
+                            {body ? (
+                              <span className="line-clamp-2 type-small text-muted-foreground">
+                                {body}
+                              </span>
+                            ) : null}
                           </span>
-                        ) : null}
-                      </span>
-                      {body ? (
-                        <span className="line-clamp-2 text-xs text-muted-foreground">{body}</span>
-                      ) : null}
-                    </button>
-                  )
-                })
+                          <ChevronRight
+                            className="size-4 shrink-0 text-subtle-foreground"
+                            aria-hidden
+                          />
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
               )}
-            </div>
-          </div>
+            </DialogBody>
+          </>
         ) : (
-          <div className="flex max-h-[60dvh] flex-col gap-4 overflow-y-auto p-4">
-            <WhatsAppBubble body={previewBody} />
-            {variableCount > 0 ? (
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Completá {variableCount === 1 ? 'el dato' : 'los datos'} del mensaje:
-                </p>
-                {Array.from({ length: variableCount }).map((_, i) => (
-                  <Input
-                    // biome-ignore lint/suspicious/noArrayIndexKey: el orden es estable por contrato del template Meta ({{1}}, {{2}}…)
-                    key={`${selected.id}-${i}`}
-                    value={variables[i] ?? ''}
-                    onChange={(e) => {
-                      const next = [...variables]
-                      next[i] = e.target.value
-                      setVariables(next)
-                    }}
-                    placeholder={`Dato ${i + 1} — ej: nombre, fecha…`}
-                    required
-                  />
-                ))}
-              </div>
-            ) : null}
-            <Button
-              onClick={handleSend}
-              disabled={isPending || missingVars}
-              className="w-full gap-1.5 bg-(--wa-accent) text-white hover:bg-(--wa-accent-deep)"
-            >
-              {isPending ? (
-                <Loader2 className="size-4 animate-spin" aria-hidden />
-              ) : (
-                <Send className="size-4" aria-hidden />
-              )}
-              {isPending ? 'Enviando…' : 'Enviar'}
-            </Button>
-          </div>
+          <>
+            <DialogBody className="flex flex-col gap-4">
+              <WhatsAppBubble body={previewBody} />
+              {variableCount > 0 ? (
+                <div className="flex flex-col gap-3">
+                  <p className="type-label text-foreground">
+                    Completá {variableCount === 1 ? 'el dato' : 'los datos'} del mensaje
+                  </p>
+                  {Array.from({ length: variableCount }).map((_, i) => (
+                    <Field
+                      // biome-ignore lint/suspicious/noArrayIndexKey: el orden es estable por contrato del template Meta ({{1}}, {{2}}…)
+                      key={`${selected.id}-${i}`}
+                      label={variableCount === 1 ? 'Dato' : `Dato ${i + 1}`}
+                      labelHidden={variableCount === 1}
+                    >
+                      <Input
+                        value={variables[i] ?? ''}
+                        onChange={(e) => {
+                          const next = [...variables]
+                          next[i] = e.target.value
+                          setVariables(next)
+                        }}
+                        placeholder="Ej: el nombre, una fecha…"
+                        required
+                      />
+                    </Field>
+                  ))}
+                </div>
+              ) : null}
+            </DialogBody>
+            <DialogFooter>
+              <Button
+                type="button"
+                onClick={handleSend}
+                disabled={missingVars}
+                loading={isPending}
+                loadingText="Enviando…"
+                className={waActionClass}
+              >
+                <Send aria-hidden />
+                Enviar
+              </Button>
+            </DialogFooter>
+          </>
         )}
       </DialogContent>
     </Dialog>

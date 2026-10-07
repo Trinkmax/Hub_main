@@ -1434,12 +1434,13 @@
   font-weight: 700;
   letter-spacing: -0.01em;
 }
-/* El eyebrow "Mensajería" es redundante: el rail ya te ubica. En el
-   PageHeader nuevo el eyebrow se dibuja en la fila de contexto
-   (data-slot="page-context"); page-eyebrow cubre una implementación que lo
-   nombre así. */
+/* El eyebrow "Mensajería" es redundante: el rail ya te ubica. Se esconde solo
+   el rótulo (page-eyebrow): la fila de contexto también lleva el «volver» y las
+   migas, que en las pantallas de detalle (flows, audiencias, difusiones) son la
+   única forma de volver. La fila entera se esconde solo si no trae ninguno de
+   los dos, para que no quede un hueco vacío. */
 .wa .uppercase.tracking-\[0\.18em\],
-.wa [data-slot="page-context"],
+.wa [data-slot="page-context"]:not(:has([data-slot="page-back"], nav)),
 .wa [data-slot="page-eyebrow"] {
   display: none;
 }

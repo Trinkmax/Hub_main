@@ -1,19 +1,15 @@
-import { ArrowLeft, CheckCheck, Eye, MessageCircle, Send, TriangleAlert, Users } from 'lucide-react'
-import Link from 'next/link'
+import { CheckCheck, Eye, MessageCircle, Send, TriangleAlert, Users } from 'lucide-react'
 import { notFound } from 'next/navigation'
-import { Badge } from '@/components/ui/badge'
-import {
-  DataTableBody,
-  DataTableCell,
-  DataTableHead,
-  DataTableHeader,
-  DataTableRoot,
-  DataTableScroll,
-  DataTableShell,
-} from '@/components/ui/data-table'
+import { Callout } from '@/components/ui/callout'
+import { DataTable } from '@/components/ui/data-table'
+import { EmptyState } from '@/components/ui/empty-state'
+import { KPI, KPIGroup } from '@/components/ui/kpi'
 import { PageHeader } from '@/components/ui/page-header'
-import { StatCard } from '@/components/ui/stat-card'
+import { PageShell } from '@/components/ui/page-shell'
+import { Section } from '@/components/ui/section'
+import { StatusBadge } from '@/components/ui/status-badge'
 import { getBroadcastDetail } from '@/lib/broadcasts/queries'
+import { formatNumber } from '@/lib/format/number-kind'
 import { formatPhoneForDisplay } from '@/lib/phone'
 import {
   RoleRequiredError,
@@ -21,32 +17,16 @@ import {
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
-import type { RecipientStatus } from '@/types/database'
-import { BroadcastStatusBadge, formatDateTime } from '../_components/broadcast-status'
+import {
+  BroadcastStatusBadge,
+  broadcastDateTime,
+  RECIPIENT_STATUS,
+} from '../_components/broadcast-status'
 import { BroadcastActions } from './_components/broadcast-actions'
 import { LiveStats } from './_components/live-stats'
 
 export const metadata = { title: 'Detalle difusión' }
 export const dynamic = 'force-dynamic'
-
-type RecipientBadgeVariant =
-  | 'default'
-  | 'secondary'
-  | 'destructive'
-  | 'outline'
-  | 'success'
-  | 'warning'
-  | 'info'
-
-const RECIPIENT_META: Record<RecipientStatus, { label: string; variant: RecipientBadgeVariant }> = {
-  pending: { label: 'En cola', variant: 'outline' },
-  sending: { label: 'Enviando', variant: 'warning' },
-  sent: { label: 'Enviado', variant: 'secondary' },
-  delivered: { label: 'Entregado', variant: 'info' },
-  read: { label: 'Leído', variant: 'success' },
-  replied: { label: 'Respondió', variant: 'default' },
-  failed: { label: 'Falló', variant: 'destructive' },
-}
 
 // Traduce los errores más comunes de WhatsApp a algo accionable. El código
 // crudo queda en el tooltip por si soporte lo necesita.
@@ -126,159 +106,136 @@ export default async function BroadcastDetailPage({
 
   const timing: string[] = []
   if (b.status === 'scheduled' && b.scheduled_at) {
-    timing.push(`Sale el ${formatDateTime(b.scheduled_at, { withYear: true })}`)
+    timing.push(`Sale el ${broadcastDateTime(b.scheduled_at, { withYear: true })}`)
   }
-  if (b.started_at) timing.push(`Empezó el ${formatDateTime(b.started_at, { withYear: true })}`)
+  if (b.started_at) timing.push(`Empezó el ${broadcastDateTime(b.started_at, { withYear: true })}`)
   if (b.completed_at)
-    timing.push(`Terminó el ${formatDateTime(b.completed_at, { withYear: true })}`)
+    timing.push(`Terminó el ${broadcastDateTime(b.completed_at, { withYear: true })}`)
+
+  type Recipient = (typeof detail.recipients)[number]
+  const customerOf = (r: Recipient) => (Array.isArray(r.customer) ? r.customer[0] : r.customer)
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+    <PageShell width="comfortable">
       <LiveStats broadcastId={id} />
-      <Link
-        href={`/${tenantSlug}/mensajeria/difusiones`}
-        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-3" />
-        Volver a difusiones
-      </Link>
 
       <PageHeader
-        eyebrow="Mensajería · Difusión"
+        back={{ href: `/${tenantSlug}/mensajeria/difusiones`, label: 'Difusiones' }}
         title={b.name}
-        description={
-          <span className="flex flex-col gap-1">
-            <span>
-              Por {channel?.display_name ?? channel?.type ?? '—'} · mensaje{' '}
-              <strong className="text-foreground">{template?.name ?? '—'}</strong> · lista{' '}
-              <strong className="text-foreground">{audience?.name ?? '—'}</strong>
-            </span>
-            {timing.length > 0 ? <span>{timing.join(' · ')}</span> : null}
-          </span>
-        }
+        meta={[
+          <BroadcastStatusBadge key="status" status={b.status} />,
+          `Por ${channel?.display_name ?? channel?.type ?? '—'}`,
+          `Mensaje «${template?.name ?? '—'}»`,
+          `Lista «${audience?.name ?? '—'}»`,
+          ...timing,
+        ]}
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <BroadcastStatusBadge status={b.status} />
-            <BroadcastActions
-              tenantSlug={tenantSlug}
-              broadcastId={id}
-              status={b.status}
-              failedCount={failed}
-            />
-          </div>
+          <BroadcastActions
+            tenantSlug={tenantSlug}
+            broadcastId={id}
+            status={b.status}
+            failedCount={failed}
+          />
         }
       />
 
-      <section
-        aria-label="Resultados del envío"
-        className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6"
-      >
-        <StatCard
-          icon={Users}
-          label="En la lista"
-          value={total.toLocaleString('es-AR')}
-          hint="Destinatarios"
-        />
-        <StatCard
+      <KPIGroup aria-label="Resultados del envío" columns={3}>
+        <KPI icon={Users} label="En la lista" value={formatNumber(total)} hint="Destinatarios" />
+        <KPI
           icon={Send}
           label="Enviados"
-          value={sent.toLocaleString('es-AR')}
-          hint={total > 0 ? `${pct}% del total` : undefined}
+          value={formatNumber(sent)}
+          hint={total > 0 ? `${pct} % del total` : undefined}
         />
-        <StatCard
+        <KPI
           icon={CheckCheck}
           label="Entregados"
-          value={delivered.toLocaleString('es-AR')}
+          value={formatNumber(delivered)}
           hint="Llegaron al teléfono"
         />
-        <StatCard icon={Eye} label="Leídos" value={read.toLocaleString('es-AR')} />
-        <StatCard
-          icon={MessageCircle}
-          label="Respondieron"
-          value={replied.toLocaleString('es-AR')}
-        />
-        <StatCard
+        <KPI icon={Eye} label="Leídos" value={formatNumber(read)} />
+        <KPI icon={MessageCircle} label="Respondieron" value={formatNumber(replied)} />
+        <KPI
           icon={TriangleAlert}
           label="Fallidos"
-          value={failed.toLocaleString('es-AR')}
-          deltaTone={failed > 0 ? 'negative' : 'positive'}
-          iconClassName={failed > 0 ? 'text-destructive' : undefined}
+          value={formatNumber(failed)}
           hint={failed > 0 ? 'Mirá el motivo abajo' : 'Todo bien'}
         />
-      </section>
+      </KPIGroup>
 
       {excluded > 0 ? (
-        <p className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-          {excluded.toLocaleString('es-AR')}{' '}
+        <Callout tone="info">
+          {formatNumber(excluded)}{' '}
           {excluded === 1
             ? 'cliente de la lista quedó afuera porque no acepta'
             : 'clientes de la lista quedaron afuera porque no aceptan'}{' '}
           recibir promos. No se les envió nada.
-        </p>
+        </Callout>
       ) : null}
 
-      <DataTableShell>
-        <header className="border-b border-border/60 px-5 py-4">
-          <h2 className="font-serif text-lg font-semibold tracking-tight">Destinatarios</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Los últimos 200, del más reciente al más viejo.
-          </p>
-        </header>
-        <DataTableScroll>
-          <DataTableRoot>
-            <DataTableHead>
-              <tr>
-                <DataTableHeader>Cliente</DataTableHeader>
-                <DataTableHeader className="hidden sm:table-cell">Teléfono</DataTableHeader>
-                <DataTableHeader>Estado</DataTableHeader>
-                <DataTableHeader className="hidden md:table-cell">Enviado</DataTableHeader>
-                <DataTableHeader>Motivo</DataTableHeader>
-              </tr>
-            </DataTableHead>
-            <DataTableBody>
-              {detail.recipients.length === 0 ? (
-                <tr>
-                  <DataTableCell
-                    colSpan={5}
-                    className="py-8 text-center text-sm text-muted-foreground"
-                  >
-                    Todavía no hay destinatarios para mostrar.
-                  </DataTableCell>
-                </tr>
-              ) : (
-                detail.recipients.map((r) => {
-                  const customer = Array.isArray(r.customer) ? r.customer[0] : r.customer
-                  const meta = RECIPIENT_META[r.status]
-                  return (
-                    <tr key={r.id} className="transition-colors hover:bg-secondary/40">
-                      <DataTableCell className="font-medium">
-                        {customer ? `${customer.first_name} ${customer.last_name}` : '—'}
-                        {customer?.phone ? (
-                          <p className="mt-0.5 text-xs font-normal text-muted-foreground sm:hidden">
-                            {formatPhoneForDisplay(customer.phone)}
-                          </p>
-                        ) : null}
-                      </DataTableCell>
-                      <DataTableCell className="hidden text-xs text-muted-foreground tabular-nums sm:table-cell">
-                        {customer?.phone ? formatPhoneForDisplay(customer.phone) : '—'}
-                      </DataTableCell>
-                      <DataTableCell>
-                        <Badge variant={meta.variant}>{meta.label}</Badge>
-                      </DataTableCell>
-                      <DataTableCell className="hidden text-xs text-muted-foreground tabular-nums md:table-cell">
-                        {r.sent_at ? formatDateTime(r.sent_at, { withYear: true }) : '—'}
-                      </DataTableCell>
-                      <DataTableCell className="text-xs text-destructive">
-                        <span title={r.error ?? undefined}>{friendlyError(r.error)}</span>
-                      </DataTableCell>
-                    </tr>
-                  )
-                })
-              )}
-            </DataTableBody>
-          </DataTableRoot>
-        </DataTableScroll>
-      </DataTableShell>
-    </div>
+      <Section title="Destinatarios" description="Los últimos 200, del más reciente al más viejo.">
+        <DataTable
+          caption="Destinatarios de la difusión"
+          rows={detail.recipients}
+          getRowId={(r) => r.id}
+          empty={
+            <EmptyState
+              size="sm"
+              title="Todavía no hay destinatarios para mostrar"
+              description="Cuando la difusión empiece a salir, cada cliente aparece acá con su estado."
+            />
+          }
+          columns={[
+            {
+              id: 'customer',
+              header: 'Cliente',
+              cell: (r) => {
+                const customer = customerOf(r)
+                return customer ? `${customer.first_name} ${customer.last_name}` : '—'
+              },
+            },
+            {
+              id: 'phone',
+              header: 'Teléfono',
+              cell: (r) => {
+                const phone = customerOf(r)?.phone
+                return (
+                  <span className="tabular-nums text-muted-foreground">
+                    {phone ? formatPhoneForDisplay(phone) : '—'}
+                  </span>
+                )
+              },
+            },
+            {
+              id: 'status',
+              header: 'Estado',
+              mobile: 'value',
+              cell: (r) => <StatusBadge status={r.status} map={RECIPIENT_STATUS} />,
+            },
+            {
+              id: 'sent',
+              header: 'Enviado',
+              mobile: 'meta',
+              cell: (r) => (
+                <span className="tabular-nums text-muted-foreground">
+                  {r.sent_at ? broadcastDateTime(r.sent_at, { withYear: true }) : '—'}
+                </span>
+              ),
+            },
+            {
+              id: 'reason',
+              header: 'Motivo',
+              mobile: 'meta',
+              cell: (r) =>
+                r.error ? (
+                  <span title={r.error} className="text-destructive-text">
+                    {friendlyError(r.error)}
+                  </span>
+                ) : null,
+            },
+          ]}
+        />
+      </Section>
+    </PageShell>
   )
 }

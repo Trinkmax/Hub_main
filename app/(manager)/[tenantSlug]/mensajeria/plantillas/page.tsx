@@ -1,14 +1,15 @@
-import { format } from 'date-fns'
 import { MessageSquareText, Plug } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import type { ReactNode } from 'react'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
+import { StatusBadge } from '@/components/ui/status-badge'
 import { getClubOtpTemplateName } from '@/lib/club-auth/message'
+import { formatDateTime } from '@/lib/dates'
 import { hiddenTemplates, visibleTemplates } from '@/lib/meta/template-visibility'
 import { createClient } from '@/lib/supabase/server'
 import {
@@ -28,7 +29,7 @@ import {
   categoryLabel,
   humanizeTemplateName,
   languageLabel,
-  STATUS_META,
+  TEMPLATE_STATUS,
 } from './_template-display'
 
 export const metadata = { title: 'Plantillas' }
@@ -105,9 +106,11 @@ function renderWithVariables(text: string): ReactNode[] {
     if (!part) continue
     if (VAR_EXACT_RE.test(part)) {
       nodes.push(
+        // Tinta al 10 %: se ve sobre la burbuja en claro y en oscuro, sin `dark:`.
+        // 0.875em sobre el text-sm de la burbuja da 12,25 px: el piso del kit.
         <span
           key={key}
-          className="rounded bg-black/10 px-1 font-mono text-[0.85em] dark:bg-white/15"
+          className="rounded-sm bg-foreground/10 px-1 font-mono text-[0.875em]"
           title="Se completa solo con el dato de cada cliente"
         >
           {part}
@@ -162,12 +165,11 @@ export default async function TemplatesPage({
   return (
     <PageShell width="comfortable">
       <PageHeader
-        eyebrow="Mensajería"
         title="Plantillas de WhatsApp"
         description="Tus mensajes aprobados: WhatsApp los revisa una sola vez y después los usás en difusiones, automatizaciones o para escribirle primero a un cliente."
         actions={
           channel ? (
-            <div className="flex flex-wrap items-center gap-2">
+            <>
               <TemplateSyncButton channelId={channel.id} tenantSlug={tenantSlug} />
               {/* Sólo hasta que exista: es configuración de una vez. */}
               {templates.some((t) => t.name === getClubOtpTemplateName()) ? null : (
@@ -180,21 +182,23 @@ export default async function TemplatesPage({
                   names={Array.from(new Set(hidden.map((t) => t.name)))}
                 />
               ) : null}
+              {/* La principal va última. */}
               <CreateTemplateDialog tenantSlug={tenantSlug} channelId={channel.id} />
-            </div>
+            </>
           ) : null
         }
       />
 
       {!channel ? (
         <EmptyState
+          size="lg"
           icon={Plug}
           title="Conectá WhatsApp primero"
           description="Para crear mensajes aprobados necesitás tener tu número de WhatsApp conectado. Se hace una sola vez desde Canales."
           action={
-            <Button asChild className="gap-2">
+            <Button asChild>
               <Link href={`/${tenantSlug}/mensajeria/canales`}>
-                <Plug className="size-4" />
+                <Plug aria-hidden />
                 Ir a Canales
               </Link>
             </Button>
@@ -202,6 +206,7 @@ export default async function TemplatesPage({
         />
       ) : templates.length === 0 ? (
         <EmptyState
+          size="lg"
           icon={MessageSquareText}
           title="Todavía no tenés plantillas"
           description="Tocá «Nueva plantilla» para escribir tu primer mensaje, o «Traer las novedades de WhatsApp» si ya tenés mensajes aprobados en tu cuenta."
@@ -226,88 +231,90 @@ function TemplateCard({
   tenantSlug: string
   channelId: string
 }) {
-  const statusMeta = STATUS_META[template.status]
+  const hint = TEMPLATE_STATUS[template.status]?.description ?? null
   const content = parseComponents(template.components, {
     category: template.category,
     language: template.language,
   })
 
   return (
-    <article className="card-hairline flex flex-col overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-sm">
-      <header className="flex items-start justify-between gap-3 px-5 pt-4">
-        <div className="min-w-0">
-          <h2 className="truncate text-base font-medium tracking-tight">
-            {humanizeTemplateName(template.name)}
-          </h2>
-          {/* Meta exige el nombre técnico único; se muestra chiquito por si hay que buscarlo. */}
-          <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
-            {template.name}
-          </p>
-        </div>
-        <Badge variant={statusMeta.variant}>{statusMeta.label}</Badge>
-      </header>
-
-      <div className="flex-1 px-5 py-4">
-        {/* El mensaje tal como sale: mini burbuja saliente con los tokens del frame .wa */}
-        <div className="max-w-[92%] rounded-lg rounded-tr-sm bg-(--wa-bubble-out) px-3.5 py-2.5 text-(--wa-text) shadow-2xs">
-          {content.header ? (
-            <p className="mb-1 text-sm font-semibold leading-snug">
-              {renderWithVariables(content.header)}
+    <Card asChild padding="none" className="gap-0 overflow-clip">
+      <article>
+        <header className="flex items-start justify-between gap-3 px-4 pt-4 sm:px-5">
+          <div className="min-w-0">
+            <h2 className="truncate type-subtitle text-foreground">
+              {humanizeTemplateName(template.name)}
+            </h2>
+            {/* Meta exige el nombre técnico único; se muestra chiquito por si hay que buscarlo. */}
+            <p className="mt-0.5 truncate font-mono type-caption text-muted-foreground">
+              {template.name}
             </p>
-          ) : null}
-          {content.body ? (
-            <p className="whitespace-pre-wrap break-words text-sm leading-snug">
-              {renderWithVariables(content.body)}
-            </p>
-          ) : (
-            <p className="text-sm italic text-(--wa-bubble-meta)">
-              Esta plantilla no tiene texto (puede ser de imagen o documento).
-            </p>
-          )}
-          {content.footer ? (
-            <p className="mt-1 text-[11px] leading-snug text-(--wa-bubble-meta-out)">
-              {content.footer}
-            </p>
-          ) : null}
-        </div>
-
-        {content.buttons.length > 0 ? (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {content.buttons.map((buttonText) => (
-              <span
-                key={buttonText}
-                className="rounded-md border border-border/60 bg-background px-2 py-0.5 text-[11px] text-muted-foreground"
-              >
-                {buttonText}
-              </span>
-            ))}
           </div>
-        ) : null}
+          <StatusBadge status={template.status} map={TEMPLATE_STATUS} />
+        </header>
 
-        {statusMeta.hint ? (
-          <p
-            className={`mt-3 text-xs ${
-              template.status === 'rejected' ? 'text-destructive' : 'text-muted-foreground'
-            }`}
-          >
-            {statusMeta.hint}
+        <div className="flex-1 px-4 py-4 sm:px-5">
+          {/* El mensaje tal como sale: mini burbuja saliente con los tokens del frame .wa */}
+          <div className="max-w-[92%] rounded-lg rounded-tr-sm bg-(--wa-bubble-out) px-3.5 py-2.5 text-(--wa-text) shadow-2xs">
+            {content.header ? (
+              <p className="mb-1 text-sm font-semibold leading-snug">
+                {renderWithVariables(content.header)}
+              </p>
+            ) : null}
+            {content.body ? (
+              <p className="whitespace-pre-wrap break-words text-sm leading-snug">
+                {renderWithVariables(content.body)}
+              </p>
+            ) : (
+              <p className="text-sm italic text-(--wa-bubble-meta)">
+                Esta plantilla no tiene texto (puede ser de imagen o documento).
+              </p>
+            )}
+            {content.footer ? (
+              <p className="mt-1 text-xs leading-snug text-(--wa-bubble-meta-out)">
+                {content.footer}
+              </p>
+            ) : null}
+          </div>
+
+          {content.buttons.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {content.buttons.map((buttonText) => (
+                <span
+                  key={buttonText}
+                  className="rounded-md border border-border bg-background px-2 py-0.5 type-caption text-muted-foreground"
+                >
+                  {buttonText}
+                </span>
+              ))}
+            </div>
+          ) : null}
+
+          {hint ? (
+            <p
+              className={`mt-3 type-small ${
+                template.status === 'rejected' ? 'text-destructive-text' : 'text-muted-foreground'
+              }`}
+            >
+              {hint}
+            </p>
+          ) : null}
+        </div>
+
+        <footer className="flex items-center justify-between gap-3 border-t border-border px-4 py-2 sm:px-5">
+          <p className="truncate type-small text-muted-foreground">
+            {categoryLabel(template.category)} · {languageLabel(template.language)}
+            {template.last_synced_at
+              ? ` · Actualizada el ${formatDateTime(template.last_synced_at)}`
+              : ''}
           </p>
-        ) : null}
-      </div>
-
-      <footer className="flex items-center justify-between gap-3 border-t border-border/50 px-5 py-2.5">
-        <p className="truncate text-xs text-muted-foreground">
-          {categoryLabel(template.category)} · {languageLabel(template.language)}
-          {template.last_synced_at
-            ? ` · Actualizada ${format(new Date(template.last_synced_at), 'dd/MM/yyyy HH:mm')}`
-            : ''}
-        </p>
-        <DeleteTemplateButton
-          tenantSlug={tenantSlug}
-          channelId={channelId}
-          templateName={template.name}
-        />
-      </footer>
-    </article>
+          <DeleteTemplateButton
+            tenantSlug={tenantSlug}
+            channelId={channelId}
+            templateName={template.name}
+          />
+        </footer>
+      </article>
+    </Card>
   )
 }

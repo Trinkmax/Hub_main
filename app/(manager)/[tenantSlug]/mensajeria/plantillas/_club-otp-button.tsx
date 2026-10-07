@@ -3,7 +3,7 @@
 import { KeyRound } from 'lucide-react'
 import { useActionState, useEffect } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
+import { SubmitButton } from '@/components/ui/submit-button'
 import type { MetaActionState } from '@/lib/meta/actions'
 import { createClubOtpTemplateAction } from '@/lib/meta/template-actions'
 
@@ -21,7 +21,7 @@ export function ClubOtpTemplateButton({
   channelId: string
   tenantSlug: string
 }) {
-  const [state, action, pending] = useActionState(
+  const [state, action] = useActionState(
     createClubOtpTemplateAction.bind(null, tenantSlug),
     initial,
   )
@@ -34,16 +34,14 @@ export function ClubOtpTemplateButton({
   return (
     <form action={action}>
       <input type="hidden" name="channel_id" value={channelId} />
-      <Button
-        type="submit"
-        variant="outline"
-        disabled={pending}
-        className="gap-2"
-        title="Plantilla de código de un solo uso (categoría Autenticación) para recuperar el acceso al club"
+      <SubmitButton
+        variant="secondary"
+        pendingText="Creando…"
+        title="Plantilla de código de un solo uso (categoría Verificación) para recuperar el acceso al club"
       >
-        <KeyRound className="size-4" aria-hidden />
-        {pending ? 'Creando…' : 'Crear plantilla del código del club'}
-      </Button>
+        <KeyRound aria-hidden />
+        Crear plantilla del código del club
+      </SubmitButton>
     </form>
   )
 }

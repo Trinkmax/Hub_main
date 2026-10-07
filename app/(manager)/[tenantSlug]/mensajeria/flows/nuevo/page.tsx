@@ -1,7 +1,6 @@
-import { ArrowLeft } from 'lucide-react'
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
 import { visibleTemplates } from '@/lib/meta/template-visibility'
 import { createClient } from '@/lib/supabase/server'
 import {
@@ -42,28 +41,21 @@ export default async function NewFlowPage({ params }: { params: Promise<{ tenant
     supabase.from('customer_tags').select('id, name').eq('tenant_id', access.tenant.id),
   ])
 
+  // El lienzo ocupa todo el alto que queda (el marco de Mensajería ya descuenta
+  // el topbar y las pestañas del celular): nada de alturas con números a mano.
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col px-4 py-4 sm:px-6">
-      <div className="mb-4 flex shrink-0 flex-col gap-3">
-        <Link
-          href={`/${tenantSlug}/mensajeria/flows`}
-          className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-3" />
-          Volver a automatizaciones
-        </Link>
-        <PageHeader
-          eyebrow="Mensajería"
-          title="Nueva automatización"
-          description="Armá un mensaje que se manda solo. Elegí cuándo tiene que salir y qué decir."
-        />
-      </div>
+    <PageShell width="full" className="h-full min-h-0 gap-4 py-4 sm:py-4">
+      <PageHeader
+        back={{ href: `/${tenantSlug}/mensajeria/flows`, label: 'Automatizaciones' }}
+        title="Nueva automatización"
+        description="Armá un mensaje que se manda solo. Elegí cuándo tiene que salir y qué decir."
+      />
       <FlowGraphEditorClient
         tenantSlug={tenantSlug}
         channels={chRes.data ?? []}
         templates={visibleTemplates(tplRes.data ?? [])}
         tags={tagsRes.data ?? []}
       />
-    </div>
+    </PageShell>
   )
 }

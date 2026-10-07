@@ -35,7 +35,6 @@ export default async function EtiquetasPage({
   return (
     <PageShell width="compact">
       <PageHeader
-        eyebrow="Mensajería"
         title="Etiquetas"
         description="Sirven para ordenar los chats: Reservas, Quejas, VIP… Etiquetá cada conversación y después filtrá la bandeja por etiqueta."
       />

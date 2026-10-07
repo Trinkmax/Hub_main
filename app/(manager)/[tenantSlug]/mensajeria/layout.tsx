@@ -34,7 +34,8 @@ export default async function MensajeriaLayout({
   const unreadTotal = await getUnreadTotal(access.tenant.id)
 
   return (
-    <div className="wa flex h-[calc(100dvh-3.5rem)] w-full overflow-hidden bg-(--wa-app)">
+    // Alto: la pantalla menos el topbar del panel (--topbar-h), nunca 56 px a mano.
+    <div className="wa flex h-[calc(100dvh-var(--topbar-h))] w-full overflow-hidden bg-(--wa-app)">
       <WaRail tenantSlug={tenantSlug} role={access.role} unreadTotal={unreadTotal} />
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="min-w-0 flex-1 overflow-y-auto overscroll-contain bg-background">

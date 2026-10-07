@@ -1,22 +1,12 @@
 'use client'
 
 import { Languages } from 'lucide-react'
-import { useActionState, useEffect } from 'react'
 import { toast } from 'sonner'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog, type ConfirmFormState } from '@/components/ui/confirm-dialog'
 import type { MetaActionState } from '@/lib/meta/actions'
 import { deleteForeignTemplatesAction } from '@/lib/meta/template-actions'
+import { toConfirmState } from '../_components/confirm-state'
 
 const initial: MetaActionState = { ok: true }
 
@@ -34,47 +24,35 @@ export function DeleteForeignTemplatesButton({
   tenantSlug: string
   names: string[]
 }) {
-  const [state, action, pending] = useActionState(
-    deleteForeignTemplatesAction.bind(null, tenantSlug),
-    initial,
-  )
-
-  useEffect(() => {
-    if (!state.ok && state.message) toast.error(state.message)
-    else if (state.ok && state.message) toast.success(state.message)
-  }, [state])
+  async function removeAll(_prev: ConfirmFormState, formData: FormData) {
+    const result = await deleteForeignTemplatesAction(tenantSlug, initial, formData)
+    if (result.ok && result.message) toast.success(result.message)
+    return toConfirmState(result)
+  }
 
   return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>
-        <Button variant="outline" className="gap-2" disabled={pending}>
-          <Languages className="size-4" aria-hidden />
-          {pending ? 'Borrando…' : `Borrar de WhatsApp las de ejemplo (${names.length})`}
+    <ConfirmDialog
+      tone="danger"
+      icon={Languages}
+      title={`¿Borrar ${names.length === 1 ? 'la plantilla' : `las ${names.length} plantillas`} en inglés?`}
+      description="Ya están ocultas en todo el panel. Esto además las borra de tu cuenta de WhatsApp. Son las de muestra de Meta, en inglés; ninguna difusión ni automatización tuya las usa."
+      confirmLabel={names.length === 1 ? 'Borrarla' : 'Borrar todas'}
+      pendingLabel="Borrando…"
+      cancelLabel="Volver"
+      formAction={removeAll}
+      hiddenFields={{ channel_id: channelId }}
+      trigger={
+        <Button variant="secondary">
+          <Languages aria-hidden />
+          Borrar de WhatsApp las de ejemplo ({names.length})
         </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>¿Borrar {names.length} plantillas en inglés?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Ya están ocultas en todo el panel. Esto además las borra de tu cuenta de WhatsApp. Son
-            las de muestra de Meta, en inglés; ninguna difusión ni automatización tuya las usa.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <ul className="max-h-40 overflow-y-auto rounded-lg bg-secondary/60 px-3 py-2 font-mono text-xs">
-          {names.map((n) => (
-            <li key={n}>{n}</li>
-          ))}
-        </ul>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Volver</AlertDialogCancel>
-          <form action={action}>
-            <input type="hidden" name="channel_id" value={channelId} />
-            <AlertDialogAction type="submit" disabled={pending}>
-              Borrar todas
-            </AlertDialogAction>
-          </form>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      }
+    >
+      <ul className="max-h-40 overflow-y-auto rounded-lg bg-secondary px-3 py-2 font-mono type-small text-foreground">
+        {names.map((n) => (
+          <li key={n}>{n}</li>
+        ))}
+      </ul>
+    </ConfirmDialog>
   )
 }

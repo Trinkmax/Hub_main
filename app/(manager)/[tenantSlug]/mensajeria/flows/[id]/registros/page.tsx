@@ -1,10 +1,9 @@
-import { ChevronLeft, ChevronRight, History } from 'lucide-react'
-import Link from 'next/link'
+import { History } from 'lucide-react'
 import { notFound } from 'next/navigation'
-import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
+import { Pagination } from '@/components/ui/pagination'
 import {
   flowLogFiltersSchema,
   hasActiveLogFilters,
@@ -13,6 +12,7 @@ import {
 } from '@/lib/flows/execution-log-filters'
 import { listFlowExecutionEvents, listFlowLogContacts } from '@/lib/flows/execution-log-queries'
 import { createClient } from '@/lib/supabase/server'
+import { makePageHref } from '@/lib/table/pagination'
 import {
   RoleRequiredError,
   requireRole,
@@ -73,23 +73,15 @@ export default async function FlowLogsPage({
   ])
   if (!flow) notFound()
 
-  const totalPages = Math.max(1, Math.ceil(total / LOG_PAGE_SIZE))
   const filtered = hasActiveLogFilters(filters)
+  const basePath = `/${tenantSlug}/mensajeria/flows/${flow.id}/registros`
 
   return (
     <PageShell width="comfortable">
-      <Link
-        href={`/${tenantSlug}/mensajeria/flows`}
-        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-      >
-        <ChevronLeft className="size-3" />
-        Volver a automatizaciones
-      </Link>
-
       <PageHeader
-        eyebrow={flow.name}
+        back={{ href: `/${tenantSlug}/mensajeria/flows`, label: 'Automatizaciones' }}
         title="Registros de ejecución"
-        description="Ver el historial y los detalles de todas las ejecuciones de esta automatización."
+        description={`Todo lo que hizo «${flow.name}»: a quién le mandó qué, cuándo, y por qué se salteó algo.`}
       />
 
       <FlowLogFilters contacts={contacts} desde={range.desde} hasta={range.hasta} />
@@ -100,94 +92,24 @@ export default async function FlowLogsPage({
           title={filtered ? 'No hay registros con esos filtros' : 'Todavía no se ejecutó'}
           description={
             filtered
-              ? 'Probá ampliar el rango de fechas o sacar algún filtro.'
+              ? 'Probá ampliar el período o sacar algún filtro con «Limpiar filtros».'
               : 'Cuando un cliente entre por el disparador, cada paso va a quedar registrado acá: qué se le mandó, cuándo, y por qué se salteó algo.'
           }
         />
       ) : (
-        <>
-          <p className="text-xs text-muted-foreground">
-            {total.toLocaleString('es-AR')} {total === 1 ? 'registro' : 'registros'} · página{' '}
-            {filters.page} de {totalPages}
-          </p>
+        <div className="flex flex-col gap-3">
           <FlowLogTable rows={rows} tenantSlug={tenantSlug} />
-        </>
+          {/* Paginación del kit: links por URL (conserva los filtros) y los
+              extremos son texto, no links muertos. */}
+          <Pagination
+            label="Paginación de los registros"
+            page={filters.page}
+            pageSize={LOG_PAGE_SIZE}
+            total={total}
+            hrefFor={makePageHref(basePath, sp)}
+          />
+        </div>
       )}
-
-      {totalPages > 1 ? (
-        <Pagination
-          basePath={`/${tenantSlug}/mensajeria/flows/${flow.id}/registros`}
-          page={filters.page}
-          totalPages={totalPages}
-          sp={sp}
-        />
-      ) : null}
     </PageShell>
-  )
-}
-
-function Pagination({
-  basePath,
-  page,
-  totalPages,
-  sp,
-}: {
-  basePath: string
-  page: number
-  totalPages: number
-  sp: Record<string, string | string[] | undefined>
-}) {
-  const buildHref = (p: number) => {
-    const params = new URLSearchParams()
-    for (const [k, v] of Object.entries(sp)) {
-      if (typeof v === 'string') params.set(k, v)
-    }
-    params.set('page', String(p))
-    return `${basePath}?${params.toString()}`
-  }
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={page <= 1}
-        className="gap-1.5"
-        asChild={page > 1}
-      >
-        {page > 1 ? (
-          <Link href={buildHref(page - 1)}>
-            <ChevronLeft className="size-3.5" />
-            Anterior
-          </Link>
-        ) : (
-          <span>
-            <ChevronLeft className="size-3.5" />
-            Anterior
-          </span>
-        )}
-      </Button>
-      <span className="text-xs tabular-nums text-muted-foreground">
-        Página {page} de {totalPages}
-      </span>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={page >= totalPages}
-        className="gap-1.5"
-        asChild={page < totalPages}
-      >
-        {page < totalPages ? (
-          <Link href={buildHref(page + 1)}>
-            Siguiente
-            <ChevronRight className="size-3.5" />
-          </Link>
-        ) : (
-          <span>
-            Siguiente
-            <ChevronRight className="size-3.5" />
-          </span>
-        )}
-      </Button>
-    </div>
   )
 }

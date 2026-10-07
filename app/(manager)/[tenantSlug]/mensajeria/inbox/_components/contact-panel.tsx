@@ -3,17 +3,22 @@ import {
   BellOff,
   BellRing,
   CalendarDays,
-  ExternalLink,
   Receipt,
   ShieldAlert,
   UserPlus,
+  UserRound,
   Utensils,
   Wallet,
 } from 'lucide-react'
 import Link from 'next/link'
+import { Button } from '@/components/ui/button'
 import { formatRelativeDays } from '@/lib/bandeja/format'
 import type { ConversationTag } from '@/lib/conversation-tags/queries'
+import { formatNumber } from '@/lib/format/number-kind'
+import { formatCents } from '@/lib/money'
 import type { TierProgress } from '@/lib/points/tiers'
+import { cn } from '@/lib/utils'
+import { waActionClass } from '../../_components/wa-classes'
 import { WaAvatar } from './wa-avatar'
 
 export type PanelCustomer = {
@@ -37,8 +42,9 @@ export type PanelInsights = {
   favoriteItem: string | null
 }
 
+/** Plata de la ficha: pesos enteros, como un tablero (formato del kit, sin `Intl`). */
 function pesos(cents: number): string {
-  return `$${Math.round(cents / 100).toLocaleString('es-AR')}`
+  return formatCents(cents, { decimals: 0 })
 }
 
 function Block({ children }: { children: React.ReactNode }) {
@@ -108,8 +114,9 @@ export function ContactPanel({
           <Block>
             <BlockTitle>Club de puntos</BlockTitle>
             <div className="flex items-baseline gap-2">
-              <span className="font-serif text-3xl font-semibold tabular-nums text-(--wa-text)">
-                {customer.points_balance.toLocaleString('es-AR')}
+              {/* El saldo de la ficha va en Fraunces (type-kpi): es un número quieto. */}
+              <span className="type-kpi text-(--wa-text)">
+                {formatNumber(customer.points_balance)}
               </span>
               <span className="text-sm text-(--wa-muted)">puntos para canjear</span>
             </div>
@@ -118,13 +125,21 @@ export function ContactPanel({
               <div className="mt-3 space-y-1.5">
                 <div className="flex items-center justify-between text-sm">
                   {tier.current ? (
+                    // El color del nivel en el fondo y en el punto; la letra, en el
+                    // texto del clon (un color claro como letra no se leía).
                     <span
-                      className="rounded-full px-2.5 py-0.5 text-xs font-semibold"
+                      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold text-(--wa-text)"
                       style={{
                         backgroundColor: tier.current.color ? `${tier.current.color}26` : undefined,
-                        color: tier.current.color ?? 'var(--wa-text)',
                       }}
                     >
+                      {tier.current.color ? (
+                        <span
+                          className="size-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: tier.current.color }}
+                          aria-hidden
+                        />
+                      ) : null}
                       {tier.current.name}
                     </span>
                   ) : (
@@ -132,12 +147,19 @@ export function ContactPanel({
                   )}
                   {tier.next && tier.pointsToNext != null ? (
                     <span className="text-xs text-(--wa-muted)">
-                      {tier.pointsToNext.toLocaleString('es-AR')} pts para {tier.next.name}
+                      {formatNumber(tier.pointsToNext)} pts para {tier.next.name}
                     </span>
                   ) : null}
                 </div>
                 {tier.next ? (
-                  <div className="h-1.5 overflow-hidden rounded-full bg-(--wa-panel-soft)">
+                  <div
+                    role="progressbar"
+                    aria-label={`Avance hacia ${tier.next.name}`}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.round(Math.min(100, Math.max(0, tier.pct)))}
+                    className="h-1.5 overflow-hidden rounded-full bg-(--wa-panel-soft)"
+                  >
                     <div
                       className="h-full rounded-full bg-(--wa-accent)"
                       style={{ width: `${Math.min(100, Math.max(0, tier.pct))}%` }}
@@ -151,16 +173,16 @@ export function ContactPanel({
               <div className="flex items-start gap-2">
                 <CalendarDays className="mt-0.5 size-4 shrink-0 text-(--wa-muted)" aria-hidden />
                 <div>
-                  <dt className="text-[11px] text-(--wa-muted)">Visitas</dt>
+                  <dt className="text-xs text-(--wa-muted)">Visitas</dt>
                   <dd className="text-sm font-medium tabular-nums text-(--wa-text)">
-                    {customer.total_visits.toLocaleString('es-AR')}
+                    {formatNumber(customer.total_visits)}
                   </dd>
                 </div>
               </div>
               <div className="flex items-start gap-2">
                 <Wallet className="mt-0.5 size-4 shrink-0 text-(--wa-muted)" aria-hidden />
                 <div>
-                  <dt className="text-[11px] text-(--wa-muted)">Gastó en total</dt>
+                  <dt className="text-xs text-(--wa-muted)">Gastó en total</dt>
                   <dd className="text-sm font-medium tabular-nums text-(--wa-text)">
                     {pesos(customer.total_spent_cents)}
                   </dd>
@@ -169,7 +191,7 @@ export function ContactPanel({
               <div className="flex items-start gap-2">
                 <CalendarDays className="mt-0.5 size-4 shrink-0 text-(--wa-muted)" aria-hidden />
                 <div>
-                  <dt className="text-[11px] text-(--wa-muted)">Última visita</dt>
+                  <dt className="text-xs text-(--wa-muted)">Última visita</dt>
                   <dd className="text-sm font-medium text-(--wa-text)">
                     {formatRelativeDays(customer.last_visit_at) ?? 'Nunca vino'}
                   </dd>
@@ -179,7 +201,7 @@ export function ContactPanel({
                 <div className="flex items-start gap-2">
                   <Receipt className="mt-0.5 size-4 shrink-0 text-(--wa-muted)" aria-hidden />
                   <div>
-                    <dt className="text-[11px] text-(--wa-muted)">Gasto por visita</dt>
+                    <dt className="text-xs text-(--wa-muted)">Gasto por visita</dt>
                     <dd className="text-sm font-medium tabular-nums text-(--wa-text)">
                       {pesos(insights.avgTicketCents)}
                     </dd>
@@ -202,13 +224,13 @@ export function ContactPanel({
           <Block>
             <BlockTitle>Promociones</BlockTitle>
             {customer.is_blocked ? (
-              <p className="flex items-center gap-2 text-sm text-destructive">
+              <p className="flex items-center gap-2 text-sm text-destructive-text">
                 <ShieldAlert className="size-4 shrink-0" aria-hidden />
                 Cliente bloqueado: no le mandes mensajes.
               </p>
             ) : customer.opt_in_marketing ? (
               <p className="flex items-center gap-2 text-sm text-(--wa-text)">
-                <BellRing className="size-4 shrink-0 text-(--wa-accent)" aria-hidden />
+                <BellRing className="size-4 shrink-0 text-(--wa-accent-deep)" aria-hidden />
                 Aceptó recibir promos por WhatsApp.
               </p>
             ) : (
@@ -226,13 +248,12 @@ export function ContactPanel({
               Esta persona todavía no está en tu lista de clientes, así que no ves sus puntos ni
               visitas.
             </p>
-            <Link
-              href={`/${tenantSlug}/clientes/nuevo`}
-              className="inline-flex items-center gap-2 rounded-full bg-(--wa-accent) px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-(--wa-accent-deep)"
-            >
-              <UserPlus className="size-4" aria-hidden />
-              Crear cliente
-            </Link>
+            <Button asChild className={cn('rounded-full', waActionClass)}>
+              <Link href={`/${tenantSlug}/clientes/nuevo`}>
+                <UserPlus aria-hidden />
+                Crear cliente
+              </Link>
+            </Button>
             {phoneDisplay ? (
               <p className="text-xs text-(--wa-muted)">
                 Usá el teléfono {phoneDisplay} al crearlo y la charla se vincula sola.
@@ -250,8 +271,8 @@ export function ContactPanel({
             {assignedTags.map((tag) => (
               <span
                 key={tag.id}
-                className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
-                style={{ backgroundColor: `${tag.color}26`, color: tag.color }}
+                className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium text-(--wa-text)"
+                style={{ backgroundColor: `${tag.color}26` }}
               >
                 <span
                   className="size-2 rounded-full"
@@ -280,9 +301,10 @@ export function ContactPanel({
         <Block>
           <Link
             href={`/${tenantSlug}/clientes/${customer.id}`}
-            className="flex w-full items-center justify-center gap-2 rounded-full border border-(--wa-border) py-2 text-sm font-medium text-(--wa-accent-deep) transition-colors hover:bg-(--wa-hover)"
+            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-(--wa-border) py-2 text-sm font-medium text-(--wa-accent-deep) transition-colors hover:bg-(--wa-hover)"
           >
-            <ExternalLink className="size-4" aria-hidden />
+            {/* Misma pestaña: ícono de persona, no el de «abre afuera». */}
+            <UserRound className="size-4" aria-hidden />
             Ver ficha completa
           </Link>
         </Block>

@@ -1,7 +1,6 @@
-import { ArrowLeft } from 'lucide-react'
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
 import { getFlowGraph } from '@/lib/flows/graph-queries'
 import { getFlow } from '@/lib/flows/queries'
 import type { FlowStepConfig, FlowTriggerConfig } from '@/lib/flows/schemas'
@@ -61,31 +60,23 @@ export default async function EditFlowPage({
   if (!graphData) notFound()
 
   const isGraphFlow = graphData.nodes.length > 0
+  const listHref = `/${tenantSlug}/mensajeria/flows`
 
   if (isGraphFlow) {
-    // New-style graph flow → graph editor.
-    // Alto: 4rem del topbar + 3.25rem de la barra de pestañas del layout. Sin
-    // descontar esa barra el canvas se pasaba de largo y aparecía scroll de página.
+    // New-style graph flow → graph editor. Ocupa lo que queda debajo de las
+    // pestañas del layout (flex), sin alturas con números a mano: antes se
+    // descontaban 4rem de topbar (mide 3,5) y en el celular sobraba scroll.
     return (
-      <div className="flex h-[calc(100vh-7.25rem)] flex-col px-4 py-4 sm:px-6">
-        <div className="mb-4 flex shrink-0 flex-col gap-3">
-          <Link
-            href={`/${tenantSlug}/mensajeria/flows`}
-            className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="size-3" />
-            Volver a automatizaciones
-          </Link>
-          <PageHeader
-            eyebrow="Mensajería"
-            title="Editar automatización"
-            description={
-              graphData.flow.active
-                ? 'Está prendida: se les manda a tus clientes cuando corresponde.'
-                : 'En pausa · prendela cuando esté lista.'
-            }
-          />
-        </div>
+      <PageShell width="full" className="min-h-0 flex-1 gap-4 py-4 sm:py-4">
+        <PageHeader
+          back={{ href: listHref, label: 'Automatizaciones' }}
+          title="Editar automatización"
+          description={
+            graphData.flow.active
+              ? 'Está prendida: se les manda a tus clientes cuando corresponde.'
+              : 'En pausa · prendela cuando esté lista.'
+          }
+        />
         <FlowGraphEditorClient
           tenantSlug={tenantSlug}
           initial={{
@@ -100,7 +91,7 @@ export default async function EditFlowPage({
           templates={templates}
           tags={tags}
         />
-      </div>
+      </PageShell>
     )
   }
 
@@ -109,16 +100,9 @@ export default async function EditFlowPage({
   if (!flow) notFound()
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
-      <Link
-        href={`/${tenantSlug}/mensajeria/flows`}
-        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-3" />
-        Volver a automatizaciones
-      </Link>
+    <PageShell width="compact">
       <PageHeader
-        eyebrow="Mensajería"
+        back={{ href: listHref, label: 'Automatizaciones' }}
         title="Editar automatización"
         description={
           flow.active
@@ -139,6 +123,6 @@ export default async function EditFlowPage({
         templates={templates}
         tags={tags}
       />
-    </div>
+    </PageShell>
   )
 }

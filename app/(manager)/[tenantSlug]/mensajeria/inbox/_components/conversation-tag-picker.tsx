@@ -1,9 +1,11 @@
 'use client'
 
-import { Tag } from 'lucide-react'
-import { useActionState, useEffect, useState, useTransition } from 'react'
+import { Plus, Tag } from 'lucide-react'
+import { useActionState, useEffect, useId, useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   type ConversationTagActionState,
@@ -26,6 +28,7 @@ export function ConversationTagPicker({
   allTags: ConversationTag[]
   assignedTagIds: string[]
 }) {
+  const baseId = useId()
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set(assignedTagIds))
   const [saving, startSaving] = useTransition()
@@ -86,93 +89,100 @@ export function ConversationTagPicker({
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
+      {/* El ícono redondo del encabezado de WhatsApp. El foco es el contorno del
+          panel (regla base), no un anillo de sombra. */}
       <PopoverTrigger
         aria-label="Etiquetas de la charla"
         title="Etiquetas de la charla"
-        className="flex size-9 items-center justify-center rounded-full text-(--wa-text-soft) transition-colors hover:bg-(--wa-hover) hover:text-(--wa-text) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--wa-accent)"
+        className="relative hit-area flex size-9 items-center justify-center rounded-full text-(--wa-text-soft) transition-colors hover:bg-(--wa-hover) hover:text-(--wa-text)"
       >
         <Tag className="size-[18px]" aria-hidden />
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-60 p-0">
-        <div className="border-b border-border/60 px-3 py-2">
-          <p className="text-xs font-semibold text-foreground">Etiquetas</p>
+      <PopoverContent align="end" size="sm" className="p-0">
+        <div className="border-b border-border px-3 py-2">
+          <p className="type-label text-foreground">Etiquetas de la charla</p>
         </div>
 
         {allTags.length === 0 && !showCreate ? (
-          <p className="px-3 py-4 text-center text-xs text-muted-foreground">
-            Sin etiquetas todavía.
+          <p className="px-3 py-4 text-center type-small text-muted-foreground">
+            Todavía no hay etiquetas. Creá la primera acá abajo.
           </p>
         ) : (
-          <ul className="max-h-52 overflow-y-auto py-1">
+          <ul className="max-h-52 overflow-y-auto p-1">
             {allTags.map((tag) => {
               const checked = selected.has(tag.id)
+              const checkboxId = `${baseId}-${tag.id}`
               return (
                 <li key={tag.id}>
-                  <button
-                    type="button"
-                    onClick={() => toggle(tag.id)}
+                  {/* La fila entera es la etiqueta de la casilla (sin un botón
+                      adentro de otro, como antes). */}
+                  <Label
+                    htmlFor={checkboxId}
                     className={cn(
-                      'flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors hover:bg-secondary/40',
-                      checked && 'bg-secondary/20',
+                      'flex min-h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2 type-small font-normal hover:bg-hover pointer-coarse:min-h-11',
+                      checked && 'bg-selected',
                     )}
                   >
                     <Checkbox
+                      id={checkboxId}
                       checked={checked}
                       onCheckedChange={() => toggle(tag.id)}
-                      aria-label={tag.name}
-                      className="pointer-events-none"
                     />
                     <span
-                      className="size-2 rounded-full shrink-0"
+                      className="size-2 shrink-0 rounded-full"
                       style={{ backgroundColor: tag.color }}
                       aria-hidden
                     />
                     <span className="truncate">{tag.name}</span>
-                  </button>
+                  </Label>
                 </li>
               )
             })}
           </ul>
         )}
 
-        {/* Inline create */}
+        {/* Crear una etiqueta sin salir del chat */}
         {showCreate ? (
-          <form action={createAction} className="border-t border-border/60 px-3 py-2 space-y-2">
+          <form action={createAction} className="space-y-2 border-t border-border px-3 py-2">
             <input type="hidden" name="color" value={newColor} />
             <div className="flex items-center gap-2">
               <input
                 type="color"
                 value={newColor}
                 onChange={(e) => setNewColor(e.target.value)}
-                className="size-6 shrink-0 rounded cursor-pointer border border-border/60 bg-transparent p-0"
-                aria-label="Color de etiqueta"
+                className="size-8 shrink-0 cursor-pointer rounded-md border border-input bg-transparent p-0.5"
+                aria-label="Color de la etiqueta"
               />
-              <input
+              <Input
                 name="name"
+                size="sm"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                placeholder="Nombre…"
+                placeholder="Nombre de la etiqueta"
+                aria-label="Nombre de la etiqueta"
                 maxLength={40}
-                className="flex-1 rounded border border-border/60 bg-background px-2 py-1 text-xs outline-none focus:border-ring focus:ring-1 focus:ring-ring/50"
+                autoFocus
               />
             </div>
-            {'ok' in createState && !createState.ok && (
-              <p className="text-[10px] text-destructive">{createState.message}</p>
-            )}
-            <div className="flex gap-1.5">
+            {'ok' in createState && !createState.ok ? (
+              <p role="alert" className="type-caption text-destructive-text">
+                {createState.message}
+              </p>
+            ) : null}
+            <div className="flex gap-2">
               <Button
                 type="submit"
                 size="sm"
-                className="h-6 flex-1 text-[11px]"
-                disabled={creating || !newName.trim()}
+                className="flex-1"
+                loading={creating}
+                disabled={!newName.trim()}
               >
-                {creating ? 'Guardando…' : 'Crear'}
+                Crear
               </Button>
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-6 text-[11px]"
                 onClick={() => {
                   setShowCreate(false)
                   setNewName('')
@@ -183,25 +193,28 @@ export function ConversationTagPicker({
             </div>
           </form>
         ) : (
-          <div className="border-t border-border/60 px-3 py-2">
-            <button
+          <div className="border-t border-border p-1">
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start"
               onClick={() => setShowCreate(true)}
-              className="w-full rounded px-2 py-1.5 text-left text-[11px] text-muted-foreground transition-colors hover:bg-secondary/40 hover:text-foreground"
             >
-              + Nueva etiqueta
-            </button>
-          </div>
-        )}
-
-        {/* Footer: apply */}
-        {hasChanges && (
-          <div className="border-t border-border/60 px-3 py-2">
-            <Button size="sm" className="h-7 w-full text-xs" onClick={save} disabled={saving}>
-              {saving ? 'Guardando…' : 'Aplicar'}
+              <Plus aria-hidden />
+              Nueva etiqueta
             </Button>
           </div>
         )}
+
+        {/* Pie: aplicar (cerrar el popover también guarda) */}
+        {hasChanges ? (
+          <div className="border-t border-border px-3 py-2">
+            <Button size="sm" className="w-full" onClick={save} loading={saving}>
+              Aplicar
+            </Button>
+          </div>
+        ) : null}
       </PopoverContent>
     </Popover>
   )

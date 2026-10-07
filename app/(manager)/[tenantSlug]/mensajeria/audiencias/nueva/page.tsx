@@ -1,7 +1,6 @@
-import { ArrowLeft } from 'lucide-react'
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
 import { getAudienceBuilderOptions } from '@/lib/audiences/queries'
 import {
   RoleRequiredError,
@@ -30,22 +29,16 @@ export default async function NewAudiencePage({
   }
 
   const options = await getAudienceBuilderOptions(access.tenant.id)
+  const listHref = `/${tenantSlug}/mensajeria/audiencias`
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
-      <Link
-        href={`/${tenantSlug}/mensajeria/audiencias`}
-        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-3" />
-        Volver a audiencias
-      </Link>
+    <PageShell width="compact">
       <PageHeader
-        eyebrow="Mensajería"
+        back={{ href: listHref, label: 'Audiencias' }}
         title="Nueva audiencia"
         description="Elegí un grupo listo o armalo a tu medida. La cantidad de clientes se calcula sola mientras lo armás."
       />
-      <AudienceForm tenantSlug={tenantSlug} options={options} />
-    </div>
+      <AudienceForm tenantSlug={tenantSlug} options={options} cancelHref={listHref} />
+    </PageShell>
   )
 }

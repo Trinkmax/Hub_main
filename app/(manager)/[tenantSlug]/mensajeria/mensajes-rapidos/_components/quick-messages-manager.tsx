@@ -1,30 +1,23 @@
 'use client'
 
 import { Pencil, Plus, Trash2, Zap } from 'lucide-react'
-import { useActionState, useEffect, useState, useTransition } from 'react'
+import { useActionState, useEffect, useEffectEvent, useState } from 'react'
 import { toast } from 'sonner'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { DataTable } from '@/components/ui/data-table'
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Field, FormError } from '@/components/ui/field'
+import { Input, InputAddon, InputGroup } from '@/components/ui/input'
+import { Section } from '@/components/ui/section'
+import { SubmitButton } from '@/components/ui/submit-button'
 import { Textarea } from '@/components/ui/textarea'
 import {
   createQuickMessage,
@@ -45,7 +38,7 @@ const EXAMPLES = [
 
 function ShortcutChip({ shortcut }: { shortcut: string }) {
   return (
-    <span className="inline-flex shrink-0 items-center rounded-md bg-secondary px-1.5 py-0.5 font-mono text-[11px] font-medium text-secondary-foreground">
+    <span className="inline-flex shrink-0 items-center rounded-sm bg-secondary px-1.5 py-0.5 font-mono type-caption font-medium text-foreground">
       /{shortcut}
     </span>
   )
@@ -68,25 +61,26 @@ function QuickMessageForm({
     ? updateQuickMessage.bind(null, tenantSlug)
     : createQuickMessage.bind(null, tenantSlug)
 
-  const [state, formAction, pending] = useActionState(
+  const [state, formAction] = useActionState(
     (prev: QuickMessageActionState, fd: FormData) => action(prev, fd),
     initial,
   )
+  // Solo la respuesta del server cierra el diálogo (no un nuevo dibujo del padre).
+  const succeed = useEffectEvent(onSuccess)
 
   useEffect(() => {
     if (state.ok) {
-      toast.success(isEdit ? 'Mensaje actualizado.' : 'Mensaje creado.')
-      onSuccess()
+      toast.success(isEdit ? 'Mensaje rápido actualizado.' : 'Mensaje rápido creado.')
+      succeed()
     }
-  }, [state.ok, isEdit, onSuccess])
+  }, [state, isEdit])
 
   return (
-    <form action={formAction} className="space-y-4">
+    <form action={formAction} className="flex flex-col gap-4">
       {isEdit && <input type="hidden" name="id" value={message.id} />}
-      <div className="space-y-1.5">
-        <Label htmlFor="title">Título</Label>
+      <FormError message={!state.ok ? state.message : null} />
+      <Field label="Título" hint="Es solo para vos: el cliente no lo ve.">
         <Input
-          id="title"
           name="title"
           autoFocus
           required
@@ -94,19 +88,16 @@ function QuickMessageForm({
           defaultValue={message?.title ?? ''}
           placeholder="Bienvenida, Consulta horarios…"
         />
-        <p className="text-xs text-muted-foreground">Es solo para vos, el cliente no lo ve.</p>
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="shortcut">Atajo</Label>
-        <div className="flex">
-          <span
-            aria-hidden
-            className="flex h-10 items-center rounded-l-md border border-r-0 border-input bg-secondary/60 px-3 font-mono text-sm text-muted-foreground"
-          >
+      </Field>
+      <Field
+        label="Atajo"
+        hint="En el chat escribí / y el atajo para usarlo. Solo minúsculas, números, - y _, sin espacios."
+      >
+        <InputGroup>
+          <InputAddon aria-hidden className="font-mono">
             /
-          </span>
+          </InputAddon>
           <Input
-            id="shortcut"
             name="shortcut"
             required
             maxLength={40}
@@ -114,42 +105,32 @@ function QuickMessageForm({
             placeholder="bienvenida"
             pattern="^[a-z0-9_-]{1,40}$"
             title="Solo minúsculas, números, guion (-) y guion bajo (_), sin espacios"
-            className="rounded-l-none font-mono"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            className="font-mono"
           />
-        </div>
-        <p className="text-xs text-muted-foreground">
-          En el chat escribí <span className="font-mono text-foreground/80">/</span> y el atajo para
-          usarlo. Solo minúsculas, números, - y _, sin espacios.
-        </p>
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="body">Mensaje</Label>
+        </InputGroup>
+      </Field>
+      <Field label="Mensaje" hint="Esto es lo que se manda tal cual al cliente.">
         <Textarea
-          id="body"
           name="body"
           required
           maxLength={1024}
+          showCount
           rows={4}
           defaultValue={message?.body ?? ''}
           placeholder="¡Hola! Gracias por escribirnos…"
           className="resize-none"
         />
-        <p className="text-xs text-muted-foreground">
-          Esto es lo que se manda tal cual al cliente.
-        </p>
-      </div>
-      {!state.ok && state.message && (
-        <p role="alert" className="text-sm text-destructive">
-          {state.message}
-        </p>
-      )}
+      </Field>
       <DialogFooter>
-        <Button type="button" variant="ghost" onClick={onCancel}>
+        <Button type="button" variant="secondary" onClick={onCancel}>
           Cancelar
         </Button>
-        <Button type="submit" disabled={pending}>
-          {pending ? (isEdit ? 'Guardando…' : 'Creando…') : isEdit ? 'Guardar' : 'Crear atajo'}
-        </Button>
+        <SubmitButton pendingText={isEdit ? 'Guardando…' : 'Creando…'}>
+          {isEdit ? 'Guardar' : 'Crear atajo'}
+        </SubmitButton>
       </DialogFooter>
     </form>
   )
@@ -162,156 +143,161 @@ export function QuickMessagesManager({
   tenantSlug: string
   initialMessages: QuickMessageRow[]
 }) {
-  const [showCreate, setShowCreate] = useState(false)
-  const [editingMessage, setEditingMessage] = useState<QuickMessageRow | null>(null)
-  const [pending, startTransition] = useTransition()
-
-  const handleDelete = (msg: QuickMessageRow) => {
-    startTransition(async () => {
-      const r = await deleteQuickMessage(tenantSlug, msg.id)
-      if (r.ok) toast.success(`Atajo "${msg.title}" eliminado.`)
-      else toast.error(r.message)
-    })
-  }
+  // `null` cerrado · `'new'` creando · un mensaje: editándolo. Un solo diálogo.
+  const [dialog, setDialog] = useState<'new' | QuickMessageRow | null>(null)
+  const editing = dialog !== null && dialog !== 'new' ? dialog : undefined
+  const close = () => setDialog(null)
 
   const count = initialMessages.length
 
   return (
-    <div className="space-y-4">
-      <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent>
+    <>
+      <Dialog
+        open={dialog !== null}
+        onOpenChange={(open) => {
+          if (!open) close()
+        }}
+      >
+        <DialogContent size="sm">
           <DialogHeader>
-            <DialogTitle>Nuevo mensaje rápido</DialogTitle>
+            <DialogTitle>{editing ? 'Editar mensaje rápido' : 'Nuevo mensaje rápido'}</DialogTitle>
           </DialogHeader>
-          <QuickMessageForm
-            tenantSlug={tenantSlug}
-            onSuccess={() => setShowCreate(false)}
-            onCancel={() => setShowCreate(false)}
-          />
+          {dialog !== null ? (
+            <QuickMessageForm
+              key={editing?.id ?? 'new'}
+              tenantSlug={tenantSlug}
+              message={editing}
+              onSuccess={close}
+              onCancel={close}
+            />
+          ) : null}
         </DialogContent>
       </Dialog>
 
-      {count > 0 && (
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm text-muted-foreground">
-            {count === 1 ? '1 atajo guardado' : `${count} atajos guardados`}
-          </p>
-          <Button size="sm" onClick={() => setShowCreate(true)}>
-            <Plus className="mr-1.5 size-4" aria-hidden />
-            Nuevo atajo
-          </Button>
-        </div>
-      )}
-
       {count === 0 ? (
-        <div className="flex flex-col items-center rounded-xl border border-dashed border-border/80 bg-card/50 px-6 py-10 text-center">
-          <div className="mb-4 flex size-12 items-center justify-center rounded-full border border-border/70 bg-secondary/60 text-muted-foreground">
-            <Zap className="size-5" aria-hidden />
-          </div>
-          <p className="text-base font-medium">Ahorrá tiempo con atajos</p>
-          <p className="mt-1 max-w-sm text-sm text-muted-foreground text-pretty">
-            Guardá las respuestas que escribís siempre y mandalas en un toque. Por ejemplo:
-          </p>
-          <ul className="mx-auto mt-4 w-full max-w-sm space-y-2 text-left">
-            {EXAMPLES.map((e) => (
-              <li
-                key={e.shortcut}
-                className="flex items-center gap-2 rounded-lg border border-border/70 bg-card px-3 py-2"
-              >
-                <ShortcutChip shortcut={e.shortcut} />
-                <span className="truncate text-xs text-muted-foreground">{e.body}</span>
-              </li>
-            ))}
-          </ul>
-          <Button className="mt-6" onClick={() => setShowCreate(true)}>
-            <Plus className="mr-1.5 size-4" aria-hidden />
-            Crear mi primer atajo
-          </Button>
-        </div>
-      ) : (
-        <ul className="space-y-3">
-          {initialMessages.map((msg) => (
-            <li
-              key={msg.id}
-              className="rounded-xl border border-border/70 bg-card p-4 transition-colors hover:border-border"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <h3 className="text-sm font-medium leading-tight">{msg.title}</h3>
-                  <ShortcutChip shortcut={msg.shortcut} />
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <Dialog
-                    open={editingMessage?.id === msg.id}
-                    onOpenChange={(open) => {
-                      if (!open) setEditingMessage(null)
-                    }}
+        <EmptyState
+          variant="dashed"
+          icon={Zap}
+          title="Ahorrá tiempo con atajos"
+          description={
+            <>
+              <span className="block">
+                Guardá las respuestas que escribís siempre y mandalas en un toque. Por ejemplo:
+              </span>
+              <ul className="mt-4 flex flex-col gap-2 text-left">
+                {EXAMPLES.map((e) => (
+                  <li
+                    key={e.shortcut}
+                    className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2"
                   >
-                    <DialogTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8"
-                        aria-label={`Editar ${msg.title}`}
-                        onClick={() => setEditingMessage(msg)}
-                      >
-                        <Pencil className="size-4" aria-hidden />
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Editar mensaje rápido</DialogTitle>
-                      </DialogHeader>
-                      {editingMessage?.id === msg.id && (
-                        <QuickMessageForm
-                          tenantSlug={tenantSlug}
-                          message={editingMessage}
-                          onSuccess={() => setEditingMessage(null)}
-                          onCancel={() => setEditingMessage(null)}
-                        />
-                      )}
-                    </DialogContent>
-                  </Dialog>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 text-muted-foreground hover:text-destructive"
-                        aria-label={`Eliminar ${msg.title}`}
-                        disabled={pending}
-                      >
-                        <Trash2 className="size-4" aria-hidden />
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>¿Eliminar “{msg.title}”?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          El atajo /{msg.shortcut} va a dejar de funcionar en el chat. Esta acción
-                          no se puede deshacer.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={() => handleDelete(msg)}
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive/20"
-                        >
-                          Eliminar
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </div>
-              </div>
-              <p className="mt-2 line-clamp-4 whitespace-pre-wrap text-sm text-muted-foreground">
-                {msg.body}
-              </p>
-            </li>
-          ))}
-        </ul>
+                    <ShortcutChip shortcut={e.shortcut} />
+                    <span className="truncate type-small text-muted-foreground">{e.body}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          }
+          action={
+            <Button onClick={() => setDialog('new')}>
+              <Plus aria-hidden />
+              Crear mi primer atajo
+            </Button>
+          }
+        />
+      ) : (
+        <Section
+          title="Tus atajos"
+          description={count === 1 ? '1 atajo guardado' : `${count} atajos guardados`}
+          actions={
+            <Button onClick={() => setDialog('new')}>
+              <Plus aria-hidden />
+              Nuevo atajo
+            </Button>
+          }
+        >
+          <DataTable
+            caption="Mensajes rápidos"
+            rows={initialMessages}
+            getRowId={(msg) => msg.id}
+            columns={[
+              {
+                id: 'title',
+                header: 'Atajo',
+                cell: (msg) => (
+                  <span className="flex min-w-0 flex-wrap items-center gap-2">
+                    <span className="truncate">{msg.title}</span>
+                    <ShortcutChip shortcut={msg.shortcut} />
+                  </span>
+                ),
+              },
+              {
+                id: 'body',
+                header: 'Mensaje',
+                cell: (msg) => (
+                  <span className="line-clamp-2 whitespace-pre-wrap text-muted-foreground">
+                    {msg.body}
+                  </span>
+                ),
+              },
+              {
+                id: 'actions',
+                header: 'Acciones',
+                headerHidden: true,
+                align: 'end',
+                width: '6rem',
+                cell: (msg) => (
+                  <QuickMessageActions
+                    tenantSlug={tenantSlug}
+                    message={msg}
+                    onEdit={() => setDialog(msg)}
+                  />
+                ),
+              },
+            ]}
+          />
+        </Section>
       )}
+    </>
+  )
+}
+
+function QuickMessageActions({
+  tenantSlug,
+  message,
+  onEdit,
+}: {
+  tenantSlug: string
+  message: QuickMessageRow
+  onEdit: () => void
+}) {
+  return (
+    <div className="flex items-center justify-end gap-1">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label={`Editar ${message.title}`}
+        onClick={onEdit}
+      >
+        <Pencil aria-hidden />
+      </Button>
+      <ConfirmDialog
+        tone="danger"
+        icon={Trash2}
+        title={`¿Borrar el atajo «${message.title}»?`}
+        description={`El atajo /${message.shortcut} deja de funcionar en el chat. No se puede deshacer.`}
+        confirmLabel="Borrar atajo"
+        pendingLabel="Borrando…"
+        onConfirm={async () => {
+          const result = await deleteQuickMessage(tenantSlug, message.id)
+          if (!result.ok) return { ok: false, error: result.message }
+          toast.success(`Atajo «${message.title}» borrado.`)
+        }}
+        trigger={
+          <Button variant="danger-ghost" size="icon-sm" aria-label={`Borrar ${message.title}`}>
+            <Trash2 aria-hidden />
+          </Button>
+        }
+      />
     </div>
   )
 }

@@ -3,6 +3,7 @@
 import { ArrowLeft, BadgeCheck, Clock, Star, X } from 'lucide-react'
 import Link from 'next/link'
 import { type ReactNode, useState } from 'react'
+import { formatNumber } from '@/lib/format/number-kind'
 import { WaAvatar } from './wa-avatar'
 
 /**
@@ -46,7 +47,7 @@ export function ChatShell({
           <Link
             href={backHref}
             aria-label="Volver a la lista de chats"
-            className="flex size-9 shrink-0 items-center justify-center rounded-full text-(--wa-text-soft) transition-colors hover:bg-(--wa-hover) md:hidden"
+            className="relative hit-area flex size-9 shrink-0 items-center justify-center rounded-full text-(--wa-text-soft) transition-colors hover:bg-(--wa-hover) md:hidden"
           >
             <ArrowLeft className="size-5" aria-hidden />
           </Link>
@@ -54,7 +55,8 @@ export function ChatShell({
           <button
             type="button"
             onClick={() => setPanelOpen((v) => !v)}
-            className="flex min-w-0 flex-1 items-center gap-3 rounded-lg py-1 pl-1 pr-2 text-left transition-colors hover:bg-(--wa-hover)"
+            aria-expanded={panelOpen}
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-lg py-1 pr-2 pl-1 text-left transition-colors hover:bg-(--wa-hover)"
             title="Ver la ficha del cliente"
           >
             <WaAvatar
@@ -78,19 +80,27 @@ export function ChatShell({
                 title="Puntos para canjear del cliente"
                 className="hidden items-center gap-1 rounded-full bg-(--wa-panel-soft) px-2.5 py-1 text-xs font-medium tabular-nums text-(--wa-text-soft) @xl:flex"
               >
-                <Star className="size-3.5 text-(--wa-accent)" aria-hidden />
-                {loyalty.points.toLocaleString('es-AR')}
+                <Star className="size-3.5 text-(--wa-accent-deep)" aria-hidden />
+                {formatNumber(loyalty.points)}
               </span>
             ) : null}
             {loyalty?.tierName ? (
+              // El color del nivel va en el fondo y en el punto; la letra, en el
+              // texto del clon (un color de nivel claro como letra no se leía).
               <span
                 title="Categoría del cliente en el club"
-                className="hidden items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium @3xl:flex"
+                className="hidden items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium text-(--wa-text-soft) @3xl:flex"
                 style={{
                   backgroundColor: loyalty.tierColor ? `${loyalty.tierColor}26` : undefined,
-                  color: loyalty.tierColor ?? undefined,
                 }}
               >
+                {loyalty.tierColor ? (
+                  <span
+                    className="size-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: loyalty.tierColor }}
+                    aria-hidden
+                  />
+                ) : null}
                 {loyalty.tierName}
               </span>
             ) : null}
@@ -110,7 +120,7 @@ export function ChatShell({
               ) : (
                 <span
                   title="Pasaron más de 24 horas del último mensaje del cliente: para escribirle va un mensaje aprobado."
-                  className="hidden items-center gap-1 rounded-full bg-warning/15 px-2.5 py-1 text-xs font-medium text-warning @2xl:flex"
+                  className="hidden items-center gap-1 rounded-full bg-warning-soft px-2.5 py-1 text-xs font-medium text-warning-text @2xl:flex"
                 >
                   <BadgeCheck className="size-3" aria-hidden />
                   Con mensaje aprobado
@@ -129,14 +139,14 @@ export function ChatShell({
       {panelOpen ? (
         <aside
           aria-label="Información del cliente"
-          className="absolute inset-0 z-20 flex flex-col bg-(--wa-app) animate-in fade-in slide-in-from-right-4 duration-200 md:static md:inset-auto md:w-[360px] md:shrink-0 md:border-l md:border-(--wa-border) xl:w-[400px]"
+          className="absolute inset-0 z-20 flex flex-col bg-(--wa-app) animate-in fade-in slide-in-from-right-4 duration-200 motion-reduce:animate-none md:static md:inset-auto md:w-[360px] md:shrink-0 md:border-l md:border-(--wa-border) xl:w-[400px]"
         >
           <header className="flex h-[59px] shrink-0 items-center gap-3 border-b border-(--wa-border) bg-(--wa-panel) px-4">
             <button
               type="button"
               onClick={() => setPanelOpen(false)}
               aria-label="Cerrar la ficha del cliente"
-              className="flex size-9 items-center justify-center rounded-full text-(--wa-text-soft) transition-colors hover:bg-(--wa-hover)"
+              className="relative hit-area flex size-9 items-center justify-center rounded-full text-(--wa-text-soft) transition-colors hover:bg-(--wa-hover)"
             >
               <X className="size-5" aria-hidden />
             </button>

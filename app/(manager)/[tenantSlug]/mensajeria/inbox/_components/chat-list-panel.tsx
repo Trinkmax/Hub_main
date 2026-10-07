@@ -1,6 +1,6 @@
 'use client'
 
-import { CheckCheck, ChevronDown, Search, X } from 'lucide-react'
+import { Camera, CheckCheck, ChevronDown, Search, X } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
@@ -16,6 +16,7 @@ import type { ConversationTag } from '@/lib/conversation-tags/queries'
 import { formatPhoneForDisplay } from '@/lib/phone'
 import { createClient, realtimeAuthReady } from '@/lib/supabase/browser'
 import { cn } from '@/lib/utils'
+import { UnreadBadge } from '../../_components/wa-rail'
 import { NewChatDialog } from './new-chat-dialog'
 import { WaAvatar } from './wa-avatar'
 
@@ -115,27 +116,42 @@ export function ChatListPanel({
     <div className="flex h-full min-h-0 flex-col bg-(--wa-panel)">
       {/* Header: título + nuevo chat */}
       <header className="flex items-center justify-between px-4 pb-1 pt-3.5">
-        <h1 className="text-[19px] font-bold tracking-tight text-(--wa-text)">Chats</h1>
+        {/* data-slot="page-title": el `.wa` le da el título compacto de 19 px
+            (globals.css), el mismo que al PageHeader del resto de Mensajería. */}
+        <h1 data-slot="page-title" className="text-(--wa-text)">
+          Chats
+        </h1>
         <NewChatDialog tenantSlug={tenantSlug} templates={templates} />
       </header>
 
       {/* Buscador */}
       <div className="px-3 pb-2 pt-1">
-        <div className="flex items-center gap-2 rounded-full bg-(--wa-panel-soft) px-3.5 py-2">
+        {/* El buscador de WhatsApp (píldora). El foco se dibuja en la píldora
+            entera, con el contorno del panel; 16 px con el dedo para que iOS
+            no haga zoom al tocarlo. */}
+        <div className="flex items-center gap-2 rounded-full bg-(--wa-panel-soft) px-3.5 py-2 outline-(--ring) -outline-offset-1 has-[input:focus-visible]:outline-2">
           <Search className="size-4 shrink-0 text-(--wa-muted)" aria-hidden />
           <input
+            type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape' && query !== '') {
+                e.preventDefault()
+                setQuery('')
+              }
+            }}
             placeholder="Buscar un chat"
             aria-label="Buscar un chat"
-            className="w-full bg-transparent text-sm text-(--wa-text) outline-none placeholder:text-(--wa-muted)"
+            autoComplete="off"
+            className="w-full bg-transparent text-(length:--control-font) text-(--wa-text) outline-none placeholder:text-(--wa-muted) [&::-webkit-search-cancel-button]:appearance-none"
           />
           {query !== '' ? (
             <button
               type="button"
               onClick={() => setQuery('')}
               aria-label="Limpiar búsqueda"
-              className="text-(--wa-muted) hover:text-(--wa-text)"
+              className="relative hit-area flex size-6 shrink-0 items-center justify-center rounded-full text-(--wa-muted) hover:text-(--wa-text)"
             >
               <X className="size-4" aria-hidden />
             </button>
@@ -238,11 +254,13 @@ export function ChatListPanel({
                         className="size-12 text-lg"
                       />
                       {c.channel_type === 'instagram' ? (
+                        // Ícono y no «IG» en 7 px: nada de texto por debajo de 12 px.
                         <span
                           title="Instagram"
-                          className="absolute -bottom-0.5 -right-0.5 flex size-4.5 items-center justify-center rounded-full bg-[#d62976] text-[7px] font-bold text-white ring-2 ring-(--wa-panel)"
+                          className="absolute -right-0.5 -bottom-0.5 flex size-5 items-center justify-center rounded-full bg-[#d62976] text-white ring-2 ring-(--wa-panel)"
                         >
-                          IG
+                          <Camera className="size-3" aria-hidden />
+                          <span className="sr-only">Instagram</span>
                         </span>
                       ) : null}
                     </div>
@@ -253,8 +271,9 @@ export function ChatListPanel({
                         </span>
                         <span
                           className={cn(
-                            'shrink-0 text-[11px] tabular-nums',
-                            unread ? 'font-semibold text-(--wa-unread)' : 'text-(--wa-muted)',
+                            'shrink-0 text-xs tabular-nums',
+                            // Verde profundo: el claro de antes daba 2,9:1 sobre el panel.
+                            unread ? 'font-semibold text-(--wa-accent-deep)' : 'text-(--wa-muted)',
                           )}
                         >
                           {formatListTimestamp(c.last_message_at)}
@@ -276,18 +295,26 @@ export function ChatListPanel({
                           <span className="truncate">{previewTextFor(c.preview)}</span>
                         </span>
                         {unread ? (
-                          <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-(--wa-unread) px-1.5 text-[11px] font-bold tabular-nums text-white">
-                            {c.unread_count}
-                          </span>
+                          <>
+                            <UnreadBadge count={c.unread_count} className="shrink-0 px-1.5" />
+                            <span className="sr-only">
+                              {c.unread_count === 1
+                                ? ', 1 mensaje sin leer'
+                                : `, ${c.unread_count} mensajes sin leer`}
+                            </span>
+                          </>
                         ) : null}
                       </div>
                       {c.tags.length > 0 ? (
                         <div className="mt-1 flex flex-wrap gap-1">
                           {c.tags.map((tag) => (
+                            // El nombre va en el texto del clon (el color de la etiqueta
+                            // como letra no se leía: los de la paleta son claros); el
+                            // color queda en el fondo y en el punto.
                             <span
                               key={tag.id}
-                              className="inline-flex items-center gap-1 rounded-full px-1.5 text-[10px] font-medium leading-4"
-                              style={{ backgroundColor: `${tag.color}26`, color: tag.color }}
+                              className="inline-flex items-center gap-1 rounded-full px-1.5 type-caption font-medium text-(--wa-text-soft)"
+                              style={{ backgroundColor: `${tag.color}26` }}
                             >
                               <span
                                 className="size-1.5 shrink-0 rounded-full"

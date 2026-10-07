@@ -3,19 +3,11 @@
 import { Plug, RefreshCw, Unplug } from 'lucide-react'
 import { useActionState, useEffect } from 'react'
 import { toast } from 'sonner'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog, type ConfirmFormState } from '@/components/ui/confirm-dialog'
+import { SubmitButton } from '@/components/ui/submit-button'
 import { disconnectChannel, type MetaActionState, syncTemplatesAction } from '@/lib/meta/actions'
+import { toConfirmState } from '../_components/confirm-state'
 
 const initial: MetaActionState = { ok: true }
 
@@ -28,76 +20,58 @@ export function ChannelCardActions({
   type: 'whatsapp' | 'instagram'
   tenantSlug: string
 }) {
-  const [disconnectState, disconnectAction, disconnectPending] = useActionState(
-    disconnectChannel.bind(null, tenantSlug),
-    initial,
-  )
-  const [syncState, syncAction, syncPending] = useActionState(
+  const [syncState, syncAction] = useActionState(
     syncTemplatesAction.bind(null, tenantSlug),
     initial,
   )
   const channelName = type === 'whatsapp' ? 'WhatsApp' : 'Instagram'
 
   useEffect(() => {
-    if (!disconnectState.ok && disconnectState.message) toast.error(disconnectState.message)
-    else if (disconnectState.ok && disconnectState.message) toast.success(disconnectState.message)
-  }, [disconnectState])
-
-  useEffect(() => {
     if (!syncState.ok && syncState.message) toast.error(syncState.message)
     else if (syncState.ok && syncState.message) toast.success(syncState.message)
   }, [syncState])
 
+  // La confirmación espera la acción con el diálogo abierto: si Meta falla,
+  // el motivo queda adentro en lugar de un aviso que se va.
+  async function disconnect(_prev: ConfirmFormState, formData: FormData) {
+    const result = await disconnectChannel(tenantSlug, initial, formData)
+    if (result.ok && result.message) toast.success(result.message)
+    return toConfirmState(result)
+  }
+
   return (
     <div className="flex flex-wrap gap-2">
-      <Button asChild variant="outline" className="gap-1.5">
+      <Button asChild variant="secondary">
         <a href={`/api/meta/${type}/connect?tenant=${encodeURIComponent(tenantSlug)}`}>
-          <Plug className="size-4" aria-hidden />
+          <Plug aria-hidden />
           Reconectar
         </a>
       </Button>
       {type === 'whatsapp' ? (
         <form action={syncAction}>
           <input type="hidden" name="channel_id" value={channelId} />
-          <Button type="submit" variant="outline" disabled={syncPending} className="gap-1.5">
-            <RefreshCw className={`size-4 ${syncPending ? 'animate-spin' : ''}`} aria-hidden />
-            {syncPending ? 'Sincronizando…' : 'Sincronizar plantillas'}
-          </Button>
+          <SubmitButton variant="secondary" pendingText="Sincronizando…">
+            <RefreshCw aria-hidden />
+            Sincronizar plantillas
+          </SubmitButton>
         </form>
       ) : null}
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button
-            variant="ghost"
-            disabled={disconnectPending}
-            className="gap-1.5 text-muted-foreground hover:text-destructive"
-          >
-            <Unplug className="size-4" aria-hidden />
+      <ConfirmDialog
+        tone="danger"
+        icon={Unplug}
+        title={`¿Desconectar ${channelName}?`}
+        description={`El bar deja de mandar y recibir mensajes por ${channelName} hasta que lo vuelvas a conectar. Las conversaciones ya guardadas no se pierden.`}
+        confirmLabel={`Desconectar ${channelName}`}
+        pendingLabel="Desconectando…"
+        formAction={disconnect}
+        hiddenFields={{ channel_id: channelId }}
+        trigger={
+          <Button variant="danger-ghost">
+            <Unplug aria-hidden />
             Desconectar
           </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Desconectar {channelName}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              El bar deja de mandar y recibir mensajes por {channelName} hasta que lo vuelvas a
-              conectar. Las conversaciones ya guardadas no se pierden.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <form action={disconnectAction}>
-              <input type="hidden" name="channel_id" value={channelId} />
-              <AlertDialogAction
-                type="submit"
-                className="bg-destructive text-white hover:bg-destructive/90"
-              >
-                Sí, desconectar
-              </AlertDialogAction>
-            </form>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        }
+      />
     </div>
   )
 }

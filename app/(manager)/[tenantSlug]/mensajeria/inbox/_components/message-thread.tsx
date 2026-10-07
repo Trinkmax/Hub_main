@@ -1,18 +1,17 @@
 'use client'
 
-import { format } from 'date-fns'
 import {
   Check,
   CheckCheck,
   ChevronDown,
   Clock3,
   FileText,
-  Loader2,
   Megaphone,
   TriangleAlert,
   Workflow,
 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { Spinner } from '@/components/ui/spinner'
 import { loadOlderMessages } from '@/lib/bandeja/actions'
 import { dayKey, formatDaySeparator } from '@/lib/bandeja/format'
 import type { MessageRow } from '@/lib/bandeja/queries'
@@ -21,6 +20,7 @@ import {
   renderSentTemplate,
   type TemplateLite,
 } from '@/lib/bandeja/template-view'
+import { formatTime } from '@/lib/dates'
 import { markConversationRead } from '@/lib/meta/actions'
 import { createClient, realtimeAuthReady } from '@/lib/supabase/browser'
 import { cn } from '@/lib/utils'
@@ -74,7 +74,7 @@ function MediaBubble({ message }: { message: MessageRow }) {
         href={media_url}
         target="_blank"
         rel="noopener noreferrer"
-        className="mb-1 flex items-center gap-2 rounded-lg bg-black/5 px-3 py-2 text-sm underline-offset-2 hover:underline dark:bg-white/10"
+        className="mb-1 flex items-center gap-2 rounded-lg bg-foreground/8 px-3 py-2 text-sm underline-offset-2 hover:underline"
       >
         <FileText className="size-4 shrink-0" aria-hidden />
         <span className="truncate">{filename ?? media_mime ?? 'Documento'}</span>
@@ -107,7 +107,7 @@ function StatusTicks({ status }: { status: MessageRow['status'] }) {
     ) : status === 'read' ? (
       <CheckCheck className="size-3.5 text-(--wa-tick)" />
     ) : status === 'failed' ? (
-      <TriangleAlert className="size-3.5 text-destructive" />
+      <TriangleAlert className="size-3.5 text-destructive-text" />
     ) : null
   if (!icon) return null
   return (
@@ -329,10 +329,11 @@ export function MessageThread({
               type="button"
               onClick={handleLoadOlder}
               disabled={isPending}
-              className="inline-flex items-center gap-1.5 rounded-full bg-(--wa-system-pill) px-3.5 py-1.5 text-xs font-medium text-(--wa-text-soft) shadow-sm transition-colors hover:text-(--wa-text) disabled:opacity-60"
+              aria-busy={isPending || undefined}
+              className="inline-flex min-h-8 items-center gap-1.5 rounded-full bg-(--wa-system-pill) px-3.5 py-1.5 text-xs font-medium text-(--wa-text-soft) shadow-sm transition-colors hover:text-(--wa-text) disabled:opacity-60"
             >
-              {isPending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
-              Ver mensajes anteriores
+              {isPending ? <Spinner size={14} aria-hidden /> : null}
+              {isPending ? 'Buscando mensajes…' : 'Ver mensajes anteriores'}
             </button>
           </div>
         ) : null}
@@ -349,7 +350,8 @@ export function MessageThread({
           // key por primer mensaje: dayKey puede repetirse si sent_at viene desordenado
           <div key={group.items[0]?.id ?? group.key} className="relative">
             <div className="sticky top-1 z-10 my-2.5 flex justify-center">
-              <span className="rounded-lg bg-(--wa-system-pill) px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-(--wa-text-soft) shadow-sm">
+              {/* 12 px y sin mayúsculas espaciadas: «Hoy», «Ayer», «Lunes». */}
+              <span className="rounded-lg bg-(--wa-system-pill) px-3 py-1 text-xs font-medium text-(--wa-text-soft) shadow-sm">
                 {group.label}
               </span>
             </div>
@@ -382,7 +384,7 @@ export function MessageThread({
                     {groupStart ? <BubbleTail outbound={outbound} /> : null}
 
                     {fromBroadcast || fromFlow || template ? (
-                      <p className="mb-0.5 flex items-center gap-1 text-[11px] font-medium text-(--wa-accent-deep)">
+                      <p className="mb-0.5 flex items-center gap-1 text-xs font-medium text-(--wa-accent-deep)">
                         {fromBroadcast ? (
                           <>
                             <Megaphone className="size-3" aria-hidden />
@@ -421,20 +423,19 @@ export function MessageThread({
 
                     <span
                       className={cn(
-                        'absolute bottom-1 right-2 flex items-center gap-0.5 text-[11px] leading-none',
+                        'absolute right-2 bottom-1 flex items-center gap-0.5 text-xs leading-none',
                         outbound ? 'text-(--wa-bubble-meta-out)' : 'text-(--wa-bubble-meta)',
                       )}
                     >
-                      <span className="tabular-nums">
-                        {format(new Date(m.sent_at ?? m.created_at), 'HH:mm')}
-                      </span>
+                      {/* Hora del bar (Córdoba), escrita a mano: igual en el server y en el navegador. */}
+                      <span className="tabular-nums">{formatTime(m.sent_at ?? m.created_at)}</span>
                       {outbound ? <StatusTicks status={m.status} /> : null}
                     </span>
 
                     {m.error ? (
                       <p
                         title={m.error}
-                        className="mt-1 flex items-center gap-1 text-[11px] text-destructive"
+                        className="mt-1 flex items-center gap-1 text-xs text-destructive-text"
                       >
                         <TriangleAlert className="size-3 shrink-0" aria-hidden />
                         {friendlyError(m.error)}
@@ -454,7 +455,7 @@ export function MessageThread({
           type="button"
           aria-label="Ir al último mensaje"
           onClick={() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' })}
-          className="absolute bottom-4 right-4 flex size-10 items-center justify-center rounded-full bg-(--wa-panel) text-(--wa-text-soft) shadow-md transition-transform hover:scale-105"
+          className="press absolute right-4 bottom-4 flex size-10 items-center justify-center rounded-full border border-(--wa-border) bg-(--wa-panel) text-(--wa-text-soft) shadow-float hover:text-(--wa-text)"
         >
           <ChevronDown className="size-5" aria-hidden />
         </button>
