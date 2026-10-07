@@ -420,106 +420,6 @@ function FormSection({ title, description, className, children, ...props }: Form
   )
 }
 
-export type FormActionsProps = React.ComponentProps<'div'> & {
-  /** `mobile` (default): barra fija abajo en el celular · `always`: también pegada abajo en escritorio · `false`: nunca. */
-  sticky?: 'mobile' | 'always' | false
-  align?: 'end' | 'between'
-}
-
-/**
- * Celular con alto suficiente (≥ 480 px): barra fija abajo. Con menos alto
- * (apaisado, zoom de 200 %) deja de ser fija: dos barras fijas taparían el
- * formulario (WCAG 1.4.10).
- */
-const MOBILE_FIXED = [
-  'max-sm:[@media(min-height:30rem)]:fixed max-sm:[@media(min-height:30rem)]:inset-x-0',
-  'max-sm:[@media(min-height:30rem)]:bottom-0 max-sm:[@media(min-height:30rem)]:z-40',
-  'max-sm:[@media(min-height:30rem)]:border-t max-sm:[@media(min-height:30rem)]:border-border',
-  'max-sm:[@media(min-height:30rem)]:bg-background max-sm:[@media(min-height:30rem)]:px-4',
-  'max-sm:[@media(min-height:30rem)]:pt-3',
-  'max-sm:[@media(min-height:30rem)]:pb-[max(0.75rem,env(safe-area-inset-bottom))]',
-].join(' ')
-
-/**
- * En el celular, botones de 44 px del mismo ancho y dos por fila. Con tres, la
- * principal (la última) ocupa sola la fila de arriba; si el encabezado ya tiene
- * `back`, mejor sacar «Cancelar» de la barra (`className="max-sm:hidden"`).
- */
-const MOBILE_GRID = [
-  'max-sm:grid max-sm:grid-cols-2 max-sm:has-[>:only-child]:grid-cols-1',
-  'max-sm:[&>*]:w-full max-sm:[&>[data-slot=button]]:h-11',
-  'max-sm:[&>:last-child:nth-child(3)]:order-first max-sm:[&>:last-child:nth-child(3)]:col-span-2',
-].join(' ')
-
-const STICKY_DESKTOP =
-  'sm:sticky sm:bottom-0 sm:z-10 sm:border-t sm:border-border sm:bg-background sm:py-3'
-
-/**
- * Las acciones del formulario (§3.2): secundario y después principal.
- *
- * Mientras la barra está fija escribe su alto en `<html>` como
- * `--sticky-actions-h` (y lo borra al desmontarse o al dejar de ser fija): una
- * variable puesta en la barra no le llegaría al Toaster ni al
- * `scroll-padding-bottom` del documento, que están arriba en el árbol. El
- * envoltorio usa esa misma variable como alto, así el final del formulario no
- * queda tapado.
- */
-function FormActions({
-  sticky = 'mobile',
-  align = 'end',
-  className,
-  children,
-  ...props
-}: FormActionsProps) {
-  const barRef = React.useRef<HTMLDivElement>(null)
-
-  React.useEffect(() => {
-    if (sticky === false) return
-    const bar = barRef.current
-    if (!bar) return
-    const root = document.documentElement
-    const update = () => {
-      if (getComputedStyle(bar).position === 'fixed') {
-        root.style.setProperty('--sticky-actions-h', `${bar.offsetHeight}px`)
-      } else {
-        root.style.removeProperty('--sticky-actions-h')
-      }
-    }
-    update()
-    const observer = new ResizeObserver(update)
-    observer.observe(bar)
-    window.addEventListener('resize', update)
-    return () => {
-      observer.disconnect()
-      window.removeEventListener('resize', update)
-      root.style.removeProperty('--sticky-actions-h')
-    }
-  }, [sticky])
-
-  return (
-    <div
-      data-slot="form-actions"
-      className={cn(sticky !== false && 'max-sm:h-(--sticky-actions-h)')}
-      {...props}
-    >
-      <div
-        ref={barRef}
-        data-slot="form-actions-bar"
-        className={cn(
-          'flex flex-wrap items-center gap-2',
-          align === 'between' ? 'justify-between' : 'justify-end',
-          MOBILE_GRID,
-          sticky !== false && MOBILE_FIXED,
-          sticky === 'always' && STICKY_DESKTOP,
-          className,
-        )}
-      >
-        {children}
-      </div>
-    </div>
-  )
-}
-
 export type FormErrorProps = Omit<React.ComponentProps<'div'>, 'title' | 'children'> & {
   message?: string | null
   title?: React.ReactNode
@@ -553,6 +453,11 @@ function FormError({ message, title, className, ...props }: FormErrorProps) {
   )
 }
 
+// La barra de acciones (§3.2) tiene una sola implementación, en
+// `form-actions.tsx` (con el foco al primer error); acá se re-exporta para el
+// import del spec. El import va en un solo sentido (field → form-actions): no
+// arma ciclo.
+export { FormActions, type FormActionsProps } from '@/components/ui/form-actions'
 // El spec la ubica acá (§3.2, MoneyField punto 8). Vive en lib/dom porque es
 // DOM puro y la usan campos que no pasan por Field; esto deja andando el import
 // del spec (`@/components/ui/field`).
@@ -560,7 +465,6 @@ export { scrollIntoViewOnTouch } from '@/lib/dom/form-control'
 export {
   Field,
   FieldRow,
-  FormActions,
   FormError,
   FormSection,
   useField,
