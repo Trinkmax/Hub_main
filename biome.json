@@ -10,8 +10,6 @@
       "**",
       "!.next",
       "!node_modules",
-      "!components/ui/form.tsx",
-      "!components/ui/view-transition-link.tsx",
       "!components/ui-legacy",
       "!components/legacy",
       "!supabase/.branches",

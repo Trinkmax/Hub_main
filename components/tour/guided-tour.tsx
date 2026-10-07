@@ -17,6 +17,9 @@ import type { TourDefinition, TourStep } from './types'
  * `target` (o cuyo target no está montado y tiene `fallbackCentered`) se
  * muestra como tarjeta centrada. Un paso cuyo target falta y NO es centrable
  * se saltea solo — así el tour no se rompe si la UI cambia.
+ *
+ * La tarjeta y el velo usan el kit HUB (§7.d): se reestilan, pero los ids,
+ * el `localStorage` (`TourLauncher`) y los anclajes no cambian.
  */
 
 type Rect = { top: number; left: number; width: number; height: number }
@@ -134,27 +137,13 @@ export function GuidedTour({
       role="dialog"
       aria-modal="true"
       aria-label={`Tutorial: ${tour.title}`}
+      data-slot="tour"
       onClick={(e) => {
         // Click en el fondo avanza (gesto natural en mobile); la tarjeta frena la propagación.
         if (e.target === e.currentTarget) next()
       }}
     >
-      {/* Spotlight (o velo completo en pasos centrados) */}
-      {rect ? (
-        <div
-          aria-hidden
-          className="pointer-events-none absolute rounded-xl ring-2 ring-primary/80 transition-all duration-300 ease-out"
-          style={{
-            top: rect.top,
-            left: rect.left,
-            width: rect.width,
-            height: rect.height,
-            boxShadow: '0 0 0 9999px rgba(15, 20, 12, 0.62)',
-          }}
-        />
-      ) : (
-        <div aria-hidden className="absolute inset-0 bg-[rgba(15,20,12,0.62)]" />
-      )}
+      <TourBackdrop rect={rect} />
 
       <TourCard
         ref={cardRef}
@@ -171,7 +160,51 @@ export function GuidedTour({
   )
 }
 
-function TourCard({
+/**
+ * El velo. Con un target medido es el spotlight: un div sobre el target con
+ * una sombra gigante que tapa todo lo demás. Sin target (pasos centrados), el
+ * velo entero. El color es el del velo de los diálogos (`--overlay`: tinta al
+ * 40 % en claro, negro al 60 % en oscuro).
+ *
+ * El borde del recorte es un `outline`: el `boxShadow` en línea pisaba la
+ * sombra de un `ring-*` (por eso el anillo de antes nunca se vio), y el
+ * contorno además sobrevive al alto contraste de Windows, que borra las
+ * sombras y con ellas el velo: ahí es lo único que marca el target. Con
+ * «reducir movimiento» salta de un target al otro sin deslizarse.
+ *
+ * Exportado para los tests de render; la página usa `GuidedTour`.
+ */
+export function TourBackdrop({ rect }: { rect: Rect | null }) {
+  if (!rect) {
+    return <div aria-hidden data-slot="tour-scrim" className="absolute inset-0 bg-overlay" />
+  }
+  return (
+    <div
+      aria-hidden
+      data-slot="tour-spotlight"
+      className={cn(
+        'pointer-events-none absolute rounded-xl outline-2 outline-primary',
+        'transition-[top,left,width,height] duration-(--duration-overlay) ease-(--ease-move) motion-reduce:transition-none',
+      )}
+      style={{
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+        boxShadow: '0 0 0 9999px var(--overlay)',
+      }}
+    />
+  )
+}
+
+/**
+ * La tarjeta de cada paso, con el vocabulario del diálogo del kit (§3.7):
+ * cartulina que flota con pelo de 1 px y sombra modal, título de sección,
+ * cuerpo de 14 px y la X fantasma de 32 px (44 de área con el dedo).
+ *
+ * Exportada para los tests de render; la página usa `GuidedTour`.
+ */
+export function TourCard({
   ref,
   step,
   rect,
@@ -182,7 +215,7 @@ function TourCard({
   onNext,
   onClose,
 }: {
-  ref: React.Ref<HTMLDivElement>
+  ref?: React.Ref<HTMLDivElement>
   step: TourStep
   rect: Rect | null
   index: number
@@ -216,16 +249,23 @@ function TourCard({
     return { top, left, width: CARD_W }
   }, [isMobile, rect])
 
+  const progress = `Paso ${index + 1} de ${total}`
+
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: el click sólo frena la propagación (el fondo avanza al tocarlo); el teclado se maneja global en el listener de window
     <div
       ref={ref}
       role="document"
       tabIndex={-1}
+      data-slot="tour-card"
       onClick={(e) => e.stopPropagation()}
       className={cn(
-        'absolute flex flex-col gap-3 rounded-2xl border border-border/60 bg-card p-4 shadow-xl outline-none',
-        'animate-in fade-in-0 zoom-in-95 duration-200',
+        // Sin contorno propio: recibe el foco por código en cada paso, como el
+        // contenido de un diálogo. Los botones de adentro sí dibujan el suyo.
+        'absolute flex flex-col gap-3 rounded-2xl border border-border bg-popover p-5 text-popover-foreground shadow-modal outline-none',
+        // Entra como un diálogo (opacidad + escala 0,97 en 220 ms); con
+        // «reducir movimiento», solo el fundido.
+        'animate-in fade-in-0 zoom-in-97 duration-(--duration-overlay) ease-(--ease-ui) motion-reduce:zoom-in-100',
         (isMobile || !rect) && 'inset-x-3 bottom-3 w-auto',
         !isMobile &&
           !rect &&
@@ -235,27 +275,40 @@ function TourCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="type-caption font-semibold text-primary">
-            {step.kicker ?? `Paso ${index + 1} de ${total}`}
+          <p data-slot="tour-kicker" className="type-caption font-medium text-primary">
+            {step.kicker ?? progress}
+            {/* Con un kicker propio, los puntos son el único avance y van
+                ocultos: el lector lo escucha igual. */}
+            {step.kicker ? <span className="sr-only"> · {progress}</span> : null}
           </p>
-          <h2 className="mt-1 font-serif text-lg font-semibold leading-snug">{step.title}</h2>
+          <h2 data-slot="tour-title" className="mt-1 type-section text-balance text-foreground">
+            {step.title}
+          </h2>
         </div>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-sm"
           onClick={onClose}
           aria-label="Salir del tutorial"
-          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          data-slot="tour-close"
+          // El ícono queda alineado con el borde del contenido y centrado
+          // contra la línea del kicker.
+          className="-mt-2 -mr-2"
         >
-          <X className="size-4" aria-hidden />
-        </button>
+          <X aria-hidden />
+        </Button>
       </div>
 
-      <div className="text-sm leading-relaxed text-muted-foreground">{step.body}</div>
+      <div data-slot="tour-body" className="type-body text-pretty text-muted-foreground">
+        {step.body}
+      </div>
 
       {step.demo ? (
         <div
           aria-hidden
-          className="pointer-events-none select-none rounded-xl border border-border/60 bg-secondary/30 p-3"
+          data-slot="tour-demo"
+          className="pointer-events-none select-none rounded-xl border border-border bg-muted p-3"
         >
           {step.demo}
         </div>
@@ -269,28 +322,28 @@ function TourCard({
               key={i}
               className={cn(
                 'size-1.5 rounded-full transition-colors',
-                i === index ? 'bg-primary' : i < index ? 'bg-primary/40' : 'bg-border',
+                i === index ? 'bg-primary' : i < index ? 'bg-primary/40' : 'bg-border-strong',
               )}
             />
           ))}
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           {index > 0 ? (
-            <Button variant="ghost" size="sm" onClick={onPrev} className="gap-1">
-              <ArrowLeft className="size-3.5" aria-hidden />
+            <Button type="button" variant="ghost" size="sm" onClick={onPrev} data-slot="tour-prev">
+              <ArrowLeft aria-hidden />
               Anterior
             </Button>
           ) : null}
-          <Button size="sm" onClick={onNext} className="gap-1">
+          <Button type="button" size="sm" onClick={onNext} data-slot="tour-next">
             {isLast ? (
               <>
                 ¡Listo!
-                <Check className="size-3.5" aria-hidden />
+                <Check aria-hidden />
               </>
             ) : (
               <>
                 Siguiente
-                <ArrowRight className="size-3.5" aria-hidden />
+                <ArrowRight aria-hidden />
               </>
             )}
           </Button>
