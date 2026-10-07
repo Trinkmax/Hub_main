@@ -6,7 +6,7 @@ import { StatCard } from '@/components/ui/stat-card'
 import { getTodaySalonOverview } from '@/lib/salon/queries'
 import { getDailyMetrics, getKpis, getTopCustomersBySpent } from '@/lib/stats/queries'
 import { createClient } from '@/lib/supabase/server'
-import { requireTenantAccess } from '@/lib/tenant'
+import { homePathForRole, requireTenantAccess } from '@/lib/tenant'
 import type { TenantRole } from '@/lib/tenant/types'
 import { OnboardingChecklist } from './_components/onboarding-checklist'
 import { QuickActions } from './_components/quick-actions'
@@ -115,6 +115,8 @@ export default async function TenantHomePage({
 }) {
   const { tenantSlug } = await params
   const { tenant, role } = await requireTenantAccess(tenantSlug)
+  // El home es del dueño: cualquier otro rol va al suyo (backstop del proxy).
+  if (role !== 'owner') redirect(homePathForRole(role, tenantSlug))
   const isOwner = role === 'owner'
 
   // Si el owner no completó el onboarding wizard, redirigirlo allí.

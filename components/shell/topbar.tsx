@@ -2,7 +2,7 @@ import { CommandPalette } from '@/components/command-palette/command-palette'
 import { ThemeToggle } from '@/components/theme/theme-toggle'
 import type { TenantFeatures } from '@/lib/platform/features'
 import { ROLE_LABELS } from '@/lib/tenant/roles'
-import type { MembershipWithTenant, Tenant, TenantRole } from '@/lib/tenant/types'
+import type { AccountingAccess, MembershipWithTenant, Tenant, TenantRole } from '@/lib/tenant/types'
 import { MobileShell } from './mobile-shell'
 import { SidebarToggle } from './sidebar-state'
 import { UserMenu } from './user-menu'
@@ -14,6 +14,7 @@ export function Topbar({
   isPlatformAdmin,
   memberships,
   email,
+  accounting,
 }: {
   tenant: Pick<Tenant, 'id' | 'name' | 'slug' | 'logo_url'>
   role: TenantRole
@@ -21,6 +22,7 @@ export function Topbar({
   isPlatformAdmin: boolean
   memberships: MembershipWithTenant[]
   email: string
+  accounting?: AccountingAccess
 }) {
   return (
     <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-border/60 bg-background/85 px-4 backdrop-blur-xl supports-[backdrop-filter]:bg-background/65 sm:px-6">
@@ -30,6 +32,7 @@ export function Topbar({
         memberships={memberships}
         features={features}
         isPlatformAdmin={isPlatformAdmin}
+        accounting={accounting}
       />
 
       <SidebarToggle />
@@ -40,6 +43,7 @@ export function Topbar({
           role={role}
           features={features}
           isPlatformAdmin={isPlatformAdmin}
+          accounting={accounting}
         />
       </div>
 

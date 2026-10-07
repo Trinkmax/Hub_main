@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { Suspense } from 'react'
 import type { TenantFeatures } from '@/lib/platform/features'
 import { ROLE_LABELS } from '@/lib/tenant/roles'
-import type { Tenant, TenantRole } from '@/lib/tenant/types'
+import type { AccountingAccess, Tenant, TenantRole } from '@/lib/tenant/types'
 import { resolveNavGroups } from './nav-config'
 import { SidebarNav } from './sidebar-nav'
 
@@ -11,15 +11,18 @@ export function SidebarContent({
   role,
   features,
   isPlatformAdmin,
+  accounting,
   onNavigate,
 }: {
   tenant: Pick<Tenant, 'id' | 'name' | 'slug' | 'logo_url'>
   role: TenantRole
   features: TenantFeatures
   isPlatformAdmin: boolean
+  /** Administración para esta persona (`access.accounting`): suma o saca su grupo. */
+  accounting?: AccountingAccess
   onNavigate?: () => void
 }) {
-  const groups = resolveNavGroups(role, tenant.slug, features, isPlatformAdmin)
+  const groups = resolveNavGroups(role, tenant.slug, features, isPlatformAdmin, accounting)
   const mainGroups = groups.filter((g) => !g.pinned)
   const pinnedGroups = groups.filter((g) => g.pinned)
 

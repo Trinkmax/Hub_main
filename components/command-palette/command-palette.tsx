@@ -1,8 +1,10 @@
 'use client'
 
 import { Search } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { actionHrefFrom } from '@/components/administracion/acciones/types'
+import { NO_ACCOUNTING } from '@/components/shell/nav-config'
 import {
   CommandDialog,
   CommandEmpty,
@@ -14,8 +16,8 @@ import {
 } from '@/components/ui/command'
 import { Kbd } from '@/components/ui/kbd'
 import type { TenantFeatures } from '@/lib/platform/features'
-import type { TenantRole } from '@/lib/tenant/types'
-import { commandEntries } from './command-config'
+import type { AccountingAccess, TenantRole } from '@/lib/tenant/types'
+import { type CommandEntry, commandEntries } from './command-config'
 import { useCommandShortcuts } from './use-command-shortcuts'
 
 type CommandPaletteProps = {
@@ -23,18 +25,31 @@ type CommandPaletteProps = {
   role: TenantRole
   features: TenantFeatures
   isPlatformAdmin: boolean
+  /** Administración para esta persona (`access.accounting`). */
+  accounting?: AccountingAccess
 }
 
-const GROUPS_ORDER = ['Acciones rápidas', 'Operación', 'Ir a'] as const
+const GROUPS_ORDER = ['Acciones rápidas', 'Administración', 'Operación', 'Ir a'] as const
+
+/** ¿Alcanza el acceso a Administración para esta entrada? (el flag ya viene adentro). */
+function accountingOk(entry: CommandEntry, accounting: AccountingAccess): boolean {
+  if (!entry.accounting) return true
+  if (!accounting.enabled) return false
+  if (entry.accounting === 'write') return accounting.write
+  if (entry.accounting === 'read') return accounting.read
+  return accounting.read || accounting.canSetUp
+}
 
 export function CommandPalette({
   tenantSlug,
   role,
   features,
   isPlatformAdmin,
+  accounting = NO_ACCOUNTING,
 }: CommandPaletteProps) {
   const [open, setOpen] = useState(false)
   const router = useRouter()
+  const pathname = usePathname()
 
   const toggle = useCallback(() => setOpen((current) => !current), [])
   useCommandShortcuts(toggle)
@@ -42,21 +57,35 @@ export function CommandPalette({
   const groupedEntries = useMemo(() => {
     const visible = commandEntries.filter((entry) => {
       const roleOk = (entry.roles ?? ['owner']).includes(role)
-      const featureOk = !entry.feature || isPlatformAdmin || features[entry.feature]
-      return roleOk && featureOk
+      // El flag de Administración no se saltea por ser superadmin (lo decide la base).
+      const featureOk =
+        !entry.feature ||
+        (entry.feature !== 'accounting' && isPlatformAdmin) ||
+        features[entry.feature]
+      return roleOk && featureOk && accountingOk(entry, accounting)
     })
     return GROUPS_ORDER.map((group) => ({
       group,
       items: visible.filter((entry) => entry.group === group),
     })).filter((g) => g.items.length > 0)
-  }, [features, isPlatformAdmin, role])
+  }, [accounting, features, isPlatformAdmin, role])
 
   const handleSelect = useCallback(
-    (href: string) => {
+    (entry: CommandEntry) => {
       setOpen(false)
+      // Las hojas de Administración se abren sobre la pantalla actual si ya se
+      // está en la sección (conservando ?tab=, ?mes=…); si no, sobre el Resumen.
+      const href = entry.accountingAction
+        ? actionHrefFrom(
+            tenantSlug,
+            pathname,
+            typeof window === 'undefined' ? '' : window.location.search,
+            entry.accountingAction,
+          )
+        : entry.href(tenantSlug)
       router.push(href)
     },
-    [router],
+    [pathname, router, tenantSlug],
   )
 
   return (
@@ -76,7 +105,6 @@ export function CommandPalette({
               key={g.group}
               label={g.group}
               entries={g.items}
-              tenantSlug={tenantSlug}
               onSelect={handleSelect}
               showSeparator={index > 0}
             />
@@ -90,14 +118,12 @@ export function CommandPalette({
 function CommandPaletteGroup({
   label,
   entries,
-  tenantSlug,
   onSelect,
   showSeparator,
 }: {
   label: string
   entries: typeof commandEntries
-  tenantSlug: string
-  onSelect: (href: string) => void
+  onSelect: (entry: CommandEntry) => void
   showSeparator: boolean
 }) {
   return (
@@ -110,7 +136,7 @@ function CommandPaletteGroup({
             <CommandItem
               key={entry.id}
               value={`${entry.label} ${entry.keywords?.join(' ') ?? ''}`}
-              onSelect={() => onSelect(entry.href(tenantSlug))}
+              onSelect={() => onSelect(entry)}
             >
               <Icon className="size-4 text-muted-foreground" aria-hidden />
               <span>{entry.label}</span>

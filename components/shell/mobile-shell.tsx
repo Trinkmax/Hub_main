@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import type { TenantFeatures } from '@/lib/platform/features'
-import type { MembershipWithTenant, Tenant, TenantRole } from '@/lib/tenant/types'
+import type { AccountingAccess, MembershipWithTenant, Tenant, TenantRole } from '@/lib/tenant/types'
 import { SidebarContent } from './sidebar-content'
 
 export function MobileShell({
@@ -13,12 +13,14 @@ export function MobileShell({
   role,
   features,
   isPlatformAdmin,
+  accounting,
 }: {
   tenant: Pick<Tenant, 'id' | 'name' | 'slug' | 'logo_url'>
   role: TenantRole
   memberships: MembershipWithTenant[]
   features: TenantFeatures
   isPlatformAdmin: boolean
+  accounting?: AccountingAccess
 }) {
   const [open, setOpen] = useState(false)
 
@@ -39,6 +41,7 @@ export function MobileShell({
           role={role}
           features={features}
           isPlatformAdmin={isPlatformAdmin}
+          accounting={accounting}
           onNavigate={() => setOpen(false)}
         />
       </SheetContent>

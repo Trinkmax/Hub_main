@@ -17,7 +17,7 @@ import {
 } from '@/lib/tenant/roles'
 // Fuente ÚNICA de slugs reservados (evitamos el set duplicado/divergente de antes).
 import { RESERVED_SLUGS } from '@/lib/tenant/types'
-import { WORKSPACE_HEADER } from '@/lib/workspace'
+import { PATH_HEADER, WORKSPACE_HEADER } from '@/lib/workspace'
 
 const PUBLIC_PATHS = new Set([
   '/login',
@@ -215,6 +215,16 @@ export async function updateSession(request: NextRequest) {
       // Headers inmutables en algún runtime: el script no-flash del <head> es
       // la red de seguridad y corre igual antes del primer paint.
     }
+  }
+
+  // El path para el backstop de ruteo del layout del panel (roles acotados con
+  // un JWT viejo). Mismo mecanismo que el de arriba; se pisa siempre, así que
+  // un valor que mande el navegador no llega al render.
+  try {
+    request.headers.set(PATH_HEADER, pathname)
+  } catch {
+    // Sin el header el layout no hace el backstop (nunca rebota sin saber el
+    // path): quedan este proxy, las páginas y la RLS.
   }
 
   let response = NextResponse.next({ request })

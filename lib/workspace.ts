@@ -11,6 +11,14 @@
  */
 export const WORKSPACE_HEADER = 'x-hub-workspace'
 
+/**
+ * El pathname del request, tal como lo vio el proxy. Lo lee el layout del
+ * panel para repetir el ruteo de los roles acotados (editor, anfitrión,
+ * contadora) con el rol REAL de la base: el JWT puede traer un rol viejo hasta
+ * 1 h. El proxy lo pisa siempre (un valor que mande el navegador no pasa).
+ */
+export const PATH_HEADER = 'x-hub-path'
+
 export type Workspace = 'salon' | 'manager'
 
 export function parseWorkspace(headerValue: string | null | undefined): Workspace {

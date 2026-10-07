@@ -1,15 +1,20 @@
+import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { AppShell } from '@/components/shell/app-shell'
 import { ClaimsRefresher } from '@/components/shell/claims-refresher'
 import { RefreshOnReturn } from '@/components/shell/refresh-on-return'
 import {
+  canAccessManagerPath,
   getMembershipsForUser,
+  homePathForRole,
+  MANAGER_SCOPED_PREFIXES,
   requireTenantAccess,
   SALON_ROLES,
   TenantNotFoundError,
   UnauthenticatedError,
 } from '@/lib/tenant'
 import { roleForSlug } from '@/lib/tenant/claims'
+import { PATH_HEADER } from '@/lib/workspace'
 
 export default async function DashboardLayout({
   children,
@@ -42,6 +47,15 @@ export default async function DashboardLayout({
   // Backstop con el rol REAL de la DB: el proxy rutea por el rol del JWT, que
   // puede quedar viejo hasta 1 h si el owner cambió el rol de esta persona.
   if (SALON_ROLES.includes(access.role)) redirect(`/${tenantSlug}/salon`)
+  // Lo mismo para los roles acotados (editor, anfitrión, contadora): solo sus
+  // prefijos. Sin el header del proxy no se decide nada (nunca rebotar a ciegas).
+  if (MANAGER_SCOPED_PREFIXES[access.role]) {
+    const path = (await headers()).get(PATH_HEADER)
+    const rest = path ? path.split('/').filter(Boolean).slice(1) : null
+    if (rest && !canAccessManagerPath(access.role, rest)) {
+      redirect(homePathForRole(access.role, tenantSlug))
+    }
+  }
 
   // Si el JWT trae un rol distinto al de la DB, forzar un refresh de sesión
   // desde el browser para que el hook re-inyecte los claims (una vez/min).
@@ -55,6 +69,7 @@ export default async function DashboardLayout({
       memberships={access.memberships}
       isPlatformAdmin={access.isPlatformAdmin}
       email={access.user.email ?? ''}
+      accounting={access.accounting}
     >
       {claimsStale ? <ClaimsRefresher /> : null}
       <RefreshOnReturn />

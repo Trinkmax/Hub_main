@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers'
 import { getTenantFeatures } from '@/lib/platform/features'
-import type { MembershipWithTenant, Tenant, TenantRole } from '@/lib/tenant/types'
+import type { AccountingAccess, MembershipWithTenant, Tenant, TenantRole } from '@/lib/tenant/types'
 import { ShellFrame } from './shell-frame'
 import { SidebarContent } from './sidebar-content'
 import { SIDEBAR_COOKIE, SidebarProvider } from './sidebar-state'
@@ -18,6 +18,7 @@ export async function AppShell({
   memberships,
   isPlatformAdmin,
   email,
+  accounting,
   children,
 }: {
   tenant: Pick<Tenant, 'id' | 'name' | 'slug' | 'logo_url' | 'feature_flags'>
@@ -25,6 +26,8 @@ export async function AppShell({
   memberships: MembershipWithTenant[]
   isPlatformAdmin: boolean
   email: string
+  /** Administración para esta persona: el grupo del menú y las entradas de ⌘K. */
+  accounting?: AccountingAccess
   children: React.ReactNode
 }) {
   const features = getTenantFeatures(tenant)
@@ -43,6 +46,7 @@ export async function AppShell({
               role={role}
               features={features}
               isPlatformAdmin={isPlatformAdmin}
+              accounting={accounting}
             />
           }
         >
@@ -53,6 +57,7 @@ export async function AppShell({
             isPlatformAdmin={isPlatformAdmin}
             memberships={memberships}
             email={email}
+            accounting={accounting}
           />
           <main className="flex-1">{children}</main>
         </ShellFrame>

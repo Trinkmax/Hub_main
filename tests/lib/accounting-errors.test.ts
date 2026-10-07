@@ -394,6 +394,19 @@ describe('mapAccError: errores de supabase-js / PostgREST → estado de la acci�
     })
   })
 
+  it('invalid_report_param (parámetro de reporte inválido) es un bug con su texto', () => {
+    const state = mapAccError({
+      code: 'P0001',
+      message: 'invalid_report_param',
+      details: '{"param":"p_side"}',
+    })
+    expect(state.code).toBe('error')
+    expect(state.message).toBe(
+      'No pudimos armar el reporte. Recargá la página y probá de nuevo; si sigue, avisanos.',
+    )
+    expect(state.detail).toMatchObject({ key: 'invalid_report_param', bug: true, param: 'p_side' })
+  })
+
   it('warning_requires_ack trae todos los avisos juntos, con su texto y sus botones', () => {
     const state = mapAccError({
       code: 'P0001',

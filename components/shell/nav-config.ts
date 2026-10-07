@@ -1,5 +1,5 @@
 import type { FeatureKey, TenantFeatures } from '@/lib/platform/features'
-import type { TenantRole } from '@/lib/tenant/types'
+import type { AccountingAccess, TenantRole } from '@/lib/tenant/types'
 import type { NavIconKey } from './nav-icons'
 
 export type NavItem = {
@@ -14,6 +14,14 @@ export type NavItem = {
   newTab?: boolean
   /** Si está, sólo se muestra cuando la feature está ON (o quien mira es superadmin). */
   feature?: FeatureKey
+  /**
+   * Administración (H.0): además del rol y del flag, el acceso por persona.
+   * `read` = la ve quien tiene acceso de lectura (contadora o dueño
+   * habilitado); `read_or_setup` = también el dueño que puede hacer la puesta
+   * en marcha (solo «Resumen», que lo lleva al asistente). El superadmin no
+   * saltea esto: el acceso lo decide la base.
+   */
+  accounting?: 'read' | 'read_or_setup'
   /**
    * El padre NO navega: al clickearlo sólo expande/colapsa sus hijos. Para
    * categorías-madre que son puro agrupador (ej. "Personas") y cuya "vista
@@ -150,6 +158,63 @@ export const NAV_GROUPS: NavGroup[] = [
         href: (s) => `/${s}/local/captura`,
         icon: 'QrCode',
         roles: ['owner'],
+      },
+    ],
+  },
+  {
+    // Contabilidad de la SAS (Sprint 1). Solo con el flag `accounting` y el
+    // acceso por persona; la contadora ve SOLO este grupo.
+    label: 'Administración',
+    collapsible: true,
+    items: [
+      {
+        label: 'Resumen',
+        href: (s) => `/${s}/administracion`,
+        icon: 'Landmark',
+        exact: true,
+        roles: ['owner', 'accountant'],
+        feature: 'accounting',
+        accounting: 'read_or_setup',
+      },
+      {
+        label: 'Compras y proveedores',
+        href: (s) => `/${s}/administracion/compras`,
+        icon: 'Truck',
+        roles: ['owner', 'accountant'],
+        feature: 'accounting',
+        accounting: 'read',
+      },
+      {
+        label: 'Ventas y clientes',
+        href: (s) => `/${s}/administracion/ventas`,
+        icon: 'HandCoins',
+        roles: ['owner', 'accountant'],
+        feature: 'accounting',
+        accounting: 'read',
+      },
+      {
+        label: 'Cajas y bancos',
+        href: (s) => `/${s}/administracion/cajas`,
+        icon: 'Wallet',
+        roles: ['owner', 'accountant'],
+        feature: 'accounting',
+        accounting: 'read',
+      },
+      {
+        label: 'Libros',
+        href: (s) => `/${s}/administracion/libros`,
+        icon: 'BookText',
+        roles: ['owner', 'accountant'],
+        feature: 'accounting',
+        accounting: 'read',
+      },
+      {
+        label: 'Plan de cuentas',
+        href: (s) => `/${s}/administracion/plan-de-cuentas`,
+        icon: 'ListTree',
+        roles: ['owner', 'accountant'],
+        feature: 'accounting',
+        accounting: 'read',
       },
     ],
   },
@@ -340,15 +405,36 @@ export const NAV_GROUPS: NavGroup[] = [
   },
 ]
 
+/** Sin Administración: lo que se usa si quien llama no pasa el acceso. */
+export const NO_ACCOUNTING: AccountingAccess = {
+  enabled: false,
+  setUp: false,
+  read: false,
+  write: false,
+  admin: false,
+  canSetUp: false,
+}
+
+function accountingOk(item: NavItem, accounting: AccountingAccess): boolean {
+  if (!item.accounting) return true
+  // `read` y `canSetUp` ya traen el flag del bar adentro (parseAccountingAccess),
+  // pero se pide `enabled` igual: fail-closed si alguien arma el objeto a mano.
+  if (!accounting.enabled) return false
+  return item.accounting === 'read' ? accounting.read : accounting.read || accounting.canSetUp
+}
+
 function itemVisible(
   item: NavItem,
   role: TenantRole,
   features: TenantFeatures,
   isPlatformAdmin: boolean,
+  accounting: AccountingAccess,
 ): boolean {
   const roleOk = !item.roles || item.roles.includes(role)
-  const featureOk = !item.feature || isPlatformAdmin || features[item.feature]
-  return roleOk && featureOk
+  // El flag de Administración no se saltea por ser superadmin (lo decide la base).
+  const featureOk =
+    !item.feature || (item.feature !== 'accounting' && isPlatformAdmin) || features[item.feature]
+  return roleOk && featureOk && accountingOk(item, accounting)
 }
 
 /**
@@ -359,19 +445,21 @@ export function visibleGroups(
   role: TenantRole,
   features: TenantFeatures,
   isPlatformAdmin: boolean,
+  accounting: AccountingAccess = NO_ACCOUNTING,
 ): NavGroup[] {
   return NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items
       .map((item) => {
         const children = item.children?.filter((child) =>
-          itemVisible(child, role, features, isPlatformAdmin),
+          itemVisible(child, role, features, isPlatformAdmin, accounting),
         )
         return { item, children }
       })
       .filter(
         ({ item, children }) =>
-          itemVisible(item, role, features, isPlatformAdmin) || (children?.length ?? 0) > 0,
+          itemVisible(item, role, features, isPlatformAdmin, accounting) ||
+          (children?.length ?? 0) > 0,
       )
       .map(({ item, children }) => ({ ...item, children })),
   })).filter((group) => group.items.length > 0)
@@ -379,19 +467,20 @@ export function visibleGroups(
 
 /**
  * Resuelve los grupos a estructuras serializables (href ejecutado, icon como key).
- * Llamar con (role, slug, features, isPlatformAdmin); features/isPlatformAdmin
- * vienen del tenant (requireTenantAccess) + lib/platform/is-admin.
+ * Llamar con (role, slug, features, isPlatformAdmin, accounting); features,
+ * isPlatformAdmin y accounting vienen de `requireTenantAccess` (un round-trip).
  *
- * Si al rol le quedan pocos items (editor/host), los grupos dejan de colapsar:
- * no tiene sentido esconder 3 entradas detrás de accordions.
+ * Si al rol le quedan pocos items (editor/host/contadora), los grupos dejan de
+ * colapsar: no tiene sentido esconder 3 entradas detrás de accordions.
  */
 export function resolveNavGroups(
   role: TenantRole,
   slug: string,
   features: TenantFeatures,
   isPlatformAdmin: boolean,
+  accounting: AccountingAccess = NO_ACCOUNTING,
 ): ResolvedNavGroup[] {
-  const groups = visibleGroups(role, features, isPlatformAdmin)
+  const groups = visibleGroups(role, features, isPlatformAdmin, accounting)
   const totalItems = groups.reduce((n, g) => n + g.items.length, 0)
   const fewItems = totalItems <= 8
 

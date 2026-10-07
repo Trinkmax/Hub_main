@@ -618,6 +618,13 @@ export const ACC_ERRORS = {
     code: 'invalid',
     message: 'El rango cruza dos ejercicios: elegí fechas de un solo ejercicio.',
   },
+  // P0001 de las `acc_report_*` con detail `{"param": "p_side"|"p_group"|"p_book"|…}`:
+  // un parámetro que la pantalla no debería mandar nunca (error de programación).
+  invalid_report_param: {
+    code: 'error',
+    message: 'No pudimos armar el reporte. Recargá la página y probá de nuevo; si sigue, avisanos.',
+    bug: true,
+  },
   export_failed: {
     code: 'error',
     message: 'No pudimos armar el archivo. Probá de nuevo en unos minutos.',

@@ -1629,6 +1629,11 @@ export type SalesMethodInput = z.infer<typeof salesMethodSchema>
 
 export const salesPointSchema = obj({
   id: optionalUuid(),
+  /** Token de concurrencia de la edición (`acc_save_sales_point` lo exige con `id`). */
+  expectedUpdatedAt: z.preprocess(
+    (v) => (v === undefined || v === null || v === '' ? null : v),
+    updatedAtField.nullable(),
+  ),
   number: formInt({ min: 1, max: 99_998, message: 'Revisá el punto de venta.' }),
   label: z
     .string({ message: 'Escribí cómo lo llamás.' })
@@ -1790,7 +1795,15 @@ const bootstrapTreasurySchema = obj({
     .min(2, 'Escribí el nombre de la caja.')
     .max(60, 'El nombre puede tener hasta 60 caracteres.'),
   kind: z.enum(TREASURY_KINDS, { message: 'Elegí el tipo de caja.' }),
-  alias: optionalText(20).default(null),
+  /** Mismo formato que exige la base (`atr_alias`): si no, el asistente falla al guardar. */
+  alias: z.preprocess(
+    (v) => (v === undefined || v === null || (typeof v === 'string' && v.trim() === '') ? null : v),
+    z
+      .string({ message: 'Revisá el alias.' })
+      .trim()
+      .regex(/^[A-Za-z0-9.-]{6,20}$/, 'El alias va de 6 a 20 letras, números, puntos o guiones.')
+      .nullable(),
+  ),
   bankName: optionalText(80).default(null),
   cbuCvu: optionalCbuField,
   createBankParty: z.boolean({ message: 'Revisá esta opción.' }).default(false),
