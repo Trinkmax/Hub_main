@@ -4,7 +4,7 @@ import { ServiceAlertChips } from '@/components/reservations/service-alert-chips
 import { StatusPill } from '@/components/reservations/status-pill'
 import { Callout } from '@/components/ui/callout'
 import { PageHeader } from '@/components/ui/page-header'
-import { DetailTemplate } from '@/components/ui/page-templates'
+import { FormTemplate } from '@/components/ui/page-templates'
 import { resolveReservationAlerts } from '@/lib/salon/alerts'
 import { type ReservationReturnTo, reservationBackLink } from '@/lib/salon/calendar-links'
 import { todayInCordoba } from '@/lib/salon/date-presets'
@@ -135,8 +135,13 @@ export default async function ReservaDetailPage({
   const highlighted =
     reservation.highlight_comment && reservation.comments ? reservation.comments : null
 
+  // La plantilla de formulario (kit §5.4, «comprobante, pago, reserva») y no la
+  // de ficha: el estado (Llegó, Sentar…) va al costado desde ~1.220 px con el
+  // menú abierto, no recién desde ~1.310 (a 1.280 caía abajo de 2.000 px de
+  // formulario), y en el celular la barra fija de «Guardar cambios» ya no tapa
+  // el final de la columna ni deja un hueco entre el formulario y el estado.
   return (
-    <DetailTemplate
+    <FormTemplate
       width="comfortable"
       header={
         <PageHeader
@@ -215,6 +220,6 @@ export default async function ReservaDetailPage({
           highlight_comment: reservation.highlight_comment,
         }}
       />
-    </DetailTemplate>
+    </FormTemplate>
   )
 }

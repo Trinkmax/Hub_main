@@ -353,7 +353,9 @@ export function SegmentOverridesEditor({
       {/* ── Alta ── */}
       <Card asChild>
         <form ref={formRef} onSubmit={submit} noValidate aria-label="Agregar cupo especial">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {/* items-start: con la fila estirada, la grilla de cada Field repartía el
+              alto sobrante y los campos quedaban a distintas alturas según su ayuda. */}
+          <div className="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Field label="Fecha" error={shown.date}>
               <DatePicker
                 value={date === '' ? null : date}

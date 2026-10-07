@@ -95,15 +95,18 @@ function EventRow({
   return (
     <div className="flex min-h-12 items-center gap-3 px-4 py-2">
       {/* El color del formato: es como el dueño reconoce sus eventos en el
-          calendario, así que acá tiene que ser la misma pista. */}
-      <span
-        aria-hidden
-        className="size-2.5 shrink-0 rounded-full"
-        style={{ backgroundColor: safeColor(event.colorHex) }}
-      />
+          calendario, así que acá tiene que ser la misma pista. Va en una
+          columna del ancho del ícono de los festejos: así los nombres de las
+          dos clases de fila empiezan en la misma línea. */}
+      <span aria-hidden className="flex size-8 shrink-0 items-center justify-center">
+        <span
+          className="size-2.5 rounded-full"
+          style={{ backgroundColor: safeColor(event.colorHex) }}
+        />
+      </span>
       <Link
         href={`/${tenantSlug}/eventos/programados/${event.id}`}
-        className="min-w-0 flex-1 truncate type-body font-medium underline-offset-[3px] hover:underline"
+        className="min-w-0 flex-1 break-words type-body font-medium underline-offset-[3px] hover:underline"
       >
         {event.title}
       </Link>
@@ -163,7 +166,9 @@ function CelebrationRow({
           <CelebrationChip kind={c.kind} />
           <span className="type-caption tabular-nums text-muted-foreground">{c.time}</span>
         </div>
-        <p className="mt-0.5 truncate type-body font-medium text-foreground">{c.title}</p>
+        {/* El nombre entero, aunque ocupe dos renglones: cortado («Grupo
+            Facultad de Arquit…») no se sabe de quién es el festejo. */}
+        <p className="mt-0.5 break-words type-body font-medium text-foreground">{c.title}</p>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 type-caption text-muted-foreground">
           <span className="inline-flex items-center gap-1">
             <Users className="size-3.5" aria-hidden />

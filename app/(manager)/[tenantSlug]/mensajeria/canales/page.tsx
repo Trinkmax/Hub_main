@@ -218,11 +218,7 @@ export default async function CanalesPage({
       </div>
 
       {/* Guía de pasos */}
-      <Section
-        divider
-        title="Cómo conectar WhatsApp"
-        description="Instagram se conecta igual de fácil: tocá «Conectar mi Instagram» y entrá con la cuenta del bar."
-      >
+      <Section divider title="Cómo conectar WhatsApp">
         <ol className="flex flex-col gap-3 type-body text-muted-foreground">
           {[
             'Tocá «Conectar mi WhatsApp» y seguí los pasos de Meta (vas a entrar con tu cuenta de Facebook).',
@@ -241,6 +237,12 @@ export default async function CanalesPage({
             </li>
           ))}
         </ol>
+        {/* Nota al pie, después de los pasos: como bajada del título se leía
+            antes de explicar WhatsApp. */}
+        <p className="max-w-prose text-pretty type-small text-muted-foreground">
+          Instagram se conecta igual de fácil: tocá «Conectar mi Instagram» y entrá con la cuenta
+          del bar.
+        </p>
       </Section>
     </PageShell>
   )

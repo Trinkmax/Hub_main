@@ -9,7 +9,8 @@ export default function Loading() {
   return (
     <PageShell width="wide" aria-busy="true">
       <SkeletonStatus label="Cargando el calendario…" />
-      <SkeletonPageHeader actions={2} />
+      {/* Cómo funciona, buscar y programar evento. */}
+      <SkeletonPageHeader actions={3} />
       <div aria-hidden className="flex flex-col gap-5">
         <div className="flex gap-6 border-b border-border pb-2">
           <Skeleton className="h-5 w-24" />

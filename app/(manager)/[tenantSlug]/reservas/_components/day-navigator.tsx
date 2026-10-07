@@ -101,7 +101,9 @@ export function DayNavigator({
           onCommit={(iso) => {
             if (iso && iso !== day) goTo(iso)
           }}
-          className="w-36"
+          // 160 px: con el dedo el campo pasa a 16 px y en 144 el año quedaba
+          // tapado por el ícono del calendario («07/10/202»).
+          className="w-40"
         />
         {!isToday ? (
           <Button variant="secondary" size="sm" disabled={pending} onClick={() => goTo(today)}>

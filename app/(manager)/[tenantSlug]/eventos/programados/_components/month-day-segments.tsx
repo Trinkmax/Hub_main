@@ -104,8 +104,10 @@ export function MonthDaySegments({
         </div>
         {details.length > 0 ? (
           // Una línea por servicio, unidas en un solo párrafo para que el
-          // line-clamp corte a dos renglones en total (y no dos por servicio).
-          <p className="line-clamp-2 type-caption text-muted-foreground">{details.join('. ')}</p>
+          // line-clamp corte en total (y no por servicio). Tres renglones y no
+          // dos: con el piso de 12 px del kit, dos cortaban justo los cumples
+          // y las tortas de la cena («… normales 51 de 60 · 2…»).
+          <p className="line-clamp-3 type-caption text-muted-foreground">{details.join('. ')}</p>
         ) : null}
       </div>
     )
@@ -196,7 +198,7 @@ function ZoneDaySegments({
           ))}
         </div>
         {details.length > 0 ? (
-          <p className="line-clamp-2 type-caption text-muted-foreground">{details.join('. ')}</p>
+          <p className="line-clamp-3 type-caption text-muted-foreground">{details.join('. ')}</p>
         ) : null}
       </div>
     )

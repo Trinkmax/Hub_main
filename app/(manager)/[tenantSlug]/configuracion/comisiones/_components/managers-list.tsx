@@ -246,6 +246,10 @@ export function ManagersList({
           {
             id: 'gestor',
             header: 'Gestor',
+            // Toma el ancho que sobra y recorta el teléfono y el mail largos: sin
+            // esto su línea sin cortes empujaba al resto («Sin / vincular» en dos
+            // renglones) y la tabla se pasaba del borde.
+            className: 'w-full max-w-0',
             cell: (row) => (
               <span className="flex min-w-0 flex-col">
                 <span className="truncate">{row.display_name || 'Sin nombre'}</span>
@@ -260,6 +264,7 @@ export function ManagersList({
           {
             id: 'cuenta',
             header: 'Cuenta del equipo',
+            className: 'whitespace-nowrap',
             cell: (row) =>
               memberName(row.user_id) ?? (
                 <span className="text-subtle-foreground">Sin vincular</span>
@@ -268,6 +273,7 @@ export function ManagersList({
           {
             id: 'comision',
             header: 'Comisión',
+            className: 'whitespace-nowrap',
             cell: (row) =>
               row.commission_eligible ? (
                 <Badge tone="brand">Cobra</Badge>
@@ -278,6 +284,7 @@ export function ManagersList({
           {
             id: 'estado',
             header: 'Estado',
+            className: 'whitespace-nowrap',
             cell: (row) => (
               <StatusBadge
                 status={row.active === false ? 'inactivo' : 'activo'}

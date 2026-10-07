@@ -165,7 +165,11 @@ export function MemberRow({
               ) : null}
             </div>
             <div className="truncate type-small text-muted-foreground">{member.email}</div>
-            <div className="mt-2 sm:hidden">{roleSelect(cn(roleWidth, 'max-w-full'))}</div>
+            {/* Con el dedo, 44 px: el `sm` de la fila mide 36 y el selector no
+                agranda su área táctil como los botones. */}
+            <div className="mt-2 sm:hidden">
+              {roleSelect(cn(roleWidth, 'max-w-full pointer-coarse:h-(--control-md)'))}
+            </div>
           </div>
         </div>
       </DataTableCell>

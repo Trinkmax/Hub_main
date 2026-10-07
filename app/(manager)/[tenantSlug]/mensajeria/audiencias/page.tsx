@@ -110,7 +110,16 @@ export default async function AudiencesPage({
               header: 'Clientes',
               numeric: true,
               width: '8rem',
-              cell: (a) => formatNumber(a.customer_count_cached),
+              cell: (a) => (
+                <>
+                  {formatNumber(a.customer_count_cached)}
+                  {/* En la tarjeta del celular no está el encabezado «Clientes»: sin
+                      la unidad quedaba un número suelto. */}
+                  <span className="font-normal text-muted-foreground md:hidden">
+                    {a.customer_count_cached === 1 ? ' cliente' : ' clientes'}
+                  </span>
+                </>
+              ),
             },
             {
               id: 'calculated',

@@ -531,7 +531,9 @@ export function ScheduledEventsMonth({
         </div>
 
         <DragOverlay dropAnimation={null}>
-          {activeDrag?.kind === 'template' ? <TemplateChip template={activeDrag.template} /> : null}
+          {activeDrag?.kind === 'template' ? (
+            <TemplateChip template={activeDrag.template} floating />
+          ) : null}
           {activeDrag?.kind === 'event' ? (
             <EventCardOverlay
               event={activeDrag.event}
@@ -885,10 +887,12 @@ function TemplateRail({
         <span className="hidden sm:inline">Arrastrá un formato a un día del calendario</span>
         <span className="sm:hidden">Formatos del bar: tocá uno para programarlo</span>
       </div>
+      {/* En el celular, 6 px arriba y abajo: el área táctil de 44 px de cada
+          chip (`hit-area`) no queda recortada por el scroll de la tira. */}
       <div
         role="toolbar"
         aria-label="Formatos disponibles para programar"
-        className="flex gap-2 overflow-x-auto pb-1"
+        className="flex gap-2 overflow-x-auto pb-1 max-sm:py-1.5"
       >
         {templates.map((t) => (
           <Fragment key={t.id}>
@@ -899,9 +903,11 @@ function TemplateRail({
             <span className="hidden sm:contents">
               <DraggableTemplate template={t} />
             </span>
+            {/* `shrink-0`: en la tira que scrollea de costado el link no se
+                achica (se partía en dos renglones: «Noche de / Jazz»). */}
             <Link
               href={`/${tenantSlug}/eventos/programados/nuevo?template=${t.id}`}
-              className="sm:hidden"
+              className="relative shrink-0 rounded-full outline-offset-2 outline-(--ring) hit-area focus-visible:outline-2 sm:hidden"
             >
               <TemplateChip template={t} />
             </Link>
@@ -946,9 +952,24 @@ function DraggableTemplate({ template }: { template: ScheduledEventTemplateRow }
   )
 }
 
-function TemplateChip({ template }: { template: ScheduledEventTemplateRow }) {
+/**
+ * El formato como chip. `floating`: el que se arrastra (flota sobre el mes, con
+ * sombra); quieto, en la tira del celular, va sin sombra (kit §2.13).
+ */
+function TemplateChip({
+  template,
+  floating = false,
+}: {
+  template: ScheduledEventTemplateRow
+  floating?: boolean
+}) {
   return (
-    <div className="flex min-h-8 items-center gap-2 rounded-full border border-border-strong bg-card px-3 type-label text-foreground shadow-float">
+    <div
+      className={cn(
+        'flex min-h-8 items-center gap-2 whitespace-nowrap rounded-full border border-border-strong bg-card px-3 type-label text-foreground',
+        floating && 'shadow-float',
+      )}
+    >
       <span
         aria-hidden
         className="size-2.5 rounded-full"

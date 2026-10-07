@@ -557,7 +557,10 @@ function BenefitRow({
     <li
       ref={setNodeRef}
       style={sortableStyle(transform, transition, isDragging)}
-      className={cn('flex items-start gap-2 bg-card px-2 py-2', isDragging && DRAGGING_ROW_CLASSES)}
+      className={cn(
+        'flex flex-wrap items-start gap-2 bg-card px-2 py-2 sm:flex-nowrap',
+        isDragging && DRAGGING_ROW_CLASSES,
+      )}
     >
       <DragHandle
         label={`Reordenar ${benefit.label}`}
@@ -595,7 +598,9 @@ function BenefitRow({
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1 pt-1">
+      {/* En el celular los controles bajan a su propia línea (al lado del
+          texto lo cortaban a «10 % en li…»). */}
+      <div className="flex shrink-0 items-center gap-1 pt-1 max-sm:basis-full max-sm:justify-end max-sm:pt-0">
         <Switch
           checked={benefit.active}
           onCheckedChange={onToggle}
@@ -739,38 +744,43 @@ function PartnerCard({
           onClick={onEditPartner}
         />
 
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
+        {/* En el celular el texto se queda con la primera línea (logo de 48 px
+            + 12 de aire) y los controles bajan a la segunda: en una sola línea
+            le dejaban 40 px y el nombre salía «Li…». */}
+        <div className="flex min-w-0 flex-1 flex-col gap-1 max-sm:basis-[calc(100%-3.75rem)]">
           <div className="flex flex-wrap items-center gap-2">
             <span className="truncate type-body font-medium text-foreground">{partner.name}</span>
             {partner.active ? null : <StatusBadge status="hidden" map={PARTNER_STATUS} />}
           </div>
+          {/* El «·» va pegado al dato que sigue: si la línea se parte, baja con
+              él y no queda colgando al final del renglón. */}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 type-small text-muted-foreground">
             {partner.category ? <span>{partner.category}</span> : null}
-            {partner.category ? <span aria-hidden="true">·</span> : null}
-            <span>
+            <span className="inline-flex items-center gap-2">
+              {partner.category ? <span aria-hidden="true">·</span> : null}
               {activeCount === 0
                 ? 'Sin beneficios activos'
                 : `${activeCount} ${activeCount === 1 ? 'beneficio' : 'beneficios'}`}
             </span>
             {partner.url ? (
-              <>
+              <span className="inline-flex items-center gap-2">
                 <span aria-hidden="true">·</span>
                 <a
                   href={partner.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 underline decoration-1 underline-offset-[3px] hover:text-foreground hover:decoration-2"
+                  className="hit-area relative inline-flex items-center gap-1 underline decoration-1 underline-offset-[3px] hover:text-foreground hover:decoration-2"
                 >
                   Ver sitio
                   <ExternalLink className="size-3" aria-hidden="true" />
                 </a>
-              </>
+              </span>
             ) : null}
           </div>
         </div>
 
         {/* Visible/oculta: un toque, sin entrar a ningún dialog. */}
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2 max-sm:ms-[3.75rem]">
           <Switch
             id={switchId}
             checked={partner.active}
@@ -788,7 +798,7 @@ function PartnerCard({
           </Label>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           <Button
             size="icon-sm"
             variant="ghost"

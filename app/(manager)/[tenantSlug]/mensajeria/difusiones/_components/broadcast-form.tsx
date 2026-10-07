@@ -136,6 +136,20 @@ const STEPS = [
   { label: 'Revisar', description: 'Y enviar' },
 ]
 
+/**
+ * Seis pasos con nombre y bajada no entran en la columna del formulario (704 px
+ * a 1280): el kit repartía el ancho en partes iguales y truncaba todo
+ * («Mens…», «Cuál …»). Desde `sm` el paso actual se ve entero y el resto queda
+ * como su número, con los conectores llevándose el espacio; los nombres de los
+ * otros pasos siguen para el lector de pantalla (`sr-only`, no `hidden`). Por los
+ * `data-slot` del kit; en el celular sigue «Paso 2 de 6 · Mensaje».
+ */
+const STEPS_CURRENT_ONLY = [
+  'sm:[&>[data-slot=step]:not([data-status=current])>span:nth-child(2)]:sr-only',
+  'sm:[&>[data-slot=step][data-status=current]]:flex-none',
+  'sm:[&>[data-slot=step][data-status=current]>[data-slot=step-connector]]:min-w-12',
+].join(' ')
+
 export function BroadcastForm({
   tenantSlug,
   channels,
@@ -279,7 +293,7 @@ export function BroadcastForm({
 
         <FormError title="No se pudo crear la difusión" message={state.ok ? null : state.message} />
 
-        <Steps steps={STEPS} current={step} />
+        <Steps steps={STEPS} current={step} className={STEPS_CURRENT_ONLY} />
 
         <Card>
           <div ref={stepRef} tabIndex={-1} className="flex flex-col gap-4 outline-none">

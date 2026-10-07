@@ -147,7 +147,9 @@ export function AttendanceCell({
         // Sin deshabilitar mientras guarda: con el foco adentro, un campo que se
         // apaga pierde el cursor. Next encola las Server Actions en orden.
         aria-busy={pending || undefined}
-        className={cn('w-28', !confirmed && '[&_input]:text-muted-foreground')}
+        // Con el dedo los botones pasan a 36 px y el campo del medio quedaba
+        // en 18 px de texto: «14» salía cortado. 128 px le dejan lugar a dos cifras.
+        className={cn('w-28 pointer-coarse:w-32', !confirmed && '[&_input]:text-muted-foreground')}
       />
       {/* Marcador discreto y no un chip de color: con 111 de 137 reservas sin
           contar, un chip ámbar por fila pintaría la agenda entera y dejaría de

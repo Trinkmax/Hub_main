@@ -310,7 +310,13 @@ export function ScheduledEventForm({
         </Field>
       </FormSection>
 
-      <FormActions align={mode === 'edit' && initialValues?.id ? 'between' : 'end'}>
+      {/* En la compu, aire y un pelo arriba (como entre secciones): sin eso los
+          botones quedaban pegados al último interruptor, como parte de «Extras».
+          En el celular la barra va fija abajo y trae su propio borde. */}
+      <FormActions
+        align={mode === 'edit' && initialValues?.id ? 'between' : 'end'}
+        className="sm:mt-6 sm:border-t sm:border-border sm:pt-6"
+      >
         {mode === 'edit' && initialValues?.id ? (
           <ConfirmDialog
             tone="danger"

@@ -222,10 +222,12 @@ export function ReservationCard({
         className="min-w-0 rounded-lg py-0.5 text-left outline-(--ring) outline-offset-2 focus-visible:outline-2"
         aria-label={`Ver ficha de ${r.guest_name}`}
       >
-        <div className="flex items-center gap-1.5">
+        {/* Con `flex-wrap`, si el nombre y el nivel no entran juntos, el nivel baja
+            un renglón: en el celular el nombre se leía «Santiago …». */}
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
           <span
             className={cn(
-              'truncate type-subtitle',
+              'min-w-0 truncate type-subtitle',
               r.status === 'no_show' && 'text-muted-foreground line-through',
             )}
           >

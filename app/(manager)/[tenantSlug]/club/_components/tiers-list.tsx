@@ -212,7 +212,10 @@ export function TiersList({
                 {index + 1}
               </span>
 
-              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+              {/* En el celular el texto ocupa la fila entera y las acciones bajan
+                  a la siguiente: al lado, los tres botones lo apretaban a una
+                  columna de 70 px («Desde / 200 pts / de / categoría»). */}
+              <div className="flex min-w-0 flex-1 flex-col gap-1.5 max-sm:basis-[calc(100%-3.25rem)]">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="type-subtitle text-foreground">
                     <span className="sr-only">Nivel {index + 1}: </span>
@@ -243,7 +246,7 @@ export function TiersList({
                 <BenefitChips benefits={tierBenefits} />
               </div>
 
-              <div className="ml-auto flex shrink-0 items-center gap-1">
+              <div className="ml-auto flex shrink-0 items-center gap-1 max-sm:w-full max-sm:justify-end">
                 <BenefitsEditor
                   tenantSlug={tenantSlug}
                   tenantId={tenantId}

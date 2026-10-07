@@ -196,7 +196,9 @@ export function ReservationQuickView({
       <DialogContent size="md">
         <DialogHeader>
           <DialogTitle className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="min-w-0 truncate">{r.guest_name}</span>
+            {/* El nombre entero: en el celular «Familia Rodríguez Etchega…» no
+                dejaba saber de quién era la reserva. Si no entra, envuelve. */}
+            <span className="min-w-0 break-words">{r.guest_name}</span>
             <StatusPill status={r.status} />
           </DialogTitle>
         </DialogHeader>

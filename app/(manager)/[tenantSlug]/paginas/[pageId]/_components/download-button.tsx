@@ -61,6 +61,9 @@ export function DownloadHtmlButton({
       disabled={html.trim().length === 0}
       aria-label={label}
       title={label}
+      // En el celular queda solo el ícono: cuadrado, del alto del botón (si no,
+      // medía 42 × 44 y no llegaba al objetivo táctil).
+      className={showLabel ? 'max-sm:aspect-square' : undefined}
     >
       {done ? <Check className="text-success-text" aria-hidden /> : <Download aria-hidden />}
       {showLabel ? <span className="max-sm:hidden">Descargar</span> : null}

@@ -158,7 +158,7 @@ export function OrganicChecklist({
                         onClick={() => openEdit(routine)}
                         aria-haspopup="dialog"
                         aria-label={`Editar ${routine.title}`}
-                        className="inline-flex items-center gap-1.5 rounded-sm text-start type-body font-medium text-foreground underline-offset-2 outline-offset-2 outline-(--ring) hover:underline focus-visible:outline-2"
+                        className="hit-area relative inline-flex items-center gap-1.5 rounded-sm text-start type-body font-medium text-foreground underline-offset-2 outline-offset-2 outline-(--ring) hover:underline focus-visible:outline-2"
                       >
                         {routine.title}
                         <Pencil className="size-3.5 shrink-0 text-subtle-foreground" aria-hidden />

@@ -434,25 +434,30 @@ export function LandingEditor({
         <PageHeader
           back={{ href: backHref, label: 'Páginas' }}
           title={page.title}
-          meta={[
-            <StatusBadge key="estado" status={landingStatus(published)} map={LANDING_STATUS} />,
-            dirty ? (
-              <Badge key="sin-guardar" tone="warning" dot>
-                Sin guardar
-              </Badge>
-            ) : null,
-            <span key="link" className="inline-flex min-w-0 max-w-full items-center gap-1">
-              <code className="truncate font-mono">{publicUrl.replace(/^https?:\/\//, '')}</code>
-              <CopyButton
-                value={publicUrl}
-                iconOnly
-                variant="ghost"
-                size="icon-sm"
-                label="Copiar link"
-                copiedLabel="¡Copiado!"
-              />
-            </span>,
-          ]}
+          // Un solo dato de meta, sin el «·» del encabezado: las insignias ya se
+          // separan solas y, en el celular, el link bajaba de renglón dejando
+          // el punto colgado al final del anterior.
+          meta={
+            <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <StatusBadge status={landingStatus(published)} map={LANDING_STATUS} />
+              {dirty ? (
+                <Badge tone="warning" dot>
+                  Sin guardar
+                </Badge>
+              ) : null}
+              <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+                <code className="truncate font-mono">{publicUrl.replace(/^https?:\/\//, '')}</code>
+                <CopyButton
+                  value={publicUrl}
+                  iconOnly
+                  variant="ghost"
+                  size="icon-sm"
+                  label="Copiar link"
+                  copiedLabel="¡Copiado!"
+                />
+              </span>
+            </span>
+          }
           actions={
             <>
               {/* Baja lo que está en el editor, no lo último guardado: si

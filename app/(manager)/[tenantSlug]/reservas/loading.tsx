@@ -14,7 +14,9 @@ export default function Loading() {
   return (
     <PageShell aria-busy="true">
       <SkeletonStatus label="Cargando las reservas…" />
-      <SkeletonPageHeader actions={3} />
+      {/* Las cinco acciones del día: cómo funciona, pasar lista, exportar,
+          panel operativo y nueva reserva (en el celular ocupan tres renglones). */}
+      <SkeletonPageHeader actions={5} />
       <div aria-hidden className="flex flex-col gap-4">
         <div className="flex flex-wrap gap-2">
           {['hoy', 'semana', 'mes', 'rango'].map((k) => (
@@ -23,7 +25,7 @@ export default function Loading() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Skeleton className="h-(--control-md) w-56" />
-          <Skeleton className="h-(--control-sm) w-36" />
+          <Skeleton className="h-(--control-sm) w-40" />
         </div>
       </div>
       <div aria-hidden className="flex flex-col gap-3">

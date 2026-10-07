@@ -323,9 +323,11 @@ export function PulseCard({
         {/* Hitos: lo que no es una mesa más. Los eventos filtran la lista (chips);
             tortas, cumples y especiales son datos (etiquetas, no se tocan). */}
         {events.length > 0 || cakes.length > 0 || birthdays.length > 0 || hasSpecial ? (
+          // `scroll-px-*` = el mismo aire que `px-*`: sin él, el encastre (snap) del
+          // primer chip lo corría hasta el borde de la tarjeta al dibujarse.
           <ul
             aria-label="Hitos del día"
-            className="-mx-4 mt-4 flex snap-x items-center gap-2 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] sm:-mx-5 sm:px-5 [&::-webkit-scrollbar]:hidden"
+            className="-mx-4 mt-4 flex snap-x scroll-px-4 items-center gap-2 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] sm:-mx-5 sm:scroll-px-5 sm:px-5 [&::-webkit-scrollbar]:hidden"
           >
             {events.map((e) => {
               if (e.kind !== 'event') return null

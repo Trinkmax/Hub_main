@@ -65,8 +65,10 @@ export function MenuHub(props: MenuHubProps): React.JSX.Element {
 
   return (
     <PageShell width="comfortable">
-      {/* Título a la izquierda y TODAS las acciones a la derecha, en una sola
-          fila (la principal, «Nueva categoría», última). */}
+      {/* La principal («Nueva categoría») va arriba a la derecha, como en el
+          resto del panel; las herramientas de la carta, en una fila debajo
+          del título. Las cinco juntas a la derecha ocupaban 800 px y dejaban
+          la descripción en una columna de 120 px. */}
       <PageHeader
         title="Carta"
         description={`${plural(menu.categories.length, 'categoría', 'categorías')} · ${plural(
@@ -75,48 +77,49 @@ export function MenuHub(props: MenuHubProps): React.JSX.Element {
           'ítems',
         )}. Cargá y ordená lo que vendés.`}
         actions={
-          <>
-            <CartaTourButton role={role} />
-            <Button asChild variant="secondary">
-              <ReloadLink href={`/carta/${tenantSlug}`} newTab data-tour="menu-ver-carta">
-                <Eye aria-hidden="true" />
-                Ver carta
-              </ReloadLink>
-            </Button>
-            <TagsManagerDialog
-              tenantSlug={tenantSlug}
-              tags={tags}
-              trigger={
-                <Button variant="secondary" data-tour="menu-etiquetas">
-                  <Tag aria-hidden="true" />
-                  Gestionar etiquetas
-                  {tags.length > 0 ? (
-                    <span className="type-caption type-amount text-muted-foreground">
-                      {tags.length}
-                    </span>
-                  ) : null}
-                </Button>
-              }
-            />
-            <Button asChild variant="secondary">
-              <ReloadLink href={`/print/carta/${tenantSlug}`} newTab>
-                <QrCode aria-hidden="true" />
-                QR de la carta
-              </ReloadLink>
-            </Button>
-            <NewCategoryPopover
-              tenantId={tenantId}
-              tenantSlug={tenantSlug}
-              trigger={
-                <Button data-tour="menu-nueva-categoria">
-                  <Plus aria-hidden="true" />
-                  Nueva categoría
-                </Button>
-              }
-            />
-          </>
+          <NewCategoryPopover
+            tenantId={tenantId}
+            tenantSlug={tenantSlug}
+            trigger={
+              <Button data-tour="menu-nueva-categoria">
+                <Plus aria-hidden="true" />
+                Nueva categoría
+              </Button>
+            }
+          />
         }
-      />
+      >
+        <div data-slot="menu-tools" className="flex flex-wrap items-center gap-2">
+          <CartaTourButton role={role} />
+          <Button asChild variant="secondary">
+            <ReloadLink href={`/carta/${tenantSlug}`} newTab data-tour="menu-ver-carta">
+              <Eye aria-hidden="true" />
+              Ver carta
+            </ReloadLink>
+          </Button>
+          <TagsManagerDialog
+            tenantSlug={tenantSlug}
+            tags={tags}
+            trigger={
+              <Button variant="secondary" data-tour="menu-etiquetas">
+                <Tag aria-hidden="true" />
+                Gestionar etiquetas
+                {tags.length > 0 ? (
+                  <span className="type-caption type-amount text-muted-foreground">
+                    {tags.length}
+                  </span>
+                ) : null}
+              </Button>
+            }
+          />
+          <Button asChild variant="secondary">
+            <ReloadLink href={`/print/carta/${tenantSlug}`} newTab>
+              <QrCode aria-hidden="true" />
+              QR de la carta
+            </ReloadLink>
+          </Button>
+        </div>
+      </PageHeader>
 
       {menu.categories.length === 0 ? (
         <EmptyState

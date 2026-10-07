@@ -460,7 +460,8 @@ function PresetCard({
       </span>
       <span className="min-w-0 flex-1">
         <span className="block type-label text-foreground">{preset.label}</span>
-        <span className="block truncate type-small text-muted-foreground">{preset.hint}</span>
+        {/* Sin truncar: en tres columnas la pista quedaba en «Sin visitas hace +30 …». */}
+        <span className="block text-pretty type-small text-muted-foreground">{preset.hint}</span>
       </span>
       <span className="shrink-0 type-small font-medium tabular-nums text-muted-foreground">
         {count === undefined ? (

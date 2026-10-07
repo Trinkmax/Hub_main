@@ -222,7 +222,7 @@ function TaskRow({
                 href={task.fileUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="relative z-10 inline-flex items-center gap-1 rounded-sm text-primary underline decoration-1 underline-offset-2 outline-offset-2 outline-(--ring) hover:decoration-2 focus-visible:outline-2"
+                className="hit-area relative z-10 inline-flex items-center gap-1 rounded-sm text-primary underline decoration-1 underline-offset-2 outline-offset-2 outline-(--ring) hover:decoration-2 focus-visible:outline-2"
               >
                 <ExternalLink className="size-3.5" aria-hidden />
                 Archivo

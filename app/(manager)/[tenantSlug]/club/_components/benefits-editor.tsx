@@ -169,7 +169,7 @@ function BenefitRow({
       ref={setNodeRef}
       style={sortableStyle(transform, transition, isDragging)}
       className={cn(
-        'flex items-center gap-2 bg-card px-2 py-2',
+        'flex flex-wrap items-center gap-2 bg-card px-2 py-2 sm:flex-nowrap',
         isDragging && DRAGGING_ROW_CLASSES,
       )}
     >
@@ -205,7 +205,9 @@ function BenefitRow({
         ) : null}
       </div>
 
-      <div className="flex shrink-0 items-center gap-1">
+      {/* En el celular los controles bajan a su propia línea: en una sola, el
+          interruptor quedaba cortado contra el borde del diálogo. */}
+      <div className="flex shrink-0 items-center gap-1 max-sm:basis-full max-sm:justify-end">
         <Switch
           checked={benefit.active}
           onCheckedChange={onToggle}

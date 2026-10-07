@@ -550,7 +550,7 @@ export function SegmentCapacityEditor({
                       <span className="sr-only">Servicio</span>
                     </DataTableHeader>
                     {ISO_DOWS.map((dow) => (
-                      <DataTableHeader key={dow} align="center">
+                      <DataTableHeader key={dow} align="center" className="last:pe-3">
                         <abbr title={DOW_LONG[dow]} className="no-underline">
                           {DOW_SHORT[dow]}
                         </abbr>
@@ -575,7 +575,9 @@ export function SegmentCapacityEditor({
                       {ISO_DOWS.map((dow) => {
                         const inputs = cellInputs(segment, dow, 'd')
                         return (
-                          <DataTableCell key={dow} className="px-1 align-top">
+                          // `last:pe-3`: la última columna no queda pegada al borde
+                          // de la tabla (las celdas van con 4 px para que entren 7 días).
+                          <DataTableCell key={dow} className="px-1 align-top last:pe-3">
                             <div className="flex flex-col gap-1">
                               {inputs.capacity}
                               {inputs.warn}

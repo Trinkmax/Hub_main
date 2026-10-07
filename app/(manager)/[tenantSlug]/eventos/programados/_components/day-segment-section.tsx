@@ -264,7 +264,12 @@ export function DaySegmentSection({
       ) : null}
 
       {rows.length > 0 ? (
-        <ul className="grid gap-2" aria-label={listLabel}>
+        // Una sola caja con pelos entre filas (como la lista de Reservas y el
+        // buscador), no una tarjeta por reserva.
+        <ul
+          className="divide-y divide-border overflow-clip rounded-lg border border-border bg-card"
+          aria-label={listLabel}
+        >
           {rows.map((r) => (
             <li key={r.id} id={`dia-res-${r.id}`}>
               {/* Sin onChanged: cada action de la vista rápida revalida el
@@ -428,19 +433,19 @@ function reservationRow(r: ReservationWithJoins, where: string, focused: boolean
       type="button"
       aria-current={focused ? 'true' : undefined}
       className={cn(
-        'flex min-h-12 w-full items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2 text-left type-body',
+        'flex min-h-12 w-full items-center gap-2.5 px-3 py-2 text-left type-body',
         'outline-(--ring) -outline-offset-2 hover:bg-hover focus-visible:outline-2 active:bg-active',
         inactive && 'opacity-60',
         // La reserva recién cargada (o la que se buscó): el ojo tiene que caer
         // ahí sin leer la lista entera.
-        focused && 'border-primary bg-selected',
+        focused && 'bg-selected ring-1 ring-primary ring-inset',
       )}
     >
       <span className="whitespace-nowrap type-caption tabular-nums text-muted-foreground">
         {timeRangeLabel(r.reservation_time_local, r.reservation_end_time_local)}
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="truncate font-medium">{r.guest_name}</span>
+        <span className="break-words font-medium">{r.guest_name}</span>
         {/* La torta viaja con la fila: es lo que el bar tiene que producir, no
             un detalle del cliente. */}
         {r.cake_count > 0 ? (

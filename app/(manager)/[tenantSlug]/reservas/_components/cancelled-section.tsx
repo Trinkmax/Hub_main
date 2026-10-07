@@ -52,17 +52,24 @@ export function CancelledSection({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-controls={listId}
-        className="flex min-h-12 w-full flex-wrap items-center gap-x-2 gap-y-0.5 px-4 py-3 text-left outline-(--ring) -outline-offset-2 hover:bg-hover focus-visible:outline-2"
+        className="flex min-h-12 w-full items-center gap-2 px-4 py-3 text-left outline-(--ring) -outline-offset-2 hover:bg-hover focus-visible:outline-2"
       >
         <XCircle className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <span className="type-label text-foreground">
-          {totalCount} {totalCount === 1 ? 'reserva cancelada' : 'reservas canceladas'}
-        </span>
-        <span className="type-caption text-muted-foreground">
-          · no cuentan para cubiertos ni para armar mesas
+        {/* En el celular la aclaración baja a su propio renglón, sin el «·»
+            colgando al principio, y la flecha se queda arriba a la derecha. */}
+        <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span className="type-label text-foreground">
+            {totalCount} {totalCount === 1 ? 'reserva cancelada' : 'reservas canceladas'}
+          </span>
+          <span className="type-caption text-muted-foreground max-sm:basis-full">
+            <span aria-hidden className="max-sm:hidden">
+              ·{' '}
+            </span>
+            no cuentan para cubiertos ni para armar mesas
+          </span>
         </span>
         <ChevronDown
-          className={cn('ml-auto size-4 shrink-0 text-muted-foreground', open && 'rotate-180')}
+          className={cn('size-4 shrink-0 text-muted-foreground', open && 'rotate-180')}
           aria-hidden
         />
       </button>

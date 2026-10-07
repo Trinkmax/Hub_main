@@ -102,6 +102,16 @@ const CLUB_TOUR: TourDefinition = {
   ],
 }
 
+/** Del alto de «Ver carta» y «Simular wallet», sus vecinos en el encabezado (el lanzador viene en `sm`). */
+const HEADER_BUTTON = 'h-(--control-md) px-4 text-sm has-[>svg]:px-3'
+
 export function ClubTourButton(): React.JSX.Element {
-  return <TourLauncher tour={CLUB_TOUR} currentRole="owner" autoStartForRoles={[]} />
+  return (
+    <TourLauncher
+      tour={CLUB_TOUR}
+      currentRole="owner"
+      autoStartForRoles={[]}
+      className={HEADER_BUTTON}
+    />
+  )
 }

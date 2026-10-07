@@ -208,7 +208,10 @@ function MealCard({
           Sin tramos todavía: las reservas de este servicio no suman comisión.
         </p>
       ) : (
-        <div className="flex flex-col divide-y divide-border">{children}</div>
+        // Contenedor de consulta: el tramo pasa a una sola línea según el ancho
+        // de la tarjeta, no de la pantalla (con el menú de Configuración al
+        // costado, a 1280 px la tarjeta mide ~650 px).
+        <div className="@container flex flex-col divide-y divide-border">{children}</div>
       )}
     </Card>
   )
@@ -247,7 +250,7 @@ function TierRow({
     // tarjeta del servicio (un grupo con su título).
     <form
       onSubmit={handleSubmit}
-      className="grid grid-cols-2 items-start gap-3 py-4 first:pt-0 last:pb-0 sm:grid-cols-[9rem_9rem_minmax(10rem,14rem)_minmax(0,1fr)]"
+      className="grid grid-cols-2 items-start gap-3 py-4 first:pt-0 last:pb-0 @xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto]"
     >
       <Field label="Desde" required>
         <NumberField
@@ -268,7 +271,7 @@ function TierRow({
           placeholder="Sin tope"
         />
       </Field>
-      <Field label="Por persona" className="col-span-2 sm:col-span-1">
+      <Field label="Por persona" className="col-span-2 @xl:col-span-1">
         <MoneyField
           cents={tier.rate_per_guest_cents ?? null}
           onCentsChange={(cents) => onPatch('rate_per_guest_cents', cents)}
@@ -276,9 +279,10 @@ function TierRow({
           maxCents={MAX_RATE_CENTS}
         />
       </Field>
-      {/* 1,625 rem = etiqueta (18 px) + 8 px: los botones quedan a la altura de los campos. */}
-      <div className="col-span-2 flex flex-wrap items-center gap-2 sm:col-span-1 sm:mt-[1.625rem] sm:min-h-(--control-md) sm:justify-end">
-        <div className="me-auto flex items-center gap-2 sm:me-2">
+      {/* 1,625 rem = etiqueta (18 px) + 8 px: los botones quedan a la altura de
+          los campos. En una tarjeta angosta bajan a su propia fila. */}
+      <div className="col-span-2 flex flex-wrap items-center gap-2 @xl:col-span-1 @xl:mt-[1.625rem] @xl:min-h-(--control-md) @xl:flex-nowrap @xl:justify-end">
+        <div className="me-auto flex items-center gap-2 @xl:me-2">
           <Switch
             id={activeId}
             checked={tier.active ?? true}

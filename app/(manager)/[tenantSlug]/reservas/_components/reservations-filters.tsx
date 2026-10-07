@@ -97,6 +97,11 @@ export function ReservationsFilters({
     Boolean,
   ).length
 
+  // Los dos selects miden lo que su texto: con `w-40` fijo «Todos los estados»
+  // se cortaba («Todos los estadc»). El mínimo evita que la barra salte al
+  // elegir un valor corto; en el celular crecen hasta llenar su renglón.
+  const selectClass = 'min-w-40 max-sm:flex-auto'
+
   return (
     <DataTableToolbar aria-busy={pending || undefined}>
       <form action={handleSearchSubmit}>
@@ -115,7 +120,7 @@ export function ReservationsFilters({
         value={defaults.status ?? 'all'}
         onValueChange={(v) => pushQuery({ status: v === 'all' ? null : v })}
       >
-        <SelectTrigger aria-label="Estado" className="w-40">
+        <SelectTrigger aria-label="Estado" className={selectClass}>
           <SelectValue placeholder="Estado" />
         </SelectTrigger>
         <SelectContent>
@@ -132,7 +137,7 @@ export function ReservationsFilters({
         value={defaults.zone ?? 'all'}
         onValueChange={(v) => pushQuery({ zone: v === 'all' ? null : v })}
       >
-        <SelectTrigger aria-label="Zona" className="w-40">
+        <SelectTrigger aria-label="Zona" className={selectClass}>
           <SelectValue placeholder="Zona" />
         </SelectTrigger>
         <SelectContent>

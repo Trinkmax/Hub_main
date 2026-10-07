@@ -26,7 +26,8 @@ function TrayRow({
     <li className="flex items-center gap-2 py-2">
       <div className="min-w-0 flex-1">
         <p className="truncate type-body font-medium text-foreground">{table.label}</p>
-        <p className="truncate type-caption text-muted-foreground">
+        {/* Puede bajar un renglón: truncado, el código del QR quedaba en «mesa…». */}
+        <p className="break-words type-caption text-muted-foreground">
           {table.capacity != null ? `${table.capacity} personas` : 'Sin capacidad'} ·{' '}
           <code className="font-mono">{table.qr_token}</code>
         </p>

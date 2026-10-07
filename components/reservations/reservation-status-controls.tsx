@@ -216,8 +216,9 @@ export function ReservationStatusControls({
               decrementLabel="Una persona menos"
               className="w-36"
             />
+            {/* Mismo alto que el contador (kit §3.0, «una fila, un tamaño»): en
+                `sm` quedaba 4 px más bajo que el campo de al lado. */}
             <Button
-              size="sm"
               disabled={pending || actualGuests === reservation.actual_guests}
               onClick={() =>
                 run(

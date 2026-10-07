@@ -169,7 +169,10 @@ export default async function TemplatesPage({
         description="Tus mensajes aprobados: WhatsApp los revisa una sola vez y después los usás en difusiones, automatizaciones o para escribirle primero a un cliente."
         actions={
           channel ? (
-            <>
+            // Tope de ancho: la columna de acciones del encabezado se mide por su
+            // contenido, y con tres botones en una fila le dejaba ~150 px al título
+            // y a la descripción. Así los botones bajan en dos filas.
+            <div className="flex max-w-md flex-wrap items-center gap-2 sm:justify-end">
               <TemplateSyncButton channelId={channel.id} tenantSlug={tenantSlug} />
               {/* Sólo hasta que exista: es configuración de una vez. */}
               {templates.some((t) => t.name === getClubOtpTemplateName()) ? null : (
@@ -184,7 +187,7 @@ export default async function TemplatesPage({
               ) : null}
               {/* La principal va última. */}
               <CreateTemplateDialog tenantSlug={tenantSlug} channelId={channel.id} />
-            </>
+            </div>
           ) : null
         }
       />
@@ -212,7 +215,9 @@ export default async function TemplatesPage({
           description="Tocá «Nueva plantilla» para escribir tu primer mensaje, o «Traer las novedades de WhatsApp» si ya tenés mensajes aprobados en tu cuenta."
         />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
+        // `grid-cols-1` (minmax(0, 1fr)): sin esto la columna implícita es `auto` y
+        // el pie que trunca (`nowrap`) la estiraba más ancha que el celular.
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {templates.map((t) => (
             <TemplateCard key={t.id} template={t} tenantSlug={tenantSlug} channelId={channel.id} />
           ))}
@@ -238,7 +243,7 @@ function TemplateCard({
   })
 
   return (
-    <Card asChild padding="none" className="gap-0 overflow-clip">
+    <Card asChild padding="none" className="min-w-0 gap-0 overflow-clip">
       <article>
         <header className="flex items-start justify-between gap-3 px-4 pt-4 sm:px-5">
           <div className="min-w-0">
@@ -302,7 +307,8 @@ function TemplateCard({
         </div>
 
         <footer className="flex items-center justify-between gap-3 border-t border-border px-4 py-2 sm:px-5">
-          <p className="truncate type-small text-muted-foreground">
+          {/* Sin truncar: en dos columnas la fecha quedaba cortada («07/10/…»). */}
+          <p className="min-w-0 text-pretty type-small text-muted-foreground">
             {categoryLabel(template.category)} · {languageLabel(template.language)}
             {template.last_synced_at
               ? ` · Actualizada el ${formatDateTime(template.last_synced_at)}`

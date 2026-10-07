@@ -867,7 +867,13 @@ export function ReservationForm({
   }
 
   return (
-    <form onSubmit={onSubmit}>
+    // `sm:…:contents`: la barra de acciones es `sticky="always"` (en la compu
+    // queda pegada abajo mientras se completa el formulario, como antes del
+    // kit), pero `FormActions` la envuelve en un div de su mismo alto y así el
+    // sticky no tenía recorrido. Sin la caja del envoltorio, la barra se pega
+    // dentro del formulario entero. En el celular el envoltorio sigue: guarda el
+    // lugar de la barra fija.
+    <form onSubmit={onSubmit} className="sm:[&>[data-slot=form-actions]]:contents">
       {/* Cliente */}
       <FormSection title="Cliente">
         <CustomerCombobox
@@ -2001,13 +2007,29 @@ function CustomerCombobox({
                 customer_id: undefined,
               })
             }
-            className="hub-phone-input"
+            className={PHONE_INPUT_CLASS}
           />
         )}
       </Field>
     </FieldRow>
   )
 }
+
+/**
+ * El teléfono con la cara de los campos del kit (§3.2): el alto de control, el
+ * borde visible (`--input`), cartulina, la letra de los campos y el foco de
+ * 2 px. `.hub-phone-input` (globals.css) lo comparte lo público (carta, /m),
+ * que queda como está; acá se pisa solo en el panel. Con el `--border` del kit
+ * el campo quedaba con un pelo apenas visible y 4 px más alto que el nombre.
+ */
+const PHONE_INPUT_CLASS = [
+  'hub-phone-input',
+  '[&_.PhoneInputCountry]:h-(--control-md) [&_.PhoneInputCountry]:border-input [&_.PhoneInputCountry]:bg-card',
+  '[&_.PhoneInputCountry]:outline-(--ring) [&_.PhoneInputCountry]:-outline-offset-1 [&_.PhoneInputCountry:has(:focus-visible)]:outline-2 [&_.PhoneInputCountry:focus-within]:shadow-none',
+  '[&_.PhoneInputInput]:h-(--control-md) [&_.PhoneInputInput]:border-input [&_.PhoneInputInput]:bg-card [&_.PhoneInputInput]:text-(length:--control-font)',
+  '[&_.PhoneInputInput]:outline-(--ring) [&_.PhoneInputInput]:-outline-offset-1 [&_.PhoneInputInput:focus-visible]:outline-2 [&_.PhoneInputInput:focus]:shadow-none',
+  '[&_.PhoneInputInput[aria-invalid=true]]:border-destructive [&_.PhoneInputInput[aria-invalid=true]]:outline-(--destructive)',
+].join(' ')
 
 /**
  * "¿Dónde se sientan? (opcional)": la planta de una reserva de evento, con las

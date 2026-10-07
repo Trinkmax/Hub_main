@@ -380,8 +380,10 @@ function SortableStep({
       // Mientras se arrastra flota (sombra de lo que se mueve); quieta, solo el pelo.
       className={`rounded-xl border bg-card p-4 ${isDragging ? 'relative z-10 border-primary shadow-float' : 'border-border'}`}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+      {/* Una sola fila: con los controles de 44 px del celular, el «Quitar» se
+          caía solo a un renglón propio. El tipo de paso es lo que se achica. */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <button
             type="button"
             {...attributes}
@@ -405,7 +407,11 @@ function SortableStep({
               onChange(buildDefaultForType(v as FlowStepConfig['type'], channels, templates, tags))
             }
           >
-            <SelectTrigger size="sm" className="w-44" aria-label={`Tipo del paso ${index + 1}`}>
+            <SelectTrigger
+              size="sm"
+              className="w-44 min-w-0 shrink"
+              aria-label={`Tipo del paso ${index + 1}`}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

@@ -147,6 +147,16 @@ const CARTA_TOUR: TourDefinition = {
   ],
 }
 
+/** Del alto de «Ver carta» y el resto del encabezado (el lanzador viene en `sm`). */
+const HEADER_BUTTON = 'h-(--control-md) px-4 text-sm has-[>svg]:px-3'
+
 export function CartaTourButton({ role }: { role: TenantRole }) {
-  return <TourLauncher tour={CARTA_TOUR} currentRole={role} autoStartForRoles={['editor']} />
+  return (
+    <TourLauncher
+      tour={CARTA_TOUR}
+      currentRole={role}
+      autoStartForRoles={['editor']}
+      className={HEADER_BUTTON}
+    />
+  )
 }

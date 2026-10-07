@@ -241,9 +241,11 @@ export function LinksManager({
                       </Button>
                     </div>
 
+                    {/* El ícono es decorativo: en el celular se va para que el
+                        nombre del botón no quede cortado a «Sumate al club d…». */}
                     <span
                       aria-hidden
-                      className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-primary"
+                      className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-primary max-sm:hidden"
                     >
                       {Icon ? (
                         <Icon className="size-4" />
@@ -254,7 +256,7 @@ export function LinksManager({
 
                     <div className="min-w-0 flex-1">
                       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                        <p className="truncate type-body font-medium text-foreground">
+                        <p className="min-w-0 break-words type-body font-medium text-foreground sm:truncate">
                           {link.label}
                         </p>
                         {link.highlight ? (

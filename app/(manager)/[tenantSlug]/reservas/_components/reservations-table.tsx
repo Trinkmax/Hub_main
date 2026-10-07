@@ -374,8 +374,10 @@ export function ReservationsTable({
                         </div>
                         <StatusPill status={r.status} className="shrink-0" />
                       </div>
-                      <div className="flex flex-wrap items-end justify-between gap-2 ps-15">
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      {/* «Ver» queda siempre abajo a la derecha: con la seña al lado del
+                          contador la fila envolvía y lo mandaba a la izquierda, debajo. */}
+                      <div className="flex items-end justify-between gap-2 ps-15">
+                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
                           {editable ? (
                             <AttendanceCell
                               tenantSlug={tenantSlug}

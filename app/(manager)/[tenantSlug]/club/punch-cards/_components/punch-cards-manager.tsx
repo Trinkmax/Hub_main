@@ -707,7 +707,7 @@ function TemplateRow({
       ref={setNodeRef}
       style={sortableStyle(transform, transition, isDragging)}
       className={cn(
-        'flex items-center gap-2 bg-card px-2 py-2',
+        'flex flex-wrap items-center gap-2 bg-card px-2 py-2 sm:flex-nowrap',
         isDragging && DRAGGING_ROW_CLASSES,
       )}
     >
@@ -739,13 +739,16 @@ function TemplateRow({
           {/* De un vistazo, cuál es exclusiva y de quién. */}
           {exclusiveOf ? <Badge icon={Lock}>{exclusiveOf}</Badge> : null}
         </div>
-        <p className="truncate type-caption text-muted-foreground">
+        {/* En el celular, hasta dos renglones: cortado en uno no se leía el disparador. */}
+        <p className="line-clamp-2 type-caption text-muted-foreground sm:line-clamp-none sm:truncate">
           <span className="type-amount">{template.threshold}</span> sellos → {prize} ·{' '}
           {TRIGGER_META[template.trigger_type].label.toLowerCase()}
         </p>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1">
+      {/* En el celular los controles bajan a su propia línea: al lado del
+          nombre lo cortaban a «Tarjeta cafet…». */}
+      <div className="flex shrink-0 items-center gap-1 max-sm:basis-full max-sm:justify-end">
         <Switch
           checked={template.active}
           onCheckedChange={onToggle}

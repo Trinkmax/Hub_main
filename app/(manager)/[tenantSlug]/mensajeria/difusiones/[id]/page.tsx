@@ -139,7 +139,13 @@ export default async function BroadcastDetailPage({
         }
       />
 
-      <KPIGroup aria-label="Resultados del envío" columns={3}>
+      {/* Seis cifras: en el celular el grupo de 3 columnas las apilaba de a una
+          (seis filas). Ahí van 2 × 3, con los pelos de una grilla de dos. */}
+      <KPIGroup
+        aria-label="Resultados del envío"
+        columns={3}
+        className="max-md:grid-cols-2 max-md:[&>*:nth-child(2)]:border-t-0 max-md:[&>*:nth-child(2n)]:border-l"
+      >
         <KPI icon={Users} label="En la lista" value={formatNumber(total)} hint="Destinatarios" />
         <KPI
           icon={Send}
@@ -200,7 +206,8 @@ export default async function BroadcastDetailPage({
               cell: (r) => {
                 const phone = customerOf(r)?.phone
                 return (
-                  <span className="tabular-nums text-muted-foreground">
+                  // Sin cortar: partido en el guion («555-» / «0108») no se lee.
+                  <span className="type-amount text-muted-foreground">
                     {phone ? formatPhoneForDisplay(phone) : '—'}
                   </span>
                 )
@@ -217,15 +224,26 @@ export default async function BroadcastDetailPage({
               header: 'Enviado',
               mobile: 'meta',
               cell: (r) => (
-                <span className="tabular-nums text-muted-foreground">
-                  {r.sent_at ? broadcastDateTime(r.sent_at, { withYear: true }) : '—'}
-                </span>
+                <>
+                  <span className="type-amount text-muted-foreground">
+                    {r.sent_at ? broadcastDateTime(r.sent_at, { withYear: true }) : '—'}
+                  </span>
+                  {/* En la tarjeta del celular el motivo va acá, en su renglón: como
+                      columna aparte dejaba un «·» colgando en los que no fallaron. */}
+                  {r.error ? (
+                    <span title={r.error} className="block text-destructive-text md:hidden">
+                      {friendlyError(r.error)}
+                    </span>
+                  ) : null}
+                </>
               ),
             },
             {
               id: 'reason',
               header: 'Motivo',
-              mobile: 'meta',
+              mobile: 'hidden',
+              // Con tope: el motivo se llevaba el ancho y partía los nombres en dos.
+              width: '16rem',
               cell: (r) =>
                 r.error ? (
                   <span title={r.error} className="text-destructive-text">

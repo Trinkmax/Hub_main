@@ -16,7 +16,13 @@ import { cn } from '@/lib/utils'
  * Sin estado: la dibuja el RSC de la lista /reservas, un encabezado por servicio.
  */
 
-/** Cada zona con su color de gráfico, estable en claro y en oscuro. */
+/**
+ * Cada zona con su color de gráfico, estable en claro y en oscuro: verde,
+ * azul y terracota. Es el mismo reparto de antes del kit: la paleta nueva
+ * reordenó los `--chart-*` (el azul pasó de 4 a 3 y la terracota de 2 a 4), y
+ * con los números viejos Planta Baja salía en terracota, que al lado del verde
+ * se lee como «sobrecupo».
+ */
 const ZONE_STYLE: Record<keyof ZoneCovers, { label: string; bar: string; dot: string }> = {
   planta_alta: {
     label: ZONE_LABELS.planta_alta,
@@ -25,8 +31,10 @@ const ZONE_STYLE: Record<keyof ZoneCovers, { label: string; bar: string; dot: st
   },
   planta_baja: {
     label: ZONE_LABELS.planta_baja,
-    bar: 'bg-chart-4',
-    dot: 'bg-chart-4',
+    // Azul en los dos temas (en el oscuro del kit, `--chart-1` y `--chart-3`
+    // ya no comparten el ámbar del tema viejo).
+    bar: 'bg-chart-3',
+    dot: 'bg-chart-3',
   },
   event_floating: {
     // Reservas de evento SIN planta elegida. Desde el 22/09 una reserva de
@@ -34,10 +42,9 @@ const ZONE_STYLE: Record<keyof ZoneCovers, { label: string; bar: string; dot: st
     // ya no describía este tramo: es la gente que todavía no tiene dónde
     // sentarse. Mismo nombre que el filtro de planta del calendario.
     label: UNPLACED_LABEL,
-    // chart-2 (terracota) y NO chart-3: en dark `--chart-1` y `--chart-3` son el
-    // mismo ámbar (misma L, hue 88 vs 70) y la barra se leía como un bloque.
-    bar: 'bg-chart-2',
-    dot: 'bg-chart-2',
+    // Terracota: la gente sin lugar asignado es lo que pide atención.
+    bar: 'bg-chart-4',
+    dot: 'bg-chart-4',
   },
 }
 

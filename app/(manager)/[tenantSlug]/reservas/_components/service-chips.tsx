@@ -4,6 +4,7 @@ import { Cake } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTransition } from 'react'
 import { FilterChip } from '@/components/ui/filter-chip'
+import { formatNumber } from '@/lib/format/number-kind'
 import { MEAL_TYPE_LABELS, type MealType } from '@/lib/salon/types'
 
 export type ServiceChip = {
@@ -86,20 +87,28 @@ export function ServiceChips({
         <FilterChip
           key={c.mealType}
           pressed={active === c.mealType}
-          count={c.count}
+          // Sin `count`: el chip lo dibuja al final, y con la torta en el medio
+          // se leía «Merienda 🎂1 1». Acá va pegado al nombre (mismo estilo) y
+          // la torta después, separada por un pelo.
+          count={c.cakes > 0 ? undefined : c.count}
           disabled={pending}
           title={`${c.covers} cubiertos`}
           onClick={() => push(c.mealType)}
         >
           {c.label}
-          {/* La torta se anuncia desde el chip: es producción del bar, no una
-              preferencia del cliente, y llegar tarde a enterarse es el moco. */}
           {c.cakes > 0 ? (
-            <span className="inline-flex items-center gap-0.5 text-brand-text">
-              <Cake className="size-3.5" aria-hidden />
-              <span className="type-caption tabular-nums">{c.cakes}</span>
-              <span className="sr-only">{c.cakes === 1 ? 'torta' : 'tortas'}</span>
-            </span>
+            <>
+              <span data-slot="filter-chip-count" className="type-caption type-amount">
+                {formatNumber(c.count)}
+              </span>
+              {/* La torta se anuncia desde el chip: es producción del bar, no una
+                  preferencia del cliente, y llegar tarde a enterarse es el moco. */}
+              <span className="inline-flex items-center gap-0.5 border-s border-border ps-1.5 text-brand-text">
+                <Cake className="size-3.5" aria-hidden />
+                <span className="type-caption tabular-nums">{c.cakes}</span>
+                <span className="sr-only">{c.cakes === 1 ? 'torta' : 'tortas'}</span>
+              </span>
+            </>
           ) : null}
         </FilterChip>
       ))}
