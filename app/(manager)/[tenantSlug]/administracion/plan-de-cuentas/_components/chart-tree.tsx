@@ -2,12 +2,22 @@
 
 import { ChevronRight, Ellipsis, ListTree, Search } from 'lucide-react'
 import Link from 'next/link'
-import { type KeyboardEvent, useCallback, useMemo, useRef, useState } from 'react'
+import {
+  type CSSProperties,
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { Amount } from '@/components/administracion/amount'
+import { plural } from '@/components/administracion/format'
 import { Button } from '@/components/ui/button'
 import {
   DataTableBody,
   DataTableCell,
+  DataTableFooter,
   DataTableHead,
   DataTableHeader,
   DataTableRoot,
@@ -18,23 +28,26 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FilterBar } from '@/components/ui/filter-bar'
-import { Label } from '@/components/ui/label'
 import { type SlidingTab, SlidingTabs } from '@/components/ui/sliding-tabs'
-import { Switch } from '@/components/ui/switch'
+import { isSystemAccountKey } from '@/lib/accounting/system-keys'
 import { cn } from '@/lib/utils'
-import { ACCOUNT_TYPE_LABELS } from '../../ajustes/_lib/labels'
+import { systemUse } from '../_lib/system-uses'
 import {
-  allGroups,
-  type ChartAccount,
+  ACCOUNT_TYPE_NAMES,
+  type ChartStatusFilter,
   type ChartTypeFilter,
-  defaultExpanded,
-  visibleChartRows,
+  type ChartVisibleRow,
+  chartView,
+  expandedForLevel,
+  levelOfExpanded,
 } from '../_lib/tree'
-import { AccountBadges, AccountSheet, type AccountSheetState } from './account-sheet'
+import { AccountBadges } from './account-bits'
+import { useChartWorkspace } from './workspace-context'
 
 const TYPE_TABS: SlidingTab<ChartTypeFilter>[] = [
   { value: 'all', label: 'Todas' },
@@ -45,117 +58,122 @@ const TYPE_TABS: SlidingTab<ChartTypeFilter>[] = [
   { value: 'expense', label: 'Egresos' },
 ]
 
-/** `?cuenta=` en la URL sin pedir la página de nuevo (la lista ya está acá). */
-function syncCuentaParam(id: string | null) {
-  try {
-    const url = new URL(window.location.href)
-    if (id) url.searchParams.set('cuenta', id)
-    else url.searchParams.delete('cuenta')
-    window.history.replaceState(window.history.state, '', url.toString())
-  } catch {
-    // Sin History API: la hoja funciona igual, solo no queda en la URL.
-  }
+const STATUS_TABS: SlidingTab<ChartStatusFilter>[] = [
+  { value: 'active', label: 'Activas' },
+  { value: 'inactive', label: 'Inactivas' },
+  { value: 'all', label: 'Todas' },
+]
+
+function rowDomId(id: string): string {
+  return `cuenta-${id}`
+}
+
+function RowBalance({ row, available }: { row: ChartVisibleRow; available: boolean }) {
+  if (!available || row.balanceCents === null) return <Amount cents={null} />
+  if (row.balanceCents === 0)
+    return <span className="text-muted-foreground tabular-nums">0,00</span>
+  return <Amount cents={row.balanceCents} side />
 }
 
 /**
- * El plan de cuentas como árbol (H.16): buscar por código o nombre,
- * desplegar, filtrar por rubro y mostrar las inactivas. Con el teclado: ↑/↓
- * entre filas, → abre un grupo, ← lo cierra. Cada cuenta se abre en la hoja de
- * la derecha (`?cuenta=`).
+ * El plan de cuentas como árbol (H.16 + #16): buscar por código («1.1.01», «110101») o nombre, por
+ * tipo, activas o inactivas, y ver hasta el nivel que se quiera. Cada cuenta muestra su código, su
+ * nombre, el tipo, «Para qué se usa» y sus insignias. Tocar un grupo lo despliega; tocar una cuenta
+ * (o «⋯ › Editar») la abre en la hoja de la derecha (`?cuenta=`). Con el teclado: ↑/↓ entre filas,
+ * → abre un grupo y ← lo cierra.
  */
-export function ChartTree({
-  tenantSlug,
-  accounts,
-  readOnly,
-  balancesAvailable,
-  initialAccountId,
-}: {
-  tenantSlug: string
-  accounts: readonly ChartAccount[]
-  readOnly: boolean
-  balancesAvailable: boolean
-  initialAccountId: string | null
-}) {
+export function ChartTree() {
+  const {
+    tenantSlug,
+    index,
+    readOnly,
+    canAdmin,
+    balancesAvailable,
+    expanded,
+    setExpanded,
+    focusId,
+    clearFocus,
+    openAccount,
+    createAccount,
+    moveAccount,
+    changeActive,
+    remapKey,
+  } = useChartWorkspace()
   const [query, setQuery] = useState('')
   const [type, setType] = useState<ChartTypeFilter>('all')
-  const [showInactive, setShowInactive] = useState(false)
-  const [expanded, setExpanded] = useState<Set<string>>(() => {
-    const open = defaultExpanded(accounts)
-    // Si se llega con `?cuenta=`, su camino arranca abierto.
-    const byId = new Map(accounts.map((a) => [a.id, a]))
-    let parent = initialAccountId ? byId.get(initialAccountId)?.parentId : null
-    while (parent) {
-      open.add(parent)
-      parent = byId.get(parent)?.parentId ?? null
-    }
-    return open
-  })
-  const [sheet, setSheet] = useState<AccountSheetState>(() => {
-    const account = initialAccountId ? accounts.find((a) => a.id === initialAccountId) : undefined
-    return account ? { mode: 'edit', account } : null
-  })
+  const [status, setStatus] = useState<ChartStatusFilter>('active')
+  const [flashId, setFlashId] = useState<string | null>(null)
   const tableRef = useRef<HTMLDivElement | null>(null)
 
-  const rows = useMemo(
-    () => visibleChartRows(accounts, { query, showInactive, type, expanded }),
-    [accounts, query, showInactive, type, expanded],
+  const view = useMemo(
+    () => chartView(index, { query, status, type, expanded }),
+    [index, query, status, type, expanded],
   )
-  const groups = useMemo(() => allGroups(accounts), [accounts])
-  const everythingOpen = groups.size > 0 && [...groups].every((id) => expanded.has(id))
-  const searching = query.trim() !== ''
+  const rows = view.rows
+  const autoOpen = view.autoOpen
+  const level = useMemo(() => levelOfExpanded(index, expanded), [index, expanded])
+  const levels = useMemo(
+    () => Array.from({ length: Math.max(1, index.maxLevel) }, (_, i) => i + 1),
+    [index.maxLevel],
+  )
+  const filtered = query.trim() !== '' || type !== 'all' || status !== 'active'
 
-  const toggle = useCallback((id: string, open?: boolean) => {
+  // La última cuenta creada, movida o reactivada: se abre su camino, se muestra y se resalta.
+  useEffect(() => {
+    if (!focusId || !index.byId.has(focusId)) return
     setExpanded((prev) => {
       const next = new Set(prev)
-      const shouldOpen = open ?? !next.has(id)
-      if (shouldOpen) next.add(id)
-      else next.delete(id)
+      for (const id of index.ancestors.get(focusId) ?? []) next.add(id)
       return next
     })
-  }, [])
+    setFlashId(focusId)
+    clearFocus()
+  }, [focusId, index, setExpanded, clearFocus])
 
-  const openSheet = (next: AccountSheetState) => {
-    setSheet(next)
-    syncCuentaParam(next?.mode === 'edit' ? next.account.id : null)
-  }
+  useEffect(() => {
+    if (!flashId) return
+    document
+      .getElementById(rowDomId(flashId))
+      ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    const timer = window.setTimeout(() => setFlashId(null), 2400)
+    return () => window.clearTimeout(timer)
+  }, [flashId])
 
-  // Si el plan cambia (se guardó algo), la hoja abierta muestra la versión nueva.
-  const sheetState: AccountSheetState = useMemo(() => {
-    if (!sheet) return null
-    if (sheet.mode === 'edit') {
-      const fresh = accounts.find((a) => a.id === sheet.account.id)
-      return fresh ? { mode: 'edit', account: fresh } : null
-    }
-    const parent = accounts.find((a) => a.id === sheet.parent.id)
-    return parent ? { mode: 'create', parent } : null
-  }, [sheet, accounts])
+  const toggle = useCallback(
+    (id: string, open?: boolean) => {
+      setExpanded((prev) => {
+        const next = new Set(prev)
+        const shouldOpen = open ?? !next.has(id)
+        if (shouldOpen) next.add(id)
+        else next.delete(id)
+        return next
+      })
+    },
+    [setExpanded],
+  )
 
-  const focusRow = (index: number) => {
+  const focusRow = (at: number) => {
     const buttons = tableRef.current?.querySelectorAll<HTMLButtonElement>('[data-chart-row]')
-    buttons?.[Math.max(0, Math.min(index, buttons.length - 1))]?.focus()
+    buttons?.[Math.max(0, Math.min(at, buttons.length - 1))]?.focus()
   }
 
-  const onRowKey = (
-    event: KeyboardEvent<HTMLButtonElement>,
-    index: number,
-    row: (typeof rows)[number],
-  ) => {
+  const onRowKey = (event: KeyboardEvent<HTMLButtonElement>, at: number, row: ChartVisibleRow) => {
     if (event.key === 'ArrowDown') {
       event.preventDefault()
-      focusRow(index + 1)
+      focusRow(at + 1)
     } else if (event.key === 'ArrowUp') {
       event.preventDefault()
-      focusRow(index - 1)
-    } else if (event.key === 'ArrowRight' && row.hasChildren && !searching) {
+      focusRow(at - 1)
+    } else if (event.key === 'ArrowRight' && row.expandable && !autoOpen) {
       event.preventDefault()
       if (!row.open) toggle(row.id, true)
-      else focusRow(index + 1)
-    } else if (event.key === 'ArrowLeft' && !searching) {
+      else focusRow(at + 1)
+    } else if (event.key === 'ArrowLeft' && !autoOpen) {
       event.preventDefault()
-      if (row.hasChildren && row.open) toggle(row.id, false)
+      if (row.expandable && row.open) toggle(row.id, false)
       else if (row.parentId) {
-        const parentIndex = rows.findIndex((r) => r.id === row.parentId)
-        if (parentIndex >= 0) focusRow(parentIndex)
+        const parentAt = rows.findIndex((r) => r.id === row.parentId)
+        if (parentAt >= 0) focusRow(parentAt)
       }
     }
   }
@@ -168,49 +186,77 @@ export function ChartTree({
             className="pointer-events-none absolute left-3 size-4 text-muted-foreground"
             aria-hidden
           />
-          <span className="sr-only">Buscar una cuenta</span>
+          <span className="sr-only">Buscar una cuenta por código o nombre</span>
           <input
             type="search"
             value={query}
-            placeholder="Código o nombre («1101», «proveedores»)"
+            placeholder="Código o nombre («1.1.01», «110101», «proveedores»)"
             onChange={(e) => setQuery(e.target.value)}
             className="h-11 w-full rounded-lg border border-transparent bg-background/40 pl-9 pr-3 text-base shadow-none outline-none placeholder:text-muted-foreground/70 focus:border-ring focus:ring-2 focus:ring-ring/40 md:h-9 md:text-sm"
           />
         </label>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-1">
-          <div className="flex items-center gap-2">
-            <Switch id="pc-inactive" checked={showInactive} onCheckedChange={setShowInactive} />
-            <Label htmlFor="pc-inactive" className="text-sm">
-              Mostrar inactivas
-            </Label>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-11 md:h-8"
-            disabled={searching}
-            onClick={() =>
-              setExpanded(everythingOpen ? defaultExpanded(accounts) : new Set(groups))
-            }
-          >
-            {everythingOpen ? 'Contraer' : 'Expandir todo'}
-          </Button>
+        <div className="-mx-2 overflow-x-auto px-2 [scrollbar-width:none] sm:mx-0 sm:px-0">
+          <SlidingTabs tabs={STATUS_TABS} value={status} onChange={setStatus} size="sm" />
         </div>
       </FilterBar>
 
-      <div className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0">
-        <SlidingTabs tabs={TYPE_TABS} value={type} onChange={setType} size="sm" />
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0">
+          <SlidingTabs tabs={TYPE_TABS} value={type} onChange={setType} size="sm" />
+        </div>
+        {levels.length > 1 ? (
+          <fieldset className="flex flex-wrap items-center gap-2">
+            <legend className="sr-only">Ver el plan hasta el nivel</legend>
+            <span aria-hidden="true" className="text-xs text-muted-foreground">
+              Ver hasta el nivel
+            </span>
+            {levels.map((n) => (
+              <button
+                key={n}
+                type="button"
+                aria-pressed={!autoOpen && level === n}
+                aria-label={`Ver hasta el nivel ${n}`}
+                disabled={autoOpen}
+                onClick={() => setExpanded(expandedForLevel(index, n))}
+                className={cn(
+                  'inline-flex h-11 min-w-11 items-center justify-center rounded-full border px-3 text-sm font-medium tabular-nums transition-colors md:h-9 md:min-w-9',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                  'disabled:opacity-60',
+                  !autoOpen && level === n
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border bg-card/40 text-muted-foreground hover:bg-secondary',
+                )}
+              >
+                {n}
+              </button>
+            ))}
+          </fieldset>
+        ) : null}
       </div>
 
       {rows.length === 0 ? (
         <EmptyState
           icon={ListTree}
-          title={searching ? 'No hay cuentas con eso' : 'No hay cuentas para mostrar'}
+          title={
+            index.ordered.length === 0
+              ? 'Todavía no hay cuentas'
+              : filtered
+                ? 'No hay cuentas con eso'
+                : 'No hay cuentas para mostrar'
+          }
           description={
-            searching
-              ? 'Probá con el código sin puntos («1101») o con otra palabra.'
-              : 'Probá con otro rubro o mostrá las inactivas.'
+            index.ordered.length === 0
+              ? 'Creá la primera o importá el plan que te pasó la contadora.'
+              : query.trim()
+                ? 'Probá con el código con puntos («1.1.01»), sin puntos («110101») o con otra palabra.'
+                : 'Probá con otro tipo o mirá todas.'
+          }
+          action={
+            index.ordered.length === 0 && !readOnly ? (
+              <Button type="button" className="h-11 md:h-9" onClick={() => createAccount(null)}>
+                Crear una cuenta principal
+              </Button>
+            ) : undefined
           }
         />
       ) : (
@@ -221,8 +267,8 @@ export function ChartTree({
                 <DataTableHead>
                   <tr>
                     <DataTableHeader>Cuenta</DataTableHeader>
-                    <DataTableHeader className="hidden md:table-cell">Rubro</DataTableHeader>
-                    <DataTableHeader className="text-right">
+                    <DataTableHeader className="hidden sm:table-cell">Tipo</DataTableHeader>
+                    <DataTableHeader className="hidden text-right sm:table-cell">
                       Saldo<span className="sr-only"> (deudor D, acreedor A)</span>
                     </DataTableHeader>
                     <DataTableHeader className="w-14">
@@ -231,30 +277,39 @@ export function ChartTree({
                   </tr>
                 </DataTableHead>
                 <DataTableBody>
-                  {rows.map((row, index) => {
-                    const isGroup = row.hasChildren || !row.postable
+                  {rows.map((row, at) => {
+                    const isGroup = !row.postable
+                    const dim = !row.match && (autoOpen || filtered)
+                    const use = systemUse(row.systemKey)
+                    const hasBadges =
+                      Boolean(row.systemKey) ||
+                      row.requiresParty ||
+                      row.isTreasury ||
+                      (row.purchaseSelectable && row.postable) ||
+                      !row.active
                     return (
                       <tr
                         key={row.id}
+                        id={rowDomId(row.id)}
                         className={cn(
-                          'transition-colors hover:bg-cream-tint',
+                          'transition-colors duration-[var(--duration-fast)] hover:bg-cream-tint',
                           !row.active && 'text-muted-foreground',
-                          row.match && 'bg-secondary/30',
+                          flashId === row.id && 'bg-cream-tint',
                         )}
                       >
-                        <DataTableCell className="py-2">
+                        <DataTableCell className="py-1.5">
                           <div
-                            className="flex min-w-0 items-center gap-1"
-                            style={{ paddingLeft: `${row.depth * 1.25}rem` }}
+                            className="flex min-w-0 items-start gap-1 pl-[calc(var(--depth)*0.75rem)] sm:pl-[calc(var(--depth)*1.25rem)]"
+                            style={{ '--depth': row.depth } as CSSProperties}
                           >
-                            {row.hasChildren ? (
+                            {row.expandable ? (
                               <button
                                 type="button"
                                 tabIndex={-1}
                                 aria-label={row.open ? `Cerrar ${row.name}` : `Abrir ${row.name}`}
-                                disabled={searching}
+                                disabled={autoOpen}
                                 onClick={() => toggle(row.id)}
-                                className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40"
+                                className="mt-1 flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40"
                               >
                                 <ChevronRight
                                   className={cn(
@@ -265,49 +320,65 @@ export function ChartTree({
                                 />
                               </button>
                             ) : (
-                              <span aria-hidden="true" className="size-8 shrink-0" />
+                              <span aria-hidden="true" className="mt-1 size-8 shrink-0" />
                             )}
                             <button
                               type="button"
                               data-chart-row
-                              aria-expanded={row.hasChildren ? row.open : undefined}
-                              onKeyDown={(event) => onRowKey(event, index, row)}
+                              aria-expanded={row.expandable ? row.open : undefined}
+                              onKeyDown={(event) => onRowKey(event, at, row)}
                               onClick={() =>
-                                isGroup && !searching && row.hasChildren
-                                  ? toggle(row.id)
-                                  : openSheet({ mode: 'edit', account: row })
+                                row.expandable && !autoOpen ? toggle(row.id) : openAccount(row.id)
                               }
-                              className="flex min-h-11 min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 rounded-md px-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-9"
+                              className="flex min-h-11 min-w-0 flex-1 flex-col items-start gap-1 rounded-md px-1 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-9"
                             >
-                              <span className="font-mono text-xs text-muted-foreground tabular-nums">
-                                {row.code}
+                              <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                                  {row.code}
+                                </span>
+                                <span
+                                  className={cn(
+                                    'text-sm',
+                                    isGroup ? 'font-semibold' : 'font-medium',
+                                    dim && 'text-muted-foreground',
+                                  )}
+                                >
+                                  {row.name}
+                                </span>
                               </span>
-                              <span
-                                className={cn('text-sm', isGroup ? 'font-semibold' : 'font-medium')}
-                              >
-                                {row.name}
-                              </span>
-                              <span className="flex flex-wrap gap-1">
-                                <AccountBadges account={row} />
+                              {hasBadges ? (
+                                <span className="flex max-w-full flex-wrap gap-1">
+                                  <AccountBadges account={row} />
+                                </span>
+                              ) : null}
+                              {row.description ? (
+                                <span className="line-clamp-2 max-w-prose text-xs text-muted-foreground text-pretty sm:line-clamp-1">
+                                  {row.description}
+                                </span>
+                              ) : null}
+                              <span className="flex flex-wrap gap-x-2 text-xs text-muted-foreground sm:hidden">
+                                <span>{ACCOUNT_TYPE_NAMES[row.type]}</span>
+                                {row.postable && balancesAvailable ? (
+                                  <span>
+                                    · Saldo <RowBalance row={row} available={balancesAvailable} />
+                                  </span>
+                                ) : null}
                               </span>
                             </button>
                           </div>
                         </DataTableCell>
-                        <DataTableCell className="hidden py-2 text-xs text-muted-foreground md:table-cell">
-                          {ACCOUNT_TYPE_LABELS[row.type]}
+                        <DataTableCell className="hidden py-2 text-xs text-muted-foreground sm:table-cell">
+                          {ACCOUNT_TYPE_NAMES[row.type]}
                         </DataTableCell>
                         <DataTableCell
-                          className={cn('py-2 text-right text-sm', isGroup && 'font-semibold')}
-                        >
-                          {!balancesAvailable || row.balanceCents === null ? (
-                            <Amount cents={null} />
-                          ) : row.balanceCents === 0 ? (
-                            <span className="text-muted-foreground tabular-nums">0,00</span>
-                          ) : (
-                            <Amount cents={row.balanceCents} side />
+                          className={cn(
+                            'hidden py-2 text-right text-sm sm:table-cell',
+                            isGroup && 'font-semibold',
                           )}
+                        >
+                          <RowBalance row={row} available={balancesAvailable} />
                         </DataTableCell>
-                        <DataTableCell className="py-2 text-right">
+                        <DataTableCell className="py-2 text-right align-top sm:align-middle">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button
@@ -320,19 +391,39 @@ export function ChartTree({
                                 <Ellipsis className="size-4" />
                               </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-52">
+                            <DropdownMenuContent align="end" className="w-56">
                               <DropdownMenuItem
                                 className="min-h-11 md:min-h-8"
-                                onSelect={() => openSheet({ mode: 'edit', account: row })}
+                                onSelect={() => openAccount(row.id)}
                               >
                                 {readOnly ? 'Ver detalle' : 'Editar'}
                               </DropdownMenuItem>
-                              {!readOnly && isGroup ? (
+                              {!readOnly && isGroup && row.active ? (
                                 <DropdownMenuItem
                                   className="min-h-11 md:min-h-8"
-                                  onSelect={() => openSheet({ mode: 'create', parent: row })}
+                                  onSelect={() => createAccount(row.id)}
                                 >
                                   Agregar cuenta adentro
+                                </DropdownMenuItem>
+                              ) : null}
+                              {!readOnly ? (
+                                <DropdownMenuItem
+                                  className="min-h-11 md:min-h-8"
+                                  onSelect={() => moveAccount(row.id)}
+                                >
+                                  Mover a otro grupo
+                                </DropdownMenuItem>
+                              ) : null}
+                              {canAdmin && isSystemAccountKey(row.systemKey) ? (
+                                <DropdownMenuItem
+                                  className="min-h-11 md:min-h-8"
+                                  onSelect={() => {
+                                    if (isSystemAccountKey(row.systemKey)) remapKey(row.systemKey)
+                                  }}
+                                >
+                                  {use
+                                    ? `Usar otra cuenta para «${use.label}»`
+                                    : 'Usar otra cuenta'}
                                 </DropdownMenuItem>
                               ) : null}
                               {row.postable ? (
@@ -344,6 +435,17 @@ export function ChartTree({
                                   </Link>
                                 </DropdownMenuItem>
                               ) : null}
+                              {!readOnly ? (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    className="min-h-11 md:min-h-8"
+                                    onSelect={() => changeActive(row.id, !row.active)}
+                                  >
+                                    {row.active ? 'Desactivar' : 'Reactivar'}
+                                  </DropdownMenuItem>
+                                </>
+                              ) : null}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </DataTableCell>
@@ -354,18 +456,15 @@ export function ChartTree({
               </DataTableRoot>
             </DataTableScroll>
           </div>
+          {filtered ? (
+            <DataTableFooter>
+              <span role="status">
+                {`${plural(view.matches, 'cuenta cumple', 'cuentas cumplen')} los filtros.`}
+              </span>
+            </DataTableFooter>
+          ) : null}
         </DataTableShell>
       )}
-
-      <AccountSheet
-        tenantSlug={tenantSlug}
-        state={sheetState}
-        accounts={accounts}
-        readOnly={readOnly}
-        balancesAvailable={balancesAvailable}
-        onClose={() => openSheet(null)}
-        onCreated={(parentId) => toggle(parentId, true)}
-      />
     </div>
   )
 }

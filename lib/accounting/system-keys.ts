@@ -155,8 +155,9 @@ export const COMPENSABLE_KEYS = [
 ] as const satisfies readonly SystemAccountKey[]
 
 /**
- * Deudas fiscales con partícipe (grupo 2.1.02): la cuenta de control de una
- * DDJJ (`ddjj_impuesto`) a nombre de un organismo.
+ * Deudas fiscales con partícipe (grupo «Deudas fiscales», 2.1.01.03.000 en el
+ * plan estándar): la cuenta de control de una DDJJ (`ddjj_impuesto`) a nombre
+ * de un organismo.
  */
 export const TAX_PAYABLE_KEYS = [
   'vat_payable',

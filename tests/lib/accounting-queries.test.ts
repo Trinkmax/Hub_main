@@ -471,7 +471,7 @@ describe('Resumen y checklist', () => {
     ])
     expect(list.warnings.map((w) => w.label)).toEqual([
       'Faltan los cierres del día del 03/10 y 04/10.',
-      'Caja quedó en −$\u00a05.000,00 al último día del mes.',
+      'Caja quedó en descubierto por $\u00a05.000,00 al último día del mes.',
       'Falta el CUIT de la SAS (Ajustes › Datos de la SAS).',
       'Hay algo para revisar antes de cerrar.',
     ])

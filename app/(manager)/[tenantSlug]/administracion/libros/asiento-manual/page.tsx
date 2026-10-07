@@ -84,6 +84,8 @@ export default async function AsientoManualPage({
     id: a.id,
     code: a.code,
     name: a.name,
+    // La madre real: una cuenta movida de grupo conserva su código (#16).
+    parentId: a.parentId,
     postable: a.postable && a.manualSelectable,
     active: a.active,
     description: a.description,

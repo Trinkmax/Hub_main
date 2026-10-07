@@ -67,9 +67,9 @@ function buildAccounts(): {
   }
   // Las hojas de «Caja y bancos» las crea el asistente.
   for (const [code, name] of [
-    ['1.1.01.01', 'Caja'],
-    ['1.1.01.02', 'Mercado Pago SAS'],
-    ['1.1.01.03', 'Banco Nación'],
+    ['1.1.01.01.001', 'Caja'],
+    ['1.1.01.01.002', 'Mercado Pago SAS'],
+    ['1.1.01.01.003', 'Banco Nación'],
   ] as const) {
     byCode.set(code, {
       id: nextId(),
@@ -272,9 +272,9 @@ export function buildCoreFixture(): CoreFixture {
     treasuries.set(t.id, t)
     treasuryByKey.set(key, t)
   }
-  addTreasury('caja', '1.1.01.01', 'cash', 15_000_000)
-  addTreasury('mp', '1.1.01.02', 'wallet', 82_000_000)
-  addTreasury('banco', '1.1.01.03', 'bank', 100_000_000)
+  addTreasury('caja', '1.1.01.01.001', 'cash', 15_000_000)
+  addTreasury('mp', '1.1.01.01.002', 'wallet', 82_000_000)
+  addTreasury('banco', '1.1.01.01.003', 'bank', 100_000_000)
   const treasury = (key: 'caja' | 'mp' | 'banco'): TreasuryRef => {
     const t = treasuryByKey.get(key)
     if (!t) throw new Error(`Falta la caja ${key}`)

@@ -39,6 +39,7 @@ import {
   monthOf,
   todayInCordoba,
 } from '@/lib/dates'
+import { formatCents } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { BookPage } from '../_components/book-page'
 import { QueryErrorBlock } from '../_components/report-error'
@@ -252,30 +253,49 @@ function ClosePanel({
   const info = checklist.info.map(infoLine).filter((l): l is ChecklistLine => l !== null)
 
   const iva = checklist.iva
-  const settles = Boolean(iva?.applies && iva.mode === 'on_close' && iva.willGenerate)
+  // Modo «al cerrar» (SAS responsable inscripta): el cierre registra la
+  // liquidación si hace falta (`will_generate`) y reemplaza la que quedó vieja
+  // (`replaces_document_id`), también cuando el mes ahora da cero (la anula).
+  const onClose = Boolean(iva?.applies && iva.mode === 'on_close')
+  const replaces = onClose && iva ? iva.replacesDocumentId : null
+  const settles = Boolean(onClose && iva && (iva.willGenerate || replaces))
+  const voidsOnly = Boolean(settles && iva && !iva.willGenerate)
   const built =
-    settles && iva && ctx
+    settles && !voidsOnly && iva && ctx
       ? buildIvaSettlement({ month: period.month, figures: iva.figures }, ctx, {
           clientRef: PREVIEW_CLIENT_REF,
         })
       : null
   const ivaPreview = built?.ok && built.preview.length > 0 ? built.preview : null
+  const again = replaces ? ' de nuevo (la anterior quedó vieja)' : ''
 
   let ivaText: ReactNode = null
+  let ivaSummary = ''
   if (iva?.applies) {
-    if (settles) {
-      ivaText =
-        iva.toPayCents > 0 ? (
+    if (voidsOnly) {
+      ivaSummary = `Se anula la liquidación del IVA que quedó vieja: ahora el IVA de ${monthNoun} da cero.`
+      ivaText = `Al cerrar se anula la liquidación del IVA que quedó vieja: ahora el IVA de ${monthNoun} da cero.`
+    } else if (settles && iva) {
+      if (iva.toPayCents > 0) {
+        ivaSummary = `Se registra la liquidación del IVA${again}: a pagar ${formatCents(iva.toPayCents)}.`
+        ivaText = (
           <>
-            Al cerrar se registra la liquidación del IVA: a pagar{' '}
+            Al cerrar se registra la liquidación del IVA{again}: a pagar{' '}
             <Amount cents={iva.toPayCents} className="font-medium" />.
           </>
-        ) : (
+        )
+      } else if (iva.inFavorCents > 0) {
+        ivaSummary = `Se registra la liquidación del IVA${again}: quedan ${formatCents(iva.inFavorCents)} a favor.`
+        ivaText = (
           <>
-            Al cerrar se registra la liquidación del IVA: quedan{' '}
+            Al cerrar se registra la liquidación del IVA{again}: quedan{' '}
             <Amount cents={iva.inFavorCents} className="font-medium" /> a favor.
           </>
         )
+      } else {
+        ivaSummary = `Se registra la liquidación del IVA${again}: no queda nada a pagar.`
+        ivaText = `Al cerrar se registra la liquidación del IVA${again}: no queda nada a pagar.`
+      }
     } else if (iva.isZero) {
       ivaText = `El IVA de ${monthNoun} da cero: no hay liquidación.`
     } else if (iva.mode === 'manual') {
@@ -362,8 +382,9 @@ function ClosePanel({
               settles && iva
                 ? {
                     expected: ivaExpectedFrom(iva),
-                    toPayCents: iva.toPayCents,
-                    inFavorCents: iva.inFavorCents,
+                    summary: ivaSummary,
+                    // Con una liquidación vieja no se puede cerrar sin reemplazarla.
+                    optional: !replaces,
                   }
                 : null
             }

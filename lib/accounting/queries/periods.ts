@@ -1,16 +1,7 @@
 import 'server-only'
-import {
-  accErrorMessage,
-  CLOSE_WARNING_COPY,
-  detailVars,
-  isAccErrorKey,
-} from '@/lib/accounting/errors'
-import {
-  CLOSE_WARNING_KEYS,
-  type CloseWarningKey,
-  type MessageDetail,
-} from '@/lib/accounting/types'
-import { formatDayMonth } from '@/lib/dates/format'
+import { closeWarningText, isCloseWarningKey } from '@/lib/accounting/close-warnings'
+import { accErrorMessage, detailVars, isAccErrorKey } from '@/lib/accounting/errors'
+import type { CloseWarningKey, MessageDetail } from '@/lib/accounting/types'
 import { formatCents } from '@/lib/money/format'
 import { type IvaPosition, parseIvaPosition } from './books'
 import {
@@ -314,95 +305,6 @@ export async function listPeriodEvents(
 
 // ─── Checklist del cierre (F.13) ─────────────────────────────────────────────
 
-function isCloseWarningKey(value: string): value is CloseWarningKey {
-  return (CLOSE_WARNING_KEYS as readonly string[]).includes(value)
-}
-
-function plural(n: number, one: string, many: string): string {
-  return `${n} ${n === 1 ? one : many}`
-}
-
-/** `['03/10', '04/10', '11/10']` → «03/10, 04/10 y 11/10». */
-function joinList(items: readonly string[]): string {
-  if (items.length <= 1) return items[0] ?? ''
-  return `${items.slice(0, -1).join(', ')} y ${items.at(-1)}`
-}
-
-/** Los nombres de una lista de la base (`[{name, …}]`), sin vacíos. */
-function namesOf(value: unknown): string[] {
-  return asRecords(value)
-    .map((row) => str(row.name).trim())
-    .filter((name) => name !== '')
-}
-
-/**
- * El texto de un aviso con sus números (cuántos, cuánto, cuáles), armado con
- * lo que manda `acc_report_close_checklist`. Sin datos, el texto general.
- */
-function warningLabel(key: CloseWarningKey, rec: UnknownRecord): string {
-  const count = intOrNull(rec.count)
-  const amount = centsOrNull(rec.amount_cents)
-  switch (key) {
-    case 'missing_daily_closes': {
-      const days = (Array.isArray(rec.dates) ? rec.dates : [])
-        .map((d) => (typeof d === 'string' ? formatDayMonth(d) : ''))
-        .filter((d) => d !== '')
-      const n = count ?? days.length
-      if (n <= 0) break
-      if (n === 1 && days[0]) return `Falta el cierre del día del ${days[0]}.`
-      if (days.length === n && n <= 4) return `Faltan los cierres del día del ${joinList(days)}.`
-      return days[0]
-        ? `Faltan ${n} cierres del día (el primero, del ${days[0]}).`
-        : `Faltan ${n} cierres del día.`
-    }
-    case 'receivables_overdue':
-      if (count !== null && count > 0 && amount !== null) {
-        return `Hay ${plural(count, 'acreditación atrasada', 'acreditaciones atrasadas')} de tarjetas, billeteras o plataformas por ${formatCents(amount)}.`
-      }
-      break
-    case 'treasury_negative': {
-      const list = asRecords(rec.treasuries)
-      const names = namesOf(rec.treasuries)
-      const balance = list.length === 1 ? centsOrNull(list[0]?.balance_cents) : null
-      if (names.length === 1 && balance !== null) {
-        return `${names[0]} quedó en ${formatCents(balance)} al último día del mes.`
-      }
-      if (names.length === 1) return `${names[0]} quedó en negativo al último día del mes.`
-      if (names.length > 1) {
-        return `${joinList(names)} quedaron en negativo al último día del mes.`
-      }
-      break
-    }
-    case 'treasuries_not_reconciled': {
-      const names = namesOf(rec.treasuries)
-      if (names.length > 0) return `Sin «Ajustar saldo» en el mes: ${joinList(names)}.`
-      break
-    }
-    case 'vat_pending_documentation':
-      if (amount !== null && amount !== 0) {
-        return `Hay ${formatCents(Math.abs(amount))} de IVA de comisiones a documentar con más de 45 días: falta la factura.`
-      }
-      break
-    case 'recurring_not_loaded': {
-      const names = namesOf(rec.items)
-      if (names.length > 0 && names.length <= 4) {
-        return `Gastos fijos del mes sin cargar: ${joinList(names)}.`
-      }
-      if (names.length > 4) return `Hay ${names.length} gastos fijos del mes sin cargar.`
-      break
-    }
-    case 'tickets_without_vendor':
-      if (count !== null && count > 0) {
-        const money = amount !== null && amount !== 0 ? ` (${formatCents(amount)})` : ''
-        return `Hay ${plural(count, 'tique', 'tiques')} sin comercio${money}: no entran al Libro IVA.`
-      }
-      break
-    case 'sas_cuit_missing':
-      break
-  }
-  return CLOSE_WARNING_COPY[key]
-}
-
 /** Información del cierre (no frena nada). `null` = una clave que esta versión no conoce: no se muestra. */
 function infoLabel(key: string, rec: UnknownRecord): string | null {
   switch (key) {
@@ -441,7 +343,7 @@ function parseItem(raw: unknown, severity: CloseChecklistSeverity): CloseCheckli
   if (label === null) {
     if (severity === 'blocker') label = blockerLabel(key, detail)
     else if (severity === 'info') label = infoLabel(key, detail)
-    else label = isCloseWarningKey(key) ? warningLabel(key, detail) : null
+    else label = isCloseWarningKey(key) ? closeWarningText(key, detail) : null
   }
   if (label === null) {
     // Un aviso que esta versión no conoce igual se muestra (frena el cierre en la base).

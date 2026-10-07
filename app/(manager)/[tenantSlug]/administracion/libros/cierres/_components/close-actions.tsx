@@ -61,8 +61,12 @@ export function CloseMonthButton({
   /** «noviembre»: donde van las correcciones. */
   nextMonthNoun: string
   warningKeys: readonly CloseWarningKey[]
-  /** La liquidación de IVA que va a tomar el cierre (`null` si no corresponde). */
-  iva: { expected: IvaPositionExpected; toPayCents: number; inFavorCents: number } | null
+  /**
+   * La liquidación de IVA que va a tomar el cierre (`null` si no corresponde):
+   * las cifras que se ven (`expected`), la frase del diálogo y si se puede
+   * apagar (no, si hay que reemplazar una liquidación que quedó vieja).
+   */
+  iva: { expected: IvaPositionExpected; summary: string; optional: boolean } | null
 }) {
   const router = useRouter()
   const switchId = useId()
@@ -74,6 +78,8 @@ export function CloseMonthButton({
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
+  const settle = iva !== null && (generate || !iva.optional)
+
   function run() {
     setError(null)
     const acks = [...new Set([...warningKeys, ...extraWarnings.map((w) => w.key)])]
@@ -82,9 +88,10 @@ export function CloseMonthButton({
         const result = await closePeriod(tenantSlug, {
           month,
           warningsAck: acks,
-          ivaSettlement: iva
-            ? { generate, expected: generate ? iva.expected : null }
-            : { generate: false, expected: null },
+          ivaSettlement:
+            iva && settle
+              ? { generate: true, expected: iva.expected }
+              : { generate: false, expected: null },
         })
         if (result.ok) {
           setOpen(false)
@@ -117,7 +124,7 @@ export function CloseMonthButton({
   const label = `Cerrar ${monthNoun}`
   return (
     <div className="flex flex-col gap-3 sm:items-end">
-      {iva ? (
+      {iva?.optional ? (
         <div className="flex min-h-11 items-center gap-3">
           <Switch
             id={switchId}
@@ -161,15 +168,7 @@ export function CloseMonthButton({
                       : `Quedan ${warningKeys.length} avisos sin resolver: se cierra igual.`}
                   </p>
                 ) : null}
-                {iva && generate ? (
-                  <p className="text-pretty">
-                    {iva.toPayCents > 0
-                      ? `Se registra la liquidación del IVA: a pagar ${formatCents(iva.toPayCents)}.`
-                      : iva.inFavorCents > 0
-                        ? `Se registra la liquidación del IVA: quedan ${formatCents(iva.inFavorCents)} a favor.`
-                        : 'Se registra la liquidación del IVA.'}
-                  </p>
-                ) : null}
+                {iva && settle && iva.summary ? <p className="text-pretty">{iva.summary}</p> : null}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>

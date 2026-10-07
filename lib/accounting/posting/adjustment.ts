@@ -14,8 +14,8 @@
  * (Debe − Haber): en la tarjeta de la empresa (pasivo) la deuda es negativa.
  * Con diferencia cero no hay comprobante: eso es `acc_mark_treasury_checked`.
  *
- * E18 · caja el 31/10: libro 45.230.000, contado 45.000.000 → D 5.3.03.05
- * Faltantes de caja 230.000 / H 1.1.01.01 Caja 230.000.
+ * E18 · caja el 31/10: libro 45.230.000, contado 45.000.000 → D 4.2.01.03.028
+ * Faltantes de caja 230.000 / H 1.1.01.01.001 Caja 230.000.
  *
  * **Anulación.** El comprobante `reversal` es el espejo exacto del original:
  * mismos renglones con los lados invertidos (misma cuenta, partícipe,

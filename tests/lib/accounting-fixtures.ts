@@ -2729,9 +2729,10 @@ export const E20_CLOSE: PostingFixture<FiscalYearCloseInput> = {
         date: '2026-12-31',
         totalCents: 105_665_245,
         lines: [
+          // En orden de código del plan (#16): ventas 4.1, amortizaciones 4.2, compras 5.1.
           D(sys('sales_salon_invoiced'), 105_665_245, 'fy_result'),
-          H(sys('purchases_soft_drinks'), 71_074_380, 'fy_result'),
           H(sys('depreciation'), 2_500_000, 'fy_result'),
+          H(sys('purchases_soft_drinks'), 71_074_380, 'fy_result'),
           H(sys('current_year_result'), 32_090_865, 'fy_result'),
         ],
       },

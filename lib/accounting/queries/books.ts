@@ -538,13 +538,17 @@ function parseTrialRow(row: UnknownRecord): TrialBalanceRow {
   }
 }
 
-/** Los importes del libro con signo: valor absoluto × `sign` (sin `-0`). */
-function signedAmounts(raw: unknown, sign: 1 | -1): IvaAmounts {
+/**
+ * Los 22 importes de una fila del libro: la base (12b·3) los manda YA firmados
+ * (`× sign`: NC y anulaciones en negativo) y se usan tal cual, en pantalla y en
+ * el CSV. Una clave que falte vale 0 (sin `-0`).
+ */
+function bookAmounts(raw: unknown): IvaAmounts {
   const rec = asRecord(raw)
   const out = {} as IvaAmounts
   for (const key of FISCAL_AMOUNT_KEYS) {
-    const value = Math.abs(cents(rec[key]))
-    out[key] = value === 0 ? 0 : value * sign
+    const value = cents(rec[key])
+    out[key] = value === 0 ? 0 : value
   }
   return out
 }
@@ -570,7 +574,7 @@ function parseIvaRow(row: UnknownRecord): IvaBookRow {
     counterpartyDocNumber: str(row.counterparty_doc_number),
     counterpartyIvaCondition: str(row.counterparty_iva_condition),
     channel: strOrNull(row.channel),
-    amounts: signedAmounts(row.amounts, sign),
+    amounts: bookAmounts(row.amounts),
     accountingDate: day(row.accounting_date),
   }
 }
@@ -984,8 +988,13 @@ function sumTotals(rows: readonly TrialBalanceRow[]): TrialBalanceTotals {
 }
 
 /**
- * Sumas y saldos (F.3): una fila por cuenta y grupo (los grupos ya vienen
- * sumados), con la línea virtual de resultados anteriores sin refundir.
+ * Sumas y saldos (F.3, #11 parte 1): una fila por cuenta y grupo, con la línea
+ * virtual de resultados anteriores sin refundir. El subtotal de un grupo lo
+ * arma la base con Σ Debe − Σ Haber de sus hojas y lo pone en D o A según el
+ * signo, nunca por el tipo ni el lado normal del grupo: un grupo de resultados
+ * puede mezclar ingresos y egresos («4 Resultado del ejercicio» con 4.1 y 4.2).
+ * Acá no se recalcula nada por tipo: los totales suman solo las imputables (y
+ * la línea virtual), así cuadran aunque el plan tenga grupos mixtos.
  */
 export async function getTrialBalance(
   tenantId: string,

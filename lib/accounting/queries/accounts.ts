@@ -3,9 +3,11 @@ import { ACCOUNT_TYPES, type AccountType, type Side } from '@/lib/accounting/typ
 import { todayInCordoba } from '@/lib/dates/zone'
 import { getTrialBalance } from './books'
 import {
+  asRecords,
   bool,
   dayOrNull,
   int,
+  intOrNull,
   isRecord,
   isUuid,
   optionalDay,
@@ -20,7 +22,8 @@ import {
 
 /**
  * Plan de cuentas (§F.14, H.16): `select` directo de `acc_accounts` (≤ 300
- * filas) ordenado por código, y el saldo de cada cuenta al día.
+ * filas) ordenado por código, y el saldo de cada cuenta al día. También lee lo
+ * que devuelven `acc_import_accounts` y `acc_remap_system_account` (#16).
  */
 
 export type AccountRow = {
@@ -64,10 +67,22 @@ export type AccountsWithBalances = {
 const ACCOUNT_COLUMNS =
   'id, code, name, type, normal_side, parent_id, level, path, postable, active, system_key, requires_party, is_treasury, purchase_selectable, manual_selectable, description, sort, updated_at'
 
-function accountType(value: unknown): AccountType {
+function accountTypeOrNull(value: unknown): AccountType | null {
   return typeof value === 'string' && (ACCOUNT_TYPES as readonly string[]).includes(value)
     ? (value as AccountType)
-    : 'asset'
+    : null
+}
+
+function accountType(value: unknown): AccountType {
+  return accountTypeOrNull(value) ?? 'asset'
+}
+
+function sideOrNull(value: unknown): Side | null {
+  return value === 'debit' || value === 'credit' ? value : null
+}
+
+function boolOrNull(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null
 }
 
 function parseAccount(row: UnknownRecord): AccountRow {
@@ -181,5 +196,170 @@ export async function listAccountsWithBalances(
         hasChildren: parents.has(account.id),
       }
     }),
+  }
+}
+
+// ─── Importar un plan (`acc_import_accounts`, #16) ───────────────────────────
+
+/** Qué pasa con cada línea: alta, cambio, nada o error (no se importa nada mientras haya uno). */
+export type ChartImportAction = 'create' | 'update' | 'none' | 'error'
+
+/** Lo que cambia de una cuenta que ya existe. */
+export type ChartImportChange =
+  | 'name'
+  | 'description'
+  | 'parent'
+  | 'type'
+  | 'normal_side'
+  | 'postable'
+
+const IMPORT_ACTIONS: readonly ChartImportAction[] = ['create', 'update', 'none', 'error']
+const IMPORT_CHANGES: readonly ChartImportChange[] = [
+  'name',
+  'description',
+  'parent',
+  'type',
+  'normal_side',
+  'postable',
+]
+
+export type ChartImportResultRow = {
+  /** Línea de lo que se mandó, desde 1. */
+  row: number
+  code: string
+  name: string
+  action: ChartImportAction
+  /** La cuenta que ya existe con ese código (o la nueva, si se aplicó). */
+  accountId: string | null
+  /** El grupo que queda (el pedido o el inferido por el código); `null` = cuenta principal. */
+  parentCode: string | null
+  level: number | null
+  type: AccountType | null
+  normalSide: Side | null
+  postable: boolean | null
+  /** Es una cuenta del sistema: la UI lo resalta si cambia. */
+  systemKey: string | null
+  /** Es la cuenta de una caja (su nombre no se cambia desde acá). */
+  isTreasury: boolean
+  changes: ChartImportChange[]
+  previous: {
+    name: string | null
+    parentCode: string | null
+    type: AccountType | null
+    normalSide: Side | null
+    postable: boolean | null
+    description: string | null
+  } | null
+  /** Clave del catálogo (`import_parent_not_found`, `code_invalid`…). */
+  error: string | null
+  /** Datos del error (`{parent_code}`, `{row}`, `{account_code, account_name}`), solo escalares. */
+  errorDetail: Record<string, string | number | boolean | null>
+}
+
+export type ChartImportResult = {
+  dryRun: boolean
+  applied: boolean
+  total: number
+  creates: number
+  updates: number
+  unchanged: number
+  errors: number
+  rows: ChartImportResultRow[]
+}
+
+function scalars(value: unknown): Record<string, string | number | boolean | null> {
+  const out: Record<string, string | number | boolean | null> = {}
+  if (!isRecord(value)) return out
+  for (const [key, v] of Object.entries(value)) {
+    if (v === null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+      out[key] = v
+    }
+  }
+  return out
+}
+
+function importRow(r: UnknownRecord, index: number): ChartImportResultRow {
+  const action = IMPORT_ACTIONS.find((a) => a === r.action) ?? 'error'
+  const error = strOrNull(r.error)
+  const previous = isRecord(r.previous)
+    ? {
+        name: strOrNull(r.previous.name),
+        parentCode: strOrNull(r.previous.parent_code),
+        type: accountTypeOrNull(r.previous.type),
+        normalSide: sideOrNull(r.previous.normal_side),
+        postable: boolOrNull(r.previous.postable),
+        description: strOrNull(r.previous.description),
+      }
+    : null
+  return {
+    row: intOrNull(r.row) ?? index + 1,
+    code: str(r.code),
+    name: str(r.name),
+    // Una fila con error siempre cuenta como error (aunque la acción no llegue).
+    action: error ? 'error' : action,
+    accountId: isUuid(r.account_id) ? r.account_id : null,
+    parentCode: strOrNull(r.parent_code),
+    level: intOrNull(r.level),
+    type: accountTypeOrNull(r.type),
+    normalSide: sideOrNull(r.normal_side),
+    postable: boolOrNull(r.postable),
+    systemKey: strOrNull(r.system_key),
+    isTreasury: r.is_treasury === true,
+    changes: strings(r.changes).filter((c): c is ChartImportChange =>
+      (IMPORT_CHANGES as readonly string[]).includes(c),
+    ),
+    previous,
+    error: error ?? (action === 'error' ? 'import_failed' : null),
+    errorDetail: scalars(r.error_detail),
+  }
+}
+
+/**
+ * Lo que devuelve `acc_import_accounts` (ensayo o real), en camelCase. Los conteos se recalculan de
+ * las filas: son los que la pantalla muestra al lado de cada una.
+ */
+export function parseChartImportResult(raw: unknown): ChartImportResult | null {
+  if (!isRecord(raw)) return null
+  const rows = asRecords(raw.rows).map(importRow)
+  const count = (action: ChartImportAction) => rows.filter((r) => r.action === action).length
+  return {
+    dryRun: raw.dry_run !== false,
+    applied: raw.applied === true,
+    total: rows.length,
+    creates: count('create'),
+    updates: count('update'),
+    unchanged: count('none'),
+    errors: count('error'),
+    rows,
+  }
+}
+
+// ─── Claves del sistema (`acc_remap_system_account`, #16) ────────────────────
+
+export type SystemRemapResult = {
+  systemKey: string
+  /** `false` si ya era esa cuenta (no se escribió nada). */
+  changed: boolean
+  from: { id: string; code: string; name: string } | null
+  to: { id: string; code: string; name: string }
+  /** Proveedores, clientes u organismos que usaban la anterior como cuenta de control. */
+  partiesRepointed: number
+}
+
+function accountBrief(value: unknown): { id: string; code: string; name: string } | null {
+  if (!isRecord(value) || !isUuid(value.id)) return null
+  return { id: value.id, code: str(value.code), name: str(value.name) }
+}
+
+export function parseSystemRemapResult(raw: unknown): SystemRemapResult | null {
+  if (!isRecord(raw)) return null
+  const to = accountBrief(raw.to)
+  if (!to) return null
+  return {
+    systemKey: str(raw.system_key),
+    changed: raw.changed === true,
+    from: accountBrief(raw.from),
+    to,
+    partiesRepointed: intOrNull(raw.parties_repointed) ?? 0,
   }
 }

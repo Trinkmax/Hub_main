@@ -23,8 +23,8 @@
  * [plataforma]`, y la partida H se imputa FIFO contra las partidas «a
  * documentar» de la plataforma que trae el contexto (E10).
  *
- * E1 · Factura A 0003-00001290 de Coca-Cola: D 5.1.01.02 71.074.380 / D IVA CF
- * 14.925.620 / H Proveedores [Coca-Cola] 86.000.000, vence 24/10.
+ * E1 · Factura A 0003-00001290 de Coca-Cola: D 5.1.01.01.002 71.074.380 /
+ * D IVA CF 14.925.620 / H Proveedores [Coca-Cola] 86.000.000, vence 24/10.
  */
 
 import {

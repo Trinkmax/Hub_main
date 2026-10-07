@@ -1,20 +1,26 @@
 'use client'
 
 import { useMemo } from 'react'
+import { accountPaths, normalizeCodeQuery, treeEntries } from './account-paths'
 import { type ComboOption, EntityCombobox } from './entity-combobox'
 import { rankAccount, rankAndFilter } from './search'
 
 /** Compatible con `AccountRef` del motor (`ctx.accounts`) y con las filas del plan. */
 export type AccountOption = {
   id: string
-  /** `1.1.01.02`. */
+  /** `1.1.01.01.001` (o `1.1.01.02` en un plan con puntos). */
   code: string
   name: string
-  /** Solo las imputables se pueden elegir; los rubros arman la ruta y los grupos. */
+  /** Solo las imputables se pueden elegir; los grupos arman la ruta y los encabezados. */
   postable: boolean
   active?: boolean
   /** «Para qué se usa». */
   description?: string | null
+  /**
+   * El grupo de la cuenta. Conviene pasarlo: una cuenta movida de grupo conserva su código. Sin
+   * esto, el grupo se infiere por el código (`1.1.01.01.001` → `1.1.01.01.000`).
+   */
+  parentId?: string | null
 }
 
 export type AccountComboboxProps = {
@@ -22,7 +28,7 @@ export type AccountComboboxProps = {
   name?: string
   value: string | null
   onValueChange: (id: string | null, account: AccountOption | null) => void
-  /** El plan entero (rubros + imputables): la ruta sale de los códigos. */
+  /** El plan entero (grupos + imputables): la ruta sale de los grupos. */
   accounts: readonly AccountOption[]
   /** Para acotar (p. ej. solo las de compras: `(a) => a.purchaseSelectable`). */
   filter?: (account: AccountOption) => boolean
@@ -36,15 +42,10 @@ export type AccountComboboxProps = {
   className?: string
 }
 
-function parentCode(code: string): string | null {
-  const at = code.lastIndexOf('.')
-  return at === -1 ? null : code.slice(0, at)
-}
-
 /**
- * Cuenta del plan: busca por código («1101» encuentra 1.1.01) o por nombre;
- * cada opción muestra su ruta («Activo › Disponibilidades»). Solo se eligen
- * cuentas imputables y activas; los rubros son encabezados.
+ * Cuenta del plan: busca por código («1.1.01» o «110101» encuentran las cuentas de ese grupo) o por
+ * nombre; cada opción muestra su ruta («ACTIVO › Activo corriente › Caja y bancos»). Solo se eligen
+ * cuentas imputables y activas; los grupos son encabezados, en el orden del árbol.
  */
 export function AccountCombobox({
   value,
@@ -56,39 +57,28 @@ export function AccountCombobox({
   ...rest
 }: AccountComboboxProps) {
   const { selectable, pathOf } = useMemo(() => {
-    const byCode = new Map(accounts.map((a) => [a.code, a]))
-    const paths = new Map<string, string>()
-    const pathFor = (code: string): string => {
-      const names: string[] = []
-      let current = parentCode(code)
-      while (current) {
-        const parent = byCode.get(current)
-        if (parent) names.unshift(parent.name)
-        current = parentCode(current)
-      }
-      return names.join(' › ')
-    }
-    for (const a of accounts) paths.set(a.id, pathFor(a.code))
+    const entries = treeEntries(accounts)
+    const paths = accountPaths(entries)
+    const order = new Map(entries.map((e, index) => [e.account.id, index]))
     const list = accounts
       .filter((a) => a.postable && (a.active !== false || a.id === value))
       .filter((a) => !extraFilter || extraFilter(a) || a.id === value)
-      .slice()
-      .sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0))
+      .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
     return { selectable: list, pathOf: (id: string) => paths.get(id) ?? '' }
   }, [accounts, extraFilter, value])
 
   const selected = value ? (accounts.find((a) => a.id === value) ?? null) : null
 
   const filter = (query: string): ComboOption[] => {
-    const ranked = rankAndFilter(selectable, query, rankAccount, 200)
-    // Sin búsqueda: agrupadas por rubro, en el orden del plan. Buscando: por relevancia.
+    const ranked = rankAndFilter(selectable, normalizeCodeQuery(query), rankAccount, 200)
+    // Sin búsqueda: agrupadas por grupo, en el orden del plan. Buscando: por relevancia.
     return ranked.map((a) => {
       const path = pathOf(a.id)
       return {
         value: a.id,
         code: a.code,
         label: a.name,
-        description: query ? path : a.description || null,
+        description: query ? path || null : a.description || null,
         group: query ? null : path || null,
       }
     })

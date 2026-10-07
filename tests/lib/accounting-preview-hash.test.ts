@@ -404,16 +404,16 @@ describe('toEntryPreview: lo que dibuja EntryPreview', () => {
     expect(
       purchase?.lines.map((l) => [l.accountCode, l.debitCents, l.creditCents, l.partyName]),
     ).toEqual([
-      ['5.3.02.08', 1_000_000, null, null],
-      ['1.1.03.01', 210_000, null, null],
-      ['2.1.01.01', null, 1_210_000, 'Mayorista X'],
+      ['4.2.01.03.029', 1_000_000, null, null],
+      ['1.1.03.04.028', 210_000, null, null],
+      ['2.1.01.01.001', null, 1_210_000, 'Mayorista X'],
     ])
     expect(purchase?.balanced).toBe(true)
     expect(purchase?.debitCents).toBe(1_210_000)
     expect(purchase?.diffCents).toBe(0)
     expect(purchase?.lines[0]?.id).toBe('d1:1')
     expect(purchase?.lines[0]?.accountName).toBe('Limpieza e higiene')
-    expect(payment?.lines.map((l) => l.accountCode)).toEqual(['2.1.01.01', '1.1.01.02'])
+    expect(payment?.lines.map((l) => l.accountCode)).toEqual(['2.1.01.01.001', '1.1.01.01.002'])
   })
 
   it('ordena el Haber después aunque venga primero', () => {

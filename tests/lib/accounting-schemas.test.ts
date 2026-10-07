@@ -8,6 +8,7 @@ import {
   bootstrapSchemaAt,
   cashMovementSchema,
   centsInt,
+  chartImportSchema,
   closeFiscalYearSchema,
   closePeriodSchema,
   collectionSchema,
@@ -42,6 +43,7 @@ import {
   salesPointSchema,
   settingsSchema,
   skipRecurringDueSchema,
+  systemRemapSchema,
   transferSchema,
   treasuryAdjustmentSchema,
   treasurySchema,
@@ -915,7 +917,7 @@ describe('Ajustes (FormData)', () => {
         { mode: 'create', parentId: U1, name: 'Fumigación', code: '5.3.a' },
         'code',
       ),
-    ).toBe('El código va con números y puntos (por ejemplo, 5.3.02.12).')
+    ).toBe('El código va con números separados por puntos (por ejemplo, 1.1.01.01.001).')
     ok(accountSchema, {
       mode: 'update',
       id: U1,
@@ -1157,6 +1159,8 @@ describe('ningún esquema contesta en inglés', () => {
     unallocateSchema,
     settingsSchema,
     accountSchema,
+    chartImportSchema,
+    systemRemapSchema,
     partySchema,
     treasurySchema,
     salesMethodSchema,

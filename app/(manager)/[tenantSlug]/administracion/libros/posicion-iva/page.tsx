@@ -365,6 +365,9 @@ function SettlementBlock({
 
   let text: string
   let actions: ReactNode = null
+  // Se registró una liquidación y después se cargó algo del mes: hay que
+  // registrarla de nuevo (la base anula la vieja; si ahora da cero, solo la anula).
+  const stale = Boolean(p.settlementDocumentId) && p.settlementUpToDate === false
   if (p.status === 'closed') {
     text = p.settlementDocumentId
       ? `La liquidación de ${monthNoun} quedó registrada al cerrar el mes.`
@@ -379,17 +382,18 @@ function SettlementBlock({
         ) : null}
       </>
     )
-  } else if (p.isZero) {
+  } else if (p.isZero && !stale) {
     text = `Por ahora ${monthNoun} no tiene IVA para liquidar.`
   } else if (p.mode === 'manual') {
-    if (p.settlementDocumentId && p.settlementUpToDate !== false) {
+    if (p.settlementDocumentId && !stale) {
       text = 'La liquidación del mes ya está registrada.'
       actions = docLink
     } else {
-      const again = Boolean(p.settlementDocumentId)
-      text = again
-        ? 'La liquidación registrada quedó vieja: después se cargó algo del mes.'
-        : 'La liquidación del IVA se registra a mano: cuando el mes esté completo, registrala.'
+      text = !stale
+        ? 'La liquidación del IVA se registra a mano: cuando el mes esté completo, registrala.'
+        : p.isZero
+          ? 'La liquidación registrada quedó vieja y ahora el mes da cero: anulala antes de cerrar.'
+          : 'La liquidación registrada quedó vieja: después se cargó algo del mes.'
       actions = (
         <>
           {docLink}
@@ -399,11 +403,16 @@ function SettlementBlock({
               month={p.month}
               monthLabel={monthNoun}
               expected={ivaExpectedFrom(p)}
-              again={again}
+              again={stale}
+              zero={p.isZero}
               resultText={
-                p.toPayCents > 0
-                  ? `Queda el asiento con IVA a pagar de ${formatCents(p.toPayCents)} a ARCA, con fecha del último día del mes.`
-                  : `Queda el asiento con ${formatCents(p.inFavorCents)} a favor para el mes siguiente.`
+                p.isZero
+                  ? `Se anula la liquidación anterior: el IVA de ${monthNoun} ahora da cero.`
+                  : p.toPayCents > 0
+                    ? `Queda el asiento con IVA a pagar de ${formatCents(p.toPayCents)} a ARCA, con fecha del último día del mes.`
+                    : p.inFavorCents > 0
+                      ? `Queda el asiento con ${formatCents(p.inFavorCents)} a favor para el mes siguiente.`
+                      : 'Queda el asiento de la liquidación, sin IVA a pagar.'
               }
             />
           ) : null}

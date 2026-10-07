@@ -57,7 +57,7 @@ export function LedgerFilters({
           accounts={accounts}
           value={accountId}
           placeholder="Elegí una cuenta"
-          searchPlaceholder="Código o nombre (por ejemplo, 1101)"
+          searchPlaceholder="Código o nombre (por ejemplo, 1.1.01.01)"
           disabled={pending}
           onValueChange={(id) => go({ cuenta: id, participe: null })}
         />

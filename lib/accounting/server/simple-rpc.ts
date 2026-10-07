@@ -18,8 +18,16 @@ export type SimpleRpcSpec<D, T> = {
   /** Para el log: `void`, `undo`, `reverse`… */
   op: string
   schema: z.ZodType<D>
-  /** La RPC y sus parámetros (el primero siempre `p_tenant_id`, el bar de la URL). */
-  call: (tenantId: string, input: D) => { fn: string; args: Record<string, unknown> }
+  /**
+   * La RPC y sus parámetros (el primero siempre `p_tenant_id`, el bar de la
+   * URL). Puede ser async si necesita leer algo antes (con la misma sesión).
+   */
+  call: (
+    tenantId: string,
+    input: D,
+  ) =>
+    | { fn: string; args: Record<string, unknown> }
+    | Promise<{ fn: string; args: Record<string, unknown> }>
   /** Lo que devuelve la acción y el texto del toast. */
   done: (data: unknown, input: D) => { data: T; message: string }
 }
@@ -44,7 +52,7 @@ export async function runSimpleRpc<D, T>(
     const parsed = spec.schema.safeParse(raw)
     if (!parsed.success) return invalidState(parsed.error)
 
-    const { fn, args } = spec.call(auth.tenantId, parsed.data)
+    const { fn, args } = await spec.call(auth.tenantId, parsed.data)
     const supabase = await createClient()
     const { data, error } = await supabase.rpc(fn, args)
     if (error) {

@@ -8,6 +8,19 @@
  * el lock del bar: orden de los meses, avisos (`close_warnings`), la
  * liquidación de IVA comparada con lo que vio la persona (`preview_stale`), la
  * numeración definitiva y la foto del período.
+ *
+ * Contratos (db-api.md, #10 partes 2 y 3; #15 según la spec C.5.5):
+ * - `acc_close_period(p_tenant_id, p_month, p_options)` con `p_options =
+ *   {warnings_ack: [clave…], iva_settlement: {generate, expected}}`; `generate`
+ *   ausente = true (solo cuenta con `iva_settlement_mode = 'on_close'` y la SAS
+ *   responsable inscripta); `expected` = las 7 cifras de `ivaExpectedJson` (sin
+ *   ellas, la base solo deja pasar una posición en cero → `preview_stale`).
+ *   `close_warnings` trae `detail = {month, warnings: [{key, count, …}]}`.
+ * - `acc_reopen_period(p_tenant_id, p_month, p_reason)` (motivo ≥ 5 letras).
+ * - `acc_generate_iva_settlement(p_tenant_id, p_month, p_expected)`: si la
+ *   vigente quedó vieja la reemplaza; si sigue al día, `iva_settlement_exists`.
+ * - `acc_close_fiscal_year(p_tenant_id, p_fiscal_year_id, p_expected =
+ *   {result_cents, balance_sheet_accounts})` y `acc_reopen_fiscal_year(…, p_reason)`.
  */
 
 import { authorizeAccounting } from '@/lib/accounting/access'
@@ -23,78 +36,42 @@ import {
   reopenFiscalYearSchema,
   reopenSchema,
 } from '@/lib/accounting/schemas'
-import { formatCents } from '@/lib/money'
 import { createClient } from '@/lib/supabase/server'
 import {
+  type CloseFiscalYearResult as CloseFiscalYearResultData,
+  type ClosePeriodResult as ClosePeriodResultData,
   type CloseWarningItem as CloseWarningItemData,
+  closeFiscalYearMessage,
+  closePeriodMessage,
   closeWarningsFromDetails,
+  type IvaSettlementResult as IvaSettlementResultData,
   ivaExpectedJson,
-  monthLabel,
+  ivaSettlementMessage,
+  parseCloseFiscalYearResult,
+  parseClosePeriodResult,
+  parseIvaSettlementResult,
+  parseReopenPeriodResult,
+  type ReopenPeriodResult as ReopenPeriodResultData,
+  reopenPeriodMessage,
 } from './payloads'
-import {
-  asRecord,
-  dayOf,
-  formInput,
-  intOf,
-  type Rec,
-  revalidateAccounting,
-  rpcFailure,
-  textOf,
-  unexpectedFailure,
-} from './support'
+import { formInput, revalidateAccounting, rpcFailure, unexpectedFailure } from './support'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
 export type CloseWarningItem = CloseWarningItemData
-
-export type ClosePeriodResult = {
-  /** Primer día del mes cerrado (`'2026-10-01'`). */
-  month: string
-  numberFrom: number | null
-  numberTo: number | null
-  entriesCount: number | null
-  ivaSettlementDocumentId: string | null
-  ivaToPayCents: number | null
-  ivaInFavorCents: number | null
-}
+export type ClosePeriodResult = ClosePeriodResultData
+export type ReopenPeriodResult = ReopenPeriodResultData
+export type IvaSettlementResult = IvaSettlementResultData
+export type CloseFiscalYearResult = CloseFiscalYearResultData
 
 /**
  * Lo que devuelve `closePeriod`. Con avisos sin aceptar: `code:
- * 'needs_confirmation'` y `closeWarnings` (todos juntos); el formulario los
- * muestra, la persona los acepta y se reenvía con `warningsAck`.
+ * 'needs_confirmation'` y `closeWarnings` (todos juntos, con sus números); el
+ * formulario los muestra, la persona los acepta y se reenvía con `warningsAck`.
  */
 export type ClosePeriodState =
   | { ok: true; data: ClosePeriodResult; message: string }
   | (AccFailureState & { closeWarnings?: CloseWarningItem[] })
-
-export type ReopenPeriodResult = { month: string }
-
-export type IvaSettlementResult = {
-  month: string
-  /** `null` si la posición del mes dio todo en cero (no se crea nada). */
-  documentId: string | null
-}
-
-export type CloseFiscalYearResult = {
-  /** Ganancia (positivo) o pérdida (negativo) del ejercicio, en centavos. */
-  resultCents: number | null
-  fyResultNumber: number | null
-  fyClosingNumber: number | null
-}
-
-// ─── Piezas ──────────────────────────────────────────────────────────────────
-
-function closeResult(r: Rec, month: string): ClosePeriodResult {
-  return {
-    month: dayOf(r.month) ?? month,
-    numberFrom: intOf(r.number_from),
-    numberTo: intOf(r.number_to),
-    entriesCount: intOf(r.entries_count),
-    ivaSettlementDocumentId: textOf(r.iva_settlement_document_id),
-    ivaToPayCents: intOf(r.iva_to_pay_cents),
-    ivaInFavorCents: intOf(r.iva_in_favor_cents),
-  }
-}
 
 // ─── Meses ───────────────────────────────────────────────────────────────────
 
@@ -114,6 +91,8 @@ export async function closePeriod(slug: string, raw: unknown): Promise<ClosePeri
       p_month: v.month,
       p_options: {
         warnings_ack: v.warningsAck,
+        // `generate` sin cifras no cierra a ciegas: si el mes tiene IVA, la
+        // base contesta `preview_stale` y la pantalla se recarga con la posición.
         iva_settlement: {
           generate: v.ivaSettlement.generate,
           expected: v.ivaSettlement.expected ? ivaExpectedJson(v.ivaSettlement.expected) : null,
@@ -129,17 +108,9 @@ export async function closePeriod(slug: string, raw: unknown): Promise<ClosePeri
       return state
     }
 
-    const result = closeResult(asRecord(data) ?? {}, v.month)
+    const result = parseClosePeriodResult(data, v.month)
     revalidateAccounting(slug)
-    const toPay = result.ivaToPayCents ?? 0
-    return {
-      ok: true,
-      data: result,
-      message:
-        toPay > 0
-          ? `${monthLabel(v.month)} cerrado. IVA a pagar: ${formatCents(toPay)}.`
-          : `${monthLabel(v.month)} cerrado.`,
-    }
+    return { ok: true, data: result, message: closePeriodMessage(result) }
   } catch (error) {
     return unexpectedFailure(op, error)
   }
@@ -158,19 +129,16 @@ export async function reopenPeriod(
     if (!parsed.success) return invalidState(parsed.error)
 
     const supabase = await createClient()
-    const { error } = await supabase.rpc('acc_reopen_period', {
+    const { data, error } = await supabase.rpc('acc_reopen_period', {
       p_tenant_id: auth.tenantId,
       p_month: parsed.data.month,
       p_reason: parsed.data.reason,
     })
     if (error) return rpcFailure(op, error)
 
+    const result = parseReopenPeriodResult(data, parsed.data.month)
     revalidateAccounting(slug)
-    return {
-      ok: true,
-      data: { month: parsed.data.month },
-      message: `${monthLabel(parsed.data.month)} reabierto.`,
-    }
+    return { ok: true, data: result, message: reopenPeriodMessage(result) }
   } catch (error) {
     return unexpectedFailure(op, error)
   }
@@ -178,7 +146,8 @@ export async function reopenPeriod(
 
 /**
  * «Registrar la liquidación del IVA» (C.5.4), para el modo manual o si se
- * apagó al cerrar: compara con las cifras que vio la persona.
+ * apagó al cerrar: compara con las cifras que vio la persona. Si la vigente
+ * quedó vieja (se cargó algo después), la base la anula y registra la nueva.
  */
 export async function generateIvaSettlement(
   slug: string,
@@ -199,20 +168,9 @@ export async function generateIvaSettlement(
     })
     if (error) return rpcFailure(op, error)
 
-    const r = asRecord(data)
-    const documentId =
-      typeof data === 'string'
-        ? data
-        : (textOf(r?.document_id) ?? textOf(r?.iva_settlement_document_id) ?? textOf(r?.id))
+    const result = parseIvaSettlementResult(data, parsed.data.month)
     revalidateAccounting(slug)
-    const month = monthLabel(parsed.data.month).toLowerCase()
-    return {
-      ok: true,
-      data: { month: parsed.data.month, documentId },
-      message: documentId
-        ? `Liquidación del IVA de ${month} registrada.`
-        : `El IVA de ${month} dio cero: no hay nada para registrar.`,
-    }
+    return { ok: true, data: result, message: ivaSettlementMessage(result) }
   } catch (error) {
     return unexpectedFailure(op, error)
   }
@@ -246,24 +204,9 @@ export async function closeFiscalYear(
     })
     if (error) return rpcFailure(op, error)
 
-    const r = asRecord(data) ?? {}
-    const result: CloseFiscalYearResult = {
-      resultCents: intOf(r.result_cents),
-      fyResultNumber: intOf(r.fy_result_number),
-      fyClosingNumber: intOf(r.fy_closing_number),
-    }
+    const result = parseCloseFiscalYearResult(data)
     revalidateAccounting(slug)
-    const cents = result.resultCents
-    return {
-      ok: true,
-      data: result,
-      message:
-        cents === null || cents === 0
-          ? 'Ejercicio cerrado.'
-          : cents > 0
-            ? `Ejercicio cerrado: ganancia de ${formatCents(cents)}.`
-            : `Ejercicio cerrado: pérdida de ${formatCents(-cents)}.`,
-    }
+    return { ok: true, data: result, message: closeFiscalYearMessage(result) }
   } catch (error) {
     return unexpectedFailure(op, error)
   }

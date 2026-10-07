@@ -84,6 +84,7 @@ import {
 } from '@/lib/accounting/server/rpc-results'
 import { runSimpleRpc } from '@/lib/accounting/server/simple-rpc'
 import { formatIsoDay } from '@/lib/dates'
+import { createClient } from '@/lib/supabase/server'
 
 // ─── Comprobantes (acc_post_bundle) ──────────────────────────────────────────
 
@@ -196,7 +197,31 @@ export async function previewBundle(
 
 // ─── Cajas ───────────────────────────────────────────────────────────────────
 
-/** «Ajustar saldo» sin diferencia: marca la caja como verificada a esa fecha. */
+/**
+ * El signo que lleva un saldo Debe − Haber de una caja a su lado normal: −1 en
+ * la tarjeta de la empresa (pasivo: la deuda en positivo), 1 en el resto. Una
+ * caja que no se ve (ajena o borrada) da 1: la RPC igual la rechaza.
+ */
+async function treasuryNormalSign(tenantId: string, treasuryId: string): Promise<1 | -1> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('acc_treasury_accounts')
+    .select('kind')
+    .eq('tenant_id', tenantId)
+    .eq('id', treasuryId)
+    .maybeSingle()
+  if (error) throw new Error(`acc_treasury_accounts ${error.code ?? 'sin-codigo'}`)
+  const kind = (data as { kind?: unknown } | null)?.kind
+  return kind === 'credit_card' ? -1 : 1
+}
+
+/**
+ * «Ajustar saldo» sin diferencia: marca la caja como verificada a esa fecha.
+ * La hoja manda contado y libro en Debe − Haber (como el motor y el arqueo);
+ * `acc_mark_treasury_checked` (#8) compara en el lado normal de la cuenta de la
+ * caja (`acc_treasury_check.book_cents`): en la tarjeta de la empresa se dan
+ * vuelta acá.
+ */
 export async function markTreasuryChecked(
   slug: string,
   input: MarkTreasuryCheckedValues,
@@ -204,16 +229,19 @@ export async function markTreasuryChecked(
   return runSimpleRpc(slug, input, {
     op: 'treasury_checked',
     schema: markTreasuryCheckedSchema,
-    call: (tenantId, v) => ({
-      fn: 'acc_mark_treasury_checked',
-      args: {
-        p_tenant_id: tenantId,
-        p_treasury_id: v.treasuryAccountId,
-        p_counted_cents: v.countedCents,
-        p_expected_book_cents: v.expectedBookCents,
-        p_as_of: v.asOf,
-      },
-    }),
+    call: async (tenantId, v) => {
+      const sign = await treasuryNormalSign(tenantId, v.treasuryAccountId)
+      return {
+        fn: 'acc_mark_treasury_checked',
+        args: {
+          p_tenant_id: tenantId,
+          p_treasury_id: v.treasuryAccountId,
+          p_counted_cents: sign * v.countedCents,
+          p_expected_book_cents: sign * v.expectedBookCents,
+          p_as_of: v.asOf,
+        },
+      }
+    },
     done: (data, v) => ({
       data: parseTreasuryChecked(data, v.treasuryAccountId),
       message: 'Saldo verificado: coincide con lo contado.',

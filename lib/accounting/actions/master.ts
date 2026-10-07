@@ -19,13 +19,21 @@ import { authorizeAccounting } from '@/lib/accounting/access'
 import { type AccSimpleState, invalidState } from '@/lib/accounting/action-state'
 import { type AccSettingsRow, parseSettingsRow } from '@/lib/accounting/context'
 import {
+  type ChartImportResult,
+  parseChartImportResult,
+  parseSystemRemapResult,
+  type SystemRemapResult,
+} from '@/lib/accounting/queries/accounts'
+import {
   accountSchema,
+  chartImportSchema,
   partySchema,
   recurringSchema,
   salesMethodSchema,
   salesPointSchema,
   settingsSchema,
   skipRecurringDueSchema,
+  systemRemapSchema,
   treasurySchema,
 } from '@/lib/accounting/schemas'
 import {
@@ -399,6 +407,7 @@ export async function saveSettings(
 
 const ACCOUNT_CREATE_FIELDS: FieldMap = [
   ['parentId', 'parent_id'],
+  ['type', 'type'],
   ['code', 'code'],
   ['name', 'name'],
   ['postable', 'postable'],
@@ -412,14 +421,21 @@ const ACCOUNT_CREATE_FIELDS: FieldMap = [
 const ACCOUNT_UPDATE_FIELDS: FieldMap = [
   ['name', 'name'],
   ['code', 'code'],
+  ['type', 'type'],
   ['active', 'active'],
+  ['requiresParty', 'requires_party'],
   ['purchaseSelectable', 'purchase_selectable'],
   ['manualSelectable', 'manual_selectable'],
   ['description', 'description'],
   ['parentId', 'parent_id'],
 ]
 
-/** Plan de cuentas: alta (`mode: 'create'`) o edición (`mode: 'update'`). */
+/**
+ * Plan de cuentas (`acc_save_account`, #16): alta (`mode: 'create'`) adentro de un grupo o como
+ * cuenta principal (`parentId: null` + `type` + `code`), o edición (`mode: 'update'`): nombre,
+ * código, tipo (bajo resultados o en una principal), «Para qué se usa», tildes, activa, y mover
+ * (`parentId`: otro grupo, o `null`) con todo su subárbol. La base hace cumplir el resto.
+ */
 export async function saveAccount(
   slug: string,
   raw: unknown,
@@ -434,14 +450,9 @@ export async function saveAccount(
     const v = parsed.data
 
     if (v.mode === 'create') {
-      if (v.requiresParty && !v.postable) {
-        return fieldFailure(
-          'requiresParty',
-          'Solo una cuenta imputable puede llevar proveedor o cliente.',
-        )
-      }
       const payload = rpcPayload(v, ACCOUNT_CREATE_FIELDS)
-      if (v.code === null) delete payload.code // el siguiente código libre de la madre
+      if (v.code === null) delete payload.code // el siguiente código libre del grupo
+      if (v.type === null) delete payload.type // el de su grupo
       return await saveVia(slug, auth.tenantId, 'p_account', {
         op,
         rpc: 'acc_save_account',
@@ -454,6 +465,7 @@ export async function saveAccount(
     const keep = keepPresent(input)
     const payload = { id: v.id, ...rpcPayload(v, ACCOUNT_UPDATE_FIELDS, keep) }
     const toggled = keep('active') ? v.active : undefined
+    const moved = keep('parentId')
     return await saveVia(slug, auth.tenantId, 'p_account', {
       op,
       rpc: 'acc_save_account',
@@ -464,8 +476,114 @@ export async function saveAccount(
           ? `Cuenta ${row.code} desactivada.`
           : toggled === true
             ? `Cuenta ${row.code} activada.`
-            : 'Cuenta guardada.',
+            : moved
+              ? `Cuenta ${row.code} movida.`
+              : 'Cuenta guardada.',
     })
+  } catch (error) {
+    return unexpectedFailure(op, error)
+  }
+}
+
+/**
+ * «Importar plan» (`acc_import_accounts`, #16): con `dryRun` es la vista previa (no escribe nada);
+ * sin él crea los códigos nuevos y actualiza los que ya existen, todo o nada. Nunca borra ni
+ * desactiva. Escritor y administrador de accesos, como pide la base.
+ */
+export async function importAccounts(
+  slug: string,
+  raw: unknown,
+): Promise<AccSimpleState<ChartImportResult>> {
+  const op = 'master.importAccounts'
+  try {
+    const auth = await authorizeAccounting(slug, 'admin')
+    if (!auth.ok) return auth.state
+    const parsed = chartImportSchema.safeParse(raw)
+    if (!parsed.success) return invalidState(parsed.error)
+    const { rows, dryRun } = parsed.data
+
+    const supabase = await createClient()
+    const { data, error } = await supabase.rpc('acc_import_accounts', {
+      p_tenant_id: auth.tenantId,
+      p_rows: rows.map((r) => ({
+        code: r.code,
+        name: r.name,
+        ...(r.type ? { type: r.type } : {}),
+        ...(r.postable === undefined ? {} : { postable: r.postable }),
+        ...(r.contra === undefined ? {} : { contra: r.contra }),
+        ...(r.parentCode ? { parent_code: r.parentCode } : {}),
+        ...(r.description === undefined ? {} : { description: r.description }),
+      })),
+      p_dry_run: dryRun,
+    })
+    if (error) return rpcFailure(op, error)
+    const result = parseChartImportResult(data)
+    if (!result) return unexpectedFailure(op, new Error('respuesta vacía'))
+
+    if (result.applied) revalidateAccounting(slug)
+    const changed = result.creates + result.updates
+    return {
+      ok: true,
+      data: result,
+      message: result.applied
+        ? changed === 0
+          ? 'No había nada para cambiar: el plan ya estaba así.'
+          : `Listo: ${importCounts(result)}.`
+        : result.errors > 0
+          ? `Hay ${result.errors === 1 ? 'una línea' : `${result.errors} líneas`} para corregir.`
+          : 'Vista previa lista.',
+    }
+  } catch (error) {
+    return unexpectedFailure(op, error)
+  }
+}
+
+/** «8 cuentas nuevas y 2 actualizadas». */
+function importCounts(result: ChartImportResult): string {
+  const parts: string[] = []
+  if (result.creates > 0) {
+    parts.push(result.creates === 1 ? '1 cuenta nueva' : `${result.creates} cuentas nuevas`)
+  }
+  if (result.updates > 0) {
+    parts.push(result.updates === 1 ? '1 actualizada' : `${result.updates} actualizadas`)
+  }
+  return parts.join(' y ')
+}
+
+/**
+ * «Usar otra cuenta» para una clave del sistema (`acc_remap_system_account`, #16): desde ahora el
+ * motor usa esa cuenta. La historia queda donde estaba (la anterior no puede tener saldo). Escritor
+ * y administrador de accesos, como pide la base.
+ */
+export async function remapSystemAccount(
+  slug: string,
+  raw: unknown,
+): Promise<AccSimpleState<SystemRemapResult>> {
+  const op = 'master.remapSystemAccount'
+  try {
+    const auth = await authorizeAccounting(slug, 'admin')
+    if (!auth.ok) return auth.state
+    const parsed = systemRemapSchema.safeParse(formInput(raw))
+    if (!parsed.success) return invalidState(parsed.error)
+
+    const supabase = await createClient()
+    const { data, error } = await supabase.rpc('acc_remap_system_account', {
+      p_tenant_id: auth.tenantId,
+      p_system_key: parsed.data.systemKey,
+      p_account_id: parsed.data.accountId,
+    })
+    if (error) return rpcFailure(op, error)
+    const result = parseSystemRemapResult(data)
+    if (!result) return unexpectedFailure(op, new Error('respuesta vacía'))
+
+    if (result.changed) revalidateAccounting(slug)
+    return {
+      ok: true,
+      data: result,
+      message: result.changed
+        ? `Listo: desde ahora el sistema usa ${result.to.code} ${result.to.name}.`
+        : `Ya usaba ${result.to.code} ${result.to.name}: no cambió nada.`,
+    }
   } catch (error) {
     return unexpectedFailure(op, error)
   }

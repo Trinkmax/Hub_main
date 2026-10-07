@@ -7,8 +7,8 @@
  * partícipe es opcional y solo sirve para estadísticas y defaults: no hay
  * cuenta corriente que mover, así que no va en ningún renglón.
  *
- * E4 · $ 4.500 en efectivo: D 5.1.01.02 Compras: bebidas sin alcohol 450.000 /
- * H 1.1.01.01 Caja 450.000.
+ * E4 · $ 4.500 en efectivo: D 5.1.01.01.002 Compras: bebidas sin alcohol
+ * 450.000 / H 1.1.01.01.001 Caja 450.000.
  */
 
 import {

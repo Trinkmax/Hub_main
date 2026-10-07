@@ -128,11 +128,13 @@ export const ACC_ERRORS = {
   code_taken: { code: 'invalid', message: 'Ese código ya existe en el plan de cuentas.' },
   code_invalid: {
     code: 'invalid',
-    message: 'El código tiene que empezar con el de la cuenta madre (por ejemplo, 5.3.02.12).',
+    message:
+      'El código va con números separados por puntos, hasta 24 caracteres (por ejemplo, 1.1.01.01.001).',
   },
+  // Desde la #16 el código es una etiqueta libre y la base ya no lo levanta; queda por compatibilidad.
   code_parent_mismatch: {
     code: 'invalid',
-    message: 'El código tiene que empezar con el de la cuenta madre (por ejemplo, 5.3.02.12).',
+    message: 'Revisá el código: números separados por puntos (por ejemplo, 1.1.01.01.001).',
   },
   parent_is_postable: {
     code: 'invalid',
@@ -146,7 +148,7 @@ export const ACC_ERRORS = {
   account_has_movements: {
     code: 'conflict',
     message:
-      'La cuenta tiene movimientos: se puede renombrar o desactivar, no cambiar el código ni el tipo.',
+      'La cuenta tiene movimientos: podés renombrarla, cambiarle el código o moverla de grupo, pero no cambiarle el tipo, el lado, si es imputable ni si lleva partícipe.',
   },
   account_has_balance: {
     code: 'conflict',
@@ -157,13 +159,98 @@ export const ACC_ERRORS = {
     message:
       'La cuenta la usa una caja, un medio de cobro, un proveedor o un gasto fijo. Cambialos primero.',
   },
+  // Desde la #16 un grupo se mueve con todo su subárbol; la base ya no la levanta.
   account_move_with_children: {
     code: 'conflict',
-    message: 'Una cuenta con subcuentas no se mueve.',
+    message: 'Esa cuenta tiene subcuentas: revisá el cambio.',
   },
   account_delete_forbidden: {
     code: 'conflict',
     message: 'Las cuentas no se borran: desactivala.',
+  },
+  // ─── Plan configurable (#16: mover, tipos mixtos, importar, reasignar claves) ─
+  account_move_cycle: {
+    code: 'invalid',
+    message: 'No podés mover una cuenta adentro de sí misma ni de una de sus subcuentas.',
+  },
+  account_level_too_deep: {
+    code: 'invalid',
+    message: 'El plan admite hasta 8 niveles: elegí una cuenta madre más arriba.',
+  },
+  account_type_mismatch: {
+    code: 'invalid',
+    message:
+      'La cuenta no puede quedar con ese tipo: debajo de Ingresos o Egresos podés elegir ingreso o egreso; en el resto toma el tipo de su grupo. Las cuentas del sistema y las de una caja no cambian de tipo.',
+  },
+  account_has_children: {
+    code: 'conflict',
+    message:
+      'La cuenta tiene subcuentas: no puede pasar a ser imputable. Mové primero las subcuentas a otro grupo.',
+  },
+  account_root_must_be_group: {
+    code: 'invalid',
+    message: 'Una cuenta sin madre tiene que ser un grupo (no imputable).',
+  },
+  account_name_invalid: {
+    code: 'invalid',
+    message: 'El nombre de la cuenta tiene que tener entre 2 y 80 caracteres.',
+  },
+  account_description_invalid: {
+    code: 'invalid',
+    message: '«Para qué se usa» puede tener hasta 280 caracteres.',
+  },
+  import_empty: {
+    code: 'invalid',
+    message: 'No hay cuentas para importar: pegá al menos una línea con código y nombre.',
+  },
+  import_too_many_rows: {
+    code: 'invalid',
+    message: 'Se pueden importar hasta 2000 cuentas por vez: partí la lista en tandas.',
+  },
+  import_duplicate_code: {
+    code: 'invalid',
+    message: 'Ese código está repetido en lo que pegaste.',
+  },
+  import_parent_not_found: {
+    code: 'invalid',
+    message: 'No encontramos la cuenta madre de esta línea ni en el plan ni en lo que pegaste.',
+  },
+  import_parent_has_errors: {
+    code: 'invalid',
+    message: 'La cuenta madre de esta línea tiene un problema: corregila primero.',
+  },
+  import_type_required: {
+    code: 'invalid',
+    message:
+      'Esta cuenta no tiene madre: indicá su tipo (activo, pasivo, patrimonio neto, ingreso o egreso).',
+  },
+  import_treasury_conflict: {
+    code: 'conflict',
+    message:
+      'Ese código ya es la cuenta de una caja ({cuenta}): cambiale el código a la caja o usá otro en la lista.',
+    fallback:
+      'Ese código ya es la cuenta de una caja: cambiale el código a la caja o usá otro en la lista.',
+  },
+  import_has_errors: {
+    code: 'invalid',
+    message: 'Hay líneas con errores: revisá la vista previa, corregilas y volvé a importar.',
+  },
+  import_failed: {
+    code: 'error',
+    message: 'No pudimos importar el plan. Probá de nuevo; si sigue, avisanos.',
+    bug: true,
+  },
+  system_remap_incompatible: {
+    code: 'invalid',
+    message:
+      'Esa cuenta no sirve para este uso del sistema: tiene que ser imputable, estar activa, no ser de una caja ni tener otra clave, y ser del mismo tipo, lado y control de partícipe que la actual.',
+  },
+  system_remap_has_balance: {
+    code: 'conflict',
+    message:
+      'La cuenta actual ({cuenta}) tiene saldo: pasalo a la nueva con un asiento manual y después cambiala.',
+    fallback:
+      'La cuenta actual tiene saldo: pasalo a la nueva con un asiento manual y después cambiala.',
   },
   invalid_control_account: {
     code: 'invalid',

@@ -164,22 +164,32 @@ export async function readerClient() {
 }
 
 /**
+ * Bugs del catálogo cuyo texto ya está escrito para una lectura (los demás
+ * `bug` hablan de guardar y se cambian por `QUERY_FAILED_MESSAGE`).
+ */
+const READ_BUG_KEYS: ReadonlySet<string> = new Set(['invalid_report_param'])
+
+/**
  * Un error de Supabase → `AccQueryError` con el mensaje de G.4. El log lleva
  * el origen y el código, nunca el detalle (puede traer datos de la fila).
- * Los textos pensados para guardar («no se guardó») se cambian por los de
- * lectura.
+ *
+ * - «Este reporte todavía no está disponible» SOLO mientras la función no
+ *   existe en la base (`PGRST202` / `42883` → `function_unavailable`: una
+ *   migración que falta aplicar). Única variante: `acc_report_subledger` con
+ *   `invalid_report_param` en `p_kind` (cada subdiario llega con su migración:
+ *   disponibilidades con la #11, compras y pagos con la 12c, ventas y cobranzas
+ *   con la #13); `p_kind` se valida acá antes de llamar, así que ese rechazo
+ *   solo puede ser una fase que falta.
+ * - Cualquier otro error muestra el texto del catálogo (`invalid_report_param`
+ *   es un bug de parámetro: «No pudimos armar el reporte…»); los pensados para
+ *   guardar («no se guardó») se cambian por los de lectura.
  */
 export function queryError(source: string, error: PgLikeError): AccQueryError {
   const state = mapAccError(error)
   const mapped = typeof state.detail?.key === 'string' ? state.detail.key : null
-  // Un reporte de una fase que todavía no está en la base: la función no existe
-  // (PGRST202) o todavía no acepta ese tipo (`invalid_report_param`, p. ej. el
-  // subdiario de compras antes de su migración; los parámetros ya se validaron
-  // acá antes de llamar). Para la pantalla y el exporte es lo mismo.
   const unavailable =
     mapped === 'function_unavailable' ||
-    mapped === 'invalid_report_param' ||
-    (!mapped && /\binvalid_report_param\b/.test(error.message ?? ''))
+    (mapped === 'invalid_report_param' && state.detail?.param === 'p_kind')
   const key = unavailable ? 'function_unavailable' : mapped
   console.error('[acc.query]', source, error.code ?? 'sin-codigo', mapped ?? '')
   let message = state.message
@@ -187,7 +197,10 @@ export function queryError(source: string, error: PgLikeError): AccQueryError {
     message = OFFLINE_READ_MESSAGE
   } else if (unavailable) {
     message = REPORT_UNAVAILABLE_MESSAGE
-  } else if (message === ACC_GENERIC_ERROR || state.detail?.bug === true) {
+  } else if (
+    message === ACC_GENERIC_ERROR ||
+    (state.detail?.bug === true && !(mapped && READ_BUG_KEYS.has(mapped)))
+  ) {
     message = QUERY_FAILED_MESSAGE
   }
   return new AccQueryError(source, unavailable ? 'error' : state.code, message, key)

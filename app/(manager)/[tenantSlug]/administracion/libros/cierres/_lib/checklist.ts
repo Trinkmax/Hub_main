@@ -1,3 +1,5 @@
+import { isCloseWarningKey } from '@/lib/accounting/close-warnings'
+import { CLOSE_WARNING_COPY } from '@/lib/accounting/errors'
 import { addDays, formatDayMonth, formatIsoDay, formatMonthLabel } from '@/lib/dates'
 import { formatCents } from '@/lib/money'
 
@@ -57,8 +59,21 @@ function isRawKey(item: ChecklistItemLike): boolean {
   return !item.label || item.label === item.key
 }
 
-/** Un aviso del cierre (C.5.1 paso 4) con su detalle y el link para resolverlo. */
+/**
+ * Un aviso del cierre (C.5.1 paso 4) con su detalle y el link para resolverlo.
+ * Si la línea trae su detalle (los días, las cajas, los gastos fijos), el texto
+ * es el general del aviso: el `label` del checklist ya los nombra y se leerían
+ * dos veces («Faltan los cierres del 03/10 y 04/10» + «Faltan los del 03/10 y
+ * 04/10»). Sin detalle, el `label` tal cual.
+ */
 export function warningLine(item: ChecklistItemLike, base: string): ChecklistLine {
+  const line = warningLineRaw(item, base)
+  return line.detail !== null && isCloseWarningKey(item.key)
+    ? { ...line, text: CLOSE_WARNING_COPY[item.key] }
+    : line
+}
+
+function warningLineRaw(item: ChecklistItemLike, base: string): ChecklistLine {
   const d = item.detail
   const text = isRawKey(item) ? 'Hay algo para revisar antes de cerrar.' : item.label
   const count = item.count ?? num(d.count)

@@ -21,7 +21,9 @@ import { parseCuit } from '@/lib/fiscal'
 import { centsFromForm, formatCents } from '@/lib/money'
 import { VAT_RATES_BP } from './iva'
 import { PREVIEW_HASH_RE } from './preview'
+import { SYSTEM_ACCOUNT_KEYS } from './system-keys'
 import {
+  ACCOUNT_TYPES,
   CHANNELS,
   CLOSE_WARNING_KEYS,
   COMMISSION_VAT_MODES,
@@ -1416,11 +1418,17 @@ export const settingsSchema = obj({
 })
 export type SettingsInput = z.infer<typeof settingsSchema>
 
+// ─── Plan de cuentas (#16: código libre, raíces, tipos mixtos, mover, importar) ───
+
+/** Formato de `acc_accounts.code` (aac_code_fmt): una etiqueta libre de números y puntos. */
 const ACCOUNT_CODE_FIELD = z
   .string({ message: 'Revisá el código.' })
   .trim()
-  .regex(/^[0-9]+(\.[0-9]+)*$/, 'El código va con números y puntos (por ejemplo, 5.3.02.12).')
-  .max(24, 'El código es demasiado largo.')
+  .regex(
+    /^[0-9]+(\.[0-9]+)*$/,
+    'El código va con números separados por puntos (por ejemplo, 1.1.01.01.001).',
+  )
+  .max(24, 'El código puede tener hasta 24 caracteres.')
 
 const accountNameField = z
   .string({ message: 'Escribí el nombre de la cuenta.' })
@@ -1428,22 +1436,61 @@ const accountNameField = z
   .min(2, 'Escribí el nombre de la cuenta.')
   .max(80, 'El nombre puede tener hasta 80 caracteres.')
 
+const accountTypeField = z.enum(ACCOUNT_TYPES, { message: 'Elegí el tipo de cuenta.' })
+
+/** Vacío, `null` o ausente → `null`. */
+const emptyToNull = (v: unknown) =>
+  v === undefined || v === null || (typeof v === 'string' && v.trim() === '') ? null : v
+
 export const accountCreateSchema = obj({
   mode: z.literal('create'),
-  parentId: uuidField('Elegí la cuenta madre.'),
-  /** Vacío = el siguiente código libre del padre. */
-  code: z.preprocess(
-    (v) => (v === undefined || v === null || (typeof v === 'string' && v.trim() === '') ? null : v),
-    ACCOUNT_CODE_FIELD.nullable(),
+  /** El grupo donde va; `null` = cuenta principal (un grupo raíz, con su tipo y su código). */
+  parentId: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+    uuidField('Elegí el grupo.').nullable(),
   ),
+  /**
+   * `null` = el de su grupo. Bajo un grupo de ingresos o egresos se puede pedir el otro; una cuenta
+   * principal lo necesita.
+   */
+  type: z.preprocess(emptyToNull, accountTypeField.nullable()),
+  /** Vacío = el siguiente código libre del grupo, con su estilo (lo elige la base). */
+  code: z.preprocess(emptyToNull, ACCOUNT_CODE_FIELD.nullable()),
   name: accountNameField,
   postable: formBoolDefault(true),
-  /** «Regularizadora»: invierte el lado normal heredado. */
+  /** «Regularizadora»: invierte el lado normal de su tipo. */
   contra: formBoolDefault(false),
   requiresParty: formBoolDefault(false),
   purchaseSelectable: formBoolDefault(false),
   manualSelectable: formBoolDefault(true),
   description: optionalText(280).default(null),
+}).superRefine((v, ctx) => {
+  if (v.parentId === null) {
+    if (v.type === null) {
+      ctx.addIssue({ code: 'custom', path: ['type'], message: 'Elegí el tipo de la cuenta.' })
+    }
+    if (v.code === null) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['code'],
+        message: 'Escribí el código de la cuenta principal (por ejemplo, 6.0.00.00.000).',
+      })
+    }
+    if (v.postable) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['postable'],
+        message: 'Una cuenta principal es siempre un grupo.',
+      })
+    }
+  }
+  if (v.requiresParty && !v.postable) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['requiresParty'],
+      message: 'Solo una cuenta imputable puede llevar proveedor o cliente.',
+    })
+  }
 })
 
 export const accountUpdateSchema = obj({
@@ -1452,11 +1499,15 @@ export const accountUpdateSchema = obj({
   expectedUpdatedAt: updatedAtField,
   name: accountNameField.optional(),
   code: ACCOUNT_CODE_FIELD.optional(),
+  /** Solo bajo un grupo de resultados (ingreso ↔ egreso) o en una cuenta principal. */
+  type: accountTypeField.optional(),
   active: formBool.optional(),
+  requiresParty: formBool.optional(),
   purchaseSelectable: formBool.optional(),
   manualSelectable: formBool.optional(),
   description: optionalText(280).optional(),
-  parentId: uuidField('Elegí la cuenta madre.').optional(),
+  /** Mover (con todo lo que tiene adentro): otro grupo, o `null` para que quede como principal. */
+  parentId: uuidField('Elegí el grupo.').nullable().optional(),
 })
 
 export const accountSchema = z.discriminatedUnion(
@@ -1467,6 +1518,55 @@ export const accountSchema = z.discriminatedUnion(
   },
 )
 export type AccountInput = z.infer<typeof accountSchema>
+
+/** Tope de `acc_import_accounts` por tanda. */
+export const CHART_IMPORT_MAX_ROWS = 2000
+
+/**
+ * Una línea de «Importar plan». Acá solo la forma: el formato del código y el largo del nombre los
+ * revisa la base línea por línea (salen como error de ESA fila en la vista previa, no frenan todo).
+ */
+export const chartImportRowSchema = obj({
+  code: z
+    .string({ message: 'Revisá el código.' })
+    .trim()
+    .min(1, 'Falta el código.')
+    .max(40, 'El código es demasiado largo.'),
+  name: z.string({ message: 'Revisá el nombre.' }).trim().max(200, 'El nombre es demasiado largo.'),
+  type: accountTypeField.optional(),
+  postable: z.boolean({ message: 'Revisá esta opción.' }).optional(),
+  contra: z.boolean({ message: 'Revisá esta opción.' }).optional(),
+  parentCode: z
+    .string({ message: 'Revisá el código del grupo.' })
+    .trim()
+    .max(40, 'El código del grupo es demasiado largo.')
+    .optional(),
+  description: z
+    .string({ message: 'Revisá «Para qué se usa».' })
+    .trim()
+    .max(280, '«Para qué se usa» puede tener hasta 280 caracteres.')
+    .nullable()
+    .optional(),
+})
+
+export const chartImportSchema = obj({
+  rows: list(chartImportRowSchema)
+    .min(1, 'Pegá al menos una cuenta con su código y su nombre.')
+    .max(
+      CHART_IMPORT_MAX_ROWS,
+      'Se pueden importar hasta 2000 cuentas por vez: partí la lista en tandas.',
+    ),
+  /** `true` = solo la vista previa (no escribe nada). */
+  dryRun: z.boolean({ message: 'Recargá la página y probá de nuevo.' }),
+})
+export type ChartImportInput = z.infer<typeof chartImportSchema>
+
+/** «Usar otra cuenta» para una clave del sistema (`acc_remap_system_account`). */
+export const systemRemapSchema = obj({
+  systemKey: z.enum(SYSTEM_ACCOUNT_KEYS, { message: 'Recargá la página y probá de nuevo.' }),
+  accountId: uuidField('Elegí la cuenta.'),
+})
+export type SystemRemapInput = z.infer<typeof systemRemapSchema>
 
 const optionalBp = z.preprocess(
   (v) => (v === undefined || v === null || (typeof v === 'string' && v.trim() === '') ? null : v),
@@ -1695,14 +1795,18 @@ export const skipRecurringDueSchema = obj({
 // ─── Períodos y ejercicio (C.5) ──────────────────────────────────────────────
 
 /** Las cifras de la posición de IVA que vio la persona (si cambian: `preview_stale`). */
+// Débito, crédito, percepciones y retenciones pueden dar negativo (un mes con
+// solo notas de crédito). A pagar y el saldo técnico nuevo nunca; la libre
+// disponibilidad nueva sí: con saldo técnico a favor es LD₀ + PERC + RET, y un
+// mes con solo NC de percepciones la deja abajo de cero (la base la acepta igual).
 export const ivaPositionExpectedSchema = obj({
-  debitCents: centsInt({ allowZero: true }),
-  creditCents: centsInt({ allowZero: true }),
-  perceptionsCents: centsInt({ allowZero: true }),
-  withholdingsCents: centsInt({ allowZero: true }),
+  debitCents: signedCentsInt(),
+  creditCents: signedCentsInt(),
+  perceptionsCents: signedCentsInt(),
+  withholdingsCents: signedCentsInt(),
   toPayCents: centsInt({ allowZero: true }),
   technicalBalanceNewCents: centsInt({ allowZero: true }),
-  freeBalanceNewCents: centsInt({ allowZero: true }),
+  freeBalanceNewCents: signedCentsInt(),
 })
 
 export const closePeriodSchema = obj({

@@ -20,7 +20,9 @@ import { generateIvaSettlement } from '@/lib/accounting/actions/periods'
 /**
  * «Registrar la liquidación del IVA» (H.12, C.5.4): para el modo manual. Manda
  * las cifras que la persona está viendo; si cambió algo mientras tanto, la
- * base contesta que cambió y la página se recarga con las nuevas.
+ * base contesta que cambió y la página se recarga con las nuevas. Si había una
+ * que quedó vieja, la base la anula y registra la nueva; si el mes ahora da
+ * cero (`zero`), solo la anula.
  */
 export function RegisterSettlementButton({
   tenantSlug,
@@ -29,6 +31,7 @@ export function RegisterSettlementButton({
   expected,
   resultText,
   again,
+  zero = false,
 }: {
   tenantSlug: string
   /** Primer día del mes (`yyyy-MM-01`). */
@@ -40,7 +43,10 @@ export function RegisterSettlementButton({
   resultText: string
   /** Ya había una liquidación que quedó vieja. */
   again: boolean
+  /** El mes ahora da cero: registrar de nuevo es anular la vieja. */
+  zero?: boolean
 }) {
+  const voidsOnly = again && zero
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -82,18 +88,28 @@ export function RegisterSettlementButton({
       }}
     >
       <Button type="button" className="h-11 md:h-9" onClick={() => setOpen(true)}>
-        {again ? 'Registrar la liquidación de nuevo' : 'Registrar la liquidación del IVA'}
+        {voidsOnly
+          ? 'Anular la liquidación vieja'
+          : again
+            ? 'Registrar la liquidación de nuevo'
+            : 'Registrar la liquidación del IVA'}
       </Button>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>¿Registrás la liquidación del IVA de {monthLabel}?</AlertDialogTitle>
+          <AlertDialogTitle>
+            {voidsOnly
+              ? `¿Anulás la liquidación del IVA de ${monthLabel}?`
+              : `¿Registrás la liquidación del IVA de ${monthLabel}?`}
+          </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-2 text-sm text-muted-foreground">
               <p className="text-pretty">{resultText}</p>
               <p className="text-pretty">
-                {again
-                  ? 'La liquidación anterior quedó vieja (se cargó algo después): se reemplaza por esta.'
-                  : `Si después cargás algo más de ${monthLabel}, la podés registrar de nuevo.`}
+                {voidsOnly
+                  ? 'Quedó vieja: después se cargó o se anuló algo del mes.'
+                  : again
+                    ? 'La liquidación anterior quedó vieja (se cargó algo después): se reemplaza por esta.'
+                    : `Si después cargás algo más de ${monthLabel}, la podés registrar de nuevo.`}
               </p>
             </div>
           </AlertDialogDescription>
@@ -107,7 +123,13 @@ export function RegisterSettlementButton({
           <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
           <Button type="button" disabled={pending} onClick={run} className="gap-2">
             {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-            {pending ? 'Registrando…' : 'Registrar'}
+            {pending
+              ? voidsOnly
+                ? 'Anulando…'
+                : 'Registrando…'
+              : voidsOnly
+                ? 'Anular'
+                : 'Registrar'}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

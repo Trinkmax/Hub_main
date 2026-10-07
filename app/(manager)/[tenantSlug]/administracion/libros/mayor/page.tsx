@@ -38,9 +38,11 @@ function uuidParam(value: string | string[] | undefined): string | null {
 }
 
 /**
- * Las cuentas para el buscador del mayor: todas las activas (y la elegida),
- * también los grupos, que en el mayor suman sus cuentas («Mayor de Caja y
- * bancos»). Por eso acá todas se pueden elegir.
+ * Las cuentas para el buscador del mayor: todas las activas (y la elegida) de
+ * los 5 niveles del plan (o más, si el plan es más hondo), también los grupos,
+ * que en el mayor suman sus cuentas («Mayor de Caja y bancos»). Por eso acá
+ * todas se pueden elegir. Va la madre de cada una (`parentId`): con códigos
+ * del estilo `1.1.01.01.001` la ruta no sale de cortar el código.
  */
 function accountOptions(catalog: PostingCatalog, selected: string | null): AccountOption[] {
   return catalog.accounts
@@ -49,6 +51,7 @@ function accountOptions(catalog: PostingCatalog, selected: string | null): Accou
       id: a.id,
       code: a.code,
       name: a.name,
+      parentId: a.parentId,
       postable: true,
       active: true,
       description: a.postable ? a.description : 'Grupo: suma todas sus cuentas.',
@@ -188,7 +191,7 @@ export default async function MayorPage({
           <EmptyState
             icon={ListTree}
             title="Elegí una cuenta"
-            description="El mayor muestra los movimientos de una cuenta con su saldo. Buscala por nombre o por código (por ejemplo, «1101» encuentra 1.1.01). Si elegís un grupo, suma todas sus cuentas."
+            description="El mayor muestra los movimientos de una cuenta con su saldo. Buscala por nombre o por código, con o sin puntos (por ejemplo, «1.1.01.01» o «110101» encuentran Caja y bancos). Si elegís un grupo, suma todas sus cuentas."
           />
         ) : null
       ) : null}

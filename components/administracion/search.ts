@@ -54,20 +54,34 @@ export function rankParty(option: PartySearchable, query: string): number {
 export type AccountSearchable = { code: string; name: string }
 
 /**
- * Cuenta: por código («1101» encuentra 1.1.01, «1.1» trae ese rubro) o por
- * nombre. Los códigos van primero. −1 si no coincide.
+ * El código sin los segmentos finales en cero (`1.1.01.01.000` → `1.1.01.01`):
+ * lo que la gente tipea para nombrar un rubro. Igual que `significantCode` de
+ * `lib/accounting/chart.ts` (acá sin importar el plan entero al navegador).
+ */
+function significantCodeOf(code: string): string {
+  return code.replace(/(\.0+)+$/, '')
+}
+
+/**
+ * Cuenta: por código, con o sin puntos, o por nombre. Con el plan de 5 niveles
+ * (`1.1.01.01.000` Caja y bancos, `1.1.01.01.001` Caja): «1.1.01.01» o
+ * «110101» traen ese rubro primero y después sus cuentas; «1.1.01.01.001» o
+ * «110101001», la cuenta. Los códigos van antes que los nombres. −1 si no
+ * coincide.
  */
 export function rankAccount(option: AccountSearchable, query: string): number {
   const q = normalizeText(query)
   if (!q) return 0
   if (/^[\d.\s]+$/.test(q)) {
     const typed = q.replace(/\s/g, '')
+    const significant = significantCodeOf(option.code)
     if (typed.includes('.')) {
-      if (option.code === typed) return 0
-      return option.code.startsWith(typed) ? 1 : -1
+      const wanted = significantCodeOf(typed)
+      if (option.code === typed || significant === wanted) return 0
+      return option.code.startsWith(typed) || significant.startsWith(wanted) ? 1 : -1
     }
     const compact = option.code.replace(/\./g, '')
-    if (compact === typed) return 0
+    if (compact === typed || significant.replace(/\./g, '') === typed) return 0
     return compact.startsWith(typed) ? 1 : -1
   }
   const r = rankText(option.name, q)

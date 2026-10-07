@@ -1416,7 +1416,7 @@ describe('matriz de roles (espejo de acc_line_rule)', () => {
     expect(errors.map((e) => e.key)).toEqual(['compensation_exceeds_balance'])
     expect(errors[0]?.detail).toMatchObject({
       available_cents: 100_000_000,
-      account_code: '1.1.03.10',
+      account_code: '1.1.03.04.035',
     })
     expect(validateDocument(e7Compensation(), ctx).errors).toEqual([])
   })
@@ -1460,7 +1460,7 @@ describe('cuentas, partícipes y cajas en los renglones', () => {
     d.lines[0] = { ...(d.lines[0] as DocLine), accountId: '00000000-0000-4000-8000-999999999999' }
     expect(errorsOf(d)).toContain('account_not_found')
     const g = e4()
-    g.lines[0] = { ...(g.lines[0] as DocLine), accountId: f.acc('5.1.01').id }
+    g.lines[0] = { ...(g.lines[0] as DocLine), accountId: f.acc('5.1.01.01.000').id }
     expect(errorsOf(g)).toContain('account_not_postable')
     const local = buildCoreFixture()
     const soft = local.sys('purchases_soft_drinks')

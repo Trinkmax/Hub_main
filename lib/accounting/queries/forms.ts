@@ -72,8 +72,9 @@ export type SalesRangeDefault = {
 export type TreasuryCheck = {
   /**
    * Saldo según el sistema al día pedido, Debe − Haber (en la tarjeta de la
-   * empresa, la deuda es negativa): el mismo signo que el armador de ajustes y
-   * que `markTreasuryChecked` (`p_expected_book_cents`).
+   * empresa, la deuda es negativa): el mismo signo que el armador de ajustes
+   * (`expected_book_cents` del arqueo) y que la entrada de `markTreasuryChecked`
+   * (la acción lo pasa al lado normal que compara `acc_mark_treasury_checked`).
    */
   bookCents: number
   lastAdjustmentDate: string | null
@@ -200,8 +201,9 @@ export async function getTreasuryCheck(
   const estimates = isRecord(data.estimates) ? data.estimates : null
   return {
     // `book_cents` viene del lado normal de la cuenta (en una tarjeta, la deuda
-    // en positivo); `book_dc_cents` es Debe − Haber, que es lo que usan el motor
-    // y `acc_mark_treasury_checked`. En una caja de activo son lo mismo.
+    // en positivo: lo que compara `acc_mark_treasury_checked`); `book_dc_cents`
+    // es Debe − Haber, lo que usan el motor y el arqueo. En una caja de activo
+    // son lo mismo.
     bookCents: centsOrNull(data.book_dc_cents) ?? cents(data.book_cents),
     lastAdjustmentDate: dayOrNull(data.last_adjustment_date),
     lastCheckedOn: dayOrNull(data.last_checked_on),

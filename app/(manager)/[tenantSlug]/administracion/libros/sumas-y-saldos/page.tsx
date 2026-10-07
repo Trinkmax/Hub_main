@@ -31,23 +31,20 @@ import { loadBookContext } from '../_lib/book-context'
 import { requireBooksAccess } from '../_lib/page-access'
 import { bookHref, firstParam, periodParams, resolveBookRange } from '../_lib/periods'
 import {
+  deepestTrialLevel,
+  isActiveTrialChip,
   isZeroTrialRow,
   netOf,
   parseTrialLevel,
   type TrialLevel,
+  trialLevelChips,
   visibleTrialRows,
 } from '../_lib/trial'
 
 export const metadata = { title: 'Sumas y saldos' }
 
-const LEVELS: ReadonlyArray<{ value: TrialLevel; label: string; aria: string }> = [
-  { value: 1, label: '1', aria: 'Solo los rubros principales' },
-  { value: 2, label: '2', aria: 'Hasta el segundo nivel' },
-  { value: 3, label: '3', aria: 'Hasta el tercer nivel' },
-  { value: 'todo', label: 'Todo', aria: 'Todas las cuentas' },
-]
-
-const INDENT = ['', 'pl-4', 'pl-8', 'pl-12', 'pl-16'] as const
+/** Sangría por nivel (1 a 5 en el plan estándar; un plan más hondo se queda en la última). */
+const INDENT = ['', 'pl-4', 'pl-8', 'pl-12', 'pl-16', 'pl-20'] as const
 
 export default async function SumasYSaldosPage({
   params,
@@ -86,6 +83,7 @@ export default async function SumasYSaldosPage({
     : null
 
   const period = periodParams(shown)
+  const levelChips = trialLevelChips(trial?.ok ? deepestTrialLevel(trial.data.rows) : 5)
   const keep = {
     ...period,
     nivel: level === 'todo' ? null : String(level),
@@ -123,14 +121,11 @@ export default async function SumasYSaldosPage({
               <span aria-hidden className="text-xs font-medium text-muted-foreground">
                 Nivel
               </span>
-              {LEVELS.map((l) => (
+              {levelChips.map((l) => (
                 <ChipLink
                   key={l.label}
-                  href={bookHref(path, {
-                    ...keep,
-                    nivel: l.value === 'todo' ? null : String(l.value),
-                  })}
-                  active={level === l.value}
+                  href={bookHref(path, { ...keep, nivel: l.param })}
+                  active={isActiveTrialChip(l, level)}
                   aria-label={l.aria}
                 >
                   {l.label}

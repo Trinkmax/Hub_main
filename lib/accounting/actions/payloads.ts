@@ -6,15 +6,11 @@
  */
 
 import { capitalizeFirst, MONTH_NAMES } from '@/lib/dates'
+import { formatCents } from '@/lib/money'
 import type { PostBundleResult } from '../action-state'
-import { CLOSE_WARNING_COPY } from '../errors'
+import { closeWarningText, isCloseWarningKey } from '../close-warnings'
 import type { BootstrapInput } from '../schemas'
-import {
-  CLOSE_WARNING_KEYS,
-  type CloseWarningKey,
-  TREASURY_KINDS,
-  type TreasuryKind,
-} from '../types'
+import { type CloseWarningKey, TREASURY_KINDS, type TreasuryKind } from '../types'
 
 type Rec = Record<string, unknown>
 
@@ -225,14 +221,12 @@ export function monthLabel(month: string): string {
   return name ? capitalizeFirst(name) : 'El mes'
 }
 
-function isCloseWarningKey(v: unknown): v is CloseWarningKey {
-  return typeof v === 'string' && (CLOSE_WARNING_KEYS as ReadonlyArray<string>).includes(v)
-}
-
 /**
- * Los avisos de `close_warnings` desde el `detail` de la RPC
- * (`{"warnings": [...]}` o la lista sola; cada uno, la clave o `{key, …}`),
- * sin repetir y con su texto. Lo que no se reconoce se ignora.
+ * Los avisos de `close_warnings` desde el `detail` de `acc_close_period`
+ * (`{"month", "warnings": [{key, count, …}]}`: los mismos del checklist, con
+ * sus números; también vale la lista sola o la clave sola), sin repetir y con
+ * su texto («Faltan los cierres del día del 03/10 y 04/10.»). Lo que no se
+ * reconoce se ignora.
  */
 export function closeWarningsFromDetails(details: string | null | undefined): CloseWarningItem[] {
   if (!details) return []
@@ -246,9 +240,10 @@ export function closeWarningsFromDetails(details: string | null | undefined): Cl
   if (!Array.isArray(list)) return []
   const out: CloseWarningItem[] = []
   for (const item of list) {
-    const key = isCloseWarningKey(item) ? item : asRecord(item)?.key
+    const rec = isCloseWarningKey(item) ? {} : (asRecord(item) ?? {})
+    const key = isCloseWarningKey(item) ? item : rec.key
     if (isCloseWarningKey(key) && !out.some((w) => w.key === key)) {
-      out.push({ key, message: CLOSE_WARNING_COPY[key] })
+      out.push({ key, message: closeWarningText(key, rec) })
     }
   }
   return out
@@ -264,7 +259,13 @@ export type IvaPositionExpected = {
   freeBalanceNewCents: number
 }
 
-/** Las cifras de la posición de IVA que vio la persona, como las compara la base. */
+/**
+ * Las cifras de la posición de IVA que vio la persona, como las compara la
+ * base (`private.acc_generate_iva_settlement`, #10): las 7 de la server action
+ * (débito, crédito, percepciones y retenciones del mes —con signo: un mes con
+ * solo notas de crédito da negativo—, a pagar y los saldos a favor nuevos).
+ * Si no coinciden con las de ese momento → `preview_stale`.
+ */
 export function ivaExpectedJson(e: IvaPositionExpected): Record<string, number> {
   return {
     debit_cents: e.debitCents,
@@ -275,4 +276,180 @@ export function ivaExpectedJson(e: IvaPositionExpected): Record<string, number> 
     technical_balance_new_cents: e.technicalBalanceNewCents,
     free_balance_new_cents: e.freeBalanceNewCents,
   }
+}
+
+// ─── Lo que devuelven los cierres (#10 partes 2 y 3, #15) ────────────────────
+
+function dayOf(v: unknown): string | null {
+  const t = textOf(v)
+  if (!t) return null
+  const day = t.slice(0, 10)
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null
+}
+
+function textList(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x !== '') : []
+}
+
+export type ClosePeriodResult = {
+  /** Primer día del mes cerrado (`'2026-10-01'`). */
+  month: string
+  periodId: string | null
+  numberFrom: number | null
+  numberTo: number | null
+  entriesCount: number | null
+  /** Σ Debe (= Σ Haber) de los asientos del mes. */
+  debitTotalCents: number | null
+  /** La liquidación de IVA que quedó con el mes (la generada al cerrar o la que ya estaba). */
+  ivaSettlementDocumentId: string | null
+  /** De la posición del mes; 0 si la SAS no liquida IVA. */
+  ivaToPayCents: number | null
+  ivaInFavorCents: number | null
+}
+
+/**
+ * `acc_close_period` → `{month, period_id, number_from, number_to,
+ * entries_count, debit_total_cents, snapshot_hash, iva_settlement_document_id,
+ * iva_to_pay_cents, iva_in_favor_cents}`.
+ */
+export function parseClosePeriodResult(data: unknown, month: string): ClosePeriodResult {
+  const r = asRecord(data) ?? {}
+  return {
+    month: dayOf(r.month) ?? month,
+    periodId: textOf(r.period_id),
+    numberFrom: intOf(r.number_from),
+    numberTo: intOf(r.number_to),
+    entriesCount: intOf(r.entries_count),
+    debitTotalCents: intOf(r.debit_total_cents),
+    ivaSettlementDocumentId: textOf(r.iva_settlement_document_id),
+    ivaToPayCents: intOf(r.iva_to_pay_cents),
+    ivaInFavorCents: intOf(r.iva_in_favor_cents),
+  }
+}
+
+/** «Octubre cerrado. IVA a pagar: $ 891.400,00.» (el IVA, solo si el mes quedó con su liquidación). */
+export function closePeriodMessage(r: ClosePeriodResult): string {
+  const name = monthLabel(r.month)
+  if (r.ivaSettlementDocumentId) {
+    const toPay = r.ivaToPayCents ?? 0
+    const inFavor = r.ivaInFavorCents ?? 0
+    if (toPay > 0) return `${name} cerrado. IVA a pagar: ${formatCents(toPay)}.`
+    if (inFavor > 0) return `${name} cerrado. IVA a favor: ${formatCents(inFavor)}.`
+  }
+  return `${name} cerrado.`
+}
+
+export type ReopenPeriodResult = {
+  /** Primer día del mes reabierto. */
+  month: string
+  periodId: string | null
+  /** Asientos que volvieron a número provisorio. */
+  numbersCleared: number | null
+  /** Las liquidaciones de IVA del mes que se anularon al reabrir. */
+  voidedIvaSettlementIds: string[]
+}
+
+/** `acc_reopen_period` → `{month, period_id, numbers_cleared, voided_iva_settlement_ids, voided_count}`. */
+export function parseReopenPeriodResult(data: unknown, month: string): ReopenPeriodResult {
+  const r = asRecord(data) ?? {}
+  return {
+    month: dayOf(r.month) ?? month,
+    periodId: textOf(r.period_id),
+    numbersCleared: intOf(r.numbers_cleared),
+    voidedIvaSettlementIds: textList(r.voided_iva_settlement_ids),
+  }
+}
+
+export function reopenPeriodMessage(r: ReopenPeriodResult): string {
+  const name = monthLabel(r.month)
+  return r.voidedIvaSettlementIds.length > 0
+    ? `${name} reabierto. Se anuló su liquidación del IVA.`
+    : `${name} reabierto.`
+}
+
+export type IvaSettlementResult = {
+  /** Primer día del mes. */
+  month: string
+  /** `null` si la posición del mes dio todo en cero (no se crea nada). */
+  documentId: string | null
+  documentSeq: number | null
+  entryId: string | null
+  toPayCents: number | null
+  inFavorCents: number | null
+  /** Liquidaciones viejas del mes que se anularon y se reemplazaron por esta. */
+  replacedCount: number
+}
+
+/**
+ * `acc_generate_iva_settlement` → `{month, created, document_id,
+ * document_seq, entry_id, total_cents, to_pay_cents, in_favor_cents,
+ * replaced_count}`. También acepta el id solo o `iva_settlement_document_id`.
+ */
+export function parseIvaSettlementResult(data: unknown, month: string): IvaSettlementResult {
+  if (typeof data === 'string') {
+    return {
+      month,
+      documentId: textOf(data),
+      documentSeq: null,
+      entryId: null,
+      toPayCents: null,
+      inFavorCents: null,
+      replacedCount: 0,
+    }
+  }
+  const r = asRecord(data) ?? {}
+  const documentId =
+    r.created === false
+      ? null
+      : (textOf(r.document_id) ?? textOf(r.iva_settlement_document_id) ?? textOf(r.id))
+  return {
+    month: dayOf(r.month) ?? month,
+    documentId,
+    documentSeq: intOf(r.document_seq),
+    entryId: textOf(r.entry_id),
+    toPayCents: intOf(r.to_pay_cents),
+    inFavorCents: intOf(r.in_favor_cents),
+    replacedCount: Math.max(0, intOf(r.replaced_count) ?? 0),
+  }
+}
+
+export function ivaSettlementMessage(r: IvaSettlementResult): string {
+  const name = monthLabel(r.month).toLowerCase()
+  if (!r.documentId) {
+    return r.replacedCount > 0
+      ? `Se anuló la liquidación anterior: el IVA de ${name} ahora da cero.`
+      : `El IVA de ${name} dio cero: no hay nada para registrar.`
+  }
+  const done = r.replacedCount > 0 ? 'registrada de nuevo' : 'registrada'
+  const toPay = r.toPayCents ?? 0
+  const inFavor = r.inFavorCents ?? 0
+  if (toPay > 0) return `Liquidación del IVA de ${name} ${done}: a pagar ${formatCents(toPay)}.`
+  if (inFavor > 0)
+    return `Liquidación del IVA de ${name} ${done}: quedan ${formatCents(inFavor)} a favor.`
+  return `Liquidación del IVA de ${name} ${done}.`
+}
+
+export type CloseFiscalYearResult = {
+  /** Ganancia (positivo) o pérdida (negativo) del ejercicio, en centavos. */
+  resultCents: number | null
+  fyResultNumber: number | null
+  fyClosingNumber: number | null
+}
+
+/** `acc_close_fiscal_year` (C.5.5, #15) → `{result_cents, fy_result_number, fy_closing_number}`. */
+export function parseCloseFiscalYearResult(data: unknown): CloseFiscalYearResult {
+  const r = asRecord(data) ?? {}
+  return {
+    resultCents: intOf(r.result_cents),
+    fyResultNumber: intOf(r.fy_result_number),
+    fyClosingNumber: intOf(r.fy_closing_number),
+  }
+}
+
+export function closeFiscalYearMessage(r: CloseFiscalYearResult): string {
+  const cents = r.resultCents
+  if (cents === null || cents === 0) return 'Ejercicio cerrado.'
+  return cents > 0
+    ? `Ejercicio cerrado: ganancia de ${formatCents(cents)}.`
+    : `Ejercicio cerrado: pérdida de ${formatCents(-cents)}.`
 }

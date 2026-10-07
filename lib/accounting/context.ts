@@ -267,7 +267,9 @@ function parseAccount(r: Rec): CatalogAccount | null {
     systemKey: isSystemAccountKey(r.system_key) ? r.system_key : null,
     description: text(r.description),
     parentId: text(r.parent_id),
-    level: int(r.level) ?? code.split('.').length,
+    // La base manda `level`; si faltara, los segmentos significativos del código
+    // (`1.1.01.00.000` → 3, como `chartLevel`), no todos los segmentos.
+    level: int(r.level) ?? code.replace(/(\.0+)+$/, '').split('.').length,
     manualSelectable: bool(r.manual_selectable, true),
     sort: int(r.sort) ?? 0,
   }

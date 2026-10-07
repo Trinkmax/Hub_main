@@ -18,9 +18,9 @@
  * todo reporte los excluye (C.5.5).
  *
  * E20 · ejercicio 2026: Ventas salón facturadas 105.665.245 (A), Compras
- * bebidas 71.074.380 (D) y Amortizaciones 2.500.000 (D) → D 4.1.01.01
- * 105.665.245 / H 5.1.01.02 71.074.380 / H 5.3.03.07 2.500.000 / H 3.2.01.02
- * Resultado del ejercicio 32.090.865.
+ * bebidas 71.074.380 (D) y Amortizaciones 2.500.000 (D) → D 4.1.01.01.001
+ * 105.665.245 / H 4.2.01.03.002 2.500.000 / H 5.1.01.01.002 71.074.380 /
+ * H 3.3.03.04.000 Resultado del ejercicio 32.090.865.
  */
 
 import {
