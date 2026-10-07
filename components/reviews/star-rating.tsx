@@ -2,6 +2,10 @@ import { Star } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // Display puro de una calificación con estrellas (no interactivo). Server-safe.
+//
+// Las llenas van en el ámbar del kit (`--warning`: es un relleno, 3,5:1 sobre
+// cartulina) y las vacías con el pelo fuerte. El número exacto lo dice la
+// etiqueta accesible («4 de 5 estrellas»): el color nunca es la única señal.
 
 export function StarRating({
   rating,
@@ -24,9 +28,7 @@ export function StarRating({
           key={value}
           className={cn(
             starClass,
-            value <= rating
-              ? 'fill-amber-400 text-amber-400'
-              : 'fill-transparent text-muted-foreground/30',
+            value <= rating ? 'fill-warning text-warning' : 'fill-transparent text-border-strong',
           )}
           aria-hidden="true"
         />

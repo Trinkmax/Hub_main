@@ -2,77 +2,46 @@
 
 import { Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { softDeleteCustomer } from '@/lib/customers/actions'
 
+/**
+ * «Borrar» de la ficha. Es un borrado lógico (`deleted_at`): por eso la
+ * confirmación explica que los datos quedan guardados. Si falla, el diálogo
+ * queda abierto con el motivo (ConfirmDialog del kit).
+ */
 export function DeleteButton({
   tenantSlug,
   customerId,
+  customerName,
 }: {
   tenantSlug: string
   customerId: string
+  customerName: string
 }) {
-  const [open, setOpen] = useState(false)
-  const [pending, start] = useTransition()
   const router = useRouter()
 
-  const onConfirm = () => {
-    start(async () => {
-      const result = await softDeleteCustomer(tenantSlug, customerId)
-      if (result.ok) {
-        toast.success('Cliente eliminado.')
-        setOpen(false)
-        router.push(`/${tenantSlug}/clientes`)
-      } else {
-        toast.error(result.message)
-      }
-    })
-  }
-
   return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="gap-1.5 text-muted-foreground hover:text-destructive"
-        >
-          <Trash2 className="size-3.5" />
-          Eliminar
+    <ConfirmDialog
+      tone="danger"
+      title={`¿Borrar a «${customerName}»?`}
+      description="Deja de aparecer en la lista y en las estadísticas, pero sus datos quedan guardados. Si te equivocaste, soporte lo puede recuperar."
+      confirmLabel="Borrar cliente"
+      pendingLabel="Borrando…"
+      trigger={
+        <Button variant="danger-ghost">
+          <Trash2 aria-hidden="true" />
+          Borrar
         </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>¿Eliminar este cliente?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Lo archivamos. No va a aparecer en la lista ni en estadísticas, pero sus datos quedan
-            auditables. Esta acción se puede revertir contactando soporte.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={onConfirm}
-            disabled={pending}
-            className="bg-destructive text-white hover:bg-destructive/90"
-          >
-            {pending ? 'Eliminando…' : 'Sí, eliminar'}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      }
+      onConfirm={async () => {
+        const result = await softDeleteCustomer(tenantSlug, customerId)
+        if (!result.ok) return { ok: false, error: result.message }
+        toast.success('Cliente borrado.')
+        router.push(`/${tenantSlug}/clientes`)
+      }}
+    />
   )
 }

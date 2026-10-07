@@ -1,10 +1,10 @@
 import { Star } from 'lucide-react'
-import Link from 'next/link'
+import { SegmentedControl } from '@/components/ui/segmented-control'
 import type { ReviewInsights } from '@/lib/reviews/queries'
-import { cn } from '@/lib/utils'
 
-// Chips de filtro por estrellas. Son <Link> (no botones con router.push) para
-// que el filtro sea copiable, compartible y sobreviva al refresh sin JS.
+// Filtro por estrellas: un `SegmentedControl` en modo link (kit HUB §3.3). Son
+// <Link> (no botones con router.push) para que el filtro sea copiable,
+// compartible y sobreviva al refresh sin JS.
 
 export type RatingFilter = 1 | 2 | 3 | 4 | 5 | undefined
 
@@ -22,63 +22,36 @@ export function ReviewsFilters({
   insights: ReviewInsights
   active: RatingFilter
 }): React.JSX.Element {
-  const chips: { value: RatingFilter; label: string; count: number }[] = [
-    { value: undefined, label: 'Todas', count: insights.total },
+  const items = [
+    {
+      value: 'todas',
+      label: 'Todas',
+      count: insights.total,
+      href: reviewsHref(tenantSlug, undefined),
+    },
     ...([5, 4, 3, 2, 1] as const).map((star) => ({
-      value: star as RatingFilter,
-      label: `${star}★`,
+      value: String(star),
+      label: (
+        <span className="inline-flex items-center gap-1 type-amount">
+          {star}
+          <Star aria-hidden="true" className="size-3.5 fill-warning text-warning" />
+          <span className="sr-only">{star === 1 ? 'estrella' : 'estrellas'}</span>
+        </span>
+      ),
       count: insights.distribution[star],
+      href: reviewsHref(tenantSlug, star),
     })),
   ]
 
-  // Son links entre vistas filtradas, no controles de formulario: <nav>.
+  // Con seis opciones y sus cuentas no siempre entra en un celular: la fila scrollea.
   return (
-    <nav
-      className="card-hairline flex w-full flex-wrap gap-1 rounded-xl border bg-card/60 p-1"
-      aria-label="Filtrar reseñas por estrellas"
-    >
-      {chips.map((chip) => {
-        const isActive = chip.value === active
-        return (
-          <Link
-            key={chip.label}
-            href={reviewsHref(tenantSlug, chip.value)}
-            scroll={false}
-            aria-current={isActive ? 'page' : undefined}
-            className={cn(
-              'flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)]',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-              isActive
-                ? 'bg-card text-foreground shadow-sm'
-                : 'text-muted-foreground hover:bg-(--cream-tint) hover:text-foreground',
-            )}
-          >
-            {chip.value ? (
-              <span className="flex items-center gap-1 tabular-nums">
-                {chip.value}
-                <Star
-                  className={cn(
-                    'size-3.5',
-                    isActive ? 'fill-amber-400 text-amber-400' : 'fill-current opacity-60',
-                  )}
-                  aria-hidden="true"
-                />
-                <span className="sr-only">{chip.value === 1 ? 'estrella' : 'estrellas'}</span>
-              </span>
-            ) : (
-              chip.label
-            )}
-            <span
-              className={cn(
-                'inline-flex min-w-[1.5rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums',
-                isActive ? 'bg-primary/15 text-primary' : 'bg-secondary/60 text-muted-foreground',
-              )}
-            >
-              {chip.count.toLocaleString('es-AR')}
-            </span>
-          </Link>
-        )
-      })}
-    </nav>
+    <div className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden">
+      <SegmentedControl
+        aria-label="Filtrar reseñas por estrellas"
+        value={active ? String(active) : 'todas'}
+        items={items}
+        className="max-w-none"
+      />
+    </div>
   )
 }

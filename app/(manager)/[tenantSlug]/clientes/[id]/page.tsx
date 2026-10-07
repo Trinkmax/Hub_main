@@ -1,17 +1,21 @@
-import { format } from 'date-fns'
-import { es } from 'date-fns/locale'
-import { ArrowLeft, Banknote, Phone, Receipt, Sparkles, Star } from 'lucide-react'
+import { Banknote, MessageCircle, Receipt, Star } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import type * as React from 'react'
 import { ContactButton } from '@/components/messaging/contact-button'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
-import { StatCard } from '@/components/ui/stat-card'
+import { KPI, KPIGroup } from '@/components/ui/kpi'
+import { PageHeader } from '@/components/ui/page-header'
+import { DetailTemplate } from '@/components/ui/page-templates'
+import { Section } from '@/components/ui/section'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { getAppUrl } from '@/lib/app-url'
 import { getCustomerById, listTags } from '@/lib/customers/queries'
+import { formatDate } from '@/lib/dates'
+import { formatNumber } from '@/lib/format/number-kind'
+import { formatCents } from '@/lib/money/format'
 import { formatPhoneForDisplay } from '@/lib/phone'
 import {
   listCustomerLedger,
@@ -20,7 +24,6 @@ import {
 } from '@/lib/points/queries'
 import { getCustomerLunchSnapshot } from '@/lib/punch-cards/queries'
 import { listCustomerReviews } from '@/lib/reviews/queries'
-import { formatReviewsSummary } from '@/lib/reviews/summary'
 import { parseServiceAlerts, type ServiceAlert } from '@/lib/salon/alerts'
 import { getCustomerInsights } from '@/lib/stats/queries'
 import {
@@ -29,6 +32,7 @@ import {
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
+import { customerSourceLabel } from '../_components/customer-meta'
 import { CustomerForm } from './_components/customer-form'
 import { CustomerQrPanel } from './_components/customer-qr-panel'
 import { CustomerTags } from './_components/customer-tags'
@@ -40,17 +44,30 @@ import { VisitsTab } from './_components/visits-tab'
 
 export const metadata = { title: 'Cliente' }
 
-function fmtCents(c: number) {
-  return `$${(c / 100).toLocaleString('es-AR', { maximumFractionDigits: 0 })}`
+/** Las pestañas de la ficha; la activa viaja en `?tab=` (se puede copiar el link). */
+const TABS = ['visitas', 'puntos', 'datos', 'comunicaciones', 'resenas', 'notas'] as const
+type CustomerTab = (typeof TABS)[number]
+
+function isCustomerTab(value: unknown): value is CustomerTab {
+  return typeof value === 'string' && (TABS as readonly string[]).includes(value)
+}
+
+/** Pesos enteros, como en los tableros: «$ 12.500». */
+function pesos(cents: number): string {
+  return formatCents(cents, { decimals: 0 })
 }
 
 export default async function CustomerDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantSlug: string; id: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { tenantSlug, id } = await params
+  const sp = await searchParams
   const appUrl = await getAppUrl()
+  const initialTab: CustomerTab = isCustomerTab(sp.tab) ? sp.tab : 'visitas'
 
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
@@ -104,296 +121,263 @@ export default async function CustomerDetailPage({
     tags: { id: string; name: string; color: string }[]
   }
   const c = customer as unknown as C
-  const initials = `${c.first_name?.[0] ?? ''}${c.last_name?.[0] ?? ''}`.toUpperCase() || '?'
+  const fullName = `${c.first_name} ${c.last_name}`.trim()
+  const basePath = `/${tenantSlug}/clientes/${c.id}`
+  const showInsights = Boolean(insights) || reviews.total > 0
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
-      <Link
-        href={`/${tenantSlug}/clientes`}
-        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-3" />
-        Volver a clientes
-      </Link>
-
-      <div className="card-hairline relative overflow-hidden rounded-xl border bg-card p-5 sm:p-6">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -right-20 -top-20 size-64 rounded-full bg-primary/10 blur-3xl"
-        />
-        <div className="relative flex flex-wrap items-start gap-4">
-          <Avatar className="size-14">
-            <AvatarFallback className="bg-secondary font-display text-base font-semibold">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="font-display text-2xl font-semibold tracking-tight">
-                {c.first_name} {c.last_name}
-              </h1>
-              <Badge variant="outline" className="capitalize">
-                {c.source}
-              </Badge>
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1.5 font-mono">
-                <Phone className="size-3.5" />
-                {formatPhoneForDisplay(c.phone)}
-              </span>
-              <span>
-                Cliente desde {format(new Date(c.created_at), "d 'de' MMM yyyy", { locale: es })}
-              </span>
-            </div>
-            <div className="mt-3">
-              <CustomerTags
-                tenantSlug={tenantSlug}
-                customerId={c.id}
-                currentTags={c.tags}
-                allTags={allTags}
-              />
-            </div>
-          </div>
-          <div className="flex flex-col items-end gap-2">
-            <Button asChild size="sm" className="gap-2">
-              <Link href={`/${tenantSlug}/clientes/${c.id}/canjear`}>
-                <Star className="size-3.5" />
-                Canjear puntos
-              </Link>
-            </Button>
-            <ContactButton
-              tenantSlug={tenantSlug}
-              phone={c.phone}
-              customerId={c.id}
-              name={`${c.first_name} ${c.last_name}`.trim()}
-            />
-            {access.role === 'owner' ? (
-              <DeleteButton tenantSlug={tenantSlug} customerId={c.id} />
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard
-          icon={Receipt}
-          label="Visitas"
-          value={c.total_visits.toLocaleString('es-AR')}
-          hint={
-            c.last_visit_at
-              ? `Última: ${format(new Date(c.last_visit_at), "d 'de' MMM", { locale: es })}`
-              : 'Sin visitas todavía'
-          }
-        />
-        <StatCard
-          icon={Banknote}
-          label="Gastado"
-          value={fmtCents(c.total_spent_cents)}
-          hint={
-            c.total_visits > 0
-              ? `Ticket prom. ${fmtCents(Math.floor(c.total_spent_cents / c.total_visits))}`
-              : '—'
-          }
-        />
-        <StatCard
-          icon={Star}
-          label="Puntos disponibles"
-          value={c.points_balance.toLocaleString('es-AR')}
-          hint="Balance actual"
-        />
-      </div>
-
-      <CustomerQrPanel
-        tenantSlug={tenantSlug}
-        customerId={c.id}
-        initialQrToken={c.qr_token}
-        appUrl={appUrl}
-        isOwner={access.role === 'owner'}
-      />
-
-      {lunchSnapshot ? (
-        <LunchCardPanel
-          tenantSlug={tenantSlug}
-          customerId={c.id}
-          initial={{
-            template_id: lunchSnapshot.template_id,
-            template_name: lunchSnapshot.template_name,
-            current_stamps: lunchSnapshot.current_stamps,
-            threshold: lunchSnapshot.threshold,
-            reward_name: lunchSnapshot.reward_name,
-            hours_from: (lunchSnapshot.config.hours_from as string | undefined) ?? null,
-            hours_to: (lunchSnapshot.config.hours_to as string | undefined) ?? null,
-          }}
-        />
-      ) : null}
-
-      {/* Un cliente puede tener reseñas sin visitas cargadas: el bloque igual se muestra. */}
-      {insights || reviews.total > 0 ? (
-        <div className="card-hairline rounded-xl border bg-card p-5">
-          <div className="mb-4 flex items-center gap-2">
-            <Sparkles className="size-4 text-primary" />
-            <h2 className="font-display text-base font-semibold tracking-tight">Insights</h2>
-          </div>
-          <div className="grid gap-x-6 gap-y-2.5 text-sm sm:grid-cols-2">
-            <InsightLine label="Plato favorito" value={insights?.favorite_item_name ?? '—'} />
-            <InsightLine
-              label="Categoría favorita"
-              value={insights?.favorite_category_name ?? '—'}
-            />
-            <InsightLine
-              label="Ticket promedio"
-              value={fmtCents(Number(insights?.avg_ticket_cents ?? 0))}
-            />
-            <InsightLine
-              label="Frecuencia"
-              value={
-                insights?.visit_frequency_days != null
-                  ? `Cada ${Number(insights?.visit_frequency_days).toFixed(1)} días`
-                  : '—'
-              }
-            />
-            <InsightLine
-              label="Días sin venir"
-              value={
-                insights?.days_since_last_visit != null
-                  ? `${insights?.days_since_last_visit} días`
-                  : '—'
-              }
-            />
-            <InsightLine
-              label="Última visita"
-              value={
-                insights?.last_visit_at
-                  ? format(new Date(insights?.last_visit_at), "d 'de' MMM yyyy", { locale: es })
-                  : '—'
-              }
-            />
-            <InsightLine label="Reseñas" value={formatReviewsSummary(reviews)} />
-          </div>
-        </div>
-      ) : null}
-
-      <Tabs defaultValue="visitas">
-        <TabsList className="bg-secondary/40">
-          <TabsTrigger
-            value="visitas"
-            className="data-[state=active]:bg-card data-[state=active]:shadow-sm"
-          >
-            Visitas
-          </TabsTrigger>
-          <TabsTrigger
-            value="puntos"
-            className="data-[state=active]:bg-card data-[state=active]:shadow-sm"
-          >
-            Puntos
-          </TabsTrigger>
-          <TabsTrigger
-            value="datos"
-            className="data-[state=active]:bg-card data-[state=active]:shadow-sm"
-          >
-            Datos
-          </TabsTrigger>
-          <TabsTrigger
-            value="comunicaciones"
-            className="data-[state=active]:bg-card data-[state=active]:shadow-sm"
-          >
-            Mensajes
-          </TabsTrigger>
-          <TabsTrigger
-            value="resenas"
-            className="gap-1.5 data-[state=active]:bg-card data-[state=active]:shadow-sm"
-          >
-            Reseñas
-            {/* El contador se ve sin abrir la pestaña: si el cliente se quejó, se nota. */}
-            {reviews.total > 0 ? (
-              <span className="rounded-full bg-secondary px-1.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
-                {reviews.total}
-              </span>
-            ) : null}
-          </TabsTrigger>
-          <TabsTrigger
-            value="notas"
-            className="data-[state=active]:bg-card data-[state=active]:shadow-sm"
-          >
-            Notas
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="visitas" className="mt-4">
-          <VisitsTab visits={visits} reviewedVisits={reviewedVisits} />
-        </TabsContent>
-
-        <TabsContent value="puntos" className="mt-4">
-          <LedgerTab ledger={ledger} redemptions={redemptions} balance={c.points_balance} />
-        </TabsContent>
-
-        <TabsContent value="datos" className="mt-4">
-          <div className="card-hairline rounded-xl border bg-card p-5 sm:p-6">
-            <h2 className="font-display text-base font-semibold tracking-tight">
-              Datos personales
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Estos datos solo los ven los miembros del equipo.
-            </p>
-            <div className="mt-5">
-              <CustomerForm
-                tenantSlug={tenantSlug}
-                customer={{ ...c, service_alerts: parseServiceAlerts(c.service_alerts) }}
-              />
-            </div>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="comunicaciones" className="mt-4">
-          <div className="card-hairline rounded-xl border bg-card p-5 sm:p-6">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <h2 className="font-display text-base font-semibold tracking-tight">Mensajes</h2>
-                <p className="text-sm text-muted-foreground">
-                  Enviá un mensaje directo o plantilla por WhatsApp.
-                </p>
-              </div>
+    <DetailTemplate
+      width="comfortable"
+      header={
+        <PageHeader
+          back={{ href: `/${tenantSlug}/clientes`, label: 'Clientes' }}
+          title={fullName || 'Cliente sin nombre'}
+          meta={[
+            <span key="phone" className="type-amount">
+              {formatPhoneForDisplay(c.phone)}
+            </span>,
+            `Cliente desde ${formatDate(c.created_at)}`,
+            customerSourceLabel(c.source),
+          ]}
+          actions={
+            <>
+              {access.role === 'owner' ? (
+                <DeleteButton tenantSlug={tenantSlug} customerId={c.id} customerName={fullName} />
+              ) : null}
               <ContactButton
                 tenantSlug={tenantSlug}
                 phone={c.phone}
                 customerId={c.id}
-                name={`${c.first_name} ${c.last_name}`.trim()}
+                name={fullName}
+                variant="secondary"
+                size="md"
               />
-            </div>
-            <EmptyState
-              icon={Phone}
-              title="Sin comunicaciones aún"
-              description="Cuando le mandes un broadcast o reciba un mensaje 1-a-1, va a aparecer acá."
-            />
-          </div>
+              <Button asChild>
+                <Link href={`${basePath}/canjear`}>
+                  <Star aria-hidden="true" />
+                  Canjear puntos
+                </Link>
+              </Button>
+            </>
+          }
+        >
+          <CustomerTags
+            tenantSlug={tenantSlug}
+            customerId={c.id}
+            currentTags={c.tags}
+            allTags={allTags}
+          />
+        </PageHeader>
+      }
+      summary={
+        <KPIGroup columns={3}>
+          <KPI
+            icon={Receipt}
+            label="Visitas"
+            value={formatNumber(c.total_visits)}
+            hint={
+              c.last_visit_at
+                ? `Última: ${formatDate(c.last_visit_at)}`
+                : 'Todavía no registró visitas'
+            }
+          />
+          <KPI
+            icon={Banknote}
+            label="Gastado"
+            value={pesos(c.total_spent_cents)}
+            hint={
+              c.total_visits > 0
+                ? `Ticket promedio: ${pesos(Math.floor(c.total_spent_cents / c.total_visits))}`
+                : 'Todavía no consumió'
+            }
+          />
+          <KPI
+            icon={Star}
+            label="Puntos disponibles"
+            value={formatNumber(c.points_balance)}
+            hint="Para canjear por recompensas del club"
+          />
+        </KPIGroup>
+      }
+    >
+      <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+        {showInsights ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                <h2>Hábitos de consumo</h2>
+              </CardTitle>
+            </CardHeader>
+            <dl className="grid gap-x-6 sm:grid-cols-2">
+              <InsightLine label="Plato favorito" value={insights?.favorite_item_name ?? null} />
+              <InsightLine
+                label="Categoría favorita"
+                value={insights?.favorite_category_name ?? null}
+              />
+              <InsightLine
+                label="Ticket promedio"
+                value={
+                  insights?.avg_ticket_cents != null
+                    ? pesos(Number(insights.avg_ticket_cents))
+                    : null
+                }
+              />
+              <InsightLine
+                label="Frecuencia"
+                value={
+                  insights?.visit_frequency_days != null
+                    ? `Cada ${formatNumber(Number(insights.visit_frequency_days), 1)} días`
+                    : null
+                }
+              />
+              <InsightLine
+                label="Días sin venir"
+                value={
+                  insights?.days_since_last_visit != null
+                    ? `${formatNumber(Number(insights.days_since_last_visit))} días`
+                    : null
+                }
+              />
+              <InsightLine
+                label="Última visita"
+                value={insights?.last_visit_at ? formatDate(insights.last_visit_at) : null}
+              />
+              <InsightLine
+                label="Reseñas"
+                value={
+                  reviews.total > 0 ? (
+                    <span className="inline-flex items-center gap-1">
+                      <Star aria-hidden="true" className="size-3.5 fill-warning text-warning" />
+                      <span className="sr-only">Promedio </span>
+                      {formatNumber(reviews.average, 1)} · {formatNumber(reviews.total)}{' '}
+                      {reviews.total === 1 ? 'reseña' : 'reseñas'}
+                    </span>
+                  ) : null
+                }
+              />
+            </dl>
+          </Card>
+        ) : null}
+
+        <CustomerQrPanel
+          tenantSlug={tenantSlug}
+          customerId={c.id}
+          initialQrToken={c.qr_token}
+          appUrl={appUrl}
+          isOwner={access.role === 'owner'}
+        />
+
+        {lunchSnapshot ? (
+          <LunchCardPanel
+            tenantSlug={tenantSlug}
+            customerId={c.id}
+            initial={{
+              template_id: lunchSnapshot.template_id,
+              template_name: lunchSnapshot.template_name,
+              current_stamps: lunchSnapshot.current_stamps,
+              threshold: lunchSnapshot.threshold,
+              reward_name: lunchSnapshot.reward_name,
+              hours_from: (lunchSnapshot.config.hours_from as string | undefined) ?? null,
+              hours_to: (lunchSnapshot.config.hours_to as string | undefined) ?? null,
+            }}
+          />
+        ) : null}
+      </div>
+
+      <Tabs defaultValue={initialTab} syncParam="tab" className="gap-6">
+        <TabsList aria-label="Secciones de la ficha">
+          <TabsTrigger value="visitas">Visitas</TabsTrigger>
+          <TabsTrigger value="puntos">Puntos</TabsTrigger>
+          <TabsTrigger value="datos">Datos</TabsTrigger>
+          <TabsTrigger value="comunicaciones">Mensajes</TabsTrigger>
+          {/* El contador se ve sin abrir la pestaña: si el cliente se quejó, se nota. */}
+          <TabsTrigger value="resenas" count={reviews.total > 0 ? reviews.total : undefined}>
+            Reseñas
+          </TabsTrigger>
+          <TabsTrigger value="notas">Notas</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="visitas">
+          <VisitsTab visits={visits} reviewedVisits={reviewedVisits} />
         </TabsContent>
 
-        <TabsContent value="resenas" className="mt-4">
+        <TabsContent value="puntos">
+          <LedgerTab ledger={ledger} redemptions={redemptions} balance={c.points_balance} />
+        </TabsContent>
+
+        <TabsContent value="datos">
+          <Section title="Datos personales" description="Solo los ve tu equipo." headingLevel={2}>
+            <CustomerForm
+              tenantSlug={tenantSlug}
+              customer={{ ...c, service_alerts: parseServiceAlerts(c.service_alerts) }}
+            />
+          </Section>
+        </TabsContent>
+
+        <TabsContent value="comunicaciones">
+          <Section
+            title="Mensajes"
+            description="Mandale un mensaje directo o una plantilla por WhatsApp."
+            actions={
+              <ContactButton
+                tenantSlug={tenantSlug}
+                phone={c.phone}
+                customerId={c.id}
+                name={fullName}
+                variant="secondary"
+                size="md"
+              />
+            }
+          >
+            <EmptyState
+              icon={MessageCircle}
+              title="Todavía no hay mensajes"
+              description="Cuando le mandes una difusión o te escriba por WhatsApp, la conversación aparece acá."
+            />
+          </Section>
+        </TabsContent>
+
+        <TabsContent value="resenas">
           <ReviewsTab reviews={reviews.reviews} />
         </TabsContent>
 
-        <TabsContent value="notas" className="mt-4">
-          <div className="card-hairline rounded-xl border bg-card p-5">
+        <TabsContent value="notas">
+          <Card>
             {c.notes ? (
-              <p className="whitespace-pre-wrap text-sm">{c.notes}</p>
+              <p className="max-w-prose whitespace-pre-wrap type-body">{c.notes}</p>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                No hay notas. Editalas desde la pestaña{' '}
-                <strong className="text-foreground">Datos</strong>.
+              <p className="type-body text-muted-foreground">
+                No hay notas. Las cargás en la pestaña{' '}
+                <Link
+                  href={`${basePath}?tab=datos`}
+                  scroll={false}
+                  className="font-medium text-foreground underline underline-offset-2 hover:decoration-2"
+                >
+                  Datos
+                </Link>
+                .
               </p>
             )}
-          </div>
+          </Card>
         </TabsContent>
       </Tabs>
-    </div>
+    </DetailTemplate>
   )
 }
 
-function InsightLine({ label, value }: { label: string; value: string }) {
+/** Una fila de «Hábitos de consumo»: nombre a la izquierda, dato a la derecha. Sin dato, «—». */
+function InsightLine({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-border/40 py-1.5 last:border-0">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-right font-medium">{value}</span>
+    <div className="flex items-baseline justify-between gap-3 py-1.5 type-body">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="text-right font-medium">
+        {value ?? (
+          <>
+            <span aria-hidden="true">—</span>
+            <span className="sr-only">sin dato</span>
+          </>
+        )}
+      </dd>
     </div>
   )
 }

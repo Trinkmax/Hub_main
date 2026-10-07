@@ -1,20 +1,21 @@
-import { Skeleton } from '@/components/ui/skeleton'
+import { PageShell } from '@/components/ui/page-shell'
+import {
+  Skeleton,
+  SkeletonForm,
+  SkeletonPageHeader,
+  SkeletonStatus,
+} from '@/components/ui/skeleton'
 
+/** Copia «Nuevo cliente»: volver a Clientes, el formulario en una columna y sus acciones. */
 export default function Loading() {
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
-      <Skeleton className="h-4 w-32" />
-      <div className="space-y-2">
-        <Skeleton className="h-3 w-20" />
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-4 w-80" />
+    <PageShell width="compact" aria-busy="true">
+      <SkeletonStatus />
+      <SkeletonPageHeader context />
+      <div className="flex flex-col gap-4">
+        <Skeleton aria-hidden="true" className="h-4 w-20" />
+        <SkeletonForm fields={5} />
       </div>
-      <div className="card-hairline space-y-4 rounded-xl border bg-card p-6">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={`field-${i.toString()}`} className="h-10 w-full" />
-        ))}
-        <Skeleton className="h-10 w-32" />
-      </div>
-    </div>
+    </PageShell>
   )
 }

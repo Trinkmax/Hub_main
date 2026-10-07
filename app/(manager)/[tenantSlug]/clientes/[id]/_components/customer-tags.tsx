@@ -1,7 +1,7 @@
 'use client'
 
 import { Plus } from 'lucide-react'
-import { useState, useTransition } from 'react'
+import { useId, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,6 +13,13 @@ type Tag = { id: string; name: string; color: string }
 
 const DEFAULT_COLOR = '#94a3b8'
 
+/**
+ * Las etiquetas del cliente, debajo del nombre en la ficha. Asignar y quitar
+ * son optimistas (se ven al toque y vuelven atrás con un aviso si falla).
+ *
+ * Sigue siendo un Popover propio y no el Combobox múltiple del kit: la etiqueta
+ * nueva se crea con un color elegido a mano, y el Combobox no tiene dónde.
+ */
 export function CustomerTags({
   tenantSlug,
   customerId,
@@ -31,6 +38,7 @@ export function CustomerTags({
   const [open, setOpen] = useState(false)
   const [newName, setNewName] = useState('')
   const [newColor, setNewColor] = useState(DEFAULT_COLOR)
+  const listLabelId = useId()
 
   const available = known.filter((t) => !tags.some((x) => x.id === t.id))
 
@@ -90,35 +98,40 @@ export function CustomerTags({
 
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 rounded-full border border-dashed bg-transparent px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-secondary/40 hover:text-foreground"
-            aria-label="Agregar etiqueta"
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-6 gap-1 rounded-full border-dashed px-2 type-caption font-medium text-muted-foreground"
           >
-            <Plus className="size-3" />
+            <Plus aria-hidden="true" className="size-3.5" />
             Etiqueta
-          </button>
+          </Button>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-64 p-0">
+        <PopoverContent align="start" size="sm" className="p-0">
           {available.length > 0 ? (
-            <ul className="max-h-44 overflow-y-auto border-b border-border/60 py-1">
-              {available.map((t) => (
-                <li key={t.id}>
-                  <button
-                    type="button"
-                    onClick={() => assign(t)}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-secondary/40"
-                  >
-                    <span
-                      className="size-2 shrink-0 rounded-full"
-                      style={{ backgroundColor: t.color }}
-                      aria-hidden
-                    />
-                    <span className="truncate">{t.name}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <div className="border-b border-border p-1">
+              <p id={listLabelId} className="px-2 pt-1 pb-1.5 type-caption text-subtle-foreground">
+                Asignar una del bar
+              </p>
+              <ul aria-labelledby={listLabelId} className="max-h-44 overflow-y-auto">
+                {available.map((t) => (
+                  <li key={t.id}>
+                    <button
+                      type="button"
+                      onClick={() => assign(t)}
+                      className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left type-body outline-(--ring) -outline-offset-2 hover:bg-accent focus-visible:outline-2 pointer-coarse:min-h-11"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="size-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: t.color }}
+                      />
+                      <span className="truncate">{t.name}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : null}
 
           <form
@@ -126,33 +139,35 @@ export function CustomerTags({
               e.preventDefault()
               create()
             }}
-            className="space-y-2 px-3 py-2.5"
+            className="grid gap-2 p-3"
           >
-            <p className="text-[11px] font-semibold text-foreground">Nueva etiqueta</p>
+            <p className="type-label">Nueva etiqueta</p>
             <div className="flex items-center gap-2">
               <input
                 type="color"
                 value={newColor}
                 onChange={(e) => setNewColor(e.target.value)}
-                className="size-7 shrink-0 cursor-pointer rounded border border-border/60 bg-transparent p-0"
+                className="size-(--control-sm) shrink-0 cursor-pointer rounded-md border border-input bg-card p-0.5 outline-offset-2 outline-(--ring) focus-visible:outline-2"
                 aria-label="Color de la etiqueta"
               />
               <Input
+                size="sm"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                placeholder="Nombre…"
+                placeholder="Nombre"
                 maxLength={40}
-                className="h-8 flex-1 text-xs"
                 aria-label="Nombre de la etiqueta"
               />
             </div>
             <Button
               type="submit"
               size="sm"
-              className="h-7 w-full text-[11px]"
-              disabled={pending || !newName.trim()}
+              className="w-full"
+              loading={pending}
+              loadingText="Guardando…"
+              disabled={!newName.trim()}
             >
-              {pending ? 'Guardando…' : 'Crear y asignar'}
+              Crear y asignar
             </Button>
           </form>
         </PopoverContent>
