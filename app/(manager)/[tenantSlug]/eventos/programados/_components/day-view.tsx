@@ -1,12 +1,14 @@
 'use client'
 
-import { CalendarPlus, ChevronLeft, ChevronRight, Clock4, Loader2, X } from 'lucide-react'
+import { CalendarPlus, ChevronLeft, ChevronRight, Clock4, X } from 'lucide-react'
 import Link from 'next/link'
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { keepOpenOnToast } from '@/components/reservations/reservation-quick-view'
+import { dayLabelInline, longDayTitle } from '@/components/reservations/day-labels'
 import { RollCallDialog } from '@/components/reservations/roll-call-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Callout } from '@/components/ui/callout'
 import {
   Dialog,
   DialogClose,
@@ -14,9 +16,12 @@ import {
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { ErrorState } from '@/components/ui/error-state'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Spinner } from '@/components/ui/spinner'
+import { toastUndo } from '@/components/ui/toast'
+import { addDays } from '@/lib/dates/civil'
 import { editEventHref, newReservationHref } from '@/lib/salon/calendar-links'
-import { formatDayLabel } from '@/lib/salon/date-presets'
 import { nowMinutesInCordoba } from '@/lib/salon/operativo'
 import {
   fetchDayOverview,
@@ -92,42 +97,16 @@ const DAY_ERROR = 'No pudimos leer el día.'
 /** Clases de la hoja inferior en mobile: sin JS de media query y sin vaul. */
 const CONTENT_CLASSES = cn(
   // El contenedor no scrollea: header y footer quedan fijos y scrollea solo el
-  // medio. Con `grid` (el default del DialogContent) un header `sticky` queda
-  // atado a su fila y se va con el scroll.
-  'flex max-h-[85dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl',
+  // medio (el alto máximo del diálogo del kit se pisa con el de la vista).
+  'flex max-h-[85dvh] flex-col gap-0 overflow-hidden p-0',
   'max-sm:top-auto max-sm:bottom-0 max-sm:left-0 max-sm:w-full max-sm:max-w-full max-sm:max-h-[92dvh] max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-b-none max-sm:rounded-t-2xl max-sm:pb-[env(safe-area-inset-bottom)]',
 )
 
-function parseIsoDay(iso: string): Date {
-  const [y, m, d] = iso.split('-').map(Number)
-  return new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1))
-}
-
-/**
- * Día anterior / siguiente. Aritmética en UTC a propósito (como
- * date-presets): con la TZ del navegador un cambio de horario corría el día.
- */
-function shiftIsoDay(iso: string, delta: number): string {
-  const d = parseIsoDay(iso)
-  d.setUTCDate(d.getUTCDate() + delta)
-  return d.toISOString().slice(0, 10)
-}
-
-/** 'Jueves, 10 de septiembre'. */
-function longDayLabel(iso: string): string {
-  const label = new Intl.DateTimeFormat('es-AR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    timeZone: 'UTC',
-  }).format(parseIsoDay(iso))
-  return label.charAt(0).toUpperCase() + label.slice(1)
-}
+/** 'Jueves 10 de septiembre' (a mano, sin `Intl`). */
+const longDayLabel = longDayTitle
 
 /** 'jue 10/09', para frases ("Almuerzo del jue 25/09: 120 lugares"). */
-function shortDayLabel(iso: string): string {
-  return lowerFirst(formatDayLabel(iso))
-}
+const shortDayLabel = dayLabelInline
 
 function placesText(capacity: number): string {
   if (capacity === 0) return 'cerrado'
@@ -417,16 +396,11 @@ export function DayView({
           return false
         }
         const previous = res.data.previous
-        toast.success(
+        // «Deshacer» del kit: dura lo mismo en toda la app y se queda quieto
+        // mientras tiene el foco. El cupo también se vuelve a tocar desde acá.
+        toastUndo(
           `${SEGMENT_LABELS[input.segment]} del ${shortDayLabel(targetDate)}: ${placesText(input.capacity)}`,
-          {
-            action: {
-              label: 'Deshacer',
-              onClick: () => {
-                void undoOverride(targetDate, input.segment, previous)
-              },
-            },
-          },
+          { onUndo: () => undoOverride(targetDate, input.segment, previous) },
         )
         return true
       } catch (error) {
@@ -456,19 +430,10 @@ export function DayView({
           return false
         }
         const previous = res.data.previous
-        toast.success(
-          `${SEGMENT_LABELS[s.key]} del ${shortDayLabel(targetDate)}: vuelve al ${isoDowLabel}`,
-          previous
-            ? {
-                action: {
-                  label: 'Deshacer',
-                  onClick: () => {
-                    void undoOverride(targetDate, s.key, previous)
-                  },
-                },
-              }
-            : undefined,
-        )
+        const message = `${SEGMENT_LABELS[s.key]} del ${shortDayLabel(targetDate)}: vuelve al ${isoDowLabel}`
+        if (previous)
+          toastUndo(message, { onUndo: () => undoOverride(targetDate, s.key, previous) })
+        else toast.success(message)
         return true
       } catch (error) {
         console.error(
@@ -487,7 +452,7 @@ export function DayView({
   // ── Navegación entre días ──
   const shift = useCallback(
     (delta: number) => {
-      if (shownDate) onDateChange(shiftIsoDay(shownDate, delta))
+      if (shownDate) onDateChange(addDays(shownDate, delta))
     },
     [shownDate, onDateChange],
   )
@@ -532,17 +497,15 @@ export function DayView({
         if (!open) onClose()
       }}
     >
+      {/* Los «Deshacer» del cupo especial viven en un aviso, fuera del diálogo:
+          el DialogContent del kit ya no se cierra al tocarlos (keepOpenOnToast). */}
       <DialogContent
+        size="lg"
         showCloseButton={false}
         className={CONTENT_CLASSES}
         onKeyDown={handleKeyDown}
-        // Los "Deshacer" del cupo especial viven en un toast, fuera del
-        // diálogo: sin esto, tocarlo cerraba el día (en desktop) antes de que
-        // corriera el click. Que el toast reciba el click lo arregla el
-        // `pointer-events: auto` de [data-sonner-toaster] en globals.css.
-        onInteractOutside={keepOpenOnToast}
       >
-        <header className="shrink-0 space-y-2.5 border-b border-border/60 px-3 pt-3 pb-3 sm:px-5">
+        <header className="flex shrink-0 flex-col gap-3 border-b border-border px-3 pt-3 pb-3 sm:px-5">
           <div className="flex items-center gap-1">
             <Button
               type="button"
@@ -556,22 +519,15 @@ export function DayView({
               <ChevronLeft aria-hidden />
             </Button>
             <div className="min-w-0 flex-1 text-center">
-              <DialogTitle className="flex items-center justify-center gap-2 font-serif text-lg">
+              <DialogTitle className="flex items-center justify-center gap-2 type-subtitle">
                 <span className="truncate">{longLabel}</span>
-                {isToday ? (
-                  <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 font-sans text-[11px] font-medium text-primary">
-                    Hoy
-                  </span>
-                ) : null}
+                {isToday ? <Badge tone="brand">Hoy</Badge> : null}
                 {/* Decorativo: el estado lo anuncia el aria-busy del contenido. */}
                 {current?.refreshing ? (
-                  <Loader2
-                    className="size-3.5 shrink-0 animate-spin text-muted-foreground"
-                    aria-hidden
-                  />
+                  <Spinner aria-hidden size={14} className="text-muted-foreground" />
                 ) : null}
               </DialogTitle>
-              <DialogDescription className="mt-0.5 text-xs">
+              <DialogDescription className="mt-0.5 type-caption">
                 Almuerzo, merienda y cena por separado
               </DialogDescription>
             </div>
@@ -595,7 +551,7 @@ export function DayView({
 
           {zoneFilter ? (
             <div className="flex justify-center">
-              <p className="inline-flex max-w-full items-center gap-1 rounded-full border border-primary/40 bg-primary/10 py-0.5 pr-0.5 pl-2.5 text-xs font-medium text-primary">
+              <p className="inline-flex max-w-full items-center gap-1 rounded-full border border-primary bg-card py-0.5 pr-0.5 pl-2.5 type-label text-foreground">
                 <span className="truncate">{zoneViewingLabel(zoneFilter)}</span>
                 {onClearZone ? (
                   <>
@@ -604,7 +560,7 @@ export function DayView({
                       type="button"
                       onClick={onClearZone}
                       aria-label={ZONE_CLEAR_ARIA}
-                      className="min-h-6 shrink-0 rounded-full px-2 underline underline-offset-2 outline-none transition-colors hover:bg-primary/15 focus-visible:ring-2 focus-visible:ring-ring/50"
+                      className="relative hit-area min-h-6 shrink-0 rounded-full px-2 text-primary underline underline-offset-2 outline-offset-2 outline-(--ring) hover:bg-hover focus-visible:outline-2"
                     >
                       {ZONE_CLEAR_LABEL}
                     </button>
@@ -646,18 +602,13 @@ export function DayView({
           aria-busy={current?.refreshing || (!overview && !failed) ? true : undefined}
         >
           {failed ? (
-            <div role="alert" className="flex flex-col items-center gap-3 px-4 py-12 text-center">
-              <p className="text-sm text-muted-foreground">{DAY_ERROR}</p>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  if (shownDate) void load(shownDate, 'reset')
-                }}
-              >
-                Reintentar
-              </Button>
-            </div>
+            <ErrorState
+              title={DAY_ERROR}
+              description="Probá de nuevo. Si sigue pasando, mirá la conexión."
+              onRetry={() => {
+                if (shownDate) void load(shownDate, 'reset')
+              }}
+            />
           ) : !overview || !daySegments || !rowsBySegment || !shownDate ? (
             <DaySkeleton />
           ) : (
@@ -666,34 +617,27 @@ export function DayView({
                 // Horas de eventos mal cargadas: solo se avisa, el dato lo
                 // corrige el dueño (Merienda Libre del 03/10 a las 21:00 con su
                 // reserva de las 16:30 le restaba 33 a la cena).
-                <div className="space-y-2 px-4 pt-4 sm:px-6">
+                <div className="grid gap-2 px-4 pt-4 sm:px-6">
                   {daySegments.mismatches.map((m) => (
-                    <div
-                      key={m.eventId}
-                      role="note"
-                      className="flex items-start gap-2 rounded-lg border border-warning/50 bg-warning/10 px-3 py-2 text-xs leading-relaxed text-foreground"
-                    >
-                      <Clock4 className="mt-0.5 size-3.5 shrink-0 text-warning-text" aria-hidden />
-                      <p className="min-w-0 flex-1">
-                        {mismatchCopy(m)}
-                        {canBook ? (
-                          <>
-                            {' '}
-                            <Link
-                              href={editEventHref(tenantSlug, m.eventId)}
-                              className="rounded-sm font-medium underline underline-offset-2 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                            >
-                              Editar evento
-                            </Link>
-                          </>
-                        ) : null}
-                      </p>
-                    </div>
+                    <Callout key={m.eventId} tone="warning" icon={Clock4} role="note">
+                      {mismatchCopy(m)}
+                      {canBook ? (
+                        <>
+                          {' '}
+                          <Link
+                            href={editEventHref(tenantSlug, m.eventId)}
+                            className="font-medium underline underline-offset-2"
+                          >
+                            Editar evento
+                          </Link>
+                        </>
+                      ) : null}
+                    </Callout>
                   ))}
                 </div>
               ) : null}
 
-              <div className="divide-y divide-border/60">
+              <div className="divide-y divide-border">
                 {SEGMENT_KEYS.map((key) => (
                   <DaySegmentSection
                     key={key}
@@ -732,12 +676,12 @@ export function DayView({
         </div>
 
         {canBook && shownDate ? (
-          <footer className="flex shrink-0 justify-end border-t border-border/60 bg-background px-4 py-3 sm:px-6">
+          <footer className="flex shrink-0 justify-end border-t border-border bg-popover px-4 py-3 sm:px-6">
             {/* El servicio del footer es el que está en curso si el día es hoy
                 (a las 02:00 todavía es la cena), la cena si no. */}
-            <Button asChild className="w-full gap-2 sm:w-auto">
+            <Button asChild className="w-full sm:w-auto">
               <Link href={footerHref}>
-                <CalendarPlus className="size-4" aria-hidden />
+                <CalendarPlus aria-hidden />
                 {footerLabel}
               </Link>
             </Button>
@@ -751,10 +695,10 @@ export function DayView({
 /** Tres servicios en esqueleto: la forma del día sin ningún número (ni del día anterior). */
 function DaySkeleton() {
   return (
-    <div role="status" className="divide-y divide-border/60">
+    <div role="status" className="divide-y divide-border">
       <span className="sr-only">Cargando el día…</span>
       {SEGMENT_KEYS.map((key) => (
-        <div key={key} aria-hidden className="space-y-2.5 px-4 py-4 sm:px-6">
+        <div key={key} aria-hidden className="flex flex-col gap-3 px-4 py-4 sm:px-6">
           <div className="flex items-center justify-between gap-3">
             <Skeleton className="h-5 w-28" />
             <Skeleton className="h-5 w-24 rounded-full" />

@@ -1,20 +1,19 @@
-import { Skeleton } from '@/components/ui/skeleton'
+import { PageShell } from '@/components/ui/page-shell'
+import {
+  SkeletonForm,
+  SkeletonPageHeader,
+  SkeletonStatus,
+  SkeletonTable,
+} from '@/components/ui/skeleton'
 
+/** Un evento programado: su formulario y, abajo, sus reservas. */
 export default function Loading() {
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
-      <div className="space-y-2">
-        <Skeleton className="h-4 w-40" />
-        <Skeleton className="h-8 w-56" />
-        <Skeleton className="h-4 w-80" />
-      </div>
-      <div className="card-hairline space-y-4 rounded-xl border bg-card p-6">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={`field-${i.toString()}`} className="h-10 w-full" />
-        ))}
-        <Skeleton className="h-10 w-32" />
-      </div>
-      <Skeleton className="h-40 w-full rounded-xl" />
-    </div>
+    <PageShell width="compact" aria-busy="true">
+      <SkeletonStatus label="Cargando el evento…" />
+      <SkeletonPageHeader context actions={1} description={false} />
+      <SkeletonForm fields={6} />
+      <SkeletonTable rows={4} columns={4} />
+    </PageShell>
   )
 }

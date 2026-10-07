@@ -611,20 +611,22 @@ describe('ZoneFilterControl', () => {
     return text(renderToString(createElement(ZoneFilterControl, { value, onChange: () => {} })))
   }
 
+  // El SegmentedControl del kit en modo radio (RadioGroup de Radix): grupo con
+  // nombre, flechas que mueven y eligen, un solo tab stop.
   it('grupo con nombre y las 4 opciones del dueño, en orden', () => {
     const html = control(null)
-    expect(html).toMatch(/^<fieldset/)
-    expect(html).toContain('<legend class="sr-only">Ver por planta</legend>')
-    const labels = [...html.matchAll(/type="radio"[^>]*\/>([^<]+)<\/label>/g)].map((m) => m[1])
+    expect(html).toMatch(/^<div role="radiogroup"/)
+    expect(html).toContain('aria-label="Ver por planta"')
+    const labels = [...html.matchAll(/role="radio"[^>]*>([^<]+)<\/button>/g)].map((m) => m[1])
     expect(labels).toEqual(['Todo', 'Planta alta', 'Planta baja', 'Sin ubicar'])
-    expect(html.match(/type="radio"/g)).toHaveLength(4)
+    expect(html.match(/role="radio"/g)).toHaveLength(4)
   })
 
-  it('radios nativos: uno solo marcado, el del valor', () => {
+  it('una sola opción elegida, la del valor', () => {
     const html = control('baja')
-    expect(html.match(/checked=""/g)).toHaveLength(1)
-    expect(html).toMatch(/checked="" value="baja"/)
-    expect(control(null)).toMatch(/checked="" value="todo"/)
+    expect(html.match(/aria-checked="true"/g)).toHaveLength(1)
+    expect(html).toMatch(/aria-checked="true" data-state="checked" value="baja"/)
+    expect(control(null)).toMatch(/aria-checked="true" data-state="checked" value="todo"/)
   })
 
   it('en el celu ocupa el ancho sin scroll; en desktop, su tamaño', () => {

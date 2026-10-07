@@ -54,19 +54,22 @@ export const SEGMENT_TONE_CLASSES: Record<
   },
   over: {
     chip: 'border-destructive/50 bg-destructive/10',
-    text: 'text-destructive',
+    text: 'text-destructive-text',
     dot: 'bg-destructive',
     bar: 'bg-destructive',
   },
 }
 
+// 12 px (el mínimo del kit) en cifras tabulares de Inter: los números se
+// alinean sin la monoespaciada del sistema, que no es de la marca.
 const CHIP_BASE =
-  'inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 font-mono text-[11px] leading-4 tabular-nums'
+  'inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 type-caption tabular-nums'
 
-// Solo el chip que hace algo: área táctil de 24 px (WCAG 2.2, el staff lo usa
-// con el dedo en la agenda del celu) y el mismo anillo de foco que el Button.
+// Solo el chip que hace algo: 24 px dibujados y área táctil de 44 con el dedo
+// (`hit-area`, el staff lo usa en la agenda del celu) y el mismo foco que el
+// Button: contorno de 2 px afuera, nunca una sombra.
 const CHIP_INTERACTIVE =
-  'min-h-6 cursor-pointer outline-none transition-colors hover:border-foreground/30 focus-visible:ring-[3px] focus-visible:ring-ring/50'
+  'relative hit-area min-h-6 cursor-pointer transition-colors duration-(--duration-quick) hover:border-foreground/30 outline-offset-2 outline-(--ring) focus-visible:outline-2'
 
 /**
  * El número del servicio como pastilla: "Cena 119/120" (personas de cupo,

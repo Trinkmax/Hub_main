@@ -1,17 +1,20 @@
 'use client'
 
-import { Check, ChevronDown, Clock, MapPin, Minus, Plus, Sparkles } from 'lucide-react'
+import { Check, ChevronDown, Clock, MapPin, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
-import { useEffect, useRef, useState, useTransition } from 'react'
+import { useEffect, useId, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { ContactButton } from '@/components/messaging/contact-button'
 import { CakeChip } from '@/components/reservations/cake-chip'
 import { ChampagneChip } from '@/components/reservations/celebration-chip'
 import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
+import { Amount } from '@/components/ui/amount'
 import { Button } from '@/components/ui/button'
+import { Callout } from '@/components/ui/callout'
 import {
   Dialog,
+  DialogBody,
   DialogClose,
   DialogContent,
   DialogFooter,
@@ -19,13 +22,21 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { NumberField } from '@/components/ui/number-field'
+import {
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { TimeField } from '@/components/ui/time-field'
+import { formatIsoDay } from '@/lib/dates/format'
 import { updateActualGuests, updateSalonReservation } from '@/lib/salon/actions'
 import { resolveReservationAlerts } from '@/lib/salon/alerts'
 import { editReservationHref } from '@/lib/salon/calendar-links'
 import { EVENT_FLOOR_QUESTION, isEventReservation, zoneChoicesFor } from '@/lib/salon/event-floor'
-import { ARSFormat } from '@/lib/salon/format'
 import { joinedEventName, placeLabel } from '@/lib/salon/place-label'
 import { fetchDaySegments } from '@/lib/salon/segment-actions'
 import {
@@ -53,14 +64,15 @@ import { cn } from '@/lib/utils'
 import { ReservationStatusControls } from './reservation-status-controls'
 import { StatusPill } from './status-pill'
 
+// Se mudó al kit (`components/ui/toast`): los diálogos, hojas y popovers del
+// kit ya lo aplican solos. Queda exportado acá para los que lo importan de
+// este archivo.
+export { keepOpenOnToast } from '@/components/ui/toast'
+
 const HHMM = /^\d{2}:\d{2}$/
 
 function fmtTime(t: string): string {
   return t.slice(0, 5)
-}
-function fmtDate(d: string): string {
-  const [y, m, day] = d.split('-')
-  return `${day}/${m}/${y}`
 }
 /** Lo que el panel edita y mueve la cuenta del servicio. */
 type PanelValues = { guests: number; zone: SalonZone; time: string; meal: MealType }
@@ -115,20 +127,6 @@ function pendingGuestsLine(p: SegmentProjection): string {
   return p.after.capacity === null
     ? `Quedarían ${p.after.people} en ${where}`
     : `Quedarían ${p.after.people} de ${p.after.capacity} en ${where}`
-}
-
-/**
- * Para el `onInteractOutside` de un diálogo o popover de Radix: tocar un toast
- * no cuenta como "afuera". El Toaster vive en el body, fuera del contenido del
- * diálogo, así que el pointerdown sobre «Deshacer» (o sobre la X del toast)
- * cerraba la capa de arriba antes de que corriera el click. En el celu la hoja
- * del día tiene el toast encima: tocarlo era cerrar el día.
- */
-export function keepOpenOnToast(event: Event): void {
-  const target = event.target
-  if (target instanceof Element && target.closest('[data-sonner-toaster]')) {
-    event.preventDefault()
-  }
 }
 
 /**
@@ -195,107 +193,106 @@ export function ReservationQuickView({
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent
-        className="max-h-[92dvh] overflow-y-auto sm:max-w-lg"
-        onInteractOutside={keepOpenOnToast}
-      >
+      <DialogContent size="md">
         <DialogHeader>
-          <DialogTitle className="flex items-center justify-between gap-3 font-serif">
-            <span className="truncate">{r.guest_name}</span>
+          <DialogTitle className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="min-w-0 truncate">{r.guest_name}</span>
             <StatusPill status={r.status} />
           </DialogTitle>
         </DialogHeader>
 
-        {editable ? (
-          <QuickEditPanel tenantSlug={tenantSlug} reservation={r} onChanged={onChanged} />
-        ) : null}
-
-        {alerts.length > 0 ? <ServiceAlertChips alerts={alerts} className="pb-1" /> : null}
-
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-          <Field label="Cuándo">
-            {fmtDate(r.reservation_date)}
-            {/* En modo editable la hora de inicio la muestra (y edita) el panel de
-                arriba, así que acá solo se agrega el fin. Sin esto, el dato
-                quedaba invisible justo en el popup que se abre desde la lista. */}
-            {editable ? '' : ` · ${fmtTime(r.reservation_time_local)}`}
-            {r.reservation_end_time_local
-              ? editable
-                ? ` · termina ${fmtTime(r.reservation_end_time_local)}`
-                : ` – ${fmtTime(r.reservation_end_time_local)}`
-              : ''}
-          </Field>
-          {editable ? null : <Field label="Dónde">{placeLabel(r, joinedEventName(r))}</Field>}
-          <Field label="Servicio">{MEAL_TYPE_LABELS[r.meal_type]}</Field>
-          <Field label="Naturaleza">{RESERVATION_KIND_LABELS[r.kind]}</Field>
-          {editable ? null : (
-            <Field label="Personas">
-              <span className="tabular-nums">{guests}</span>
-              <span className="text-[11px] text-muted-foreground">{guestsHint}</span>
-            </Field>
-          )}
-          <Field label="Origen">{ORIGIN_LABELS[r.origin]}</Field>
-          {/* La seña se veía solo entrando a la edición completa; es lo primero
-              que pregunta el dueño cuando mira una reserva. */}
-          <Field label="Seña">
-            {r.deposit_cents > 0 ? (
-              <span className="font-mono tabular-nums">{ARSFormat(r.deposit_cents)}</span>
-            ) : (
-              <span className="text-muted-foreground">Sin seña</span>
-            )}
-          </Field>
-          <Field label="Gestor">
-            {r.primary_manager?.display_name ?? '—'}
-            {r.assistant_manager ? ` + ${r.assistant_manager.display_name}` : ''}
-          </Field>
-          {r.cake_count > 0 || r.champagne_count > 0 ? (
-            // Qué torta va, no cuántas: la hace el bar y la cocina la tiene que
-            // poder leer desde acá sin abrir la edición completa.
-            <Field label="Cumpleaños" wide>
-              <span className="flex flex-wrap items-center gap-1.5">
-                <CakeChip
-                  count={r.cake_count}
-                  option={r.cake_option}
-                  optionId={r.cake_option_id}
-                  detailed
-                />
-                <ChampagneChip count={r.champagne_count} />
-              </span>
-            </Field>
+        <DialogBody className="grid content-start gap-4">
+          {editable ? (
+            <QuickEditPanel tenantSlug={tenantSlug} reservation={r} onChanged={onChanged} />
           ) : null}
-        </dl>
 
-        {r.comments ? (
-          <div
-            className={cn(
-              'rounded-lg p-3',
-              // Destacado: se tiñe el bloque que YA existe en vez de repetir el
-              // comentario arriba. Mostrarlo dos veces en un popup chico es peor
-              // que no destacarlo.
-              r.highlight_comment ? 'border border-warning/50 bg-warning/10' : 'bg-secondary/50',
+          {alerts.length > 0 ? <ServiceAlertChips alerts={alerts} /> : null}
+
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+            <Detail label="Cuándo">
+              {formatIsoDay(r.reservation_date)}
+              {/* En modo editable la hora de inicio la muestra (y edita) el panel de
+                  arriba, así que acá solo se agrega el fin. Sin esto, el dato
+                  quedaba invisible justo en el popup que se abre desde la lista. */}
+              {editable ? '' : ` · ${fmtTime(r.reservation_time_local)}`}
+              {r.reservation_end_time_local
+                ? editable
+                  ? ` · termina ${fmtTime(r.reservation_end_time_local)}`
+                  : ` – ${fmtTime(r.reservation_end_time_local)}`
+                : ''}
+            </Detail>
+            {editable ? null : <Detail label="Dónde">{placeLabel(r, joinedEventName(r))}</Detail>}
+            <Detail label="Servicio">{MEAL_TYPE_LABELS[r.meal_type]}</Detail>
+            <Detail label="Naturaleza">{RESERVATION_KIND_LABELS[r.kind]}</Detail>
+            {editable ? null : (
+              <Detail label="Personas">
+                <span className="tabular-nums">{guests}</span>
+                <span className="type-caption font-normal text-muted-foreground">{guestsHint}</span>
+              </Detail>
             )}
-          >
-            <p className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">
-              {r.highlight_comment ? 'Comentario destacado' : 'Comentario del cliente'}
-            </p>
-            <p className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words text-sm">
-              {r.comments}
-            </p>
+            <Detail label="Origen">{ORIGIN_LABELS[r.origin]}</Detail>
+            {/* La seña se veía solo entrando a la edición completa; es lo primero
+                que pregunta el dueño cuando mira una reserva. */}
+            <Detail label="Seña">
+              {r.deposit_cents > 0 ? (
+                <Amount cents={r.deposit_cents} decimals={0} />
+              ) : (
+                <span className="font-normal text-muted-foreground">Sin seña</span>
+              )}
+            </Detail>
+            <Detail label="Gestor">
+              {r.primary_manager?.display_name ?? '—'}
+              {r.assistant_manager ? ` + ${r.assistant_manager.display_name}` : ''}
+            </Detail>
+            {r.cake_count > 0 || r.champagne_count > 0 ? (
+              // Qué torta va, no cuántas: la hace el bar y la cocina la tiene que
+              // poder leer desde acá sin abrir la edición completa.
+              <Detail label="Cumpleaños" wide>
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <CakeChip
+                    count={r.cake_count}
+                    option={r.cake_option}
+                    optionId={r.cake_option_id}
+                    detailed
+                  />
+                  <ChampagneChip count={r.champagne_count} />
+                </span>
+              </Detail>
+            ) : null}
+          </dl>
+
+          {r.comments ? (
+            <div
+              className={cn(
+                'rounded-lg p-3',
+                // Destacado: se tiñe el bloque que YA existe en vez de repetir el
+                // comentario arriba. Mostrarlo dos veces en un popup chico es peor
+                // que no destacarlo.
+                r.highlight_comment ? 'bg-warning-soft' : 'bg-secondary',
+              )}
+            >
+              <p className="mb-1 type-caption text-muted-foreground">
+                {r.highlight_comment ? 'Comentario destacado' : 'Comentario del cliente'}
+              </p>
+              <p className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words type-body">
+                {r.comments}
+              </p>
+            </div>
+          ) : null}
+
+          <div data-tour="quick-estado">
+            <ReservationStatusControls
+              tenantSlug={tenantSlug}
+              reservation={r}
+              onChanged={onChanged}
+              showActualGuestsEditor={false}
+            />
           </div>
-        ) : null}
+        </DialogBody>
 
-        <div data-tour="quick-estado">
-          <ReservationStatusControls
-            tenantSlug={tenantSlug}
-            reservation={r}
-            onChanged={onChanged}
-            showActualGuestsEditor={false}
-          />
-        </div>
-
-        <DialogFooter className="gap-2 sm:justify-between">
-          <div className="flex gap-2">
-            <Button asChild variant="outline">
+        <DialogFooter className="sm:justify-between">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row">
+            <Button asChild variant="secondary">
               <Link href={fullEditHref ?? editReservationHref(tenantSlug, r.id)}>
                 Edición completa
               </Link>
@@ -306,6 +303,7 @@ export function ReservationQuickView({
                 phone={r.customer?.phone ?? r.guest_phone ?? ''}
                 customerId={r.customer?.id}
                 name={r.guest_name}
+                size="md"
               />
             ) : null}
           </div>
@@ -356,6 +354,7 @@ function QuickEditPanel({
   reservation: ReservationWithJoins
   onChanged?: () => void
 }) {
+  const guestsLabelId = useId()
   const isPost = r.status === 'arrived' || r.status === 'seated' || r.status === 'closed'
   const serverGuests = isPost ? (r.actual_guests ?? r.estimated_guests) : r.estimated_guests
   const serverZone = r.zone
@@ -707,130 +706,133 @@ function QuickEditPanel({
   const timeArmed = draftProjection?.needsConfirm === true
 
   return (
-    <section data-tour="quick-personas" className="rounded-xl border border-border/70 bg-card p-4">
-      <header className="mb-2 flex items-center justify-between">
-        <span className="text-xs uppercase tracking-wide text-muted-foreground">
+    <section
+      data-tour="quick-personas"
+      className="grid gap-3 rounded-xl border border-border bg-card p-4"
+    >
+      <header className="flex items-center justify-between gap-2">
+        <span id={guestsLabelId} className="type-label text-muted-foreground">
           {isPost ? 'Personas reales' : 'Personas'}
         </span>
-        <span aria-live="polite" className="text-[11px] text-muted-foreground">
+        <span aria-live="polite" className="type-caption text-muted-foreground">
           {pending ? 'Guardando…' : ''}
         </span>
       </header>
 
-      <div className="flex items-center justify-center gap-5">
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="size-11 rounded-full"
-          aria-label="Una persona menos"
-          disabled={guests <= 1}
-          onClick={() => bump(-1)}
-        >
-          <Minus className="size-5" />
-        </Button>
-        <div className="min-w-16 text-center">
-          <div className="font-mono text-4xl font-semibold leading-none tabular-nums">{guests}</div>
-          {isPost && guests !== r.estimated_guests ? (
-            <div className="mt-1 text-[11px] text-muted-foreground tabular-nums">
-              est. {r.estimated_guests}
-            </div>
-          ) : null}
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="size-11 rounded-full"
-          aria-label="Una persona más"
-          disabled={guests >= 99}
-          onClick={() => bump(1)}
-        >
-          <Plus className="size-5" />
-        </Button>
+      <div className="grid justify-items-center gap-1">
+        {/* El NumberField del kit: − y + grandes para el dedo, y también se
+            puede tipear (20 → 18) o usar las flechas. Cada cambio pasa por
+            `bump`, que proyecta el cupo y guarda con debounce. */}
+        <NumberField
+          value={guests}
+          onValueChange={(n) => {
+            if (n !== null) bump(n - guestsRef.current)
+          }}
+          min={1}
+          max={99}
+          size="lg"
+          suffix={guests === 1 ? 'persona' : 'personas'}
+          aria-labelledby={guestsLabelId}
+          incrementLabel="Una persona más"
+          decrementLabel="Una persona menos"
+          className="w-60"
+        />
+        {isPost && guests !== r.estimated_guests ? (
+          <span className="type-caption tabular-nums text-muted-foreground">
+            reservaron {r.estimated_guests}
+          </span>
+        ) : null}
       </div>
 
       {/* Región viva siempre montada: el lector de pantalla anuncia el aviso
-          apenas aparece, sin mover el foco del stepper. */}
+          apenas aparece, sin mover el foco del contador. */}
       <div aria-live="polite">
         {guestsHeld ? (
-          <div className="mt-3 space-y-2 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-foreground">
-            <p className="font-medium text-destructive">
-              {projection ? pendingGuestsLine(projection) : 'Te pasás del cupo del servicio'}
-            </p>
+          <Callout
+            tone="danger"
+            title={projection ? pendingGuestsLine(projection) : 'Te pasás del cupo del servicio'}
+            action={
+              <>
+                <Button type="button" size="sm" onClick={confirmHeldGuests}>
+                  Guardar igual
+                </Button>
+                <Button type="button" variant="secondary" size="sm" onClick={undoHeldGuests}>
+                  Deshacer
+                </Button>
+              </>
+            }
+          >
             {overProjection ? (
               <OverCapacityDetail projection={overProjection} countInHeadline />
             ) : null}
-            <p className="text-xs text-muted-foreground">Todavía no se guardó.</p>
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" className="h-10" onClick={confirmHeldGuests}>
-                Guardar igual
-              </Button>
-              <Button type="button" variant="outline" className="h-10" onClick={undoHeldGuests}>
-                Deshacer
-              </Button>
-            </div>
-          </div>
+            <p>Todavía no se guardó.</p>
+          </Callout>
         ) : overProjection ? (
-          <OverCapacityNotice projection={overProjection} className="mt-3" />
+          <OverCapacityNotice projection={overProjection} />
         ) : null}
       </div>
       {isPost && r.actual_guests === null ? (
-        <p className="mt-2 text-center text-[11px] text-warning-text">
+        <p className="text-center type-caption text-warning-text">
           Sin cantidad real cargada — la comisión se calcula sobre {r.estimated_guests} estimadas.
         </p>
       ) : null}
 
-      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
+      <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
         <Popover open={timeOpen} onOpenChange={onTimeOpenChange}>
           <PopoverTrigger asChild>
             <Button
               type="button"
-              variant="outline"
-              className="h-11 gap-2 rounded-full px-4"
+              variant="secondary"
+              className="rounded-full"
               aria-label={`Cambiar hora (actual ${time})`}
               // Con personas frenadas esperando "Guardar igual", primero se
               // resuelve eso: si no, la hora saldría con un número sin confirmar.
               disabled={guestsHeld}
             >
-              <Clock className="size-4 text-muted-foreground" />
-              <span className="font-mono text-sm tabular-nums">{time}</span>
-              <ChevronDown className="size-3.5 text-muted-foreground" />
+              <Clock aria-hidden className="text-muted-foreground" />
+              <span className="tabular-nums">{time}</span>
+              <ChevronDown aria-hidden className="size-3.5 text-muted-foreground" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent align="start" className="w-72 space-y-2">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              Hora de la reserva
-            </p>
+          <PopoverContent align="start" className="grid gap-3">
+            <PopoverHeader>
+              <PopoverTitle>Hora de la reserva</PopoverTitle>
+            </PopoverHeader>
             <div className="flex items-center gap-2">
-              <Input
-                type="time"
+              <TimeField
                 value={timeDraft}
-                onChange={(e) => setTimeDraft(e.target.value)}
-                className="h-11 flex-1 tabular-nums"
+                onValueChange={(t) => setTimeDraft(t ?? '')}
+                // Enter guarda, igual que el botón de al lado.
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    saveTime()
+                  }
+                }}
                 aria-label="Nueva hora"
+                className="flex-1"
               />
-              {/* Un solo botón que cambia de cara: si se desmontara el ✓ para
-                  montar "Guardar igual", el foco del teclado se perdería justo
-                  cuando hay que confirmar. */}
+              {/* Un solo botón que cambia de cara: si se desmontara el tilde
+                  para montar "Guardar igual", el foco del teclado se perdería
+                  justo cuando hay que confirmar. */}
               <Button
                 type="button"
-                size={timeArmed ? 'default' : 'icon'}
-                className={timeArmed ? 'h-11 shrink-0 px-3' : 'size-11 shrink-0'}
+                size={timeArmed ? 'md' : 'icon'}
+                className="shrink-0"
                 aria-label={timeArmed ? undefined : 'Guardar hora'}
                 onClick={saveTime}
               >
-                {timeArmed ? 'Guardar igual' : <Check className="size-5" />}
+                {timeArmed ? 'Guardar igual' : <Check aria-hidden />}
               </Button>
             </div>
-            <div aria-live="polite" className="space-y-2">
+            <div aria-live="polite" className="grid gap-2">
               {draftCrossesTo ? (
-                <p className="text-xs text-muted-foreground">
+                <p className="type-small text-muted-foreground">
                   Pasa a {SEGMENT_WITH_ARTICLE[draftCrossesTo]}
                 </p>
               ) : null}
               {timeArmed && draftProjection ? (
-                <OverCapacityNotice projection={draftProjection} compact />
+                <OverCapacityNotice projection={draftProjection} />
               ) : null}
             </div>
           </PopoverContent>
@@ -842,41 +844,50 @@ function QuickEditPanel({
           <PopoverTrigger asChild>
             <Button
               type="button"
-              variant="outline"
-              className="h-11 max-w-full gap-2 rounded-full px-4"
+              variant="secondary"
+              className="max-w-full rounded-full"
               aria-label={`${hasEvent ? 'Cambiar dónde se sientan' : 'Cambiar zona'} (actual ${zoneText})`}
               disabled={guestsHeld}
             >
               {hasEvent ? (
-                <Sparkles aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                <Sparkles aria-hidden className="text-muted-foreground" />
               ) : (
-                <MapPin aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                <MapPin aria-hidden className="text-muted-foreground" />
               )}
-              <span className="truncate text-sm">{zoneText}</span>
-              <ChevronDown aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate">{zoneText}</span>
+              <ChevronDown aria-hidden className="size-3.5 text-muted-foreground" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent align="start" className="w-64 space-y-1.5">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              {hasEvent ? EVENT_FLOOR_QUESTION : 'Zona'}
-            </p>
-            {hasEvent ? (
-              <p className="text-[11px] leading-snug text-muted-foreground">
-                Sigue en {eventName ?? 'el evento'}: esto solo dice en qué planta.
-              </p>
-            ) : null}
-            {zoneChoices.map((c) => (
-              <Button
-                key={c.zone}
-                type="button"
-                variant={zone === c.zone ? 'default' : 'outline'}
-                aria-pressed={zone === c.zone}
-                className="h-11 w-full justify-start"
-                onClick={() => saveZone(c.zone)}
-              >
-                {c.label}
-              </Button>
-            ))}
+          <PopoverContent align="start" size="sm" className="grid gap-2">
+            <PopoverHeader>
+              <PopoverTitle>{hasEvent ? EVENT_FLOOR_QUESTION : 'Zona'}</PopoverTitle>
+              {hasEvent ? (
+                <PopoverDescription>
+                  Sigue en {eventName ?? 'el evento'}: esto solo dice en qué planta.
+                </PopoverDescription>
+              ) : null}
+            </PopoverHeader>
+            <div className="grid gap-1">
+              {zoneChoices.map((c) => {
+                const selected = zone === c.zone
+                return (
+                  <Button
+                    key={c.zone}
+                    type="button"
+                    variant="ghost"
+                    aria-pressed={selected}
+                    className={cn(
+                      'w-full justify-between text-foreground',
+                      selected && 'bg-selected font-semibold',
+                    )}
+                    onClick={() => saveZone(c.zone)}
+                  >
+                    {c.label}
+                    {selected ? <Check aria-hidden className="text-primary" /> : null}
+                  </Button>
+                )
+              })}
+            </div>
           </PopoverContent>
         </Popover>
       </div>
@@ -917,29 +928,21 @@ function OverCapacityDetail({
  */
 function OverCapacityNotice({
   projection,
-  compact = false,
   className,
 }: {
   projection: SegmentProjection
-  compact?: boolean
   className?: string
 }) {
   const { title } = overCapacityConfirmCopy(projection)
   return (
-    <div
-      className={cn(
-        'space-y-1 rounded-lg border border-destructive/50 bg-destructive/10 text-foreground',
-        compact ? 'p-2 text-xs' : 'p-3 text-sm',
-        className,
-      )}
-    >
-      <p className="font-medium text-destructive">{title}</p>
+    <Callout tone="danger" title={title} className={className}>
       <OverCapacityDetail projection={projection} />
-    </div>
+    </Callout>
   )
 }
 
-function Field({
+/** Un dato de la reserva: rótulo chico arriba, valor abajo. */
+function Detail({
   label,
   children,
   wide = false,
@@ -950,9 +953,9 @@ function Field({
   wide?: boolean
 }) {
   return (
-    <div className={cn('space-y-0.5', wide && 'col-span-2')}>
-      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className="font-medium">{children}</dd>
+    <div className={cn('grid content-start gap-0.5', wide && 'col-span-2')}>
+      <dt className="type-caption text-muted-foreground">{label}</dt>
+      <dd className="type-body font-medium">{children}</dd>
     </div>
   )
 }

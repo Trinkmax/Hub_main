@@ -1,10 +1,13 @@
 'use client'
 
-import { Filter, X } from 'lucide-react'
+import { SlidersHorizontal, X } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, useTransition } from 'react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { FilterBar, FilterSearch } from '@/components/ui/filter-bar'
+import { DataTableToolbar } from '@/components/ui/data-table'
+import { Field } from '@/components/ui/field'
+import { SearchField } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -14,6 +17,7 @@ import {
 } from '@/components/ui/select'
 import {
   Sheet,
+  SheetBody,
   SheetContent,
   SheetDescription,
   SheetHeader,
@@ -22,6 +26,7 @@ import {
 } from '@/components/ui/sheet'
 import { UNPLACED_LABEL } from '@/lib/salon/event-floor'
 import { STATUS_LABELS, ZONE_LABELS } from '@/lib/salon/types'
+import { CommitDatePicker } from './commit-date-picker'
 
 type Defaults = {
   q?: string
@@ -36,6 +41,11 @@ type Defaults = {
   dateTo?: string
 }
 
+/**
+ * La barra de filtros de la lista (`DataTableToolbar` del kit): buscador, estado
+ * y zona a la vista, y gestor y fechas en «Más filtros» (una hoja lateral).
+ * Todo vive en la URL: el link se comparte por WhatsApp y muestra lo mismo.
+ */
 export function ReservationsFilters({
   tenantSlug,
   managers,
@@ -81,18 +91,31 @@ export function ReservationsFilters({
       defaults.dateFrom ||
       defaults.dateTo,
   )
+  // Lo que está escondido en la hoja: el botón dice cuántos hay puestos, si no
+  // un filtro activo queda invisible y la lista "pierde" reservas sin razón.
+  const advancedCount = [defaults.managerId, defaults.dateFrom, defaults.dateTo].filter(
+    Boolean,
+  ).length
 
   return (
-    <FilterBar className="flex-wrap">
-      <form action={handleSearchSubmit} className="flex-1 min-w-[220px]">
-        <FilterSearch name="q" placeholder="Buscar por nombre…" defaultValue={defaults.q} />
+    <DataTableToolbar aria-busy={pending || undefined}>
+      <form action={handleSearchSubmit}>
+        <SearchField
+          name="q"
+          placeholder="Buscar por nombre…"
+          aria-label="Buscar por nombre del cliente"
+          defaultValue={defaults.q}
+          onClear={() => {
+            if (defaults.q) pushQuery({ q: null })
+          }}
+        />
       </form>
 
       <Select
         value={defaults.status ?? 'all'}
         onValueChange={(v) => pushQuery({ status: v === 'all' ? null : v })}
       >
-        <SelectTrigger className="h-9 w-[140px]">
+        <SelectTrigger aria-label="Estado" className="w-40">
           <SelectValue placeholder="Estado" />
         </SelectTrigger>
         <SelectContent>
@@ -109,7 +132,7 @@ export function ReservationsFilters({
         value={defaults.zone ?? 'all'}
         onValueChange={(v) => pushQuery({ zone: v === 'all' ? null : v })}
       >
-        <SelectTrigger className="h-9 w-[160px]">
+        <SelectTrigger aria-label="Zona" className="w-40">
           <SelectValue placeholder="Zona" />
         </SelectTrigger>
         <SelectContent>
@@ -124,21 +147,24 @@ export function ReservationsFilters({
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetTrigger asChild>
-          <Button variant="outline" size="sm" className="gap-2">
-            <Filter className="size-4" />
-            Más
+          <Button variant="secondary">
+            <SlidersHorizontal aria-hidden />
+            Más filtros
+            {advancedCount > 0 ? (
+              <Badge tone="brand" appearance="solid" className="tabular-nums">
+                {advancedCount}
+                <span className="sr-only">{advancedCount === 1 ? 'activo' : 'activos'}</span>
+              </Badge>
+            ) : null}
           </Button>
         </SheetTrigger>
         <SheetContent>
           <SheetHeader>
-            <SheetTitle>Filtros avanzados</SheetTitle>
-            <SheetDescription>Acotá por gestor o rango de fechas.</SheetDescription>
+            <SheetTitle>Más filtros</SheetTitle>
+            <SheetDescription>Acotá por gestor o por un rango de fechas.</SheetDescription>
           </SheetHeader>
-          <div className="space-y-4 px-4 py-6">
-            <div className="block text-sm">
-              <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Gestor
-              </span>
+          <SheetBody className="grid content-start gap-4">
+            <Field label="Gestor">
               <Select
                 value={defaults.managerId ?? 'all'}
                 onValueChange={(v) => {
@@ -146,7 +172,7 @@ export function ReservationsFilters({
                   setSheetOpen(false)
                 }}
               >
-                <SelectTrigger className="h-9 w-full">
+                <SelectTrigger>
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
@@ -158,45 +184,31 @@ export function ReservationsFilters({
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div className="block text-sm">
-              <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Desde
-              </span>
-              <input
-                type="date"
-                defaultValue={defaults.dateFrom}
-                onChange={(e) => pushQuery({ from: e.target.value || null })}
-                className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
+            </Field>
+            <Field label="Desde">
+              <CommitDatePicker
+                defaultValue={defaults.dateFrom ?? null}
+                clearable
+                onCommit={(iso) => pushQuery({ from: iso })}
               />
-            </div>
-            <div className="block text-sm">
-              <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Hasta
-              </span>
-              <input
-                type="date"
-                defaultValue={defaults.dateTo}
-                onChange={(e) => pushQuery({ to: e.target.value || null })}
-                className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
+            </Field>
+            <Field label="Hasta">
+              <CommitDatePicker
+                defaultValue={defaults.dateTo ?? null}
+                clearable
+                onCommit={(iso) => pushQuery({ to: iso })}
               />
-            </div>
-          </div>
+            </Field>
+          </SheetBody>
         </SheetContent>
       </Sheet>
 
       {hasFilters ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="gap-1.5 text-muted-foreground"
-          onClick={clearAll}
-          disabled={pending}
-        >
-          <X className="size-4" />
+        <Button variant="ghost" onClick={clearAll} disabled={pending}>
+          <X aria-hidden />
           Limpiar
         </Button>
       ) : null}
-    </FilterBar>
+    </DataTableToolbar>
   )
 }

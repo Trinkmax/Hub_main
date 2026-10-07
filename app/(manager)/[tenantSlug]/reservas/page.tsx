@@ -1,33 +1,26 @@
-import {
-  Cake,
-  CalendarCheck,
-  CalendarPlus,
-  Download,
-  MonitorSmartphone,
-  PartyPopper,
-} from 'lucide-react'
+import { CalendarCheck, CalendarPlus, MonitorSmartphone, PartyPopper } from 'lucide-react'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { z } from 'zod'
 import { DayHighlights } from '@/components/reservations/day-highlights'
+import { dayLabel } from '@/components/reservations/day-labels'
 import { RollCallDialog } from '@/components/reservations/roll-call-dialog'
 import { Button } from '@/components/ui/button'
-import { EmptyState } from '@/components/ui/empty-state'
+import { Callout } from '@/components/ui/callout'
+import { ExportButton } from '@/components/ui/data-table'
+import { KPI, KPIGroup } from '@/components/ui/kpi'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
+import { ListEmptyState } from '@/components/ui/page-templates'
+import { formatRange } from '@/lib/dates/format'
+import { formatNumber } from '@/lib/format/number-kind'
 import {
   editReservationHref,
   newReservationHref,
   reservasExportHref,
   reservasListHref,
 } from '@/lib/salon/calendar-links'
-import {
-  detectPreset,
-  formatDayLabel,
-  thisMonth,
-  thisWeek,
-  todayInCordoba,
-} from '@/lib/salon/date-presets'
+import { detectPreset, thisMonth, thisWeek, todayInCordoba } from '@/lib/salon/date-presets'
 import { activeDaySegments, counterDayLabel, eventUsedById } from '@/lib/salon/day-counter'
 import { buildDayHighlights } from '@/lib/salon/day-highlights'
 import { partySizeBucketSchema, tallyPartySizes, totalPartySizes } from '@/lib/salon/party-size'
@@ -399,54 +392,69 @@ export default async function ReservasPage({
     managerId,
   })
 
+  // «Limpiar filtros» del vacío: saca la búsqueda y los filtros pero se queda
+  // en el día o el rango que se estaba mirando (el «Limpiar» de la barra, en
+  // cambio, vuelve a la lista de hoy, como siempre).
+  const clearQs = new URLSearchParams()
+  if (rangeMode) {
+    if (fromParam) clearQs.set('from', fromParam)
+    if (toParam) clearQs.set('to', toParam)
+  } else if (day && day !== today) {
+    clearQs.set('day', day)
+  }
+  const clearFiltersHref = `/${tenantSlug}/reservas${
+    clearQs.toString() ? `?${clearQs.toString()}` : ''
+  }`
+
+  const description = [
+    `${formatNumber(total)} ${total === 1 ? 'reserva activa' : 'reservas activas'}`,
+    cancelled && cancelled.total > 0
+      ? `${formatNumber(cancelled.total)} cancelada${cancelled.total === 1 ? '' : 's'}`
+      : null,
+    totalPages > 1 ? `página ${page} de ${totalPages}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
   return (
     <PageShell>
       <PageHeader
-        eyebrow="Operaciones"
         title="Reservas"
-        description={`${total.toLocaleString('es-AR')} ${total === 1 ? 'reserva activa' : 'reservas activas'}${
-          cancelled && cancelled.total > 0
-            ? ` · ${cancelled.total} cancelada${cancelled.total === 1 ? '' : 's'}`
-            : ''
-        } · página ${page} de ${totalPages}`}
+        description={description}
         actions={
-          <div className="flex flex-wrap gap-2">
+          <>
             <ReservasTourButton role={access.role} />
             {/* Solo en modo día: "pasar lista" de un mes entero no es un cierre
                 de noche, es una migración de datos. */}
             {day && canRecordAttendance ? (
-              <RollCallDialog tenantSlug={tenantSlug} day={day} dayLabel={formatDayLabel(day)} />
+              <RollCallDialog tenantSlug={tenantSlug} day={day} dayLabel={dayLabel(day)} />
             ) : null}
-            <Button asChild variant="outline" className="gap-2">
-              {/* <a> pelado y no <Link>: es una descarga, no una navegación. */}
-              <a href={exportHref} download title="Descargar planilla (Excel / Sheets)">
-                <Download className="size-4" />
-                Exportar
-              </a>
-            </Button>
-            <Button asChild variant="outline" className="gap-2">
-              <Link
+            <ExportButton href={exportHref} title="Descargar planilla (Excel / Sheets)" />
+            <Button asChild variant="secondary">
+              {/* <a> y pestaña nueva: el panel operativo es del salón (otro
+                  tema), se abre siempre con recarga. */}
+              <a
                 href={`/${tenantSlug}/salon/reservas-operativo`}
                 target="_blank"
                 rel="noopener"
                 data-tour="reservas-operativo-link"
               >
-                <MonitorSmartphone className="size-4" />
+                <MonitorSmartphone aria-hidden />
                 Panel operativo
-              </Link>
+              </a>
             </Button>
-            <Button asChild className="gap-2">
+            <Button asChild>
               {/* Sin ?volver: al guardar vuelve a esta lista, en el día de la reserva. */}
               <Link href={newReservationHref(tenantSlug)} data-tour="reservas-nueva">
-                <CalendarPlus className="size-4" />
+                <CalendarPlus aria-hidden />
                 Nueva reserva
               </Link>
             </Button>
-          </div>
+          </>
         }
       />
 
-      <div className="space-y-3" data-tour="reservas-dia">
+      <div className="flex flex-col gap-4" data-tour="reservas-dia">
         <ReservationRangeChips
           tenantSlug={tenantSlug}
           active={activePreset}
@@ -457,48 +465,45 @@ export default async function ReservasPage({
         />
 
         {rangeMode ? (
-          <div className="card-hairline flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border/70 bg-card/60 px-4 py-2.5 text-sm">
-            <span className="font-medium">
-              {fromParam ? formatDayLabel(fromParam) : '…'} →{' '}
-              {toParam ? formatDayLabel(toParam) : '…'}
-            </span>
+          <section aria-label="Totales del período" className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <p className="type-label text-foreground">
+                {fromParam && toParam
+                  ? formatRange(fromParam, toParam)
+                  : fromParam
+                    ? `Desde el ${dayLabel(fromParam)}`
+                    : toParam
+                      ? `Hasta el ${dayLabel(toParam)}`
+                      : ''}
+              </p>
+              <Button asChild variant="link" size="sm">
+                <Link href={reservasListHref(tenantSlug)}>Volver a la vista por día</Link>
+              </Button>
+            </div>
             {rangeTotals ? (
-              <span className="font-mono text-sm tabular-nums text-muted-foreground">
-                {/* "activas" no es adorno: el header de arriba cuenta TODAS las filas
-                    de la lista (incluidas canceladas y no_show) y este total las
+              <KPIGroup>
+                {/* "activas" no es adorno: el encabezado cuenta TODAS las filas
+                    de la lista (incluidas las que no vinieron) y este total las
                     excluye. Sin la palabra, el dueño lee dos totales de reservas
                     distintos en la misma pantalla y no sabe cuál creer. */}
-                {rangeTotals.reservations}{' '}
-                {rangeTotals.reservations === 1 ? 'reserva activa' : 'reservas activas'} ·{' '}
-                {rangeTotals.guests} cubiertos
-                {rangeTotals.eventos > 0
-                  ? ` (${rangeTotals.salon} salón · ${rangeTotals.eventos} eventos)`
-                  : null}
-              </span>
+                <KPI label="Reservas activas" value={formatNumber(rangeTotals.reservations)} />
+                <KPI
+                  label="Cubiertos"
+                  value={formatNumber(rangeTotals.guests)}
+                  hint={
+                    rangeTotals.eventos > 0
+                      ? `${formatNumber(rangeTotals.salon)} salón · ${formatNumber(rangeTotals.eventos)} eventos`
+                      : undefined
+                  }
+                />
+                {/* Lo que hay que PRODUCIR en el período. Una torta se encarga con
+                    días: verla recién al abrir el día correcto llega tarde. */}
+                {/* "cumpleaños" es invariable en singular y plural. */}
+                <KPI label="Cumpleaños" value={formatNumber(rangeTotals.birthdays)} />
+                <KPI label="Tortas" value={formatNumber(rangeTotals.cakes)} />
+              </KPIGroup>
             ) : null}
-            {/* Lo que hay que PRODUCIR en el período. Una torta se encarga con
-                días: verla recién al abrir el día correcto llega tarde. */}
-            {rangeTotals && (rangeTotals.cakes > 0 || rangeTotals.birthdays > 0) ? (
-              <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-                {rangeTotals.birthdays > 0 ? (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] font-medium leading-tight text-primary">
-                    <PartyPopper className="size-3" aria-hidden />
-                    {/* "cumpleaños" es invariable en singular y plural. */}
-                    {rangeTotals.birthdays} cumpleaños
-                  </span>
-                ) : null}
-                {rangeTotals.cakes > 0 ? (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] font-medium leading-tight text-primary">
-                    <Cake className="size-3" aria-hidden />
-                    {rangeTotals.cakes} {rangeTotals.cakes === 1 ? 'torta' : 'tortas'}
-                  </span>
-                ) : null}
-              </span>
-            ) : null}
-            <Button asChild variant="ghost" size="sm" className="ml-auto">
-              <Link href={reservasListHref(tenantSlug)}>Volver a vista por día</Link>
-            </Button>
-          </div>
+          </section>
         ) : day ? (
           <DayNavigator
             tenantSlug={tenantSlug}
@@ -544,93 +549,92 @@ export default async function ReservasPage({
       ) : null}
 
       {nueva ? (
-        // Tokens de la casa (success) y no emerald crudo: respetan el tema
-        // oscuro y la marca.
-        <div
-          role="status"
-          className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-success/30 bg-success/10 px-4 py-3 text-sm"
-        >
-          <PartyPopper className="size-4 shrink-0 text-success" aria-hidden />
-          <span className="text-foreground">
-            Reserva de <strong>{nueva.guest_name}</strong> creada para el{' '}
-            {formatDayLabel(nueva.reservation_date)}.
-          </span>
-          <div className="ml-auto flex gap-2">
-            <Button asChild variant="outline" size="sm">
-              <Link href={editReservationHref(tenantSlug, nueva.id)}>Abrir reserva</Link>
-            </Button>
-            <Button asChild variant="ghost" size="sm">
-              <Link href={dismissNuevaHref}>Listo</Link>
-            </Button>
-          </div>
-        </div>
+        <Callout
+          tone="success"
+          icon={PartyPopper}
+          announce="polite"
+          title={`Reserva de ${nueva.guest_name} creada para el ${dayLabel(nueva.reservation_date)}.`}
+          action={
+            <>
+              <Button asChild variant="secondary" size="sm">
+                <Link href={editReservationHref(tenantSlug, nueva.id)}>Abrir reserva</Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm">
+                <Link href={dismissNuevaHref}>Listo</Link>
+              </Button>
+            </>
+          }
+        />
       ) : null}
 
-      <div data-tour="reservas-filtros">
-        <ReservationsFilters
-          tenantSlug={tenantSlug}
-          managers={managers.map((m) => ({ id: m.id, display_name: m.display_name }))}
-          defaults={{
-            q,
-            status,
-            zone,
-            mealType,
-            partySize,
-            managerId,
-            dateFrom: fromParam,
-            dateTo: toParam,
-          }}
-        />
-      </div>
+      <div className="flex min-w-0 flex-col gap-3">
+        <div data-tour="reservas-filtros">
+          <ReservationsFilters
+            tenantSlug={tenantSlug}
+            managers={managers.map((m) => ({ id: m.id, display_name: m.display_name }))}
+            defaults={{
+              q,
+              status,
+              zone,
+              mealType,
+              partySize,
+              managerId,
+              dateFrom: fromParam,
+              dateTo: toParam,
+            }}
+          />
+        </div>
 
-      {rows.length === 0 ? (
-        <EmptyState
-          icon={CalendarCheck}
-          title={
-            hasFilters
-              ? 'Sin resultados'
-              : rangeMode
+        {rows.length === 0 ? (
+          <ListEmptyState
+            size="md"
+            filtered={hasFilters}
+            clearHref={clearFiltersHref}
+            icon={CalendarCheck}
+            filteredTitle="No hay reservas con estos filtros"
+            filteredDescription="Probá con otra búsqueda o limpiá los filtros para ver todas las de este período."
+            title={
+              rangeMode
                 ? 'No hay reservas activas en este período'
                 : cancelled && cancelled.total > 0
                   ? 'Todas canceladas'
                   : 'No hay reservas este día'
-          }
-          description={
-            hasFilters
-              ? 'Probá cambiar los filtros o limpiar todo para ver toda la lista.'
-              : rangeMode
+            }
+            description={
+              rangeMode
                 ? 'Probá con otro período (Este mes) o cargá una reserva nueva.'
                 : cancelled && cancelled.total > 0
                   ? // Hay reservas, pero todas canceladas: decir "no hay
                     // ninguna" sería mentira y mandaría a buscar un bug.
                     'Las reservas de este día están todas canceladas — las ves abajo. Movete de día con las flechas o cargá una nueva.'
                   : 'No hay reservas cargadas para esta fecha. Movete de día con las flechas, mirá la semana completa arriba, o cargá una nueva.'
-          }
-          action={
-            <Button asChild className="gap-2">
-              <Link href={newReservationHref(tenantSlug, day ? { date: day } : {})}>
-                <CalendarPlus className="size-4" />
-                Crear reserva
-              </Link>
-            </Button>
-          }
-        />
-      ) : (
-        <div data-tour="reservas-lista">
-          <ReservationsTable
-            tenantSlug={tenantSlug}
-            rows={rows}
-            canRecordAttendance={canRecordAttendance}
-            today={today}
-            page={page}
-            totalPages={totalPages}
-            totalCount={total}
-            searchParams={sp}
-            groupByDay={rangeMode}
-            highlightId={nueva?.id}
+            }
+            action={
+              <Button asChild>
+                <Link href={newReservationHref(tenantSlug, day ? { date: day } : {})}>
+                  <CalendarPlus aria-hidden />
+                  Cargar reserva
+                </Link>
+              </Button>
+            }
           />
-        </div>
-      )}
+        ) : (
+          <div data-tour="reservas-lista">
+            <ReservationsTable
+              tenantSlug={tenantSlug}
+              rows={rows}
+              canRecordAttendance={canRecordAttendance}
+              today={today}
+              page={page}
+              pageSize={pageSize}
+              totalCount={total}
+              searchParams={sp}
+              groupByDay={rangeMode}
+              highlightId={nueva?.id}
+            />
+          </div>
+        )}
+      </div>
 
       {/* Al pie y colapsado: existe (alguien va a preguntar "¿esta no había
           reservado?") pero cuesta un toque llegar, así que ya no se confunde

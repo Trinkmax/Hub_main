@@ -1,11 +1,13 @@
-import { ArrowLeft } from 'lucide-react'
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { dayLabel } from '@/components/reservations/day-labels'
 import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
+import { StatusPill } from '@/components/reservations/status-pill'
+import { Callout } from '@/components/ui/callout'
 import { PageHeader } from '@/components/ui/page-header'
+import { DetailTemplate } from '@/components/ui/page-templates'
 import { resolveReservationAlerts } from '@/lib/salon/alerts'
 import { type ReservationReturnTo, reservationBackLink } from '@/lib/salon/calendar-links'
-import { formatDayLabel, todayInCordoba } from '@/lib/salon/date-presets'
+import { todayInCordoba } from '@/lib/salon/date-presets'
 import { timeRangeLabel } from '@/lib/salon/format'
 import {
   getBonusRule,
@@ -126,92 +128,93 @@ export default async function ReservaDetailPage({
     focusId: id,
   })
 
-  return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
-      <PageHeader
-        eyebrow={
-          <Link
-            href={back.href}
-            className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="size-3.5" />
-            {back.label}
-          </Link>
-        }
-        title={reservation.guest_name}
-        description={`${formatDayLabel(reservation.reservation_date)} · ${timeRangeLabel(reservation.reservation_time_local, reservation.reservation_end_time_local)} · ${reservation.estimated_guests} personas`}
-      />
+  const alerts = resolveReservationAlerts(
+    reservation.service_alerts,
+    reservation.customer?.service_alerts,
+  )
+  const highlighted =
+    reservation.highlight_comment && reservation.comments ? reservation.comments : null
 
-      {/* Avisos arriba del fold: es la pantalla donde el encargado confirma la
-          reserva por teléfono, y no puede tener que bajar para enterarse. */}
-      {(() => {
-        const alerts = resolveReservationAlerts(
-          reservation.service_alerts,
-          reservation.customer?.service_alerts,
-        )
-        if (alerts.length === 0 && !(reservation.highlight_comment && reservation.comments)) {
-          return null
-        }
-        return (
-          <div className="space-y-2">
+  return (
+    <DetailTemplate
+      width="comfortable"
+      header={
+        <PageHeader
+          back={{ href: back.href, label: returnTo === 'calendario' ? 'Calendario' : 'Reservas' }}
+          title={reservation.guest_name}
+          meta={[
+            dayLabel(reservation.reservation_date),
+            timeRangeLabel(
+              reservation.reservation_time_local,
+              reservation.reservation_end_time_local,
+            ),
+            `${reservation.estimated_guests} ${reservation.estimated_guests === 1 ? 'persona' : 'personas'}`,
+            <StatusPill key="estado" status={reservation.status} />,
+          ]}
+        />
+      }
+      // Avisos arriba del fold: es la pantalla donde el encargado confirma la
+      // reserva por teléfono, y no puede tener que bajar para enterarse.
+      notice={
+        alerts.length > 0 || highlighted ? (
+          <div className="grid gap-2">
             <ServiceAlertChips alerts={alerts} />
-            {reservation.highlight_comment && reservation.comments ? (
-              <p className="rounded-lg border border-warning/50 bg-warning/10 px-3 py-2 text-sm leading-snug text-foreground">
-                {reservation.comments}
-              </p>
+            {highlighted ? (
+              <Callout tone="warning" title="Comentario destacado">
+                <span className="whitespace-pre-wrap break-words">{highlighted}</span>
+              </Callout>
             ) : null}
           </div>
-        )
-      })()}
-
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-        <ReservationForm
-          mode="edit"
-          tenantSlug={tenantSlug}
-          returnTo={returnTo}
-          initialDate={reservation.reservation_date}
-          today={todayInCordoba()}
-          initialSnapshot={snapshot}
-          reservationStatus={reservation.status}
-          managers={managers}
-          templates={templates}
-          initialEventsForDate={eventsForDate}
-          cakeOptions={cakeOptions.filter((c) => c.active || c.id === reservation?.cake_option_id)}
-          canManageCakes={access.role === 'owner'}
-          rateTiers={tiers}
-          bonusPerGuestCents={bonus?.bonus_per_guest_cents ?? 0}
-          linkedManagerId={linkedManager?.id ?? null}
-          canManageManagers={access.role === 'owner'}
-          reservationId={reservation.id}
-          customerServiceAlerts={reservation.customer?.service_alerts ?? []}
-          initialValues={{
-            customer_id: reservation.customer_id ?? undefined,
-            guest_name: reservation.guest_name,
-            guest_phone: reservation.guest_phone ?? undefined,
-            guest_email: reservation.guest_email ?? undefined,
-            kind: reservation.kind,
-            meal_type: reservation.meal_type,
-            reservation_date: reservation.reservation_date,
-            reservation_time_local: reservation.reservation_time_local,
-            reservation_end_time_local: reservation.reservation_end_time_local?.slice(0, 5) ?? '',
-            zone: reservation.zone,
-            scheduled_event_id: reservation.scheduled_event_id ?? undefined,
-            estimated_guests: reservation.estimated_guests,
-            cake_count: reservation.cake_count,
-            cake_option_id: reservation.cake_option_id,
-            champagne_count: reservation.champagne_count,
-            deposit_cents: reservation.deposit_cents,
-            origin: reservation.origin,
-            primary_manager_id: reservation.primary_manager_id,
-            assistant_manager_id: reservation.assistant_manager_id ?? undefined,
-            comments: reservation.comments ?? undefined,
-            actual_guests: reservation.actual_guests,
-            service_alerts: reservation.service_alerts,
-            highlight_comment: reservation.highlight_comment,
-          }}
-        />
-        <ReservationDetailSidebar tenantSlug={tenantSlug} reservation={reservation} />
-      </div>
-    </div>
+        ) : null
+      }
+      aside={<ReservationDetailSidebar tenantSlug={tenantSlug} reservation={reservation} />}
+    >
+      <ReservationForm
+        mode="edit"
+        tenantSlug={tenantSlug}
+        returnTo={returnTo}
+        cancelHref={back.href}
+        initialDate={reservation.reservation_date}
+        today={todayInCordoba()}
+        initialSnapshot={snapshot}
+        reservationStatus={reservation.status}
+        managers={managers}
+        templates={templates}
+        initialEventsForDate={eventsForDate}
+        cakeOptions={cakeOptions.filter((c) => c.active || c.id === reservation?.cake_option_id)}
+        canManageCakes={access.role === 'owner'}
+        rateTiers={tiers}
+        bonusPerGuestCents={bonus?.bonus_per_guest_cents ?? 0}
+        linkedManagerId={linkedManager?.id ?? null}
+        canManageManagers={access.role === 'owner'}
+        reservationId={reservation.id}
+        customerServiceAlerts={reservation.customer?.service_alerts ?? []}
+        initialValues={{
+          customer_id: reservation.customer_id ?? undefined,
+          guest_name: reservation.guest_name,
+          guest_phone: reservation.guest_phone ?? undefined,
+          guest_email: reservation.guest_email ?? undefined,
+          kind: reservation.kind,
+          meal_type: reservation.meal_type,
+          reservation_date: reservation.reservation_date,
+          reservation_time_local: reservation.reservation_time_local,
+          reservation_end_time_local: reservation.reservation_end_time_local?.slice(0, 5) ?? '',
+          zone: reservation.zone,
+          scheduled_event_id: reservation.scheduled_event_id ?? undefined,
+          estimated_guests: reservation.estimated_guests,
+          cake_count: reservation.cake_count,
+          cake_option_id: reservation.cake_option_id,
+          champagne_count: reservation.champagne_count,
+          deposit_cents: reservation.deposit_cents,
+          origin: reservation.origin,
+          primary_manager_id: reservation.primary_manager_id,
+          assistant_manager_id: reservation.assistant_manager_id ?? undefined,
+          comments: reservation.comments ?? undefined,
+          actual_guests: reservation.actual_guests,
+          service_alerts: reservation.service_alerts,
+          highlight_comment: reservation.highlight_comment,
+        }}
+      />
+    </DetailTemplate>
   )
 }

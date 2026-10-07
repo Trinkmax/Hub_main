@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowUpRight, CalendarPlus, Info, Loader2, Pencil } from 'lucide-react'
+import { ArrowUpRight, CalendarPlus, Pencil, TriangleAlert } from 'lucide-react'
 import Link from 'next/link'
 import { CakeChip } from '@/components/reservations/cake-chip'
 import { ReservationQuickView } from '@/components/reservations/reservation-quick-view'
@@ -12,7 +12,9 @@ import {
   ZoneChip,
 } from '@/components/reservations/segment-meter'
 import { StatusPill } from '@/components/reservations/status-pill'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Callout } from '@/components/ui/callout'
 import { editEventHref, editReservationHref, newReservationHref } from '@/lib/salon/calendar-links'
 import { timeRangeLabel } from '@/lib/salon/format'
 import { joinedEventName, placeLabel } from '@/lib/salon/place-label'
@@ -156,12 +158,12 @@ export function DaySegmentSection({
     <section
       id={`dia-seg-${key}`}
       aria-labelledby={headingId}
-      className="space-y-2.5 px-4 py-4 sm:px-6"
+      className="flex flex-col gap-3 px-4 py-4 sm:px-6"
     >
-      <header className="flex items-center justify-between gap-3">
-        <h3 id={headingId} className="flex items-baseline gap-2 font-serif text-base font-semibold">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <h3 id={headingId} className="flex items-baseline gap-2 type-subtitle">
           {SEGMENT_LABELS[key]}
-          <span className="font-mono text-xs font-normal tabular-nums text-muted-foreground">
+          <span className="type-caption font-normal tabular-nums text-muted-foreground">
             {defaultTime}
           </span>
         </h3>
@@ -189,7 +191,7 @@ export function DaySegmentSection({
         {/* El title repite de dónde sale el cupo también en un servicio vacío
             (sin chip): "Cupo general del salón" en un bar sin config. */}
         <p
-          className={cn('text-sm', SEGMENT_TONE_CLASSES[tone].text)}
+          className={cn('type-body', SEGMENT_TONE_CLASSES[tone].text)}
           title={zl ? undefined : capSourceLabel(s, isoDow)}
         >
           {statusLine}
@@ -198,7 +200,7 @@ export function DaySegmentSection({
           // El servicio entero, en chico y con su propio tono: Planta Alta
           // puede tener lugar con la cena ya llena.
           <p
-            className={cn('text-xs', SEGMENT_TONE_CLASSES[segmentTone(s)].text)}
+            className={cn('type-caption', SEGMENT_TONE_CLASSES[segmentTone(s)].text)}
             title={segmentAriaLabel(s, dayLabel)}
           >
             {zc.whole}
@@ -210,17 +212,12 @@ export function DaySegmentSection({
           // de este día con el cupo más alto de la semana, y se puede deshacer.
           <Button
             type="button"
-            variant="outline"
+            variant="secondary"
             size="sm"
             onClick={() => onRaise(suggestedRaise)}
-            disabled={raising}
-            className="gap-1.5"
+            loading={raising}
           >
-            {raising ? (
-              <Loader2 className="size-3.5 animate-spin" aria-hidden />
-            ) : (
-              <ArrowUpRight className="size-3.5" aria-hidden />
-            )}
+            <ArrowUpRight aria-hidden />
             {/* El cupo especial es de ESTE día: "hoy" en el jue 25/09 visto
                 el 21/09 prometía otra fecha que la que se guarda. */}
             Subir a {suggestedRaise} {isToday ? 'hoy' : `el ${dayLabel}`}
@@ -232,32 +229,26 @@ export function DaySegmentSection({
         // Informativo, no rojo: Pizza libre de 140 en una cena de 120 no es un
         // error de hoy. Tampoco hay botón de "bajar el cupo": ese número es
         // también el umbral del bonus de evento lleno y cambiarlo mueve plata.
-        <div
-          role="note"
-          className="flex items-start gap-2 rounded-lg border border-info/40 bg-info/10 px-3 py-2 text-xs leading-relaxed text-foreground"
-        >
-          <Info className="mt-0.5 size-3.5 shrink-0 text-info" aria-hidden />
-          <p className="min-w-0 flex-1">
-            {eventNote}
-            {canBook && s.events.length === 1 && onlyEvent ? (
-              <>
-                {' · '}
-                <Link
-                  href={editEventHref(tenantSlug, onlyEvent.id)}
-                  className="rounded-sm font-medium underline underline-offset-2 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                >
-                  Editar evento
-                </Link>
-              </>
-            ) : null}
-          </p>
-        </div>
+        <Callout tone="info" role="note">
+          {eventNote}
+          {canBook && s.events.length === 1 && onlyEvent ? (
+            <>
+              {' · '}
+              <Link
+                href={editEventHref(tenantSlug, onlyEvent.id)}
+                className="font-medium underline underline-offset-2"
+              >
+                Editar evento
+              </Link>
+            </>
+          ) : null}
+        </Callout>
       ) : null}
 
-      {sourceLine ? <p className="text-[11px] text-muted-foreground">{sourceLine}</p> : null}
+      {sourceLine ? <p className="type-caption text-muted-foreground">{sourceLine}</p> : null}
 
       {s.events.length > 0 ? (
-        <ul className="space-y-1.5" aria-label={`Eventos de ${SEGMENT_WITH_ARTICLE[key]}`}>
+        <ul className="grid gap-2" aria-label={`Eventos de ${SEGMENT_WITH_ARTICLE[key]}`}>
           {s.events.map((e) => (
             <li key={e.id}>
               <EventCard
@@ -273,7 +264,7 @@ export function DaySegmentSection({
       ) : null}
 
       {rows.length > 0 ? (
-        <ul className="space-y-1.5" aria-label={listLabel}>
+        <ul className="grid gap-2" aria-label={listLabel}>
           {rows.map((r) => (
             <li key={r.id} id={`dia-res-${r.id}`}>
               {/* Sin onChanged: cada action de la vista rápida revalida el
@@ -308,9 +299,9 @@ export function DaySegmentSection({
         // La hora la precarga el server desde la config del bar: el link lleva
         // solo el servicio (una sola fuente para "a qué hora se reserva"). Con
         // ?volver=calendario, al guardar se vuelve a este día.
-        <Button asChild variant="outline" size="sm" className="max-w-full gap-1.5">
+        <Button asChild variant="secondary" size="sm" className="max-w-full self-start">
           <Link href={newReservationHref(tenantSlug, { date, segment: key, from: 'calendario' })}>
-            <CalendarPlus className="size-3.5" aria-hidden />
+            <CalendarPlus aria-hidden />
             <span className="truncate">
               Nueva reserva en {SEGMENT_WITH_ARTICLE[key]} · {defaultTime}
             </span>
@@ -360,60 +351,60 @@ function EventCard({
   const inside = insideLine(e)
 
   return (
-    <div
-      className="card-hairline space-y-2 rounded-xl border border-border/60 bg-card/50 py-2 pl-3 pr-2"
-      // La franja del color del formato: es como el dueño reconoce sus eventos
-      // en el calendario, así que acá tiene que ser la misma pista.
-      style={{ boxShadow: `inset 3px 0 0 ${color}` }}
-    >
+    <div className="grid gap-2 rounded-lg border border-border bg-card px-3 py-2.5">
       <div className="flex items-center gap-2">
+        {/* El color del formato: es como el dueño reconoce sus eventos en el
+            calendario, así que acá tiene que ser la misma pista. */}
         <span
           aria-hidden
-          className="size-2 shrink-0 rounded-full"
+          className="size-2.5 shrink-0 rounded-full"
           style={{ backgroundColor: color }}
         />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">{e.name}</span>
-        <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate type-body font-medium">{e.name}</span>
+        <span className="shrink-0 type-caption tabular-nums text-muted-foreground">
           {e.startsAt}
         </span>
-        <span
-          className={cn(
-            'shrink-0 font-mono text-[11px] tabular-nums',
-            // `text-warning` pelado sobre la card no llega a AA en claro: el
-            // patrón de la casa es el texto normal sobre su propio tinte.
-            e.over
-              ? 'font-semibold text-destructive'
-              : full
-                ? 'rounded-full bg-warning/15 px-1.5 font-semibold text-foreground'
-                : 'text-muted-foreground',
-          )}
-          title={
-            e.over
-              ? `Se pasó por ${e.used - e.capacity}`
-              : full
-                ? 'Evento lleno'
-                : `${e.used} de ${e.capacity} lugares`
-          }
-        >
-          {e.over ? '⚠ ' : ''}
-          {e.used}/{e.capacity}
-        </span>
+        {e.over ? (
+          <Badge
+            tone="danger"
+            icon={TriangleAlert}
+            className="tabular-nums"
+            title={`Se pasó por ${e.used - e.capacity}`}
+          >
+            {e.used}/{e.capacity}
+            <span className="sr-only">: se pasó por {e.used - e.capacity}</span>
+          </Badge>
+        ) : full ? (
+          <Badge tone="warning" className="tabular-nums" title="Evento lleno">
+            {e.used}/{e.capacity}
+            <span className="sr-only">: lleno</span>
+          </Badge>
+        ) : (
+          <span
+            className="shrink-0 type-caption tabular-nums text-muted-foreground"
+            title={`${e.used} de ${e.capacity} lugares`}
+          >
+            {e.used}/{e.capacity}
+          </span>
+        )}
       </div>
-      {zoneLine ? <p className="pl-4 text-xs font-medium text-foreground">{zoneLine}</p> : null}
-      {inside ? <p className="pl-4 text-[11px] text-muted-foreground">{inside}</p> : null}
+      {zoneLine ? (
+        <p className="ps-4.5 type-caption font-medium text-foreground">{zoneLine}</p>
+      ) : null}
+      {inside ? <p className="ps-4.5 type-caption text-muted-foreground">{inside}</p> : null}
       {canBook ? (
-        <div className="flex flex-wrap items-center gap-1.5 pl-4">
-          <Button asChild size="sm" className="max-w-full gap-1.5">
+        <div className="flex flex-wrap items-center gap-2 ps-4.5">
+          <Button asChild size="sm" className="max-w-full">
             <Link
               href={newReservationHref(tenantSlug, { date, eventId: e.id, from: 'calendario' })}
             >
-              <CalendarPlus className="size-3.5" aria-hidden />
+              <CalendarPlus aria-hidden />
               <span className="truncate">Reservar en {e.name}</span>
             </Link>
           </Button>
-          <Button asChild size="sm" variant="ghost" className="gap-1.5 text-muted-foreground">
+          <Button asChild size="sm" variant="ghost">
             <Link href={editEventHref(tenantSlug, e.id)} aria-label={`Editar evento ${e.name}`}>
-              <Pencil className="size-3.5" aria-hidden />
+              <Pencil aria-hidden />
               Editar evento
             </Link>
           </Button>
@@ -437,17 +428,18 @@ function reservationRow(r: ReservationWithJoins, where: string, focused: boolean
       type="button"
       aria-current={focused ? 'true' : undefined}
       className={cn(
-        'flex w-full items-center gap-2.5 rounded-lg border border-border/60 bg-card/40 px-3 py-2 text-left text-sm transition-colors outline-none hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring/50',
+        'flex min-h-12 w-full items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2 text-left type-body',
+        'outline-(--ring) -outline-offset-2 hover:bg-hover focus-visible:outline-2 active:bg-active',
         inactive && 'opacity-60',
         // La reserva recién cargada (o la que se buscó): el ojo tiene que caer
         // ahí sin leer la lista entera.
-        focused && 'bg-primary/5 ring-2 ring-primary',
+        focused && 'border-primary bg-selected',
       )}
     >
-      <span className="whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground">
+      <span className="whitespace-nowrap type-caption tabular-nums text-muted-foreground">
         {timeRangeLabel(r.reservation_time_local, r.reservation_end_time_local)}
       </span>
-      <span className="flex min-w-0 flex-1 flex-col leading-tight">
+      <span className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="truncate font-medium">{r.guest_name}</span>
         {/* La torta viaja con la fila: es lo que el bar tiene que producir, no
             un detalle del cliente. */}
@@ -456,15 +448,19 @@ function reservationRow(r: ReservationWithJoins, where: string, focused: boolean
             count={r.cake_count}
             option={r.cake_option}
             optionId={r.cake_option_id}
-            className="mt-1 self-start"
+            className="self-start"
           />
         ) : null}
       </span>
-      <span className="hidden max-w-[40%] truncate text-[11px] text-muted-foreground sm:inline">
+      <span className="hidden max-w-[40%] truncate type-caption text-muted-foreground sm:inline">
         {where}
       </span>
-      <span className="whitespace-nowrap text-[11px] text-muted-foreground tabular-nums">
-        {r.actual_guests ?? r.estimated_guests}p
+      <span className="whitespace-nowrap type-caption tabular-nums text-muted-foreground">
+        {r.actual_guests ?? r.estimated_guests}
+        <span className="sr-only">
+          {(r.actual_guests ?? r.estimated_guests) === 1 ? ' persona' : ' personas'}
+        </span>
+        <span aria-hidden>p</span>
       </span>
       <StatusPill status={r.status} />
     </button>

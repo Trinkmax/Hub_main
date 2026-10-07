@@ -1,29 +1,14 @@
 'use client'
 
-import {
-  ChevronDown,
-  ClipboardEdit,
-  DoorClosed,
-  DoorOpen,
-  Trash2,
-  Users,
-  XCircle,
-} from 'lucide-react'
-import { useState, useTransition } from 'react'
+import { ClipboardEdit, DoorClosed, DoorOpen, Trash2, Undo2, Users, XCircle } from 'lucide-react'
+import { useId, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { Card, CardHeader, CardTitle } from '@/components/ui/card'
+import { ConfirmDialog, type ConfirmResult } from '@/components/ui/confirm-dialog'
+import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { NumberField } from '@/components/ui/number-field'
 import {
   cancelSalonReservation,
   markArrived,
@@ -34,8 +19,9 @@ import {
   updateActualGuests,
 } from '@/lib/salon/actions'
 import type { ReservationWithJoins, SalonReservationStatus } from '@/lib/salon/types'
-import { cn } from '@/lib/utils'
 import { StatusPill } from './status-pill'
+
+type ActionResult = { ok: boolean; message?: string }
 
 /**
  * Controles operativos del comensal (Llegó / Sentar / Cerrar mesa + revertir
@@ -44,6 +30,12 @@ import { StatusPill } from './status-pill'
  *
  * `onChanged` se llama tras cada acción exitosa: el popup lo usa para refrescar
  * su data; el sidebar lo omite (las Server Actions ya hacen revalidatePath).
+ *
+ * Kit HUB: el próximo paso del ciclo es el único botón principal (los otros
+ * dos quedan apagados en su lugar, así se lee el orden Llegó → Sentar →
+ * Cerrar mesa); «Cerrar mesa» y «Cancelar reserva» confirman con
+ * `ConfirmDialog`, que espera la acción con el diálogo abierto y, si falla,
+ * queda abierto con el error adentro.
  */
 export function ReservationStatusControls({
   tenantSlug,
@@ -55,7 +47,7 @@ export function ReservationStatusControls({
   reservation: ReservationWithJoins
   onChanged?: () => void
   /**
-   * El quick view trae su propio stepper de personas (estimadas o reales según
+   * El quick view trae su propio contador de personas (estimadas o reales según
    * estado), así que oculta este editor para no duplicarlo en el mismo popup.
    */
   showActualGuestsEditor?: boolean
@@ -65,14 +57,23 @@ export function ReservationStatusControls({
     reservation.actual_guests ?? reservation.estimated_guests,
   )
 
-  function run(p: Promise<{ ok: boolean; message?: string }>) {
+  function run(p: Promise<ActionResult>) {
     startTransition(async () => {
       const r = await p
       if (r.ok) {
         toast.success(r.message ?? 'Listo.')
         onChanged?.()
-      } else toast.error(r.message ?? 'Falló.')
+      } else toast.error(r.message ?? 'No se pudo hacer el cambio. Probá de nuevo.')
     })
+  }
+
+  /** Para los `ConfirmDialog`: espera la acción y, si falla, deja el error adentro del diálogo. */
+  async function confirmAction(p: Promise<ActionResult>, fallback: string): Promise<ConfirmResult> {
+    const r = await p
+    if (!r.ok) return { ok: false, error: r.message ?? fallback }
+    toast.success(r.message ?? 'Listo.')
+    onChanged?.()
+    return { ok: true }
   }
 
   const allowedNext: SalonReservationStatus[] = (() => {
@@ -92,130 +93,128 @@ export function ReservationStatusControls({
   })()
 
   return (
-    <div className="space-y-4">
+    <div className="grid gap-4">
       {/* Estado actual + acciones */}
-      <section className="rounded-xl border border-border/70 bg-card p-4">
-        <header className="mb-3 flex items-center justify-between">
-          <span className="text-xs uppercase tracking-wide text-muted-foreground">Estado</span>
+      <Card padding="sm" className="gap-3">
+        <CardHeader className="grid-cols-[1fr_auto] items-center">
+          <CardTitle className="type-label text-muted-foreground">Estado</CardTitle>
           <StatusPill status={reservation.status} />
-        </header>
+        </CardHeader>
 
-        <div className="grid grid-cols-1 gap-2">
-          {(['arrived', 'seated', 'closed'] as const).map((to) => {
+        <div className="grid gap-2">
+          {(['arrived', 'seated'] as const).map((to) => {
             const enabled = allowedNext.includes(to)
-            const icon = to === 'arrived' ? DoorOpen : to === 'seated' ? Users : DoorClosed
-            const Icon = icon
-            const label = to === 'arrived' ? 'Llegó' : to === 'seated' ? 'Sentar' : 'Cerrar mesa'
-            if (to === 'closed') {
-              return (
-                <ClosedDialog
-                  key={to}
-                  disabled={!enabled || pending}
-                  defaultGuests={actualGuests}
-                  estimated={reservation.estimated_guests}
-                  onConfirm={(n) => {
-                    setActualGuests(n)
-                    run(markClosed(tenantSlug, reservation.id, n))
-                  }}
-                />
-              )
-            }
+            const Icon = to === 'arrived' ? DoorOpen : Users
             return (
               <Button
                 key={to}
+                variant={enabled ? 'primary' : 'secondary'}
+                size="lg"
                 disabled={!enabled || pending}
-                className={cn(
-                  'h-11 justify-start gap-3',
-                  to === 'arrived'
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                    : 'bg-emerald-600 hover:bg-emerald-700 text-white',
-                )}
+                className="justify-start"
                 onClick={() => {
                   if (to === 'arrived') run(markArrived(tenantSlug, reservation.id))
-                  if (to === 'seated') run(markSeated(tenantSlug, reservation.id))
+                  else run(markSeated(tenantSlug, reservation.id))
                 }}
               >
-                <Icon className="size-4" />
-                {label}
+                <Icon aria-hidden />
+                {to === 'arrived' ? 'Llegó' : 'Sentar'}
               </Button>
             )
           })}
+          <ClosedDialog
+            enabled={allowedNext.includes('closed')}
+            disabled={pending}
+            defaultGuests={actualGuests}
+            estimated={reservation.estimated_guests}
+            onConfirm={(n) => {
+              setActualGuests(n)
+              return confirmAction(
+                markClosed(tenantSlug, reservation.id, n),
+                'No pudimos cerrar la mesa. Probá de nuevo.',
+              )
+            }}
+          />
 
           {allowedNext.includes('pending') ? (
             <Button
-              variant="outline"
-              className="h-9 justify-start gap-3 text-xs"
+              variant="ghost"
+              size="sm"
+              className="justify-start"
               disabled={pending}
               onClick={() =>
                 run(revertStatus(tenantSlug, reservation.id, 'pending' as SalonReservationStatus))
               }
             >
-              <ChevronDown className="size-4 rotate-90" />
+              <Undo2 aria-hidden />
               Revertir a Pendiente
             </Button>
           ) : null}
           {allowedNext.includes('arrived') && reservation.status === 'seated' ? (
             <Button
-              variant="outline"
-              className="h-9 justify-start gap-3 text-xs"
+              variant="ghost"
+              size="sm"
+              className="justify-start"
               disabled={pending}
               onClick={() =>
                 run(revertStatus(tenantSlug, reservation.id, 'arrived' as SalonReservationStatus))
               }
             >
-              <ChevronDown className="size-4 rotate-90" />
+              <Undo2 aria-hidden />
               Revertir a Llegó
             </Button>
           ) : null}
           {allowedNext.includes('seated') && reservation.status === 'closed' ? (
             <Button
-              variant="outline"
-              className="h-9 justify-start gap-3 text-xs"
+              variant="ghost"
+              size="sm"
+              className="justify-start"
               disabled={pending}
               onClick={() =>
                 run(revertStatus(tenantSlug, reservation.id, 'seated' as SalonReservationStatus))
               }
             >
-              <ChevronDown className="size-4 rotate-90" />
+              <Undo2 aria-hidden />
               Reabrir mesa
             </Button>
           ) : null}
 
-          {reservation.status !== 'no_show' &&
-          reservation.status !== 'cancelled' &&
-          allowedNext.includes('no_show') ? (
+          {allowedNext.includes('no_show') ? (
             <Button
-              variant="outline"
-              className="h-9 justify-start gap-3 text-xs text-muted-foreground"
+              variant="secondary"
+              size="sm"
+              className="justify-start"
               disabled={pending}
               onClick={() => run(markNoShow(tenantSlug, reservation.id))}
             >
-              <XCircle className="size-4" />
+              <XCircle aria-hidden />
               No vino
             </Button>
           ) : null}
         </div>
-      </section>
+      </Card>
 
       {/* Cantidad real inline editor */}
       {showActualGuestsEditor &&
       reservation.status !== 'cancelled' &&
       reservation.status !== 'no_show' ? (
-        <section className="rounded-xl border border-border/70 bg-card p-4">
-          <header className="mb-3 flex items-center gap-2">
-            <ClipboardEdit className="size-4 text-muted-foreground" />
-            <span className="text-xs uppercase tracking-wide text-muted-foreground">
-              Cantidad real
-            </span>
-          </header>
+        <Card padding="sm" className="gap-3">
+          <CardHeader className="grid-cols-[auto_1fr] items-center gap-2">
+            <ClipboardEdit className="size-4 text-muted-foreground" aria-hidden />
+            <CardTitle className="type-label text-muted-foreground">Cantidad real</CardTitle>
+          </CardHeader>
           <div className="flex items-center gap-2">
-            <Input
-              type="number"
+            <NumberField
+              value={actualGuests}
+              onValueChange={(n) => {
+                if (n !== null) setActualGuests(n)
+              }}
               min={1}
               max={99}
-              value={actualGuests}
-              onChange={(e) => setActualGuests(Math.max(1, Math.min(99, Number(e.target.value))))}
-              className="h-10 w-20 text-center text-base tabular-nums"
+              aria-label="Personas que vinieron"
+              incrementLabel="Una persona más"
+              decrementLabel="Una persona menos"
+              className="w-36"
             />
             <Button
               size="sm"
@@ -233,153 +232,142 @@ export function ReservationStatusControls({
             </Button>
           </div>
           {reservation.actual_guests === null ? (
-            <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">
+            <p className="type-caption text-warning-text">
               Sin cantidad real cargada — la comisión se calcula sobre{' '}
               {reservation.estimated_guests} estimadas.
             </p>
           ) : (
-            <p className="mt-2 text-[11px] text-muted-foreground">
+            <p className="type-caption text-muted-foreground">
               Real cargada: {reservation.actual_guests} (estimadas {reservation.estimated_guests}).
             </p>
           )}
-        </section>
+        </Card>
       ) : null}
 
       {/* Cancelar */}
       {reservation.status !== 'cancelled' ? (
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="outline"
-              className="w-full gap-2 text-rose-700 hover:text-rose-700 dark:text-rose-300 dark:hover:text-rose-300"
-              disabled={pending}
-            >
-              <Trash2 className="size-4" />
-              Cancelar reserva
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>¿Cancelar esta reserva?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Liberá el cupo del bucket. La comisión asociada se reversa automáticamente (excepto
-                las entries ya pagadas).
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <CancelReasonForm
-              onSubmit={(reason) =>
-                run(
-                  cancelSalonReservation(tenantSlug, {
-                    id: reservation.id,
-                    reason,
-                  } as Record<string, unknown>),
-                )
-              }
-            />
-          </AlertDialogContent>
-        </AlertDialog>
+        <CancelDialog
+          disabled={pending}
+          onConfirm={(reason) =>
+            confirmAction(
+              cancelSalonReservation(tenantSlug, {
+                id: reservation.id,
+                reason,
+              } as Record<string, unknown>),
+              'No pudimos cancelar la reserva. Probá de nuevo.',
+            )
+          }
+        />
       ) : null}
     </div>
   )
 }
 
 function ClosedDialog({
+  enabled,
   disabled,
   defaultGuests,
   estimated,
   onConfirm,
 }: {
+  /** ¿«Cerrar mesa» es el próximo paso? (solo con la mesa sentada). */
+  enabled: boolean
   disabled: boolean
   defaultGuests: number
   estimated: number
-  onConfirm: (n: number) => void
+  onConfirm: (n: number) => Promise<ConfirmResult>
 }) {
   const [open, setOpen] = useState(false)
   const [guests, setGuests] = useState(defaultGuests)
   return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger asChild>
+    <ConfirmDialog
+      open={open}
+      onOpenChange={(next) => {
+        // Cada vez que se abre arranca en el número vigente de la reserva.
+        if (next) setGuests(defaultGuests)
+        setOpen(next)
+      }}
+      title="¿Cerrar la mesa?"
+      description="Confirmá cuántas personas pasaron por la mesa. Con ese número se recalcula la comisión."
+      confirmLabel="Cerrar mesa"
+      pendingLabel="Cerrando…"
+      cancelLabel="Volver"
+      icon={DoorClosed}
+      trigger={
         <Button
-          disabled={disabled}
-          className="h-11 justify-start gap-3 bg-slate-700 hover:bg-slate-800 text-white"
+          variant={enabled ? 'primary' : 'secondary'}
+          size="lg"
+          disabled={!enabled || disabled}
+          className="justify-start"
         >
-          <DoorClosed className="size-4" />
+          <DoorClosed aria-hidden />
           Cerrar mesa
         </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Cerrar mesa</AlertDialogTitle>
-          <AlertDialogDescription>
-            Confirmá la cantidad real de personas que pasaron por la mesa. Se recalcula la comisión.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <div className="my-4 flex items-center justify-center gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={() => setGuests(Math.max(1, guests - 1))}
-          >
-            −
-          </Button>
-          <div className="text-center">
-            <div className="font-mono text-3xl font-semibold tabular-nums">{guests}</div>
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              personas reales
-            </div>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={() => setGuests(Math.min(99, guests + 1))}
-          >
-            +
-          </Button>
-        </div>
+      }
+      onConfirm={() => onConfirm(guests)}
+    >
+      <div className="grid justify-items-center gap-2 py-2">
+        <NumberField
+          value={guests}
+          onValueChange={(n) => {
+            if (n !== null) setGuests(n)
+          }}
+          min={1}
+          max={99}
+          size="lg"
+          suffix="personas"
+          aria-label="Personas reales"
+          incrementLabel="Una persona más"
+          decrementLabel="Una persona menos"
+          className="w-56"
+        />
         {guests !== estimated ? (
-          <p className="text-center text-xs text-amber-700 dark:text-amber-300">
+          <p className="type-small text-warning-text">
             Estimaste {estimated}, vas a cerrar con {guests}.
           </p>
         ) : null}
-        <AlertDialogFooter>
-          <AlertDialogCancel>Volver</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={() => {
-              onConfirm(guests)
-              setOpen(false)
-            }}
-          >
-            Cerrar mesa
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      </div>
+    </ConfirmDialog>
   )
 }
 
-function CancelReasonForm({ onSubmit }: { onSubmit: (reason?: string) => void }) {
+function CancelDialog({
+  disabled,
+  onConfirm,
+}: {
+  disabled: boolean
+  onConfirm: (reason?: string) => Promise<ConfirmResult>
+}) {
+  const reasonId = useId()
   const [reason, setReason] = useState('')
   return (
-    <>
-      <div className="space-y-2 py-4">
+    <ConfirmDialog
+      tone="danger"
+      icon={Trash2}
+      title="¿Cancelar esta reserva?"
+      description="Se libera su lugar en el cupo. La comisión asociada se revierte sola (salvo la que ya se pagó)."
+      confirmLabel="Cancelar reserva"
+      pendingLabel="Cancelando…"
+      cancelLabel="Volver"
+      onOpenChange={(next) => {
+        if (next) setReason('')
+      }}
+      trigger={
+        <Button variant="danger-ghost" className="w-full" disabled={disabled}>
+          <Trash2 aria-hidden />
+          Cancelar reserva
+        </Button>
+      }
+      onConfirm={() => onConfirm(reason.trim() || undefined)}
+    >
+      <Field label="Motivo" id={reasonId} optional>
         <Input
-          placeholder="Motivo (opcional)…"
+          placeholder="Avisaron que no vienen, cambio de fecha…"
           value={reason}
           maxLength={280}
           onChange={(e) => setReason(e.target.value)}
         />
-      </div>
-      <AlertDialogFooter>
-        <AlertDialogCancel>Volver</AlertDialogCancel>
-        <AlertDialogAction
-          className="bg-rose-600 hover:bg-rose-700"
-          onClick={() => onSubmit(reason.trim() || undefined)}
-        >
-          Cancelar reserva
-        </AlertDialogAction>
-      </AlertDialogFooter>
-    </>
+      </Field>
+    </ConfirmDialog>
   )
 }

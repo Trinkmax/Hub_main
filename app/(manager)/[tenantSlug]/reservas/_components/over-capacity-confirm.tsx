@@ -1,15 +1,9 @@
+'use client'
+
 import { TriangleAlert } from 'lucide-react'
+import { useState } from 'react'
 import { SEGMENT_TONE_CLASSES, SegmentBar } from '@/components/reservations/segment-meter'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import type { SegmentProjection } from '@/lib/salon/segments'
 import { overCapacityConfirmCopy, segmentHeadline, segmentTone } from '@/lib/salon/segments-copy'
 import { cn } from '@/lib/utils'
@@ -20,8 +14,8 @@ import { cn } from '@/lib/utils'
  * No bloquea: el dueño decidió que pasarse se permite, pero que nadie lo haga
  * sin enterarse. Los números salen de la misma proyección que el medidor en
  * vivo del form (recalculada con datos frescos al apretar Guardar), así la
- * pregunta no sorprende. "Revisar" es el foco inicial (Radix enfoca Cancel):
- * un Enter distraído no carga la reserva.
+ * pregunta no sorprende. "Revisar" es el foco inicial (el `ConfirmDialog` del
+ * kit enfoca lo menos destructivo): un Enter distraído no carga la reserva.
  *
  * Presentacional: abierta mientras haya proyección; el form decide qué pasa al
  * confirmar o cancelar.
@@ -37,47 +31,43 @@ export function OverCapacityConfirm({
   onConfirm: () => void
   onCancel: () => void
 }) {
-  const copy = projection ? overCapacityConfirmCopy(projection) : null
-  const tone = projection ? SEGMENT_TONE_CLASSES[segmentTone(projection.after)] : null
+  // La última proyección se queda mientras el diálogo se cierra: sin esto el
+  // texto se vaciaba en plena animación de salida.
+  const [shown, setShown] = useState(projection)
+  if (projection !== null && projection !== shown) setShown(projection)
+
+  const current = projection ?? shown
+  const copy = current ? overCapacityConfirmCopy(current) : null
+  const tone = current ? SEGMENT_TONE_CLASSES[segmentTone(current.after)] : null
 
   return (
-    <AlertDialog
+    <ConfirmDialog
       open={projection !== null}
       onOpenChange={(open) => {
         if (!open) onCancel()
       }}
+      icon={TriangleAlert}
+      title={copy?.title ?? 'Te pasás del cupo'}
+      description={
+        copy ? (
+          <span className="grid gap-1">
+            <span>{copy.body}</span>
+            {copy.eventLine ? <span>{copy.eventLine}</span> : null}
+          </span>
+        ) : undefined
+      }
+      confirmLabel={mode === 'edit' ? 'Guardar igual' : 'Cargar igual'}
+      cancelLabel="Revisar"
+      onConfirm={onConfirm}
     >
-      {projection && copy && tone ? (
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <TriangleAlert aria-hidden className="size-5 shrink-0 text-destructive" />
-              {copy.title}
-            </AlertDialogTitle>
-            {/* asChild: el Description de Radix es un <p> y adentro van dos. */}
-            <AlertDialogDescription asChild>
-              <div className="space-y-1">
-                <p>{copy.body}</p>
-                {copy.eventLine ? <p>{copy.eventLine}</p> : null}
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          <div className="space-y-1.5 rounded-lg border border-border/60 bg-card/60 p-3">
-            <p className={cn('font-mono text-sm font-medium tabular-nums', tone.text)}>
-              {segmentHeadline(projection.after, 'long')}
-            </p>
-            <SegmentBar segment={projection.after} size="sm" />
-          </div>
-
-          <AlertDialogFooter>
-            <AlertDialogCancel className="h-11">Revisar</AlertDialogCancel>
-            <AlertDialogAction className="h-11" onClick={onConfirm}>
-              {mode === 'edit' ? 'Guardar igual' : 'Cargar igual'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
+      {current && tone ? (
+        <div className="grid gap-1.5 rounded-lg bg-secondary p-3">
+          <p className={cn('type-label tabular-nums', tone.text)}>
+            {segmentHeadline(current.after, 'long')}
+          </p>
+          <SegmentBar segment={current.after} size="sm" />
+        </div>
       ) : null}
-    </AlertDialog>
+    </ConfirmDialog>
   )
 }

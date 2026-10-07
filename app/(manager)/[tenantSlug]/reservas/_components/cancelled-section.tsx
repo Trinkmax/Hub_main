@@ -2,9 +2,9 @@
 
 import { ChevronDown, XCircle } from 'lucide-react'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useId, useState } from 'react'
+import { dayLabel } from '@/components/reservations/day-labels'
 import { editReservationHref } from '@/lib/salon/calendar-links'
-import { formatDayLabel } from '@/lib/salon/date-presets'
 import { hhmm } from '@/lib/salon/format'
 import type { ReservationWithJoins } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
@@ -38,64 +38,64 @@ export function CancelledSection({
   showDate: boolean
 }) {
   const [open, setOpen] = useState(false)
+  const listId = useId()
 
   if (totalCount === 0) return null
 
   return (
-    <div className="rounded-xl border border-dashed border-border/70 bg-card/20">
+    <section
+      aria-label="Reservas canceladas"
+      className="overflow-clip rounded-xl border border-dashed border-border-strong"
+    >
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 rounded-xl px-4 py-3 text-left transition-colors hover:bg-secondary/50"
+        aria-controls={listId}
+        className="flex min-h-12 w-full flex-wrap items-center gap-x-2 gap-y-0.5 px-4 py-3 text-left outline-(--ring) -outline-offset-2 hover:bg-hover focus-visible:outline-2"
       >
         <XCircle className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <span className="text-sm font-medium text-muted-foreground">
+        <span className="type-label text-foreground">
           {totalCount} {totalCount === 1 ? 'reserva cancelada' : 'reservas canceladas'}
         </span>
-        <span className="text-xs text-muted-foreground">
+        <span className="type-caption text-muted-foreground">
           · no cuentan para cubiertos ni para armar mesas
         </span>
         <ChevronDown
-          className={cn(
-            'ml-auto size-4 shrink-0 text-muted-foreground transition-transform',
-            open && 'rotate-180',
-          )}
+          className={cn('ml-auto size-4 shrink-0 text-muted-foreground', open && 'rotate-180')}
           aria-hidden
         />
       </button>
 
       {open ? (
-        <ul className="space-y-1 border-t border-border/50 px-3 py-2">
+        <ul id={listId} className="divide-y divide-border border-t border-border">
           {rows.map((r) => (
             <li key={r.id}>
               <Link
                 href={editReservationHref(tenantSlug, r.id)}
-                className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded-lg px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-secondary"
+                className="flex min-h-11 flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2 type-body text-muted-foreground outline-(--ring) -outline-offset-2 hover:bg-hover hover:text-foreground focus-visible:outline-2"
               >
                 {showDate ? (
-                  <span className="font-mono text-xs tabular-nums">
-                    {formatDayLabel(r.reservation_date)}
-                  </span>
+                  <span className="type-caption tabular-nums">{dayLabel(r.reservation_date)}</span>
                 ) : null}
-                <span className="font-mono text-xs tabular-nums">
-                  {hhmm(r.reservation_time_local)}
-                </span>
+                <span className="type-caption tabular-nums">{hhmm(r.reservation_time_local)}</span>
                 <span className="font-medium line-through">{r.guest_name}</span>
-                <span className="text-xs tabular-nums">{r.estimated_guests}p</span>
+                <span className="type-caption tabular-nums">
+                  {r.estimated_guests} {r.estimated_guests === 1 ? 'persona' : 'personas'}
+                </span>
                 {r.cancelled_reason ? (
-                  <span className="text-xs italic">· {r.cancelled_reason}</span>
+                  <span className="type-caption italic">· {r.cancelled_reason}</span>
                 ) : null}
               </Link>
             </li>
           ))}
           {rows.length < totalCount ? (
-            <li className="px-2 py-1.5 text-xs text-muted-foreground">
+            <li className="px-4 py-2 type-caption text-muted-foreground">
               y {totalCount - rows.length} más. Filtrá por estado «Cancelada» para verlas todas.
             </li>
           ) : null}
         </ul>
       ) : null}
-    </div>
+    </section>
   )
 }

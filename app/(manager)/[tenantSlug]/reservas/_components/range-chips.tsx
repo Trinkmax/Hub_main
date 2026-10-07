@@ -4,11 +4,19 @@ import { CalendarRange } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { DatePicker } from '@/components/ui/date-picker'
+import { Field, FieldRow } from '@/components/ui/field'
+import { FilterChip } from '@/components/ui/filter-chip'
+import {
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { formatRange } from '@/lib/dates/format'
 import type { DatePresetRange, ReservationDatePreset } from '@/lib/salon/date-presets'
-import { cn } from '@/lib/utils'
 
 /**
  * Chips de período arriba de la lista: Hoy · Esta semana · Este mes · Rango.
@@ -17,6 +25,10 @@ import { cn } from '@/lib/utils'
  * "Más" — el dueño no podía ver la agenda de la semana sin ir flecha por flecha.
  * Los presets se calculan en el server (`lib/salon/date-presets.ts`) y llegan
  * ya resueltos para que el chip y la query no puedan discrepar.
+ *
+ * Son los `FilterChip` del kit (el elegido lleva contorno verde y un tilde);
+ * «Rango» abre un popover con dos `DatePicker` (se tipea «15/9» o se elige en
+ * el calendario) en lugar de los `type="date"` del navegador.
  */
 export function ReservationRangeChips({
   tenantSlug,
@@ -73,77 +85,64 @@ export function ReservationRangeChips({
   const invalidDraft = Boolean(draftFrom && draftTo && draftFrom > draftTo)
 
   return (
-    <div className="flex flex-wrap items-center gap-2" data-tour="reservas-periodo">
-      <Chip
-        label="Hoy"
-        active={active === 'today'}
+    <fieldset className="flex min-w-0 flex-wrap items-center gap-2" data-tour="reservas-periodo">
+      <legend className="sr-only">Período</legend>
+      <FilterChip
+        pressed={active === 'today'}
         disabled={pending}
         onClick={() => push({ from: null, to: null, day: null, servicio: null })}
-      />
-      <Chip
-        label="Esta semana"
-        active={active === 'week'}
-        disabled={pending}
-        onClick={() => applyRange(week)}
-      />
-      <Chip
-        label="Este mes"
-        active={active === 'month'}
-        disabled={pending}
-        onClick={() => applyRange(month)}
-      />
+      >
+        Hoy
+      </FilterChip>
+      <FilterChip pressed={active === 'week'} disabled={pending} onClick={() => applyRange(week)}>
+        Esta semana
+      </FilterChip>
+      <FilterChip pressed={active === 'month'} disabled={pending} onClick={() => applyRange(month)}>
+        Este mes
+      </FilterChip>
 
-      <Popover open={rangeOpen} onOpenChange={setRangeOpen}>
+      <Popover
+        open={rangeOpen}
+        onOpenChange={(open) => {
+          // Al abrir arranca con el rango que se está viendo.
+          if (open) {
+            setDraftFrom(from ?? '')
+            setDraftTo(to ?? '')
+          }
+          setRangeOpen(open)
+        }}
+      >
         <PopoverTrigger asChild>
-          <button
-            type="button"
-            disabled={pending}
-            className={cn(
-              'inline-flex h-11 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-              active === 'range'
-                ? 'border-primary bg-primary text-primary-foreground'
-                : 'border-border bg-card/40 text-muted-foreground hover:bg-secondary',
-            )}
-          >
-            <CalendarRange className="size-4" />
-            {active === 'range' && from && to ? 'Rango elegido' : 'Rango'}
-          </button>
+          <FilterChip pressed={active === 'range'} icon={CalendarRange} disabled={pending}>
+            {active === 'range' && from && to ? formatRange(from, to) : 'Rango'}
+          </FilterChip>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-72 space-y-3">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Rango de fechas</p>
-          <div className="space-y-2">
-            <div className="space-y-1">
-              <Label htmlFor="range-from" className="text-xs text-muted-foreground">
-                Desde
-              </Label>
-              <Input
-                id="range-from"
-                type="date"
-                value={draftFrom}
-                onChange={(e) => setDraftFrom(e.target.value)}
-                className="h-11"
+        <PopoverContent align="start" size="lg" className="grid gap-4">
+          <PopoverHeader>
+            <PopoverTitle>Rango de fechas</PopoverTitle>
+            <PopoverDescription>Con una sola fecha se ve ese día.</PopoverDescription>
+          </PopoverHeader>
+          <FieldRow>
+            <Field
+              label="Desde"
+              error={invalidDraft ? 'Tiene que ser antes de «Hasta».' : undefined}
+            >
+              <DatePicker
+                value={draftFrom || null}
+                onValueChange={(iso) => setDraftFrom(iso ?? '')}
               />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="range-to" className="text-xs text-muted-foreground">
-                Hasta
-              </Label>
-              <Input
-                id="range-to"
-                type="date"
-                value={draftTo}
-                onChange={(e) => setDraftTo(e.target.value)}
-                className="h-11"
+            </Field>
+            <Field label="Hasta">
+              <DatePicker
+                value={draftTo || null}
+                min={draftFrom || undefined}
+                onValueChange={(iso) => setDraftTo(iso ?? '')}
               />
-            </div>
-          </div>
-          {invalidDraft ? (
-            <p className="text-xs text-destructive">La fecha "Desde" tiene que ser anterior.</p>
-          ) : null}
+            </Field>
+          </FieldRow>
           <Button
             type="button"
-            className="h-11 w-full"
+            className="w-full"
             disabled={invalidDraft || (!draftFrom && !draftTo)}
             onClick={applyDraft}
           >
@@ -151,37 +150,6 @@ export function ReservationRangeChips({
           </Button>
         </PopoverContent>
       </Popover>
-    </div>
-  )
-}
-
-function Chip({
-  label,
-  active,
-  disabled,
-  onClick,
-}: {
-  label: string
-  active: boolean
-  disabled?: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-pressed={active}
-      className={cn(
-        'inline-flex h-11 items-center rounded-full border px-4 text-sm font-medium transition-colors',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-        'disabled:opacity-60',
-        active
-          ? 'border-primary bg-primary text-primary-foreground'
-          : 'border-border bg-card/40 text-muted-foreground hover:bg-secondary',
-      )}
-    >
-      {label}
-    </button>
+    </fieldset>
   )
 }

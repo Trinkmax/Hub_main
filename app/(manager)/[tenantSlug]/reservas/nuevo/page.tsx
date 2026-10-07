@@ -1,8 +1,8 @@
-import { ArrowLeft } from 'lucide-react'
 import { cookies } from 'next/headers'
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { FormTemplate } from '@/components/ui/page-templates'
+import { formatDayMonth } from '@/lib/dates/format'
 import { type ReservationReturnTo, reservationBackLink } from '@/lib/salon/calendar-links'
 import { todayInCordoba } from '@/lib/salon/date-presets'
 import { lastManagerCookieName } from '@/lib/salon/managers'
@@ -143,39 +143,34 @@ export default async function NuevaReservaPage({
   })
   const { initialDate, segment } = defaults
   const targetEvent = requestedEvent && defaults.targetEventId ? requestedEvent : null
-  const [, mm, dd] = initialDate.split('-')
   // Al calendario abierto en ese día y en ese servicio (desde ahí se veía cómo
   // venía el día), o a la lista parada en ese día.
   const back = reservationBackLink(tenantSlug, { returnTo, date: initialDate, segment })
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
-      <PageHeader
-        eyebrow={
-          <Link
-            href={back.href}
-            className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="size-3.5" />
-            {back.label}
-          </Link>
-        }
-        title={targetEvent ? `Reserva para ${eventDisplayName(targetEvent)}` : 'Nueva reserva'}
-        // Sin evento, la descripción no nombra el día ni el servicio de la URL:
-        // el header se arma en el server y no se entera de lo que cambia el form,
-        // así que después de tocar «Mañana» o «Cena» seguiría diciendo
-        // «Merienda del jue 25/09». El día y el servicio vigentes ya se ven
-        // marcados en el form. Con evento sí van: el servicio lo fija el evento.
-        description={
-          targetEvent
-            ? `${dd}/${mm} · ${targetEvent.starts_at_local.slice(0, 5)} · ${SEGMENT_LABELS[segment]} · el evento ya queda elegido abajo`
-            : 'Cargá los datos del cliente. El día, el servicio y la hora se pueden cambiar abajo.'
-        }
-      />
+    <FormTemplate
+      header={
+        <PageHeader
+          back={{ href: back.href, label: returnTo === 'calendario' ? 'Calendario' : 'Reservas' }}
+          title={targetEvent ? `Reserva para ${eventDisplayName(targetEvent)}` : 'Nueva reserva'}
+          // Sin evento, la descripción no nombra el día ni el servicio de la URL:
+          // el header se arma en el server y no se entera de lo que cambia el form,
+          // así que después de tocar «Mañana» o «Cena» seguiría diciendo
+          // «Merienda del jue 25/09». El día y el servicio vigentes ya se ven
+          // marcados en el form. Con evento sí van: el servicio lo fija el evento.
+          description={
+            targetEvent
+              ? `${formatDayMonth(initialDate)} · ${targetEvent.starts_at_local.slice(0, 5)} · ${SEGMENT_LABELS[segment]} · el evento ya queda elegido abajo`
+              : 'Cargá los datos del cliente. El día, el servicio y la hora se pueden cambiar abajo.'
+          }
+        />
+      }
+    >
       <ReservationForm
         mode="create"
         tenantSlug={tenantSlug}
         returnTo={returnTo}
+        cancelHref={back.href}
         initialDate={initialDate}
         today={today}
         initialSnapshot={snapshot}
@@ -191,6 +186,6 @@ export default async function NuevaReservaPage({
         lastManagerId={lastManagerId}
         canManageManagers={access.role === 'owner'}
       />
-    </div>
+    </FormTemplate>
   )
 }

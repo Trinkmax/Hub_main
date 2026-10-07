@@ -36,11 +36,12 @@ import { cn } from '@/lib/utils'
  * Solo aparecen los servicios con actividad (gente o eventos), siempre en
  * orden A/M/C. Nunca se muestra un total del día.
  *
- * - `cell`: la celda de la grilla (sm+). Entre 640 y 1023 px la celda tiene
- *   ~55-72 px útiles: entra "C 119/120" en mono 10px y la barra. Desde lg
- *   suma el desglose compacto en hasta dos renglones ("46/50 normales · 3
- *   cumples · 1 torta"): el dueño lo pidió visible sin abrir el día. Desde xl
- *   (~107 px) el título pasa a "Cena 119/120".
+ * - `cell`: la celda de la grilla (sm+). Con el piso de 12 px del kit, "C
+ *   119/120" mide ~56 px en cifras tabulares de Inter: la celda deja ~60 px
+ *   útiles a 640 px (el mes achica el aire entre celdas y su relleno para
+ *   eso). Desde lg suma el desglose compacto en hasta dos renglones ("46/50
+ *   normales · 3 cumples · 1 torta"): el dueño lo pidió visible sin abrir el
+ *   día. Desde xl (~107 px) el título pasa a "Cena 119/120".
  * - `agenda`: la fila del celu (< sm), a todo el ancho: chips "Cena 119/120"
  *   y hasta dos líneas de detalle.
  *
@@ -104,9 +105,7 @@ export function MonthDaySegments({
         {details.length > 0 ? (
           // Una línea por servicio, unidas en un solo párrafo para que el
           // line-clamp corte a dos renglones en total (y no dos por servicio).
-          <p className="line-clamp-2 text-[11px] leading-4 text-muted-foreground">
-            {details.join('. ')}
-          </p>
+          <p className="line-clamp-2 type-caption text-muted-foreground">{details.join('. ')}</p>
         ) : null}
       </div>
     )
@@ -126,10 +125,13 @@ export function MonthDaySegments({
             onClick={() => onOpenSegment(s.key)}
             aria-label={label}
             title={label}
-            className="-mx-1 flex min-w-0 flex-col gap-0.5 rounded px-1 py-0.5 text-left outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring/50"
+            className="-mx-1 flex min-w-0 flex-col gap-0.5 rounded-sm px-1 py-0.5 text-left outline-(--ring) -outline-offset-2 hover:bg-hover focus-visible:outline-2"
           >
             <span
-              className={cn('font-mono text-[10px] leading-3 font-medium tabular-nums', tone.text)}
+              className={cn(
+                'whitespace-nowrap type-caption font-medium tabular-nums tracking-tight',
+                tone.text,
+              )}
             >
               <span className="xl:hidden">{segmentHeadline(s, 'letter')}</span>
               <span className="hidden xl:inline">{segmentHeadline(s, 'short')}</span>
@@ -140,7 +142,7 @@ export function MonthDaySegments({
             </span>
             <SegmentBar segment={s} size="xs" />
             {breakdown ? (
-              <span className="hidden text-[10px] leading-3 text-muted-foreground lg:line-clamp-2">
+              <span className="hidden type-caption text-muted-foreground lg:line-clamp-2">
                 {breakdown}
               </span>
             ) : null}
@@ -194,9 +196,7 @@ function ZoneDaySegments({
           ))}
         </div>
         {details.length > 0 ? (
-          <p className="line-clamp-2 text-[11px] leading-4 text-muted-foreground">
-            {details.join('. ')}
-          </p>
+          <p className="line-clamp-2 type-caption text-muted-foreground">{details.join('. ')}</p>
         ) : null}
       </div>
     )
@@ -215,17 +215,20 @@ function ZoneDaySegments({
             onClick={() => onOpenSegment(z.segment)}
             aria-label={label}
             title={label}
-            className="-mx-1 flex min-w-0 flex-col gap-0.5 rounded px-1 py-0.5 text-left outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring/50"
+            className="-mx-1 flex min-w-0 flex-col gap-0.5 rounded-sm px-1 py-0.5 text-left outline-(--ring) -outline-offset-2 hover:bg-hover focus-visible:outline-2"
           >
             <span
-              className={cn('font-mono text-[10px] leading-3 font-medium tabular-nums', tone.text)}
+              className={cn(
+                'whitespace-nowrap type-caption font-medium tabular-nums tracking-tight',
+                tone.text,
+              )}
             >
               <span className="xl:hidden">{zoneHeadline(z, 'letter')}</span>
               <span className="hidden xl:inline">{zoneHeadline(z, 'short')}</span>
             </span>
             <ZoneBar load={z} size="xs" />
             {breakdown ? (
-              <span className="hidden text-[10px] leading-3 text-muted-foreground lg:line-clamp-2">
+              <span className="hidden type-caption text-muted-foreground lg:line-clamp-2">
                 {breakdown}
               </span>
             ) : null}

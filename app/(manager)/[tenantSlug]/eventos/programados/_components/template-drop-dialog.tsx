@@ -1,8 +1,8 @@
 'use client'
 
-import { Loader2 } from 'lucide-react'
-import { useEffect, useId, useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { longDayLabel } from '@/components/reservations/day-labels'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -12,9 +12,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Field } from '@/components/ui/field'
+import { NumberField } from '@/components/ui/number-field'
 import { Switch } from '@/components/ui/switch'
+import { TimeField } from '@/components/ui/time-field'
 import { upsertScheduledEvent } from '@/lib/salon/actions'
 import { PRIVATE_GROUP_SWITCH } from '@/lib/salon/private-groups'
 import { MEAL_TYPE_LABELS, type ScheduledEventTemplateRow } from '@/lib/salon/types'
@@ -27,18 +28,17 @@ const DEFAULT_TIMES: Record<string, string> = {
   hub_event: '21:00',
 }
 
-function formatDateLong(date: string): string {
-  const [y, m, d] = date.split('-').map(Number)
-  if (!y || !m || !d) return date
-  const dt = new Date(Date.UTC(y, m - 1, d))
-  return new Intl.DateTimeFormat('es-AR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    timeZone: 'UTC',
-  }).format(dt)
+/** Solo hex: el color viene de la DB y va a un `style`. */
+function safeColor(colorHex: string | null | undefined): string {
+  return colorHex && /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(colorHex)
+    ? colorHex
+    : 'var(--muted-foreground)'
 }
 
+/**
+ * Al soltar un formato sobre un día del mes: hora, cupo y si es un grupo
+ * privado, y listo. Lo demás sale del formato.
+ */
 export function TemplateDropDialog({
   open,
   onOpenChange,
@@ -54,15 +54,11 @@ export function TemplateDropDialog({
   date: string | null
   onCreated?: () => void
 }) {
-  const timeId = useId()
-  const capId = useId()
-  const privateId = useId()
-
   const initialTime = template ? (DEFAULT_TIMES[template.default_meal_type] ?? '21:00') : '21:00'
   const initialCap = template?.default_capacity ?? 40
 
-  const [time, setTime] = useState(initialTime)
-  const [capacity, setCapacity] = useState(initialCap)
+  const [time, setTime] = useState<string | null>(initialTime)
+  const [capacity, setCapacity] = useState<number | null>(initialCap)
   const [privateGroup, setPrivateGroup] = useState(template?.default_private_group ?? false)
   const [pending, startTransition] = useTransition()
 
@@ -77,7 +73,7 @@ export function TemplateDropDialog({
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    if (!template || !date) return
+    if (!template || !date || !time || capacity === null) return
     startTransition(async () => {
       const result = await upsertScheduledEvent(tenantSlug, {
         template_id: template.id,
@@ -89,7 +85,7 @@ export function TemplateDropDialog({
         private_group: privateGroup,
       })
       if (result.ok) {
-        toast.success(`${template.name} programado para el ${formatDateLong(date)}`)
+        toast.success(`${template.name} programado para el ${longDayLabel(date)}`)
         onOpenChange(false)
         onCreated?.()
       } else {
@@ -100,20 +96,20 @@ export function TemplateDropDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 font-serif">
+          <DialogTitle className="flex items-center gap-2">
             {template ? (
               <span
                 aria-hidden
-                className="inline-block size-3 rounded-full"
-                style={{ backgroundColor: template.color_hex }}
+                className="inline-block size-3 shrink-0 rounded-full"
+                style={{ backgroundColor: safeColor(template.color_hex) }}
               />
             ) : null}
             Programar {template?.name ?? 'evento'}
           </DialogTitle>
           <DialogDescription>
-            {date ? <span className="capitalize">{formatDateLong(date)}</span> : null}
+            {date ? <span className="first-letter:uppercase">{longDayLabel(date)}</span> : null}
             {template ? (
               <>
                 {' · '}
@@ -124,63 +120,47 @@ export function TemplateDropDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="grid gap-4">
-          <div className="grid gap-1.5">
-            <Label htmlFor={timeId}>Hora de inicio</Label>
-            <Input
-              id={timeId}
-              type="time"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-              required
-              step={300}
-              className="font-mono tabular-nums"
-            />
-          </div>
+          <Field label="Hora de inicio">
+            <TimeField value={time} onValueChange={setTime} step={5} required />
+          </Field>
 
-          <div className="grid gap-1.5">
-            <Label htmlFor={capId}>Cupo total</Label>
-            <Input
-              id={capId}
-              type="number"
+          <Field
+            label="Cupo total"
+            hint={
+              template?.default_capacity == null
+                ? 'Este formato no tiene cupo por defecto: completalo a mano.'
+                : undefined
+            }
+          >
+            <NumberField
+              value={capacity}
+              onValueChange={setCapacity}
               min={1}
               max={999}
-              value={capacity}
-              onChange={(e) => setCapacity(Number(e.target.value))}
+              suffix="lugares"
               required
-              className="tabular-nums"
             />
-            {template?.default_capacity == null ? (
-              <p className="text-[11px] text-muted-foreground">
-                Este template no tiene cupo por defecto — completalo manualmente.
-              </p>
-            ) : null}
-          </div>
+          </Field>
 
           {/* «Grupo privado»: arranca como diga el formato. */}
-          <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-background/40 p-3">
-            <Switch
-              id={privateId}
-              className="mt-0.5"
-              checked={privateGroup}
-              onCheckedChange={setPrivateGroup}
-            />
-            <label htmlFor={privateId} className="cursor-pointer">
-              <div className="text-sm font-medium">{PRIVATE_GROUP_SWITCH.label}</div>
-              <p className="text-xs text-muted-foreground">{PRIVATE_GROUP_SWITCH.hint}</p>
-            </label>
-          </div>
+          <Field
+            layout="toggle"
+            label={PRIVATE_GROUP_SWITCH.label}
+            hint={PRIVATE_GROUP_SWITCH.hint}
+          >
+            <Switch checked={privateGroup} onCheckedChange={setPrivateGroup} />
+          </Field>
 
           <DialogFooter>
             <Button
               type="button"
-              variant="ghost"
+              variant="secondary"
               onClick={() => onOpenChange(false)}
               disabled={pending}
             >
               Cancelar
             </Button>
-            <Button type="submit" disabled={pending} className="gap-1.5">
-              {pending ? <Loader2 className="size-3.5 animate-spin" /> : null}
+            <Button type="submit" loading={pending} loadingText="Programando…">
               Programar
             </Button>
           </DialogFooter>

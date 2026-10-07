@@ -1,5 +1,7 @@
 import { SEGMENT_TONE_CLASSES } from '@/components/reservations/segment-meter'
 import { Button } from '@/components/ui/button'
+import { Callout } from '@/components/ui/callout'
+import { RadioCards, type RadioCardsItem } from '@/components/ui/radio-cards'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   SEGMENT_KEYS,
@@ -24,6 +26,10 @@ import { cn } from '@/lib/utils'
  * ofrecerse (hubo 2 en toda la historia y cuenta como almuerzo) y el cupo se
  * mide por estos 3 servicios, así que elegir el servicio y ver si entra es la
  * misma decisión.
+ *
+ * Son las `RadioCards` del kit: un grupo de radio de verdad (las flechas
+ * mueven y eligen), con la hora como dato al costado y el cupo como línea de
+ * apoyo.
  *
  * Presentacional y sin estado: el form decide qué pasa al tocar (mover la hora
  * si no la tocaron, avisar si la hora es de otro servicio). Una reserva legacy
@@ -64,87 +70,67 @@ export function SegmentPicker({
   const locked = lockedSegment !== null
   const suggested = settings[value].defaultTime
 
+  const items: RadioCardsItem[] = SEGMENT_KEYS.map((key) => {
+    const load = segments?.[key] ?? null
+    return {
+      value: key,
+      label: SEGMENT_LABELS[key],
+      meta: settings[key].defaultTime,
+      description: load ? (
+        <>
+          <RatioPill load={load} />
+          {/* El número y la causa van completos para el lector de pantalla: el
+              color de la pastilla nunca es la única señal. */}
+          <span className="sr-only">{segmentAriaLabel(load, '')}</span>
+        </>
+      ) : segmentsFailed ? (
+        // Mismo alto que la pastilla para que las tarjetas no salten.
+        <span aria-hidden>—</span>
+      ) : (
+        <Skeleton aria-hidden className="h-4 w-12 rounded-full" />
+      ),
+    }
+  })
+
   return (
-    <div className="space-y-2">
-      <fieldset aria-describedby={locked ? 'segment-picker-locked' : undefined} className="min-w-0">
-        <legend className="sr-only">Servicio</legend>
-        <div className="grid grid-cols-3 gap-2">
-          {SEGMENT_KEYS.map((key) => {
-            const active = value === key
-            const load = segments?.[key] ?? null
-            const time = settings[key].defaultTime
-            // El número y la causa van completos para el lector de pantalla: el
-            // color de la pastilla nunca es la única señal.
-            const label = load
-              ? `${segmentAriaLabel(load, '')} Hora sugerida ${time}.`
-              : `${SEGMENT_LABELS[key]}, hora sugerida ${time}.`
-            return (
-              <button
-                type="button"
-                key={key}
-                aria-pressed={active}
-                aria-label={label}
-                disabled={locked}
-                onClick={() => onSelect(key)}
-                className={cn(
-                  'flex min-h-16 flex-col items-center justify-center gap-0.5 rounded-xl border px-1.5 py-2 text-sm font-medium outline-none transition-all',
-                  'focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed',
-                  active
-                    ? 'border-primary bg-primary/10 text-foreground shadow-inner'
-                    : 'border-border bg-card/40 text-muted-foreground hover:bg-secondary disabled:opacity-60 disabled:hover:bg-card/40',
-                )}
-              >
-                <span>{SEGMENT_LABELS[key]}</span>
-                <span className="font-mono text-[11px] font-normal tabular-nums text-muted-foreground">
-                  {time}
-                </span>
-                {load ? (
-                  <RatioPill load={load} />
-                ) : segmentsFailed ? (
-                  // Mismo alto que la pastilla para que los botones no salten.
-                  <span
-                    aria-hidden
-                    className="font-mono text-[10px] font-normal leading-4 text-muted-foreground"
-                  >
-                    —
-                  </span>
-                ) : (
-                  <Skeleton aria-hidden className="h-4 w-10 rounded-full" />
-                )}
-              </button>
-            )
-          })}
-        </div>
-      </fieldset>
+    <div className="grid gap-2">
+      <RadioCards
+        aria-label="Servicio"
+        aria-describedby={locked ? 'segment-picker-locked' : undefined}
+        items={items}
+        size="sm"
+        // Tres columnas desde 390 px (casi todos los celulares): son tres
+        // palabras cortas y así la decisión entra en una sola fila.
+        className="min-[390px]:grid-cols-3"
+        value={value}
+        disabled={locked}
+        onValueChange={(next) => onSelect(next as SegmentKey)}
+      />
 
       {locked ? (
-        <p id="segment-picker-locked" className="text-xs text-muted-foreground">
+        <p id="segment-picker-locked" className="type-caption text-muted-foreground">
           El servicio lo define el evento ({SEGMENT_LABELS[lockedSegment]})
         </p>
       ) : null}
 
       {!locked && timeMismatch ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warning/50 bg-warning/10 px-3 py-2">
-          <p className="text-xs text-foreground">
-            La hora {timeMismatch.time} es de {SEGMENT_WITH_ARTICLE[timeMismatch.timeSegment]}
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 bg-card"
-            onClick={onUseSuggestedTime}
-          >
-            Pasar a {suggested}
-          </Button>
-        </div>
+        <Callout
+          tone="warning"
+          action={
+            <Button type="button" variant="secondary" size="sm" onClick={onUseSuggestedTime}>
+              Pasar a {suggested}
+            </Button>
+          }
+        >
+          La hora {timeMismatch.time} es de {SEGMENT_WITH_ARTICLE[timeMismatch.timeSegment]}
+        </Callout>
       ) : null}
 
       {/* Siempre montado: un aria-live que aparece junto con su texto no se
           anuncia en todos los lectores de pantalla. */}
       <p
         aria-live="polite"
-        className={autoSwitchedTo ? 'text-xs font-medium text-foreground' : 'sr-only'}
+        className={autoSwitchedTo ? 'type-caption font-medium text-foreground' : 'sr-only'}
       >
         {autoSwitchedTo ? `Pasó a ${SEGMENT_LABELS[autoSwitchedTo]}` : ''}
       </p>
@@ -152,14 +138,14 @@ export function SegmentPicker({
   )
 }
 
-/** "19/70" con el tono del servicio (verde, ámbar o rojo). Decorativa: el botón ya lo dice. */
+/** "19/70" con el tono del servicio (verde, ámbar o rojo). Decorativa: la tarjeta ya lo dice. */
 function RatioPill({ load }: { load: SegmentLoad }) {
   const tone = SEGMENT_TONE_CLASSES[segmentTone(load)]
   return (
     <span
       aria-hidden
       className={cn(
-        'rounded-full border px-1.5 font-mono text-[10px] font-normal leading-4 tabular-nums',
+        'inline-flex rounded-full border px-1.5 type-caption tabular-nums',
         tone.chip,
         tone.text,
       )}

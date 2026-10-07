@@ -1,34 +1,29 @@
 'use client'
 
 import { zodResolver } from '@hookform/resolvers/zod'
-import {
-  Cake,
-  Calendar,
-  Clock,
-  GlassWater,
-  HandHeart,
-  MessageCircle,
-  Minus,
-  Plus,
-  RotateCcw,
-  Search,
-  Sparkles,
-  User as UserIcon,
-  Users,
-  X,
-} from 'lucide-react'
-import { AnimatePresence, motion } from 'motion/react'
+import { Cake, GlassWater, RotateCcw, Search, X } from 'lucide-react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import PhoneInput from 'react-phone-number-input'
 import 'react-phone-number-input/style.css'
 import { toast } from 'sonner'
 import { CakeOptionPicker } from '@/components/reservations/cake-option-picker'
 import { SEGMENT_TONE_CLASSES, SegmentBar } from '@/components/reservations/segment-meter'
+import { Amount } from '@/components/ui/amount'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Callout } from '@/components/ui/callout'
+import { Field, FieldRow, FormSection } from '@/components/ui/field'
+import { FilterChip } from '@/components/ui/filter-chip'
+import { FormActions } from '@/components/ui/form-actions'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { KbdShortcut } from '@/components/ui/kbd-shortcut'
+import { MoneyField } from '@/components/ui/money-field'
+import { NumberField } from '@/components/ui/number-field'
+import { RadioCards, type RadioCardsItem } from '@/components/ui/radio-cards'
+import { SegmentedControl } from '@/components/ui/segmented-control'
 import {
   Select,
   SelectContent,
@@ -41,8 +36,11 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { TimeField } from '@/components/ui/time-field'
 import { calculateCommission, type RateTier } from '@/lib/commissions/calculate'
 import { type CustomerSearchResult, searchCustomers } from '@/lib/customers/search'
+import { addDays, weekdayOf } from '@/lib/dates/civil'
+import { formatDayMonth } from '@/lib/dates/format'
 import { createSalonReservation, updateSalonReservation } from '@/lib/salon/actions'
 import {
   parseServiceAlerts,
@@ -90,12 +88,6 @@ import {
   segmentStatusLine,
   segmentTone,
 } from '@/lib/salon/segments-copy'
-import { OverCapacityConfirm } from './over-capacity-confirm'
-import { QuickTemplateDialog } from './quick-template-dialog'
-import { SegmentPicker } from './segment-picker'
-
-type ReservationFormInput = CreateSalonReservationInput
-
 import {
   type CakeOptionRow,
   ORIGIN_LABELS,
@@ -108,6 +100,12 @@ import {
   type ScheduledEventTemplateRow,
 } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
+import { CommitDatePicker } from './commit-date-picker'
+import { OverCapacityConfirm } from './over-capacity-confirm'
+import { QuickTemplateDialog } from './quick-template-dialog'
+import { SegmentPicker } from './segment-picker'
+
+type ReservationFormInput = CreateSalonReservationInput
 
 type Props = {
   mode: 'create' | 'edit'
@@ -119,6 +117,11 @@ type Props = {
    * (el default) la lista en ese día.
    */
   returnTo: ReservationReturnTo
+  /**
+   * El «Cancelar» de la barra de acciones: la misma pantalla de origen que el
+   * «volver» del encabezado. Sin él no se dibuja.
+   */
+  cancelHref?: string
   initialDate: string
   /**
    * Hoy en Córdoba, desde el server. Los chips "Hoy / Mañana / …" salen de acá
@@ -196,65 +199,40 @@ const ORIGINS: ReservationOrigin[] = [
   'in_person',
   'partner_referral',
 ]
-// Las plantas se listan fijas; los eventos del día se suman como tiles al lado
-// (ver "Dónde se sienta"). Las tarjetas de planta son la reserva NORMAL; la
+// Las plantas se listan fijas; los eventos del día se suman como tarjetas al
+// lado (ver "Dónde se sienta"). Las tarjetas de planta son la reserva NORMAL; la
 // planta de una reserva de evento se elige abajo, en "¿Dónde se sientan?".
 const FLOOR_ZONES: FloorZone[] = ['planta_alta', 'planta_baja']
-
-const ZONE_TILE =
-  'flex min-h-16 flex-col items-center justify-center gap-0.5 rounded-xl border px-2 py-2 text-sm font-medium transition-all'
-const ZONE_TILE_ACTIVE = 'border-primary bg-primary/10 text-foreground shadow-inner'
-const ZONE_TILE_IDLE = 'border-border bg-card/40 text-muted-foreground hover:bg-secondary'
 const KINDS: ReservationKind[] = ['normal', 'birthday', 'special']
+/** El valor de radio de un evento en "Dónde se sienta" (las plantas van por su nombre). */
+const EVENT_VALUE_PREFIX = 'evento:'
 
-function ARSFormat(cents: number): string {
-  return new Intl.NumberFormat('es-AR', {
-    style: 'currency',
-    currency: 'ARS',
-    maximumFractionDigits: 0,
-  }).format(Math.round(cents / 100))
-}
-
-/** 'YYYY-MM-DD' → 'dd/MM' (así habla el bar de las fechas). */
-function ddMM(iso: string): string {
-  const [, m, d] = iso.split('-')
-  return `${d}/${m}`
-}
-
-// El input date da '' mientras está vacío: con eso no se pide el cupo (el
+// El campo de fecha da '' mientras está vacío: con eso no se pide el cupo (el
 // server igual valida la fecha con zod).
 const ISO_DAY_RE = /^\d{4}-\d{2}-\d{2}$/
 const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d/
 
+/**
+ * Los atajos de fecha: Hoy, Mañana y el próximo viernes y sábado. Aritmética
+ * de calendario sobre el `yyyy-MM-dd` de Córdoba que manda el server (sin la
+ * zona horaria del navegador ni `Intl`).
+ */
 function quickChips(today: string): Array<{ label: string; date: string }> {
-  const base = new Date(`${today}T12:00:00Z`)
-  const out: Array<{ label: string; date: string }> = []
-  const fmt = (d: Date) => {
-    return new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'America/Argentina/Cordoba',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(d)
-  }
-  out.push({ label: 'Hoy', date: today })
-  const tomorrow = new Date(base.getTime() + 24 * 3600 * 1000)
-  out.push({ label: 'Mañana', date: fmt(tomorrow) })
-  // próximo viernes / sábado
-  for (let i = 2; i <= 9; i++) {
-    const d = new Date(base.getTime() + i * 24 * 3600 * 1000)
-    const dow = d.getUTCDay() // 0=Sun ... 5=Fri 6=Sat
-    if (dow === 5) {
-      out.push({ label: 'Viernes', date: fmt(d) })
-      break
-    }
-  }
-  for (let i = 2; i <= 9; i++) {
-    const d = new Date(base.getTime() + i * 24 * 3600 * 1000)
-    const dow = d.getUTCDay()
-    if (dow === 6) {
-      out.push({ label: 'Sábado', date: fmt(d) })
-      break
+  const out: Array<{ label: string; date: string }> = [
+    { label: 'Hoy', date: today },
+    { label: 'Mañana', date: addDays(today, 1) },
+  ]
+  // weekdayOf: 0 = domingo … 5 = viernes, 6 = sábado.
+  for (const [label, dow] of [
+    ['Viernes', 5],
+    ['Sábado', 6],
+  ] as const) {
+    for (let i = 2; i <= 9; i++) {
+      const date = addDays(today, i)
+      if (weekdayOf(date) === dow) {
+        out.push({ label, date })
+        break
+      }
     }
   }
   return out
@@ -264,6 +242,7 @@ export function ReservationForm({
   mode,
   tenantSlug,
   returnTo,
+  cancelHref,
   initialDate,
   today,
   initialSnapshot,
@@ -608,8 +587,6 @@ export function ReservationForm({
     setAutoSwitchedTo(next)
   }
 
-  const timeField = form.register('reservation_time_local')
-
   // Preview de comisión client-side
   const commissionPreviewCents = useMemo(() => {
     const primary = managers.find((m) => m.id === values.primary_manager_id)
@@ -828,19 +805,79 @@ export function ReservationForm({
   }, [onSubmit, submitting, confirming])
 
   const chips = quickChips(today)
+  const errors = form.formState.errors
+
+  // "Dónde se sienta": las dos plantas y los eventos del día en un solo grupo
+  // de radio. El valor de un evento lleva prefijo para no chocar con una zona.
+  // Siempre un string: '' es «nada elegido» sin pasar el grupo a no controlado
+  // (un evento de otro día que ya no está en la lista).
+  const placeValue = place.floorTile
+    ? place.floorTile
+    : place.eventId
+      ? `${EVENT_VALUE_PREFIX}${place.eventId}`
+      : ''
+  const placeItems: RadioCardsItem[] = [
+    ...FLOOR_ZONES.map((z) => ({
+      value: z,
+      label: floorLabel(z),
+      // Personas en la planta EN ESTE SERVICIO, sin denominador: el tope por
+      // planta del día entero mezclaba almuerzo y cena (el mismo defecto que el
+      // "171 de 130"). El tope es del servicio y lo muestra el medidor.
+      description: projection
+        ? `${projection.before.byZone[z]} en ${SEGMENT_WITH_ARTICLE[projection.segment]}`
+        : undefined,
+    })),
+    ...eventsForDate.map((e) =>
+      eventPlaceItem(e, eventLoads[e.id] ?? null, place.eventId === e.id ? place.eventFloor : null),
+    ),
+  ]
+
+  function choosePlace(next: string) {
+    if (next.startsWith(EVENT_VALUE_PREFIX)) {
+      const e = eventsForDate.find((x) => x.id === next.slice(EVENT_VALUE_PREFIX.length))
+      if (!e) return
+      // Entra al evento. La planta arranca "Sin definir", salvo que ya fuera
+      // este evento (volver a tocarlo no la borra).
+      const picked = pickEventTile(values, e.id)
+      form.setValue('zone', picked.zone, { shouldValidate: true })
+      form.setValue('scheduled_event_id', picked.scheduled_event_id, { shouldValidate: true })
+      form.clearErrors('scheduled_event_id')
+      // El evento define el servicio (por su hora, R2) y con eso la tarifa:
+      // 'hub_event' no tiene y dejaba la comisión en 0. Si la hora no la
+      // tocaron, la reserva arranca con el evento.
+      setAutoSwitchedTo(null)
+      form.setValue('meal_type', mealTypeForSegment(segmentOfEventStart(e.starts_at_local)), {
+        shouldValidate: true,
+        shouldDirty: false,
+      })
+      if (!timeTouched) {
+        form.setValue('reservation_time_local', e.starts_at_local.slice(0, 5), {
+          shouldValidate: true,
+          shouldDirty: false,
+        })
+      }
+      return
+    }
+    // Tocar una planta suelta es "sin evento": se limpia acá, en el toque, y
+    // no en un efecto (ver `pickFloorTile`).
+    const picked = pickFloorTile(next as FloorZone)
+    form.setValue('zone', picked.zone, { shouldValidate: true })
+    form.setValue('scheduled_event_id', picked.scheduled_event_id, { shouldValidate: true })
+    form.clearErrors('scheduled_event_id')
+  }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-6">
+    <form onSubmit={onSubmit}>
       {/* Cliente */}
-      <FieldGroup title="Cliente" icon={UserIcon}>
+      <FormSection title="Cliente">
         <CustomerCombobox
-          tenantSlug={tenantSlug}
           value={{
             customer_id: values.customer_id,
             guest_name: values.guest_name,
             guest_phone: values.guest_phone ?? null,
             guest_email: values.guest_email ?? null,
           }}
+          tenantSlug={tenantSlug}
           onChange={(v) => {
             form.setValue('customer_id', v.customer_id, { shouldValidate: true })
             form.setValue('guest_name', v.guest_name, { shouldValidate: true })
@@ -857,144 +894,115 @@ export function ReservationForm({
               setProfileAlerts([])
             }
           }}
-          error={form.formState.errors.guest_name?.message}
+          error={errors.guest_name?.message}
+          phoneError={errors.guest_phone?.message}
         />
-      </FieldGroup>
+      </FormSection>
 
       {/* Fecha + horario */}
-      <FieldGroup title="Cuándo" icon={Calendar}>
-        <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-          <div className="space-y-2">
-            <Label
-              htmlFor="reservation_date"
-              className="text-xs uppercase tracking-wide text-muted-foreground"
+      <FormSection title="Cuándo">
+        <Field label="Fecha" error={errors.reservation_date?.message}>
+          {/* Tipeando, la fecha se aplica al salir del campo (o con Enter): si no,
+              «15/10» pasaba por el 1 de enero y pedía el cupo de cada fecha a
+              medio tipear. Del calendario, en el momento. */}
+          <CommitDatePicker
+            value={values.reservation_date || null}
+            today={today}
+            onCommit={(iso) =>
+              form.setValue('reservation_date', iso ?? '', { shouldValidate: iso !== null })
+            }
+          />
+        </Field>
+        <fieldset className="-mt-2 flex min-w-0 flex-wrap gap-2">
+          <legend className="sr-only">Atajos de fecha</legend>
+          {chips.map((c) => (
+            <FilterChip
+              key={c.label}
+              pressed={values.reservation_date === c.date}
+              onClick={() => form.setValue('reservation_date', c.date, { shouldValidate: true })}
             >
-              Fecha
-            </Label>
-            <Input
-              id="reservation_date"
-              type="date"
-              aria-invalid={!!form.formState.errors.reservation_date}
-              {...form.register('reservation_date')}
-              className="h-11 text-base"
+              {c.label}
+            </FilterChip>
+          ))}
+        </fieldset>
+        {/* Los dos horarios van juntos y en ese orden: se leen como un rango.
+            En mobile quedan uno al lado del otro en vez de apilarse, que es
+            como el staff los piensa ("de nueve y media a doce y media"). */}
+        <div className="grid grid-cols-2 items-start gap-4">
+          <Field label="Horario" error={errors.reservation_time_local?.message}>
+            <TimeField
+              value={timeValue}
+              step={15}
+              onValueChange={(t) =>
+                form.setValue('reservation_time_local', t ?? '', {
+                  shouldValidate: t !== null,
+                  shouldDirty: true,
+                })
+              }
+              // El servicio se acomoda a la hora cuando se termina de tipear:
+              // tipeando «1300», «130» es la 01:30 y no tiene que pasar la
+              // reserva a la cena y volverla al almuerzo en el medio.
+              onBlur={() => handleTimeChangedByUser(form.getValues('reservation_time_local') ?? '')}
             />
-            <div className="flex flex-wrap gap-1.5">
-              {chips.map((c) => (
-                <button
-                  type="button"
-                  key={c.label}
-                  onClick={() =>
-                    form.setValue('reservation_date', c.date, { shouldValidate: true })
+          </Field>
+          <Field
+            label="Hasta"
+            optional
+            error={errors.reservation_end_time_local?.message}
+            hint={
+              implausibleSpan
+                ? undefined
+                : !endTime
+                  ? 'Si no sabés hasta qué hora se quedan, dejalo vacío.'
+                  : crossesMidnight
+                    ? `Termina al día siguiente · ${durationLabel(spanMinutes ?? 0)} de mesa.`
+                    : `${durationLabel(spanMinutes ?? 0)} de mesa.`
+            }
+          >
+            {(control) => (
+              <div className="flex items-center gap-1">
+                <TimeField
+                  {...control}
+                  value={endTime ?? ''}
+                  step={15}
+                  className="flex-1"
+                  onValueChange={(t) =>
+                    form.setValue('reservation_end_time_local', t ?? '', { shouldValidate: true })
                   }
-                  className={cn(
-                    'rounded-full border px-3 py-1 text-xs transition-colors',
-                    values.reservation_date === c.date
-                      ? 'border-primary bg-primary text-primary-foreground'
-                      : 'border-border hover:bg-secondary',
-                  )}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          {/* Los dos horarios van juntos y en ese orden: se leen como un rango.
-              En mobile quedan uno al lado del otro en vez de apilarse, que es
-              como el staff los piensa ("de nueve y media a doce y media"). */}
-          <div className="grid grid-cols-2 gap-3 sm:w-[292px]">
-            <div className="space-y-2">
-              <Label
-                htmlFor="reservation_time_local"
-                className="text-xs uppercase tracking-wide text-muted-foreground"
-              >
-                Horario
-              </Label>
-              <div className="relative">
-                <Clock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="reservation_time_local"
-                  type="time"
-                  step={900}
-                  aria-invalid={!!form.formState.errors.reservation_time_local}
-                  {...timeField}
-                  onChange={(e) => {
-                    void timeField.onChange(e)
-                    handleTimeChangedByUser(e.target.value)
-                  }}
-                  className="h-11 pl-9 text-base tabular-nums"
                 />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label
-                htmlFor="reservation_end_time_local"
-                className="text-xs uppercase tracking-wide text-muted-foreground"
-              >
-                Hasta (opcional)
-              </Label>
-              <div className="relative">
-                <Clock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="reservation_end_time_local"
-                  type="time"
-                  step={900}
-                  aria-invalid={!!form.formState.errors.reservation_end_time_local}
-                  aria-describedby="reservation_end_time_hint"
-                  {...form.register('reservation_end_time_local')}
-                  className={cn('h-11 pl-9 text-base tabular-nums', endTime && 'pr-9')}
-                />
-                {/* Sin esto no se puede volver a "sin hora de fin" desde el
-                    celular: la rueda de iOS y el reloj de Android no tienen
-                    cómo dejar el campo vacío. Y puede llegar cargado solo,
-                    porque el alta desde un evento lo precarga. */}
+                {/* Puede llegar cargado solo (el alta desde un evento lo
+                    precarga): un toque lo deja vacío otra vez. */}
                 {endTime ? (
                   <Button
                     type="button"
                     variant="ghost"
-                    size="icon"
+                    size="icon-sm"
                     aria-label="Quitar el horario de fin"
                     onClick={() =>
                       form.setValue('reservation_end_time_local', '', { shouldValidate: true })
                     }
-                    className="absolute right-1 top-1/2 size-8 -translate-y-1/2 rounded-md text-muted-foreground hover:text-foreground"
                   >
-                    <X className="size-3.5" />
+                    <X aria-hidden />
                   </Button>
                 ) : null}
               </div>
-            </div>
-            {/* Tres estados, no dos: sin fin es un consejo, con fin es el dato
-                que el dueño vino a buscar (cuánto dura la mesa), y un tramo
-                absurdo es un aviso. Decirle "dejalo vacío" a alguien que acaba
-                de completar el campo era un consejo desalineado. */}
-            <p
-              id="reservation_end_time_hint"
-              className={cn(
-                'col-span-2 text-[11px] leading-snug',
-                // Tinte de fondo, no color de texto: `--warning-foreground` está
-                // pensado SOBRE el ámbar y en dark mode queda casi negro sobre
-                // negro. Es el mismo patrón del chip de cubiertos.
-                implausibleSpan
-                  ? 'rounded-md border border-warning/50 bg-warning/10 px-2 py-1 text-foreground'
-                  : 'text-muted-foreground',
-              )}
-            >
-              {!endTime
-                ? 'Si no sabés hasta qué hora se quedan, dejalo vacío.'
-                : implausibleSpan
-                  ? `Serían ${durationLabel(spanMinutes ?? 0)} de mesa. ¿Está bien el horario?`
-                  : crossesMidnight
-                    ? `Termina al día siguiente · ${durationLabel(spanMinutes ?? 0)} de mesa.`
-                    : `${durationLabel(spanMinutes ?? 0)} de mesa.`}
-            </p>
-          </div>
+            )}
+          </Field>
         </div>
-      </FieldGroup>
+        {/* Una cena que arranca 21:30 y termina 00:30 es la noche típica del
+            bar, no un error de carga: no lo bloqueamos, lo decimos. Un tramo
+            absurdo (21:30 → 20:00 son 22h30 de mesa) es casi seguro un dedazo. */}
+        {implausibleSpan ? (
+          <Callout tone="warning">
+            Serían {durationLabel(spanMinutes ?? 0)} de mesa. ¿Está bien el horario?
+          </Callout>
+        ) : null}
+      </FormSection>
 
       {/* Servicio: Almuerzo / Merienda / Cena con su hora sugerida y cómo
           viene su cupo ese día. Tocar uno mueve la hora si todavía no la
           tocaron; si la tocaron y es de otro servicio, se avisa. */}
-      <FieldGroup title="Tipo de servicio" icon={Sparkles}>
+      <FormSection title="Servicio">
         <SegmentPicker
           value={selectedSegment}
           settings={settings}
@@ -1011,84 +1019,23 @@ export function ReservationForm({
           }
           autoSwitchedTo={autoSwitchedTo}
         />
-      </FieldGroup>
+      </FormSection>
 
       {/* Dónde se sienta: plantas + eventos del día en UNA sola grilla. Antes
           había que elegir "Sujeta a evento" y DESPUÉS buscar el evento en un
           combo — dos veces la misma decisión. Ahora cada evento programado del
           día es una opción más, con su hora y su ocupación a la vista. Con un
           evento elegido aparece abajo, opcional, en qué planta se sientan. */}
-      <FieldGroup title="Dónde se sienta" icon={Users}>
-        <div className="grid gap-2 sm:grid-cols-3">
-          {FLOOR_ZONES.map((z) => {
-            // Activa solo como reserva normal: una de Pizza libre en Planta
-            // Alta muestra activo el evento, y la planta en la pregunta de abajo.
-            const isActive = place.floorTile === z
-            return (
-              <button
-                type="button"
-                key={z}
-                aria-pressed={isActive}
-                onClick={() => {
-                  // Tocar una planta suelta es "sin evento": se limpia acá, en
-                  // el toque, y no en un efecto (ver `pickFloorTile`).
-                  const next = pickFloorTile(z)
-                  form.setValue('zone', next.zone, { shouldValidate: true })
-                  form.setValue('scheduled_event_id', next.scheduled_event_id, {
-                    shouldValidate: true,
-                  })
-                  form.clearErrors('scheduled_event_id')
-                }}
-                className={cn(ZONE_TILE, isActive ? ZONE_TILE_ACTIVE : ZONE_TILE_IDLE)}
-              >
-                <span>{floorLabel(z)}</span>
-                {/* Personas en la planta EN ESTE SERVICIO, sin denominador: el
-                    tope por planta del día entero mezclaba almuerzo y cena
-                    (el mismo defecto que el "171 de 130"). El tope es del
-                    servicio y lo muestra el medidor de abajo. */}
-                {projection ? (
-                  <span className="text-[11px] tabular-nums text-muted-foreground">
-                    {projection.before.byZone[z]} en {SEGMENT_WITH_ARTICLE[projection.segment]}
-                  </span>
-                ) : null}
-              </button>
-            )
-          })}
-          {eventsForDate.map((e) => (
-            <EventZoneTile
-              key={e.id}
-              event={e}
-              active={place.eventId === e.id}
-              floor={place.eventId === e.id ? place.eventFloor : null}
-              load={eventLoads[e.id] ?? null}
-              onSelect={() => {
-                // Entra al evento. La planta arranca "Sin definir", salvo que
-                // ya fuera este evento (volver a tocarlo no la borra).
-                const next = pickEventTile(values, e.id)
-                form.setValue('zone', next.zone, { shouldValidate: true })
-                form.setValue('scheduled_event_id', next.scheduled_event_id, {
-                  shouldValidate: true,
-                })
-                form.clearErrors('scheduled_event_id')
-                // El evento define el servicio (por su hora, R2) y con eso la
-                // tarifa: 'hub_event' no tiene y dejaba la comisión en 0. Si la
-                // hora no la tocaron, la reserva arranca con el evento.
-                setAutoSwitchedTo(null)
-                form.setValue(
-                  'meal_type',
-                  mealTypeForSegment(segmentOfEventStart(e.starts_at_local)),
-                  { shouldValidate: true, shouldDirty: false },
-                )
-                if (!timeTouched) {
-                  form.setValue('reservation_time_local', e.starts_at_local.slice(0, 5), {
-                    shouldValidate: true,
-                    shouldDirty: false,
-                  })
-                }
-              }}
-            />
-          ))}
-        </div>
+      <FormSection title="Dónde se sienta">
+        <RadioCards
+          aria-label="Dónde se sienta"
+          columns={3}
+          size="sm"
+          items={placeItems}
+          value={placeValue}
+          onValueChange={choosePlace}
+          invalid={Boolean(errors.zone)}
+        />
         {/* La planta DENTRO del evento ("si lo requiere", pidió el dueño): la
             reserva sigue siendo del evento y cuenta en su cupo; esto solo dice
             dónde se sienta. Sin elegir queda "Sin ubicar", como siempre. */}
@@ -1101,192 +1048,187 @@ export function ReservationForm({
           />
         ) : null}
         {eventsForDate.length === 0 && !eventDateMismatch ? (
-          <p className="text-xs text-muted-foreground">
-            Sin eventos programados para el {ddMM(values.reservation_date)}. Si la reserva es para
-            un evento,{' '}
+          <p className="type-small text-muted-foreground">
+            Sin eventos programados para el {formatDayMonth(values.reservation_date)}. Si la reserva
+            es para un evento,{' '}
             <a
               href={`/${tenantSlug}/eventos/programados`}
               target="_blank"
               rel="noopener"
-              className="text-primary underline"
+              className="text-primary underline underline-offset-[3px] hover:decoration-2"
             >
               programalo en el calendario
             </a>{' '}
             y va a aparecer acá como opción.
           </p>
         ) : null}
-        {form.formState.errors.zone?.message ? (
-          <p className="text-sm text-destructive">{form.formState.errors.zone.message}</p>
-        ) : null}
-        {eventDateMismatch ? (
-          <div
-            role="alert"
-            className="space-y-2 rounded-lg border border-destructive/50 bg-destructive/5 p-3"
-          >
-            <p className="text-sm font-medium text-destructive">
-              La fecha no coincide con el evento
-              {selectedEventDate ? ` (el evento es del ${ddMM(selectedEventDate)})` : ''}.
-            </p>
-            <p className="text-xs text-muted-foreground">
-              No podemos guardarla así. Elegí cómo seguir:
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {selectedEventDate ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-11"
-                  onClick={() =>
-                    form.setValue('reservation_date', selectedEventDate, {
-                      shouldValidate: true,
-                    })
-                  }
-                >
-                  Volver al {ddMM(selectedEventDate)}
-                </Button>
-              ) : null}
-              <Button
-                type="button"
-                variant="ghost"
-                className="h-11"
-                onClick={() => {
-                  // Sacarla del evento: vuelve a una planta para que el form
-                  // quede válido aunque ese día no haya otros eventos. Si ya
-                  // tenía planta elegida dentro del evento, se queda en esa.
-                  const next = pickFloorTile(
-                    values.zone === 'event_floating' ? 'planta_alta' : values.zone,
-                  )
-                  form.setValue('zone', next.zone, { shouldValidate: true })
-                  form.setValue('scheduled_event_id', next.scheduled_event_id, {
-                    shouldValidate: true,
-                  })
-                  form.clearErrors('scheduled_event_id')
-                }}
-              >
-                Sacarla del evento
-              </Button>
-            </div>
-          </div>
-        ) : form.formState.errors.scheduled_event_id?.message ? (
-          <p className="text-sm text-destructive">
-            {form.formState.errors.scheduled_event_id.message}
+        {errors.zone?.message ? (
+          <p role="alert" className="type-caption text-destructive-text">
+            {errors.zone.message}
           </p>
         ) : null}
-      </FieldGroup>
+        {eventDateMismatch ? (
+          <Callout
+            tone="danger"
+            announce="assertive"
+            title={`La fecha no coincide con el evento${
+              selectedEventDate ? ` (el evento es del ${formatDayMonth(selectedEventDate)})` : ''
+            }.`}
+            action={
+              <>
+                {selectedEventDate ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() =>
+                      form.setValue('reservation_date', selectedEventDate, {
+                        shouldValidate: true,
+                      })
+                    }
+                  >
+                    Volver al {formatDayMonth(selectedEventDate)}
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    // Sacarla del evento: vuelve a una planta para que el form
+                    // quede válido aunque ese día no haya otros eventos. Si ya
+                    // tenía planta elegida dentro del evento, se queda en esa.
+                    const next = pickFloorTile(
+                      values.zone === 'event_floating' ? 'planta_alta' : values.zone,
+                    )
+                    form.setValue('zone', next.zone, { shouldValidate: true })
+                    form.setValue('scheduled_event_id', next.scheduled_event_id, {
+                      shouldValidate: true,
+                    })
+                    form.clearErrors('scheduled_event_id')
+                  }}
+                >
+                  Sacarla del evento
+                </Button>
+              </>
+            }
+          >
+            No podemos guardarla así. Elegí cómo seguir:
+          </Callout>
+        ) : errors.scheduled_event_id?.message ? (
+          <p role="alert" className="type-caption text-destructive-text">
+            {errors.scheduled_event_id.message}
+          </p>
+        ) : null}
+      </FormSection>
 
       {/* Tipo de reserva */}
-      <FieldGroup title="Naturaleza" icon={HandHeart}>
-        <Segmented
-          options={KINDS.map((k) => ({ value: k, label: RESERVATION_KIND_LABELS[k] }))}
+      <FormSection title="Tipo de reserva">
+        <SegmentedControl
+          aria-label="Tipo de reserva"
+          items={KINDS.map((k) => ({ value: k, label: RESERVATION_KIND_LABELS[k] }))}
           value={values.kind}
-          onChange={(v) => form.setValue('kind', v as ReservationKind, { shouldValidate: true })}
+          onValueChange={(v) => form.setValue('kind', v, { shouldValidate: true })}
         />
-      </FieldGroup>
+      </FormSection>
 
       {/* ESPECIAL: formato pedido (cumple/recibida que pide Sushi/Pizza/Ramen) */}
-      <AnimatePresence initial={false}>
-        {(values.kind === 'birthday' || values.kind === 'special') && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.18 }}
-          >
-            <FieldGroup title="¿Piden formato calendarizado?" icon={Sparkles}>
-              <p className="text-xs text-muted-foreground">
-                Si el cumple / recibida pide Sushi Libre, Pizza Libre, Ramen u otro formato del
-                catálogo. Si ya hay ese evento programado ese día, se suma; si no, se crea
-                automáticamente un evento ad-hoc para ese cliente.
-              </p>
-              <Select
-                value={values.requested_template_id ?? '__none__'}
-                onValueChange={(v) =>
-                  form.setValue('requested_template_id', v === '__none__' ? undefined : v, {
-                    shouldValidate: true,
-                  })
+      {values.kind === 'birthday' || values.kind === 'special' ? (
+        <FormSection
+          title="¿Piden un formato del calendario?"
+          description="Si el cumple o la recibida pide Sushi Libre, Pizza Libre, Ramen u otro formato del catálogo. Si ese evento ya está programado ese día, se suma; si no, se crea un evento solo para este cliente."
+        >
+          <Field label="Formato" error={errors.requested_template_id?.message}>
+            <Select
+              value={values.requested_template_id ?? '__none__'}
+              onValueChange={(v) =>
+                form.setValue('requested_template_id', v === '__none__' ? undefined : v, {
+                  shouldValidate: true,
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Sin formato (cena normal)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Sin formato — cena normal</SelectItem>
+                {templates.length === 0 ? (
+                  <div className="px-3 py-2 type-small text-muted-foreground">
+                    No hay formatos cargados.{' '}
+                    <a
+                      href={`/${tenantSlug}/eventos/templates`}
+                      target="_blank"
+                      rel="noopener"
+                      className="text-primary underline underline-offset-[3px]"
+                    >
+                      Crear uno
+                    </a>
+                  </div>
+                ) : (
+                  templates.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      <span className="flex items-center gap-2">
+                        <span
+                          className="size-2 rounded-full"
+                          style={{ backgroundColor: t.color_hex }}
+                          aria-hidden
+                        />
+                        {t.name}
+                        {t.default_capacity ? (
+                          <span className="type-caption text-muted-foreground">
+                            · cupo {t.default_capacity}
+                          </span>
+                        ) : null}
+                      </span>
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          </Field>
+          <div className="flex justify-end">
+            <QuickTemplateDialog
+              tenantSlug={tenantSlug}
+              defaultMealType={values.meal_type}
+              onCreated={(tpl) => {
+                setTemplates((prev) => [...prev, tpl].sort((a, b) => a.name.localeCompare(b.name)))
+                form.setValue('requested_template_id', tpl.id, { shouldValidate: true })
+              }}
+            />
+          </div>
+          {values.requested_template_id ? (
+            <Callout tone="success">
+              {(() => {
+                const tpl = templates.find((t) => t.id === values.requested_template_id)
+                const existing = eventsForDate.find(
+                  (e) => e.template?.id === values.requested_template_id,
+                )
+                if (existing) {
+                  return `Se suma al ${tpl?.name} ya programado (${existing.starts_at_local.slice(0, 5)} · cupo ${existing.capacity}).`
                 }
-              >
-                <SelectTrigger className="h-11 text-base">
-                  <SelectValue placeholder="Sin formato (cena normal)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">Sin formato — cena normal</SelectItem>
-                  {templates.length === 0 ? (
-                    <div className="px-3 py-2 text-sm text-muted-foreground">
-                      No hay templates configurados.{' '}
-                      <a
-                        href={`/${tenantSlug}/eventos/templates`}
-                        target="_blank"
-                        rel="noopener"
-                        className="text-primary underline"
-                      >
-                        Crear uno
-                      </a>
-                    </div>
-                  ) : (
-                    templates.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>
-                        <span className="flex items-center gap-2">
-                          <span
-                            className="size-2 rounded-full"
-                            style={{ backgroundColor: t.color_hex }}
-                            aria-hidden
-                          />
-                          {t.name}
-                          {t.default_capacity ? (
-                            <span className="text-xs text-muted-foreground">
-                              · cap {t.default_capacity}
-                            </span>
-                          ) : null}
-                        </span>
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-              <div className="flex justify-end">
-                <QuickTemplateDialog
-                  tenantSlug={tenantSlug}
-                  defaultMealType={values.meal_type}
-                  onCreated={(tpl) => {
-                    setTemplates((prev) =>
-                      [...prev, tpl].sort((a, b) => a.name.localeCompare(b.name)),
-                    )
-                    form.setValue('requested_template_id', tpl.id, { shouldValidate: true })
-                  }}
-                />
-              </div>
-              {values.requested_template_id ? (
-                <p className="text-xs text-emerald-700 dark:text-emerald-400">
-                  ✓ {(() => {
-                    const tpl = templates.find((t) => t.id === values.requested_template_id)
-                    const existing = eventsForDate.find(
-                      (e) => e.template?.id === values.requested_template_id,
-                    )
-                    if (existing) {
-                      return `Se suma al ${tpl?.name} ya programado (${existing.starts_at_local.slice(0, 5)} · cap ${existing.capacity}).`
-                    }
-                    return `${tpl?.name} no está programado ese día — se crea ad-hoc al guardar.`
-                  })()}
-                </p>
-              ) : null}
-              {form.formState.errors.requested_template_id?.message ? (
-                <p className="text-sm text-destructive">
-                  {form.formState.errors.requested_template_id.message}
-                </p>
-              ) : null}
-            </FieldGroup>
-          </motion.div>
-        )}
-      </AnimatePresence>
+                return `${tpl?.name} no está programado ese día: se crea solo al guardar.`
+              })()}
+            </Callout>
+          ) : null}
+        </FormSection>
+      ) : null}
 
       {/* Cantidad + capacidad */}
-      <FieldGroup title="Cantidad de personas" icon={Users}>
-        <div className="grid gap-4 sm:grid-cols-[180px_1fr]">
-          <GuestStepper
-            value={values.estimated_guests}
-            onChange={(v) => form.setValue('estimated_guests', v, { shouldValidate: true })}
-          />
+      <FormSection title="Cuántos son">
+        <div className="grid items-start gap-4 sm:grid-cols-[13rem_1fr]">
+          <Field label="Personas" error={errors.estimated_guests?.message}>
+            <NumberField
+              value={values.estimated_guests}
+              onValueChange={(v) => {
+                if (v !== null) form.setValue('estimated_guests', v, { shouldValidate: true })
+              }}
+              min={1}
+              max={99}
+              size="lg"
+              incrementLabel="Una persona más"
+              decrementLabel="Una persona menos"
+            />
+          </Field>
           <SegmentMeter
             projection={projection}
             fallback={
@@ -1301,7 +1243,7 @@ export function ReservationForm({
             onRetry={() => requestSnapshot(values.reservation_date)}
           />
         </div>
-      </FieldGroup>
+      </FormSection>
 
       {/* Cumpleaños extras (condicional).
           Se abre también cuando la reserva YA tiene torta o champagne aunque el
@@ -1309,88 +1251,61 @@ export function ReservationForm({
           (hay una real del 28/05) queda con el aviso ámbar "falta elegir torta"
           y sin ningún control para resolverlo — ni siquiera para bajar las
           tortas a 0. La DB no ata la torta al `kind`, así que la UI tampoco. */}
-      <AnimatePresence initial={false}>
-        {(values.kind === 'birthday' || values.cake_count > 0 || values.champagne_count > 0) && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.18 }}
-          >
-            <FieldGroup
-              title={values.kind === 'birthday' ? 'Cumpleaños' : 'Torta y champagne'}
+      {values.kind === 'birthday' || values.cake_count > 0 || values.champagne_count > 0 ? (
+        <FormSection title={values.kind === 'birthday' ? 'Cumpleaños' : 'Torta y champagne'}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <BringsItemControl
               icon={Cake}
-            >
-              <div className="grid gap-3 sm:grid-cols-2">
-                <BringsItemControl
-                  icon={Cake}
-                  label="¿Lleva torta?"
-                  value={values.cake_count}
-                  onChange={(v) => {
-                    form.setValue('cake_count', v)
-                    // Bajar a 0 tortas limpia el sabor: la DB tiene un check que
-                    // lo prohíbe y, sobre todo, guardar "opción 2" en una mesa
-                    // sin torta le deja a la cocina una comanda fantasma.
-                    if (v === 0) form.setValue('cake_option_id', null)
-                  }}
-                />
-                <BringsItemControl
-                  icon={GlassWater}
-                  label="¿Traen champagne?"
-                  value={values.champagne_count}
-                  onChange={(v) => form.setValue('champagne_count', v)}
-                />
-              </div>
+              label="¿Lleva torta?"
+              itemLabel="tortas"
+              value={values.cake_count}
+              onChange={(v) => {
+                form.setValue('cake_count', v)
+                // Bajar a 0 tortas limpia el sabor: la DB tiene un check que
+                // lo prohíbe y, sobre todo, guardar "opción 2" en una mesa
+                // sin torta le deja a la cocina una comanda fantasma.
+                if (v === 0) form.setValue('cake_option_id', null)
+              }}
+            />
+            <BringsItemControl
+              icon={GlassWater}
+              label="¿Traen champagne?"
+              itemLabel="botellas"
+              value={values.champagne_count}
+              onChange={(v) => form.setValue('champagne_count', v)}
+            />
+          </div>
 
-              {/* El desplegable de tortas: se abre solo cuando hay torta que
-                  hacer. Es la mitad que faltaba — antes se anotaba "torta: 1" y
-                  el lunes nadie sabía de qué era. */}
-              <AnimatePresence initial={false}>
-                {values.cake_count > 0 && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.18 }}
-                    className="overflow-hidden"
-                  >
-                    <CakeOptionPicker
-                      className="pt-3"
-                      options={cakeOptions}
-                      value={values.cake_option_id ?? null}
-                      onChange={(id) =>
-                        form.setValue('cake_option_id', id, { shouldValidate: true })
-                      }
-                      cakeCount={values.cake_count}
-                      manageHref={
-                        canManageCakes ? `/${tenantSlug}/configuracion/tortas` : undefined
-                      }
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </FieldGroup>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          {/* El desplegable de tortas: se abre solo cuando hay torta que
+              hacer. Es la mitad que faltaba — antes se anotaba "torta: 1" y
+              el lunes nadie sabía de qué era. */}
+          {values.cake_count > 0 ? (
+            <CakeOptionPicker
+              options={cakeOptions}
+              value={values.cake_option_id ?? null}
+              onChange={(id) => form.setValue('cake_option_id', id, { shouldValidate: true })}
+              cakeCount={values.cake_count}
+              manageHref={canManageCakes ? `/${tenantSlug}/configuracion/tortas` : undefined}
+            />
+          ) : null}
+        </FormSection>
+      ) : null}
 
       {/* Gestor + asistente */}
-      <FieldGroup title="Quién gestionó" icon={UserIcon}>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-              Gestor principal
-            </Label>
+      <FormSection title="Quién gestionó">
+        <FieldRow>
+          <Field
+            label="Gestor principal"
+            error={errors.primary_manager_id?.message}
+            hint="Es quien se lleva la comisión."
+          >
             <Select
               value={values.primary_manager_id}
               onValueChange={(v) =>
                 form.setValue('primary_manager_id', v, { shouldValidate: true })
               }
             >
-              <SelectTrigger
-                className="h-11"
-                aria-invalid={!!form.formState.errors.primary_manager_id}
-              >
+              <SelectTrigger>
                 <SelectValue placeholder="Elegí un gestor" />
               </SelectTrigger>
               <SelectContent>
@@ -1406,18 +1321,8 @@ export function ReservationForm({
                 ))}
               </SelectContent>
             </Select>
-            {form.formState.errors.primary_manager_id?.message ? (
-              <p className="text-xs text-destructive">
-                {form.formState.errors.primary_manager_id.message}
-              </p>
-            ) : (
-              <p className="text-xs text-muted-foreground">Es quien se lleva la comisión.</p>
-            )}
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-              Asistente (opcional)
-            </Label>
+          </Field>
+          <Field label="Asistente" optional hint="Si suman dos comisionables, se reparte 50/50.">
             <Select
               value={values.assistant_manager_id ?? '__none__'}
               onValueChange={(v) =>
@@ -1426,7 +1331,7 @@ export function ReservationForm({
                 })
               }
             >
-              <SelectTrigger className="h-11">
+              <SelectTrigger>
                 <SelectValue placeholder="Nadie" />
               </SelectTrigger>
               <SelectContent>
@@ -1447,186 +1352,155 @@ export function ReservationForm({
                 })}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">
-              Si suman dos comisionables, se splittea 50/50.
-            </p>
-          </div>
-        </div>
+          </Field>
+        </FieldRow>
         <ManagersHint
           tenantSlug={tenantSlug}
           count={managers.length}
           canManage={canManageManagers}
         />
-      </FieldGroup>
+      </FormSection>
 
       {/* Origen */}
-      <FieldGroup title="Cómo llegó la reserva" icon={MessageCircle}>
-        <Segmented
-          options={ORIGINS.map((o) => ({ value: o, label: ORIGIN_LABELS[o] }))}
-          value={values.origin}
-          onChange={(v) =>
-            form.setValue('origin', v as ReservationOrigin, { shouldValidate: true })
-          }
-        />
-      </FieldGroup>
-
-      {/* Seña + comentarios */}
-      <FieldGroup title="Extras" icon={Sparkles}>
-        <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
-          <div className="space-y-1.5">
-            <Label
-              htmlFor="deposit_cents"
-              className="text-xs uppercase tracking-wide text-muted-foreground"
+      <FormSection title="Cómo llegó la reserva">
+        <fieldset className="flex min-w-0 flex-wrap gap-2">
+          <legend className="sr-only">Cómo llegó la reserva</legend>
+          {ORIGINS.map((o) => (
+            <FilterChip
+              key={o}
+              pressed={values.origin === o}
+              onClick={() => form.setValue('origin', o, { shouldValidate: true })}
             >
-              Seña (ARS)
-            </Label>
-            <div className="relative">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                $
-              </span>
-              <Input
-                id="deposit_cents"
-                type="number"
-                min={0}
-                step={1}
-                inputMode="numeric"
-                placeholder="0"
-                value={values.deposit_cents > 0 ? Math.round(values.deposit_cents / 100) : ''}
-                onChange={(e) =>
-                  form.setValue('deposit_cents', Math.max(0, Number(e.target.value) * 100), {
-                    shouldValidate: true,
-                  })
-                }
-                className="h-11 pl-7 text-base tabular-nums"
-              />
-            </div>
-          </div>
-          {/* Avisos: van pegados al comentario porque son la versión marcable de
-              lo que antes se escribía suelto ahí y nadie leía. Chips y no un
-              select múltiple: el staff carga reservas por teléfono desde el
-              celular, y esto tiene que ser un toque. */}
-          <div className="space-y-1.5">
-            <fieldset className="space-y-1.5">
-              <legend className="text-xs uppercase tracking-wide text-muted-foreground">
-                Avisos para cocina y salón
-              </legend>
-              <div className="flex flex-wrap gap-1.5">
-                {SERVICE_ALERTS.map((alert) => {
-                  const meta = SERVICE_ALERT_META[alert]
-                  const active = selectedAlerts.includes(alert)
-                  return (
-                    <button
-                      type="button"
-                      key={alert}
-                      aria-pressed={active}
-                      title={meta.hint}
-                      onClick={() => toggleAlert(alert)}
-                      className={cn(
-                        'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                        active
-                          ? meta.severity === 'critical'
-                            ? 'border-destructive/60 bg-destructive/10 text-destructive'
-                            : 'border-warning/60 bg-warning/15 text-foreground'
-                          : 'border-border bg-card/40 text-muted-foreground hover:bg-secondary',
-                      )}
-                    >
-                      {meta.label}
-                    </button>
-                  )
-                })}
-              </div>
-            </fieldset>
-            {profileAlerts.length > 0 ? (
-              <p className="text-[11px] leading-snug text-muted-foreground">
-                {profileAlerts.map((a) => SERVICE_ALERT_META[a].label).join(', ')}{' '}
-                {profileAlerts.length === 1 ? 'ya está' : 'ya están'} en la ficha de este cliente y
-                {profileAlerts.length === 1 ? ' aparece' : ' aparecen'} solos en cada reserva. Para
-                sacarlo hay que editar la ficha.
-              </p>
-            ) : hasCustomerLink ? (
-              <p className="text-[11px] leading-snug text-muted-foreground">
-                Lo que es de la persona (celíaca, alérgica) queda guardado en su ficha y vuelve solo
-                la próxima vez.
-              </p>
-            ) : (
-              // Sin cliente en el CRM no hay ficha donde guardarlo. Decirlo:
-              // prometer "vuelve solo" y que no vuelva es peor que no prometerlo.
-              <p className="text-[11px] leading-snug text-muted-foreground">
-                Estos avisos quedan solo en esta reserva. Cargá el teléfono para que se guarden en
-                la ficha del cliente y vuelvan solos la próxima vez.
-              </p>
-            )}
-          </div>
+              {ORIGIN_LABELS[o]}
+            </FilterChip>
+          ))}
+        </fieldset>
+      </FormSection>
 
-          <div className="space-y-1.5">
-            <Label
-              htmlFor="comments"
-              className="text-xs uppercase tracking-wide text-muted-foreground"
-            >
-              Comentarios
-            </Label>
-            <Textarea
-              id="comments"
-              {...form.register('comments')}
-              placeholder="Alergia a qué, mesa preferida, promos ofrecidas, etc."
-              rows={3}
-            />
-            {/* La válvula de escape para lo que no entra en ningún chip. Solo
-                tiene sentido si hay algo escrito. */}
-            {values.comments?.trim() ? (
-              <div className="flex items-center gap-2 pt-0.5">
-                <Switch
-                  id="highlight_comment"
-                  checked={Boolean(values.highlight_comment)}
-                  onCheckedChange={(v) =>
-                    form.setValue('highlight_comment', v, { shouldValidate: true })
-                  }
-                />
-                <Label
-                  htmlFor="highlight_comment"
-                  className="cursor-pointer text-[11px] font-normal leading-snug text-muted-foreground"
-                >
-                  Destacar este comentario: se lee entero en la agenda y en el panel de mozos, sin
-                  abrir nada.
-                </Label>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </FieldGroup>
+      {/* Seña + avisos + comentarios */}
+      <FormSection title="Seña, avisos y comentarios">
+        <Field
+          label="Seña"
+          optional
+          error={errors.deposit_cents?.message}
+          hint="En pesos. Si no dejaron seña, dejalo vacío."
+          className="sm:max-w-60"
+        >
+          <MoneyField
+            cents={values.deposit_cents > 0 ? values.deposit_cents : null}
+            decimals="auto"
+            placeholder="Sin seña"
+            onCentsChange={(cents) =>
+              form.setValue('deposit_cents', cents ?? 0, { shouldValidate: true })
+            }
+          />
+        </Field>
 
-      {/* Footer: comisión + submit */}
-      <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/90 px-4 py-3 shadow-lg backdrop-blur">
-        <div className="flex items-center gap-3">
-          <div className="rounded-lg bg-amber-50 px-3 py-1.5 text-sm dark:bg-amber-950/40">
-            <span className="text-[11px] uppercase tracking-wide text-amber-700 dark:text-amber-300">
-              Comisión estimada
-            </span>
-            <div className="font-mono text-base font-semibold text-amber-900 dark:text-amber-100 tabular-nums">
-              {commissionPreviewCents > 0 ? ARSFormat(commissionPreviewCents) : '—'}
+        {/* Avisos: van pegados al comentario porque son la versión marcable de
+            lo que antes se escribía suelto ahí y nadie leía. Chips y no un
+            select múltiple: el staff carga reservas por teléfono desde el
+            celular, y esto tiene que ser un toque. */}
+        <div className="grid gap-2">
+          <fieldset className="grid min-w-0 gap-2">
+            <legend className="mb-2 type-label text-foreground">Avisos para cocina y salón</legend>
+            <div className="flex flex-wrap gap-2">
+              {SERVICE_ALERTS.map((alert) => {
+                const meta = SERVICE_ALERT_META[alert]
+                return (
+                  <FilterChip
+                    key={alert}
+                    pressed={selectedAlerts.includes(alert)}
+                    title={meta.hint}
+                    onClick={() => toggleAlert(alert)}
+                  >
+                    {meta.label}
+                  </FilterChip>
+                )
+              })}
             </div>
-          </div>
-          <p className="hidden text-xs text-muted-foreground sm:block">
-            Atajo: ⌘/Ctrl + Enter para confirmar
+          </fieldset>
+          <p className="type-caption text-pretty text-subtle-foreground">
+            {profileAlerts.length > 0
+              ? `${profileAlerts.map((a) => SERVICE_ALERT_META[a].label).join(', ')} ${
+                  profileAlerts.length === 1 ? 'ya está' : 'ya están'
+                } en la ficha de este cliente y ${
+                  profileAlerts.length === 1 ? 'aparece' : 'aparecen'
+                } solos en cada reserva. Para sacarlo hay que editar la ficha.`
+              : hasCustomerLink
+                ? 'Lo que es de la persona (celíaca, alérgica) queda guardado en su ficha y vuelve solo la próxima vez.'
+                : // Sin cliente en el CRM no hay ficha donde guardarlo. Decirlo:
+                  // prometer "vuelve solo" y que no vuelva es peor que no prometerlo.
+                  'Estos avisos quedan solo en esta reserva. Cargá el teléfono para que se guarden en la ficha del cliente y vuelvan solos la próxima vez.'}
           </p>
         </div>
+
+        <Field label="Comentarios" optional error={errors.comments?.message}>
+          <Textarea
+            {...form.register('comments')}
+            placeholder="Alergia a qué, mesa preferida, promos ofrecidas, etc."
+            rows={3}
+          />
+        </Field>
+        {/* La válvula de escape para lo que no entra en ningún chip. Solo
+            tiene sentido si hay algo escrito. */}
+        {values.comments?.trim() ? (
+          <Field
+            layout="toggle"
+            label="Destacar este comentario"
+            hint="Se lee entero en la agenda y en el panel de mozos, sin abrir nada."
+          >
+            <Switch
+              checked={Boolean(values.highlight_comment)}
+              onCheckedChange={(v) =>
+                form.setValue('highlight_comment', v, { shouldValidate: true })
+              }
+            />
+          </Field>
+        ) : null}
+      </FormSection>
+
+      {/* Comisión estimada: el número con plata atrás, justo antes de guardar. */}
+      <div className="mt-8 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pb-3">
+        <p className="type-small text-muted-foreground">
+          Comisión estimada:{' '}
+          {commissionPreviewCents > 0 ? (
+            <Amount
+              cents={commissionPreviewCents}
+              decimals={0}
+              className="font-semibold text-foreground"
+            />
+          ) : (
+            <span className="text-foreground">—</span>
+          )}
+        </p>
+        <p className="inline-flex items-center gap-1.5 type-caption text-muted-foreground max-sm:hidden">
+          Para guardar sin el mouse: <KbdShortcut keys={['mod', 'enter']} />
+        </p>
+      </div>
+
+      <FormActions sticky="always">
+        {cancelHref ? (
+          <Button asChild variant="secondary" className="max-sm:hidden">
+            <Link href={cancelHref}>Cancelar</Link>
+          </Button>
+        ) : null}
         <Button
           type="submit"
-          disabled={submitting || eventDateMismatch}
+          loading={submitting}
+          loadingText="Guardando…"
+          disabled={eventDateMismatch}
           title={
             eventDateMismatch
               ? 'La fecha de la reserva no coincide con la del evento elegido.'
               : undefined
           }
-          className="min-w-[160px] h-11 text-base"
         >
-          {submitting ? 'Guardando…' : mode === 'create' ? 'Crear reserva' : 'Guardar cambios'}
+          {mode === 'create' ? 'Crear reserva' : 'Guardar cambios'}
         </Button>
-      </div>
+      </FormActions>
 
-      {/* Sobrecupo (D3): se guarda recién al confirmar. El AlertDialog va en
-          un portal, así que sus botones no envían este <form>. */}
+      {/* Sobrecupo (D3): se guarda recién al confirmar. El diálogo va en un
+          portal, así que sus botones no envían este <form>. */}
       <OverCapacityConfirm
         projection={confirming?.projection ?? null}
         mode={mode}
@@ -1648,27 +1522,55 @@ export function ReservationForm({
 // Subcomponentes
 // ──────────────────────────────────────────────────────────
 
-function FieldGroup({
-  title,
-  icon: Icon,
-  children,
-}: {
-  title: string
-  // biome-ignore lint/suspicious/noExplicitAny: lucide icon type
-  icon: any
-  children: React.ReactNode
-}) {
-  return (
-    <section className="space-y-3 rounded-xl border border-border/60 bg-card/60 p-4 sm:p-5">
-      <header className="flex items-center gap-2">
-        <Icon className="size-4 text-muted-foreground" />
-        <h2 className="font-serif text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          {title}
-        </h2>
-      </header>
-      <div className="space-y-3">{children}</div>
-    </section>
-  )
+/** Solo hex: el color viene de la DB y va a un `style`. */
+function safeColor(colorHex: string | null | undefined): string {
+  return colorHex && /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(colorHex)
+    ? colorHex
+    : 'var(--primary)'
+}
+
+/**
+ * Un evento programado del día como opción de "Dónde se sienta": nombre con el
+ * color del formato, hora y ocupación real (la misma cuenta del calendario, si
+ * ya llegó el cupo del día). Un toque = `scheduled_event_id` y el servicio del
+ * evento; la planta se elige aparte (`EventFloorChooser`) y, si la eligieron,
+ * la tarjeta la repite abajo ("Evento · Planta Alta") para leerla de un vistazo.
+ */
+function eventPlaceItem(
+  event: ScheduledEventWithTemplate,
+  load: SegmentEventLoad | null,
+  /** Planta elegida dentro de este evento (solo si es el elegido). */
+  floor: SalonZone | null,
+): RadioCardsItem {
+  const name = event.name_override ?? event.template?.name ?? 'Evento'
+  const used = load?.used ?? null
+  const cap = load?.capacity ?? event.capacity
+  const full = used !== null && cap > 0 && used >= cap
+  return {
+    value: `${EVENT_VALUE_PREFIX}${event.id}`,
+    label: (
+      <span className="flex min-w-0 items-center gap-1.5">
+        <span
+          aria-hidden
+          className="size-2 shrink-0 rounded-full"
+          style={{ backgroundColor: safeColor(event.template?.color_hex) }}
+        />
+        <span className="truncate">{name}</span>
+      </span>
+    ),
+    meta: event.starts_at_local.slice(0, 5),
+    description: (
+      <>
+        <span className={cn('tabular-nums', full && 'font-medium text-destructive-text')}>
+          {used !== null ? `${used}/${cap}` : `cupo ${cap}`}
+          {full ? ' · lleno' : ''}
+        </span>
+        <span className="block">
+          {floor && floor !== 'event_floating' ? `Evento · ${floorLabel(floor)}` : 'Evento'}
+        </span>
+      </>
+    ),
+  }
 }
 
 /**
@@ -1680,18 +1582,12 @@ function ManagerOption({ manager, isSelf }: { manager: ReservationManagerRow; is
   return (
     <span className="flex items-center gap-2">
       {manager.display_name}
-      {isSelf ? (
-        <span className="rounded-full border bg-muted px-1.5 py-0 text-[10px] font-medium text-muted-foreground">
-          Vos
-        </span>
-      ) : null}
+      {isSelf ? <Badge tone="neutral">Vos</Badge> : null}
       {manager.commission_eligible ? (
-        <span
-          className="rounded-full bg-amber-100 px-1.5 py-0 text-[10px] font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-200"
-          title="Cobra comisión"
-        >
+        <Badge tone="brand" title="Cobra comisión">
           $$
-        </span>
+          <span className="sr-only">(cobra comisión)</span>
+        </Badge>
       ) : null}
     </span>
   )
@@ -1722,198 +1618,109 @@ function ManagersHint({
 
   if (count === 0) {
     return (
-      <div role="alert" className="rounded-lg border border-destructive/50 bg-destructive/5 p-3">
-        <p className="text-sm font-medium text-destructive">No hay gestores cargados.</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Sin al menos un gestor no se puede guardar la reserva.{' '}
-          {canManage ? (
-            <>
-              <a href={href} target="_blank" rel="noopener" className="text-primary underline">
-                Cargalos en Comisiones
-              </a>
-              , tab «Gestores».
-            </>
-          ) : (
-            'Pedile al dueño que los cargue en Configuración → Comisiones → tab «Gestores».'
-          )}
-        </p>
-      </div>
+      <Callout tone="danger" announce="assertive" title="No hay gestores cargados.">
+        Sin al menos un gestor no se puede guardar la reserva.{' '}
+        {canManage ? (
+          <>
+            <a href={href} target="_blank" rel="noopener">
+              Cargalos en Comisiones
+            </a>
+            , pestaña «Gestores».
+          </>
+        ) : (
+          'Pedile al dueño que los cargue en Configuración → Comisiones → pestaña «Gestores».'
+        )}
+      </Callout>
     )
   }
 
   if (count === 1) {
     return (
-      <div className="rounded-lg border border-amber-300/60 bg-amber-50/70 p-3 dark:border-amber-800/60 dark:bg-amber-950/30">
-        <p className="text-xs text-amber-900 dark:text-amber-100">
-          Hay un solo gestor cargado, así que todas las reservas van a quedar a su nombre. ¿Falta
-          alguien?{' '}
-          {canManage ? (
-            <>
-              <a href={href} target="_blank" rel="noopener" className="font-medium underline">
-                Agregalos en Comisiones
-              </a>
-              , tab «Gestores».
-            </>
-          ) : (
-            'Pedile al dueño que agregue al resto en Configuración → Comisiones → tab «Gestores».'
-          )}
-        </p>
-      </div>
+      <Callout tone="warning">
+        Hay un solo gestor cargado, así que todas las reservas van a quedar a su nombre. ¿Falta
+        alguien?{' '}
+        {canManage ? (
+          <>
+            <a href={href} target="_blank" rel="noopener">
+              Agregalos en Comisiones
+            </a>
+            , pestaña «Gestores».
+          </>
+        ) : (
+          'Pedile al dueño que agregue al resto en Configuración → Comisiones → pestaña «Gestores».'
+        )}
+      </Callout>
     )
   }
 
   if (!canManage) return null
 
   return (
-    <p className="text-xs text-muted-foreground">
+    <p className="type-caption text-muted-foreground">
       ¿Falta alguien en la lista?{' '}
-      <a href={href} target="_blank" rel="noopener" className="underline hover:text-foreground">
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener"
+        className="underline underline-offset-[3px] hover:text-foreground"
+      >
         Agregalos en Comisiones
       </a>
-      , tab «Gestores».
+      , pestaña «Gestores».
     </p>
   )
 }
 
-function Segmented({
-  options,
-  value,
-  onChange,
-}: {
-  options: Array<{ value: string; label: string }>
-  value: string
-  onChange: (v: string) => void
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {options.map((opt) => {
-        const isActive = value === opt.value
-        return (
-          <button
-            type="button"
-            key={opt.value}
-            onClick={() => onChange(opt.value)}
-            className={cn(
-              'rounded-lg border px-3 py-2 text-sm font-medium transition-all',
-              isActive
-                ? 'border-primary bg-primary text-primary-foreground shadow-sm'
-                : 'border-border bg-card/40 text-muted-foreground hover:bg-secondary',
-            )}
-          >
-            {opt.label}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-function GuestStepper({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  return (
-    <div className="flex h-14 items-center rounded-xl border border-border bg-card/60">
-      <button
-        type="button"
-        aria-label="Quitar"
-        onClick={() => onChange(Math.max(1, value - 1))}
-        className="flex h-full w-12 items-center justify-center text-muted-foreground transition-colors hover:bg-secondary/60 active:bg-secondary"
-      >
-        <Minus className="size-4" />
-      </button>
-      <div className="flex flex-1 flex-col items-center font-mono">
-        <span className="text-2xl font-semibold tabular-nums">{value}</span>
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">personas</span>
-      </div>
-      <button
-        type="button"
-        aria-label="Agregar"
-        onClick={() => onChange(Math.min(99, value + 1))}
-        className="flex h-full w-12 items-center justify-center text-muted-foreground transition-colors hover:bg-secondary/60 active:bg-secondary"
-      >
-        <Plus className="size-4" />
-      </button>
-    </div>
-  )
-}
-
+/**
+ * «¿Lleva torta?» / «¿Traen champagne?»: No o Sí, y cuántas (hasta 2) si es
+ * que sí. Un segmentado de dos opciones del kit y su `NumberField`.
+ */
 function BringsItemControl({
   icon: Icon,
   label,
+  itemLabel,
   value,
   onChange,
 }: {
-  // biome-ignore lint/suspicious/noExplicitAny: lucide icon type
-  icon: any
+  icon: typeof Cake
   label: string
+  /** «tortas», «botellas»: el nombre de la cantidad para el lector de pantalla. */
+  itemLabel: string
   value: number
   onChange: (v: number) => void
 }) {
+  const labelId = useId()
   const brings = value > 0
   return (
-    <div className="space-y-2">
-      <Label className="text-xs uppercase tracking-wide text-muted-foreground">{label}</Label>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => onChange(0)}
-          className={cn(
-            'h-10 rounded-lg border px-4 text-sm font-medium transition-all',
-            !brings
-              ? 'border-primary bg-primary text-primary-foreground'
-              : 'border-border bg-card/40 text-muted-foreground hover:bg-secondary',
-          )}
-        >
-          No
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange(value > 0 ? value : 1)}
-          className={cn(
-            'flex h-10 items-center gap-1.5 rounded-lg border px-4 text-sm font-medium transition-all',
-            brings
-              ? 'border-primary bg-primary text-primary-foreground'
-              : 'border-border bg-card/40 text-muted-foreground hover:bg-secondary',
-          )}
-        >
-          <Icon className="size-4" />
-          Sí
-        </button>
-      </div>
-      <AnimatePresence initial={false}>
+    <div className="grid content-start gap-2">
+      <span id={labelId} className="inline-flex items-center gap-1.5 type-label text-foreground">
+        <Icon className="size-4 text-muted-foreground" aria-hidden />
+        {label}
+      </span>
+      <div className="flex flex-wrap items-center gap-3">
+        <SegmentedControl
+          aria-label={label}
+          items={[
+            { value: 'no', label: 'No' },
+            { value: 'si', label: 'Sí' },
+          ]}
+          value={brings ? 'si' : 'no'}
+          onValueChange={(v) => onChange(v === 'si' ? (value > 0 ? value : 1) : 0)}
+        />
         {brings ? (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.15 }}
-          >
-            <div className="flex items-center gap-3 pt-1">
-              <span className="text-xs text-muted-foreground">Cantidad</span>
-              <div className="flex h-10 items-center rounded-lg border border-border bg-card/60">
-                <button
-                  type="button"
-                  aria-label="Quitar"
-                  onClick={() => onChange(Math.max(1, value - 1))}
-                  className="flex h-full w-9 items-center justify-center text-muted-foreground transition-colors hover:bg-secondary/60"
-                >
-                  <Minus className="size-3.5" />
-                </button>
-                <span className="w-8 text-center font-mono text-base font-semibold tabular-nums">
-                  {value}
-                </span>
-                <button
-                  type="button"
-                  aria-label="Agregar"
-                  onClick={() => onChange(Math.min(2, value + 1))}
-                  className="flex h-full w-9 items-center justify-center text-muted-foreground transition-colors hover:bg-secondary/60"
-                >
-                  <Plus className="size-3.5" />
-                </button>
-              </div>
-              <span className="text-[11px] text-muted-foreground">máx 2</span>
-            </div>
-          </motion.div>
+          <NumberField
+            value={value}
+            onValueChange={(n) => {
+              if (n !== null) onChange(n)
+            }}
+            min={1}
+            max={2}
+            size="sm"
+            aria-label={`Cuántas ${itemLabel} (máximo 2)`}
+            className="w-32"
+          />
         ) : null}
-      </AnimatePresence>
+      </div>
     </div>
   )
 }
@@ -1928,8 +1735,8 @@ const METER_FALLBACK_TEXT = {
  * Cómo queda el servicio CON esta reserva: "Cena · 123 de 120", la barra
  * (evento con su color, normales con el tono del estado, libre) y la decisión
  * en una línea. Son los mismos números que va a mostrar la confirmación de
- * sobrecupo al guardar, así el AlertDialog no sorprende. Pasarse se permite:
- * solo se avisa.
+ * sobrecupo al guardar, así el diálogo no sorprende. Pasarse se permite: solo
+ * se avisa.
  */
 function SegmentMeter({
   projection,
@@ -1944,7 +1751,7 @@ function SegmentMeter({
   if (!projection) {
     if (fallback === 'loading') {
       return (
-        <div className="space-y-2 rounded-xl border border-border/60 bg-card/60 p-3">
+        <div role="status" className="grid gap-2 rounded-xl border border-border bg-card p-3">
           <span className="sr-only">Leyendo el cupo del servicio…</span>
           <Skeleton aria-hidden className="h-4 w-32" />
           <Skeleton aria-hidden className="h-1.5 w-full rounded-full" />
@@ -1954,19 +1761,24 @@ function SegmentMeter({
     }
     if (fallback === 'error') {
       return (
-        <div className="flex min-h-14 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/70 bg-card/40 px-4 py-3 text-center text-xs text-muted-foreground">
-          <p role="status">{METER_FALLBACK_TEXT.error}</p>
-          <Button type="button" variant="outline" size="sm" className="h-9" onClick={onRetry}>
-            <RotateCcw aria-hidden className="size-3.5" />
-            Reintentar
-          </Button>
-        </div>
+        <Callout
+          tone="warning"
+          announce="polite"
+          action={
+            <Button type="button" variant="secondary" size="sm" onClick={onRetry}>
+              <RotateCcw aria-hidden />
+              Reintentar
+            </Button>
+          }
+        >
+          {METER_FALLBACK_TEXT.error}
+        </Callout>
       )
     }
     return (
-      <div className="flex min-h-14 items-center justify-center rounded-xl border border-dashed border-border/70 bg-card/40 px-4 text-center text-xs text-muted-foreground">
+      <p className="flex min-h-14 items-center rounded-xl border border-dashed border-border-strong px-4 type-small text-muted-foreground">
         {METER_FALLBACK_TEXT[fallback]}
-      </div>
+      </p>
     )
   }
 
@@ -1975,21 +1787,19 @@ function SegmentMeter({
   const status = segmentStatusLine(after)
   const eventLine = projection.event ? overCapacityConfirmCopy(projection).eventLine : null
   return (
-    <div className="space-y-1.5 rounded-xl border border-border/60 bg-card/60 p-3">
-      <p className={cn('font-mono text-sm font-medium tabular-nums', tone.text)}>
-        {segmentHeadline(after, 'long')}
-      </p>
+    <div className="grid gap-1.5 rounded-xl border border-border bg-card p-3">
+      <p className={cn('type-label tabular-nums', tone.text)}>{segmentHeadline(after, 'long')}</p>
       <SegmentBar segment={after} size="sm" />
       <p
         aria-live="polite"
         className={cn(
-          'text-[11px] leading-snug',
+          'type-caption',
           projection.needsConfirm ? tone.text : 'text-muted-foreground',
         )}
       >
         {projection.needsConfirm ? `Al guardar te vamos a pedir confirmación: ${status}` : status}
       </p>
-      {eventLine ? <p className="text-[11px] text-muted-foreground">{eventLine}</p> : null}
+      {eventLine ? <p className="type-caption text-muted-foreground">{eventLine}</p> : null}
     </div>
   )
 }
@@ -1998,11 +1808,22 @@ function SegmentMeter({
 // CustomerCombobox: autocomplete contra el CRM
 // ──────────────────────────────────────────────────────────
 
+/**
+ * Nombre del cliente con sugerencias del CRM, y su teléfono.
+ *
+ * Es un campo de texto libre (una reserva no necesita cliente del CRM: se
+ * puede escribir cualquier nombre) con la lista de sugerencias del patrón
+ * «combobox» de la APG: `role="combobox"`, `aria-expanded`,
+ * `aria-activedescendant`, ↑ ↓ para recorrer, Enter para elegir y Esc para
+ * cerrar. El `Combobox` del kit elige de una lista y no deja texto libre,
+ * por eso este queda acá.
+ */
 function CustomerCombobox({
   tenantSlug,
   value,
   onChange,
   error,
+  phoneError,
 }: {
   tenantSlug: string
   value: {
@@ -2020,23 +1841,34 @@ function CustomerCombobox({
     service_alerts?: ServiceAlert[]
   }) => void
   error?: string
+  phoneError?: string
 }) {
+  const listId = useId()
   const [results, setResults] = useState<CustomerSearchResult[]>([])
   const [, startSearch] = useTransition()
   const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(-1)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const requestRef = useRef(0)
 
   const search = useCallback(
     (q: string) => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
       if (q.trim().length < 2) {
+        requestRef.current += 1
         setResults([])
+        setOpen(false)
         return
       }
       debounceRef.current = setTimeout(() => {
+        // Solo la última búsqueda escribe: una respuesta atrasada de "ma" no
+        // pisa la de "mar".
+        const id = ++requestRef.current
         startSearch(async () => {
           const r = await searchCustomers(tenantSlug, q)
+          if (id !== requestRef.current) return
           setResults(r)
+          setActive(-1)
           setOpen(true)
         })
       }, 200)
@@ -2044,79 +1876,120 @@ function CustomerCombobox({
     [tenantSlug],
   )
 
+  function pick(c: CustomerSearchResult) {
+    onChange({
+      customer_id: c.id,
+      guest_name: `${c.first_name} ${c.last_name}`.trim(),
+      guest_phone: c.phone,
+      guest_email: null,
+      service_alerts: parseServiceAlerts(c.service_alerts),
+    })
+    setOpen(false)
+    setActive(-1)
+  }
+
+  const expanded = open && results.length > 0
+
   return (
-    <div className="space-y-2">
-      <div className="grid gap-3 sm:grid-cols-[1fr_220px]">
-        <div className="space-y-1.5">
-          <Label
-            htmlFor="guest_name"
-            className="text-xs uppercase tracking-wide text-muted-foreground"
+    <FieldRow className="sm:grid-cols-[1fr_15rem]">
+      <Field
+        label="Nombre del cliente"
+        error={error}
+        hint={
+          value.customer_id
+            ? 'Cliente vinculado al CRM.'
+            : value.guest_name
+              ? 'Reserva libre: no se vincula a un cliente del CRM.'
+              : 'Escribí el nombre: si ya es cliente, aparece para elegirlo.'
+        }
+      >
+        <div className="relative">
+          <Search
+            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle-foreground"
+            aria-hidden
+          />
+          <Input
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={expanded}
+            aria-controls={listId}
+            aria-activedescendant={expanded && active >= 0 ? `${listId}-${active}` : undefined}
+            autoComplete="off"
+            value={value.guest_name}
+            onChange={(e) => {
+              onChange({ ...value, guest_name: e.target.value, customer_id: undefined })
+              search(e.target.value)
+            }}
+            onKeyDown={(e) => {
+              if (!expanded) return
+              if (e.key === 'ArrowDown') {
+                e.preventDefault()
+                setActive((i) => (i + 1) % results.length)
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault()
+                setActive((i) => (i <= 0 ? results.length - 1 : i - 1))
+              } else if (e.key === 'Enter' && active >= 0) {
+                const c = results[active]
+                if (c) {
+                  e.preventDefault()
+                  pick(c)
+                }
+              } else if (e.key === 'Escape') {
+                e.preventDefault()
+                setOpen(false)
+              }
+            }}
+            onFocus={() => results.length > 0 && setOpen(true)}
+            onBlur={() => setTimeout(() => setOpen(false), 150)}
+            placeholder="Buscar o escribir el nombre…"
+            className="pl-9"
+          />
+          <div
+            id={listId}
+            role="listbox"
+            aria-label="Clientes del CRM"
+            hidden={!expanded}
+            className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-xl border border-border bg-popover p-1 shadow-float"
           >
-            Nombre del cliente
-          </Label>
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              id="guest_name"
-              autoComplete="off"
-              aria-invalid={!!error}
-              value={value.guest_name}
-              onChange={(e) => {
-                onChange({ ...value, guest_name: e.target.value, customer_id: undefined })
-                search(e.target.value)
-              }}
-              onFocus={() => results.length > 0 && setOpen(true)}
-              onBlur={() => setTimeout(() => setOpen(false), 150)}
-              placeholder="Buscar o escribir nombre…"
-              className="h-11 pl-9 text-base"
-            />
-            {open && results.length > 0 ? (
-              <div className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-border bg-popover p-1 shadow-lg">
-                {results.map((c) => (
-                  <button
-                    type="button"
-                    key={c.id}
-                    onClick={() => {
-                      onChange({
-                        customer_id: c.id,
-                        guest_name: `${c.first_name} ${c.last_name}`.trim(),
-                        guest_phone: c.phone,
-                        guest_email: null,
-                        service_alerts: parseServiceAlerts(c.service_alerts),
-                      })
-                      setOpen(false)
-                    }}
-                    className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-secondary"
-                  >
-                    <span className="truncate">
-                      {c.first_name} {c.last_name}
-                    </span>
-                    <span className="font-mono text-[11px] text-muted-foreground">{c.phone}</span>
-                  </button>
-                ))}
+            {results.map((c, i) => (
+              // biome-ignore lint/a11y/useKeyWithClickEvents: el teclado lo maneja el campo (flechas, aria-activedescendant); el click es para el mouse y el dedo
+              <div
+                key={c.id}
+                id={`${listId}-${i}`}
+                role="option"
+                tabIndex={-1}
+                aria-selected={i === active}
+                // Elegir con el mouse no le saca el foco al campo.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => pick(c)}
+                className={cn(
+                  'flex min-h-8 cursor-default items-center justify-between gap-2 rounded-md px-2 type-body pointer-coarse:min-h-11',
+                  'hover:bg-accent',
+                  i === active && 'bg-accent',
+                )}
+              >
+                <span className="truncate">
+                  {c.first_name} {c.last_name}
+                </span>
+                <span className="shrink-0 type-caption tabular-nums text-muted-foreground">
+                  {c.phone}
+                </span>
               </div>
-            ) : null}
+            ))}
           </div>
-          {error ? <p className="text-xs text-destructive">{error}</p> : null}
-          {value.customer_id ? (
-            <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
-              ✓ Cliente vinculado al CRM
-            </p>
-          ) : value.guest_name ? (
-            <p className="text-[11px] text-muted-foreground">
-              Reserva libre — no se vincula a cliente del CRM.
-            </p>
-          ) : null}
         </div>
-        <div className="space-y-1.5">
-          <Label
-            htmlFor="guest_phone"
-            className="text-xs uppercase tracking-wide text-muted-foreground"
-          >
-            Teléfono (opcional)
-          </Label>
+      </Field>
+      <Field
+        label="Teléfono"
+        optional
+        error={phoneError}
+        hint="Tocá la bandera si el cliente es de otro país."
+      >
+        {(control) => (
           <PhoneInput
-            id="guest_phone"
+            id={control.id}
+            aria-describedby={control['aria-describedby']}
+            aria-invalid={control['aria-invalid']}
             international
             defaultCountry="AR"
             placeholder="351 555 1234"
@@ -2130,77 +2003,16 @@ function CustomerCombobox({
             }
             className="hub-phone-input"
           />
-          <p className="text-[11px] text-muted-foreground">
-            Tocá la bandera si el cliente es de otro país.
-          </p>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/**
- * Un evento programado del día como opción de "Dónde se sienta": nombre con el
- * color del formato, hora y ocupación real (la misma cuenta del calendario, si
- * ya llegó el cupo del día). Un toque = `scheduled_event_id` y el servicio del
- * evento; la planta se elige aparte (`EventFloorChooser`) y, si la eligieron,
- * la tarjeta la repite abajo ("Evento · Planta Alta") para leerla de un vistazo.
- */
-function EventZoneTile({
-  event,
-  active,
-  floor,
-  load,
-  onSelect,
-}: {
-  event: ScheduledEventWithTemplate
-  active: boolean
-  /** Planta elegida dentro de este evento (solo si es el elegido). */
-  floor: SalonZone | null
-  load: SegmentEventLoad | null
-  onSelect: () => void
-}) {
-  const color = event.template?.color_hex ?? 'var(--primary)'
-  const name = event.name_override ?? event.template?.name ?? 'Evento'
-  const used = load?.used ?? null
-  const cap = load?.capacity ?? event.capacity
-  const full = used !== null && cap > 0 && used >= cap
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onSelect}
-      className={cn(ZONE_TILE, active ? ZONE_TILE_ACTIVE : ZONE_TILE_IDLE)}
-      style={active ? { borderColor: color } : undefined}
-    >
-      <span className="flex max-w-full items-center gap-1.5">
-        <span
-          aria-hidden
-          className="size-2 shrink-0 rounded-full"
-          style={{ backgroundColor: color }}
-        />
-        <span className="truncate">{name}</span>
-      </span>
-      <span
-        className={cn(
-          'text-[11px] tabular-nums',
-          full ? 'text-destructive' : 'text-muted-foreground',
         )}
-      >
-        {event.starts_at_local.slice(0, 5)} · {used !== null ? `${used}/${cap}` : `cap ${cap}`}
-        {full ? ' · lleno' : ''}
-      </span>
-      <span className="max-w-full truncate text-[10px] uppercase tracking-wide text-muted-foreground">
-        {floor && floor !== 'event_floating' ? `Evento · ${floorLabel(floor)}` : 'Evento'}
-      </span>
-    </button>
+      </Field>
+    </FieldRow>
   )
 }
 
 /**
- * "¿Dónde se sientan? (opcional)": la planta de una reserva de evento. Radios
- * nativos (un solo tab stop, flechas del teclado, el lector anuncia "1 de 3")
- * con cara de tarjeta, como el resto de las decisiones del alta.
+ * "¿Dónde se sientan? (opcional)": la planta de una reserva de evento, con las
+ * `RadioCards` del kit (un solo tab stop, flechas del teclado, el lector
+ * anuncia "1 de 3").
  *
  * Al lado de cada planta, la gente que ya hay en ella en ESE servicio (la misma
  * cuenta de las tarjetas de arriba), sin denominador: el tope es del servicio y
@@ -2218,47 +2030,28 @@ function EventFloorChooser({
   segmentLabel: string | null
   onChange: (zone: SalonZone) => void
 }) {
+  const labelId = useId()
   return (
-    <div className="border-t border-border/60 pt-3">
-      <fieldset>
-        <legend className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
-          {EVENT_FLOOR_QUESTION} <span className="normal-case tracking-normal">(opcional)</span>
-        </legend>
-        <div className="grid grid-cols-3 gap-2">
-          {EVENT_FLOOR_OPTIONS.map((o) => {
-            const checked = value === o.zone
-            const count =
-              o.zone !== 'event_floating' && byZone && segmentLabel
-                ? `${byZone[o.zone]} en ${segmentLabel}`
-                : null
-            return (
-              <label
-                key={o.zone}
-                className={cn(
-                  'flex min-h-12 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg border px-2 py-1.5 text-center text-sm font-medium transition-colors',
-                  'has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring',
-                  checked ? ZONE_TILE_ACTIVE : ZONE_TILE_IDLE,
-                )}
-              >
-                <input
-                  type="radio"
-                  name="event_floor"
-                  value={o.zone}
-                  checked={checked}
-                  onChange={() => onChange(o.zone)}
-                  className="sr-only"
-                />
-                <span>{o.label}</span>
-                {count ? (
-                  <span className="text-[11px] font-normal tabular-nums text-muted-foreground">
-                    {count}
-                  </span>
-                ) : null}
-              </label>
-            )
-          })}
-        </div>
-      </fieldset>
+    <div className="grid gap-2 border-t border-border pt-4">
+      <p id={labelId} className="type-label text-foreground">
+        {EVENT_FLOOR_QUESTION}{' '}
+        <span className="font-normal text-subtle-foreground">(opcional)</span>
+      </p>
+      <RadioCards
+        aria-labelledby={labelId}
+        size="sm"
+        className="min-[420px]:grid-cols-3"
+        value={value}
+        onValueChange={(z) => onChange(z as SalonZone)}
+        items={EVENT_FLOOR_OPTIONS.map((o) => ({
+          value: o.zone,
+          label: o.label,
+          description:
+            o.zone !== 'event_floating' && byZone && segmentLabel
+              ? `${byZone[o.zone]} en ${segmentLabel}`
+              : undefined,
+        }))}
+      />
     </div>
   )
 }

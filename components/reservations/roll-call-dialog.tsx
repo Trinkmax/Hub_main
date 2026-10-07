@@ -1,12 +1,13 @@
 'use client'
 
-import { Check, ClipboardCheck, Loader2 } from 'lucide-react'
+import { Check, ClipboardCheck } from 'lucide-react'
 import { useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { GuestCountStepper } from '@/components/reservations/guest-count-stepper'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -14,7 +15,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { EmptyState } from '@/components/ui/empty-state'
+import { NumberField } from '@/components/ui/number-field'
+import { Skeleton } from '@/components/ui/skeleton'
 import { bulkUpdateActualGuests } from '@/lib/salon/actions'
 import { fetchReservationsForDate } from '@/lib/salon/client-actions'
 import { hhmm } from '@/lib/salon/format'
@@ -49,7 +52,7 @@ export function RollCallDialog({
   const [loading, setLoading] = useState(false)
 
   // El día COMPLETO, pedido al abrir. No se puede usar la lista de la página:
-  // está paginada de a 25 y filtrada por los filtros activos, así que un viernes
+  // está paginada y filtrada por los filtros activos, así que un viernes
   // cargado (o con un filtro de zona puesto) dejaría reservas afuera del cierre
   // sin decirlo. Y pedirlo al abrir en vez de en cada carga de la agenda evita
   // una query que casi nadie usa.
@@ -74,7 +77,7 @@ export function RollCallDialog({
   )
 
   // Borrador local. Solo entra acá lo que el encargado CONFIRMÓ, tocando el
-  // stepper o el check de la fila. Una fila que no tocó no se manda.
+  // número o el tilde de la fila. Una fila que no tocó no se manda.
   //
   // La versión anterior mandaba también las que nunca se habían contado, con el
   // estimado como valor: abrir el diálogo y tocar "Guardar todo" daba por
@@ -139,19 +142,20 @@ export function RollCallDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
-        <Button variant="outline" className="gap-2" data-tour="reservas-pasar-lista">
-          <ClipboardCheck className="size-4" />
+        <Button variant="secondary" data-tour="reservas-pasar-lista">
+          <ClipboardCheck aria-hidden />
           Pasar lista
           {rows !== null && missing > 0 ? (
-            <span className="rounded-full bg-warning/20 px-1.5 py-px font-mono text-[11px] font-semibold tabular-nums text-foreground">
+            <Badge tone="warning" className="tabular-nums" title="Reservas sin contar">
               {missing}
-            </span>
+              <span className="sr-only">sin contar</span>
+            </Badge>
           ) : null}
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle className="font-serif">Pasar lista</DialogTitle>
+          <DialogTitle>Pasar lista</DialogTitle>
           <DialogDescription>
             {dayLabel}
             {rows === null
@@ -159,19 +163,28 @@ export function RollCallDialog({
               : missing === 0
                 ? ' · ya están todas contadas'
                 : ` · faltan contar ${missing} de ${candidates.length}`}
-            . Tocá el número si vinieron distinto, o el ✓ si vinieron los que reservaron.
+            . Si vinieron distinto, corregí el número; si vinieron los que reservaron, confirmá con
+            el tilde.
           </DialogDescription>
         </DialogHeader>
 
-        {loading ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">Cargando el día…</p>
-        ) : candidates.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            No hay reservas con asistencia para registrar este día.
-          </p>
-        ) : (
-          <ScrollArea className="max-h-[55vh] -mx-1 px-1">
-            <ul className="space-y-1.5">
+        <DialogBody aria-busy={loading || undefined}>
+          {loading ? (
+            <div role="status" className="grid gap-2 py-1">
+              <span className="sr-only">Cargando el día…</span>
+              {['a', 'b', 'c'].map((k) => (
+                <Skeleton key={k} aria-hidden className="h-14 w-full rounded-lg" />
+              ))}
+            </div>
+          ) : candidates.length === 0 ? (
+            <EmptyState
+              size="sm"
+              icon={ClipboardCheck}
+              title="No hay nada para contar"
+              description="Este día no tiene reservas con asistencia para registrar: las canceladas y las que no vinieron no cuentan."
+            />
+          ) : (
+            <ul className="grid gap-2">
               {candidates.map((r) => {
                 const value = countFor(r)
                 const untouched = draft[r.id] === undefined && r.actual_guests === null
@@ -181,16 +194,16 @@ export function RollCallDialog({
                   <li
                     key={r.id}
                     className={cn(
-                      'flex items-center gap-3 rounded-xl border px-3 py-2',
-                      untouched ? 'border-dashed border-border' : 'border-border/70 bg-card/50',
+                      'flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border px-3 py-2',
+                      untouched ? 'border-dashed border-border-strong' : 'border-border bg-card',
                     )}
                   >
-                    <span className="w-11 shrink-0 font-mono text-sm tabular-nums text-muted-foreground">
+                    <span className="w-11 shrink-0 type-body tabular-nums text-muted-foreground">
                       {hhmm(r.reservation_time_local)}
                     </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{r.guest_name}</span>
-                      <span className="block text-[11px] text-muted-foreground">
+                    <span className="min-w-0 flex-1 basis-32">
+                      <span className="block truncate type-body font-medium">{r.guest_name}</span>
+                      <span className="block type-caption text-muted-foreground">
                         reservó {r.estimated_guests}
                         {differs
                           ? ` · ${value > r.estimated_guests ? '+' : '−'}${Math.abs(value - r.estimated_guests)}`
@@ -198,49 +211,68 @@ export function RollCallDialog({
                         {untouched ? ' · sin contar' : ''}
                       </span>
                     </span>
-                    <GuestCountStepper
-                      value={value}
-                      onChange={(n) => setDraft((prev) => ({ ...prev, [r.id]: n }))}
-                      size="md"
-                      disabled={pending}
-                    />
-                    {/* Tocar ± ya confirma. Este check es para el caso más común:
-                      vinieron los que reservaron y no hay nada que cambiar. Sin
-                      él, "no toqué nada" y "vinieron los 20" se verían igual y
-                      no habría forma de anotar el segundo. */}
-                    <Button
-                      type="button"
-                      variant={untouched ? 'outline' : 'ghost'}
-                      size="icon"
-                      aria-label={`Confirmar ${value} en ${r.guest_name}`}
-                      disabled={pending || justConfirmed}
-                      onClick={() => setDraft((prev) => ({ ...prev, [r.id]: value }))}
-                      className={cn('size-9 shrink-0', justConfirmed && 'text-success')}
-                    >
-                      <Check className="size-4" aria-hidden />
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <NumberField
+                        value={value}
+                        onValueChange={(n) => {
+                          if (n !== null) setDraft((prev) => ({ ...prev, [r.id]: n }))
+                        }}
+                        min={1}
+                        max={99}
+                        aria-label={`Personas que vinieron a la mesa de ${r.guest_name}`}
+                        incrementLabel="Una persona más"
+                        decrementLabel="Una persona menos"
+                        disabled={pending}
+                        className={cn('w-36', untouched && '[&_input]:text-muted-foreground')}
+                      />
+                      {/* Tocar ± ya confirma. Este tilde es para el caso más común:
+                          vinieron los que reservaron y no hay nada que cambiar. Sin
+                          él, "no toqué nada" y "vinieron los 20" se verían igual y
+                          no habría forma de anotar el segundo. */}
+                      <Button
+                        type="button"
+                        variant={untouched ? 'secondary' : 'ghost'}
+                        size="icon"
+                        aria-label={
+                          justConfirmed
+                            ? `${value} confirmados en ${r.guest_name}`
+                            : `Confirmar ${value} en ${r.guest_name}`
+                        }
+                        aria-pressed={justConfirmed}
+                        disabled={pending || justConfirmed}
+                        onClick={() => setDraft((prev) => ({ ...prev, [r.id]: value }))}
+                        className={cn(justConfirmed && 'text-success-text')}
+                      >
+                        <Check aria-hidden />
+                      </Button>
+                    </div>
                   </li>
                 )
               })}
             </ul>
-          </ScrollArea>
-        )}
+          )}
+        </DialogBody>
 
-        <DialogFooter className="gap-2 sm:justify-between">
-          <div className="flex flex-1 flex-wrap items-center gap-2">
+        <DialogFooter className="sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {missing > 0 ? (
               <Button type="button" variant="ghost" size="sm" onClick={confirmAllPending}>
                 Vinieron todos como reservaron
               </Button>
             ) : null}
-            <span className="text-xs text-muted-foreground">
+            <span aria-live="polite" className="type-small text-muted-foreground">
               {toSave.length === 0
                 ? 'Tocá las que quieras registrar'
                 : `Se guardan ${toSave.length} ${toSave.length === 1 ? 'reserva' : 'reservas'}`}
             </span>
           </div>
-          <Button onClick={save} disabled={pending || toSave.length === 0} className="gap-2">
-            {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
+          <Button
+            type="button"
+            onClick={save}
+            loading={pending}
+            loadingText="Guardando…"
+            disabled={toSave.length === 0}
+          >
             Guardar todo
           </Button>
         </DialogFooter>

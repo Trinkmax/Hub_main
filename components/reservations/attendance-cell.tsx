@@ -3,7 +3,7 @@
 import { Users } from 'lucide-react'
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { GuestCountStepper } from '@/components/reservations/guest-count-stepper'
+import { NumberField } from '@/components/ui/number-field'
 import { bulkUpdateActualGuests } from '@/lib/salon/actions'
 import type { SalonReservationStatus } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
@@ -112,40 +112,48 @@ export function AttendanceCell({
   if (!editable) {
     return (
       <span className="inline-flex items-center gap-1 tabular-nums">
-        <Users className="size-3.5 text-muted-foreground" />
+        <Users className="size-3.5 text-muted-foreground" aria-hidden />
         <span className="font-semibold">{actualGuests ?? estimatedGuests}</span>
+        <span className="sr-only">
+          {(actualGuests ?? estimatedGuests) === 1 ? 'persona' : 'personas'}
+        </span>
       </span>
     )
   }
 
+  const statusText = confirmed
+    ? value === estimatedGuests
+      ? 'vinieron'
+      : `de ${estimatedGuests} reservadas`
+    : 'sin contar'
+
   return (
-    <span className="inline-flex flex-col items-start gap-0.5">
-      <span className="inline-flex items-center gap-1">
-        <Users className="size-3.5 shrink-0 text-muted-foreground" />
-        {/* Sin contar, el número se ve apagado: es la reserva mostrada como
-            punto de partida, no un conteo. Contado, se ve firme. */}
-        <GuestCountStepper
-          value={value}
-          onChange={bump}
-          size="sm"
-          disabled={pending}
-          muted={!confirmed}
-        />
-      </span>
+    <span className="inline-flex flex-col items-start gap-1">
+      {/* El NumberField del kit: − y + de un toque, se puede tipear (20 → 18
+          sin tocar dos veces) y las flechas suman o restan. Sin contar, el
+          número se ve apagado: es la reserva mostrada como punto de partida,
+          no un conteo. Contado, se ve firme. */}
+      <NumberField
+        value={value}
+        onValueChange={(next) => {
+          if (next !== null && next !== value) bump(next)
+        }}
+        min={1}
+        max={99}
+        size="sm"
+        aria-label={`Personas que vinieron (${statusText})`}
+        incrementLabel="Una persona más"
+        decrementLabel="Una persona menos"
+        // Sin deshabilitar mientras guarda: con el foco adentro, un campo que se
+        // apaga pierde el cursor. Next encola las Server Actions en orden.
+        aria-busy={pending || undefined}
+        className={cn('w-28', !confirmed && '[&_input]:text-muted-foreground')}
+      />
       {/* Marcador discreto y no un chip de color: con 111 de 137 reservas sin
           contar, un chip ámbar por fila pintaría la agenda entera y dejaría de
           significar algo. El total que falta lo grita el botón "Pasar lista". */}
-      <span
-        className={cn(
-          'pl-5 text-[10px] leading-none text-muted-foreground',
-          !confirmed && 'italic',
-        )}
-      >
-        {confirmed
-          ? value === estimatedGuests
-            ? 'vinieron'
-            : `de ${estimatedGuests} reservadas`
-          : 'sin contar'}
+      <span className={cn('type-caption text-muted-foreground', !confirmed && 'italic')}>
+        {statusText}
       </span>
     </span>
   )
