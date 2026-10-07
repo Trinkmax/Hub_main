@@ -43,30 +43,27 @@ export default async function EnlacesPage({ params }: { params: Promise<{ tenant
   return (
     <PageShell>
       <PageHeader
-        eyebrow="Marketing"
         title="Link de Instagram"
-        description="Un solo link para la bio, con todos tus destinos adentro y la identidad del bar. Editalo acá y se actualiza al instante."
+        description="Un solo link para la bio, con todos tus destinos adentro y la identidad del bar. Lo que cambies acá se ve al instante."
+        meta={
+          <>
+            Pegá este link en la bio de Instagram:{' '}
+            <span className="break-all font-mono text-foreground">{publicUrl}</span>
+          </>
+        }
         actions={
           <>
-            <CopyButton value={publicUrl} label="Copiar link" copiedLabel="¡Copiado!" />
-            <Button asChild variant="outline">
+            <Button asChild variant="secondary">
               <a href={`/l/${tenantSlug}`} target="_blank" rel="noopener noreferrer">
                 Ver página
-                <ArrowUpRight className="size-4" aria-hidden />
+                <ArrowUpRight aria-hidden />
+                <span className="sr-only"> (se abre en otra pestaña)</span>
               </a>
             </Button>
+            <CopyButton value={publicUrl} size="md" label="Copiar link" copiedLabel="¡Copiado!" />
           </>
         }
       />
-
-      <div className="card-hairline flex flex-wrap items-center gap-2 rounded-xl border bg-cream-tint px-4 py-3">
-        <span className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-          Pegá esto en Instagram
-        </span>
-        <code className="min-w-0 flex-1 truncate rounded-md bg-card px-2 py-1 font-mono text-[13px]">
-          {publicUrl}
-        </code>
-      </div>
 
       <LinksManager
         tenantSlug={tenantSlug}

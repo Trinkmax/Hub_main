@@ -4,20 +4,24 @@ import { useRouter } from 'next/navigation'
 import { useActionState, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Callout } from '@/components/ui/callout'
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Field, FormError } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { SubmitButton } from '@/components/ui/submit-button'
 import { Switch } from '@/components/ui/switch'
 import { type LandingActionState, updateLandingSettings } from '@/lib/landings/actions'
 import type { LandingPageDetail } from '@/lib/landings/queries'
 import { checkSlugFormat, LANDING_SLUG_HINT } from '@/lib/landings/schemas'
+import { SlugInput } from '../../_components/new-page-dialog'
 
 const INITIAL: LandingActionState = { ok: false, message: '' }
 
@@ -41,105 +45,82 @@ export function SettingsDialog({
   const slugError = checkSlugFormat(slug)
   const slugChanged = slug !== page.slug
 
-  const [state, formAction, pending] = useActionState(
+  const [state, formAction] = useActionState(
     (prev: LandingActionState, fd: FormData) => updateLandingSettings(tenantSlug, prev, fd),
     INITIAL,
   )
 
+  // El error del server se ve adentro del formulario (FormError).
   useEffect(() => {
     if (state.ok) {
       toast.success('Ajustes guardados.')
       onOpenChange(false)
       router.refresh()
-    } else if (state.message) {
-      toast.error(state.message)
     }
   }, [state, onOpenChange, router])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92dvh] overflow-y-auto">
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle className="font-serif text-xl">Ajustes de la página</DialogTitle>
+          <DialogTitle>Ajustes de la página</DialogTitle>
           <DialogDescription>El nombre interno, el link y si aparece en Google.</DialogDescription>
         </DialogHeader>
 
-        <form action={formAction} className="space-y-4">
-          <input type="hidden" name="id" value={page.id} />
-          <input type="hidden" name="indexable" value={indexable ? 'true' : 'false'} />
+        <form action={formAction} className="flex min-h-0 flex-1 flex-col gap-4">
+          <DialogBody className="grid gap-4">
+            <FormError message={state.ok ? null : state.message} />
+            <input type="hidden" name="id" value={page.id} />
+            <input type="hidden" name="indexable" value={indexable ? 'true' : 'false'} />
 
-          <div className="space-y-1.5">
-            <Label htmlFor="settings-title">
-              Nombre<span className="text-destructive"> *</span>
-            </Label>
-            <Input
-              id="settings-title"
+            <Field
+              label="Nombre"
               name="title"
               required
-              maxLength={80}
-              defaultValue={page.title}
-            />
-            <p className="text-xs text-muted-foreground">
-              Sólo se ve en esta lista. El título que lee la gente es el {'<title>'} del HTML.
-            </p>
-          </div>
+              hint="Sólo se ve en esta lista. El título que lee la gente es el <title> del HTML."
+            >
+              <Input maxLength={80} defaultValue={page.title} />
+            </Field>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="settings-slug">
-              Link público<span className="text-destructive"> *</span>
-            </Label>
-            <div className="flex items-center overflow-hidden rounded-lg border border-input bg-background focus-within:ring-[3px] focus-within:ring-ring/50">
-              <span className="shrink-0 truncate border-r border-input bg-cream-tint px-2.5 py-2 font-mono text-xs text-muted-foreground">
-                {urlPrefix}
-              </span>
-              <input
-                id="settings-slug"
-                name="slug"
-                required
-                maxLength={40}
+            <Field
+              label="Link público"
+              name="slug"
+              required
+              hint={slugError ? undefined : LANDING_SLUG_HINT}
+              error={slugError}
+            >
+              <SlugInput
+                prefix={urlPrefix}
                 value={slug}
-                onChange={(event) => setSlug(event.target.value.toLowerCase())}
-                className="min-w-0 flex-1 bg-transparent px-2.5 py-2 font-mono text-sm outline-none"
+                onChange={(next) => setSlug(next.toLowerCase())}
               />
-            </div>
-            {slugError ? (
-              <p className="text-xs text-destructive">{slugError}</p>
-            ) : slugChanged && page.published ? (
-              <p className="text-xs text-amber-700 dark:text-amber-400">
-                Ojo: la página está publicada. Al cambiar el link, el anterior deja de funcionar —
-                si ya lo mandaste por WhatsApp o está en una historia, se rompe.
-              </p>
-            ) : (
-              <p className="text-xs text-muted-foreground">{LANDING_SLUG_HINT}</p>
-            )}
-          </div>
+            </Field>
 
-          <div className="flex items-start justify-between gap-4 rounded-lg border border-border/70 px-4 py-3">
-            <div className="space-y-0.5">
-              <Label htmlFor="settings-indexable" className="cursor-pointer">
-                Que Google la encuentre
-              </Label>
-              <p className="text-xs text-muted-foreground text-pretty">
-                Apagado, la página funciona igual pero le pedimos a los buscadores que no la
-                indexen. Prendelo sólo cuando esté terminada y quieras que aparezca en las
-                búsquedas.
-              </p>
-            </div>
-            <Switch
-              id="settings-indexable"
-              checked={indexable}
-              onCheckedChange={setIndexable}
-              aria-label="Que Google la encuentre"
-            />
-          </div>
+            {/* Cambiar el link de una página publicada rompe el que ya circula:
+                se avisa apenas se toca, no recién al guardar. */}
+            {!slugError && slugChanged && page.published ? (
+              <Callout tone="warning" title="El link anterior va a dejar de funcionar">
+                La página está publicada. Si ya lo mandaste por WhatsApp o está en una historia, ese
+                link se rompe.
+              </Callout>
+            ) : null}
+
+            <Field
+              label="Que Google la encuentre"
+              layout="toggle"
+              hint="Apagado, la página funciona igual pero le pedimos a los buscadores que no la indexen. Prendelo cuando esté terminada y quieras que aparezca en las búsquedas."
+            >
+              <Switch checked={indexable} onCheckedChange={setIndexable} />
+            </Field>
+          </DialogBody>
 
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={pending || slugError !== null}>
-              {pending ? 'Guardando…' : 'Guardar ajustes'}
-            </Button>
+            <SubmitButton pendingText="Guardando…" disabled={slugError !== null}>
+              Guardar ajustes
+            </SubmitButton>
           </DialogFooter>
         </form>
       </DialogContent>

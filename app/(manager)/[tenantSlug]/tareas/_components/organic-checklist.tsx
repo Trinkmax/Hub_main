@@ -4,16 +4,24 @@ import { Check, ChevronLeft, ChevronRight, ListChecks, Pencil, Plus, Sparkles } 
 import Link from 'next/link'
 import { useEffect, useOptimistic, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Progress } from '@/components/ui/progress'
+import { formatNumber } from '@/lib/format/number-kind'
 import { seedSuggestedRoutines, toggleRoutineCheck } from '@/lib/marketing/actions'
 import type { RoutineRow } from '@/lib/marketing/queries'
 import { formatDayShort, shiftWeeks, weekEndOf } from '@/lib/marketing/week'
+import { NBSP } from '@/lib/money/format'
 import { cn } from '@/lib/utils'
 import { RoutineDialog } from './routine-dialog'
 
 type Toggle = { routineId: string; slot: number; done: boolean }
+
+/** Cuántos casilleros de la rutina están tildados HOY (los de un cupo viejo no cuentan). */
+function doneCount(routine: RoutineRow): number {
+  return routine.doneSlots.filter((slot) => slot < routine.slots).length
+}
 
 export function OrganicChecklist({
   tenantSlug,
@@ -71,10 +79,7 @@ export function OrganicChecklist({
   }
 
   const total = optimistic.reduce((acc, routine) => acc + routine.slots, 0)
-  const done = optimistic.reduce(
-    (acc, routine) => acc + routine.doneSlots.filter((slot) => slot < routine.slots).length,
-    0,
-  )
+  const done = optimistic.reduce((acc, routine) => acc + doneCount(routine), 0)
   const percent = total === 0 ? 0 : Math.round((done / total) * 100)
 
   function openNew() {
@@ -102,105 +107,121 @@ export function OrganicChecklist({
   }, [newRoutineNonce])
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-6">
       <WeekBar weekStart={weekStart} weekTitle={weekTitle} isCurrentWeek={isCurrentWeek} />
 
       {optimistic.length === 0 ? (
         <SuggestedEmptyState tenantSlug={tenantSlug} onCreate={openNew} />
       ) : (
         <>
-          <div className="card-hairline flex items-center gap-4 rounded-xl border bg-card p-4">
-            <div className="shrink-0">
-              <p className="font-serif text-2xl font-semibold leading-none tracking-tight">
-                {done}
-                <span className="text-muted-foreground"> de {total}</span>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="type-small text-muted-foreground">
+                <span className="type-label type-amount text-foreground">
+                  {done} de {total}
+                </span>{' '}
+                hechas esta semana
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">completadas esta semana</p>
+              <span className="type-label type-amount text-foreground">
+                {formatNumber(percent)}
+                {NBSP}%
+              </span>
             </div>
-            <Progress value={percent} className="h-2 flex-1" />
-            <span className="w-10 shrink-0 text-right font-medium tabular-nums">{percent}%</span>
+            <Progress
+              value={percent}
+              tone={percent >= 100 ? 'success' : 'brand'}
+              label="Avance del checklist de la semana"
+              valueText={`${done} de ${total} hechas`}
+            />
           </div>
 
-          <ul className="space-y-2">
+          <ul
+            aria-label="Rutinas de la semana"
+            className="divide-y divide-border overflow-clip rounded-xl border border-border bg-card"
+          >
             {optimistic.map((routine) => {
               // Sólo cuentan los casilleros que HOY existen: si el cupo bajó de
               // 3 a 1, los tildes viejos de los slots 2 y 3 siguen en la DB y
               // marcarían la rutina como completa sin haberla hecho.
-              const complete =
-                routine.doneSlots.filter((slot) => slot < routine.slots).length >= routine.slots
+              const complete = doneCount(routine) >= routine.slots
               return (
                 <li
                   key={routine.id}
-                  className={cn(
-                    'card-hairline group flex flex-col gap-3 rounded-xl border bg-card p-4',
-                    'sm:flex-row sm:items-center sm:justify-between',
-                    complete && 'border-success/30 bg-success/5',
-                  )}
+                  className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1">
-                      {/* El título abre la edición, igual que en las tarjetas de
-                          tarea: en un celular `group-hover` nunca se aplica
-                          (Tailwind lo envuelve en `@media (hover: hover)`), así
-                          que el lápiz solo no alcanzaba como único camino. */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* El título abre la edición. El lápiz siempre se ve: en
+                          un celular no hay hover que lo descubra. */}
                       <button
                         type="button"
                         onClick={() => openEdit(routine)}
-                        className="rounded-sm text-left font-medium leading-snug tracking-tight outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                        aria-haspopup="dialog"
+                        aria-label={`Editar ${routine.title}`}
+                        className="inline-flex items-center gap-1.5 rounded-sm text-start type-body font-medium text-foreground underline-offset-2 outline-offset-2 outline-(--ring) hover:underline focus-visible:outline-2"
                       >
                         {routine.title}
+                        <Pencil className="size-3.5 shrink-0 text-subtle-foreground" aria-hidden />
                       </button>
-                      <span
-                        aria-hidden
-                        className="rounded-md p-2 text-muted-foreground transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
-                      >
-                        <Pencil className="size-3.5" aria-hidden />
-                      </span>
+                      {complete ? (
+                        <Badge tone="success" icon={Check}>
+                          Hecha
+                        </Badge>
+                      ) : null}
                     </div>
                     {routine.description ? (
-                      <p className="mt-1 text-sm text-muted-foreground text-pretty">
+                      <p className="mt-1 max-w-prose type-small text-pretty text-muted-foreground">
                         {routine.description}
                       </p>
                     ) : null}
                   </div>
 
-                  <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                    {Array.from({ length: routine.slots }, (_, index) => index).map((slot) => {
-                      const checked = routine.doneSlots.includes(slot)
-                      return (
-                        <button
-                          key={`${routine.id}-${slot}`}
-                          type="button"
-                          onClick={() => toggle(routine, slot, !checked)}
-                          aria-pressed={checked}
-                          aria-label={`${routine.title} — ${slot + 1} de ${routine.slots}`}
-                          className={cn(
-                            'inline-flex size-9 items-center justify-center rounded-full border text-sm font-medium',
-                            'transition-[background-color,color,transform] duration-[var(--duration-fast)] active:scale-95',
-                            'outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                            checked
-                              ? 'border-transparent bg-success text-success-foreground'
-                              : 'border-border bg-background text-muted-foreground hover:border-foreground/25 hover:bg-cream-tint',
-                          )}
-                        >
-                          {checked ? (
-                            <Check className="size-4" aria-hidden />
-                          ) : (
-                            <span aria-hidden>{slot + 1}</span>
-                          )}
-                        </button>
-                      )
-                    })}
-                  </div>
+                  {/* fieldset + legend: el grupo de casilleros se anuncia con el
+                      nombre de la rutina. El flex va en un div adentro (en
+                      algunos Safari un fieldset no arma flex). */}
+                  <fieldset className="min-w-0 shrink-0">
+                    <legend className="sr-only">Veces hechas de {routine.title}</legend>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {Array.from({ length: routine.slots }, (_, index) => index).map((slot) => {
+                        const checked = routine.doneSlots.includes(slot)
+                        return (
+                          <button
+                            key={`${routine.id}-${slot}`}
+                            type="button"
+                            onClick={() => toggle(routine, slot, !checked)}
+                            aria-pressed={checked}
+                            aria-label={`${routine.title}: vez ${slot + 1} de ${routine.slots}`}
+                            className={cn(
+                              'press inline-flex size-9 items-center justify-center rounded-full border type-label type-amount pointer-coarse:size-11',
+                              'outline-offset-2 outline-(--ring) focus-visible:outline-2',
+                              // Tildado: relleno verde (lo elegido de una grilla, §3.0) y
+                              // además el check, así no depende solo del color.
+                              checked
+                                ? 'border-primary bg-primary text-primary-foreground'
+                                : 'border-input bg-card text-muted-foreground hover:bg-hover hover:text-foreground',
+                            )}
+                          >
+                            {checked ? (
+                              <Check className="size-4" aria-hidden />
+                            ) : (
+                              <span aria-hidden>{slot + 1}</span>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </fieldset>
                 </li>
               )
             })}
           </ul>
 
-          <Button variant="outline" onClick={openNew} className="w-full sm:w-auto">
-            <Plus className="size-4" aria-hidden />
-            Sumar una rutina
-          </Button>
+          <div>
+            <Button variant="secondary" onClick={openNew} className="w-full sm:w-auto">
+              <Plus aria-hidden />
+              Sumar una rutina
+            </Button>
+          </div>
         </>
       )}
 
@@ -226,40 +247,40 @@ function WeekBar({
 }) {
   // La semana viaja por la URL (no por estado) para que el server traiga los
   // tildes de esa semana. Los links mantienen `?seccion=organico` para volver
-  // a la misma solapa después de la navegación.
+  // a la misma pestaña después de la navegación.
   const hrefFor = (offset: number) =>
     `?seccion=organico&semana=${shiftWeeks(weekStart, offset)}` as const
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-secondary/40 p-2">
-      <Button asChild variant="ghost" size="icon" aria-label="Semana anterior">
-        <Link href={hrefFor(-1)} scroll={false}>
-          <ChevronLeft className="size-4" aria-hidden />
-        </Link>
-      </Button>
-
-      <div className="text-center">
-        <p className="text-sm font-medium leading-tight">{weekTitle}</p>
-        <p className="text-xs text-muted-foreground">
-          {formatDayShort(weekStart)} — {formatDayShort(weekEndOf(weekStart))}
-        </p>
-      </div>
-
-      <div className="flex items-center gap-1">
-        {isCurrentWeek ? null : (
-          <Button asChild variant="ghost" size="sm">
-            <Link href="?seccion=organico" scroll={false}>
-              Hoy
-            </Link>
-          </Button>
-        )}
-        <Button asChild variant="ghost" size="icon" aria-label="Semana siguiente">
+    <nav aria-label="Semana del checklist" className="flex flex-wrap items-center gap-3">
+      <div className="flex items-center gap-2">
+        <Button asChild variant="secondary" size="icon" aria-label="Semana anterior">
+          <Link href={hrefFor(-1)} scroll={false}>
+            <ChevronLeft aria-hidden />
+          </Link>
+        </Button>
+        <Button asChild variant="secondary" size="icon" aria-label="Semana siguiente">
           <Link href={hrefFor(1)} scroll={false}>
-            <ChevronRight className="size-4" aria-hidden />
+            <ChevronRight aria-hidden />
           </Link>
         </Button>
       </div>
-    </div>
+
+      <div className="min-w-0">
+        <p className="type-subtitle text-foreground">{weekTitle}</p>
+        <p className="type-small type-amount text-muted-foreground">
+          {formatDayShort(weekStart)} – {formatDayShort(weekEndOf(weekStart))}
+        </p>
+      </div>
+
+      {isCurrentWeek ? null : (
+        <Button asChild variant="ghost" size="sm" className="ms-auto">
+          <Link href="?seccion=organico" scroll={false}>
+            Volver a esta semana
+          </Link>
+        </Button>
+      )}
+    </nav>
   )
 }
 
@@ -277,26 +298,27 @@ function SuggestedEmptyState({
       icon={ListChecks}
       title="Todavía no hay checklist semanal"
       description="Son las cosas que se repiten todas las semanas (historias, reels, el mensaje al canal). Se reinician solas cada lunes."
+      secondaryAction={
+        <Button variant="secondary" onClick={onCreate}>
+          <Plus aria-hidden />
+          Crear la primera
+        </Button>
+      }
       action={
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <Button
-            disabled={pending}
-            onClick={() =>
-              startTransition(async () => {
-                const result = await seedSuggestedRoutines(tenantSlug)
-                if (result.ok) toast.success('Listo, ya tenés el checklist base.')
-                else toast.error(result.message)
-              })
-            }
-          >
-            <Sparkles className="size-4" aria-hidden />
-            {pending ? 'Cargando…' : 'Cargar checklist sugerido'}
-          </Button>
-          <Button variant="outline" onClick={onCreate}>
-            <Plus className="size-4" aria-hidden />
-            Crear la primera
-          </Button>
-        </div>
+        <Button
+          loading={pending}
+          loadingText="Cargando…"
+          onClick={() =>
+            startTransition(async () => {
+              const result = await seedSuggestedRoutines(tenantSlug)
+              if (result.ok) toast.success('Listo, ya tenés el checklist base.')
+              else toast.error(result.message)
+            })
+          }
+        >
+          <Sparkles aria-hidden />
+          Cargar checklist sugerido
+        </Button>
       }
     />
   )

@@ -1,12 +1,14 @@
 'use client'
 
-import { ChevronDown, ChevronRight, ClipboardList, Plus, Search, X } from 'lucide-react'
+import { ClipboardList, Plus, SearchX } from 'lucide-react'
 import { useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { DataTableToolbar } from '@/components/ui/data-table'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Input } from '@/components/ui/input'
+import { SearchField } from '@/components/ui/input'
 import { PageHeader } from '@/components/ui/page-header'
+import { SegmentedControl } from '@/components/ui/segmented-control'
 import {
   Select,
   SelectContent,
@@ -14,29 +16,39 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { SlidingTabs } from '@/components/ui/sliding-tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger, tabsCountClasses } from '@/components/ui/tabs'
 import { setMarketingTaskStatus } from '@/lib/marketing/actions'
 import {
   BOARD_VIEWS,
   type BoardView,
+  isBoardView,
   isTaskCategory,
   MINE_MODE_LABELS,
   MINE_MODES,
   type MineMode,
-  type TaskCategory,
   type TaskStatus,
   VIEW_LABELS,
 } from '@/lib/marketing/constants'
 import type { MarketingTaskRow, RoutineRow, TeamMember } from '@/lib/marketing/queries'
-import { BUCKET_LABELS, DATE_BUCKETS, type DateBucket, dateBucket } from '@/lib/marketing/week'
-import { cn } from '@/lib/utils'
+import { DATE_BUCKETS, type DateBucket, dateBucket } from '@/lib/marketing/week'
 import { OrganicChecklist } from './organic-checklist'
-import { TaskCard } from './task-card'
 import { TaskDialog } from './task-dialog'
+import { type TaskGroup, TaskList } from './task-list'
 
 /** Saca tildes para que "grabacion" encuentre "grabación". */
 function normalize(value: string): string {
   return value.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+}
+
+const MINE_MODE_ITEMS = MINE_MODES.map((mode) => ({ value: mode, label: MINE_MODE_LABELS[mode] }))
+
+const VIEW_DESCRIPTIONS: Record<BoardView, string> = {
+  eventos: 'Lo que hay que hacer para los eventos, ordenado por fecha. Lo ven todos los socios.',
+  promociones:
+    'Lo que hay que hacer para las promociones, ordenado por fecha. Lo ven todos los socios.',
+  impresiones: 'Lo que hay que mandar a imprimir, ordenado por fecha. Lo ven todos los socios.',
+  organico: 'El checklist que se repite todas las semanas. Se reinicia solo cada lunes.',
+  mias: 'Lo que tiene cada uno: como responsable o como parte del equipo.',
 }
 
 export function MarketingBoard({
@@ -80,8 +92,8 @@ export function MarketingBoard({
   // diálogo vive adentro del checklist.
   const [newRoutineNonce, setNewRoutineNonce] = useState(0)
 
-  // Estado optimista del cambio de estado desde la tarjeta: el select tiene que
-  // pintarse solo, sin esperar el round-trip ni el revalidate.
+  // Estado optimista del cambio de estado desde la lista: la etiqueta tiene que
+  // pintarse sola, sin esperar el round-trip ni el revalidate.
   const [pendingStatus, setPendingStatus] = useState<Record<string, TaskStatus>>({})
   const [, startTransition] = useTransition()
 
@@ -118,7 +130,7 @@ export function MarketingBoard({
     })
   }, [resolved, view, query, minePerson, mineMode])
 
-  const groups = useMemo(() => {
+  const groups = useMemo<TaskGroup[]>(() => {
     const byBucket = new Map<DateBucket, MarketingTaskRow[]>()
     for (const task of visible) {
       const bucket = dateBucket(task.definedDate ?? task.idealDate, today)
@@ -159,8 +171,8 @@ export function MarketingBoard({
 
   // Sólo suelta el override si sigue siendo EL NUESTRO: con dos cambios
   // encadenados sobre la misma tarea, la respuesta del primero borraba el
-  // override del segundo (que seguía en vuelo) y el chip parpadeaba al estado
-  // intermedio.
+  // override del segundo (que seguía en vuelo) y la etiqueta parpadeaba al
+  // estado intermedio.
   function forgetPending(id: string, status: TaskStatus) {
     setPendingStatus((prev) => {
       if (prev[id] !== status) return prev
@@ -183,206 +195,179 @@ export function MarketingBoard({
   }
 
   const isOrganic = view === 'organico'
+  const trimmedSearch = search.trim()
+  const minePersonName = minePerson === currentUserId ? 'vos' : (nameById.get(minePerson) ?? null)
 
-  const description =
-    view === 'organico'
-      ? 'El checklist que se repite todas las semanas. Se reinicia solo cada lunes.'
-      : view === 'mias'
-        ? 'Lo que tiene cada uno: como responsable o como parte del equipo.'
-        : `${visible.length} ${visible.length === 1 ? 'tarea' : 'tareas'} en esta sección. Los cambios los ven todos los socios.`
+  // El vacío dice por qué no hay nada y qué hacer: la búsqueda no encontró, la
+  // persona no tiene tareas, o la sección todavía está vacía.
+  const empty =
+    query.length > 0 ? (
+      <EmptyState
+        size="sm"
+        icon={SearchX}
+        title={`No encontramos tareas con «${trimmedSearch}»`}
+        description="Probá con otra palabra o limpiá el buscador para ver todo."
+        action={
+          <Button variant="secondary" size="sm" onClick={() => setSearch('')}>
+            Limpiar búsqueda
+          </Button>
+        }
+      />
+    ) : view === 'mias' ? (
+      <EmptyState
+        size="sm"
+        icon={ClipboardList}
+        title={
+          minePersonName ? `No hay tareas para ${minePersonName}` : 'Elegí a alguien del equipo'
+        }
+        description={
+          minePersonName
+            ? 'Cuando le asignen una, como responsable o como parte del equipo, aparece acá.'
+            : 'Arriba elegís de quién querés ver las tareas.'
+        }
+      />
+    ) : (
+      <EmptyState
+        size="sm"
+        icon={ClipboardList}
+        title={`Todavía no hay tareas en ${VIEW_LABELS[view]}`}
+        description="Cargá la primera y queda a la vista de todo el equipo."
+        action={
+          <Button size="sm" onClick={openNew}>
+            <Plus aria-hidden />
+            Nueva tarea
+          </Button>
+        }
+      />
+    )
+
+  const body = isOrganic ? (
+    <OrganicChecklist
+      tenantSlug={tenantSlug}
+      routines={routines}
+      weekStart={weekStart}
+      weekTitle={weekTitle}
+      isCurrentWeek={isCurrentWeek}
+      newRoutineNonce={newRoutineNonce}
+    />
+  ) : (
+    <div className="flex flex-col gap-3">
+      <DataTableToolbar>
+        <SearchField
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          onClear={() => setSearch('')}
+          placeholder="Buscar tareas…"
+          aria-label="Buscar tareas"
+        />
+        {view === 'mias' ? (
+          <>
+            <Select value={minePerson} onValueChange={setMinePerson}>
+              <SelectTrigger aria-label="De quién" className="w-full sm:w-48">
+                <SelectValue placeholder="Elegí a alguien" />
+              </SelectTrigger>
+              <SelectContent>
+                {team.map((member) => (
+                  <SelectItem key={member.id} value={member.id}>
+                    {member.name}
+                    {member.id === currentUserId ? ' (vos)' : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <SegmentedControl
+              aria-label="Rol en la tarea"
+              items={MINE_MODE_ITEMS}
+              value={mineMode}
+              onValueChange={setMineMode}
+            />
+          </>
+        ) : null}
+        <p role="status" className="ms-auto type-small text-muted-foreground">
+          <span className="type-amount">{visible.length}</span>{' '}
+          {visible.length === 1 ? 'tarea' : 'tareas'}
+        </p>
+      </DataTableToolbar>
+
+      <TaskList
+        caption={
+          view === 'mias' ? 'Tareas de la persona elegida' : `Tareas de ${VIEW_LABELS[view]}`
+        }
+        groups={groups}
+        collapsed={collapsed}
+        onToggleGroup={(bucket) => setCollapsed((prev) => ({ ...prev, [bucket]: !prev[bucket] }))}
+        nameFor={nameFor}
+        onEdit={openEdit}
+        onStatusChange={changeStatus}
+        empty={empty}
+      />
+    </div>
+  )
 
   return (
     <>
-      <PageHeader
-        eyebrow="Organización de contenido"
-        title="Tareas de marketing"
-        description={description}
-        actions={
-          isOrganic ? (
-            // En Orgánico el buscador no tendría qué filtrar y "Nueva tarea"
-            // crearía algo que no se ve desde acá: la acción de esta solapa es
-            // sumar una rutina.
-            <Button onClick={() => setNewRoutineNonce((n) => n + 1)}>
-              <Plus className="size-4" aria-hidden />
-              Nueva rutina
-            </Button>
-          ) : (
-            <>
-              <div className="relative">
-                <Search
-                  className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                  aria-hidden
-                />
-                <Input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Buscar tareas…"
-                  aria-label="Buscar tareas"
-                  className="w-full pl-8 sm:w-56"
-                />
-                {search ? (
-                  <button
-                    type="button"
-                    onClick={() => setSearch('')}
-                    aria-label="Limpiar búsqueda"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="size-3.5" aria-hidden />
-                  </button>
-                ) : null}
-              </div>
+      {/* Las secciones del tablero son pestañas con la URL (`?seccion=`): el
+          link se puede copiar y el server arranca en la que corresponde. */}
+      <Tabs
+        value={view}
+        defaultValue={initialView}
+        onValueChange={(next) => {
+          if (isBoardView(next)) setView(next)
+        }}
+        syncParam="seccion"
+        className="gap-6"
+      >
+        <PageHeader
+          title="Tareas de marketing"
+          description={VIEW_DESCRIPTIONS[view]}
+          actions={
+            isOrganic ? (
+              // En Orgánico "Nueva tarea" crearía algo que no se ve desde acá:
+              // la acción de esta solapa es sumar una rutina.
+              <Button onClick={() => setNewRoutineNonce((n) => n + 1)}>
+                <Plus aria-hidden />
+                Nueva rutina
+              </Button>
+            ) : (
               <Button onClick={openNew}>
-                <Plus className="size-4" aria-hidden />
+                <Plus aria-hidden />
                 Nueva tarea
               </Button>
-            </>
-          )
-        }
-      />
-
-      <div className="-mx-4 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
-        <SlidingTabs
-          value={view}
-          onChange={setView}
-          tabs={BOARD_VIEWS.map((value) => ({
-            value,
-            label: (
-              <span className="inline-flex items-center gap-1.5">
-                {VIEW_LABELS[value]}
-                {isTaskCategory(value) && (openCount[value] ?? 0) > 0 ? (
-                  <span className="rounded-full bg-primary/10 px-1.5 text-[11px] font-semibold tabular-nums text-primary">
-                    {openCount[value]}
-                  </span>
-                ) : null}
-              </span>
-            ),
-          }))}
-        />
-      </div>
-
-      {isOrganic ? (
-        <OrganicChecklist
-          tenantSlug={tenantSlug}
-          routines={routines}
-          weekStart={weekStart}
-          weekTitle={weekTitle}
-          isCurrentWeek={isCurrentWeek}
-          newRoutineNonce={newRoutineNonce}
-        />
-      ) : (
-        <div className="space-y-4">
-          {view === 'mias' ? (
-            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-secondary/40 p-2">
-              <Select value={minePerson} onValueChange={setMinePerson}>
-                <SelectTrigger className="w-full bg-card sm:w-48" aria-label="Persona">
-                  <SelectValue placeholder="Elegí a alguien" />
-                </SelectTrigger>
-                <SelectContent>
-                  {team.map((member) => (
-                    <SelectItem key={member.id} value={member.id}>
-                      {member.name}
-                      {member.id === currentUserId ? ' (vos)' : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={mineMode} onValueChange={(value) => setMineMode(value as MineMode)}>
-                <SelectTrigger className="w-full bg-card sm:w-44" aria-label="Rol en la tarea">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MINE_MODES.map((mode) => (
-                    <SelectItem key={mode} value={mode}>
-                      {MINE_MODE_LABELS[mode]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <span className="px-1 text-sm font-medium tabular-nums text-muted-foreground">
-                {visible.length} {visible.length === 1 ? 'tarea' : 'tareas'}
-              </span>
-            </div>
-          ) : null}
-
-          {groups.length === 0 ? (
-            <EmptyState
-              icon={ClipboardList}
-              title={search ? 'No encontramos nada' : 'No hay tareas para mostrar'}
-              description={
-                search
-                  ? 'Probá con otra palabra o limpiá el buscador.'
-                  : 'Cargá la primera y queda a la vista de todo el equipo.'
-              }
-              action={
-                search ? (
-                  <Button variant="outline" onClick={() => setSearch('')}>
-                    Limpiar búsqueda
-                  </Button>
-                ) : (
-                  <Button onClick={openNew}>
-                    <Plus className="size-4" aria-hidden />
-                    Nueva tarea
-                  </Button>
+            )
+          }
+          tabs={
+            <TabsList aria-label="Secciones del tablero">
+              {BOARD_VIEWS.map((value) => {
+                const open = isTaskCategory(value) ? (openCount[value] ?? 0) : 0
+                return (
+                  <TabsTrigger key={value} value={value}>
+                    {VIEW_LABELS[value]}
+                    {open > 0 ? (
+                      <span className={tabsCountClasses}>
+                        {open}
+                        <span className="sr-only"> {open === 1 ? 'abierta' : 'abiertas'}</span>
+                      </span>
+                    ) : null}
+                  </TabsTrigger>
                 )
-              }
-            />
-          ) : (
-            groups.map((group) => {
-              const isOpen = !collapsed[group.bucket]
-              return (
-                <section key={group.bucket} className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setCollapsed((prev) => ({ ...prev, [group.bucket]: !prev[group.bucket] }))
-                    }
-                    className="flex w-full items-center gap-1.5 rounded-md py-1 text-left text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    {isOpen ? (
-                      <ChevronDown className="size-3.5" aria-hidden />
-                    ) : (
-                      <ChevronRight className="size-3.5" aria-hidden />
-                    )}
-                    <span>{BUCKET_LABELS[group.bucket]}</span>
-                    <span
-                      className={cn(
-                        'rounded-full px-1.5 text-[11px] tabular-nums',
-                        group.bucket === 'past'
-                          ? 'bg-warning/15 text-warning'
-                          : 'bg-secondary text-secondary-foreground',
-                      )}
-                    >
-                      {group.items.length}
-                    </span>
-                  </button>
+              })}
+            </TabsList>
+          }
+        />
 
-                  {isOpen ? (
-                    <ul className="space-y-2">
-                      {group.items.map((task) => (
-                        <li key={task.id}>
-                          <TaskCard
-                            task={task}
-                            nameFor={nameFor}
-                            onEdit={openEdit}
-                            onStatusChange={changeStatus}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </section>
-              )
-            })
-          )}
-        </div>
-      )}
+        {BOARD_VIEWS.map((value) => (
+          <TabsContent key={value} value={value}>
+            {value === view ? body : null}
+          </TabsContent>
+        ))}
+      </Tabs>
 
       <TaskDialog
         key={dialogSession}
         tenantSlug={tenantSlug}
         team={team}
         task={editing}
-        defaultCategory={(isTaskCategory(view) ? view : 'eventos') as TaskCategory}
+        defaultCategory={isTaskCategory(view) ? view : 'eventos'}
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         // Si la tarea se creó desde "Mis tareas", la sección elegida es la

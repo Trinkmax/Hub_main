@@ -1,22 +1,8 @@
 'use client'
 
-import { format } from 'date-fns'
-import { es } from 'date-fns/locale'
-import {
-  ArrowLeft,
-  ArrowUpRight,
-  Check,
-  Clock,
-  Code2,
-  FileUp,
-  Images,
-  Loader2,
-  Settings2,
-  Upload,
-} from 'lucide-react'
-import Link from 'next/link'
+import { ArrowUpRight, Check, Clock, Code2, FileUp, Images, Settings2, Upload } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import {
   AlertDialog,
@@ -30,10 +16,18 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { CopyButton } from '@/components/ui/copy-button'
+import { EmptyState } from '@/components/ui/empty-state'
+import { FormActions } from '@/components/ui/form-actions'
 import { Label } from '@/components/ui/label'
+import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
+import { StatusBadge } from '@/components/ui/status-badge'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { formatDateTime } from '@/lib/dates'
+import { formatNumber } from '@/lib/format/number-kind'
 import {
   fetchLandingVersionHtml,
   restoreLandingVersion,
@@ -46,6 +40,8 @@ import type { LandingPageDetail, LandingVersionRow, LandingViewPoint } from '@/l
 import { LANDING_HTML_MAX_CHARS, LANDING_HTML_MAX_LABEL } from '@/lib/landings/schemas'
 import { HAS_LANDINGS_HOST } from '@/lib/landings/security'
 import { cn } from '@/lib/utils'
+import { DropOverlay } from '../../_components/drop-overlay'
+import { LANDING_STATUS, landingStatus } from '../../_components/page-status'
 import { DownloadHtmlButton } from './download-button'
 import { HistoryPanel } from './history-panel'
 import { MediaPanel } from './media-panel'
@@ -70,6 +66,21 @@ import { SettingsDialog } from './settings-dialog'
 /** Lo que tarda en refrescarse la previa después de tipear. */
 const PREVIEW_DEBOUNCE_MS = 400
 
+/**
+ * El alto del código en escritorio: lo que queda de la pantalla debajo del
+ * topbar y de la barra del editor (`--editor-bar-h`, medida abajo), menos las
+ * pestañas, la fila del tamaño y el aire de la página.
+ */
+const CODE_HEIGHT =
+  'h-[52dvh] lg:h-[calc(100dvh-var(--topbar-h)-var(--editor-bar-h,7rem)-10.5rem)] lg:min-h-[24rem]'
+
+/** «menos de 1 KB» mientras no llega al KB (redondeado daba «0 KB» con código adentro). */
+function sizeLabel(chars: number): string {
+  if (chars === 0) return '0 KB'
+  if (chars < 1024) return 'menos de 1 KB'
+  return `${formatNumber(Math.round(chars / 1024))} KB`
+}
+
 export function LandingEditor({
   tenantSlug,
   tenantId,
@@ -77,6 +88,7 @@ export function LandingEditor({
   versions,
   views,
   landingsBase,
+  today,
 }: {
   tenantSlug: string
   tenantId: string
@@ -85,9 +97,13 @@ export function LandingEditor({
   views: LandingViewPoint[]
   /** Base pública ya resuelta: `${landingsBase}/${slug}` es el link. */
   landingsBase: string
+  /** Hoy en Córdoba, resuelto en el server: las fechas relativas salen igual en los dos lados. */
+  today: string
 }) {
   const router = useRouter()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const barRef = useRef<HTMLDivElement>(null)
+  const sizeId = useId()
 
   const [html, setHtml] = useState(page.html)
   // Lo último confirmado por el server. La diferencia con `html` es lo que
@@ -116,6 +132,24 @@ export function LandingEditor({
 
   const dirty = html !== saved
   const publicUrl = `${landingsBase}/${page.slug}`
+  const backHref = `/${tenantSlug}/paginas`
+
+  // La barra de arriba queda fija desde `sm` y su alto cambia con el ancho (los
+  // botones bajan de fila): se mide y se publica como `--editor-bar-h` en la
+  // raíz, así la previa fija y el alto del código se acomodan debajo de ella.
+  useEffect(() => {
+    const bar = barRef.current
+    const root = bar?.parentElement
+    if (!bar || !root) return
+    const update = () => root.style.setProperty('--editor-bar-h', `${bar.offsetHeight}px`)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(bar)
+    return () => {
+      observer.disconnect()
+      root.style.removeProperty('--editor-bar-h')
+    }
+  }, [])
 
   // La previa se recalcula con retraso: recargar el iframe en cada tecla hace
   // parpadear la pantalla y come CPU con landings pesadas.
@@ -131,8 +165,8 @@ export function LandingEditor({
     () => analyzeLandingHtml(debouncedHtml, { isolated: !HAS_LANDINGS_HOST }),
     [debouncedHtml],
   )
-  // Para el punto rojo de la solapa: estando en Imágenes o Historial, la
-  // revisión queda fuera de la vista y hay que avisar igual.
+  // Para la marca de la pestaña: estando en Imágenes o Historial, la revisión
+  // queda fuera de la vista y hay que avisar igual.
   const checkCount = useMemo(() => summarizeChecks(checks), [checks])
   // La previa usa `srcdoc`, y ahí NUNCA podemos dar allow-same-origin (heredaría
   // el origen del panel, con la sesión adentro). O sea que los embebidos no se
@@ -149,7 +183,7 @@ export function LandingEditor({
       new Promise<boolean>((resolve) => {
         if (overflow) {
           toast.error(
-            `El código pasa los ${LANDING_HTML_MAX_LABEL}. Sacá las imágenes pegadas adentro del HTML y subilas en la solapa Imágenes.`,
+            `El código pasa los ${LANDING_HTML_MAX_LABEL}. Sacá las imágenes pegadas adentro del HTML y subilas en la pestaña Imágenes.`,
           )
           resolve(false)
           return
@@ -242,7 +276,7 @@ export function LandingEditor({
       // galería. Decirlo así ahorra el viaje a preguntar.
       toast.error(
         file.type.startsWith('image/')
-          ? 'Eso es una imagen: soltala en la solapa Imágenes.'
+          ? 'Eso es una imagen: soltala en la pestaña Imágenes.'
           : 'Tiene que ser un archivo .html',
       )
       return
@@ -250,7 +284,7 @@ export function LandingEditor({
     const text = await file.text()
     if (text.length > LANDING_HTML_MAX_CHARS) {
       toast.error(
-        `Ese archivo pesa ${Math.round(text.length / 1024)} KB y el máximo es ${LANDING_HTML_MAX_LABEL}. Casi siempre es por imágenes pegadas adentro del HTML: subilas en la solapa Imágenes.`,
+        `Ese archivo pesa ${Math.round(text.length / 1024)} KB y el máximo es ${LANDING_HTML_MAX_LABEL}. Casi siempre es por imágenes pegadas adentro del HTML: subilas en la pestaña Imágenes.`,
       )
       return
     }
@@ -313,10 +347,38 @@ export function LandingEditor({
     })
   }
 
+  /**
+   * La navegación del App Router no dispara `beforeunload`: sin esta guarda,
+   * volver al listado con cambios sin guardar los perdía sin una sola pregunta.
+   * Se intercepta en captura el click del «← Páginas» del encabezado (también
+   * llega con Enter): el `<Link>` ve el evento cancelado y no navega.
+   */
+  function guardBackLink(event: React.MouseEvent<HTMLDivElement>) {
+    if (!dirty) return
+    const target = event.target
+    if (!(target instanceof Element) || !target.closest('[data-slot="page-back"]')) return
+    event.preventDefault()
+    setLeaving(true)
+  }
+
+  const saveLabel = dirty ? (published ? 'Publicar cambios' : 'Guardar') : 'Guardado'
+  const renderSaveButton = (className?: string) => (
+    <Button
+      onClick={() => void save()}
+      disabled={!dirty || overflow}
+      loading={pending}
+      className={className}
+    >
+      {dirty ? null : <Check aria-hidden />}
+      {saveLabel}
+    </Button>
+  )
+
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: soltar el archivo es un atajo; el botón "Subir .html" hace exactamente lo mismo con teclado.
-    <div
-      className="relative mx-auto w-full max-w-screen-2xl space-y-4 px-4 py-6 sm:px-6 lg:px-8"
+    <PageShell
+      width="wide"
+      className="relative gap-4"
+      // Soltar el archivo es un atajo: «Subir .html» hace exactamente lo mismo con teclado.
       onDragOver={(event) => {
         // Sólo reaccionamos a archivos: arrastrar texto seleccionado dentro del
         // textarea no tiene que prender la zona de drop.
@@ -340,12 +402,14 @@ export function LandingEditor({
       }}
     >
       {/* El input vive acá arriba porque lo abren dos lugares: el botón de la
-          barra y el cartel del editor vacío. */}
+          pestaña Código y el cartel del editor vacío. */}
       <input
         ref={fileInputRef}
         type="file"
         accept=".html,.htm,text/html"
         className="sr-only"
+        tabIndex={-1}
+        aria-hidden
         onChange={(event) => {
           const file = event.target.files?.[0]
           if (file) void loadFile(file)
@@ -354,157 +418,103 @@ export function LandingEditor({
         }}
       />
 
-      {dropping ? (
-        <div className="pointer-events-none fixed inset-0 z-50 grid place-items-center bg-background/70 backdrop-blur-sm">
-          <div className="card-hairline flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-primary bg-card px-10 py-8 shadow-lg">
-            <div className="flex size-14 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <FileUp className="size-7" aria-hidden />
-            </div>
-            <p className="font-serif text-xl font-semibold">Soltá tu archivo .html</p>
-            <p className="text-sm text-muted-foreground">Lo cargamos en el editor al instante.</p>
-          </div>
-        </div>
-      ) : null}
-      {/* ── Barra de la página ───────────────────────────── */}
-      {/* top-16 y z-10: el topbar del shell es `sticky top-0 z-20 h-14`. Con el
-          mismo z-index ganaba esta barra (va después en el DOM) y tapaba el
-          menú, el ⌘K y el avatar al scrollear. */}
-      <header className="card-hairline sticky top-16 z-10 rounded-xl border bg-card/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-card/80">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-          {/* La navegación del App Router no dispara `beforeunload`: sin este
-              guard, volver al listado con cambios sin guardar los perdía sin
-              una sola pregunta. */}
-          <Button
-            asChild
-            variant="ghost"
-            size="icon"
-            aria-label="Volver a Páginas"
-            onClick={(event) => {
-              if (dirty) {
-                event.preventDefault()
-                setLeaving(true)
-              }
-            }}
-          >
-            <Link href={`/${tenantSlug}/paginas`}>
-              <ArrowLeft className="size-4" aria-hidden />
-            </Link>
-          </Button>
+      {dropping ? <DropOverlay description="Lo cargamos en el editor al instante." /> : null}
 
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h1 className="truncate font-serif text-xl font-semibold tracking-tight">
-                {page.title}
-              </h1>
-              {published ? (
-                <Badge variant="secondary">Publicada</Badge>
-              ) : (
-                <Badge variant="outline">Borrador</Badge>
-              )}
-              {dirty ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400">
-                  <span className="size-1.5 rounded-full bg-amber-500" aria-hidden />
-                  Sin guardar
-                </span>
-              ) : null}
-            </div>
-            <div className="mt-0.5 flex items-center gap-1.5">
-              <code className="truncate font-mono text-xs text-muted-foreground">
-                {publicUrl.replace(/^https?:\/\//, '')}
-              </code>
+      {/* ── Barra de la página ───────────────────────────── */}
+      {/* Fija debajo del topbar desde `sm` (z-10: el topbar es z-20 y tiene que
+          quedar arriba). En el celular no se fija: ocuparía media pantalla, y
+          el «Guardar» va en la barra de abajo. */}
+      <div
+        ref={barRef}
+        data-slot="landing-editor-bar"
+        onClickCapture={guardBackLink}
+        className="-mx-4 border-b border-border bg-background px-4 pb-4 sm:sticky sm:top-(--topbar-h) sm:z-10 sm:-mx-6 sm:px-6 sm:pt-3 lg:-mx-8 lg:px-8"
+      >
+        <PageHeader
+          back={{ href: backHref, label: 'Páginas' }}
+          title={page.title}
+          meta={[
+            <StatusBadge key="estado" status={landingStatus(published)} map={LANDING_STATUS} />,
+            dirty ? (
+              <Badge key="sin-guardar" tone="warning" dot>
+                Sin guardar
+              </Badge>
+            ) : null,
+            <span key="link" className="inline-flex min-w-0 max-w-full items-center gap-1">
+              <code className="truncate font-mono">{publicUrl.replace(/^https?:\/\//, '')}</code>
               <CopyButton
                 value={publicUrl}
                 iconOnly
                 variant="ghost"
-                size="sm"
+                size="icon-sm"
                 label="Copiar link"
                 copiedLabel="¡Copiado!"
               />
-            </div>
-          </div>
-
-          {/* flex-wrap + textos que se esconden abajo de sm: con la página
-              publicada, los cinco controles no entran en 360px de ancho. */}
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {/* Baja lo que está en el editor, no lo último guardado: si retocaste
-                algo y se lo vas a pasar a ChatGPT, es eso lo que tiene que ver. */}
-            <DownloadHtmlButton
-              html={html}
-              fileName={() => landingFileName(page.slug, new Date())}
-              label="Descargar el código como .html"
-              onDownloaded={() => {
-                if (!dirty) return
-                toast.info('Descargado con cambios sin guardar', {
-                  description: published
-                    ? 'El archivo tiene lo que ves en el editor, pero la página en vivo todavía no.'
-                    : 'El archivo tiene lo que ves en el editor, pero acá todavía no está guardado.',
-                })
-              }}
-            />
-
-            <div className="flex items-center gap-2 rounded-lg border border-border/70 px-2.5 py-1.5 sm:px-3">
-              <Switch
-                id="published"
-                checked={published}
-                onCheckedChange={togglePublished}
-                disabled={pending}
-                aria-label="Publicar página"
+            </span>,
+          ]}
+          actions={
+            <>
+              {/* Baja lo que está en el editor, no lo último guardado: si
+                  retocaste algo y se lo vas a pasar a ChatGPT, es eso lo que
+                  tiene que ver. */}
+              <DownloadHtmlButton
+                html={html}
+                fileName={() => landingFileName(page.slug, new Date())}
+                label="Descargar el código como .html"
+                onDownloaded={() => {
+                  if (!dirty) return
+                  toast.info('Descargado con cambios sin guardar', {
+                    description: published
+                      ? 'El archivo tiene lo que ves en el editor, pero la página en vivo todavía no.'
+                      : 'El archivo tiene lo que ves en el editor, pero acá todavía no está guardado.',
+                  })
+                }}
               />
-              <Label htmlFor="published" className="hidden cursor-pointer text-xs sm:inline">
-                {published ? 'En vivo' : 'Publicar'}
-              </Label>
-            </div>
 
-            {published ? (
-              <Button asChild variant="outline" size="sm">
-                <a
-                  href={publicUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Ver la página publicada"
-                >
-                  <span className="hidden sm:inline">Ver</span>
-                  <ArrowUpRight className="size-4" aria-hidden />
-                  <span className="sr-only sm:hidden">Ver la página publicada</span>
-                </a>
+              <PublishToggle published={published} pending={pending} onChange={togglePublished} />
+
+              {published ? (
+                <Button asChild variant="secondary">
+                  <a
+                    href={publicUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Ver la página publicada (se abre en otra pestaña)"
+                  >
+                    <span className="max-sm:hidden">Ver</span>
+                    <ArrowUpRight aria-hidden />
+                  </a>
+                </Button>
+              ) : null}
+
+              <Button
+                variant="secondary"
+                size="icon"
+                aria-label="Ajustes de la página"
+                onClick={() => {
+                  setSettingsSession((n) => n + 1)
+                  setSettingsOpen(true)
+                }}
+              >
+                <Settings2 aria-hidden />
               </Button>
-            ) : null}
 
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Ajustes de la página"
-              onClick={() => {
-                setSettingsSession((n) => n + 1)
-                setSettingsOpen(true)
-              }}
-            >
-              <Settings2 className="size-4" aria-hidden />
-            </Button>
-
-            <Button onClick={() => void save()} disabled={!dirty || pending || overflow}>
-              {pending ? (
-                <Loader2 className="size-4 animate-spin" aria-hidden />
-              ) : dirty ? null : (
-                <Check className="size-4" aria-hidden />
-              )}
-              {dirty ? (published ? 'Publicar cambios' : 'Guardar') : 'Guardado'}
-            </Button>
-          </div>
-        </div>
-      </header>
+              {/* En el celular el «Guardar» va en la barra fija de abajo. */}
+              {renderSaveButton('max-sm:hidden')}
+            </>
+          }
+        />
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,26rem)] lg:items-start">
         {/* ── Previa (arriba en celular, a la derecha en escritorio) ── */}
-        <div className="order-1 lg:order-2 lg:sticky lg:top-[9.5rem]">
+        <div className="order-1 lg:sticky lg:top-[calc(var(--topbar-h)+var(--editor-bar-h,7rem)+1rem)] lg:order-2">
           <PreviewPanel
             html={viewing ? viewing.html : debouncedHtml}
             checks={checks}
             note={previewNote}
             viewingLabel={
-              viewing
-                ? `Versión del ${format(new Date(viewing.version.createdAt), "d 'de' MMM HH:mm", { locale: es })}`
-                : null
+              viewing ? `Versión del ${formatDateTime(viewing.version.createdAt)}` : null
             }
             viewingFileName={
               viewing ? landingFileName(page.slug, new Date(viewing.version.createdAt)) : null
@@ -517,54 +527,40 @@ export function LandingEditor({
 
         {/* ── Panel de trabajo ────────────────────────────── */}
         <div className="order-2 min-w-0 lg:order-1">
-          <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <TabsList>
-                <TabsTrigger value="codigo">
-                  <Code2 className="size-4" aria-hidden />
-                  Código
-                  {checkCount.errors > 0 ? (
-                    <span
-                      className="ml-1 inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-4 text-destructive-foreground"
-                      title={`${checkCount.errors} ${checkCount.errors === 1 ? 'problema' : 'problemas'} para revisar`}
-                    >
-                      {checkCount.errors}
+          <Tabs
+            value={tab}
+            onValueChange={(value) => {
+              if (value === 'codigo' || value === 'imagenes' || value === 'historial') setTab(value)
+            }}
+          >
+            <TabsList aria-label="Partes del editor">
+              <TabsTrigger value="codigo" icon={Code2}>
+                Código
+                {checkCount.errors > 0 ? (
+                  <Badge tone="danger" className="type-amount">
+                    {checkCount.errors}
+                    <span className="sr-only">
+                      {checkCount.errors === 1
+                        ? ' problema para revisar'
+                        : ' problemas para revisar'}
                     </span>
-                  ) : null}
-                </TabsTrigger>
-                <TabsTrigger value="imagenes">
-                  <Images className="size-4" aria-hidden />
-                  Imágenes
-                </TabsTrigger>
-                <TabsTrigger value="historial">
-                  <Clock className="size-4" aria-hidden />
-                  Historial
-                  {versions.length > 0 ? (
-                    <span className="ml-1 text-xs text-muted-foreground">{versions.length}</span>
-                  ) : null}
-                </TabsTrigger>
-              </TabsList>
-
-              {tab === 'codigo' ? (
-                <div className="flex items-center gap-3">
-                  <span
-                    className={cn(
-                      'font-mono text-xs tabular-nums',
-                      overflow ? 'text-destructive' : 'text-muted-foreground',
-                    )}
-                  >
-                    {Math.round(chars / 1024)} KB / {LANDING_HTML_MAX_LABEL}
-                  </span>
-                  <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
-                    <Upload className="size-4" aria-hidden />
-                    Subir .html
-                  </Button>
-                </div>
-              ) : null}
-            </div>
+                  </Badge>
+                ) : null}
+              </TabsTrigger>
+              <TabsTrigger value="imagenes" icon={Images}>
+                Imágenes
+              </TabsTrigger>
+              <TabsTrigger
+                value="historial"
+                icon={Clock}
+                count={versions.length > 0 ? versions.length : undefined}
+              >
+                Historial
+              </TabsTrigger>
+            </TabsList>
 
             {/* forceMount + `hidden`: sin esto Radix DESMONTA el textarea al
-                cambiar de solapa, `textareaRef.current` queda en null y
+                cambiar de pestaña, `textareaRef.current` queda en null y
                 "Insertar" desde Imágenes pegaba el <img> al final del archivo
                 (después de </html>) en vez de en el cursor. */}
             <TabsContent
@@ -572,13 +568,36 @@ export function LandingEditor({
               forceMount
               className={tab === 'codigo' ? undefined : 'hidden'}
             >
-              <CodePanel
-                ref={textareaRef}
-                value={html}
-                onChange={setHtml}
-                onPick={() => fileInputRef.current?.click()}
-                overflow={overflow}
-              />
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-3">
+                  <span
+                    id={sizeId}
+                    className={cn(
+                      'type-caption type-amount',
+                      overflow ? 'text-destructive-text' : 'text-muted-foreground',
+                    )}
+                  >
+                    {sizeLabel(chars)} de {LANDING_HTML_MAX_LABEL}
+                    {overflow ? ': sacá las imágenes pegadas y subilas en Imágenes' : null}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Upload aria-hidden />
+                    Subir .html
+                  </Button>
+                </div>
+                <CodePanel
+                  ref={textareaRef}
+                  value={html}
+                  onChange={setHtml}
+                  onPick={() => fileInputRef.current?.click()}
+                  overflow={overflow}
+                  describedBy={sizeId}
+                />
+              </div>
             </TabsContent>
 
             <TabsContent value="imagenes">
@@ -591,6 +610,7 @@ export function LandingEditor({
                 views={views}
                 totalViews={page.views}
                 lastViewedAt={page.lastViewedAt}
+                today={today}
                 pending={pending}
                 onView={viewVersion}
                 onRestore={restoreVersion}
@@ -598,6 +618,11 @@ export function LandingEditor({
             </TabsContent>
           </Tabs>
         </div>
+      </div>
+
+      {/* Celular: el «Guardar» fijo abajo, a mano del pulgar. */}
+      <div className="sm:hidden">
+        <FormActions>{renderSaveButton()}</FormActions>
       </div>
 
       <SettingsDialog
@@ -609,72 +634,77 @@ export function LandingEditor({
         onOpenChange={setSettingsOpen}
       />
 
-      {/* Salir con cambios sin guardar */}
+      {/* Salir con cambios sin guardar: tres caminos, no una confirmación. La
+          principal es la que no pierde nada. */}
       <AlertDialog open={leaving} onOpenChange={setLeaving}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Tenés cambios sin guardar</AlertDialogTitle>
             <AlertDialogDescription>
-              Si salís ahora se pierde lo que escribiste desde el último guardado.
+              Si salís ahora, se pierde lo que escribiste desde la última vez que guardaste.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Seguir editando</AlertDialogCancel>
+            <AlertDialogAction variant="danger-ghost" onClick={() => router.push(backHref)}>
+              Salir sin guardar
+            </AlertDialogAction>
             <Button
-              variant="outline"
-              disabled={pending}
+              loading={pending}
               onClick={async () => {
                 const ok = await save()
                 if (ok) {
                   setLeaving(false)
-                  router.push(`/${tenantSlug}/paginas`)
+                  router.push(backHref)
                 }
               }}
             >
-              Guardar y salir
+              {published ? 'Publicar y salir' : 'Guardar y salir'}
             </Button>
-            <AlertDialogAction
-              onClick={(event) => {
-                event.preventDefault()
-                setLeaving(false)
-                router.push(`/${tenantSlug}/paginas`)
-              }}
-            >
-              Salir sin guardar
-            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog
+      <ConfirmDialog
         open={droppedHtml !== null}
-        onOpenChange={(open) => !open && setDroppedHtml(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Reemplazar el código actual?</AlertDialogTitle>
-            <AlertDialogDescription>
-              El archivo que soltaste va a pisar todo lo que hay en el editor. Si la página estaba
-              publicada, todavía podés volver atrás desde el historial.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(event) => {
-                event.preventDefault()
-                if (droppedHtml !== null) {
-                  setHtml(droppedHtml)
-                  setDroppedHtml(null)
-                  toast.success('Archivo cargado. Revisá la previa y guardá.')
-                }
-              }}
-            >
-              Reemplazar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        onOpenChange={(open) => {
+          if (!open) setDroppedHtml(null)
+        }}
+        title="¿Reemplazar el código actual?"
+        description="El archivo que soltaste va a pisar todo lo que hay en el editor. Si la página estaba publicada, todavía podés volver atrás desde el historial."
+        confirmLabel="Reemplazar código"
+        onConfirm={() => {
+          if (droppedHtml !== null) {
+            setHtml(droppedHtml)
+            toast.success('Archivo cargado. Revisá la previa y guardá.')
+          }
+        }}
+      />
+    </PageShell>
+  )
+}
+
+/**
+ * Publicar o despublicar al toque (es una acción, con su aviso). La etiqueta
+ * dice el estado («En vivo») o lo que hace («Publicar»); en el celular queda
+ * solo para el lector de pantalla.
+ */
+function PublishToggle({
+  published,
+  pending,
+  onChange,
+}: {
+  published: boolean
+  pending: boolean
+  onChange: (next: boolean) => void
+}) {
+  const id = useId()
+  return (
+    <div className="flex h-(--control-md) items-center gap-2 rounded-md border border-border-strong bg-card px-3">
+      <Switch id={id} checked={published} onCheckedChange={onChange} disabled={pending} />
+      <Label htmlFor={id} className="cursor-pointer max-sm:sr-only">
+        {published ? 'En vivo' : 'Publicar'}
+      </Label>
     </div>
   )
 }
@@ -685,12 +715,15 @@ function CodePanel({
   onChange,
   onPick,
   overflow,
+  describedBy,
 }: {
   ref: React.RefObject<HTMLTextAreaElement | null>
   value: string
   onChange: (value: string) => void
   onPick: () => void
   overflow: boolean
+  /** El tamaño del código («12 KB de 2 MB»), que el lector lee con el campo. */
+  describedBy: string
 }) {
   // Con el editor vacío, el textarea solo no comunica que se puede arrastrar un
   // archivo: el cartel se dibuja ENCIMA pero sin capturar el mouse
@@ -701,8 +734,11 @@ function CodePanel({
   return (
     <div
       className={cn(
-        'card-hairline relative overflow-hidden rounded-xl border bg-card transition-colors',
-        overflow && 'border-destructive',
+        'relative overflow-clip rounded-xl border border-border bg-card',
+        // El foco del textarea se dibuja en la caja, «sobre el borde» como en
+        // todo campo del kit.
+        'outline-(--ring) -outline-offset-1 focus-within:outline-2',
+        overflow && 'border-destructive outline-(--destructive)',
       )}
     >
       <textarea
@@ -713,37 +749,27 @@ function CodePanel({
         autoCapitalize="off"
         autoCorrect="off"
         aria-label="Código HTML de la página"
-        placeholder={
-          empty
-            ? undefined
-            : '<!doctype html>\n<html lang="es-AR">\n  <head>\n    <meta charset="utf-8">\n  </head>\n</html>'
-        }
-        className="block h-[52dvh] w-full resize-y bg-transparent p-4 font-mono text-[13px] leading-relaxed outline-none placeholder:text-muted-foreground/50 lg:h-[calc(100dvh-16rem)]"
+        aria-describedby={describedBy}
+        aria-invalid={overflow || undefined}
+        className={cn(
+          'block w-full resize-y bg-transparent p-4 font-mono text-[13px] leading-relaxed text-foreground outline-none',
+          CODE_HEIGHT,
+        )}
       />
 
       {empty ? (
-        <div className="pointer-events-none absolute inset-0 grid place-items-center p-6">
-          <div className="flex max-w-sm flex-col items-center text-center">
-            <div className="mb-4 flex size-14 items-center justify-center rounded-full border border-primary/20 bg-cream-tint text-primary shadow-2xs">
-              <FileUp className="size-6" aria-hidden />
-            </div>
-            <p className="font-serif text-lg font-semibold tracking-tight">
-              Arrastrá tu archivo .html acá
-            </p>
-            <p className="mt-1.5 text-sm text-muted-foreground text-pretty">
-              O pegá el código directamente: hacé click en cualquier lado y escribí.
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="pointer-events-auto mt-4"
-              onClick={onPick}
-            >
-              <Upload className="size-4" aria-hidden />
+        <EmptyState
+          icon={FileUp}
+          title="Arrastrá tu archivo .html acá"
+          description="O pegá el código directamente: hacé click en cualquier lado y escribí."
+          action={
+            <Button variant="secondary" size="sm" className="pointer-events-auto" onClick={onPick}>
+              <Upload aria-hidden />
               Buscar el archivo en la compu
             </Button>
-          </div>
-        </div>
+          }
+          className="pointer-events-none absolute inset-0"
+        />
       ) : null}
     </div>
   )

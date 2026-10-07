@@ -1,30 +1,23 @@
 'use client'
 
 import { Trash2 } from 'lucide-react'
-import { useActionState, useEffect, useTransition } from 'react'
+import { useActionState, useEffect } from 'react'
 import { toast } from 'sonner'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Field, FormError } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { NumberField } from '@/components/ui/number-field'
+import { SubmitButton } from '@/components/ui/submit-button'
 import { Textarea } from '@/components/ui/textarea'
 import { deleteRoutine, type MarketingActionState, saveRoutine } from '@/lib/marketing/actions'
 import type { RoutineRow } from '@/lib/marketing/queries'
@@ -45,7 +38,7 @@ export function RoutineDialog({
 }) {
   const isEdit = routine !== null
 
-  const [state, formAction, pending] = useActionState(
+  const [state, formAction] = useActionState(
     (prev: MarketingActionState, fd: FormData) => saveRoutine(tenantSlug, prev, fd),
     INITIAL,
   )
@@ -54,92 +47,82 @@ export function RoutineDialog({
   // submit. Con `state.ok` en las deps, el efecto se volvía a disparar al cambiar
   // cualquier otra dep (p. ej. `isEdit`) y cerraba el diálogo con un toast de
   // éxito mentiroso. El padre además remonta este componente en cada apertura,
-  // así que `state` arranca siempre en INITIAL.
+  // así que `state` arranca siempre en INITIAL. El error se ve en el formulario.
   useEffect(() => {
     if (state.ok) {
       toast.success(isEdit ? 'Rutina actualizada.' : 'Rutina creada.')
       onOpenChange(false)
-    } else if (state.message) {
-      toast.error(state.message)
     }
   }, [state, isEdit, onOpenChange])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92dvh] overflow-y-auto">
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle className="font-serif text-xl">
-            {isEdit ? 'Editar rutina' : 'Nueva rutina semanal'}
-          </DialogTitle>
+          <DialogTitle>{isEdit ? 'Editar rutina' : 'Nueva rutina semanal'}</DialogTitle>
           <DialogDescription>
             Algo que se repite todas las semanas. Los tildes se reinician solos cada lunes.
           </DialogDescription>
         </DialogHeader>
 
-        <form key={routine?.id ?? 'new'} action={formAction} className="space-y-4">
-          {isEdit ? <input type="hidden" name="id" value={routine.id} /> : null}
+        <form
+          key={routine?.id ?? 'new'}
+          action={formAction}
+          className="flex min-h-0 flex-1 flex-col gap-4"
+        >
+          <DialogBody className="grid gap-4">
+            <FormError message={state.ok ? null : state.message} />
+            {isEdit ? <input type="hidden" name="id" value={routine.id} /> : null}
 
-          <div className="space-y-1.5">
-            <Label htmlFor="routine-title">
-              Nombre<span className="text-destructive"> *</span>
-            </Label>
-            <Input
-              id="routine-title"
-              name="title"
-              required
-              maxLength={160}
-              defaultValue={routine?.title ?? ''}
-              placeholder="Historia de Happy Hour"
-            />
-          </div>
+            <Field label="Nombre" name="title" required>
+              <Input
+                maxLength={160}
+                defaultValue={routine?.title ?? ''}
+                placeholder="Historia de Happy Hour"
+              />
+            </Field>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="routine-description">Detalle</Label>
-            <Textarea
-              id="routine-description"
-              name="description"
-              rows={3}
-              maxLength={400}
-              defaultValue={routine?.description ?? ''}
-              placeholder="Qué marcas, qué horario, qué se muestra…"
-              className="resize-none"
-            />
-          </div>
+            <Field label="Detalle" name="description" optional>
+              <Textarea
+                rows={3}
+                maxLength={400}
+                defaultValue={routine?.description ?? ''}
+                placeholder="Qué marcas, qué horario, qué se muestra…"
+              />
+            </Field>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="routine-slots">Veces por semana</Label>
-            <Input
-              id="routine-slots"
+            <Field
+              label="Veces por semana"
               name="slots"
-              type="number"
-              min={1}
-              max={14}
               required
-              defaultValue={routine?.slots ?? 1}
-              className="w-28"
-            />
-            <p className="text-xs text-muted-foreground">
-              Cuántos casilleros a tildar. 3 = hay que hacerla tres veces.
-            </p>
-          </div>
+              hint="Cuántos casilleros hay que tildar. 3 = hay que hacerla tres veces."
+            >
+              <NumberField
+                min={1}
+                max={14}
+                defaultValue={routine?.slots ?? 1}
+                incrementLabel="Una vez más"
+                decrementLabel="Una vez menos"
+                className="max-w-48"
+              />
+            </Field>
+          </DialogBody>
 
-          <DialogFooter className="gap-2 sm:justify-between">
+          <DialogFooter className="sm:justify-between">
             {isEdit ? (
               <DeleteRoutineButton
                 tenantSlug={tenantSlug}
                 routine={routine}
                 onDeleted={() => onOpenChange(false)}
               />
-            ) : (
-              <span />
-            )}
-            <div className="flex items-center gap-2">
-              <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            ) : null}
+            <div className="flex flex-col-reverse gap-2 sm:ms-auto sm:flex-row">
+              <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={pending}>
-                {pending ? 'Guardando…' : isEdit ? 'Guardar' : 'Crear rutina'}
-              </Button>
+              <SubmitButton pendingText="Guardando…">
+                {isEdit ? 'Guardar cambios' : 'Crear rutina'}
+              </SubmitButton>
             </div>
           </DialogFooter>
         </form>
@@ -157,44 +140,26 @@ function DeleteRoutineButton({
   routine: RoutineRow
   onDeleted: () => void
 }) {
-  const [pending, startTransition] = useTransition()
-
   return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>
-        <Button type="button" variant="ghost" className="text-destructive hover:text-destructive">
-          <Trash2 className="size-4" aria-hidden />
-          Eliminar
+    <ConfirmDialog
+      tone="danger"
+      icon={Trash2}
+      title={`¿Borrar la rutina «${routine.title}»?`}
+      description="Se borra la rutina y también el historial de tildes de todas las semanas."
+      confirmLabel="Borrar rutina"
+      pendingLabel="Borrando…"
+      onConfirm={async () => {
+        const result = await deleteRoutine(tenantSlug, routine.id)
+        if (!result.ok) return { ok: false, error: result.message }
+        toast.success('Rutina borrada.')
+        onDeleted()
+      }}
+      trigger={
+        <Button type="button" variant="danger-ghost">
+          <Trash2 aria-hidden />
+          Borrar
         </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>¿Eliminar esta rutina?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Se borra «{routine.title}» y también el historial de tildes de todas las semanas.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
-          <AlertDialogAction
-            disabled={pending}
-            onClick={(event) => {
-              event.preventDefault()
-              startTransition(async () => {
-                const result = await deleteRoutine(tenantSlug, routine.id)
-                if (result.ok) {
-                  toast.success('Rutina eliminada.')
-                  onDeleted()
-                } else {
-                  toast.error(result.message)
-                }
-              })
-            }}
-          >
-            {pending ? 'Eliminando…' : 'Eliminar'}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      }
+    />
   )
 }

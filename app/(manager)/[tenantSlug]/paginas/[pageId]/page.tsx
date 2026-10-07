@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import { todayInCordoba } from '@/lib/dates'
 import { getLandingPage, getLandingViewSeries, listLandingVersions } from '@/lib/landings/queries'
 import { getLandingsBase } from '@/lib/landings/urls'
 import {
@@ -48,6 +49,7 @@ export default async function EditarPaginaPage({
       versions={versions}
       views={views}
       landingsBase={landingsBase}
+      today={todayInCordoba()}
     />
   )
 }

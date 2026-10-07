@@ -2,7 +2,7 @@
 
 import { Check, Download } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button, type ButtonVariant } from '@/components/ui/button'
 import { downloadLandingHtml } from '@/lib/landings/download'
 
 /**
@@ -16,7 +16,8 @@ export function DownloadHtmlButton({
   fileName,
   label,
   showLabel = true,
-  variant = 'outline',
+  variant = 'secondary',
+  size = 'md',
   onDownloaded,
 }: {
   html: string
@@ -26,7 +27,9 @@ export function DownloadHtmlButton({
   label: string
   /** Muestra "Descargar" al lado del ícono (sólo desde sm; en celular, ícono). */
   showLabel?: boolean
-  variant?: React.ComponentProps<typeof Button>['variant']
+  variant?: ButtonVariant
+  /** Con `showLabel`, el alto del botón; sin etiqueta es cuadrado del mismo alto. */
+  size?: 'sm' | 'md'
   onDownloaded?: () => void
 }) {
   const [done, setDone] = useState(false)
@@ -51,7 +54,7 @@ export function DownloadHtmlButton({
     <Button
       type="button"
       variant={variant}
-      size={showLabel ? 'sm' : 'icon'}
+      size={showLabel ? size : size === 'sm' ? 'icon-sm' : 'icon'}
       onClick={download}
       // Un archivo vacío no le sirve a nadie, y subirlo después dejaría la
       // página en blanco.
@@ -59,12 +62,8 @@ export function DownloadHtmlButton({
       aria-label={label}
       title={label}
     >
-      {done ? (
-        <Check className="size-4 text-success" aria-hidden />
-      ) : (
-        <Download className="size-4" aria-hidden />
-      )}
-      {showLabel ? <span className="hidden sm:inline">Descargar</span> : null}
+      {done ? <Check className="text-success-text" aria-hidden /> : <Download aria-hidden />}
+      {showLabel ? <span className="max-sm:hidden">Descargar</span> : null}
     </Button>
   )
 }
