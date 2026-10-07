@@ -3,7 +3,37 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ============================================================
+   Kit HUB: tokens (especificación del kit, §2)
+
+   Cuatro scopes comparten este archivo:
+   - `:root, .theme-light`: claro NUEVO. Panel, auth, onboarding y admin; el
+     catálogo de componentes lo pide con `.theme-light`.
+   - `.dark, .theme-dark`: oscuro NUEVO («verde carbón»).
+   - `.force-light, .legacy-theme`: claro CONGELADO, los valores de antes del
+     kit. Lo usan el salón (`<html class="force-light">`), lo público
+     (`<html class="legacy-theme">`) y las vistas previas de lo público dentro
+     del panel (envoltorios `.force-light`).
+   - `:is(.dark .legacy-theme, .legacy-theme.dark)`: oscuro CONGELADO, lo
+     público en oscuro.
+
+   Reglas que no se ven y se rompen fácil:
+   - Cada token se declara en los cuatro bloques, alias incluidos. Un
+     `--tenant-accent: var(--primary)` se resuelve en el elemento que lo
+     declara y baja ya resuelto: un scope que no lo redeclara se queda con el
+     valor del `<html>`. Lo exige tests/lib/tokens-parity.test.ts.
+   - El orden importa. `:root` y `.force-light` empatan en especificidad (0,1,0)
+     sobre el mismo `<html>` del salón y gana el que va después: por eso lo
+     congelado va al final. El oscuro congelado gana por especificidad (0,2,0).
+   - Los valores congelados no se tocan (ni el --chart-1 casi igual a --chart-3
+     del oscuro): se arreglan con el rediseño del salón y lo público.
+   - Los contrastes de los scopes nuevos los recalcula
+     tests/lib/tokens-contrast.test.ts contra los mínimos de WCAG.
+   ============================================================ */
+
 @theme inline {
+  /* Fuentes: Inter para trabajar, Fraunces para nombres y números (las carga
+     next/font en app/layout.tsx). */
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-serif: var(--font-fraunces), ui-serif, Georgia, "Times New Roman", serif;
   --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
@@ -53,36 +83,344 @@
   --color-cream-tint: var(--cream-tint);
   --color-forest-glow: var(--forest-glow);
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
+  /* Kit HUB (§2.6). El texto de apoyo es un COLOR (`text-subtle-foreground`);
+     los tamaños son las utilidades `type-*`. En v4 `text-*` comparte espacio
+     de nombres entre tamaño y color: por eso no existe nada llamado «caption». */
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-border-strong: var(--border-strong);
+  --color-rule: var(--rule);
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  --color-selected: var(--selected);
+  --color-overlay: var(--overlay);
+  --color-skeleton: var(--skeleton);
+  --color-primary-hover: var(--primary-hover);
+  --color-destructive-hover: var(--destructive-hover);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-destructive-text: var(--destructive-text);
+  --color-success-soft: var(--success-soft);
+  --color-success-text: var(--success-text);
+  --color-warning-soft: var(--warning-soft);
+  --color-info-soft: var(--info-soft);
+  --color-info-text: var(--info-text);
+  --color-gold: var(--gold);
+  --color-gold-foreground: var(--gold-foreground);
+  --color-gold-soft: var(--gold-soft);
+  --color-gold-text: var(--gold-text);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-text: var(--brand-text);
+  --color-aging-current: var(--aging-current);
+  --color-aging-soon: var(--aging-soon);
+  --color-aging-1-30: var(--aging-1-30);
+  --color-aging-31-60: var(--aging-31-60);
+  --color-aging-60-plus: var(--aging-60-plus);
 
-  --shadow-2xs: 0 1px 0 0 color-mix(in oklch, var(--foreground) 6%, transparent);
-  --shadow-xs:  0 1px 2px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
+  /* Radios y sombras quietas: variables de runtime con scope. Así `rounded-xl`
+     vale 12 px en el panel y sigue en 14 px en el salón con la misma clase, y
+     `shadow-xs` se apaga en el panel sin tocar un archivo (§2.8 y §2.9). */
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --radius-xl: var(--r-xl);
+  --radius-2xl: var(--r-2xl);
+
+  --shadow-2xs: var(--sh-2xs);
+  --shadow-xs: var(--sh-xs);
+  /* sm, md y lg quedan con sus valores de hoy, iguales en todos los scopes: los
+     usan 40 elementos quietos (píldoras elegidas, tarjetas de QR, burbujas de
+     .wa). Inflarlos a elevación les daría sombra de popover. */
   --shadow-sm:  0 2px 4px -1px color-mix(in oklch, var(--foreground) 8%, transparent),
                 0 1px 2px 0 color-mix(in oklch, var(--foreground) 6%, transparent);
   --shadow-md:  0 6px 14px -4px color-mix(in oklch, var(--foreground) 12%, transparent),
                 0 2px 4px -2px color-mix(in oklch, var(--foreground) 8%, transparent);
   --shadow-lg:  0 18px 32px -10px color-mix(in oklch, var(--foreground) 18%, transparent),
                 0 8px 12px -6px color-mix(in oklch, var(--foreground) 10%, transparent);
+  /* Solo lo usa lo público. */
   --shadow-glow: 0 0 0 1px color-mix(in oklch, var(--ring) 25%, transparent),
                  0 8px 32px -8px color-mix(in oklch, var(--primary) 35%, transparent);
+  /* Lo que flota en el kit: popover, menú, tooltip y toast; diálogo y hoja. */
+  --shadow-float: var(--elevation-1);
+  --shadow-modal: var(--elevation-2);
 
+  /* Movimiento. --ease-out, --ease-spring y --duration-* son de lo congelado;
+     el kit usa curvas con nombre propio y las duraciones de los invariantes. */
   --ease-out:    cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --ease-spring: cubic-bezier(0.5, 1.4, 0.5, 1);
+  --ease-ui:     cubic-bezier(0.23, 1, 0.32, 1);     /* entrar, salir, presionar */
+  --ease-move:   cubic-bezier(0.77, 0, 0.175, 1);    /* algo que se mueve en pantalla */
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);     /* hojas */
   --duration-fast:   120ms;
   --duration-base:   200ms;
   --duration-slow:   320ms;
   --duration-slower: 500ms;
 }
 
-/* Light — derivada del logo HUB!: cream paper + forest ink */
-:root {
-  --radius: 0.625rem;
+/* Invariantes: iguales en todos los scopes (layout, densidad y duraciones).
+   Llevan la lista completa de selectores para existir también dentro de un
+   scope descendiente (un .theme-dark del catálogo, un .force-light de una
+   vista previa) y para que el ajuste táctil llegue a todos. */
+:root, .theme-light, .dark, .theme-dark, .force-light, .legacy-theme {
+  --topbar-h: 3.5rem;            /* 56 px: reemplaza h-14 / top-14 / calc(100dvh-3.5rem) sueltos */
+  --sidebar-w: 16rem;            /* 256 px (antes 260 px, fuera de la escala de 4) */
+  --control-sm: 2rem;            /* 32 px */
+  --control-md: 2.25rem;         /* 36 px: botones, campos y selects miden lo mismo */
+  --control-lg: 2.75rem;         /* 44 px */
+  --control-font: 0.875rem;      /* 14 px. Se usa como text-(length:--control-font): la forma corta es un color */
+  --row-comfortable: 2.75rem;    /* 44 px: listas */
+  --row-compact: 2.25rem;        /* 36 px: libros contables */
+  --duration-press: 140ms;       /* hundir el botón */
+  --duration-quick: 150ms;       /* colores, tooltip, switch */
+  --duration-menu: 180ms;        /* popover, select, dropdown, combobox: entrada */
+  --duration-menu-exit: 120ms;
+  --duration-overlay: 220ms;     /* diálogo y hoja: entrada */
+  --duration-overlay-exit: 160ms;
+  --hit-min: 24px;               /* objetivo mínimo con mouse (WCAG 2.5.8); lo usa la utilidad hit-area */
 
+  /* Alto del chrome del salón. Los declara el shell (topbar / tab bar) y los usa
+     el contenido para su padding y sus `sticky top-…`. Antes cada página lo
+     adivinaba (`pb-24`, `h-[calc(100dvh-56px-76px)]`) y ninguna coincidía con la
+     barra real: de ahí los scrolls raros y el contenido tapado. */
+  --salon-topbar-h: 3.5rem;
+  --salon-tabbar-h: calc(4.25rem + env(safe-area-inset-bottom));
+}
+@media (pointer: coarse) {
+  /* Teléfono y tablet: 44 px de objetivo y 16 px de letra para que iOS no haga
+     zoom al enfocar. Lo que dibuja menos de 44 agranda su área, no su dibujo. */
+  :root, .theme-light, .dark, .theme-dark, .force-light, .legacy-theme {
+    --control-sm: 2.25rem;       /* 36 */
+    --control-md: 2.75rem;       /* 44 */
+    --control-lg: 3rem;          /* 48 */
+    --control-font: 1rem;        /* 16 */
+    --hit-min: 44px;
+  }
+}
+
+/* ── Claro nuevo: papel, cartulina y tinta ─────────────────────────────── */
+:root, .theme-light {
+  color-scheme: light;
+
+  /* Superficies */
+  --background:          oklch(0.956 0.021 88.7);   /* #f6f0e1 papel */
+  --foreground:          oklch(0.204 0.035 165);    /* #051c13 tinta */
+  --surface:             oklch(0.956 0.021 88.7);   /* #f6f0e1 marco: sidebar y topbar = papel */
+  --surface-foreground:  oklch(0.204 0.035 165);
+  --card:                oklch(0.994 0.006 84.6);   /* #fffdf9 cartulina */
+  --card-foreground:     oklch(0.204 0.035 165);
+  --popover:             oklch(0.994 0.006 84.6);   /* #fffdf9 + borde + elevación */
+  --popover-foreground:  oklch(0.204 0.035 165);
+
+  /* Rellenos y texto */
+  --secondary:           oklch(0.92 0.024 88.2);    /* #ebe4d3 relleno visible sobre papel y cartulina (chips, pistas) */
+  --secondary-foreground: oklch(0.204 0.035 165);
+  --muted:               oklch(0.95 0.017 88);      /* #f3eee2 relleno sobre cartulina (encabezado de tabla, kbd) */
+  --muted-foreground:    oklch(0.471 0.021 163.9);  /* #515f58 texto secundario */
+  --subtle-foreground:   oklch(0.519 0.017 164.2);  /* #606c66 texto de apoyo (12 px) y placeholder */
+  --accent:              oklch(0.936 0.009 128.6);  /* #e8ebe5 opción resaltada (menús, listbox, combobox) */
+  --accent-foreground:   oklch(0.204 0.035 165);
+
+  /* Acción y foco */
+  --primary:             oklch(0.354 0.057 165);    /* #194534 verde HUB */
+  --primary-foreground:  oklch(0.994 0.006 84.6);   /* #fffdf9 */
+  --primary-hover:       oklch(0.31 0.05 165);      /* #13382a */
+  --ring:                oklch(0.354 0.057 165);    /* foco sólido de 2 px (antes al 55 %) */
+
+  /* Líneas */
+  --border:              oklch(0.884 0.026 86.9);   /* #e0d8c6 pelo (decorativo) */
+  --border-strong:       oklch(0.807 0.032 86.5);   /* #c9bfa9 énfasis: encabezado de tabla, chips, botón secundario */
+  --input:               oklch(0.621 0.015 88.7);   /* #8a867c borde de campo, 3:1 */
+  --rule:                oklch(0.471 0.021 163.9);  /* #515f58 regla contable de totales */
+
+  /* Estados por superposición (sirven sobre cualquier superficie) */
+  --hover:               oklch(0.204 0.035 165 / 5%);
+  --active:              oklch(0.204 0.035 165 / 9%);
+  --selected:            oklch(0.354 0.057 165 / 10%);
+  --overlay:             oklch(0.204 0.035 165 / 40%);   /* velo de diálogo: tinta, no negro */
+  --skeleton:            oklch(0.204 0.035 165 / 7%);
+
+  /* Tonos: sólido (relleno, punto, ícono) · -foreground (texto sobre sólido) · -soft (fondo suave) · -text (texto suelto o sobre -soft) */
+  --destructive:            oklch(0.499 0.15 34.8);    /* #a7391e */
+  --destructive-foreground: oklch(0.994 0.006 84.6);
+  --destructive-hover:      oklch(0.45 0.14 34.8);     /* #932e15 */
+  --destructive-soft:       oklch(0.948 0.027 37.6);   /* #ffe8e1 */
+  --destructive-text:       oklch(0.499 0.15 34.8);    /* #a7391e */
+  --success:                oklch(0.459 0.109 155.3);  /* #0a693c */
+  --success-foreground:     oklch(0.994 0.006 84.6);
+  --success-soft:           oklch(0.95 0.035 154.4);   /* #ddf6e4 */
+  --success-text:           oklch(0.459 0.109 155.3);  /* #0a693c */
+  --warning:                oklch(0.63 0.135 66.2);    /* #bf7613 solo relleno o punto, nunca texto */
+  --warning-foreground:     oklch(0.204 0.035 165);
+  --warning-soft:           oklch(0.955 0.045 82.6);   /* #ffeecf */
+  --warning-text:           oklch(0.47 0.109 61.6);    /* #854a00 */
+  --info:                   oklch(0.471 0.08 229.7);   /* #1f637f */
+  --info-foreground:        oklch(0.994 0.006 84.6);
+  --info-soft:              oklch(0.949 0.025 229.1);  /* #def2fc */
+  --info-text:              oklch(0.471 0.08 229.7);   /* #1f637f */
+  --gold:                   oklch(0.78 0.105 88.5);    /* #d3b465 solo relleno: como texto da 2:1 */
+  --gold-foreground:        oklch(0.204 0.035 165);    /* tinta sobre dorado */
+  --gold-soft:              oklch(0.944 0.046 90.9);   /* #f8ecca */
+  --gold-text:              oklch(0.407 0.075 85.2);   /* #5c4610 bronce, solo sobre gold-soft */
+  --brand-soft:             oklch(0.936 0.009 128.6);  /* #e8ebe5 */
+  --brand-text:             oklch(0.354 0.057 165);    /* #194534 */
+
+  /* Gráficos (validados con la skill dataviz; siempre sobre --card) */
+  --chart-1: oklch(0.529 0.115 157.9);   /* #1a7f51 verde */
+  --chart-2: oklch(0.66 0.13 75);        /* #c0851f ocre */
+  --chart-3: oklch(0.479 0.115 250.1);   /* #20609b azul */
+  --chart-4: oklch(0.56 0.151 34.8);     /* #bc4c31 terracota */
+  --chart-5: oklch(0.52 0.129 329.9);    /* #914a8c ciruela */
+
+  /* Antigüedad de deuda (AgingBar): neutro + rampa cálida de un solo tono.
+     «Vence pronto» queda debajo de 3:1: la leyenda con montos es obligatoria. */
+  --aging-current:  oklch(0.62 0.03 165);     /* #768c82 al día */
+  --aging-soon:     oklch(0.75 0.14 68);      /* #e79b3d vence en ≤ 7 días */
+  --aging-1-30:     oklch(0.64 0.15 48);      /* #d36b2d */
+  --aging-31-60:    oklch(0.53 0.15 36);      /* #b14325 */
+  --aging-60-plus:  oklch(0.42 0.13 29);      /* #86281f */
+
+  /* Plano y «Cómo nos fue»: sin cambios (ya validados). --wall es el «poche»
+     sólido de paredes y barra; --seat, las sillas (el plano en vivo las pisa
+     por estado con --fp-seat); --viz-*, la dona del ingreso. */
+  --wall: oklch(0.32 0.02 165);  --wall-foreground: oklch(0.96 0.012 88);  --wall-border: oklch(0.24 0.025 165);
+  --seat: oklch(0.83 0.016 88);  --seat-border: oklch(0.7 0.022 165);
+  --viz-pauta: oklch(0.61 0.15 55);  --viz-costo: oklch(0.46 0.13 250);  --viz-resultado: oklch(0.64 0.11 180);
+
+  /* Alias heredados. <BrandAccent> pisa --brand-accent inline en lo público;
+     se usa como bg-(--brand-accent). bg-[--brand-accent] NO anda en v4.2: da
+     `background-color: --brand-accent`, que el navegador descarta. */
+  --tenant-accent: var(--primary);           --tenant-accent-foreground: var(--primary-foreground);
+  --brand-accent: var(--primary);            --brand-accent-foreground: var(--primary-foreground);
+  --brand-rose: var(--destructive);          --brand-amber: var(--warning);  --brand-teal: var(--info);
+  --cream-tint: oklch(0.956 0.021 88.7 / 65%);
+  --forest-glow: oklch(0.354 0.057 165 / 18%);
+
+  /* Elevación: solo lo que flota, siempre con desplazamiento + desenfoque suave. */
+  --elevation-1: 0 1px 2px oklch(0.204 0.035 165 / 6%), 0 8px 24px -6px oklch(0.204 0.035 165 / 16%);
+  --elevation-2: 0 2px 4px oklch(0.204 0.035 165 / 6%), 0 24px 48px -12px oklch(0.204 0.035 165 / 28%);
+  /* Lo quieto no tiene sombra. `0 0 #0000` y no `none`: en una lista de
+     box-shadow, `none` invalida la declaración y se lleva puestos los ring-*. */
+  --sh-2xs: 0 0 #0000;
+  --sh-xs:  0 0 #0000;
+
+  /* Radios: escala 6/8/12/16 sin renombrar clases (rounded-lg baja a 8) */
+  --radius: 0.625rem;   /* se mantiene por compatibilidad; ya no arma la escala */
+  --r-sm: 6px;  --r-md: 8px;  --r-lg: 8px;  --r-xl: 12px;  --r-2xl: 16px;
+}
+
+/* ── Oscuro nuevo: «verde carbón». El dorado es la tinta de acción ─────── */
+.dark, .theme-dark {
+  color-scheme: dark;   /* los controles nativos y las barras de scroll siguen a la app, no al sistema operativo */
+
+  --background:          oklch(0.16 0.021 165.2);   /* #05100b */
+  --foreground:          oklch(0.944 0.014 84.6);   /* #f1ece2 */
+  --surface:             oklch(0.16 0.021 165.2);   /* #05100b */
+  --surface-foreground:  oklch(0.944 0.014 84.6);
+  --card:                oklch(0.215 0.024 166.8);  /* #0e1d17 */
+  --card-foreground:     oklch(0.944 0.014 84.6);
+  --popover:             oklch(0.24 0.025 163.7);   /* #14231c, flota = más claro */
+  --popover-foreground:  oklch(0.944 0.014 84.6);
+
+  --secondary:           oklch(0.291 0.021 165.1);  /* #222f29 */
+  --secondary-foreground: oklch(0.944 0.014 84.6);
+  --muted:               oklch(0.254 0.021 164.6);  /* #192620 */
+  --muted-foreground:    oklch(0.77 0.012 89.7);    /* #b7b4ac */
+  --subtle-foreground:   oklch(0.699 0.012 89.8);   /* #a19e96 */
+  --accent:              oklch(0.324 0.031 128.5);  /* #2f3726 = dorado 14 % sobre popover */
+  --accent-foreground:   oklch(0.944 0.014 84.6);
+
+  --primary:             oklch(0.78 0.105 88.5);    /* #d3b465 dorado: relleno con tinta oscura y tinta de acción */
+  --primary-foreground:  oklch(0.16 0.021 165.2);   /* #05100b */
+  --primary-hover:       oklch(0.83 0.1 88.5);      /* #e2c479 */
+  --ring:                oklch(0.78 0.105 88.5);
+
+  --border:              oklch(0.309 0.017 165.9);  /* #28332e */
+  --border-strong:       oklch(0.38 0.016 164);     /* #3b4540 */
+  --input:               oklch(0.559 0.011 87.5);   /* #77746d */
+  --rule:                oklch(0.77 0.012 89.7);    /* #b7b4ac */
+
+  --hover:               oklch(1 0 0 / 6%);
+  --active:              oklch(1 0 0 / 10%);
+  --selected:            oklch(0.78 0.105 88.5 / 14%);
+  --overlay:             oklch(0 0 0 / 60%);
+  --skeleton:            oklch(1 0 0 / 7%);
+
+  --destructive:            oklch(0.659 0.15 34.9);   /* #de6b4f */
+  --destructive-foreground: oklch(0.16 0.021 165.2);
+  --destructive-hover:      oklch(0.7 0.15 35);       /* #ec785b */
+  --destructive-soft:       oklch(0.301 0.059 36.1);  /* #472218 */
+  --destructive-text:       oklch(0.829 0.08 40.1);   /* #f5b6a0 */
+  --success:                oklch(0.72 0.14 155);     /* #4ebe7d */
+  --success-foreground:     oklch(0.16 0.021 165.2);
+  --success-soft:           oklch(0.3 0.056 154.7);   /* #133621 */
+  --success-text:           oklch(0.84 0.099 154.9);  /* #95deae */
+  --warning:                oklch(0.78 0.13 74.4);    /* #e8aa4e */
+  --warning-foreground:     oklch(0.16 0.021 165.2);
+  --warning-soft:           oklch(0.309 0.05 74.5);   /* #3f2c10 */
+  --warning-text:           oklch(0.86 0.1 82);       /* #f2cb83 */
+  --info:                   oklch(0.721 0.08 223.9);  /* #6ab0ca */
+  --info-foreground:        oklch(0.16 0.021 165.2);
+  --info-soft:              oklch(0.3 0.045 229.6);   /* #123240 */
+  --info-text:              oklch(0.84 0.065 230.1);  /* #9fd3ed */
+  --gold:                   oklch(0.78 0.105 88.5);   /* #d3b465 */
+  --gold-foreground:        oklch(0.16 0.021 165.2);
+  --gold-soft:              oklch(0.33 0.051 88.8);   /* #403414 */
+  --gold-text:              oklch(0.88 0.08 90);      /* #ecd69b */
+  --brand-soft:             oklch(0.3 0.039 165.6);   /* #193429 */
+  --brand-text:             oklch(0.86 0.071 159.8);  /* #a9e0c1 */
+
+  --chart-1: oklch(0.551 0.121 161.6);  /* #03875b */
+  --chart-2: oklch(0.665 0.13 77.9);    /* #bf881e */
+  --chart-3: oklch(0.599 0.115 250);    /* #4584c2 */
+  --chart-4: oklch(0.64 0.15 35);       /* #d76549 */
+  --chart-5: oklch(0.62 0.13 330);      /* #b167ab */
+
+  /* En oscuro, más vencido = más brillante: la urgencia manda. */
+  --aging-current: oklch(0.56 0.03 165);    /* #657a70 */
+  --aging-soon:    oklch(0.68 0.12 74);     /* #c48c38: por debajo del brillo de «más de 60» */
+  --aging-1-30:    oklch(0.5 0.12 29.8);    /* #9c4438 */
+  --aging-31-60:   oklch(0.599 0.15 34);    /* #c9583f */
+  --aging-60-plus: oklch(0.71 0.13 41.8);   /* #e5845e */
+
+  --wall: oklch(0.42 0.018 165);  --wall-foreground: oklch(0.97 0.01 88);  --wall-border: oklch(0.52 0.02 165);
+  --seat: oklch(0.56 0.02 165);   --seat-border: oklch(0.68 0.022 165);
+  --viz-pauta: oklch(0.62 0.15 55);  --viz-costo: oklch(0.53 0.13 250);  --viz-resultado: oklch(0.62 0.11 180);
+
+  --tenant-accent: var(--primary);           --tenant-accent-foreground: var(--primary-foreground);
+  --brand-accent: var(--primary);            --brand-accent-foreground: var(--primary-foreground);
+  --brand-rose: var(--destructive);          --brand-amber: var(--warning);  --brand-teal: var(--info);
+  --cream-tint: oklch(0.215 0.024 166.8 / 65%);
+  --forest-glow: oklch(0.78 0.105 88.5 / 18%);
+
+  /* En oscuro la sombra casi no se ve: separan el borde y el popover más claro */
+  --elevation-1: 0 1px 2px oklch(0 0 0 / 30%), 0 8px 24px -6px oklch(0 0 0 / 50%);
+  --elevation-2: 0 2px 4px oklch(0 0 0 / 30%), 0 24px 48px -12px oklch(0 0 0 / 60%);
+  --sh-2xs: 0 0 #0000;  --sh-xs: 0 0 #0000;
+  --radius: 0.625rem;
+  --r-sm: 6px;  --r-md: 8px;  --r-lg: 8px;  --r-xl: 12px;  --r-2xl: 16px;
+}
+
+/* Más contraste si el sistema lo pide (no cambia nada si no): bordes y texto
+   de apoyo más fuertes. Solo en los scopes nuevos; el test de paridad ignora
+   este bloque. Va antes de lo congelado para no pisarle el <html>. */
+@media (prefers-contrast: more) {
+  :root, .theme-light {
+    --border: var(--border-strong);
+    --subtle-foreground: var(--muted-foreground);
+    --input: oklch(0.52 0.015 88.7);     /* #6c695f: 5,41 sobre cartulina, 4,85 sobre papel */
+  }
+  .dark, .theme-dark {
+    --border: var(--border-strong);
+    --subtle-foreground: var(--muted-foreground);
+    --input: oklch(0.66 0.011 87.5);     /* #95928b: 5,59 sobre card */
+  }
+}
+
+/* ── Claro congelado ────────────────────────────────────────────────────────
+   El salón, lo público y las vistas previas de lo público dentro del panel se
+   ven igual que antes del kit. Sirve también para sheets que portalizan a
+   <body> si llevan la clase. Como son declaraciones directas en el elemento,
+   ganan sobre lo heredado de un <html class="dark">. */
+.force-light, .legacy-theme {
   --background:        oklch(0.965 0.022 88);
   --foreground:        oklch(0.205 0.035 165);
 
@@ -104,17 +442,6 @@
   --muted:             oklch(0.92 0.018 88);
   --muted-foreground:  oklch(0.45 0.022 165);
 
-  /* Estructura del plano (paredes/columnas/barra/islas): "poche" sólido oscuro,
-     NO transparente — contrasta con las mesas (claras, card). */
-  --wall:              oklch(0.32 0.02 165);
-  --wall-foreground:   oklch(0.96 0.012 88);
-  --wall-border:       oklch(0.24 0.025 165);
-
-  /* Sillas/banquetas del plano (estilo SevenRooms). Neutras por defecto; el
-     componente en vivo sobrescribe --fp-seat por estado de la mesa. */
-  --seat:              oklch(0.83 0.016 88);
-  --seat-border:       oklch(0.7 0.022 165);
-
   --accent:            oklch(0.91 0.04 165);
   --accent-foreground: oklch(0.245 0.05 165);
 
@@ -135,18 +462,6 @@
   --input:             oklch(0.88 0.018 88);
   --ring:              oklch(0.355 0.058 165 / 55%);
 
-  --chart-1:           oklch(0.355 0.058 165);
-  --chart-2:           oklch(0.555 0.155 35);
-  --chart-3:           oklch(0.71 0.135 70);
-  --chart-4:           oklch(0.5 0.075 240);
-  --chart-5:           oklch(0.62 0.08 25);
-
-  /* Dona «Cómo se repartió el ingreso» («Cómo nos fue», 02/10/2026). El color
-     sigue a la cosa: pauta, costo, resultado. Validados con la skill dataviz
-     contra --card (#fefaf0): banda de luz 0,43–0,77, croma ≥ 0,10, CVD ≥ 8 en
-     TODOS los pares (en un aro las tres porciones se tocan), visión normal ≥ 15
-     y 3:1 contra la tarjeta. Lejos de --success (el ✓) y de --warning-text (el
-     ✗ y «abajo») a propósito: una porción no es un estado. */
   --viz-pauta:         oklch(0.61 0.15 55);
   --viz-costo:         oklch(0.46 0.13 250);
   --viz-resultado:     oklch(0.64 0.11 180);
@@ -157,28 +472,65 @@
   --cream-tint:        oklch(0.965 0.022 88 / 65%);
   --forest-glow:       oklch(0.355 0.058 165 / 18%);
 
-  /* Alto del chrome del salón. Los declara el shell (topbar / tab bar) y los usa
-     el contenido para su padding y sus `sticky top-…`. Antes cada página lo
-     adivinaba (`pb-24`, `h-[calc(100dvh-56px-76px)]`) y ninguna coincidía con la
-     barra real: de ahí los scrolls raros y el contenido tapado. */
-  --salon-topbar-h: 3.5rem;
-  --salon-tabbar-h: calc(4.25rem + env(safe-area-inset-bottom));
-
-  /* Aliases legacy para no romper componentes que aún referencian brand-* */
   --brand-rose:  var(--destructive);
   --brand-amber: var(--warning);
   --brand-teal:  var(--info);
 
   /* Acento de marca: default = primary (forest). El <BrandAccent> lo pisa inline
-     cuando el tenant define uno. Definirlo acá permite usar el shorthand válido
-     bg-[--brand-accent] (el comma-fallback [--brand-accent,var(--primary)] NO
-     compila en Tailwind v4 → transparente). */
+     cuando el tenant define uno. Se usa como bg-(--brand-accent): la forma con
+     corchetes, bg-[--brand-accent], es un no-op en Tailwind v4.2 (genera
+     `background-color: --brand-accent` y el navegador la descarta), y el
+     comma-fallback [--brand-accent,var(--primary)] tampoco compila. */
   --brand-accent: var(--primary);
   --brand-accent-foreground: var(--primary-foreground);
+
+  /* Faltaban: dentro de un envoltorio claro bajo <html class="dark"> heredaban
+     el OSCURO. Son los valores claros de antes del kit. */
+  --chart-1: oklch(0.355 0.058 165);  --chart-2: oklch(0.555 0.155 35);  --chart-3: oklch(0.71 0.135 70);
+  --chart-4: oklch(0.5 0.075 240);    --chart-5: oklch(0.62 0.08 25);
+  --wall: oklch(0.32 0.02 165);  --wall-foreground: oklch(0.96 0.012 88);  --wall-border: oklch(0.24 0.025 165);
+  --seat: oklch(0.83 0.016 88);  --seat-border: oklch(0.7 0.022 165);
+
+  /* Mecánica congelada: radios 6/8/10/14/18 y las sombras quietas de antes */
+  --radius: 0.625rem;
+  --r-sm: calc(var(--radius) - 4px);  --r-md: calc(var(--radius) - 2px);  --r-lg: var(--radius);
+  --r-xl: calc(var(--radius) + 4px);  --r-2xl: calc(var(--radius) + 8px);
+  --sh-2xs: 0 1px 0 0 color-mix(in oklch, var(--foreground) 6%, transparent);
+  --sh-xs:  0 1px 2px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
+
+  /* Tokens nuevos con los valores del claro nuevo: solo los lee un componente
+     del kit nuevo si cae adentro, y en ese caso tiene que verse claro y bien. */
+  --subtle-foreground: oklch(0.519 0.017 164.2);  --border-strong: oklch(0.807 0.032 86.5);  --rule: oklch(0.471 0.021 163.9);
+  --primary-hover: oklch(0.31 0.05 165);  --destructive-hover: oklch(0.45 0.14 34.8);
+  --hover: oklch(0.204 0.035 165 / 5%);  --active: oklch(0.204 0.035 165 / 9%);  --selected: oklch(0.354 0.057 165 / 10%);
+  --overlay: oklch(0.204 0.035 165 / 40%);  --skeleton: oklch(0.204 0.035 165 / 7%);
+  --destructive-soft: oklch(0.948 0.027 37.6);  --destructive-text: oklch(0.499 0.15 34.8);
+  --success-soft: oklch(0.95 0.035 154.4);  --success-text: oklch(0.459 0.109 155.3);
+  --warning-soft: oklch(0.955 0.045 82.6);
+  --info-soft: oklch(0.949 0.025 229.1);  --info-text: oklch(0.471 0.08 229.7);
+  --gold: oklch(0.78 0.105 88.5);  --gold-foreground: oklch(0.204 0.035 165);
+  --gold-soft: oklch(0.944 0.046 90.9);  --gold-text: oklch(0.407 0.075 85.2);
+  --brand-soft: oklch(0.936 0.009 128.6);  --brand-text: oklch(0.354 0.057 165);
+  --aging-current: oklch(0.62 0.03 165);  --aging-soon: oklch(0.75 0.14 68);
+  --aging-1-30: oklch(0.64 0.15 48);  --aging-31-60: oklch(0.53 0.15 36);  --aging-60-plus: oklch(0.42 0.13 29);
+  --elevation-1: 0 1px 2px oklch(0.204 0.035 165 / 6%), 0 8px 24px -6px oklch(0.204 0.035 165 / 16%);
+  --elevation-2: 0 2px 4px oklch(0.204 0.035 165 / 6%), 0 24px 48px -12px oklch(0.204 0.035 165 / 28%);
 }
 
-/* Dark — cream se vuelve "midnight cream", forest sigue siendo accent vivo */
-.dark {
+/* Re-establece la propiedad `color` (no solo la variable): el subárbol
+   force-light suele portalizarse a <body>, que en dark mode tiene `color`
+   claro. Sin esto, el texto que HEREDA color (títulos serif sin clase de color)
+   quedaba lavado/invisible sobre el fondo claro. Los `text-*` explícitos ya
+   andaban; esto cubre el resto. */
+.force-light  { color-scheme: light; color: var(--foreground); }
+/* Lo público sigue al sistema operativo, como siempre. */
+.legacy-theme { color-scheme: light dark; }
+
+/* ── Oscuro congelado: lo público en oscuro (cookie o sistema operativo) ────
+   Copia literal del oscuro de antes del kit, más los tokens nuevos. Gana por
+   especificidad (0,2,0). Un envoltorio .force-light adentro de
+   <html class="legacy-theme dark"> no lleva .legacy-theme: se queda claro. */
+:is(.dark .legacy-theme, .legacy-theme.dark) {
   --background:        oklch(0.155 0.022 165);
   --foreground:        oklch(0.945 0.015 88);
 
@@ -233,8 +585,7 @@
   --chart-4:           oklch(0.65 0.075 240);
   --chart-5:           oklch(0.72 0.08 25);
 
-  /* Los mismos tres tonos, con su escalón para la tarjeta oscura (#0e1d17):
-     banda 0,48–0,67, CVD ≥ 8 en todos los pares, visión normal ≥ 15, 3:1. */
+  /* Los mismos tres tonos de la dona, con su escalón para la tarjeta oscura. */
   --viz-pauta:         oklch(0.62 0.15 55);
   --viz-costo:         oklch(0.53 0.13 250);
   --viz-resultado:     oklch(0.62 0.11 180);
@@ -249,87 +600,35 @@
   --brand-amber: var(--warning);
   --brand-teal:  var(--info);
 
-  /* Acento de marca: default = primary (forest). El <BrandAccent> lo pisa inline
-     cuando el tenant define uno. Definirlo acá permite usar el shorthand válido
-     bg-[--brand-accent] (el comma-fallback [--brand-accent,var(--primary)] NO
-     compila en Tailwind v4 → transparente). */
+  /* Acento de marca: default = primary. El <BrandAccent> lo pisa inline; se usa
+     como bg-(--brand-accent), nunca bg-[--brand-accent] (no-op en v4.2). */
   --brand-accent: var(--primary);
   --brand-accent-foreground: var(--primary-foreground);
-}
 
-/* Fuerza modo claro en un subárbol aunque <html> esté en .dark (la carta pública
-   siempre va clara). Re-declara los tokens claros: como son una declaración
-   directa en el elemento, ganan sobre los heredados de .dark. Sirve también para
-   sheets que portalizan a <body> si llevan la clase. */
-.force-light {
-  color-scheme: light;
-  /* Re-establece la propiedad `color` (no solo la variable): el subárbol force-light
-     suele portalizarse a <body>, que en dark mode tiene `color` claro. Sin esto, el
-     texto que HEREDA color (títulos serif sin clase de color) quedaba lavado/invisible
-     sobre el fondo claro. Los `text-*` explícitos ya andaban; esto cubre el resto. */
-  color: var(--foreground);
+  /* Tokens nuevos con los valores del oscuro nuevo */
+  --subtle-foreground: oklch(0.699 0.012 89.8);  --border-strong: oklch(0.38 0.016 164);  --rule: oklch(0.77 0.012 89.7);
+  --primary-hover: oklch(0.83 0.1 88.5);  --destructive-hover: oklch(0.7 0.15 35);
+  --hover: oklch(1 0 0 / 6%);  --active: oklch(1 0 0 / 10%);  --selected: oklch(0.78 0.105 88.5 / 14%);
+  --overlay: oklch(0 0 0 / 60%);  --skeleton: oklch(1 0 0 / 7%);
+  --destructive-soft: oklch(0.301 0.059 36.1);  --destructive-text: oklch(0.829 0.08 40.1);
+  --success-soft: oklch(0.3 0.056 154.7);  --success-text: oklch(0.84 0.099 154.9);
+  --warning-soft: oklch(0.309 0.05 74.5);
+  --info-soft: oklch(0.3 0.045 229.6);  --info-text: oklch(0.84 0.065 230.1);
+  --gold: oklch(0.78 0.105 88.5);  --gold-foreground: oklch(0.16 0.021 165.2);
+  --gold-soft: oklch(0.33 0.051 88.8);  --gold-text: oklch(0.88 0.08 90);
+  --brand-soft: oklch(0.3 0.039 165.6);  --brand-text: oklch(0.86 0.071 159.8);
+  --aging-current: oklch(0.56 0.03 165);  --aging-soon: oklch(0.68 0.12 74);
+  --aging-1-30: oklch(0.5 0.12 29.8);  --aging-31-60: oklch(0.599 0.15 34);  --aging-60-plus: oklch(0.71 0.13 41.8);
+  --elevation-1: 0 1px 2px oklch(0 0 0 / 30%), 0 8px 24px -6px oklch(0 0 0 / 50%);
+  --elevation-2: 0 2px 4px oklch(0 0 0 / 30%), 0 24px 48px -12px oklch(0 0 0 / 60%);
 
-  --background:        oklch(0.965 0.022 88);
-  --foreground:        oklch(0.205 0.035 165);
-
-  --surface:           oklch(0.952 0.026 88);
-  --surface-foreground: oklch(0.205 0.035 165);
-
-  --card:              oklch(0.985 0.014 88);
-  --card-foreground:   oklch(0.205 0.035 165);
-
-  --popover:           oklch(0.99 0.008 88);
-  --popover-foreground: oklch(0.205 0.035 165);
-
-  --primary:           oklch(0.355 0.058 165);
-  --primary-foreground: oklch(0.965 0.022 88);
-
-  --secondary:         oklch(0.92 0.022 88);
-  --secondary-foreground: oklch(0.245 0.035 165);
-
-  --muted:             oklch(0.92 0.018 88);
-  --muted-foreground:  oklch(0.45 0.022 165);
-
-  --accent:            oklch(0.91 0.04 165);
-  --accent-foreground: oklch(0.245 0.05 165);
-
-  --destructive:           oklch(0.555 0.155 35);
-  --destructive-foreground: oklch(0.985 0.012 88);
-
-  --success:           oklch(0.5 0.12 155);
-  --success-foreground: oklch(0.985 0.012 88);
-  --warning:           oklch(0.71 0.135 70);
-  --warning-foreground: oklch(0.225 0.05 70);
-  /* Texto ámbar suelto sobre superficies claras/oscuras (AA en las dos):
-     --warning-foreground es para ir SOBRE ámbar sólido, no como texto. */
-  --warning-text:      oklch(0.46 0.12 62);
-  --info:              oklch(0.55 0.075 215);
-  --info-foreground:   oklch(0.985 0.012 88);
-
-  --border:            oklch(0.86 0.018 88);
-  --input:             oklch(0.88 0.018 88);
-  --ring:              oklch(0.355 0.058 165 / 55%);
-
-  --viz-pauta:         oklch(0.61 0.15 55);
-  --viz-costo:         oklch(0.46 0.13 250);
-  --viz-resultado:     oklch(0.64 0.11 180);
-
-  --tenant-accent:           var(--primary);
-  --tenant-accent-foreground: var(--primary-foreground);
-
-  --cream-tint:        oklch(0.965 0.022 88 / 65%);
-  --forest-glow:       oklch(0.355 0.058 165 / 18%);
-
-  --brand-rose:  var(--destructive);
-  --brand-amber: var(--warning);
-  --brand-teal:  var(--info);
-
-  /* Acento de marca: default = primary (forest). El <BrandAccent> lo pisa inline
-     cuando el tenant define uno. Definirlo acá permite usar el shorthand válido
-     bg-[--brand-accent] (el comma-fallback [--brand-accent,var(--primary)] NO
-     compila en Tailwind v4 → transparente). */
-  --brand-accent: var(--primary);
-  --brand-accent-foreground: var(--primary-foreground);
+  /* La mecánica congelada es la misma que en claro. Se repite para que este
+     bloque no dependa de lo que deje el claro congelado en el mismo <html>. */
+  --radius: 0.625rem;
+  --r-sm: calc(var(--radius) - 4px);  --r-md: calc(var(--radius) - 2px);  --r-lg: var(--radius);
+  --r-xl: calc(var(--radius) + 4px);  --r-2xl: calc(var(--radius) + 8px);
+  --sh-2xs: 0 1px 0 0 color-mix(in oklch, var(--foreground) 6%, transparent);
+  --sh-xs:  0 1px 2px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
 }
 
 @layer base {
@@ -337,16 +636,28 @@
     @apply border-border outline-ring/50;
   }
 
+  /* `color-scheme` lo fija cada scope de tokens (arriba): el panel sigue al
+     tema de la app y lo público, al sistema operativo, como siempre. */
   html {
-    color-scheme: light dark;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
 
+  /* Nada fijo tapa el foco (WCAG 2.4.11): lo que se enfoca con Tab se desplaza
+     para quedar entre el topbar y la barra fija de acciones (FormActions
+     escribe --sticky-actions-h en <html> mientras está montada). Solo en el
+     panel: lo congelado no cambia. */
+  :root:not(.force-light):not(.legacy-theme) {
+    scroll-padding-top: calc(var(--topbar-h) + 0.5rem);
+    scroll-padding-bottom: calc(var(--sticky-actions-h, 0px) + 0.5rem);
+  }
+
+  /* Sin font-feature-settings global: el Inter que sirve next/font no trae
+     cv02/cv03/cv04/cv11/ss01, así que la regla vieja no hacía nada. Las cifras
+     tabulares se piden donde hacen falta (type-amount y las tablas). */
   body {
     @apply bg-background text-foreground font-sans;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01";
   }
 
   ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -368,8 +679,22 @@
     color: var(--foreground);
   }
 
+  /* Lo congelado (salón y público) sigue sin contorno nativo: sus componentes
+     dibujan el foco con ring. */
   :where(input, textarea, select, button):focus-visible {
     outline: none;
+  }
+
+  /* Foco del panel: un color, un grosor, siempre `outline` (nunca box-shadow,
+     que desaparece en el alto contraste de Windows). Cualquier nativo
+     enfocable tiene anillo desde el día uno, aunque nadie le haya puesto
+     clases. Le gana a la regla de arriba por especificidad (0,4,0 contra
+     0,1,0) en la misma capa; las utilidades (outline-none de un componente)
+     siguen ganando por capa. */
+  :root:not(.force-light):not(.legacy-theme)
+    :where(a[href], button, [role="button"], [role="tab"], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
   }
 
   /* Con un Dialog modal abierto, Radix le pone pointer-events: none al body y
@@ -384,9 +709,121 @@
   }
 }
 
+/* ── Tipografía del kit (§2.11) ────────────────────────────────────────────
+   Utilidades de Tailwind v4: admiten variantes (md:type-title). cn() las
+   conoce (lib/utils.ts), así que pisar el tamaño con text-{tamaño} o
+   leading-* funciona por orden de clases y no por el alfabeto del CSS.
+   Fraunces no tiene cifras tabulares: type-kpi nunca va en un contador que
+   cambia en vivo ni en una columna; para eso, Inter con type-amount. */
+@utility type-title {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  line-height: 2.125rem;
+  font-weight: 560;
+  letter-spacing: -0.012em;
+  text-wrap: balance;
+  @media (width >= 64rem) {
+    font-size: 1.875rem;
+    line-height: 2.25rem;
+  }
+}
+@utility type-kpi {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  line-height: 2rem;
+  font-weight: 520;
+  letter-spacing: -0.01em;
+  @media (width >= 40rem) {
+    font-size: 2rem;
+    line-height: 2.25rem;
+  }
+}
+@utility type-section {
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+@utility type-subtitle {
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: 600;
+}
+@utility type-body {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+@utility type-small {
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+}
+@utility type-label {
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  font-weight: 500;
+}
+/* El mínimo: nada por debajo de 12 px. */
+@utility type-caption {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+/* Solo los títulos de grupo del menú: la única mayúscula espaciada del panel. */
+@utility type-group {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+/* Toda plata y todo número alineado: cifras tabulares y sin cortes de línea. */
+@utility type-amount {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Presionar (§2.10) ─────────────────────────────────────────────────────
+   En Tailwind 4.2 `scale-*` escribe la propiedad `scale`, no `transform`: una
+   transición hecha a mano tiene que nombrar `scale` (el button viejo declaraba
+   transform y `colors`, por eso su 0,985 saltaba sin animar). Solo para lo
+   chico: una fila o tarjeta ancha pinta --active, no se escala. */
+@utility press {
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease,
+              scale var(--duration-press) var(--ease-ui);
+  &:active:not(:disabled):not([aria-disabled="true"]):not([aria-busy="true"]) {
+    scale: 0.97;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    &:active {
+      scale: none;
+    }
+  }
+}
+
+/* ── Área táctil (§3.0) ────────────────────────────────────────────────────
+   Lo que dibuja menos que el objetivo (24 px con mouse, 44 con el dedo)
+   agranda su área, no su dibujo. El elemento tiene que estar posicionado: la
+   utilidad no fija `position` porque cada uno ya trae la suya (relative en
+   botones y chips, absolute en el cerrar de un toast). */
+@utility hit-area {
+  &::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    translate: -50% -50%;
+    width: max(100%, var(--hit-min));
+    height: max(100%, var(--hit-min));
+  }
+}
+
 @layer utilities {
-  /* Fondo cálido del shell con un degradado cream → cream-tint */
-  .bg-app-gradient {
+  /* Fondo cálido del shell viejo (degradé cream → cream-tint con brillos verde
+     y ámbar). Solo pinta dentro de lo congelado: el salón, lo público (/v,
+     /m, /c, la carta) y sus vistas previas en el panel. En el panel el fondo es
+     papel plano (§1.3 del kit): la clase sigue existiendo, pero afuera de un
+     scope congelado no pinta nada y se ve el bg-background del body. */
+  :is(.force-light, .legacy-theme) .bg-app-gradient,
+  .bg-app-gradient:is(.force-light, .legacy-theme) {
     background-image:
       radial-gradient(at 12% 0%, color-mix(in oklch, var(--primary) 10%, transparent) 0px, transparent 55%),
       radial-gradient(at 88% 0%, color-mix(in oklch, var(--warning) 8%, transparent) 0px, transparent 50%),
@@ -916,6 +1353,13 @@
   --wa-composer: #f7f5ef;
   --wa-input: #fdfcf8;
   color: var(--wa-text);
+
+  /* El clon no cambia de forma con el kit: re-fija los radios de antes (las
+     burbujas usan rounded-lg) y las sombras quietas (la burbuja de muestra de
+     Plantillas usa shadow-2xs, que en el resto del panel se apaga). */
+  --r-sm: 6px;  --r-md: 8px;  --r-lg: 10px;  --r-xl: 14px;  --r-2xl: 18px;
+  --sh-2xs: 0 1px 0 0 color-mix(in oklch, var(--foreground) 6%, transparent);
+  --sh-xs:  0 1px 2px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
 }
 .dark .wa {
   --wa-app: #0c0c0c;
@@ -978,15 +1422,24 @@
 }
 
 /* Dentro del clon WhatsApp los títulos de página van compactos, sin el
-   hero serif gigante del dashboard (pedido del dueño: máximo espacio útil). */
-.wa h1.font-serif {
+   hero serif gigante del dashboard (pedido del dueño: máximo espacio útil).
+   Se apunta al PageHeader por data-slot (el gancho estable del kit); los
+   selectores por clase quedan en paralelo hasta que ningún PageHeader viejo
+   los emita. */
+.wa h1.font-serif,
+.wa [data-slot="page-title"] {
   font-family: var(--font-sans);
   font-size: 19px;
   line-height: 1.3;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
-/* El eyebrow "Mensajería" es redundante: el rail ya te ubica. */
-.wa .uppercase.tracking-\[0\.18em\] {
+/* El eyebrow "Mensajería" es redundante: el rail ya te ubica. En el
+   PageHeader nuevo el eyebrow se dibuja en la fila de contexto
+   (data-slot="page-context"); page-eyebrow cubre una implementación que lo
+   nombre así. */
+.wa .uppercase.tracking-\[0\.18em\],
+.wa [data-slot="page-context"],
+.wa [data-slot="page-eyebrow"] {
   display: none;
 }

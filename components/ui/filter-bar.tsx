@@ -1,47 +1,18 @@
-import { Search } from 'lucide-react'
-import type { ReactNode } from 'react'
-import { cn } from '@/lib/utils'
+import { DataTableToolbar } from '@/components/ui/data-table'
+import { SearchField } from '@/components/ui/input'
 
-export function FilterBar({
-  className,
-  children,
-}: {
-  className?: string
-  children: ReactNode
-}) {
-  return (
-    <div
-      className={cn(
-        'flex flex-col gap-2 rounded-xl border border-border/60 bg-card/40 p-2 sm:flex-row sm:items-center',
-        className,
-      )}
-    >
-      {children}
-    </div>
-  )
-}
+/*
+ * Compatibilidad (kit HUB §3.6 y §3.9): `FilterBar` y `FilterSearch` son alias
+ * de `DataTableToolbar` y `SearchField`. El sucesor acepta las mismas props de
+ * siempre (`className` y `children`; `name`, `placeholder` y `defaultValue`)
+ * con los mismos defaults (`name="q"`, «Buscar…»), así que el que llama no
+ * cambia: solo se ve como el resto de la tabla, con todos los controles en
+ * `sm`. El salón y lo público tienen su copia vieja en
+ * `components/ui-legacy/filter-bar.tsx`.
+ */
 
-export function FilterSearch({
-  name = 'q',
-  placeholder = 'Buscar…',
-  defaultValue,
-  className,
-}: {
-  name?: string
-  placeholder?: string
-  defaultValue?: string
-  className?: string
-}) {
-  return (
-    <label className={cn('relative flex flex-1 items-center', className)}>
-      <Search className="pointer-events-none absolute left-3 size-4 text-muted-foreground" />
-      <input
-        type="search"
-        name={name}
-        defaultValue={defaultValue}
-        placeholder={placeholder}
-        className="h-9 w-full rounded-lg border border-transparent bg-background/40 pl-9 pr-3 text-sm shadow-none outline-none placeholder:text-muted-foreground/70 focus:border-ring focus:ring-2 focus:ring-ring/40"
-      />
-    </label>
-  )
-}
+/** @deprecated Usá `DataTableToolbar` de `@/components/ui/data-table`. */
+export const FilterBar = DataTableToolbar
+
+/** @deprecated Usá `SearchField` de `@/components/ui/input`. */
+export const FilterSearch = SearchField

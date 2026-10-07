@@ -1,110 +1,55 @@
-'use client'
-
-import { useInView, useMotionValue, useSpring } from 'motion/react'
-import { useEffect, useMemo, useRef } from 'react'
+import type * as React from 'react'
+import { formatNumber, formatNumberKind, type NumberFormatKind } from '@/lib/format/number-kind'
 import { cn } from '@/lib/utils'
 
-/**
- * Kinds de formato serializables — usalos en lugar de pasar funciones cuando
- * el StatCard / page sea Server Component (las funciones no cruzan RSC).
- */
-export type NumberFormatKind =
-  | 'integer'
-  | 'decimal-1'
-  | 'decimal-2'
-  | 'currency-cents-ars'
-  | 'percent-100'
+export type { NumberFormatKind }
 
-const formatters: Record<NumberFormatKind, (n: number) => string> = {
-  integer: (n) => Intl.NumberFormat('es-AR').format(Math.round(n)),
-  'decimal-1': (n) =>
-    Intl.NumberFormat('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(n),
-  'decimal-2': (n) =>
-    Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n),
-  'currency-cents-ars': (n) =>
-    `$${(Math.round(n) / 100).toLocaleString('es-AR', { maximumFractionDigits: 0 })}`,
-  'percent-100': (n) => `${Math.round(n)}%`,
-}
-
-type NumberTickerProps = {
+type NumberTickerProps = Omit<React.ComponentProps<'span'>, 'children'> & {
   value: number
   decimalPlaces?: number
+  /** @deprecated el kit no anima números (§1.1, «quieto por defecto»): se ignora. */
   durationMs?: number
-  /** Función custom — solo válida en Client Components (no cruza RSC). */
+  /** Función propia. Solo desde un componente cliente: una función no cruza la frontera RSC. */
   format?: (n: number) => string
-  /** Kind serializable — preferí esto cuando el padre es Server Component. */
+  /** Formato serializable: el que va desde un Server Component. */
   formatKind?: NumberFormatKind
-  className?: string
+  /** @deprecated el kit no anima números: se ignora. */
   startOnView?: boolean
+  /** @deprecated el kit no anima números: se ignora. */
   delayMs?: number
 }
 
-const defaultFormat = (n: number, decimals: number) =>
-  Intl.NumberFormat('es-AR', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(n)
-
 /**
- * Anima un número desde 0 al valor target con spring suave.
- * SSR-safe: pinta el valor final en el primer paint, anima en mount.
- * Honra `prefers-reduced-motion` (skip animación).
+ * @deprecated Dibuja el valor final, quieto: el kit no anima números (§3.5).
+ * Así los números que contaban en el panel (KPIs del Resumen, reseñas, pulso
+ * del operativo) se quedan quietos sin tocar las páginas. Para un número nuevo
+ * usá `KPI` con el valor ya formateado. El contador animado sigue en
+ * `components/ui-legacy/number-ticker` para el carnet de `/c`.
+ *
+ * Server-safe: sin hooks ni `motion`. El formato es el de
+ * `lib/format/number-kind.ts`, escrito a mano (sin `Intl`, sin errores de
+ * hidratación).
  */
 export function NumberTicker({
   value,
   decimalPlaces = 0,
-  durationMs = 800,
+  durationMs: _durationMs,
   format,
   formatKind,
+  startOnView: _startOnView,
+  delayMs: _delayMs,
   className,
-  startOnView = false,
-  delayMs = 0,
+  ...props
 }: NumberTickerProps) {
-  const ref = useRef<HTMLSpanElement>(null)
-  const motionValue = useMotionValue(0)
-  const stiffness = Math.max(40, Math.min(220, 16000 / durationMs))
-  const damping = 25
-  const springValue = useSpring(motionValue, { stiffness, damping })
-  const inView = useInView(ref, { once: true, margin: '0px' })
-
-  const formatter = useMemo(() => {
-    if (format) return format
-    if (formatKind) return formatters[formatKind]
-    return (n: number) => defaultFormat(n, decimalPlaces)
-  }, [format, formatKind, decimalPlaces])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-
-    const reduce =
-      typeof window !== 'undefined' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
-    if (reduce) {
-      el.textContent = formatter(value)
-      return
-    }
-
-    if (startOnView && !inView) {
-      el.textContent = formatter(0)
-      return
-    }
-
-    const start = () => motionValue.set(value)
-    const t = window.setTimeout(start, delayMs)
-    return () => window.clearTimeout(t)
-  }, [value, motionValue, inView, startOnView, formatter, delayMs])
-
-  useEffect(() => {
-    return springValue.on('change', (latest) => {
-      if (ref.current) ref.current.textContent = formatter(latest)
-    })
-  }, [springValue, formatter])
+  const text = format
+    ? format(value)
+    : formatKind
+      ? formatNumberKind(value, formatKind)
+      : formatNumber(value, decimalPlaces)
 
   return (
-    <span ref={ref} className={cn('tabular-nums', className)}>
-      {formatter(value)}
+    <span data-slot="number-ticker" className={cn('tabular-nums', className)} {...props}>
+      {text}
     </span>
   )
 }
