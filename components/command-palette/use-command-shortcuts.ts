@@ -4,8 +4,8 @@ import { useEffect } from 'react'
 
 /**
  * Listener global para Cmd+K / Ctrl+K que abre el command palette.
- * Ignora cuando el usuario está escribiendo en un input editable
- * (excepto si Cmd/Ctrl está presionado, en cuyo caso lo permitimos).
+ * Anda también adentro de un campo (con Cmd/Ctrl apretado no se está
+ * escribiendo) y en el celular, que ahora tiene su lupa en el topbar.
  */
 export function useCommandShortcuts(onToggle: () => void, options: { disabled?: boolean } = {}) {
   const { disabled = false } = options
@@ -14,11 +14,19 @@ export function useCommandShortcuts(onToggle: () => void, options: { disabled?: 
     if (disabled) return
 
     const handler = (event: KeyboardEvent) => {
-      const isPaletteCombo = event.key === 'k' && (event.metaKey || event.ctrlKey) && !event.altKey
+      // `toLowerCase`: con Bloq Mayús la tecla llega como «K». El `typeof`: el
+      // autocompletar de Chrome dispara keydown sin `key`.
+      const isPaletteCombo =
+        typeof event.key === 'string' &&
+        event.key.toLowerCase() === 'k' &&
+        (event.metaKey || event.ctrlKey) &&
+        !event.altKey
 
       if (!isPaletteCombo) return
 
       event.preventDefault()
+      // Dejar apretado ⌘K no la abre y cierra en loop.
+      if (event.repeat) return
       onToggle()
     }
 
