@@ -1,24 +1,48 @@
 'use client'
 
-import { ArrowLeft, Phone, User as UserIcon, Users } from 'lucide-react'
+import { ArrowLeft, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { Amount } from '@/components/ui/amount'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
-import { Skeleton } from '@/components/ui/skeleton'
+import { DataTable } from '@/components/ui/data-table'
+import { EmptyState } from '@/components/ui/empty-state'
+import { ErrorState } from '@/components/ui/error-state'
+import { KPI } from '@/components/ui/kpi'
+import { Section } from '@/components/ui/section'
+import {
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
+import { Skeleton, SkeletonStatus, SkeletonTable } from '@/components/ui/skeleton'
+import { formatNumber } from '@/lib/format/number-kind'
 import type { StaffSessionDetail } from '@/lib/staff-performance/queries'
+import { shortDateTime } from './format'
 
-function fmt(cents: number): string {
-  return `$${(cents / 100).toLocaleString('es-AR', { maximumFractionDigits: 0 })}`
+type DetailItem = StaffSessionDetail['items'][number]
+type DetailCustomer = StaffSessionDetail['customers'][number]
+
+/**
+ * Los productos agrupados por categoría, en el orden en que aparece cada
+ * categoría por primera vez (como antes). `DataTable groupBy` agrupa filas
+ * SEGUIDAS, así que primero se juntan.
+ */
+function itemsByCategory(items: ReadonlyArray<DetailItem>): DetailItem[] {
+  const groups = new Map<string, DetailItem[]>()
+  for (const it of items) {
+    const list = groups.get(it.category_name) ?? []
+    list.push(it)
+    groups.set(it.category_name, list)
+  }
+  return Array.from(groups.values()).flat()
 }
 
-function fmtDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+function customerName(c: DetailCustomer): string {
+  return `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim() || 'Sin nombre'
 }
 
 export function StaffSessionDetailDrawer({
@@ -26,18 +50,24 @@ export function StaffSessionDetailDrawer({
   onOpenChange,
   sessionId,
   onBack,
+  backLabel,
 }: {
   open: boolean
   onOpenChange: (next: boolean) => void
   sessionId: string | null
   onBack: () => void
+  /** El mozo del que se viene: «← Juan». */
+  backLabel?: string
 }) {
   const [detail, setDetail] = useState<StaffSessionDetail | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Sube con «Reintentar»: vuelve a correr la carga sin cerrar el cajón.
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     if (!open || !sessionId) return
+    void attempt
     let cancelled = false
     setLoading(true)
     setDetail(null)
@@ -49,7 +79,7 @@ export function StaffSessionDetailDrawer({
         })
         if (cancelled) return
         if (!res.ok) {
-          setError('No se pudo cargar el detalle.')
+          setError('No pudimos cargar el detalle de la mesa.')
           setLoading(false)
           return
         }
@@ -64,137 +94,129 @@ export function StaffSessionDetailDrawer({
     return () => {
       cancelled = true
     }
-  }, [open, sessionId])
+  }, [open, sessionId, attempt])
 
-  const itemsByCategory = (detail?.items ?? []).reduce((acc, it) => {
-    const arr = acc.get(it.category_name) ?? []
-    arr.push(it)
-    acc.set(it.category_name, arr)
-    return acc
-  }, new Map<string, StaffSessionDetail['items']>())
+  const title = detail ? (detail.alias ?? `Mesa ${detail.table_label ?? ''}`.trim()) : 'Mesa'
+  const staffCount = detail?.staff_user_ids.length ?? 0
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
-        <div className="space-y-5">
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={onBack} className="gap-1.5">
-              <ArrowLeft className="size-3.5" aria-hidden />
-              Volver
+      <SheetContent side="right" size="lg">
+        <SheetHeader>
+          <div>
+            <Button variant="ghost" size="sm" onClick={onBack} className="-ms-2">
+              <ArrowLeft aria-hidden />
+              {backLabel ? `Volver a ${backLabel}` : 'Volver'}
             </Button>
           </div>
+          <SheetTitle>{title}</SheetTitle>
+          <SheetDescription>
+            {detail ? (
+              <>
+                {detail.alias && detail.table_label ? `Mesa ${detail.table_label} · ` : null}
+                Abierta <span className="type-amount">{shortDateTime(detail.opened_at)}</span>
+                {' → '}
+                {detail.paid_at ? (
+                  <span className="type-amount">{shortDateTime(detail.paid_at)}</span>
+                ) : (
+                  'sin cierre'
+                )}
+              </>
+            ) : (
+              <span className="sr-only">Detalle de la mesa</span>
+            )}
+          </SheetDescription>
+          {detail ? (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              {detail.party_size !== null ? (
+                <Badge icon={Users}>
+                  {formatNumber(detail.party_size)}{' '}
+                  {detail.party_size === 1 ? 'persona' : 'personas'}
+                </Badge>
+              ) : null}
+              <Badge appearance="outline">
+                {staffCount} {staffCount === 1 ? 'mozo atribuido' : 'mozos atribuidos'}
+              </Badge>
+            </div>
+          ) : null}
+        </SheetHeader>
 
+        <SheetBody className="flex flex-col gap-8">
           {loading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-7 w-40" />
-              <Skeleton className="h-4 w-64" />
-              <Skeleton className="h-32 w-full" />
+            <div aria-busy="true" className="flex flex-col gap-6">
+              <SkeletonStatus />
+              <Skeleton className="h-16 w-48" />
+              <SkeletonTable rows={4} columns={3} />
             </div>
           ) : error ? (
-            <p className="text-sm text-destructive">{error}</p>
+            <ErrorState size="sm" description={error} onRetry={() => setAttempt((n) => n + 1)} />
           ) : !detail ? (
-            <p className="text-sm text-muted-foreground">Sin datos.</p>
+            <EmptyState size="sm" title="Sin datos de esta mesa" />
           ) : (
             <>
-              <header className="space-y-1">
-                <h3 className="font-serif text-2xl font-semibold tracking-tight">
-                  {detail.alias ?? `Mesa ${detail.table_label ?? ''}`}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  {detail.alias && detail.table_label ? (
-                    <span className="mr-1">Mesa {detail.table_label} · </span>
-                  ) : null}
-                  Abierta {fmtDateTime(detail.opened_at)} →{' '}
-                  {detail.paid_at ? fmtDateTime(detail.paid_at) : 'sin cierre'}
-                </p>
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  {detail.party_size !== null ? (
-                    <Badge variant="secondary" className="gap-1">
-                      <Users className="size-3" aria-hidden />
-                      {detail.party_size} pax
-                    </Badge>
-                  ) : null}
-                  <Badge variant="outline">
-                    {detail.staff_user_ids.length} mozo
-                    {detail.staff_user_ids.length === 1 ? '' : 's'} atribuid
-                    {detail.staff_user_ids.length === 1 ? 'o' : 'os'}
-                  </Badge>
-                </div>
-              </header>
-
-              <section className="card-hairline rounded-xl border border-border/70 bg-card/85 p-4">
-                <p className="text-xs uppercase tracking-wider text-muted-foreground">
-                  Total cobrado
-                </p>
-                <p className="font-serif text-3xl font-semibold tabular-nums">
-                  {fmt(detail.total_cents)}
-                </p>
-              </section>
+              <KPI
+                label="Total cobrado"
+                value={<Amount cents={detail.total_cents} decimals={0} />}
+              />
 
               {detail.customers.length > 0 ? (
-                <section>
-                  <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Comensales registrados ({detail.customers.length})
-                  </h4>
-                  <ul className="space-y-1.5">
-                    {detail.customers.map((c) => (
-                      <li
-                        key={`${c.phone ?? ''}-${c.first_name ?? ''}-${c.last_name ?? ''}`}
-                        className="flex items-center gap-2 text-sm"
-                      >
-                        <UserIcon className="size-3.5 text-muted-foreground" aria-hidden />
-                        <span className="font-medium">
-                          {c.first_name ?? ''} {c.last_name ?? ''}
-                        </span>
-                        {c.phone ? (
-                          <span className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            <Phone className="size-3" aria-hidden />
-                            {c.phone}
-                          </span>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                </section>
+                <Section
+                  title={`Comensales registrados (${formatNumber(detail.customers.length)})`}
+                  headingLevel={3}
+                >
+                  <DataTable
+                    caption="Comensales registrados"
+                    rows={detail.customers}
+                    getRowId={(c) => `${c.phone ?? ''}-${c.first_name ?? ''}-${c.last_name ?? ''}`}
+                    columns={[
+                      { id: 'nombre', header: 'Nombre', cell: (c) => customerName(c) },
+                      {
+                        id: 'telefono',
+                        header: 'Teléfono',
+                        mobile: 'secondary',
+                        cell: (c) =>
+                          c.phone ? (
+                            <span className="type-amount text-muted-foreground">{c.phone}</span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          ),
+                      },
+                    ]}
+                  />
+                </Section>
               ) : null}
 
-              <section>
-                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Productos llevados ({detail.items.length})
-                </h4>
-                {detail.items.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Sin productos cargados.</p>
-                ) : (
-                  <div className="space-y-4">
-                    {Array.from(itemsByCategory.entries()).map(([category, items]) => (
-                      <div key={category}>
-                        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-primary/70">
-                          {category}
-                        </p>
-                        <ul className="space-y-1">
-                          {items.map((it) => (
-                            <li
-                              key={it.menu_item_id}
-                              className="flex items-center gap-2 rounded-md border border-border/40 bg-muted/30 px-2.5 py-1.5 text-sm"
-                            >
-                              <span className="grow truncate">{it.name}</span>
-                              <span className="shrink-0 tabular-nums text-muted-foreground">
-                                ×{it.quantity}
-                              </span>
-                              <span className="w-20 shrink-0 text-right font-medium tabular-nums">
-                                {fmt(it.line_total_cents)}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
+              <Section title={`Productos (${formatNumber(detail.items.length)})`} headingLevel={3}>
+                <DataTable
+                  caption="Productos de la mesa"
+                  rows={itemsByCategory(detail.items)}
+                  getRowId={(it) => it.menu_item_id}
+                  density="compact"
+                  groupBy={(it) => ({ key: it.category_name, label: it.category_name })}
+                  columns={[
+                    { id: 'producto', header: 'Producto', cell: (it) => it.name },
+                    {
+                      id: 'cantidad',
+                      header: 'Cant.',
+                      numeric: true,
+                      mobile: 'secondary',
+                      cell: (it) => (
+                        <span className="text-muted-foreground">×{formatNumber(it.quantity)}</span>
+                      ),
+                    },
+                    {
+                      id: 'total',
+                      header: 'Total',
+                      numeric: true,
+                      cell: (it) => <Amount cents={it.line_total_cents} decimals={0} />,
+                    },
+                  ]}
+                  empty={<EmptyState size="sm" title="Esta mesa no tiene productos cargados" />}
+                />
+              </Section>
             </>
           )}
-        </div>
+        </SheetBody>
       </SheetContent>
     </Sheet>
   )

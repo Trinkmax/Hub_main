@@ -12,9 +12,33 @@ import {
   YAxis,
 } from 'recharts'
 import { EmptyState } from '@/components/ui/empty-state'
+import { capitalizeFirst, formatLongDate, MONTH_NAMES_SHORT } from '@/lib/dates/format'
+import { formatNumber } from '@/lib/format/number-kind'
+import { formatCents } from '@/lib/money/format'
 
 type DailyPoint = { day: string; visits: number; revenue_cents: number }
 
+/**
+ * Tipografía de los ejes y del tooltip: 12 px, el mínimo del kit (§2.11). Los
+ * valores salen de los tokens, así el gráfico sigue al tema claro y al oscuro.
+ */
+const TICK_STYLE = { fontSize: 12, fill: 'var(--muted-foreground)' } as const
+
+/** `'2026-09-15'` → `'15 sep'`, cortando el string: sin `Intl` ni corrimientos de zona. */
+function shortDayLabel(iso: string): string {
+  const month = MONTH_NAMES_SHORT[Number(iso.slice(5, 7)) - 1]
+  return month ? `${iso.slice(8, 10)} ${month}` : iso
+}
+
+/**
+ * Evolución diaria de visitas o facturación (recharts). La API (`data`,
+ * `metric`, `compact`) la comparte el Resumen: no se cambia sin avisarle.
+ *
+ * - Plata con `formatCents` sin centavos y fechas armadas a mano: lo mismo
+ *   que el resto del kit, sin depender del ICU del navegador.
+ * - El tooltip flota (`--elevation-1`) con el borde del kit; nada más tiene
+ *   sombra. El área no se anima al montar (quieto por defecto, §1.1).
+ */
 export function RevenueChart({
   data,
   metric,
@@ -29,19 +53,20 @@ export function RevenueChart({
   if (data.length === 0) {
     return (
       <EmptyState
+        size="sm"
         icon={LineChartIcon}
         title="Sin datos en el rango"
         description="Cuando empieces a cerrar mesas, vas a ver acá la evolución día a día."
-        className="h-full border-0 bg-transparent py-8"
+        className="h-full"
       />
     )
   }
 
-  const labelY = metric === 'visits' ? 'Visitas' : 'Revenue'
+  const labelY = metric === 'visits' ? 'Visitas' : 'Facturación'
   const fmtY =
     metric === 'revenue_cents'
-      ? (v: number) => `$${(v / 100).toLocaleString('es-AR', { maximumFractionDigits: 0 })}`
-      : (v: number) => v.toLocaleString('es-AR')
+      ? (v: number) => formatCents(v, { decimals: 0 })
+      : (v: number) => formatNumber(v)
 
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -57,11 +82,8 @@ export function RevenueChart({
         )}
         <XAxis
           dataKey="day"
-          tickFormatter={(v) => {
-            const d = new Date(`${v}T00:00:00`)
-            return d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })
-          }}
-          tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
+          tickFormatter={(v) => shortDayLabel(String(v))}
+          tick={TICK_STYLE}
           tickLine={false}
           axisLine={false}
           minTickGap={24}
@@ -69,10 +91,10 @@ export function RevenueChart({
         />
         <YAxis
           tickFormatter={fmtY}
-          tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
+          tick={TICK_STYLE}
           tickLine={false}
           axisLine={false}
-          width={compact ? 0 : 56}
+          width={compact ? 0 : 72}
           hide={compact}
         />
         <Tooltip
@@ -81,24 +103,18 @@ export function RevenueChart({
             background: 'var(--popover)',
             border: '1px solid var(--border)',
             borderRadius: 'var(--radius-md)',
-            boxShadow: '0 8px 32px -12px rgb(0 0 0 / 0.5)',
+            boxShadow: 'var(--elevation-1)',
             color: 'var(--popover-foreground)',
-            fontSize: 12,
+            fontSize: 13,
             padding: '8px 10px',
           }}
           labelStyle={{
             color: 'var(--muted-foreground)',
-            fontSize: 11,
+            fontSize: 12,
             marginBottom: 4,
           }}
           formatter={(value) => [fmtY(Number(value)), labelY]}
-          labelFormatter={(v) =>
-            new Date(`${String(v)}T00:00:00`).toLocaleDateString('es-AR', {
-              day: '2-digit',
-              month: 'long',
-              year: 'numeric',
-            })
-          }
+          labelFormatter={(v) => capitalizeFirst(formatLongDate(String(v))) || String(v)}
         />
         <Area
           type="monotone"
@@ -107,6 +123,9 @@ export function RevenueChart({
           strokeWidth={2}
           fill={`url(#${gradientId})`}
           dot={false}
+          // Quieto por defecto (§1.1): el área no se dibuja de a poco cada vez
+          // que se abre la pantalla, igual que el Sparkline.
+          isAnimationActive={false}
           activeDot={{
             r: 4,
             stroke: 'var(--background)',

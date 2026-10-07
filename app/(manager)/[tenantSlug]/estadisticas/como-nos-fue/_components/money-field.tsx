@@ -1,8 +1,8 @@
 'use client'
 
 import type { FocusEvent, ReactNode, Ref } from 'react'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Field } from '@/components/ui/field'
+import { Input, InputAddon, InputGroup } from '@/components/ui/input'
 import { canonicalInput, type NumberKind, parseLocaleNumber } from '@/lib/salon/event-marketing'
 import { cn } from '@/lib/utils'
 
@@ -16,13 +16,27 @@ import { cn } from '@/lib/utils'
  * `canonicalInput` (`1,234.50` → `1.234,50`), así el dueño ve lo que se va a
  * guardar antes de guardarlo.
  *
- * `h-11 text-base` en cualquier ancho: con menos de 16px iOS hace zoom al
- * enfocar y el form queda corrido.
+ * El aspecto es el del kit (`Field` + `InputGroup`: etiqueta, prefijo `$` o
+ * `US$` adentro, ayuda y error con su ícono, 16 px con el dedo para que iOS no
+ * haga zoom), pero el comportamiento sigue siendo el de la pauta y NO el del
+ * `MoneyField` del kit, a propósito:
+ *
+ * - el kit lee con `parseMoneyToCents`, que rechaza más de dos decimales
+ *   (`0,125`, `1.234,567`) y letras entre los dígitos, cosas que
+ *   `parseLocaleNumber` acepta y que la pauta guarda;
+ * - el kit frena el envío con `setCustomValidity` y muestra SUS mensajes, y acá
+ *   el error lo decide el formulario (`checkMarketingDraft`, el mismo schema del
+ *   server) y se muestra recién al salir del campo o al guardar;
+ * - los conteos («Mensajes», «Alcance») irían a `NumberField`, que también
+ *   tiene su propio parseo y sus mensajes.
+ *
+ * Cuando el kit tenga un modo «sin validación propia» (el texto y el error los
+ * maneja el que llama), esto pasa a ser un `MoneyField` con `decimals="auto"`.
  */
 
 const CURRENCY = {
-  usd: { prefix: 'US$', padding: 'pl-12', srSuffix: ', en dólares' },
-  ars: { prefix: '$', padding: 'pl-7', srSuffix: ', en pesos' },
+  usd: { prefix: 'US$', srSuffix: ', en dólares' },
+  ars: { prefix: '$', srSuffix: ', en pesos' },
 } as const
 
 /**
@@ -74,62 +88,51 @@ export function MoneyField({
   className,
 }: MoneyFieldProps) {
   const money = currency ? CURRENCY[currency] : null
-  const hintId = hint ? `${id}-hint` : undefined
-  const errorId = error ? `${id}-error` : undefined
-  const describedBy = [hintId, errorId].filter(Boolean).join(' ') || undefined
 
   return (
     <div className={cn('grid content-start gap-1.5', className)}>
-      <Label htmlFor={id} className="gap-1 text-xs">
-        {label}
-        {optional ? <span className="font-normal text-muted-foreground">(opcional)</span> : null}
-        {money ? <span className="sr-only">{money.srSuffix}</span> : null}
-      </Label>
-      <div className="relative">
-        {money ? (
-          <span
-            aria-hidden
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"
-          >
-            {money.prefix}
-          </span>
-        ) : null}
-        <Input
-          ref={inputRef}
-          id={id}
-          type="text"
-          inputMode={kind === 'count' ? 'numeric' : 'decimal'}
-          autoComplete="off"
-          autoCorrect="off"
-          spellCheck={false}
-          value={value}
-          placeholder={placeholder}
-          disabled={disabled}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={describedBy}
-          onChange={(e) => onValueChange(e.target.value)}
-          onFocus={scrollIntoViewOnTouch}
-          onBlur={() => {
-            const parsed = parseLocaleNumber(value, kind)
-            if (parsed.ok) {
-              const canonical = canonicalInput(parsed.value, kind)
-              if (canonical !== value) onValueChange(canonical)
-            }
-            onBlur?.()
-          }}
-          className={cn('h-11 text-base tabular-nums md:text-base', money?.padding)}
-        />
-      </div>
-      {hint ? (
-        <p id={hintId} className="text-[11px] leading-snug text-muted-foreground">
-          {hint}
-        </p>
-      ) : null}
-      {error ? (
-        <p id={errorId} role="alert" className="text-xs leading-snug text-destructive">
-          {error}
-        </p>
-      ) : null}
+      <Field
+        id={id}
+        label={
+          <>
+            {label}
+            {money ? <span className="sr-only">{money.srSuffix}</span> : null}
+          </>
+        }
+        optional={optional}
+        hint={hint}
+        error={error}
+        disabled={disabled}
+      >
+        <InputGroup>
+          {money ? (
+            <InputAddon aria-hidden className="text-subtle-foreground">
+              {money.prefix}
+            </InputAddon>
+          ) : null}
+          <Input
+            ref={inputRef}
+            type="text"
+            inputMode={kind === 'count' ? 'numeric' : 'decimal'}
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            value={value}
+            placeholder={placeholder}
+            onChange={(e) => onValueChange(e.target.value)}
+            onFocus={scrollIntoViewOnTouch}
+            onBlur={() => {
+              const parsed = parseLocaleNumber(value, kind)
+              if (parsed.ok) {
+                const canonical = canonicalInput(parsed.value, kind)
+                if (canonical !== value) onValueChange(canonical)
+              }
+              onBlur?.()
+            }}
+            className="type-amount"
+          />
+        </InputGroup>
+      </Field>
       {children}
     </div>
   )

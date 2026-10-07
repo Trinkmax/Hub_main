@@ -94,13 +94,16 @@ export function MoneyShareDonut({
   return (
     <section
       aria-labelledby={titleId}
-      className={cn('@container card-hairline min-w-0 rounded-xl border bg-card', className)}
+      className={cn(
+        '@container min-w-0 rounded-xl border border-border bg-card text-card-foreground',
+        className,
+      )}
     >
-      <header className="border-b border-border/60 px-4 py-3">
-        <Heading id={titleId} className="font-serif text-base font-semibold tracking-tight">
+      <header className="border-b border-border px-4 py-3">
+        <Heading id={titleId} className="type-subtitle text-foreground">
           {data.title}
         </Heading>
-        <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{data.base}</p>
+        <p className="mt-0.5 type-caption text-muted-foreground">{data.base}</p>
       </header>
 
       {/* Angosto (el celular): el aro arriba y centrado, la leyenda a lo
@@ -160,21 +163,19 @@ export function MoneyShareDonut({
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-[1.125rem] text-center">
             <span
               className={cn(
-                'whitespace-nowrap font-serif font-semibold leading-tight tabular-nums',
+                'whitespace-nowrap font-display font-[520] leading-tight',
                 data.center.value.length > 12 ? 'text-xs' : 'text-sm',
                 data.center.tone === 'warning' && 'text-warning-text',
               )}
             >
               {data.center.value}
             </span>
-            <span className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-              {data.center.label}
-            </span>
+            <span className="mt-0.5 type-caption text-muted-foreground">{data.center.label}</span>
           </div>
         </div>
 
         {/* La leyenda ES la tabla de la dona: etiqueta, % y monto. */}
-        <dl className="min-w-0 divide-y divide-border/60">
+        <dl className="min-w-0 divide-y divide-border">
           {data.slices.map((s) => (
             // biome-ignore lint/a11y/noStaticElementInteractions: resaltado decorativo; el dato ya está escrito en el renglón
             <div
@@ -182,11 +183,12 @@ export function MoneyShareDonut({
               onMouseEnter={() => setActive(s.arc > 0 ? s.key : null)}
               onMouseLeave={() => setActive(null)}
               className={cn(
-                '-mx-2 grid grid-cols-[minmax(0,1fr)_auto_minmax(5.5rem,auto)] items-baseline gap-x-3 rounded-md px-2 py-1.5 transition-colors duration-(--duration-fast) motion-reduce:transition-none',
-                active === s.key && 'bg-secondary/60',
+                // Sin transición: el resaltado sigue al mouse (kit §2.10).
+                '-mx-2 grid grid-cols-[minmax(0,1fr)_auto_minmax(5.5rem,auto)] items-baseline gap-x-3 rounded-md px-2 py-1.5',
+                active === s.key && 'bg-secondary',
               )}
             >
-              <dt className="flex min-w-0 items-center gap-2 text-xs">
+              <dt className="flex min-w-0 items-center gap-2 type-caption">
                 <span
                   aria-hidden
                   className={cn(
@@ -196,7 +198,7 @@ export function MoneyShareDonut({
                 />
                 <span className="truncate">{s.label}</span>
               </dt>
-              <dd className="text-right text-sm font-medium tabular-nums">
+              <dd className="text-right type-body font-medium tabular-nums">
                 {s.share === '—' ? (
                   <>
                     <span className="sr-only">sin reparto</span>
@@ -208,7 +210,7 @@ export function MoneyShareDonut({
                   s.share
                 )}
               </dd>
-              <dd className={cn('text-right text-xs tabular-nums', toneClass(s.tone))}>
+              <dd className={cn('text-right type-caption tabular-nums', toneClass(s.tone))}>
                 {s.amount}
               </dd>
             </div>
@@ -217,7 +219,7 @@ export function MoneyShareDonut({
 
         <figcaption
           className={cn(
-            'text-sm leading-snug @min-[30rem]:col-span-2 @min-[52rem]:col-span-1 @min-[52rem]:pl-3',
+            'type-body text-pretty @min-[30rem]:col-span-2 @min-[52rem]:col-span-1 @min-[52rem]:pl-3',
             data.state === 'abajo' && 'text-warning-text',
           )}
         >
@@ -225,7 +227,7 @@ export function MoneyShareDonut({
         </figcaption>
       </figure>
 
-      <div className="space-y-0.5 border-t border-border/60 px-4 py-3 text-[11px] leading-snug text-muted-foreground">
+      <div className="space-y-0.5 border-t border-border px-4 py-3 type-caption text-muted-foreground">
         {data.notes.map((note) => (
           <p key={note}>{note}</p>
         ))}

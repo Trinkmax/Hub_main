@@ -1,26 +1,49 @@
 'use client'
 
-import { Check, Wallet } from 'lucide-react'
+import { ArrowRight, Check, Wallet } from 'lucide-react'
 import Link from 'next/link'
 import { useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+  COMMISSION_STATUS_OWNER,
+  commissionStatusOf,
+} from '@/components/commissions/commission-status'
+import { Amount } from '@/components/ui/amount'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Callout } from '@/components/ui/callout'
+import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
-import { formatARS } from '@/lib/commissions/calculate'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import {
+  DataTableBody,
+  DataTableCell,
+  DataTableHead,
+  DataTableHeader,
+  DataTableRoot,
+  DataTableRow,
+  DataTableScroll,
+  DataTableShell,
+} from '@/components/ui/data-table'
+import { EmptyState } from '@/components/ui/empty-state'
+import { KPI, KPIGroup } from '@/components/ui/kpi'
+import { StatusBadge } from '@/components/ui/status-badge'
 import type { CommissionPeriod } from '@/lib/commissions/period'
+import { formatIsoDay } from '@/lib/dates/format'
+import { formatNumber } from '@/lib/format/number-kind'
+import { formatCents } from '@/lib/money/format'
 import { markCommissionPaid, markCommissionRangePaid } from '@/lib/salon/actions'
 import type { CommissionBreakdownEntry } from '@/lib/salon/queries'
 import { cn } from '@/lib/utils'
+
+/** Sin centavos, como el resto de la liquidación. */
+function money(cents: number): string {
+  return formatCents(cents, { decimals: 0 })
+}
+
+function reservasLabel(n: number): string {
+  return `${formatNumber(n)} ${n === 1 ? 'reserva' : 'reservas'}`
+}
 
 export function ManagerCommissionsBreakdown({
   tenantSlug,
@@ -64,6 +87,7 @@ export function ManagerCommissionsBreakdown({
     () => payableNow.length > 0 && payableNow.every((e) => selected.has(e.id)),
     [payableNow, selected],
   )
+  const somePayableSelected = payableNow.some((e) => selected.has(e.id))
 
   // Cada cifra sale de la MISMA lista que la acompaña: el diálogo de liquidar
   // todo dice "N reservas por $X" y las dos salen de `payableNow`, o algún día
@@ -107,45 +131,45 @@ export function ManagerCommissionsBreakdown({
   /**
    * Liquidación completa del período. No manda ids: el servidor vuelve a
    * preguntar quién está impago en ese rango (ver `markCommissionRangePaid`),
-   * así que el número del diálogo es informativo y el pago sale de la DB.
+   * así que el número del diálogo es informativo y el pago sale de la DB. Si
+   * falla, el diálogo queda abierto con el error adentro.
    */
-  function payAllPending() {
-    startTransition(async () => {
-      const r = await markCommissionRangePaid(tenantSlug, {
-        manager_id: managerId,
-        from: period.from,
-        to: period.to,
-      } as Record<string, unknown>)
-      if (r.ok) {
-        // El mensaje puede avisar que quedaron pendientes: duración larga para
-        // que no se lo lleve el toast antes de leerlo.
-        toast.success(r.message ?? 'Listo.', { duration: 8000 })
-        setConfirmPayAll(false)
-        setSelected(new Set())
-      } else {
-        toast.error(r.message, { duration: 8000 })
-      }
-    })
+  async function payAllPending() {
+    const r = await markCommissionRangePaid(tenantSlug, {
+      manager_id: managerId,
+      from: period.from,
+      to: period.to,
+    } as Record<string, unknown>)
+    if (!r.ok) return { ok: false as const, error: r.message }
+    // El mensaje puede avisar que quedaron pendientes: duración larga para
+    // que no se lo lleve el toast antes de leerlo.
+    toast.success(r.message ?? 'Listo.', { duration: 8000 })
+    setSelected(new Set())
+    return { ok: true as const }
   }
 
   return (
-    <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Stat label="Total" value={formatARS(totals.payable)} />
-        <Stat label="Cobrado" value={formatARS(totals.paid)} tone="muted" />
-        <Stat label="Pendiente" value={formatARS(totals.pending)} tone="amber" />
-      </div>
+    <div className="flex flex-col gap-6">
+      <KPIGroup columns={3}>
+        <KPI label="Total" value={<Amount cents={totals.payable} decimals={0} />} />
+        <KPI label="Cobrado" value={<Amount cents={totals.paid} decimals={0} />} />
+        <KPI
+          label="Pendiente"
+          value={<Amount cents={totals.pending} decimals={0} />}
+          hint={totals.pending > 0 ? 'Falta pagarle' : 'No queda nada por pagar'}
+        />
+      </KPIGroup>
 
       {/* Con el rango libre se puede pedir más de un año de una: si la lectura
           tocó el techo, los totales y el botón de liquidar de abajo están
           contando de menos. Avisarlo importa más acá que en cualquier otra
           pantalla, porque desde acá se paga. */}
       {truncated ? (
-        <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-text">
-          Hay más comisiones de las que entran en una sola lectura: faltan reservas en la tabla y en
-          los totales. Por eso no está el botón de liquidar todo el período: diría un total que no
-          es el que se marcaría. Elegí un rango más corto y volvé a intentar.
-        </p>
+        <Callout tone="warning" title="Faltan reservas en la tabla y en los totales">
+          Hay más comisiones de las que entran en una sola lectura. Por eso no está el botón de
+          liquidar todo el período: diría un total que no es el que se marcaría. Elegí un rango más
+          corto y volvé a intentar.
+        </Callout>
       ) : null}
 
       {/* Liquidar todo el período. Se esconde mientras hay entries tildadas:
@@ -159,225 +183,235 @@ export function ManagerCommissionsBreakdown({
           conjunto distinto del que se va a marcar. Tildar de a una sigue
           andando: ahí se pagan ids que el dueño vio en la tabla. */}
       {payableNow.length > 0 && selected.size === 0 && !truncated ? (
-        <div className="card-hairline flex flex-col gap-3 rounded-xl border bg-card/60 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground">
+        <Card padding="sm" className="gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="max-w-prose text-pretty type-body text-muted-foreground">
             Quedan{' '}
-            <span className="font-medium text-foreground">
-              {payableNow.length} {payableNow.length === 1 ? 'reserva' : 'reservas'}
-            </span>{' '}
+            <span className="font-medium text-foreground">{reservasLabel(payableNow.length)}</span>{' '}
             sin pagar en este período, por{' '}
-            <span className="font-mono font-medium tabular-nums text-foreground">
-              {formatARS(totals.payableNow)}
-            </span>
+            <Amount
+              cents={totals.payableNow}
+              decimals={0}
+              className="font-medium text-foreground"
+            />
             .
             {futureCount > 0 ? (
               <>
                 {' '}
-                {futureCount === 1 ? 'Hay 1 reserva' : `Hay ${futureCount} reservas`} más adelante
-                en el calendario: no entran en la liquidación hasta que ocurran.
+                {futureCount === 1 ? 'Hay 1 reserva' : `Hay ${formatNumber(futureCount)} reservas`}{' '}
+                más adelante en el calendario: no entran en la liquidación hasta que ocurran.
               </>
             ) : null}
           </p>
           <Button
             onClick={() => setConfirmPayAll(true)}
             disabled={pending}
-            className="h-10 w-full gap-2 sm:w-auto"
+            className="max-sm:w-full sm:shrink-0"
           >
-            <Wallet className="size-4" aria-hidden />
+            <Wallet aria-hidden />
             Marcar todo lo pendiente como pagado
           </Button>
-        </div>
+        </Card>
       ) : null}
 
-      <AlertDialog
+      <ConfirmDialog
         open={confirmPayAll}
-        onOpenChange={(next) => {
-          if (!next && !pending) setConfirmPayAll(false)
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              ¿Marcar {payableNow.length} {payableNow.length === 1 ? 'reserva' : 'reservas'} como
-              pagadas?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Se van a marcar como pagadas todas las comisiones pendientes de {period.label} que ya
-              ocurrieron: {payableNow.length} {payableNow.length === 1 ? 'reserva' : 'reservas'} por{' '}
-              {formatARS(totals.payableNow)}. Las que ya figuran cobradas no se tocan
-              {futureCount > 0 ? ', y las del futuro tampoco' : ''}.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                // Sin esto Radix cierra el diálogo antes de que termine la
-                // acción y el dueño no ve si salió bien.
-                e.preventDefault()
-                payAllPending()
-              }}
-              disabled={pending}
-            >
-              {pending ? 'Marcando…' : 'Sí, marcar como pagadas'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        onOpenChange={setConfirmPayAll}
+        title={`¿Marcar ${reservasLabel(payableNow.length)} como pagadas?`}
+        description={
+          <>
+            Se van a marcar como pagadas todas las comisiones pendientes de {period.label} que ya
+            ocurrieron: {reservasLabel(payableNow.length)} por {money(totals.payableNow)}. Las que
+            ya figuran cobradas no se tocan
+            {futureCount > 0 ? ', y las del futuro tampoco' : ''}.
+          </>
+        }
+        confirmLabel="Marcar como pagadas"
+        pendingLabel="Marcando…"
+        icon={Wallet}
+        onConfirm={payAllPending}
+      />
 
       {selected.size > 0 ? (
-        <div className="sticky top-2 z-10 flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-amber-50/80 px-3 py-2 text-sm backdrop-blur dark:bg-amber-950/30">
+        // Misma barra que la selección del kit: arriba de la tabla en
+        // escritorio (pegada debajo del topbar) y fija abajo en el celular.
+        <div
+          className={cn(
+            'z-10 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-4 py-2',
+            'sm:sticky sm:top-[calc(var(--topbar-h)+0.5rem)]',
+            'max-sm:fixed max-sm:inset-x-4 max-sm:bottom-[calc(1rem+env(safe-area-inset-bottom))] max-sm:z-40 max-sm:shadow-float',
+          )}
+        >
           {/* "reservas", no "entries": en este período hay una entry de ledger
               por reserva del gestor, y es el idioma del dueño — el diálogo de
               liquidar todo y el toast dicen lo mismo. */}
-          <span>
-            {selected.size}{' '}
+          <span role="status" className="type-label tabular-nums text-foreground">
+            {formatNumber(selected.size)}{' '}
             {selected.size === 1 ? 'reserva seleccionada' : 'reservas seleccionadas'}
           </span>
-          <Button size="sm" onClick={payNow} disabled={pending} className="gap-2">
-            <Check className="size-4" />
-            Marcar como cobradas
-          </Button>
+          <div className="ms-auto flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelected(new Set())}
+              disabled={pending}
+            >
+              Limpiar
+            </Button>
+            <Button size="sm" onClick={payNow} loading={pending} loadingText="Marcando…">
+              <Check aria-hidden />
+              Marcar como cobradas
+            </Button>
+          </div>
         </div>
       ) : null}
 
-      <div className="card-hairline overflow-hidden rounded-xl border bg-card">
-        <table className="w-full text-sm">
-          <thead className="border-b border-border/60 bg-secondary/40 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-            <tr>
-              <th className="w-10 px-3 py-2">
-                <Checkbox
-                  checked={allPayableSelected}
-                  onCheckedChange={selectAll}
-                  aria-label="Seleccionar todas"
-                />
-              </th>
-              <th className="px-3 py-2">Fecha</th>
-              <th className="px-3 py-2">Cliente</th>
-              <th className="px-3 py-2 text-right">Reservó → vino</th>
-              <th className="px-3 py-2 text-right">Tarifa</th>
-              <th className="px-3 py-2 text-right">Base</th>
-              <th className="px-3 py-2 text-right">Bonus</th>
-              <th className="px-3 py-2 text-right">Cobra</th>
-              <th className="px-3 py-2 text-right">Split</th>
-              <th className="px-3 py-2">Estado</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/60">
-            {entries.map((e) => {
-              const isPaid = !!e.paid_at
-              const noActual = e.reservation.actual_guests === null
-              // Todavía no ocurrió: está en la tabla porque el período la
-              // abarca, pero no se liquida (el monto puede cambiar o la reserva
-              // caerse, y una comisión pagada ya no se corrige).
-              const isFuture = !isPaid && e.reservation.reservation_date > today
-              return (
-                <tr key={e.id} className={isPaid ? 'opacity-70' : ''}>
-                  <td className="px-3 py-2 align-middle">
-                    {!isPaid ? (
-                      <Checkbox checked={selected.has(e.id)} onCheckedChange={() => toggle(e.id)} />
-                    ) : null}
-                  </td>
-                  <td className="px-3 py-2 font-mono tabular-nums">
-                    {e.reservation.reservation_date}
-                    {isFuture ? (
-                      <span
-                        className="ml-1.5 rounded bg-secondary px-1 font-sans text-[10px] uppercase tracking-wide text-muted-foreground"
-                        title="Todavía no ocurrió: no entra en la liquidación del período"
-                      >
-                        futura
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className="px-3 py-2">
-                    <Link
-                      href={`/${tenantSlug}/reservas/${e.reservation.id}`}
-                      className="hover:underline"
-                    >
-                      {e.reservation.guest_name}
-                    </Link>
-                  </td>
-                  {/* Las dos cifras, no una: es la revisión que los dueños
-                      hacen antes de aprobar el pago. Un solo número no deja ver
-                      si vinieron menos ni si el conteo existe. */}
-                  <td className="px-3 py-2 text-right font-mono tabular-nums">
-                    <span className="text-muted-foreground">{e.reservation.estimated_guests}</span>
-                    <span className="mx-1 text-muted-foreground">→</span>
-                    {noActual ? (
-                      <span
-                        className="rounded bg-warning/20 px-1 text-[10px] uppercase tracking-wide text-foreground"
-                        title="Nadie contó esta reserva: se cobra por lo reservado"
-                      >
-                        sin contar
-                      </span>
-                    ) : (
-                      <span
-                        className={cn(
-                          'font-semibold',
-                          e.reservation.actual_guests !== e.reservation.estimated_guests &&
-                            'text-warning',
-                        )}
-                      >
-                        {e.reservation.actual_guests}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono tabular-nums">
-                    {formatARS(e.base_rate_per_guest_cents)}
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono tabular-nums">
-                    {formatARS(e.base_total_cents)}
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono tabular-nums">
-                    {e.bonus_total_cents > 0 ? (
-                      <span className="text-amber-700 dark:text-amber-300">
-                        +{formatARS(e.bonus_total_cents)}
-                      </span>
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono tabular-nums font-semibold">
-                    {formatARS(e.payable_cents)}
-                  </td>
-                  <td className="px-3 py-2 text-right text-[11px] text-muted-foreground">
-                    {e.split_factor_denominator === 1
-                      ? '100%'
-                      : `${e.split_factor_numerator}/${e.split_factor_denominator}`}
-                  </td>
-                  <td className="px-3 py-2">
-                    {isPaid ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
-                        <Check className="size-3" />
-                        Cobrada
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
-                        Pendiente
-                      </span>
-                    )}
-                  </td>
+      {entries.length === 0 ? (
+        <EmptyState
+          icon={Wallet}
+          title="Sin reservas liquidadas en este período"
+          description="Cuando sus reservas se cierren con la cantidad real de personas, van a aparecer acá con lo que le corresponde."
+        />
+      ) : (
+        <DataTableShell className={cn(selected.size > 0 && 'max-sm:mb-20')}>
+          {/* Con casillas en las filas va con scroll de costado en el celular
+              (no tarjetas): cada casilla tiene que ser una sola. */}
+          <DataTableScroll>
+            <DataTableRoot caption={`Comisiones de ${period.label}`} className="min-w-[56rem]">
+              <DataTableHead>
+                <tr>
+                  <DataTableHeader className="w-10 px-3">
+                    <Checkbox
+                      checked={
+                        allPayableSelected ? true : somePayableSelected ? 'indeterminate' : false
+                      }
+                      onCheckedChange={selectAll}
+                      disabled={payableNow.length === 0}
+                      aria-label="Elegir todas las que se pueden liquidar hoy"
+                    />
+                  </DataTableHeader>
+                  <DataTableHeader>Fecha</DataTableHeader>
+                  <DataTableHeader>Cliente</DataTableHeader>
+                  <DataTableHeader numeric>Reservó → vino</DataTableHeader>
+                  <DataTableHeader numeric>Tarifa $</DataTableHeader>
+                  <DataTableHeader numeric>Base $</DataTableHeader>
+                  <DataTableHeader numeric>Bonus $</DataTableHeader>
+                  <DataTableHeader numeric>Cobra $</DataTableHeader>
+                  <DataTableHeader numeric>Parte</DataTableHeader>
+                  <DataTableHeader>Estado</DataTableHeader>
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-function Stat({ label, value, tone }: { label: string; value: string; tone?: 'muted' | 'amber' }) {
-  return (
-    <div
-      className={`rounded-xl border p-4 ${
-        tone === 'amber'
-          ? 'border-amber-300/60 bg-amber-50/40 dark:bg-amber-950/20'
-          : 'border-border/60 bg-card/60'
-      }`}
-    >
-      <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="mt-1 font-mono text-2xl font-semibold tabular-nums">{value}</div>
+              </DataTableHead>
+              <DataTableBody>
+                {entries.map((e) => {
+                  const isPaid = !!e.paid_at
+                  const noActual = e.reservation.actual_guests === null
+                  // Todavía no ocurrió: está en la tabla porque el período la
+                  // abarca, pero no se liquida (el monto puede cambiar o la reserva
+                  // caerse, y una comisión pagada ya no se corrige).
+                  const isFuture = !isPaid && e.reservation.reservation_date > today
+                  return (
+                    <DataTableRow
+                      key={e.id}
+                      selected={selected.has(e.id)}
+                      interactive={!isPaid}
+                      className={cn(isPaid && '[&>td]:text-muted-foreground')}
+                    >
+                      <DataTableCell className="w-10 px-3">
+                        {!isPaid ? (
+                          <Checkbox
+                            checked={selected.has(e.id)}
+                            onCheckedChange={() => toggle(e.id)}
+                            aria-label={`Elegir la reserva de ${e.reservation.guest_name}`}
+                          />
+                        ) : null}
+                      </DataTableCell>
+                      <DataTableCell>
+                        <span className="inline-flex flex-wrap items-center gap-1.5">
+                          <span className="type-amount">
+                            {formatIsoDay(e.reservation.reservation_date)}
+                          </span>
+                          {isFuture ? (
+                            <Badge title="Todavía no ocurrió: no entra en la liquidación del período">
+                              futura
+                            </Badge>
+                          ) : null}
+                        </span>
+                      </DataTableCell>
+                      <DataTableCell primary>
+                        <Link
+                          href={`/${tenantSlug}/reservas/${e.reservation.id}`}
+                          className="underline-offset-[3px] hover:underline focus-visible:underline"
+                        >
+                          {e.reservation.guest_name}
+                        </Link>
+                      </DataTableCell>
+                      {/* Las dos cifras, no una: es la revisión que los dueños
+                          hacen antes de aprobar el pago. Un solo número no deja ver
+                          si vinieron menos ni si el conteo existe. */}
+                      <DataTableCell numeric>
+                        <span className="inline-flex items-center justify-end gap-1">
+                          <span className="text-muted-foreground">
+                            {formatNumber(e.reservation.estimated_guests)}
+                          </span>
+                          <ArrowRight aria-hidden className="size-3.5 text-muted-foreground" />
+                          <span className="sr-only">vinieron</span>
+                          {noActual ? (
+                            <Badge
+                              tone="warning"
+                              title="Nadie contó esta reserva: se cobra por lo reservado"
+                            >
+                              sin contar
+                            </Badge>
+                          ) : (
+                            <span
+                              className={cn(
+                                'font-semibold',
+                                e.reservation.actual_guests !== e.reservation.estimated_guests &&
+                                  'text-warning-text',
+                              )}
+                            >
+                              {formatNumber(e.reservation.actual_guests)}
+                            </span>
+                          )}
+                        </span>
+                      </DataTableCell>
+                      <DataTableCell numeric>
+                        <Amount cents={e.base_rate_per_guest_cents} decimals={0} currency={false} />
+                      </DataTableCell>
+                      <DataTableCell numeric>
+                        <Amount cents={e.base_total_cents} decimals={0} currency={false} />
+                      </DataTableCell>
+                      <DataTableCell numeric>
+                        {e.bonus_total_cents > 0 ? (
+                          <span className="text-warning-text">
+                            +<Amount cents={e.bonus_total_cents} decimals={0} currency={false} />
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </DataTableCell>
+                      <DataTableCell numeric className="font-semibold">
+                        <Amount cents={e.payable_cents} decimals={0} currency={false} />
+                      </DataTableCell>
+                      <DataTableCell numeric className="type-small text-muted-foreground">
+                        {e.split_factor_denominator === 1
+                          ? '100 %'
+                          : `${e.split_factor_numerator}/${e.split_factor_denominator}`}
+                      </DataTableCell>
+                      <DataTableCell>
+                        <StatusBadge
+                          status={commissionStatusOf(e.paid_at)}
+                          map={COMMISSION_STATUS_OWNER}
+                        />
+                      </DataTableCell>
+                    </DataTableRow>
+                  )
+                })}
+              </DataTableBody>
+            </DataTableRoot>
+          </DataTableScroll>
+        </DataTableShell>
+      )}
     </div>
   )
 }

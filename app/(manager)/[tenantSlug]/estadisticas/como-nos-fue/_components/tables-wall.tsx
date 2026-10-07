@@ -219,7 +219,7 @@ export function TablesWall({
           alto mínimo fijo el muro no salta al cambiar de mesa. */}
       <figcaption
         aria-hidden
-        className="flex min-h-[2lh] min-w-0 items-end text-[11px] leading-snug text-muted-foreground"
+        className="flex min-h-[2lh] min-w-0 items-end type-caption text-muted-foreground"
       >
         <span className="text-pretty">
           {readout ? (
@@ -249,7 +249,7 @@ export function TablesWall({
             <li aria-hidden className="h-0 basis-full" />
             <li
               aria-hidden
-              className="flex h-6 items-center text-[10px] text-muted-foreground sm:h-7"
+              className="flex h-6 items-center type-caption text-muted-foreground sm:h-7"
             >
               {fallenGroupLabel(fallen)}
             </li>
@@ -334,7 +334,7 @@ export function TablesWallLegend({ flags }: { flags: WallLegendFlags }) {
   const items = LEGEND.filter((item) => flags[item.flag])
   if (items.length === 0) return null
   return (
-    <ul className="ev-ink wall flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
+    <ul className="ev-ink wall flex flex-wrap items-center gap-x-4 gap-y-1.5 type-caption text-muted-foreground">
       {items.map((item) => (
         <li key={item.flag} className="inline-flex items-center gap-1.5">
           <span aria-hidden className="wall-table flex" data-table={item.chip.state} data-static="">

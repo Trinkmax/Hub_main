@@ -1,51 +1,31 @@
 'use client'
 
-import {
-  Banknote,
-  CalendarCheck,
-  CalendarRange,
-  ChevronLeft,
-  ChevronRight,
-  CircleSlash,
-  Download,
-  TrendingUp,
-} from 'lucide-react'
+import { Banknote, CalendarCheck, CircleSlash, TrendingUp } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useTransition } from 'react'
-import { Button } from '@/components/ui/button'
+import { useOptimistic, useTransition } from 'react'
+import { Amount } from '@/components/ui/amount'
+import { Callout } from '@/components/ui/callout'
+import { Card } from '@/components/ui/card'
+import { DataTable, DataTableToolbar, ExportButton } from '@/components/ui/data-table'
 import { EmptyState } from '@/components/ui/empty-state'
-import { SlidingTabs } from '@/components/ui/sliding-tabs'
-import { StatCard } from '@/components/ui/stat-card'
-import { formatARS } from '@/lib/commissions/calculate'
-import { formatDayLabel } from '@/lib/salon/date-presets'
+import { KPI, KPIGroup } from '@/components/ui/kpi'
+import { PeriodPicker } from '@/components/ui/period-picker'
+import { Section } from '@/components/ui/section'
+import { SegmentedControl } from '@/components/ui/segmented-control'
+import { formatIsoDay } from '@/lib/dates/format'
+import { formatNumber } from '@/lib/format/number-kind'
+import { formatCents } from '@/lib/money/format'
 import type { DepositsReport } from '@/lib/salon/deposits'
 import { cn } from '@/lib/utils'
-import { DepositsBarChart } from './deposits-bar-chart'
+import { DepositsBarChart, dayLabel } from './deposits-bar-chart'
 
-/** `2026-09` + 1 → `2026-10`. Aritmética en UTC: en local, un runtime en
- *  UTC-3 se corre de mes en el borde. */
-function shiftYM(ym: string, months: number): string {
-  const [y, m] = ym.split('-').map(Number)
-  if (!y || !m) return ym
-  const d = new Date(Date.UTC(y, m - 1 + months, 1))
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+/** Sin centavos, como el resto del tablero (KPIs y tableros: 0 decimales). */
+function money(cents: number): string {
+  return formatCents(cents, { decimals: 0 })
 }
 
-function formatYM(ym: string): string {
-  const [y, m] = ym.split('-').map(Number)
-  if (!y || !m) return ym
-  return new Intl.DateTimeFormat('es-AR', {
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(new Date(Date.UTC(y, m - 1, 1)))
-}
-
-/** `2026-09-01` → `01/09/2026`, para el rótulo del histórico. */
-function formatFullDay(iso: string): string {
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
-}
+type Basis = 'reserva' | 'carga'
+type Scope = 'mes' | 'todo'
 
 export function DepositsDashboard({
   tenantSlug,
@@ -56,14 +36,19 @@ export function DepositsDashboard({
   tenantSlug: string
   report: DepositsReport
   currentYM: string
-  period: 'mes' | 'todo'
+  period: Scope
 }) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [pending, startTransition] = useTransition()
+  // Lo elegido se ve al toque (optimista) y vuelve a lo que diga el server
+  // cuando llega la página nueva.
+  const [shownYM, setShownYM] = useOptimistic(currentYM)
 
   const { totals, basis } = report
   const porCarga = basis === 'created'
+  const [shownBasis, setShownBasis] = useOptimistic<Basis>(porCarga ? 'carga' : 'reserva')
+  const [shownScope, setShownScope] = useOptimistic<Scope>(period)
 
   // El link del CSV se arma con el MISMO rango y criterio que está en pantalla:
   // si saliera de los searchParams crudos, un default implícito haría que la
@@ -72,15 +57,19 @@ export function DepositsDashboard({
     `/api/senas/export?slug=${encodeURIComponent(tenantSlug)}` +
     `&from=${report.from}&to=${report.to}&fecha=${porCarga ? 'carga' : 'reserva'}`
 
-  // `replace` para el selector de fecha: SlidingTabs ahora es un radiogroup y
-  // las flechas eligen en cada tecla, así que con push cada una dejaba una
-  // entrada en el historial (kit §3.3). Los botones de mes siguen con push:
-  // «atrás» vuelve al mes anterior, como siempre.
-  function push(next: Record<string, string>, mode: 'push' | 'replace' = 'push') {
+  // `replace` para los segmentados: son radiogroups y las flechas eligen en
+  // cada tecla, así que con push cada una dejaba una entrada en el historial
+  // (kit §3.3). El mes sigue con push: «atrás» vuelve al mes anterior.
+  function push(
+    next: Record<string, string>,
+    mode: 'push' | 'replace' = 'push',
+    optimistic?: () => void,
+  ) {
     const params = new URLSearchParams(searchParams.toString())
     for (const [key, value] of Object.entries(next)) params.set(key, value)
     const href = `?${params.toString()}`
     startTransition(() => {
+      optimistic?.()
       if (mode === 'replace') router.replace(href, { scroll: false })
       else router.push(href, { scroll: false })
     })
@@ -90,92 +79,71 @@ export function DepositsDashboard({
   const withMoneyDays = report.days.filter((d) => d.total_cents > 0)
 
   return (
-    <div className={cn('space-y-6', pending && 'opacity-60 transition-opacity')}>
+    <div
+      aria-busy={pending || undefined}
+      className={cn('flex flex-col gap-8', pending && 'opacity-60 transition-opacity')}
+    >
       {/* Barra de control: qué período y con qué criterio se lee el día. */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-col gap-3">
+        <DataTableToolbar>
+          <SegmentedControl<Scope>
+            aria-label="Período"
+            items={[
+              { value: 'mes', label: 'Por mes' },
+              { value: 'todo', label: 'Todo el histórico' },
+            ]}
+            value={shownScope}
+            onValueChange={(value) =>
+              push({ periodo: value }, 'replace', () => setShownScope(value))
+            }
+          />
           {period === 'todo' ? (
-            <>
-              <h2 className="font-serif text-lg font-semibold">Todo el histórico</h2>
-              <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                {formatFullDay(report.from)} → {formatFullDay(report.to)}
-              </span>
-              <Button variant="ghost" size="sm" onClick={() => push({ periodo: 'mes' })}>
-                Ver por mes
-              </Button>
-            </>
+            <span className="type-small text-muted-foreground">
+              <span className="type-amount">{formatIsoDay(report.from)}</span> al{' '}
+              <span className="type-amount">{formatIsoDay(report.to)}</span>
+            </span>
           ) : (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                aria-label="Mes anterior"
-                onClick={() => push({ month: shiftYM(currentYM, -1) })}
-              >
-                <ChevronLeft className="size-4" />
-              </Button>
-              <h2 className="min-w-44 text-center font-serif text-lg font-semibold capitalize">
-                {formatYM(currentYM)}
-              </h2>
-              <Button
-                variant="outline"
-                size="sm"
-                aria-label="Mes siguiente"
-                onClick={() => push({ month: shiftYM(currentYM, 1) })}
-              >
-                <ChevronRight className="size-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1.5"
-                onClick={() => push({ periodo: 'todo' })}
-              >
-                <CalendarRange className="size-3.5" />
-                Todo el histórico
-              </Button>
-            </>
+            <PeriodPicker
+              aria-label="Mes"
+              kinds={['month']}
+              value={{ kind: 'month', month: shownYM }}
+              onValueChange={(next) => {
+                if (next.kind !== 'month') return
+                push({ month: next.month }, 'push', () => setShownYM(next.month))
+              }}
+            />
           )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <SlidingTabs
-            size="sm"
-            value={porCarga ? 'carga' : 'reserva'}
-            onChange={(value) => push({ fecha: value }, 'replace')}
-            tabs={[
+          <SegmentedControl<Basis>
+            aria-label="Contar cada seña por"
+            items={[
               { value: 'reserva', label: 'Día de la reserva' },
               { value: 'carga', label: 'Día de carga' },
             ]}
+            value={shownBasis}
+            onValueChange={(value) => push({ fecha: value }, 'replace', () => setShownBasis(value))}
           />
-          <Button asChild variant="outline" size="sm" className="gap-2">
-            <a href={exportHref} download title="Descargar planilla (Excel / Sheets)">
-              <Download className="size-4" />
-              <span className="sr-only sm:not-sr-only">Exportar</span>
-            </a>
-          </Button>
-        </div>
+          <ExportButton href={exportHref} title="Descargar planilla (Excel / Sheets)" />
+        </DataTableToolbar>
+
+        <p className="max-w-prose text-pretty type-small text-muted-foreground">
+          {porCarga
+            ? 'Cada seña cuenta el día en que se cargó la reserva en el sistema: es la plata que entró ese día.'
+            : 'Cada seña cuenta el día en que la gente viene: es la plata que respalda cada fecha de servicio.'}
+        </p>
+
+        {porCarga ? (
+          <Callout tone="warning">
+            No se guarda la fecha en que se cobró la seña. Si una reserva se cargó tarde o se migró
+            de otro sistema, cae el día de la carga, no el del cobro.
+          </Callout>
+        ) : null}
+
+        {report.truncated ? (
+          <Callout tone="warning" title="El total puede estar incompleto">
+            Hay más reservas de las que entran en una sola lectura. Elegí un período más corto.
+          </Callout>
+        ) : null}
       </div>
-
-      <p className="-mt-3 text-xs text-muted-foreground">
-        {porCarga
-          ? 'Cada seña cuenta el día en que se cargó la reserva en el sistema: es la plata que entró ese día.'
-          : 'Cada seña cuenta el día en que la gente viene: es la plata que respalda cada fecha de servicio.'}
-      </p>
-
-      {porCarga ? (
-        <p className="text-xs text-warning-text">
-          Ojo: no se guarda la fecha en que se cobró la seña. Si una reserva se cargó tarde o se
-          migró de otro sistema, cae el día de la carga, no el del cobro.
-        </p>
-      ) : null}
-
-      {report.truncated ? (
-        <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-text">
-          Hay más reservas de las que entran en una sola lectura: el total puede estar incompleto.
-          Elegí un período más corto.
-        </p>
-      ) : null}
 
       {totals.reservations === 0 ? (
         <EmptyState
@@ -185,143 +153,152 @@ export function DepositsDashboard({
         />
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard
+          <KPIGroup columns={4}>
+            <KPI
               label={periodLabel}
-              value={formatARS(totals.total_cents)}
-              className="border-primary/60 bg-primary/5"
-              hint={`${totals.with_deposit} de ${totals.reservations} reservas dejaron seña`}
+              value={<Amount cents={totals.total_cents} decimals={0} />}
+              hint={`${formatNumber(totals.with_deposit)} de ${formatNumber(totals.reservations)} reservas dejaron seña`}
             />
-            <StatCard
+            <KPI
               icon={CalendarCheck}
-              iconClassName="text-success"
               label="Seña vigente"
-              value={formatARS(totals.active_cents)}
+              value={<Amount cents={totals.active_cents} decimals={0} />}
               hint="Reservas en pie"
             />
-            <StatCard
+            <KPI
               icon={CircleSlash}
-              iconClassName="text-destructive"
               label="Canceladas / No vino"
-              value={formatARS(totals.fallen_cents)}
+              value={<Amount cents={totals.fallen_cents} decimals={0} />}
               hint={
                 totals.fallen_cents > 0
-                  ? `Canceladas ${formatARS(totals.cancelled_cents)} · No vino ${formatARS(totals.no_show_cents)}`
+                  ? `Canceladas ${money(totals.cancelled_cents)} · No vino ${money(totals.no_show_cents)}`
                   : 'No se cayó ninguna'
               }
             />
-            <StatCard
+            <KPI
               icon={TrendingUp}
-              iconClassName="text-primary"
               label="Día más alto"
-              value={totals.top_day ? formatARS(totals.top_day.total_cents) : '—'}
-              hint={totals.top_day ? formatDayLabel(totals.top_day.day) : 'Sin señas todavía'}
+              value={
+                totals.top_day ? <Amount cents={totals.top_day.total_cents} decimals={0} /> : '—'
+              }
+              hint={totals.top_day ? dayLabel(totals.top_day.day) : 'Sin señas todavía'}
             />
-          </div>
+          </KPIGroup>
 
-          <div className="card-hairline rounded-xl border bg-card">
-            <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 py-4">
-              <h2 className="font-serif text-lg font-semibold tracking-tight">Señas por día</h2>
-              <ul className="flex items-center gap-3 text-[11px] text-muted-foreground">
+          <Section
+            title="Señas por día"
+            actions={
+              <ul className="flex items-center gap-3 type-caption text-muted-foreground">
                 <li className="inline-flex items-center gap-1.5">
-                  <span className="size-2 shrink-0 rounded-full bg-primary" />
+                  <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-primary" />
                   Vigente
                 </li>
                 <li className="inline-flex items-center gap-1.5">
-                  <span className="size-2 shrink-0 rounded-full bg-destructive/55" />
+                  <span
+                    aria-hidden="true"
+                    className="size-2 shrink-0 rounded-full bg-destructive/55"
+                  />
                   Canceladas / No vino
                 </li>
               </ul>
-            </header>
-            <div className="px-5 pb-5 pt-3">
+            }
+          >
+            <Card>
               <DepositsBarChart
                 days={report.days}
                 median={totals.median_day_cents}
                 avg={totals.avg_day_cents}
                 daysWithDeposit={totals.days_with_deposit}
               />
-            </div>
-          </div>
+            </Card>
+          </Section>
 
-          <div className="card-hairline rounded-xl border bg-card">
-            <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 py-4">
-              <div>
-                <h2 className="font-serif text-lg font-semibold tracking-tight">Detalle por día</h2>
-                <p className="text-xs text-muted-foreground">
-                  Solo los días que dejaron plata. Los días sin seña están en el gráfico y en la
-                  planilla.
-                </p>
-              </div>
-            </header>
-            {withMoneyDays.length === 0 ? (
-              <EmptyState
-                title="Ninguna reserva dejó seña"
-                description={`Hubo ${totals.reservations} ${totals.reservations === 1 ? 'reserva' : 'reservas'} en el período, pero ninguna con seña cargada.`}
-                className="m-3 border-0 bg-transparent"
-              />
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-sm">
-                  <thead className="border-b border-border/60 bg-secondary/40 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                    <tr>
-                      <th className="px-4 py-2 font-medium">Día</th>
-                      <th className="px-4 py-2 text-right font-medium">Reservas</th>
-                      <th className="px-4 py-2 text-right font-medium">Con seña</th>
-                      <th className="px-4 py-2 text-right font-medium">Vigente</th>
-                      <th className="px-4 py-2 text-right font-medium">Canceladas / No vino</th>
-                      <th className="px-4 py-2 text-right font-medium">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/60">
-                    {withMoneyDays.map((d) => (
-                      <tr key={d.day} className="hover:bg-secondary/30">
-                        <td className="px-4 py-2 font-medium">{formatDayLabel(d.day)}</td>
-                        <td className="px-4 py-2 text-right font-mono tabular-nums text-muted-foreground">
-                          {d.reservations}
-                        </td>
-                        <td className="px-4 py-2 text-right font-mono tabular-nums text-muted-foreground">
-                          {d.with_deposit}
-                        </td>
-                        <td className="px-4 py-2 text-right font-mono tabular-nums">
-                          {formatARS(d.active_cents)}
-                        </td>
-                        <td className="px-4 py-2 text-right font-mono tabular-nums">
-                          {d.fallen_cents > 0 ? (
-                            <span className="text-destructive">{formatARS(d.fallen_cents)}</span>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2 text-right font-mono font-semibold tabular-nums">
-                          {formatARS(d.total_cents)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot className="border-t border-border bg-secondary/30">
-                    <tr>
-                      <td className="px-4 py-2 font-medium">{periodLabel}</td>
-                      <td className="px-4 py-2 text-right font-mono tabular-nums">
-                        {totals.reservations}
-                      </td>
-                      <td className="px-4 py-2 text-right font-mono tabular-nums">
-                        {totals.with_deposit}
-                      </td>
-                      <td className="px-4 py-2 text-right font-mono tabular-nums">
-                        {formatARS(totals.active_cents)}
-                      </td>
-                      <td className="px-4 py-2 text-right font-mono tabular-nums">
-                        {formatARS(totals.fallen_cents)}
-                      </td>
-                      <td className="px-4 py-2 text-right font-mono font-semibold tabular-nums">
-                        {formatARS(totals.total_cents)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-          </div>
+          <Section
+            title="Detalle por día"
+            description="Solo los días que dejaron plata. Los días sin seña están en el gráfico y en la planilla."
+          >
+            <DataTable
+              caption="Señas por día"
+              rows={withMoneyDays}
+              getRowId={(d) => d.day}
+              // Planilla de cifras: en el celular se desliza de costado con el
+              // día fijo, así cada número sigue debajo de su encabezado.
+              mobile="scroll"
+              columns={[
+                {
+                  id: 'dia',
+                  header: 'Día',
+                  cell: (d) => dayLabel(d.day),
+                  // El total del período (no la suma de las filas: los días sin
+                  // seña también cuentan reservas).
+                  footer: <span className="type-label">{periodLabel}</span>,
+                },
+                {
+                  id: 'reservas',
+                  header: 'Reservas',
+                  numeric: true,
+                  cell: (d) => (
+                    <span className="text-muted-foreground">{formatNumber(d.reservations)}</span>
+                  ),
+                  footer: formatNumber(totals.reservations),
+                },
+                {
+                  id: 'con-sena',
+                  header: 'Con seña',
+                  numeric: true,
+                  cell: (d) => (
+                    <span className="text-muted-foreground">{formatNumber(d.with_deposit)}</span>
+                  ),
+                  footer: formatNumber(totals.with_deposit),
+                },
+                {
+                  id: 'vigente',
+                  header: 'Vigente $',
+                  numeric: true,
+                  cell: (d) => <Amount cents={d.active_cents} decimals={0} currency={false} />,
+                  footer: <Amount cents={totals.active_cents} decimals={0} currency={false} />,
+                },
+                {
+                  id: 'caidas',
+                  header: 'Canceladas / No vino $',
+                  numeric: true,
+                  cell: (d) =>
+                    d.fallen_cents > 0 ? (
+                      <Amount
+                        cents={d.fallen_cents}
+                        decimals={0}
+                        currency={false}
+                        className="text-destructive-text"
+                      />
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    ),
+                  footer: <Amount cents={totals.fallen_cents} decimals={0} currency={false} />,
+                },
+                {
+                  id: 'total',
+                  header: 'Total $',
+                  numeric: true,
+                  cell: (d) => (
+                    <Amount
+                      cents={d.total_cents}
+                      decimals={0}
+                      currency={false}
+                      className="font-semibold"
+                    />
+                  ),
+                  footer: <Amount cents={totals.total_cents} decimals={0} currency={false} />,
+                },
+              ]}
+              empty={
+                <EmptyState
+                  size="sm"
+                  title="Ninguna reserva dejó seña"
+                  description={`Hubo ${formatNumber(totals.reservations)} ${totals.reservations === 1 ? 'reserva' : 'reservas'} en el período, pero ninguna con seña cargada.`}
+                />
+              }
+            />
+          </Section>
         </>
       )}
     </div>

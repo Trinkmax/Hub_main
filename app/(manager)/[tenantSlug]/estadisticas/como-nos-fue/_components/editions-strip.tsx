@@ -3,6 +3,8 @@
 import { TrendingDown, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
 import { type CSSProperties, useId } from 'react'
+import { WEEKDAY_NAMES_SHORT } from '@/lib/dates/format'
+import { formatNumber } from '@/lib/format/number-kind'
 import { buildEventConversion } from '@/lib/salon/event-conversion'
 import { eventInk } from '@/lib/salon/event-ink'
 import type {
@@ -34,20 +36,20 @@ import { CuadroExportButton } from './cuadro-export-button'
  * arma su planilla (`eventConversionToCsv`): acá solo se dibuja.
  */
 
-const nf = new Intl.NumberFormat('es-AR')
-
+/**
+ * `'2026-10-03'` → `'03/10 vie'`, armado a mano: el `Intl` del server y el del
+ * navegador no siempre dan la misma abreviatura y rompían la hidratación.
+ */
 function dayLabel(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number)
   const dt = new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1))
-  const weekday = new Intl.DateTimeFormat('es-AR', { weekday: 'short', timeZone: 'UTC' })
-    .format(dt)
-    .replace('.', '')
+  const weekday = WEEKDAY_NAMES_SHORT[dt.getUTCDay()] ?? ''
   return `${String(dt.getUTCDate()).padStart(2, '0')}/${String(dt.getUTCMonth() + 1).padStart(2, '0')} ${weekday}`
 }
 
 function avgText(avg: number | null): string {
   if (avg === null) return '—'
-  return avg.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+  return formatNumber(avg, 1)
 }
 
 function Row({
@@ -70,25 +72,25 @@ function Row({
     <li>
       <Link
         href={href}
-        className={cn(
-          'flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-3 transition-colors hover:bg-secondary/40',
-          enCurso && 'opacity-80',
-        )}
+        // Fila-link: hover sin transición (se recorre la lista con el mouse) y
+        // foco «adentro». Lo que todavía no pasó lo dicen el texto y la barra
+        // punteada, sin bajar la opacidad (bajaría el contraste del texto).
+        className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-3 outline-(--ring) -outline-offset-2 hover:bg-hover focus-visible:outline-2 active:bg-active"
       >
-        <span className="w-24 shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+        <span className="w-24 shrink-0 type-caption type-amount text-muted-foreground">
           {dayLabel(edition.date)}
         </span>
 
         <span className="flex shrink-0 items-baseline gap-1">
-          <span className="font-serif text-xl font-semibold tabular-nums leading-none">
-            {nf.format(guests)}
+          <span className="text-xl leading-none font-semibold type-amount">
+            {formatNumber(guests)}
           </span>
-          <span className="text-[11px] text-muted-foreground">
+          <span className="type-caption text-muted-foreground">
             {guests === 1 ? 'persona' : 'personas'}
           </span>
         </span>
 
-        <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+        <span className="shrink-0 type-caption type-amount text-muted-foreground">
           {reservations} {reservations === 1 ? 'reserva' : 'reservas'} · {avgText(edition.avg)} c/u
         </span>
 
@@ -107,7 +109,7 @@ function Row({
           />
         </span>
 
-        <span className="shrink-0 text-[11px] tabular-nums">
+        <span className="shrink-0 type-caption tabular-nums">
           {enCurso ? (
             <span className="text-muted-foreground">
               {isTonight ? 'es esta noche' : 'todavía no pasó'}
@@ -120,16 +122,16 @@ function Row({
             <span
               className={cn(
                 'inline-flex items-center gap-1',
-                delta.diff > 0 ? 'text-success' : 'text-muted-foreground',
+                delta.diff > 0 ? 'text-success-text' : 'text-muted-foreground',
               )}
             >
               {delta.diff > 0 ? (
-                <TrendingUp className="size-3.5" />
+                <TrendingUp aria-hidden className="size-3.5" />
               ) : (
-                <TrendingDown className="size-3.5" />
+                <TrendingDown aria-hidden className="size-3.5" />
               )}
               {delta.diff > 0 ? '+' : ''}
-              {nf.format(delta.diff)} que el {dayLabel(delta.againstDate).slice(0, 5)}
+              {formatNumber(delta.diff)} que el {dayLabel(delta.againstDate).slice(0, 5)}
             </span>
           )}
         </span>
@@ -140,7 +142,7 @@ function Row({
         {marketingLine ? (
           <span
             className={cn(
-              'basis-full pl-28 font-mono text-[11px] @max-4xl:order-2 @max-4xl:pl-0',
+              'basis-full pl-28 type-caption type-amount @max-4xl:order-2 @max-4xl:pl-0',
               marketingLine.tone === 'warning' ? 'text-warning-text' : 'text-muted-foreground',
             )}
           >
@@ -182,30 +184,30 @@ export function EditionsStrip({
           '--max-guests': data.maxGuests,
         } as CSSProperties
       }
-      className="ev-ink @container card-hairline min-w-0 rounded-xl border bg-card"
+      className="ev-ink @container min-w-0 rounded-xl border border-border bg-card text-card-foreground"
     >
       {/* Cabecera (C4): igual que «Rentabilidad». Los dos resúmenes de
           siempre (la mejor y la pauta agrupada) bajan debajo del subtítulo,
           alineados a la izquierda: a la derecha va «Exportar». */}
-      <header className="border-b border-border/60 px-4 py-3">
+      <header className="border-b border-border px-4 py-3">
         <div className="flex items-center justify-between gap-3">
-          <h2 id={titleId} className="font-serif text-base font-semibold tracking-tight">
+          <h2 id={titleId} className="type-subtitle text-foreground">
             {data.title}
             {/* Entero o nada: a 360 px baja de renglón sin partirse. */}
-            <span className="ml-2 inline-block whitespace-nowrap text-xs font-normal text-muted-foreground">
+            <span className="ml-2 inline-block whitespace-nowrap type-caption font-normal text-muted-foreground">
               {data.countLabel}
             </span>
           </h2>
           <CuadroExportButton {...exportAction} />
         </div>
-        <p className="mt-1 text-xs leading-snug text-muted-foreground">{data.subtitle}</p>
+        <p className="mt-1 type-caption text-muted-foreground">{data.subtitle}</p>
         {data.bestText || data.summary ? (
           <div className="mt-2 space-y-0.5">
             {data.bestText ? (
-              <p className="text-[11px] text-muted-foreground">{data.bestText}</p>
+              <p className="type-caption text-muted-foreground">{data.bestText}</p>
             ) : null}
             {data.summary ? (
-              <p className="text-[11px] text-muted-foreground">
+              <p className="type-caption text-muted-foreground">
                 {data.summary.text}
                 {data.summary.pendingText ? (
                   <>
@@ -219,7 +221,7 @@ export function EditionsStrip({
         ) : null}
       </header>
 
-      <ul className="divide-y divide-border/60 [--u:min(5px,calc((100cqw_-_2rem)/var(--max-guests)))] @4xl:[--u:min(5px,calc((100cqw_-_36rem)/var(--max-guests)))]">
+      <ul className="divide-y divide-border [--u:min(5px,calc((100cqw_-_2rem)/var(--max-guests)))] @4xl:[--u:min(5px,calc((100cqw_-_36rem)/var(--max-guests)))]">
         {data.rows.map((r) => (
           <Row
             key={r.edition.eventId ?? r.edition.key}
@@ -233,7 +235,7 @@ export function EditionsStrip({
       </ul>
 
       {data.collapsedText ? (
-        <p className="border-t border-border/60 px-4 py-2.5 text-[11px] text-muted-foreground">
+        <p className="border-t border-border px-4 py-2.5 type-caption text-muted-foreground">
           {data.collapsedText}
         </p>
       ) : null}

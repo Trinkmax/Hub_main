@@ -4,6 +4,16 @@ import { ArrowRight, Check, ChevronDown, ChevronRight, X } from 'lucide-react'
 import Link from 'next/link'
 import { useId, useState } from 'react'
 import {
+  DataTableBody,
+  DataTableCell,
+  DataTableFoot,
+  DataTableHead,
+  DataTableHeader,
+  DataTableRoot,
+  DataTableRow,
+  DataTableScroll,
+} from '@/components/ui/data-table'
+import {
   CONSOLIDATED_COLUMNS,
   type ConsolidatedCell,
   type ConsolidatedResult,
@@ -25,12 +35,22 @@ import { MathStep } from './marketing-report'
  * dueño desde 30rem (a 28rem se sale 3 px con «$ 1.136.488 abajo»). Las dos
  * están en el DOM y una se esconde por CSS, como en la pestaña Pauta.
  *
+ * La tabla es la del kit (primitivos de `DataTable`): encabezado en `bg-muted`,
+ * pelos en las celdas y el total con **la regla contable** (`DataTableFoot`).
+ * Con el relleno de las celdas al mínimo (`--cell-px`) para que entre en la
+ * columna de 32rem al lado de «Conversión».
+ *
  * Todo lo que se lee sale armado de `buildEventConsolidated`: acá solo se
  * dibuja. Lo único propio es qué fechas están desplegadas (varias a la vez,
  * para comparar dos desgloses).
  */
 
-const TH = 'py-2 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground'
+/** Los rótulos de la tabla, a 12 px: es una tabla angosta y el cuerpo también va a 12. */
+const TH = 'type-caption font-medium'
+
+/** Rellenos de la primera y la última columna (las del medio usan `--cell-px`). */
+const FIRST_COL = 'ps-3'
+const LAST_COL = 'pe-3'
 
 function toneClass(tone: ConsolidatedCell['tone']): string | undefined {
   if (tone === 'warning') return 'text-warning-text'
@@ -54,7 +74,7 @@ function Cell({ cell }: { cell: ConsolidatedCell }) {
 /** ✓ dejó plata · ✗ quedó abajo · un hueco del mismo ancho si no hay marca (los montos quedan alineados). */
 function Mark({ mark }: { mark: ConsolidatedResult['mark'] }) {
   if (mark === 'dejo') {
-    return <Check aria-hidden strokeWidth={2.5} className="size-3.5 shrink-0 text-success" />
+    return <Check aria-hidden strokeWidth={2.5} className="size-3.5 shrink-0 text-success-text" />
   }
   if (mark === 'abajo') {
     return <X aria-hidden strokeWidth={2.5} className="size-3.5 shrink-0 text-warning-text" />
@@ -94,7 +114,7 @@ function ResultText({ result, big = false }: { result: ConsolidatedResult; big?:
             'tabular-nums',
             // El monto no se parte; el motivo («faltan ingreso, costo y dólar») sí.
             judged && 'whitespace-nowrap',
-            big && judged && 'font-serif text-lg font-semibold leading-none',
+            big && judged && 'font-display text-lg leading-none font-[520]',
           )}
         >
           {result.text}
@@ -109,7 +129,7 @@ function Detail({ row, id, tenantSlug }: { row: ConsolidatedRow; id: string; ten
   return (
     <div
       id={id}
-      className="space-y-1.5 rounded-lg bg-secondary/40 px-3 py-2.5 text-left text-xs leading-relaxed text-muted-foreground"
+      className="space-y-1.5 rounded-lg bg-secondary px-3 py-2.5 text-left text-xs leading-relaxed text-muted-foreground"
     >
       {row.detail.steps.length > 0 ? (
         <p className="tabular-nums">
@@ -135,7 +155,7 @@ function Detail({ row, id, tenantSlug }: { row: ConsolidatedRow; id: string; ten
       <Link
         href={`/${tenantSlug}/estadisticas/como-nos-fue?vista=dia&dia=${row.date}`}
         aria-label={row.linkLabel}
-        className="inline-flex min-h-10 items-center gap-1 font-medium text-foreground/80 hover:text-foreground pointer-fine:min-h-7"
+        className="inline-flex min-h-11 items-center gap-1 rounded-sm font-medium text-foreground underline-offset-[3px] outline-offset-2 outline-(--ring) hover:underline focus-visible:outline-2 pointer-fine:min-h-7"
       >
         Ver la noche
         <ArrowRight aria-hidden className="size-3.5" />
@@ -169,20 +189,20 @@ export function EventConsolidated({
   return (
     <section
       aria-labelledby={titleId}
-      className="@container card-hairline min-w-0 rounded-xl border bg-card"
+      className="@container min-w-0 rounded-xl border border-border bg-card text-card-foreground"
     >
       {/* Cabecera (C4): título y «Exportar» en el renglón 1; el subtítulo a lo
           ancho debajo (a 360 px no entra al lado del botón); el titular de
           siempre abajo. */}
-      <header className="border-b border-border/60 px-4 py-3">
+      <header className="border-b border-border px-4 py-3">
         <div className="flex items-center justify-between gap-3">
-          <h2 id={titleId} className="font-serif text-base font-semibold tracking-tight">
+          <h2 id={titleId} className="type-subtitle text-foreground">
             {data.title}
           </h2>
           <CuadroExportButton {...exportAction} />
         </div>
-        <p className="mt-1 text-xs leading-snug text-muted-foreground">{data.subtitle}</p>
-        <p className="mt-2 text-sm leading-snug">
+        <p className="mt-1 type-caption text-muted-foreground">{data.subtitle}</p>
+        <p className="mt-2 text-pretty type-body">
           {data.headline.before}
           {data.headline.value ? (
             <span className="font-semibold tabular-nums">{data.headline.value}</span>
@@ -195,7 +215,7 @@ export function EventConsolidated({
       </header>
 
       {/* Celular y columnas angostas: una tarjeta por fecha. */}
-      <ul aria-label={data.caption} className="divide-y divide-border/60 @min-[30rem]:hidden">
+      <ul aria-label={data.caption} className="divide-y divide-border @min-[30rem]:hidden">
         {data.rows.map((r) => {
           const isOpen = open.has(r.eventId)
           const panelId = `${uid}-c-${r.eventId}`
@@ -209,15 +229,15 @@ export function EventConsolidated({
                   aria-expanded={isOpen}
                   aria-controls={panelId}
                   onClick={() => toggle(r.eventId)}
-                  className="group flex w-full items-baseline justify-between gap-3 text-left outline-none after:absolute after:-inset-1.5 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring/50"
+                  className="group flex w-full items-baseline justify-between gap-3 text-left outline-none after:absolute after:-inset-1.5 after:rounded-lg focus-visible:after:outline-2 focus-visible:after:outline-(--ring)"
                 >
                   <span className="flex items-center gap-2">
-                    <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                    <span className="type-caption type-amount text-muted-foreground">
                       {r.weekdayLabel}
                     </span>
                     <ChevronDown
                       aria-hidden
-                      className="size-3.5 text-muted-foreground transition-transform duration-(--duration-fast) ease-(--ease-out) group-aria-expanded:rotate-180 motion-reduce:transition-none"
+                      className="size-3.5 text-muted-foreground transition-transform duration-(--duration-quick) ease-(--ease-ui) group-aria-expanded:rotate-180 motion-reduce:transition-none"
                     />
                   </span>
                   <ResultText result={r.result} big />
@@ -240,16 +260,17 @@ export function EventConsolidated({
         })}
       </ul>
       {total ? (
-        <div className="border-t border-border/60 bg-secondary/30 px-4 py-3 @min-[30rem]:hidden">
+        // El total de las tarjetas, con la regla contable: raya arriba y doble abajo.
+        <div className="border-t border-t-rule border-b-[3px] border-b-rule px-4 py-3 [border-bottom-style:double] @min-[30rem]:hidden">
           <p
             className={cn(
-              'text-sm font-medium leading-snug',
+              'type-body font-medium text-pretty',
               total.negative && 'text-warning-text',
             )}
           >
             {total.sentence}
           </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{total.cardLine}</p>
+          <p className="mt-0.5 type-caption text-muted-foreground">{total.cardLine}</p>
         </div>
       ) : null}
 
@@ -261,22 +282,22 @@ export function EventConsolidated({
           contenedor de los `sr-only` (son `absolute`): sin él quedan fuera del
           recorte y, desde su lugar en la tabla, la página igual se corre
           (medido en Chrome: 24 px con la sección en 482 px). */}
-      <div className="relative hidden overflow-x-auto @min-[30rem]:block">
-        <table className="w-full text-xs tabular-nums">
-          <caption className="sr-only">{data.caption}</caption>
-          <thead>
-            <tr className="border-b border-border/60 text-left">
+      <DataTableScroll className="relative hidden @min-[30rem]:block">
+        <DataTableRoot
+          caption={data.caption}
+          density="compact"
+          className="type-caption tabular-nums data-[density=compact]:[--cell-px:0.375rem]"
+        >
+          <DataTableHead>
+            <tr>
               {CONSOLIDATED_COLUMNS.map((c) => (
-                <th
+                <DataTableHeader
                   key={c.key}
-                  scope="col"
+                  numeric={c.key !== 'date'}
                   className={cn(
                     TH,
-                    c.key === 'date'
-                      ? 'pr-1.5 pl-3'
-                      : c.key === 'result'
-                        ? 'pr-3 pl-1.5 text-right'
-                        : 'px-1.5 text-right',
+                    c.key === 'date' ? FIRST_COL : null,
+                    c.key === 'result' ? LAST_COL : null,
                   )}
                 >
                   {c.srLabel ? (
@@ -287,106 +308,110 @@ export function EventConsolidated({
                   ) : (
                     c.label
                   )}
-                </th>
+                </DataTableHeader>
               ))}
             </tr>
-          </thead>
-          <tbody className="divide-y divide-border/60">
+          </DataTableHead>
+          <DataTableBody>
             {data.rows.map((r) => {
               const isOpen = open.has(r.eventId)
               const panelId = `${uid}-t-${r.eventId}`
               return [
-                <tr
-                  key={r.eventId}
-                  className={cn('align-top transition-colors', isOpen && 'bg-secondary/30')}
-                >
-                  <th scope="row" className="py-2 pr-1.5 pl-3 text-left font-normal">
+                <DataTableRow key={r.eventId} className={cn(isOpen && 'bg-muted/40')}>
+                  <th
+                    scope="row"
+                    className={cn(
+                      'px-[var(--cell-px)] py-[var(--cell-py)] text-left align-top font-normal',
+                      FIRST_COL,
+                    )}
+                  >
                     <button
                       type="button"
                       aria-expanded={isOpen}
                       aria-controls={panelId}
                       aria-label={r.toggleLabel}
                       onClick={() => toggle(r.eventId)}
-                      className="group inline-flex items-center gap-1 whitespace-nowrap rounded-sm font-mono tabular-nums outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 pointer-coarse:min-h-10"
+                      className="group inline-flex items-center gap-1 whitespace-nowrap rounded-sm type-amount outline-offset-2 outline-(--ring) hover:text-foreground focus-visible:outline-2 pointer-coarse:min-h-11"
                     >
                       {r.dayMonth}
                       <ChevronRight
                         aria-hidden
-                        className="size-3 text-muted-foreground transition-transform duration-(--duration-fast) ease-(--ease-out) group-aria-expanded:rotate-90 motion-reduce:transition-none"
+                        className="size-3 text-muted-foreground transition-transform duration-(--duration-quick) ease-(--ease-ui) group-aria-expanded:rotate-90 motion-reduce:transition-none"
                       />
                     </button>
                   </th>
-                  <td className="px-1.5 py-2 text-right">
+                  <DataTableCell numeric className="align-top">
                     <Cell cell={r.cells.guests} />
-                  </td>
+                  </DataTableCell>
                   {(['spend', 'perGuest', 'drinkPerGuest'] as const).map((k) => (
-                    <td
+                    <DataTableCell
                       key={k}
-                      className={cn(
-                        'whitespace-nowrap px-1.5 py-2 text-right',
-                        toneClass(r.cells[k].tone),
-                      )}
+                      numeric
+                      className={cn('align-top', toneClass(r.cells[k].tone))}
                     >
                       <Cell cell={r.cells[k]} />
-                    </td>
+                    </DataTableCell>
                   ))}
-                  <td className="py-2 pr-3 pl-1.5 text-right">
+                  {/* Sin `numeric` (que no deja partir): el motivo («faltan ingreso,
+                      costo y dólar») baja de renglón; el monto no, por su `nowrap`. */}
+                  <DataTableCell align="end" className={cn('align-top tabular-nums', LAST_COL)}>
                     <ResultText result={r.result} />
                     {axis !== null && r.bar !== null ? <ResultBar axis={axis} bar={r.bar} /> : null}
-                  </td>
-                </tr>,
+                  </DataTableCell>
+                </DataTableRow>,
                 isOpen ? (
-                  <tr key={`${r.eventId}-desglose`} className="bg-secondary/30">
-                    <td colSpan={6} className="px-3 pb-3">
+                  <DataTableRow key={`${r.eventId}-desglose`} className="bg-muted/40">
+                    <DataTableCell colSpan={6} className="px-3 pt-0 pb-3">
                       <Detail row={r} id={panelId} tenantSlug={tenantSlug} />
-                    </td>
-                  </tr>
+                    </DataTableCell>
+                  </DataTableRow>
                 ) : null,
               ]
             })}
-          </tbody>
+          </DataTableBody>
           {total ? (
-            <tfoot className="border-t border-border">
-              <tr className="align-top font-medium">
-                <th scope="row" className="py-2 pr-1.5 pl-3 text-left">
+            <DataTableFoot>
+              <tr className="align-top">
+                <th
+                  scope="row"
+                  className={cn('px-[var(--cell-px)] py-[var(--cell-py)] text-left', FIRST_COL)}
+                >
                   <span aria-hidden>
                     Total
-                    <span className="block text-[10px] font-normal text-muted-foreground">
+                    <span className="block type-caption font-normal text-muted-foreground">
                       {total.base}
                     </span>
                   </span>
                   <span className="sr-only">{total.srLabel}</span>
                 </th>
-                <td className="px-1.5 py-2 text-right">
+                <DataTableCell numeric className="align-top">
                   <Cell cell={total.cells.guests} />
-                </td>
+                </DataTableCell>
                 {(['spend', 'perGuest', 'drinkPerGuest'] as const).map((k) => (
-                  <td
+                  <DataTableCell
                     key={k}
-                    className={cn(
-                      'whitespace-nowrap px-1.5 py-2 text-right',
-                      toneClass(total.cells[k].tone),
-                    )}
+                    numeric
+                    className={cn('align-top', toneClass(total.cells[k].tone))}
                   >
                     <Cell cell={total.cells[k]} />
-                  </td>
+                  </DataTableCell>
                 ))}
-                <td className="py-2 pr-3 pl-1.5 text-right">
+                <DataTableCell align="end" className={cn('align-top tabular-nums', LAST_COL)}>
                   <ResultText result={total.result} />
                   {total.perPersonText ? (
-                    <span className="block text-[10px] font-normal text-muted-foreground">
+                    <span className="block type-caption font-normal text-muted-foreground">
                       {total.perPersonText}
                     </span>
                   ) : null}
-                </td>
+                </DataTableCell>
               </tr>
-            </tfoot>
+            </DataTableFoot>
           ) : null}
-        </table>
-      </div>
+        </DataTableRoot>
+      </DataTableScroll>
 
       {data.notes.length > 0 ? (
-        <ul className="space-y-0.5 border-t border-border/60 px-4 py-3 text-[11px] leading-snug text-muted-foreground">
+        <ul className="space-y-0.5 border-t border-border px-4 py-3 type-caption text-muted-foreground">
           {data.notes.map((note) => (
             <li key={note}>{note}</li>
           ))}

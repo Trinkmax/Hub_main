@@ -1,19 +1,22 @@
-import { PageHeader } from '@/components/ui/page-header'
-import { Skeleton } from '@/components/ui/skeleton'
+import { PageShell } from '@/components/ui/page-shell'
+import {
+  SkeletonKPIGroup,
+  SkeletonPageHeader,
+  SkeletonStatus,
+  SkeletonTable,
+} from '@/components/ui/skeleton'
 
+// Copia el detalle del gestor: volver + nombre, los tres totales y la tabla de
+// reservas (con scroll de costado en el celular, como la de verdad).
 export default function Loading() {
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
-      <PageHeader
-        eyebrow={<Skeleton className="h-3 w-24" />}
-        title={<Skeleton className="h-7 w-48" />}
-        description={<Skeleton className="h-4 w-72" />}
-      />
-      <div className="space-y-2">
-        {['r1', 'r2', 'r3', 'r4', 'r5', 'r6'].map((k) => (
-          <Skeleton key={k} className="h-16 w-full rounded-lg" />
-        ))}
+    <PageShell width="comfortable" aria-busy="true">
+      <SkeletonStatus />
+      <SkeletonPageHeader context />
+      <div className="flex flex-col gap-6">
+        <SkeletonKPIGroup count={3} columns={3} />
+        <SkeletonTable rows={6} columns={8} mobile="scroll" />
       </div>
-    </div>
+    </PageShell>
   )
 }

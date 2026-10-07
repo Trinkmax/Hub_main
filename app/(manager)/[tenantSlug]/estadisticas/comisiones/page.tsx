@@ -1,7 +1,6 @@
-import { ArrowLeft } from 'lucide-react'
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
 import { resolveCommissionPeriod } from '@/lib/commissions/period'
 import { todayInCordoba } from '@/lib/salon/date-presets'
 import { listCommissionSummary } from '@/lib/salon/queries'
@@ -55,17 +54,9 @@ export default async function ComisionesStatsPage({
   })
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+    <PageShell width="comfortable">
       <PageHeader
-        eyebrow={
-          <Link
-            href={`/${tenantSlug}/estadisticas`}
-            className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="size-3.5" />
-            Estadísticas
-          </Link>
-        }
+        back={{ href: `/${tenantSlug}/estadisticas`, label: 'Estadísticas' }}
         title="Comisiones"
         description={`Liquidación de ${period.label}`}
       />
@@ -75,6 +66,6 @@ export default async function ComisionesStatsPage({
         summary={summary.rows}
         truncated={summary.truncated}
       />
-    </div>
+    </PageShell>
   )
 }

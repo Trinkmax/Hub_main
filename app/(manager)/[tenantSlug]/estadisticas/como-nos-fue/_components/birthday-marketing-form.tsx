@@ -11,19 +11,11 @@ import {
   useTransition,
 } from 'react'
 import { toast } from 'sonner'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog, type ConfirmResult } from '@/components/ui/confirm-dialog'
+import { Field } from '@/components/ui/field'
+import { FormActions } from '@/components/ui/form-actions'
 import { Kbd } from '@/components/ui/kbd'
-import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
   deleteBirthdayMarketing,
@@ -62,11 +54,22 @@ import { MoneyField, scrollIntoViewOnTouch } from './money-field'
  * La vista previa usa la MISMA cuenta que la pestaña (`birthdayPautaReport`),
  * contra los cumples reservados en el mes: lo que se ve acá es lo que se va a
  * ver al guardar.
+ *
+ * Borrar pide confirmación con el `ConfirmDialog` del kit: espera al server con
+ * el diálogo abierto y, si falla, el error queda adentro.
  */
 
 type FieldErrors = Partial<Record<BirthdayMarketingField, string>>
 
-const EYEBROW = 'text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground'
+/**
+ * Cuando el form ya se desmontó (borrado con éxito), el diálogo deja el foco
+ * donde lo haya puesto la pestaña («Cargar pauta de cumpleaños»); si nadie lo
+ * movió, lo lleva al título de la página.
+ */
+function focusWherePageLeftIt(): HTMLElement | null {
+  const active = document.activeElement
+  return active instanceof HTMLElement && active !== document.body ? active : null
+}
 
 export function BirthdayMarketingForm({
   tenantSlug,
@@ -102,8 +105,8 @@ export function BirthdayMarketingForm({
   const [serverErrors, setServerErrors] = useState<FieldErrors>({})
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [saving, startSaving] = useTransition()
-  const [deleting, startDeleting] = useTransition()
-  const pending = saving || deleting
+  // Borrar espera adentro del diálogo (modal): mientras tanto el form no se toca.
+  const pending = saving
 
   const inputs = useRef<
     Partial<Record<BirthdayMarketingField, HTMLInputElement | HTMLTextAreaElement>>
@@ -220,29 +223,27 @@ export function BirthdayMarketingForm({
     })
   }
 
-  const confirmDelete = () => {
-    if (!row || pending) return
+  /** Lo corre el `ConfirmDialog`: si falla, el diálogo queda abierto con el error. */
+  const confirmDelete = async (): Promise<ConfirmResult> => {
+    if (!row) return
     const expected = row.updatedAt
-    startDeleting(async () => {
-      let res: BirthdayMarketingActionState
-      try {
-        res = await deleteBirthdayMarketing(tenantSlug, ym, expected)
-      } catch (error) {
-        console.error(
-          '[como-nos-fue.cumples.delete]',
-          error instanceof Error ? error.message : 'sin respuesta',
-        )
-        toast.error(BIRTHDAY_MARKETING_UNREACHABLE.delete)
-        return
-      }
-      if (res.ok) {
-        toast.success(`Pauta de cumpleaños de ${monthName} borrada.`)
-        onDeleted()
-        return
-      }
-      toast.error(res.message)
-      if (res.code === 'stale') router.refresh()
-    })
+    let res: BirthdayMarketingActionState
+    try {
+      res = await deleteBirthdayMarketing(tenantSlug, ym, expected)
+    } catch (error) {
+      console.error(
+        '[como-nos-fue.cumples.delete]',
+        error instanceof Error ? error.message : 'sin respuesta',
+      )
+      return { ok: false, error: BIRTHDAY_MARKETING_UNREACHABLE.delete }
+    }
+    if (res.ok) {
+      toast.success(`Pauta de cumpleaños de ${monthName} borrada.`)
+      onDeleted()
+      return
+    }
+    if (res.code === 'stale') router.refresh()
+    return { ok: false, error: res.message }
   }
 
   const onFormKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
@@ -263,12 +264,12 @@ export function BirthdayMarketingForm({
         onKeyDown={onFormKeyDown}
       >
         <div className="flex items-baseline justify-between gap-3">
-          <h3 className={EYEBROW}>Pauta de cumpleaños</h3>
-          <span className="hidden items-center gap-1 text-[11px] text-muted-foreground pointer-fine:inline-flex">
+          <h3 className="type-label text-muted-foreground">Pauta de cumpleaños</h3>
+          <span className="hidden items-center gap-1 type-caption text-muted-foreground pointer-fine:inline-flex">
             <Kbd>Esc</Kbd> para cancelar
           </span>
         </div>
-        <p className="mt-1.5 max-w-prose text-xs text-muted-foreground">
+        <p className="mt-1.5 max-w-prose text-pretty text-xs text-muted-foreground">
           En Meta, filtrá la campaña de cumpleaños del 1 al último día de {monthName}.
         </p>
 
@@ -298,8 +299,8 @@ export function BirthdayMarketingForm({
         </div>
 
         {/* La vista previa: la misma cuenta que va a quedar en la pestaña. */}
-        <div className="mt-4 border-t border-border/50 pt-3">
-          <p aria-hidden className={EYEBROW}>
+        <div className="mt-4 border-t border-border pt-3">
+          <p aria-hidden className="type-label text-muted-foreground">
             Con estos números
           </p>
           {preview ? (
@@ -331,21 +332,20 @@ export function BirthdayMarketingForm({
           )}
         </div>
 
-        <div className="mt-4 grid gap-1.5">
-          <Label htmlFor={fieldId('notes')} className="gap-1 text-xs">
-            Nota
-            <span className="font-normal text-muted-foreground">(opcional)</span>
-          </Label>
+        <Field
+          id={fieldId('notes')}
+          label="Nota"
+          optional
+          error={notesError}
+          disabled={pending}
+          className="mt-4"
+        >
           <Textarea
             ref={register('notes')}
-            id={fieldId('notes')}
             rows={2}
             maxLength={280}
             placeholder="Ej.: reels de cumpleaños + historia fija"
             value={draft.notes}
-            disabled={pending}
-            aria-invalid={notesError ? true : undefined}
-            aria-describedby={notesError ? `${fieldId('notes')}-error` : undefined}
             onChange={(e) => setField('notes', e.target.value)}
             onBlur={() => markTouched('notes')}
             onFocus={scrollIntoViewOnTouch}
@@ -356,71 +356,55 @@ export function BirthdayMarketingForm({
               }
             }}
           />
-          {notesError ? (
-            <p
-              id={`${fieldId('notes')}-error`}
-              role="alert"
-              className="text-xs leading-snug text-destructive"
-            >
-              {notesError}
-            </p>
-          ) : null}
-        </div>
+        </Field>
 
-        <div className="mt-5 flex flex-col gap-2 @sm:flex-row @sm:items-center @sm:justify-end">
+        {/* Las acciones del kit, en línea (no fijas abajo: el form vive adentro
+            de la tarjeta de la pauta). En el celular van de a dos, del mismo
+            ancho, y «Guardar» queda solo abajo; en escritorio, «Borrar» a la
+            izquierda. */}
+        <FormActions sticky={false} className="mt-5">
           {row ? (
             <Button
               type="button"
-              variant="ghost"
-              size="sm"
-              className="order-last h-10 self-center text-destructive hover:text-destructive @sm:order-none @sm:mr-auto @sm:h-9 @sm:self-auto"
+              variant="danger-ghost"
               onClick={() => setDeleteOpen(true)}
               disabled={pending}
+              className="sm:me-auto"
             >
-              {deleting ? 'Borrando…' : 'Borrar pauta'}
+              Borrar pauta
             </Button>
           ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            className="h-11 w-full @sm:h-9 @sm:w-auto"
-            onClick={cancel}
-            disabled={pending}
-          >
+          <Button type="button" variant="secondary" onClick={cancel} disabled={pending}>
             Cancelar
           </Button>
           <Button
             type="submit"
-            className="order-first h-11 w-full @sm:order-none @sm:h-9 @sm:w-auto"
-            disabled={pending || blocked !== null}
+            loading={saving}
+            loadingText="Guardando…"
+            disabled={blocked !== null}
           >
-            {saving ? 'Guardando…' : 'Guardar pauta'}
+            Guardar pauta
           </Button>
-        </div>
-        <p aria-live="polite" className="mt-2 text-xs text-destructive empty:hidden @sm:text-right">
+        </FormActions>
+        <p
+          aria-live="polite"
+          className="mt-2 type-caption text-destructive-text empty:hidden @sm:text-right"
+        >
           {blocked ?? ''}
         </p>
       </form>
 
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Borrar la pauta de cumpleaños de {monthName}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              El mes vuelve a quedar «Sin cargar». Los cumpleaños y las personas no cambian.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={confirmDelete}
-            >
-              Borrar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        tone="danger"
+        title={`¿Borrar la pauta de cumpleaños de ${monthName}?`}
+        description="El mes vuelve a quedar «Sin cargar». Los cumpleaños y las personas no cambian."
+        confirmLabel="Borrar pauta"
+        pendingLabel="Borrando…"
+        onConfirm={confirmDelete}
+        returnFocus={focusWherePageLeftIt}
+      />
     </div>
   )
 }

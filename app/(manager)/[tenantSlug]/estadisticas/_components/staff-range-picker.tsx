@@ -11,6 +11,16 @@ import {
 } from '@/components/ui/select'
 import { type DateRangePreset, labelForPreset, PRESETS } from '@/lib/staff-performance/date-range'
 
+/**
+ * El período de «Mozos»: solo los atajos que entiende el server (`?preset=`).
+ *
+ * Todavía no es el `PeriodPicker` del kit a propósito: el cajón de cada mozo le
+ * pide sus mesas a `/api/staff/sessions` con el `preset` solo, y un rango a
+ * mano (`preset=custom&from&to`) haría que la tabla y el cajón miraran períodos
+ * distintos. Además el camino `custom` lee `yyyy-MM-dd` como medianoche UTC y
+ * en Córdoba arranca un día antes. Cuando eso se arregle en
+ * `lib/staff-performance`, este selector pasa al `PeriodPicker`.
+ */
 export function StaffRangePicker({ currentPreset }: { currentPreset: DateRangePreset }) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -21,7 +31,6 @@ export function StaffRangePicker({ currentPreset }: { currentPreset: DateRangePr
     params.set('tab', 'mozos')
     params.set('preset', next)
     // Custom requiere from/to — para MVP no exponemos calendarios, solo presets.
-    // Si el usuario elige 'custom' por algún flujo futuro, lo manejamos ahí.
     params.delete('from')
     params.delete('to')
     startTransition(() => {
@@ -31,7 +40,12 @@ export function StaffRangePicker({ currentPreset }: { currentPreset: DateRangePr
 
   return (
     <Select value={currentPreset} onValueChange={onChange} disabled={pending}>
-      <SelectTrigger className="w-[180px]">
+      <SelectTrigger
+        size="sm"
+        aria-label="Período"
+        aria-busy={pending || undefined}
+        className="w-44"
+      >
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
