@@ -1,22 +1,37 @@
 'use client'
 
 import { useActionState, useEffect, useState } from 'react'
-import type { Value } from 'react-phone-number-input'
+import { useFormStatus } from 'react-dom'
+import PhoneInput from 'react-phone-number-input'
+import 'react-phone-number-input/style.css'
 import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { DatePicker } from '@/components/ui/date-picker'
-import { Field, FieldRow, FormError, FormSection } from '@/components/ui/field'
-import { ChipGroup, FilterChip } from '@/components/ui/filter-chip'
-import { FormActions } from '@/components/ui/form-actions'
 import { Input } from '@/components/ui/input'
-import { SubmitButton } from '@/components/ui/submit-button'
+import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { type CustomerActionState, updateCustomer } from '@/lib/customers/actions'
-import { todayInCordoba } from '@/lib/dates'
 import { SERVICE_ALERT_META, SERVICE_ALERTS, type ServiceAlert } from '@/lib/salon/alerts'
-import { PhoneField } from '../../_components/phone-field'
+import { cn } from '@/lib/utils'
 
 const initial: CustomerActionState = { ok: true }
+
+function SubmitButton() {
+  const { pending } = useFormStatus()
+  return (
+    <Button type="submit" disabled={pending} className="min-w-[140px]">
+      {pending ? 'Guardando…' : 'Guardar cambios'}
+    </Button>
+  )
+}
+
+function RequiredMark() {
+  return (
+    <span aria-hidden="true" className="ml-0.5 text-destructive">
+      *
+    </span>
+  )
+}
 
 type CustomerFormData = {
   id: string
@@ -31,12 +46,6 @@ type CustomerFormData = {
   service_alerts: ServiceAlert[]
 }
 
-const PERSON_ALERTS = SERVICE_ALERTS.filter((a) => SERVICE_ALERT_META[a].scope === 'person')
-
-/** Los campos que muestran su propio error. */
-const FIELD_NAMES = ['first_name', 'last_name', 'phone', 'email', 'birthdate', 'notes'] as const
-
-/** Los datos del cliente (pestaña «Datos» de la ficha). Guarda con la Server Action de siempre. */
 export function CustomerForm({
   tenantSlug,
   customer,
@@ -46,124 +55,190 @@ export function CustomerForm({
 }) {
   const action = updateCustomer.bind(null, tenantSlug)
   const [state, formAction] = useActionState(action, initial)
-  const [phone, setPhone] = useState<Value | undefined>(
-    (customer.phone || undefined) as Value | undefined,
-  )
+  const [phone, setPhone] = useState<string | undefined>(customer.phone || undefined)
   const [selected, setSelected] = useState<ServiceAlert[]>(customer.service_alerts)
-  const [today] = useState(() => todayInCordoba())
 
   useEffect(() => {
-    if (state.ok && state.message) toast.success(state.message)
+    if (state.ok && state.message) {
+      toast.success(state.message)
+    } else if (!state.ok && state.message) {
+      toast.error(state.message)
+    }
   }, [state])
 
-  const fieldErrors = state.ok ? undefined : state.fieldErrors
-  // Un error de un campo se ve abajo de ese campo; el resto, arriba del formulario.
-  const shownInField = FIELD_NAMES.some((name) => fieldErrors?.[name])
-  const generalError = !state.ok && !shownInField ? state.message : null
-
   return (
-    <form action={formAction} className="grid">
+    <form action={formAction} className="grid gap-5">
       <input type="hidden" name="id" value={customer.id} />
-      <FormError message={generalError} className="mb-6" />
 
-      <FormSection title="Contacto">
-        <FieldRow>
-          <Field label="Nombre" error={fieldErrors?.first_name} required>
-            <Input name="first_name" defaultValue={customer.first_name} maxLength={60} />
-          </Field>
-          <Field label="Apellido" error={fieldErrors?.last_name} required>
-            <Input name="last_name" defaultValue={customer.last_name} maxLength={60} />
-          </Field>
-        </FieldRow>
-        <Field label="WhatsApp" error={fieldErrors?.phone} required>
-          <PhoneField name="phone" value={phone} onChange={setPhone} />
-        </Field>
-        <FieldRow>
-          <Field label="Email" error={fieldErrors?.email} optional>
-            <Input
-              name="email"
-              type="email"
-              defaultValue={customer.email ?? ''}
-              maxLength={120}
-              placeholder="cliente@ejemplo.com"
-              autoComplete="off"
-            />
-          </Field>
-          <Field label="Cumpleaños" name="birthdate" error={fieldErrors?.birthdate} optional>
-            <DatePicker
-              defaultValue={customer.birthdate}
-              max={today}
-              captionLayout="dropdowns"
-              fromYear={1920}
-              toYear={Number(today.slice(0, 4))}
-              clearable
-            />
-          </Field>
-        </FieldRow>
-      </FormSection>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-1.5">
+          <Label htmlFor="first_name">
+            Nombre
+            <RequiredMark />
+          </Label>
+          <Input
+            id="first_name"
+            name="first_name"
+            defaultValue={customer.first_name}
+            required
+            maxLength={60}
+          />
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="last_name">
+            Apellido
+            <RequiredMark />
+          </Label>
+          <Input
+            id="last_name"
+            name="last_name"
+            defaultValue={customer.last_name}
+            required
+            maxLength={60}
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-1.5">
+        <Label htmlFor="phone-input">
+          WhatsApp
+          <RequiredMark />
+        </Label>
+        <PhoneInput
+          id="phone-input"
+          name="phone"
+          international
+          defaultCountry="AR"
+          countryCallingCodeEditable={false}
+          value={phone}
+          onChange={setPhone}
+          className="hub-phone-input"
+          aria-required="true"
+        />
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-1.5">
+          <Label htmlFor="email">
+            Email <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
+          </Label>
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            defaultValue={customer.email ?? ''}
+            maxLength={120}
+            placeholder="cliente@ejemplo.com"
+            autoComplete="email"
+          />
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="birthdate">
+            Cumpleaños <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
+          </Label>
+          <Input
+            id="birthdate"
+            name="birthdate"
+            type="date"
+            defaultValue={customer.birthdate ?? ''}
+          />
+        </div>
+      </div>
 
       {/* Avisos permanentes. Esta ficha es el ÚNICO lugar donde se sacan: en una
           reserva se pueden marcar (y suben acá solos), pero desmarcarlos ahí no
           los borra, o un descuido dejaría sin aviso a todas las demás reservas
           de esta persona. */}
-      <FormSection
-        title="Servicio"
-        description="Los avisos aparecen solos en cada reserva de esta persona, en la agenda y en el panel de mozos."
-      >
-        <ChipGroup aria-label="Avisos de servicio">
-          {PERSON_ALERTS.map((alert) => {
+      <fieldset className="grid gap-1.5">
+        <legend className="text-sm font-medium">Avisos de servicio</legend>
+        <p className="text-xs text-muted-foreground">
+          Aparecen solos en cada reserva de esta persona, en la agenda y en el panel de mozos.
+        </p>
+        <div className="mt-1 flex flex-wrap gap-2">
+          {SERVICE_ALERTS.filter((a) => SERVICE_ALERT_META[a].scope === 'person').map((alert) => {
             const meta = SERVICE_ALERT_META[alert]
             const active = selected.includes(alert)
             return (
-              <FilterChip
+              <label
                 key={alert}
-                size="md"
                 title={meta.hint}
-                pressed={active}
-                onPressedChange={(next) =>
-                  setSelected((prev) => (next ? [...prev, alert] : prev.filter((a) => a !== alert)))
-                }
+                className={cn(
+                  'inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                  active
+                    ? meta.severity === 'critical'
+                      ? 'border-destructive/60 bg-destructive/10 text-destructive'
+                      : 'border-warning/60 bg-warning/15 text-foreground'
+                    : 'border-border bg-card/40 text-muted-foreground hover:bg-secondary',
+                )}
               >
+                <input
+                  type="checkbox"
+                  name="service_alerts"
+                  value={alert}
+                  checked={active}
+                  onChange={(e) =>
+                    setSelected((prev) =>
+                      e.target.checked ? [...prev, alert] : prev.filter((a) => a !== alert),
+                    )
+                  }
+                  className="sr-only"
+                />
                 {meta.label}
-              </FilterChip>
+              </label>
             )
           })}
-        </ChipGroup>
-        {selected.map((alert) => (
-          <input key={alert} type="hidden" name="service_alerts" value={alert} />
-        ))}
-        <Field label="Notas internas" error={fieldErrors?.notes} optional>
-          <Textarea
-            name="notes"
-            defaultValue={customer.notes ?? ''}
-            maxLength={500}
-            showCount
-            placeholder="Preferencias, alergias, lo que el equipo tiene que saber…"
-            rows={4}
-          />
-        </Field>
-      </FormSection>
+        </div>
+      </fieldset>
 
-      <FormSection title="Mensajes">
-        <Field
-          layout="toggle"
-          label="Acepta recibir promociones por WhatsApp y email"
-          hint="Marcalo solo si te lo confirmó. Queda registrado con fecha, hora e IP."
-        >
-          <Checkbox name="opt_in_marketing" defaultChecked={customer.opt_in_marketing} />
-        </Field>
-        <Field
-          layout="toggle"
-          label="No contactar"
-          hint="Frena todo mensaje saliente (difusiones, automatizaciones y contacto a mano), aunque haya aceptado promociones."
-        >
-          <Checkbox name="is_blocked" defaultChecked={customer.is_blocked} />
-        </Field>
-      </FormSection>
+      <div className="grid gap-1.5">
+        <Label htmlFor="notes">Notas internas</Label>
+        <Textarea
+          id="notes"
+          name="notes"
+          defaultValue={customer.notes ?? ''}
+          maxLength={500}
+          placeholder="Preferencias, alergias, observaciones del staff…"
+          rows={4}
+          className="resize-none"
+        />
+      </div>
 
-      <FormActions className="mt-6">
-        <SubmitButton pendingText="Guardando…">Guardar cambios</SubmitButton>
-      </FormActions>
+      <Label className="flex items-start gap-3 rounded-lg border border-border/60 bg-background/40 p-3.5">
+        <Checkbox
+          name="opt_in_marketing"
+          id="opt_in_marketing"
+          defaultChecked={customer.opt_in_marketing}
+          className="mt-0.5"
+        />
+        <div className="space-y-0.5">
+          <span className="text-sm font-medium leading-none">
+            Acepta recibir promociones por WhatsApp/email
+          </span>
+          <span className="block text-xs text-muted-foreground">
+            Solo marcá esto si te lo confirmó. Quedará registrado con fecha, hora e IP.
+          </span>
+        </div>
+      </Label>
+
+      <Label className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3.5">
+        <Checkbox
+          name="is_blocked"
+          id="is_blocked"
+          defaultChecked={customer.is_blocked}
+          className="mt-0.5"
+        />
+        <div className="space-y-0.5">
+          <span className="text-sm font-medium leading-none">No contactar</span>
+          <span className="block text-xs text-muted-foreground">
+            Bloquea todo mensaje saliente (difusiones, flows y contacto manual), aunque tenga
+            opt-in.
+          </span>
+        </div>
+      </Label>
+
+      <div className="flex justify-end">
+        <SubmitButton />
+      </div>
     </form>
   )
 }

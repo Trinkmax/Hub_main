@@ -1,4 +1,4 @@
-import { isTenantRole, type TenantRole } from './types'
+import { TENANT_ROLES, type TenantRole } from './types'
 
 /**
  * Lectura de los claims que `custom_access_token_hook` inyecta en el JWT.
@@ -14,6 +14,8 @@ import { isTenantRole, type TenantRole } from './types'
  * 1 h, lo que dura el access token) sólo puede rutear mal, nunca exponer datos.
  */
 export type TenantClaim = { id: string; slug: string; role: TenantRole }
+
+const ROLE_SET = new Set<string>(TENANT_ROLES)
 
 /**
  * `app_metadata.tenants` → lista de memberships del usuario.
@@ -33,8 +35,9 @@ export function readTenantClaims(appMetadata: unknown): TenantClaim[] | null {
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue
     const { id, slug, role } = item as { id?: unknown; slug?: unknown; role?: unknown }
-    if (typeof id !== 'string' || typeof slug !== 'string' || !isTenantRole(role)) continue
-    out.push({ id, slug, role })
+    if (typeof id !== 'string' || typeof slug !== 'string' || typeof role !== 'string') continue
+    if (!ROLE_SET.has(role)) continue
+    out.push({ id, slug, role: role as TenantRole })
   }
   return out
 }

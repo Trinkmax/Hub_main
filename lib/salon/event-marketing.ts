@@ -90,22 +90,9 @@
  * ese archivo importa las columnas de pauta de acá para sus planillas.
  */
 
-import { csvFormulaGuard } from '@/lib/csv/guard'
-import { decimalEsAr, decimalEsArAuto as rateDigits, roundTo, scaledInt } from '@/lib/money/decimal'
 import { rowsToCsv } from '@/lib/stats/csv'
 import { SALON_TZ } from './date-presets'
 import type { EditionSummary } from './events-report'
-
-// Se mudaron a `lib/money` y `lib/csv` (compartidos con el kit y con
-// Administración). Se reexportan para que los imports de siempre sigan andando.
-export { csvFormulaGuard } from '@/lib/csv/guard'
-export { decimalEsAr } from '@/lib/money/decimal'
-export {
-  canonicalInput,
-  type NumberKind,
-  type ParsedNumber,
-  parseLocaleNumber,
-} from '@/lib/money/parse'
 
 // ─── Tipos ─────────────────────────────────────────────────────────────────
 
@@ -261,8 +248,41 @@ export type MarketingBlock = {
 
 const NBSP = '\u00A0'
 
-// `scaledInt`, `decimalEsAr`, `roundTo` y `rateDigits` (entero si es redondo,
-// dos decimales si no) viven en `lib/money/decimal.ts`, sin cambios.
+/**
+ * `round(|v| × 10^exp)` como entero, redondeando sobre la representación
+ * decimal corta del número y no sobre el binario. Con `Math.round(v * 100)`,
+ * 1,005 da 100 (porque 1,005 × 100 = 100,49999…); `Intl` y cualquier persona
+ * dicen 1,01. Pasando por el string `'1.005e2'` sale 100,5 → 101, igual que
+ * `Intl`. Los números en notación exponencial (< 1e-6 o ≥ 1e21) no tienen ese
+ * problema a la escala que usamos y van por la cuenta directa.
+ */
+function scaledInt(v: number, exp: number): number {
+  const abs = Math.abs(v)
+  const s = String(abs)
+  return s.includes('e') ? Math.round(abs * 10 ** exp) : Math.round(Number(`${s}e${exp}`))
+}
+
+/** `1234567` → `'1.234.567'`. es-AR agrupa desde el millar (1.234, no 1234). */
+function groupThousands(intDigits: string): string {
+  return intDigits.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+}
+
+/** Número con `digits` decimales fijos, coma decimal y puntos de miles opcionales. */
+export function decimalEsAr(v: number, digits: number, grouping: boolean): string {
+  if (!Number.isFinite(v)) return '—'
+  const n = scaledInt(v, digits)
+  const negative = v < 0 && n > 0
+  const fixed = (n / 10 ** digits).toFixed(digits)
+  const [int = '0', frac] = fixed.split('.')
+  const intPart = grouping ? groupThousands(int) : int
+  return `${negative ? '-' : ''}${intPart}${frac ? `,${frac}` : ''}`
+}
+
+/** Redondeo a `digits` decimales con la misma regla que el formato. */
+function roundTo(v: number, digits: number): number {
+  const n = scaledInt(v, digits) / 10 ** digits
+  return v < 0 ? -n : n
+}
 
 /** `175.26` → `'US$ 175,26'` · `1240.5` → `'US$ 1.240,50'`. */
 export function formatUsd(v: number): string {
@@ -295,6 +315,11 @@ export function formatPesosRate(v: number): string {
  */
 export function formatArsUnit(pesos: number): string {
   return `$${NBSP}${rateDigits(pesos, true)}`
+}
+
+function rateDigits(v: number, grouping: boolean): string {
+  const r = roundTo(v, 2)
+  return decimalEsAr(r, Number.isInteger(r) ? 0 : 2, grouping)
 }
 
 /**
@@ -2032,8 +2057,82 @@ export function pooledStripSummary(
 
 // ─── Parser de lo que se tipea ───────────────────────────────────────────────
 
-// `parseLocaleNumber` y `canonicalInput` viven en `lib/money/parse.ts` (se
-// reexportan arriba): MoneyField del kit y el parser de plata los comparten.
+export type NumberKind = 'money' | 'count' | 'rate'
+
+export type ParsedNumber =
+  | { ok: true; value: number }
+  | { ok: false; reason: 'vacio' | 'ilegible' | 'negativo' | 'con-decimales' }
+
+/** Primer grupo de 1 a 3 dígitos y el resto de exactamente 3. */
+function validGroups(groups: ReadonlyArray<string>): boolean {
+  return groups.every((g, i) => (i === 0 ? /^\d{1,3}$/.test(g) : /^\d{3}$/.test(g)))
+}
+
+/** Deja el número como lo entiende `Number` (`'1234.5'`), o `null` si es ambiguo. */
+function normalizeSeparators(s: string): string | null {
+  const lastDot = s.lastIndexOf('.')
+  const lastComma = s.lastIndexOf(',')
+  if (lastDot === -1 && lastComma === -1) return s
+
+  if (lastDot !== -1 && lastComma !== -1) {
+    // Los dos: el último es el decimal y el otro solo puede separar miles.
+    const decimal = lastDot > lastComma ? '.' : ','
+    const group = decimal === '.' ? ',' : '.'
+    const decimalAt = s.lastIndexOf(decimal)
+    const intPart = s.slice(0, decimalAt)
+    const fracPart = s.slice(decimalAt + 1)
+    if (intPart.includes(decimal) || !/^\d+$/.test(fracPart)) return null
+    const groups = intPart.split(group)
+    return validGroups(groups) ? `${groups.join('')}.${fracPart}` : null
+  }
+
+  const sep = lastDot !== -1 ? '.' : ','
+  const parts = s.split(sep)
+  // Más de una vez: separa miles, y todos los grupos tienen que ser de 3.
+  if (parts.length > 2) return validGroups(parts) ? parts.join('') : null
+  const [intPart = '', fracPart = ''] = parts
+  // Una vez y 3 dígitos atrás: miles (`1.450`, `8,420`). `1234.567` es ambiguo.
+  if (/^\d{3}$/.test(fracPart)) return validGroups(parts) ? parts.join('') : null
+  // Una vez y 1-2 dígitos: decimal (`175,26`, `175.26`, `1450,50`).
+  if (/^\d{1,2}$/.test(fracPart)) return `${intPart || '0'}.${fracPart}`
+  return null
+}
+
+/**
+ * Lee lo que el dueño pega desde Meta o tipea a mano, en cualquiera de los
+ * dos formatos. Ads Manager en es-LA muestra `US$175,26`; una planilla en
+ * inglés, `1,234.50`. La regla "si hay coma, es el decimal" leía mal esto
+ * último, así que cuando hay ambos separadores manda el ÚLTIMO, y cuando hay
+ * uno solo lo deciden los dígitos que lo siguen (3 = miles; 1-2 = decimal).
+ */
+export function parseLocaleNumber(raw: string, kind: NumberKind): ParsedNumber {
+  const trimmed = raw.trim()
+  if (trimmed === '') return { ok: false, reason: 'vacio' }
+  const firstDigit = trimmed.search(/\d/)
+  // Un menos (o el signo tipográfico) antes del primer dígito. Un guion después
+  // ("175,26 - USD") es texto y se descarta con el resto.
+  if (firstDigit > 0 && /[-−]/.test(trimmed.slice(0, firstDigit)))
+    return { ok: false, reason: 'negativo' }
+  // Fuera US$, USD, $, letras, espacios y espacios duros: quedan dígitos y separadores.
+  const cleaned = trimmed.replace(/[^\d.,]/g, '')
+  if (!/\d/.test(cleaned)) return { ok: false, reason: 'ilegible' }
+  const normalized = normalizeSeparators(cleaned)
+  if (normalized === null) return { ok: false, reason: 'ilegible' }
+  const value = Number(normalized)
+  if (!Number.isFinite(value)) return { ok: false, reason: 'ilegible' }
+  if (kind === 'count' && !Number.isInteger(value)) return { ok: false, reason: 'con-decimales' }
+  return { ok: true, value }
+}
+
+/**
+ * Cómo queda el input al salir del campo: `1,234.50` → `1.234,50`. Plata y
+ * dólar van enteros si son redondos y con 2 decimales si no; los conteos,
+ * enteros. Siempre vuelve a leerse igual con `parseLocaleNumber`.
+ */
+export function canonicalInput(value: number, kind: NumberKind): string {
+  if (kind === 'count') return formatCount(value)
+  return rateDigits(value, true)
+}
 
 // ─── CSV ─────────────────────────────────────────────────────────────────────
 
@@ -2101,8 +2200,14 @@ export const MARKETING_LIVE_BLANK_HEADERS: ReadonlySet<string> = new Set([
   'Resultado ARS',
 ])
 
-// `csvFormulaGuard` (apóstrofo adelante de lo que Excel leería como fórmula)
-// vive en `lib/csv/guard.ts` y se reexporta arriba.
+/**
+ * Excel ejecuta una celda que arranca con `=`, `+`, `-`, `@`, tab o CR como
+ * fórmula. Lo que escribió una persona (la nota, el nombre de un evento) va con
+ * un apóstrofo adelante, que Excel no muestra.
+ */
+export function csvFormulaGuard(text: string): string {
+  return /^[=+\-@\t\r]/.test(text) ? `'${text}` : text
+}
 
 // Mismos redondeos que la pantalla, sin separador de miles: es lo que Excel en
 // es-AR lee como número.

@@ -1,6 +1,7 @@
+import { ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
-import { FormTemplate } from '@/components/ui/page-templates'
 import { listScheduledTemplates } from '@/lib/salon/queries'
 import {
   RESERVATION_STAFF_ROLES,
@@ -44,15 +45,20 @@ export default async function NuevoEventoProgramadoPage({
   })
 
   return (
-    <FormTemplate
-      header={
-        <PageHeader
-          back={{ href: `/${tenantSlug}/eventos/programados`, label: 'Calendario' }}
-          title="Programar evento"
-          description="Sushi Libre el sábado 27, Pizza Libre el lunes 9… Cada fecha tiene su propio cupo."
-        />
-      }
-    >
+    <div className="mx-auto w-full max-w-2xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      <PageHeader
+        eyebrow={
+          <Link
+            href={`/${tenantSlug}/eventos/programados`}
+            className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="size-3.5" />
+            Volver al calendario
+          </Link>
+        }
+        title="Programar evento"
+        description="Sushi Libre el sábado 27, Pizza Libre el lunes 9, etc. Cada instancia tiene su cupo."
+      />
       <ScheduledEventForm
         tenantSlug={tenantSlug}
         mode="create"
@@ -60,6 +66,6 @@ export default async function NuevoEventoProgramadoPage({
         presetDate={presetDate}
         presetTemplateId={presetTemplateId}
       />
-    </FormTemplate>
+    </div>
   )
 }

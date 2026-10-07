@@ -1,13 +1,18 @@
-import { PageShell } from '@/components/ui/page-shell'
-import { SkeletonStatus, SkeletonTable } from '@/components/ui/skeleton'
-import { WaSkeletonPageHeader } from '../_components/wa-skeletons'
+import { Skeleton } from '@/components/ui/skeleton'
+import { ListSkeleton } from '@/components/ui/skeleton-list'
 
 export default function Loading() {
   return (
-    <PageShell width="comfortable" aria-busy="true">
-      <SkeletonStatus label="Cargando las difusiones…" />
-      <WaSkeletonPageHeader actions={1} />
-      <SkeletonTable rows={8} columns={4} />
-    </PageShell>
+    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      <div className="flex items-end justify-between gap-3">
+        <div className="space-y-2">
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="h-8 w-44" />
+          <Skeleton className="h-4 w-80" />
+        </div>
+        <Skeleton className="h-10 w-40" />
+      </div>
+      <ListSkeleton rows={8} />
+    </div>
   )
 }

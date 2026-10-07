@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, ChevronRight, Clock, MapPin } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { TourLauncher } from '@/components/tour/tour-launcher'
 import type { TourDefinition } from '@/components/tour/types'
 import type { TenantRole } from '@/lib/tenant/types'
@@ -18,10 +18,7 @@ const RESERVAS_TOUR: TourDefinition = (() => {
     // Cuando la lista volvió al menú (22/09/2026) se corrigió el texto del
     // contador (ahora es por servicio) SIN subir el id: la anfitriona ya lo
     // vio y la pantalla es la misma; el texto nuevo queda en "¿Cómo funciona?".
-    // @3 (kit HUB, 10/2026): la pantalla cambió de cara — chips del kit, la
-    // fecha se tipea o se elige en un calendario, «Más filtros» en una hoja y,
-    // en el celular, la lista pasa a tarjetas. Los pasos apuntan a lo mismo.
-    id: 'reservas@3',
+    id: 'reservas@2',
     title: 'Gestionar reservas',
     steps: [
       {
@@ -41,11 +38,11 @@ const RESERVAS_TOUR: TourDefinition = (() => {
         title: 'El día que estás viendo',
         body: (
           <>
-            Movete con las flechas o elegí la fecha en el calendario. Al lado ves cada servicio del
-            día (almuerzo, merienda, cena) con su gente sobre <strong>su</strong> cupo, igual que en
-            el calendario: <strong>verde</strong> hay lugar, <strong>ámbar</strong> se está
-            llenando, <strong>rojo</strong> te pasaste. La gente de un evento cuenta en el servicio
-            del evento.
+            Movete con las flechas para ver otros días. Al lado ves cada servicio del día (almuerzo,
+            merienda, cena) con su gente sobre <strong>su</strong> cupo, igual que en el calendario:{' '}
+            <strong>verde</strong> hay lugar, <strong>ámbar</strong> se está llenando,{' '}
+            <strong>rojo</strong> te pasaste. La gente de un evento cuenta en el servicio del
+            evento.
           </>
         ),
       },
@@ -58,8 +55,7 @@ const RESERVAS_TOUR: TourDefinition = (() => {
           <>
             Desayuno, almuerzo, merienda y cena, cada uno con sus cubiertos y{' '}
             <strong>en qué zona se sientan</strong>. Tocá un servicio para ver solo ese, o «Todo el
-            día» para volver. Si un servicio tiene torta, el chip te lo avisa con el ícono de la
-            torta.
+            día» para volver. Si un servicio tiene torta, el chip te lo avisa con el 🎂.
           </>
         ),
       },
@@ -125,22 +121,24 @@ const RESERVAS_TOUR: TourDefinition = (() => {
           <div className="space-y-2.5">
             <div className="flex items-center justify-center gap-6 text-center">
               <span>
-                <span className="block text-3xl font-semibold leading-none type-amount text-muted-foreground">
+                <span className="block font-mono text-3xl font-semibold leading-none tabular-nums text-muted-foreground">
                   4
                 </span>
-                <span className="mt-1 block type-caption italic text-muted-foreground">
+                <span className="mt-1 block text-[10px] italic text-muted-foreground">
                   sin contar
                 </span>
               </span>
-              <ChevronRight className="size-6 text-muted-foreground" aria-hidden />
+              <span className="text-2xl text-muted-foreground">→</span>
               <span>
-                <span className="block text-3xl font-semibold leading-none type-amount">3</span>
-                <span className="mt-1 block type-caption text-muted-foreground">
+                <span className="block font-mono text-3xl font-semibold leading-none tabular-nums">
+                  3
+                </span>
+                <span className="mt-1 block text-[10px] text-muted-foreground">
                   de 4 reservadas
                 </span>
               </span>
             </div>
-            <p className="text-center type-caption text-muted-foreground">
+            <p className="text-center text-[11px] leading-snug text-muted-foreground">
               Un toque en <strong>−</strong> y quedó registrado que de 4 vinieron 3.
             </p>
           </div>
@@ -152,8 +150,8 @@ const RESERVAS_TOUR: TourDefinition = (() => {
         title: 'Pasar lista: todo el día de una',
         body: (
           <>
-            El botón <strong>Pasar lista</strong> abre las reservas del día juntas. Confirmá con el{' '}
-            <strong>tilde</strong> las que vinieron como reservaron, corregí con − / + las que no, y{' '}
+            El botón <strong>Pasar lista</strong> abre las reservas del día juntas. Tocá el{' '}
+            <strong>✓</strong> en las que vinieron como reservaron, corregí con − / + las que no, y{' '}
             <strong>Guardar todo</strong>. El numerito del botón te dice cuántas faltan contar.
             <br />
             <span className="text-muted-foreground">
@@ -178,30 +176,25 @@ const RESERVAS_TOUR: TourDefinition = (() => {
         ),
         demo: (
           <div className="space-y-2.5">
-            <div className="flex flex-wrap items-center justify-center gap-1.5 type-caption font-medium">
-              <span className="inline-flex items-center gap-1 rounded-full bg-brand-soft px-2.5 py-1 text-brand-text">
-                <Check className="size-3.5" aria-hidden />
-                Llegó
-              </span>
-              <ChevronRight className="size-3.5 text-muted-foreground" aria-hidden />
+            <div className="flex flex-wrap items-center justify-center gap-1.5 text-xs font-medium">
+              <span className="rounded-full bg-primary/15 px-2.5 py-1 text-primary">✓ Llegó</span>
+              <ChevronRight className="size-3.5 text-muted-foreground/60" />
               <span className="rounded-full bg-primary px-2.5 py-1 text-primary-foreground">
                 Sentados
               </span>
-              <ChevronRight className="size-3.5 text-muted-foreground" aria-hidden />
+              <ChevronRight className="size-3.5 text-muted-foreground/60" />
               <span className="rounded-full border border-border bg-card px-2.5 py-1 text-muted-foreground">
                 Cerrar mesa
               </span>
             </div>
-            <div className="flex flex-wrap items-center justify-center gap-1.5 type-caption text-muted-foreground">
-              <span className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5">
-                <Clock className="size-3" aria-hidden />
-                21:30
+            <div className="flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
+              <span className="rounded-full border border-border bg-card px-2 py-0.5">
+                🕒 21:30
               </span>
-              <span className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5">
-                <MapPin className="size-3" aria-hidden />
-                Planta baja
+              <span className="rounded-full border border-border bg-card px-2 py-0.5">
+                📍 Planta baja
               </span>
-              <span>tocá los chips para cambiarlos</span>
+              <span>← tocá los chips para cambiarlos</span>
             </div>
           </div>
         ),
@@ -212,8 +205,8 @@ const RESERVAS_TOUR: TourDefinition = (() => {
         title: 'Buscar y filtrar',
         body: (
           <>
-            Por nombre, estado, zona o gestor (en «Más filtros»). Con el rango de fechas ves semanas
-            enteras (ideal para planificar un evento grande).
+            Por nombre o teléfono, estado, zona o gestor. Con el rango de fechas ves semanas enteras
+            (ideal para planificar un evento grande).
           </>
         ),
       },

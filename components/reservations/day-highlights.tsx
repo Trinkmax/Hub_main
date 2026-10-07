@@ -1,24 +1,14 @@
-import { Cake, CalendarPlus, PartyPopper, Users } from 'lucide-react'
+import { Cake, CalendarPlus, PartyPopper, Sparkles, Users } from 'lucide-react'
 import Link from 'next/link'
 import { CakeChip } from '@/components/reservations/cake-chip'
 import { CelebrationChip, ChampagneChip } from '@/components/reservations/celebration-chip'
 import { StatusPill } from '@/components/reservations/status-pill'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Section } from '@/components/ui/section'
 import { editReservationHref, newReservationHref } from '@/lib/salon/calendar-links'
 import type { CelebrationHighlight, DayHighlight, EventHighlight } from '@/lib/salon/day-highlights'
 import { cn } from '@/lib/utils'
 
-/** Solo hex: el color viene de la DB y va a un `style`. */
-function safeColor(colorHex: string | null | undefined): string {
-  return colorHex && /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(colorHex)
-    ? colorHex
-    : 'var(--muted-foreground)'
-}
-
 /**
- * Lo que hay que preparar de este día, en un solo bloque: los eventos
+ * Lo que hay que preparar de este día, en un solo renglón: los eventos
  * programados Y los cumpleaños, al mismo nivel.
  *
  * El dueño lo pidió textual: "debería ser cumpleaños y eventos como si fueran lo
@@ -27,7 +17,6 @@ function safeColor(colorHex: string | null | undefined): string {
  * decía "Pizza libre" y la torta no aparecía en ningún lado. La torta la hace el
  * bar: enterarse el mismo lunes es un moco caro.
  *
- * Una `Section` del kit con una sola caja y filas (no una tarjeta por ítem).
  * Sin estado ni handlers: es un Server Component de la lista de Reservas. Los
  * links (reservar en el evento, abrir el festejo) no llevan ?volver: al guardar
  * se vuelve a la lista.
@@ -53,34 +42,42 @@ export function DayHighlights({
   const events = highlights.length - celebrations
 
   return (
-    <Section
-      title="Lo que pasa este día"
-      description={[
-        events > 0 ? `${events} ${events === 1 ? 'evento' : 'eventos'}` : null,
-        celebrations > 0 ? `${celebrations} ${celebrations === 1 ? 'festejo' : 'festejos'}` : null,
-      ]
-        .filter(Boolean)
-        .join(' · ')}
-      className={className}
-    >
-      <ul className="divide-y divide-border overflow-clip rounded-xl border border-border bg-card">
+    <section className={cn('space-y-2', className)} aria-label="Lo que pasa este día">
+      <header className="flex items-baseline justify-between gap-2 px-0.5">
+        <h3 className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          <Sparkles className="size-3" aria-hidden />
+          Lo que pasa este día
+        </h3>
+        <span className="text-[11px] tabular-nums text-muted-foreground">
+          {[
+            events > 0 ? `${events} ${events === 1 ? 'evento' : 'eventos'}` : null,
+            celebrations > 0
+              ? `${celebrations} ${celebrations === 1 ? 'festejo' : 'festejos'}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </span>
+      </header>
+
+      <ul className="space-y-1.5">
         {highlights.map((h) =>
           h.kind === 'event' ? (
             <li key={h.key}>
-              <EventRow tenantSlug={tenantSlug} date={date} event={h} canBook={canBook} />
+              <EventCard tenantSlug={tenantSlug} date={date} event={h} canBook={canBook} />
             </li>
           ) : (
             <li key={h.key}>
-              <CelebrationRow tenantSlug={tenantSlug} celebration={h} />
+              <CelebrationCard tenantSlug={tenantSlug} celebration={h} />
             </li>
           ),
         )}
       </ul>
-    </Section>
+    </section>
   )
 }
 
-function EventRow({
+function EventCard({
   tenantSlug,
   date,
   event,
@@ -93,49 +90,53 @@ function EventRow({
 }) {
   const full = event.capacity > 0 && event.used >= event.capacity
   return (
-    <div className="flex min-h-12 items-center gap-3 px-4 py-2">
-      {/* El color del formato: es como el dueño reconoce sus eventos en el
-          calendario, así que acá tiene que ser la misma pista. Va en una
-          columna del ancho del ícono de los festejos: así los nombres de las
-          dos clases de fila empiezan en la misma línea. */}
-      <span aria-hidden className="flex size-8 shrink-0 items-center justify-center">
-        <span
-          className="size-2.5 rounded-full"
-          style={{ backgroundColor: safeColor(event.colorHex) }}
-        />
-      </span>
+    <div
+      className="card-hairline flex items-center gap-3 rounded-xl border border-border/60 bg-card/50 py-2 pl-3 pr-2"
+      // La franja del color del formato: es como el dueño reconoce sus eventos
+      // en el calendario, así que acá tiene que ser la misma pista.
+      style={{ boxShadow: `inset 3px 0 0 ${event.colorHex}` }}
+    >
+      <span
+        aria-hidden
+        className="size-2 shrink-0 rounded-full"
+        style={{ backgroundColor: event.colorHex }}
+      />
       <Link
         href={`/${tenantSlug}/eventos/programados/${event.id}`}
-        className="min-w-0 flex-1 break-words type-body font-medium underline-offset-[3px] hover:underline"
+        className="min-w-0 flex-1 truncate text-sm font-medium underline-offset-4 hover:underline"
       >
         {event.title}
       </Link>
-      <span className="shrink-0 type-caption tabular-nums text-muted-foreground">{event.time}</span>
-      {full ? (
-        <Badge tone="warning" title="Evento lleno" className="tabular-nums">
-          {event.used}/{event.capacity}
-        </Badge>
-      ) : (
-        <span className="shrink-0 type-caption tabular-nums text-muted-foreground">
-          {event.used}/{event.capacity}
-        </span>
-      )}
+      <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
+        {event.time}
+      </span>
+      <span
+        className={cn(
+          'shrink-0 font-mono text-[11px] tabular-nums',
+          // `text-warning` pelado sobre la card no llega a AA en claro: el
+          // patrón de la casa es el token de texto sobre su propio fondo.
+          full
+            ? 'rounded-full bg-warning/15 px-1.5 font-semibold text-foreground'
+            : 'text-muted-foreground',
+        )}
+      >
+        {event.used}/{event.capacity}
+      </span>
       {canBook ? (
-        <Button asChild variant="secondary" size="sm" className="shrink-0">
-          <Link
-            href={newReservationHref(tenantSlug, { date, eventId: event.id })}
-            aria-label={`Reservar en ${event.title}`}
-          >
-            <CalendarPlus aria-hidden />
-            <span className="max-sm:sr-only">Reservar</span>
-          </Link>
-        </Button>
+        <Link
+          href={newReservationHref(tenantSlug, { date, eventId: event.id })}
+          aria-label={`Reservar en ${event.title}`}
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border/70 px-2.5 text-xs font-medium transition-colors hover:bg-secondary"
+        >
+          <CalendarPlus className="size-3.5" aria-hidden />
+          <span className="hidden sm:inline">Reservar</span>
+        </Link>
       ) : null}
     </div>
   )
 }
 
-function CelebrationRow({
+function CelebrationCard({
   tenantSlug,
   celebration: c,
 }: {
@@ -148,63 +149,69 @@ function CelebrationRow({
   return (
     <Link
       href={editReservationHref(tenantSlug, c.id)}
-      className="flex items-start gap-3 px-4 py-3 outline-(--ring) -outline-offset-2 hover:bg-hover focus-visible:outline-2 active:bg-active"
+      className={cn(
+        'card-hairline block rounded-xl border p-3 transition-colors duration-(--duration-fast)',
+        // Más presencia que un evento a propósito: es lo que hoy se pasa por alto.
+        isSpecial
+          ? 'border-info/35 bg-info/[0.06] hover:bg-info/10'
+          : 'border-primary/35 bg-primary/[0.06] hover:bg-primary/10',
+      )}
     >
-      <span
-        aria-hidden
-        className={cn(
-          'mt-px flex size-8 shrink-0 items-center justify-center rounded-lg',
-          // Más presencia que un evento a propósito: es lo que hoy se pasa por alto.
-          isSpecial ? 'bg-info-soft text-info-text' : 'bg-brand-soft text-brand-text',
-        )}
-      >
-        <Icon className="size-4" />
-      </span>
+      <div className="flex items-start gap-2.5">
+        <span
+          aria-hidden
+          className={cn(
+            'mt-px flex size-7 shrink-0 items-center justify-center rounded-lg',
+            isSpecial ? 'bg-info/15 text-info' : 'bg-primary/15 text-primary',
+          )}
+        >
+          <Icon className="size-4" />
+        </span>
 
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <CelebrationChip kind={c.kind} />
-          <span className="type-caption tabular-nums text-muted-foreground">{c.time}</span>
-        </div>
-        {/* El nombre entero, aunque ocupe dos renglones: cortado («Grupo
-            Facultad de Arquit…») no se sabe de quién es el festejo. */}
-        <p className="mt-0.5 break-words type-body font-medium text-foreground">{c.title}</p>
-        <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 type-caption text-muted-foreground">
-          <span className="inline-flex items-center gap-1">
-            <Users className="size-3.5" aria-hidden />
-            <span className="tabular-nums">{c.guests}</span>
-            <span className="sr-only">{c.guests === 1 ? 'persona' : 'personas'}</span>
-          </span>
-          <span aria-hidden>·</span>
-          <span>{c.zoneLabel}</span>
-          {/* El dato que se perdía: viene al evento, pero ES un cumpleaños.
-              Sin planta elegida (zona flotante) `zoneLabel` ya ES el nombre
-              del evento: repetirlo decía "Pizza libre · en Pizza libre". */}
-          {c.eventName && c.eventName !== c.zoneLabel ? (
-            <>
-              <span aria-hidden>·</span>
-              <span className="inline-flex items-center gap-1">
-                {c.eventColorHex ? (
-                  <span
-                    aria-hidden
-                    className="size-2 rounded-full"
-                    style={{ backgroundColor: safeColor(c.eventColorHex) }}
-                  />
-                ) : null}
-                en {c.eventName}
-              </span>
-            </>
-          ) : null}
-        </p>
-        {c.cakeCount > 0 || c.champagneCount > 0 ? (
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            <CakeChip count={c.cakeCount} option={c.cake} optionId={c.cakeOptionId} />
-            <ChampagneChip count={c.champagneCount} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <CelebrationChip kind={c.kind} />
+            <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+              {c.time}
+            </span>
           </div>
-        ) : null}
-      </div>
+          <p className="truncate font-medium leading-snug">{c.title}</p>
+          <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+            <span className="inline-flex items-center gap-1">
+              <Users className="size-3" aria-hidden />
+              <span className="font-mono tabular-nums">{c.guests}</span>
+            </span>
+            <span aria-hidden>·</span>
+            <span>{c.zoneLabel}</span>
+            {/* El dato que se perdía: viene al evento, pero ES un cumpleaños.
+                Sin planta elegida (zona flotante) `zoneLabel` ya ES el nombre
+                del evento: repetirlo decía "Pizza libre · en Pizza libre". */}
+            {c.eventName && c.eventName !== c.zoneLabel ? (
+              <>
+                <span aria-hidden>·</span>
+                <span className="inline-flex items-center gap-1">
+                  {c.eventColorHex ? (
+                    <span
+                      aria-hidden
+                      className="size-1.5 rounded-full"
+                      style={{ backgroundColor: c.eventColorHex }}
+                    />
+                  ) : null}
+                  en {c.eventName}
+                </span>
+              </>
+            ) : null}
+          </p>
+          {c.cakeCount > 0 || c.champagneCount > 0 ? (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <CakeChip count={c.cakeCount} option={c.cake} optionId={c.cakeOptionId} />
+              <ChampagneChip count={c.champagneCount} />
+            </div>
+          ) : null}
+        </div>
 
-      <StatusPill status={c.status} className="mt-1" />
+        <StatusPill status={c.status} />
+      </div>
     </Link>
   )
 }

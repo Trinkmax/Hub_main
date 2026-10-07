@@ -1,14 +1,11 @@
 'use client'
 
-import { CalendarPlus, CalendarX2, ChevronDown, Filter, SearchX } from 'lucide-react'
+import { CalendarPlus, CalendarX2, ChevronDown, SearchX } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import Link from 'next/link'
-import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { PartySizeChips } from '@/components/reservations/party-size-chips'
 import { Button } from '@/components/ui/button'
-import { Callout } from '@/components/ui/callout'
-import { EmptyState } from '@/components/ui/empty-state'
-import { Section } from '@/components/ui/section'
 import type { BoardFilter } from '@/lib/salon/operativo'
 import { BOARD_FILTER_LABELS } from '@/lib/salon/operativo'
 import {
@@ -20,13 +17,6 @@ import type { ServiceBucket } from '@/lib/salon/services'
 import type { ReservationWithJoins } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 import { NowDivider } from './now-divider'
-
-/**
- * Lo que se enfoca con Tab adentro de la lista no queda escondido abajo de lo
- * fijo (WCAG 2.4.11): el topbar (`--topbar-h`) más la barra de búsqueda y
- * filtros, que también es sticky (~7,5 rem con los controles táctiles).
- */
-const FOCUS_CLEARANCE = '[&_:is(a,button)]:scroll-mt-[calc(var(--topbar-h)+7.5rem)]'
 
 /**
  * La lista de la noche, cortada por SERVICIO (merienda, cena…) y en orden de
@@ -42,9 +32,7 @@ export function ReservationList({
   searching,
   query,
   filter,
-  onShowAll,
   eventFilter,
-  eventFilterLabel,
   onClearEventFilter,
   partySize,
   partyTally,
@@ -63,11 +51,7 @@ export function ReservationList({
   searching: boolean
   query: string
   filter: BoardFilter
-  /** Vuelve el filtro de estado a «Todas». */
-  onShowAll: () => void
   eventFilter: string | null
-  /** El nombre del evento filtrado, para que el aviso diga cuál. */
-  eventFilterLabel: string | null
   onClearEventFilter: () => void
   /** El tamaño de mesa elegido ("mesas de 4"); `null` = todos. */
   partySize: PartySizeBucket | null
@@ -88,7 +72,6 @@ export function ReservationList({
   const reduced = useReducedMotion()
   const [showCancelled, setShowCancelled] = useState(false)
   const scrolledRef = useRef(false)
-  const cancelledId = useId()
 
   // Una sola vez al abrir HOY: dejar la línea de "ahora" a la vista, si hay
   // reservas que ya pasaron (si no, arriba de todo ya está bien).
@@ -111,93 +94,80 @@ export function ReservationList({
   const sizeChips = searching ? null : (
     <PartySizeChips tally={partyTally} active={partySize} onSelect={onPartySize} className="mt-4" />
   )
-  const newReservationHref = `/${tenantSlug}/reservas/nuevo?date=${date}`
 
   if (emptyAll && !searching) {
     return (
-      <EmptyState
-        className="mt-4"
-        icon={CalendarX2}
-        title={isToday ? 'Nada reservado para hoy' : 'Nada reservado para este día'}
-        description="Si entra una reserva, aparece acá sola. También podés cargarla vos."
-        action={
-          <Button asChild variant="secondary">
-            <Link href={newReservationHref} prefetch={false}>
-              <CalendarPlus aria-hidden="true" />
-              Cargar una reserva
-            </Link>
-          </Button>
-        }
-      />
+      <div className="card-hairline mt-4 rounded-2xl border bg-card p-10 text-center">
+        <CalendarX2 className="mx-auto size-9 text-muted-foreground/60" aria-hidden />
+        <h2 className="mt-3 font-serif text-lg font-semibold">
+          {isToday ? 'Nada reservado para hoy' : 'Nada reservado para este día'}
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground text-balance">
+          Si entra una reserva, aparece acá sola.
+        </p>
+        <Button asChild variant="outline" className="mt-5 h-11 gap-2 rounded-full">
+          <Link href={`/${tenantSlug}/reservas/nuevo?date=${date}`} prefetch={false}>
+            <CalendarPlus className="size-4" aria-hidden />
+            Cargar una reserva
+          </Link>
+        </Button>
+      </div>
     )
   }
 
   if (total === 0) {
-    const q = query.trim()
     return (
       <>
         {sizeChips}
-        {searching ? (
-          <EmptyState
-            className="mt-4"
-            icon={SearchX}
-            title={`Nadie con «${q}» ${isToday ? 'hoy' : 'este día'}`}
-            description="Probá con el apellido o los últimos dígitos del teléfono."
-            action={
-              <Button asChild variant="secondary">
+        <div className="card-hairline mt-4 rounded-2xl border bg-card p-8 text-center">
+          <SearchX className="mx-auto size-8 text-muted-foreground/60" aria-hidden />
+          {searching ? (
+            <>
+              <h2 className="mt-3 font-serif text-lg font-semibold">
+                Nadie con «{query.trim()}» hoy
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Probá con el apellido o los últimos dígitos del teléfono.
+              </p>
+              <Button asChild variant="outline" className="mt-5 h-11 gap-2 rounded-full">
                 <Link
-                  href={`${newReservationHref}&guest_name=${encodeURIComponent(q)}`}
+                  href={`/${tenantSlug}/reservas/nuevo?date=${date}&guest_name=${encodeURIComponent(query.trim())}`}
                   prefetch={false}
                 >
-                  <CalendarPlus aria-hidden="true" />
-                  Nueva reserva para «{q}»
+                  <CalendarPlus className="size-4" aria-hidden />
+                  Nueva reserva para «{query.trim()}»
                 </Link>
               </Button>
-            }
-          />
-        ) : (
-          <EmptyState
-            className="mt-4"
-            icon={SearchX}
-            title={
-              <>
+            </>
+          ) : (
+            <>
+              <h2 className="mt-3 font-serif text-lg font-semibold">
                 {partySize
                   ? `No hay ${partySizeAriaLabel(partySize)}`
                   : `Nada en «${BOARD_FILTER_LABELS[filter]}»`}
                 {partySize && filter !== 'all' ? ` en «${BOARD_FILTER_LABELS[filter]}»` : ''}
                 {eventFilter ? ' para ese evento' : ''}
-              </>
-            }
-            description={
-              partySize
-                ? 'Tocá «Todas» para ver el resto de los tamaños.'
-                : filter === 'waiting'
-                  ? 'Todos los que reservaron ya están adentro.'
-                  : 'Cambiá el filtro para ver el resto.'
-            }
-            action={
-              partySize || eventFilter || filter !== 'all' ? (
-                <>
-                  {partySize ? (
-                    <Button variant="secondary" onClick={() => onPartySize(null)}>
-                      Ver todos los tamaños
-                    </Button>
-                  ) : null}
-                  {eventFilter ? (
-                    <Button variant="secondary" onClick={onClearEventFilter}>
-                      Quitar filtro de evento
-                    </Button>
-                  ) : null}
-                  {!partySize && filter !== 'all' ? (
-                    <Button variant="secondary" onClick={onShowAll}>
-                      Ver todas
-                    </Button>
-                  ) : null}
-                </>
-              ) : null
-            }
-          />
-        )}
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {partySize
+                  ? 'Tocá «Todas» para ver el resto de los tamaños.'
+                  : filter === 'waiting'
+                    ? 'Todos los que reservaron ya están adentro.'
+                    : 'Cambiá el filtro para ver el resto.'}
+              </p>
+              {partySize ? (
+                <Button variant="ghost" className="mt-4" onClick={() => onPartySize(null)}>
+                  Ver todos los tamaños
+                </Button>
+              ) : null}
+              {eventFilter ? (
+                <Button variant="ghost" className="mt-4" onClick={onClearEventFilter}>
+                  Quitar filtro de evento
+                </Button>
+              ) : null}
+            </>
+          )}
+        </div>
       </>
     )
   }
@@ -206,37 +176,27 @@ export function ReservationList({
   return (
     <>
       {sizeChips}
-      <div className={cn('mt-4 flex flex-col gap-6', FOCUS_CLEARANCE)}>
+      <div className="mt-4 space-y-6">
         {eventFilter && !searching ? (
-          <Callout
-            tone="neutral"
-            icon={Filter}
-            action={
-              <Button variant="secondary" size="sm" onClick={onClearEventFilter}>
-                Ver todas
-              </Button>
-            }
-          >
-            Mostrando solo las reservas de{' '}
-            {eventFilterLabel ? (
-              <strong className="font-medium text-foreground">{eventFilterLabel}</strong>
-            ) : (
-              'ese evento'
-            )}
-            .
-          </Callout>
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-secondary/40 px-3 py-2 text-sm">
+            <span>Mostrando solo las reservas de ese evento.</span>
+            <Button variant="ghost" size="sm" className="h-8" onClick={onClearEventFilter}>
+              Ver todas
+            </Button>
+          </div>
         ) : null}
 
         {groups.map((group) => {
           const startIndex = flat
           flat += group.rows.length
           return (
-            <Section
+            <section
               key={group.mealType}
-              title={group.label}
-              className="gap-2"
-              description={
-                <span className="tabular-nums">
+              aria-label={`${group.label}: ${group.rows.length} reservas`}
+            >
+              <header className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-1">
+                <h2 className="font-serif text-lg font-semibold tracking-tight">{group.label}</h2>
+                <p className="text-xs text-muted-foreground tabular-nums">
                   <strong className="font-semibold text-foreground">{group.covers}</strong>{' '}
                   cubiertos
                   {' · '}
@@ -257,10 +217,10 @@ export function ReservationList({
                       </span>
                     </>
                   ) : null}
-                </span>
-              }
-            >
-              <ul className="flex flex-col gap-2">
+                </p>
+              </header>
+
+              <ul className="space-y-2">
                 <AnimatePresence initial={false}>
                   {group.rows.flatMap((r, i) => {
                     const idx = startIndex + i
@@ -288,7 +248,7 @@ export function ReservationList({
                   })}
                 </AnimatePresence>
               </ul>
-            </Section>
+            </section>
           )
         })}
 
@@ -298,44 +258,42 @@ export function ReservationList({
               type="button"
               onClick={() => setShowCancelled((v) => !v)}
               aria-expanded={showCancelled}
-              aria-controls={cancelledId}
-              className="flex min-h-11 w-full items-center justify-between rounded-lg px-2 type-body text-muted-foreground outline-(--ring) -outline-offset-2 hover:bg-hover hover:text-foreground focus-visible:outline-2"
+              className="flex h-11 w-full items-center justify-between rounded-xl px-2 text-sm text-muted-foreground transition-colors hover:bg-(--cream-tint)"
             >
               <span>
-                Canceladas <span className="type-caption type-amount">({cancelled.length})</span>
+                Canceladas{' '}
+                <span className="font-mono text-xs tabular-nums">({cancelled.length})</span>
               </span>
               <ChevronDown
                 className={cn(
-                  'size-4 transition-transform duration-(--duration-quick) ease-(--ease-ui) motion-reduce:transition-none',
+                  'size-4 transition-transform duration-(--duration-base)',
                   showCancelled && 'rotate-180',
                 )}
-                aria-hidden="true"
+                aria-hidden
               />
             </button>
-            <ul
-              id={cancelledId}
-              hidden={!showCancelled}
-              className="mt-1 divide-y divide-border rounded-xl border border-border bg-card"
-            >
-              {cancelled.map((r) => (
-                <li key={r.id} className="flex items-center gap-3 px-3 py-2.5 type-body">
-                  <span className="w-12 shrink-0 type-caption text-muted-foreground type-amount">
-                    {r.reservation_time_local.slice(0, 5)}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-muted-foreground line-through">
-                    {r.guest_name}
-                  </span>
-                  <span className="shrink-0 type-caption text-muted-foreground type-amount">
-                    {r.estimated_guests}p
-                  </span>
-                  {r.cancelled_reason ? (
-                    <span className="hidden max-w-[14rem] truncate type-caption text-muted-foreground sm:block">
-                      {r.cancelled_reason}
+            {showCancelled ? (
+              <ul className="mt-1 divide-y divide-border/60 rounded-xl border border-border/60 bg-card/60">
+                {cancelled.map((r) => (
+                  <li key={r.id} className="flex items-center gap-3 px-3 py-2.5 text-sm">
+                    <span className="w-12 shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+                      {r.reservation_time_local.slice(0, 5)}
                     </span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground line-through">
+                      {r.guest_name}
+                    </span>
+                    <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+                      {r.estimated_guests}p
+                    </span>
+                    {r.cancelled_reason ? (
+                      <span className="hidden max-w-[14rem] truncate text-xs text-muted-foreground sm:block">
+                        {r.cancelled_reason}
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </section>
         ) : null}
       </div>

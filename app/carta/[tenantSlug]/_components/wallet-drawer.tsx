@@ -13,7 +13,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui-legacy/alert-dialog'
+} from '@/components/ui/alert-dialog'
 import { clubLogout } from '@/lib/club-auth/actions'
 import { cn } from '@/lib/utils'
 import { useDismissOnBack } from './use-dismiss-on-back'

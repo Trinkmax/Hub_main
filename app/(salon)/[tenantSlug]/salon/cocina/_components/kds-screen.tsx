@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui-legacy/badge'
-import { Button } from '@/components/ui-legacy/button'
-import { EmptyState } from '@/components/ui-legacy/empty-state'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/ui/empty-state'
 import { type AnyRealtimePayload, mergeRow } from '@/lib/realtime/optimistic-merge'
 import { subscribeChanges } from '@/lib/realtime/subscribe'
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh'

@@ -86,8 +86,5 @@ export async function updateTenantConfig(
     return { ok: false, message: 'No se pudo guardar.' }
   }
   revalidatePath(`/${slug}/configuracion`)
-  // El formulario vive en Local › Auto-aceptación: es la pantalla que lee esta
-  // configuración (`getTenantConfig`), así que es la que hay que refrescar.
-  revalidatePath(`/${slug}/local/auto-aceptacion`)
   return { ok: true, message: 'Guardado.' }
 }

@@ -2,155 +2,150 @@
 
 import { TrendingDown, Users } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useActionState, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Amount } from '@/components/ui/amount'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { DataTable, ExportButton } from '@/components/ui/data-table'
+import {
+  DataTableBody,
+  DataTableCell,
+  DataTableHead,
+  DataTableHeader,
+  DataTableRoot,
+  DataTableScroll,
+  DataTableShell,
+} from '@/components/ui/data-table'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Section } from '@/components/ui/section'
-import { formatNumber } from '@/lib/format/number-kind'
 import { type AudienceFromListState, createAudienceFromList } from '@/lib/stats/audience-from-list'
 import type { ChurnRiskRow } from '@/lib/stats/queries'
 
 const initial: AudienceFromListState = { ok: true, id: '' }
 
-/**
- * Riesgo de churn: la lista y el atajo para convertirla en una audiencia.
- *
- * La confirmación es un `ConfirmDialog` en modo formulario: el nombre viaja en
- * el `FormData` y los ids en un campo oculto, igual que antes, a la misma
- * Server Action. Si falla, el error queda adentro del diálogo (no en un aviso
- * que se va); si sale bien, avisa y abre la audiencia nueva.
- */
-export function ChurnCard({
-  rows,
-  tenantSlug,
-  exportHref,
-}: {
-  rows: ChurnRiskRow[]
-  tenantSlug: string
-  /** La planilla de la misma lista (`/api/stats/export?type=churn_risk`). */
-  exportHref: string
-}) {
+function fmtCents(cents: number): string {
+  return `$${(cents / 100).toLocaleString('es-AR', { maximumFractionDigits: 0 })}`
+}
+
+export function ChurnCard({ rows, tenantSlug }: { rows: ChurnRiskRow[]; tenantSlug: string }) {
   const router = useRouter()
+  const [state, action, pending] = useActionState(
+    createAudienceFromList.bind(null, tenantSlug),
+    initial,
+  )
   const [name, setName] = useState('Riesgo de churn')
+
+  useEffect(() => {
+    if (state.ok && state.id) {
+      toast.success('Audiencia creada.')
+      router.push(`/${tenantSlug}/mensajeria/audiencias/${state.id}`)
+    } else if (!state.ok && state.message) {
+      toast.error(state.message)
+    }
+  }, [state, router, tenantSlug])
+
   const ids = rows.map((r) => r.customer_id).join(',')
 
-  async function createAudience(_prev: unknown, formData: FormData) {
-    const result = await createAudienceFromList(tenantSlug, initial, formData)
-    if (result.ok) {
-      toast.success('Audiencia creada.')
-      router.push(`/${tenantSlug}/mensajeria/audiencias/${result.id}`)
-    }
-    return result
-  }
-
   return (
-    <Section
-      title="Riesgo de churn"
-      description="Clientes que eran frecuentes y no volvieron en el doble de su frecuencia habitual."
-      actions={
-        rows.length > 0 ? (
-          <>
-            <ExportButton href={exportHref} size="sm" />
-            <ConfirmDialog
-              title="¿Crear una audiencia con esta lista?"
-              description={
-                <>
-                  Va a ser una audiencia fija con los {formatNumber(rows.length)} clientes en riesgo
-                  de churn. La vas a poder usar en una difusión.
-                </>
-              }
-              confirmLabel="Crear audiencia"
-              pendingLabel="Creando…"
-              icon={Users}
-              trigger={
-                <Button size="sm">
-                  <Users aria-hidden />
-                  Crear audiencia
-                </Button>
-              }
-              formAction={createAudience}
-              hiddenFields={{ customer_ids: ids }}
-              confirmDisabled={name.trim() === ''}
-            >
-              <Field label="Nombre de la audiencia" name="name">
+    <DataTableShell>
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border/60 px-5 py-4">
+        <div className="flex items-start gap-3">
+          <div className="flex size-9 items-center justify-center rounded-lg bg-warning/15 text-warning">
+            <TrendingDown className="size-4" />
+          </div>
+          <div>
+            <h2 className="font-serif text-lg font-semibold tracking-tight">Riesgo de churn</h2>
+            <p className="text-xs text-muted-foreground">
+              Clientes que eran frecuentes y no volvieron en 2× su frecuencia habitual.
+            </p>
+          </div>
+        </div>
+        {rows.length > 0 ? (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button size="sm" className="gap-1.5">
+                <Users className="size-3.5" />
+                Crear audiencia
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Crear audiencia desde lista</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Vamos a crear una audiencia estática con los <strong>{rows.length}</strong>{' '}
+                  clientes identificados como riesgo de churn.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <form action={action} className="space-y-3">
                 <Input
+                  name="name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   required
                   maxLength={80}
-                  autoComplete="off"
                 />
-              </Field>
-            </ConfirmDialog>
-          </>
-        ) : null
-      }
-    >
-      <DataTable
-        caption="Clientes en riesgo de churn"
-        rows={rows}
-        getRowId={(r) => r.customer_id}
-        rowHref={(r) => `/${tenantSlug}/clientes/${r.customer_id}`}
-        rowLabel={(r) => `${r.first_name} ${r.last_name}`.trim()}
-        columns={[
-          {
-            id: 'cliente',
-            header: 'Cliente',
-            cell: (r) => `${r.first_name} ${r.last_name}`.trim(),
-          },
-          {
-            id: 'visitas',
-            header: 'Visitas',
-            numeric: true,
-            mobile: 'hidden',
-            cell: (r) => formatNumber(r.total_visits),
-          },
-          {
-            id: 'frecuencia',
-            header: 'Venía',
-            hideBelow: 'lg',
-            mobile: 'secondary',
-            cell: (r) => (
-              <span className="text-muted-foreground">
-                cada <span className="type-amount">{formatNumber(r.visit_frequency_days, 1)}</span>{' '}
-                días
-              </span>
-            ),
-          },
-          {
-            id: 'sin-volver',
-            header: 'Última visita',
-            align: 'end',
-            cell: (r) => (
-              <span className="type-amount text-warning-text">
-                hace {formatNumber(r.days_since_last_visit)}{' '}
-                {r.days_since_last_visit === 1 ? 'día' : 'días'}
-              </span>
-            ),
-          },
-          // Con su `$`: en el celular la lista pasa a tarjetas y el encabezado no se ve.
-          {
-            id: 'gasto',
-            header: 'Gastó',
-            numeric: true,
-            cell: (r) => <Amount cents={r.total_spent_cents} decimals={0} />,
-          },
-        ]}
-        empty={
-          <EmptyState
-            size="sm"
-            icon={TrendingDown}
-            title="Nadie en riesgo"
-            description="Ningún cliente frecuente dejó de venir. Si alguno se demora el doble de lo habitual, va a aparecer acá."
-          />
-        }
-      />
-    </Section>
+                <input type="hidden" name="customer_ids" value={ids} />
+                <AlertDialogFooter>
+                  <AlertDialogCancel type="button">Cancelar</AlertDialogCancel>
+                  <AlertDialogAction type="submit" disabled={pending}>
+                    {pending ? 'Creando…' : 'Crear audiencia'}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </form>
+            </AlertDialogContent>
+          </AlertDialog>
+        ) : null}
+      </header>
+      {rows.length === 0 ? (
+        <EmptyState
+          icon={TrendingDown}
+          title="Nadie en riesgo"
+          description="No hay clientes en riesgo de churn según la lógica actual. Buen trabajo."
+          className="m-3 border-0 bg-transparent"
+        />
+      ) : (
+        <DataTableScroll>
+          <DataTableRoot>
+            <DataTableHead>
+              <tr>
+                <DataTableHeader>Cliente</DataTableHeader>
+                <DataTableHeader>Visitas</DataTableHeader>
+                <DataTableHeader>Frecuencia</DataTableHeader>
+                <DataTableHeader>Sin volver</DataTableHeader>
+                <DataTableHeader>Spent</DataTableHeader>
+              </tr>
+            </DataTableHead>
+            <DataTableBody>
+              {rows.map((r) => (
+                <tr key={r.customer_id} className="transition-colors hover:bg-secondary/40">
+                  <DataTableCell className="font-medium">
+                    {r.first_name} {r.last_name}
+                  </DataTableCell>
+                  <DataTableCell className="tabular-nums">{r.total_visits}</DataTableCell>
+                  <DataTableCell className="tabular-nums text-muted-foreground">
+                    cada {r.visit_frequency_days?.toFixed?.(1) ?? r.visit_frequency_days}d
+                  </DataTableCell>
+                  <DataTableCell className="tabular-nums text-warning">
+                    {r.days_since_last_visit}d
+                  </DataTableCell>
+                  <DataTableCell className="font-display font-semibold tabular-nums">
+                    {fmtCents(r.total_spent_cents)}
+                  </DataTableCell>
+                </tr>
+              ))}
+            </DataTableBody>
+          </DataTableRoot>
+        </DataTableScroll>
+      )}
+    </DataTableShell>
   )
 }

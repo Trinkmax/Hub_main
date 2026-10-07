@@ -9,22 +9,13 @@ import { requireFeature } from '@/lib/platform/guards'
 import { requireTenantAccess } from '@/lib/tenant'
 import { FloorPlanEditor } from './_components/floor-plan-editor'
 import { FloorPlanErrorBoundary } from './_components/floor-plan-error-boundary'
-import { FLOOR_VIEW_PARAM, floorViewFromParam } from './_components/floor-view'
-import { MESAS_DESCRIPTION, MESAS_TITLE } from './_components/page-copy'
 import { TablesListFallback } from './_components/tables-list-fallback'
 import { ZeroAreaCta } from './_components/zero-area-cta'
 
-export const metadata = { title: MESAS_TITLE }
+export const metadata = { title: 'Plano de mesas' }
 
-export default async function MesasPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ tenantSlug: string }>
-  searchParams: Promise<Record<string, string | string[] | undefined>>
-}) {
+export default async function MesasPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
   const { tenantSlug } = await params
-  const sp = await searchParams
 
   let access: Awaited<ReturnType<typeof requireTenantAccess>>
   try {
@@ -74,14 +65,16 @@ export default async function MesasPage({
 
   return (
     <PageShell width="wide">
-      <PageHeader title={MESAS_TITLE} description={MESAS_DESCRIPTION} />
+      <PageHeader
+        title="Plano de mesas"
+        description="Dibujá la distribución real del local: arrastrá elementos desde la paleta al lienzo, reubicalos y gestioná cada QR. Cambiá a En vivo para ver el estado de cada mesa."
+      />
 
       {data.areas.length === 0 ? (
         <EmptyState
-          size="lg"
           icon={LayoutGrid}
           title="Todavía no hay áreas"
-          description="Un área es un piso o un salón (Planta baja, Terraza…). Creá la primera para empezar a ubicar mesas y generar sus QR."
+          description="Creá la primera área (un piso o salón) para empezar a ubicar mesas en el plano."
           action={<ZeroAreaCta slug={tenantSlug} />}
         />
       ) : (
@@ -94,7 +87,6 @@ export default async function MesasPage({
             initial={data}
             liveAreas={liveAreas}
             initialLive={initialLive}
-            initialView={floorViewFromParam(sp[FLOOR_VIEW_PARAM])}
           />
         </FloorPlanErrorBoundary>
       )}

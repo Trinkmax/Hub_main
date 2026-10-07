@@ -55,8 +55,8 @@ const CLUB_TOUR: TourDefinition = {
       ),
       demo: (
         <div className="flex items-center justify-center gap-4">
-          <span className="relative flex aspect-[4/3] w-24 items-center justify-center overflow-hidden rounded-lg border border-border bg-secondary">
-            <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-0.5 type-caption font-medium">
+          <span className="relative flex aspect-[4/3] w-24 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-primary/20 to-primary/5">
+            <span className="inline-flex items-center gap-1 rounded-full bg-background/90 px-2 py-0.5 text-[10px] font-medium">
               <Camera className="size-3" aria-hidden />
               Subir foto
             </span>
@@ -102,16 +102,6 @@ const CLUB_TOUR: TourDefinition = {
   ],
 }
 
-/** Del alto de «Ver carta» y «Simular wallet», sus vecinos en el encabezado (el lanzador viene en `sm`). */
-const HEADER_BUTTON = 'h-(--control-md) px-4 text-sm has-[>svg]:px-3'
-
 export function ClubTourButton(): React.JSX.Element {
-  return (
-    <TourLauncher
-      tour={CLUB_TOUR}
-      currentRole="owner"
-      autoStartForRoles={[]}
-      className={HEADER_BUTTON}
-    />
-  )
+  return <TourLauncher tour={CLUB_TOUR} currentRole="owner" autoStartForRoles={[]} />
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, Plus } from 'lucide-react'
+import { Loader2, Plus } from 'lucide-react'
 import { useId, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -13,9 +13,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { NumberField } from '@/components/ui/number-field'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -29,19 +28,7 @@ import { cn } from '@/lib/utils'
 
 const MEALS: MealType[] = ['breakfast', 'lunch', 'tea_time', 'dinner', 'hub_event']
 const PALETTE = ['#7c3aed', '#0ea5e9', '#16a34a', '#f59e0b', '#ef4444', '#ec4899'] as const
-const PALETTE_NAMES: Record<(typeof PALETTE)[number], string> = {
-  '#7c3aed': 'Violeta',
-  '#0ea5e9': 'Celeste',
-  '#16a34a': 'Verde',
-  '#f59e0b': 'Ámbar',
-  '#ef4444': 'Rojo',
-  '#ec4899': 'Rosa',
-}
 
-/**
- * «Crear formato nuevo» desde el alta de una reserva: el atajo para el cumple
- * que pide un formato que todavía no existe en el catálogo.
- */
 export function QuickTemplateDialog({
   tenantSlug,
   defaultMealType,
@@ -51,35 +38,32 @@ export function QuickTemplateDialog({
   defaultMealType: MealType
   onCreated: (template: ScheduledEventTemplateRow) => void
 }) {
-  const colorLabelId = useId()
+  const nameId = useId()
+  const capId = useId()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
-  const [capacity, setCapacity] = useState<number | null>(null)
+  const [capacity, setCapacity] = useState('')
   const [mealType, setMealType] = useState<MealType>(defaultMealType)
   const [color, setColor] = useState<string>(PALETTE[0])
-  const [nameError, setNameError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   function reset() {
     setName('')
-    setCapacity(null)
+    setCapacity('')
     setMealType(defaultMealType)
     setColor(PALETTE[0])
-    setNameError(null)
   }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    // El form vive adentro del form de la reserva (por portal): que el envío no suba.
     e.preventDefault()
-    e.stopPropagation()
     if (!name.trim()) {
-      setNameError('Poné un nombre para el formato.')
+      toast.error('Poné un nombre')
       return
     }
     startTransition(async () => {
       const result = await quickCreateScheduledTemplate(tenantSlug, {
         name: name.trim(),
-        default_capacity: capacity === null ? '' : capacity,
+        default_capacity: capacity === '' ? '' : Number(capacity),
         default_meal_type: mealType,
         color_hex: color,
       })
@@ -103,34 +87,35 @@ export function QuickTemplateDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button type="button" variant="secondary" size="sm">
-          <Plus aria-hidden />
+        <Button type="button" variant="outline" size="sm" className="gap-1.5">
+          <Plus className="size-3.5" />
           Crear formato nuevo
         </Button>
       </DialogTrigger>
-      <DialogContent size="sm">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Nuevo formato</DialogTitle>
+          <DialogTitle className="font-serif">Nuevo formato</DialogTitle>
           <DialogDescription>
             Sushi Libre, Pizza Libre, Ramen… Queda guardado en el catálogo para reusarlo.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="grid gap-4">
-          <Field label="Nombre" error={nameError}>
+          <div className="grid gap-1.5">
+            <Label htmlFor={nameId}>Nombre</Label>
             <Input
+              id={nameId}
               value={name}
-              onChange={(e) => {
-                setName(e.target.value)
-                if (nameError) setNameError(null)
-              }}
-              placeholder="Pizza Libre"
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ej. Pizza Libre"
               maxLength={80}
               autoFocus
+              required
             />
-          </Field>
-          <Field label="Tipo de servicio">
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Tipo de servicio</Label>
             <Select value={mealType} onValueChange={(v) => setMealType(v as MealType)}>
-              <SelectTrigger>
+              <SelectTrigger className="h-10">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -141,49 +126,42 @@ export function QuickTemplateDialog({
                 ))}
               </SelectContent>
             </Select>
-          </Field>
-          <Field label="Cupo sugerido" optional hint="Se puede cambiar en cada fecha.">
-            <NumberField
-              value={capacity}
-              onValueChange={setCapacity}
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor={capId}>Cupo sugerido (opcional)</Label>
+            <Input
+              id={capId}
+              type="number"
               min={1}
               max={9999}
-              steppers={false}
-              placeholder="40"
-              suffix="personas"
+              inputMode="numeric"
+              value={capacity}
+              onChange={(e) => setCapacity(e.target.value)}
+              placeholder="Ej. 40"
+              className="tabular-nums"
             />
-          </Field>
-          <div className="grid gap-2">
-            <span id={colorLabelId} className="type-label text-foreground">
-              Color
-            </span>
-            <div role="radiogroup" aria-labelledby={colorLabelId} className="flex flex-wrap gap-2">
-              {PALETTE.map((c) => {
-                const selected = color === c
-                return (
-                  // biome-ignore lint/a11y/useSemanticElements: muestras de color; un input radio no se deja pintar así
-                  <button
-                    key={c}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    aria-label={PALETTE_NAMES[c]}
-                    onClick={() => setColor(c)}
-                    className={cn(
-                      'relative hit-area flex size-8 items-center justify-center rounded-full border border-border-strong',
-                      'outline-offset-2 outline-(--ring) focus-visible:outline-2',
-                      selected && 'outline-2 outline-foreground',
-                    )}
-                    style={{ backgroundColor: c }}
-                  >
-                    {selected ? <Check className="size-4 text-white" aria-hidden /> : null}
-                  </button>
-                )
-              })}
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Color</Label>
+            <div className="flex flex-wrap gap-2">
+              {PALETTE.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  aria-label={`Color ${c}`}
+                  onClick={() => setColor(c)}
+                  className={cn(
+                    'size-7 rounded-full border-2 transition-transform',
+                    color === c ? 'scale-110 border-foreground' : 'border-transparent',
+                  )}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
             </div>
           </div>
           <DialogFooter>
-            <Button type="submit" loading={pending} loadingText="Creando…">
+            <Button type="submit" disabled={pending} className="gap-2">
+              {pending ? <Loader2 className="size-4 animate-spin" /> : null}
               Crear y usar
             </Button>
           </DialogFooter>

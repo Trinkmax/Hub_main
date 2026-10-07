@@ -2,11 +2,9 @@
 
 import { useActionState, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Card } from '@/components/ui/card'
-import { Field } from '@/components/ui/field'
-import { FormActions } from '@/components/ui/form-actions'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { SubmitButton } from '@/components/ui/submit-button'
+import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { type CapturePromptState, updateCapturePromptConfig } from '@/lib/capture-prompt/actions'
@@ -22,7 +20,7 @@ export function CapturePromptForm({
   config: CapturePromptConfig
 }) {
   const [enabled, setEnabled] = useState(config.enabled)
-  const [state, action] = useActionState(
+  const [state, action, pending] = useActionState(
     (prev: CapturePromptState, fd: FormData) => updateCapturePromptConfig(tenantSlug, prev, fd),
     initial,
   )
@@ -33,41 +31,53 @@ export function CapturePromptForm({
   }, [state])
 
   return (
-    <Card asChild className="max-w-2xl">
-      <form action={action}>
-        {/* El Switch de Radix se maneja controlado y su estado viaja en este
-            input (igual que welcome-reward-form). */}
-        <input type="hidden" name="enabled" value={enabled ? 'true' : 'false'} />
+    <form action={action} className="max-w-2xl space-y-4 rounded-xl border bg-card p-5">
+      {/* Input oculto: el Switch de Radix se maneja controlado y sincroniza
+          su estado acá para que viaje en el FormData (igual que welcome-reward-form). */}
+      <input type="hidden" name="enabled" value={enabled ? 'true' : 'false'} />
 
-        <Field
-          label="Mostrar la invitación a registrarse"
-          layout="toggle"
-          hint="Aparece en el primer escaneo (abajo de la carta) y al confirmar la primera orden. Apagada, no se muestra ninguna invitación automática."
-        >
-          <Switch checked={enabled} onCheckedChange={setEnabled} />
-        </Field>
+      <div>
+        <h2 className="font-display text-base font-semibold">Invitación a registrarse</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          El gancho que ve el comensal en el primer escaneo (bottom sheet) y al confirmar su primera
+          orden. Si lo desactivás, no se muestra ninguna invitación automática.
+        </p>
+      </div>
 
-        <Field label="Título" name="headline" required>
-          <Input
-            maxLength={80}
-            defaultValue={config.headline}
-            placeholder="Sumá puntos en cada visita"
-          />
-        </Field>
+      <div className="flex items-center gap-2">
+        <Switch id="enabled" checked={enabled} onCheckedChange={setEnabled} />
+        <Label htmlFor="enabled">Mostrar la invitación de captura</Label>
+      </div>
 
-        <Field label="Subtítulo" name="subtext" required>
-          <Textarea
-            maxLength={160}
-            showCount
-            defaultValue={config.subtext}
-            placeholder="Dejá tu nombre y teléfono y empezá a ganar beneficios."
-          />
-        </Field>
+      <div className="grid gap-1.5">
+        <Label htmlFor="headline">Título</Label>
+        <Input
+          id="headline"
+          name="headline"
+          maxLength={80}
+          required
+          defaultValue={config.headline}
+          placeholder="Sumá puntos en cada visita"
+        />
+      </div>
 
-        <FormActions sticky={false}>
-          <SubmitButton pendingText="Guardando…">Guardar invitación</SubmitButton>
-        </FormActions>
-      </form>
-    </Card>
+      <div className="grid gap-1.5">
+        <Label htmlFor="subtext">Subtítulo</Label>
+        <Textarea
+          id="subtext"
+          name="subtext"
+          maxLength={160}
+          required
+          defaultValue={config.subtext}
+          placeholder="Dejá tu nombre y teléfono y empezá a ganar beneficios."
+        />
+      </div>
+
+      <div className="flex justify-end">
+        <Button type="submit" disabled={pending}>
+          {pending ? 'Guardando…' : 'Guardar'}
+        </Button>
+      </div>
+    </form>
   )
 }

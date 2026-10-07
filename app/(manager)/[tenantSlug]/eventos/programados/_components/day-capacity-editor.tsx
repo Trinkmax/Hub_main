@@ -1,20 +1,12 @@
 'use client'
 
-import { SlidersHorizontal } from 'lucide-react'
+import { Loader2, SlidersHorizontal } from 'lucide-react'
 import { useId, useState } from 'react'
+import { keepOpenOnToast } from '@/components/reservations/reservation-quick-view'
 import { Button } from '@/components/ui/button'
-import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { NumberField } from '@/components/ui/number-field'
-import {
-  Popover,
-  PopoverContent,
-  PopoverDescription,
-  PopoverHeader,
-  PopoverTitle,
-  PopoverTrigger,
-} from '@/components/ui/popover'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { segmentOverrideSchema } from '@/lib/salon/segment-schemas'
 import { type IsoDow, SEGMENT_KEYS, type SegmentKey, type SegmentLoad } from '@/lib/salon/segments'
 import { capSourceLabel, SEGMENT_LABELS } from '@/lib/salon/segments-copy'
@@ -162,38 +154,55 @@ export function DayCapacityEditor({
   }
 
   const reasonId = `${baseId}-motivo`
+  const reasonErrorId = `${baseId}-motivo-error`
   const normalizedReason = reason.trim()
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <Button variant="secondary" disabled={!segments}>
-          <SlidersHorizontal aria-hidden />
+        <Button variant="outline" className="gap-2" disabled={!segments}>
+          <SlidersHorizontal className="size-4" aria-hidden />
           Cupo del día
         </Button>
       </PopoverTrigger>
-      {/* «Deshacer» del aviso de este mismo guardado: el popover del kit no se
-          cierra al tocar un aviso, así el número vuelve al anterior a la vista. */}
-      <PopoverContent align="center" size="lg" className="grid gap-4">
-        <PopoverHeader>
-          <PopoverTitle>Cupo del {dayLabel}</PopoverTitle>
-          <PopoverDescription>
+      <PopoverContent
+        align="center"
+        className="w-[min(22rem,calc(100vw-2rem))] space-y-3 p-4"
+        // «Deshacer» del toast de este mismo guardado: el editor queda abierto
+        // y el número vuelve al anterior a la vista, en vez de cerrarse.
+        onInteractOutside={keepOpenOnToast}
+      >
+        <div className="space-y-1">
+          <p className="font-serif text-sm font-semibold">Cupo del {dayLabel}</p>
+          <p className="text-xs leading-relaxed text-muted-foreground">
             Solo para este día: abrimos la terraza, feriado, cerrado por evento privado. Gana sobre
             el cupo de la semana. 0 = cerrado.
-          </PopoverDescription>
-        </PopoverHeader>
+          </p>
+        </div>
 
-        <Field label="Motivo" optional id={reasonId} error={errors.reason}>
+        <div className="space-y-1.5">
+          <Label htmlFor={reasonId} className="text-xs">
+            Motivo (opcional)
+          </Label>
           <Input
+            id={reasonId}
             value={reason}
             maxLength={120}
             placeholder="Terraza abierta"
             onChange={(e) => setReason(e.target.value)}
+            aria-invalid={errors.reason ? true : undefined}
+            aria-describedby={errors.reason ? reasonErrorId : undefined}
+            className="h-9"
           />
-        </Field>
+          {errors.reason ? (
+            <p id={reasonErrorId} role="alert" className="text-[11px] text-destructive">
+              {errors.reason}
+            </p>
+          ) : null}
+        </div>
 
         {segments ? (
-          <ul className="grid gap-4 border-t border-border pt-4">
+          <ul className="space-y-3 border-t border-border/60 pt-3">
             {SEGMENT_KEYS.map((key) => {
               const s = segments[key]
               const inputId = `${baseId}-${key}`
@@ -208,7 +217,7 @@ export function DayCapacityEditor({
                 <li key={key}>
                   {/* Un form por servicio: Enter en el número guarda ESE servicio. */}
                   <form
-                    className="grid gap-1"
+                    className="space-y-1"
                     onSubmit={(e) => {
                       e.preventDefault()
                       void save(key)
@@ -218,55 +227,55 @@ export function DayCapacityEditor({
                       <Label htmlFor={inputId} className="w-20 shrink-0">
                         {SEGMENT_LABELS[key]}
                       </Label>
-                      {/* Sin `max`: un número de más lo rechaza el esquema al
-                          guardar, con su mensaje en la fila (el campo va sin
-                          Field y no mostraría el suyo). */}
-                      <NumberField
+                      <Input
                         id={inputId}
-                        size="sm"
-                        steppers={false}
+                        type="number"
+                        inputMode="numeric"
                         min={0}
-                        value={drafts[key].trim() === '' ? null : Number(drafts[key])}
+                        max={999}
+                        step={1}
+                        value={drafts[key]}
                         placeholder={s.capacity === null ? 'Sin tope' : String(s.capacity)}
-                        onValueChange={(n) =>
-                          setDrafts((prev) => ({ ...prev, [key]: n === null ? '' : String(n) }))
-                        }
+                        onChange={(e) => {
+                          const value = e.target.value
+                          setDrafts((prev) => ({ ...prev, [key]: value }))
+                        }}
                         aria-invalid={error ? true : undefined}
                         aria-describedby={error ? `${sourceId} ${errorId}` : sourceId}
                         disabled={pending}
-                        className="w-24"
+                        className="h-9 w-20 font-mono tabular-nums"
                       />
                       <Button
                         type="submit"
                         size="sm"
-                        variant="secondary"
-                        disabled={(pending && busy !== key) || !dirty}
-                        loading={busy === key}
+                        variant="outline"
+                        disabled={pending || !dirty}
                         aria-label={`Guardar ${SEGMENT_LABELS[key]}`}
+                        className="gap-1.5"
                       >
+                        {busy === key ? (
+                          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                        ) : null}
                         Guardar
                       </Button>
                     </div>
-                    <p id={sourceId} className="ps-22 type-caption text-muted-foreground">
+                    <p id={sourceId} className="pl-22 text-[11px] text-muted-foreground">
                       {capSourceLabel(s, isoDow)}
                     </p>
                     {error ? (
-                      <p
-                        id={errorId}
-                        role="alert"
-                        className="ps-22 type-caption text-destructive-text"
-                      >
+                      <p id={errorId} role="alert" className="pl-22 text-[11px] text-destructive">
                         {error}
                       </p>
                     ) : null}
                     {s.capSource === 'override' ? (
-                      <div className="ps-22">
+                      <div className="pl-22">
                         <Button
                           type="button"
                           variant="link"
                           size="sm"
                           disabled={pending}
                           onClick={() => void onRemove(key)}
+                          className="h-auto px-0 py-0.5 text-xs"
                         >
                           Volver al {lowerFirst(weekdayCapLabel(s, isoDow))}
                         </Button>

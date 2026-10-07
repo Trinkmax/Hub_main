@@ -14,7 +14,7 @@ import {
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { MoveTableSheet } from '@/components/legacy/floor-plan/move-table-sheet'
+import { MoveTableSheet } from '@/components/floor-plan/move-table-sheet'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,15 +24,15 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui-legacy/alert-dialog'
-import { Badge } from '@/components/ui-legacy/badge'
-import { Button } from '@/components/ui-legacy/button'
+} from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui-legacy/dropdown-menu'
+} from '@/components/ui/dropdown-menu'
 import {
   Sheet,
   SheetContent,
@@ -40,7 +40,7 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-} from '@/components/ui-legacy/sheet'
+} from '@/components/ui/sheet'
 import type { PointsRedemptionConfig } from '@/lib/points/redemption'
 import { subscribeChanges } from '@/lib/realtime/subscribe'
 import {

@@ -1,82 +1,109 @@
-import { ChevronRight } from 'lucide-react'
-import Link from 'next/link'
-import type * as React from 'react'
-import { cn } from '@/lib/utils'
+import * as React from "react"
+import { ChevronRight, MoreHorizontal } from "lucide-react"
+import { Slot } from "radix-ui"
 
-export type BreadcrumbItem = {
-  label: string
-  /** Sin `href` se dibuja como texto (la página actual o un nivel sin pantalla propia). */
-  href?: string
+import { cn } from "@/lib/utils"
+
+function Breadcrumb({ ...props }: React.ComponentProps<"nav">) {
+  return <nav aria-label="breadcrumb" data-slot="breadcrumb" {...props} />
 }
 
-export type BreadcrumbProps = Omit<React.ComponentProps<'nav'>, 'children'> & {
-  items: ReadonlyArray<BreadcrumbItem>
-}
-
-/**
- * Link de nivel: foco «afuera» del kit, subrayado al pasar y área táctil de
- * 24 px (44 con el dedo) sin agrandar el dibujo.
- */
-export const crumbLinkClass =
-  'relative hit-area rounded-sm underline-offset-4 transition-colors duration-(--duration-quick) hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring motion-reduce:transition-none'
-
-/**
- * Migas de pan del kit (§3.5), para cuando hay dos niveles o más: «Proveedores
- * › Coca-Cola › Pagos». Server-safe.
- *
- * - `<nav aria-label="Migas de pan">` con una lista ordenada.
- * - El separador es `ChevronRight` de 12 px con `aria-hidden` (no un carácter:
- *   un «›» o «/» se lee en voz alta).
- * - El último nivel lleva `aria-current="page"`.
- *
- * Reemplaza al `breadcrumb.tsx` de shadcn (sin usos): la versión vieja quedó
- * congelada en `components/ui-legacy`.
- */
-export function Breadcrumb({
-  items,
-  className,
-  'aria-label': ariaLabel = 'Migas de pan',
-  ...props
-}: BreadcrumbProps) {
-  if (items.length === 0) return null
+function BreadcrumbList({ className, ...props }: React.ComponentProps<"ol">) {
   return (
-    <nav
-      data-slot="breadcrumb"
-      aria-label={ariaLabel}
-      className={cn('min-w-0', className)}
+    <ol
+      data-slot="breadcrumb-list"
+      className={cn(
+        "flex flex-wrap items-center gap-1.5 text-sm break-words text-muted-foreground sm:gap-2.5",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+function BreadcrumbItem({ className, ...props }: React.ComponentProps<"li">) {
+  return (
+    <li
+      data-slot="breadcrumb-item"
+      className={cn("inline-flex items-center gap-1.5", className)}
+      {...props}
+    />
+  )
+}
+
+function BreadcrumbLink({
+  asChild,
+  className,
+  ...props
+}: React.ComponentProps<"a"> & {
+  asChild?: boolean
+}) {
+  const Comp = asChild ? Slot.Root : "a"
+
+  return (
+    <Comp
+      data-slot="breadcrumb-link"
+      className={cn("transition-colors hover:text-foreground", className)}
+      {...props}
+    />
+  )
+}
+
+function BreadcrumbPage({ className, ...props }: React.ComponentProps<"span">) {
+  return (
+    <span
+      data-slot="breadcrumb-page"
+      role="link"
+      aria-disabled="true"
+      aria-current="page"
+      className={cn("font-normal text-foreground", className)}
+      {...props}
+    />
+  )
+}
+
+function BreadcrumbSeparator({
+  children,
+  className,
+  ...props
+}: React.ComponentProps<"li">) {
+  return (
+    <li
+      data-slot="breadcrumb-separator"
+      role="presentation"
+      aria-hidden="true"
+      className={cn("[&>svg]:size-3.5", className)}
       {...props}
     >
-      <ol className="flex flex-wrap items-center gap-x-1 gap-y-0.5 type-small text-muted-foreground">
-        {items.map((item, index) => {
-          const last = index === items.length - 1
-          return (
-            <li
-              // biome-ignore lint/suspicious/noArrayIndexKey: la miga es posicional y el mismo rótulo puede repetirse en dos niveles
-              key={`${index}-${item.label}`}
-              data-slot="breadcrumb-item"
-              className="inline-flex min-w-0 items-center gap-1"
-            >
-              {item.href ? (
-                <Link
-                  href={item.href}
-                  aria-current={last ? 'page' : undefined}
-                  className={cn(crumbLinkClass, last && 'text-foreground')}
-                >
-                  {item.label}
-                </Link>
-              ) : (
-                <span
-                  aria-current={last ? 'page' : undefined}
-                  className={cn(last && 'text-foreground')}
-                >
-                  {item.label}
-                </span>
-              )}
-              {last ? null : <ChevronRight aria-hidden="true" className="size-3 shrink-0" />}
-            </li>
-          )
-        })}
-      </ol>
-    </nav>
+      {children ?? <ChevronRight />}
+    </li>
   )
+}
+
+function BreadcrumbEllipsis({
+  className,
+  ...props
+}: React.ComponentProps<"span">) {
+  return (
+    <span
+      data-slot="breadcrumb-ellipsis"
+      role="presentation"
+      aria-hidden="true"
+      className={cn("flex size-9 items-center justify-center", className)}
+      {...props}
+    >
+      <MoreHorizontal className="size-4" />
+      <span className="sr-only">More</span>
+    </span>
+  )
+}
+
+export {
+  Breadcrumb,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+  BreadcrumbEllipsis,
 }

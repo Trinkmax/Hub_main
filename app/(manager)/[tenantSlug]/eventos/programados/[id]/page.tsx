@@ -1,12 +1,9 @@
-import { CalendarPlus } from 'lucide-react'
+import { ArrowLeft, CalendarPlus } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { z } from 'zod'
-import { dayLabel } from '@/components/reservations/day-labels'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/ui/page-header'
-import { FormTemplate } from '@/components/ui/page-templates'
-import { Section } from '@/components/ui/section'
 import { calendarHref, newReservationHref } from '@/lib/salon/calendar-links'
 import {
   getScheduledEvent,
@@ -67,69 +64,67 @@ export default async function ScheduledEventPage({
     .filter((r) => r.status !== 'cancelled' && r.status !== 'no_show')
     .reduce((acc, r) => acc + (r.actual_guests ?? r.estimated_guests), 0)
 
-  const eventName = event.name_override ?? event.template?.name ?? 'Evento'
-
   return (
-    <FormTemplate
-      header={
-        <PageHeader
+    <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      <PageHeader
+        eyebrow={
           // Vuelve al mes del evento con su día abierto (antes caía en el mes
           // de hoy y había que volver a buscar la fecha).
-          back={{ href: calendarHref(tenantSlug, { day: event.event_date }), label: 'Calendario' }}
-          title={eventName}
-          meta={[
-            dayLabel(event.event_date),
-            event.starts_at_local.slice(0, 5),
-            `${totalGuests} de ${event.capacity} ${event.capacity === 1 ? 'lugar reservado' : 'lugares reservados'}`,
-          ]}
-          actions={
-            // Reservar desde el evento: llega al form con el evento, la fecha y
-            // la hora ya elegidos (antes había que volver a buscarlo en un combo).
-            // El evento es parte del calendario: al guardar se vuelve al día.
-            <Button asChild>
-              <Link
-                href={newReservationHref(tenantSlug, {
-                  date: event.event_date,
-                  eventId: event.id,
-                  from: 'calendario',
-                })}
-              >
-                <CalendarPlus aria-hidden />
-                Nueva reserva
-              </Link>
-            </Button>
-          }
-        />
-      }
-    >
-      <div className="flex flex-col gap-8">
-        <ScheduledEventForm
-          tenantSlug={tenantSlug}
-          mode="edit"
-          templates={templates}
-          initialValues={{
-            id: event.id,
-            template_id: event.template_id,
-            name_override: event.name_override ?? undefined,
-            event_date: event.event_date,
-            starts_at_local: event.starts_at_local.slice(0, 5),
-            ends_at_local: event.ends_at_local?.slice(0, 5),
-            capacity: event.capacity,
-            meal_type: event.meal_type,
-            full_bonus_active: event.full_bonus_active,
-            attendance_points: event.attendance_points,
-            notes: event.notes ?? undefined,
-            private_group: event.private_group,
-          }}
-        />
+          <Link
+            href={calendarHref(tenantSlug, { day: event.event_date })}
+            className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="size-3.5" />
+            Volver al calendario
+          </Link>
+        }
+        title={event.name_override ?? event.template?.name ?? 'Evento'}
+        description={`${event.event_date} · ${event.starts_at_local.slice(0, 5)} · ${totalGuests}/${event.capacity} personas reservadas`}
+        actions={
+          // Reservar desde el evento: llega al form con el evento, la fecha y
+          // la hora ya elegidos (antes había que volver a buscarlo en un combo).
+          // El evento es parte del calendario: al guardar se vuelve al día.
+          <Button asChild className="gap-2">
+            <Link
+              href={newReservationHref(tenantSlug, {
+                date: event.event_date,
+                eventId: event.id,
+                from: 'calendario',
+              })}
+            >
+              <CalendarPlus className="size-4" />
+              Nueva reserva
+            </Link>
+          </Button>
+        }
+      />
 
-        <Section
-          title="Reservas del evento"
-          description={`${eventReservations.length} ${eventReservations.length === 1 ? 'reserva' : 'reservas'} · ${totalGuests} ${totalGuests === 1 ? 'persona' : 'personas'}`}
-        >
-          <EventReservationsList tenantSlug={tenantSlug} reservations={eventReservations} />
-        </Section>
-      </div>
-    </FormTemplate>
+      <ScheduledEventForm
+        tenantSlug={tenantSlug}
+        mode="edit"
+        templates={templates}
+        initialValues={{
+          id: event.id,
+          template_id: event.template_id,
+          name_override: event.name_override ?? undefined,
+          event_date: event.event_date,
+          starts_at_local: event.starts_at_local.slice(0, 5),
+          ends_at_local: event.ends_at_local?.slice(0, 5),
+          capacity: event.capacity,
+          meal_type: event.meal_type,
+          full_bonus_active: event.full_bonus_active,
+          attendance_points: event.attendance_points,
+          notes: event.notes ?? undefined,
+          private_group: event.private_group,
+        }}
+      />
+
+      <section className="rounded-xl border bg-card/60 p-4">
+        <h2 className="mb-3 font-serif text-lg font-semibold">
+          Reservas asociadas ({eventReservations.length})
+        </h2>
+        <EventReservationsList tenantSlug={tenantSlug} reservations={eventReservations} />
+      </section>
+    </div>
   )
 }

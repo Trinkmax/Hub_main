@@ -3,7 +3,7 @@
 import { ArrowRightLeft, Loader2, Users } from 'lucide-react'
 import { useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui-legacy/button'
+import { Button } from '@/components/ui/button'
 import {
   Sheet,
   SheetContent,
@@ -11,7 +11,7 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-} from '@/components/ui-legacy/sheet'
+} from '@/components/ui/sheet'
 import type { ItemMoveTarget } from '@/lib/floor-plan/queries'
 import type { SessionGuestLite } from '@/lib/sessions-waiter/queries'
 import {

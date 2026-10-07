@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { PageHeader } from '@/components/ui-legacy/page-header'
+import { PageHeader } from '@/components/ui/page-header'
 import { requireFeature } from '@/lib/platform/guards'
 import { requireTenantAccess } from '@/lib/tenant'
 import { listKitchenQueue, listTicketItemsForTickets } from '@/lib/tickets/queries'

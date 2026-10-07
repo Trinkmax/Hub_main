@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation'
 import { claimForTenantId } from '@/lib/tenant/claims'
 import { getCurrentUser, getMembershipsForUser } from '@/lib/tenant/current'
-import { homePathForRole } from '@/lib/tenant/roles'
+import type { TenantRole } from '@/lib/tenant/types'
+
+const STAFF_ROLES = new Set<TenantRole>(['cashier', 'waiter', 'kitchen'])
 
 /**
  * `/` sólo decide a qué bar mandar al usuario. Todo sale del JWT (verificado
@@ -26,8 +28,7 @@ export default async function HomePage() {
   const target = active ?? tenants[0]
   if (!target) redirect('/onboarding')
 
-  // Cada rol directo a su home (el mismo mapa que usa el proxy): el staff al
-  // salón, contenido a la carta, la anfitriona a reservas, la contadora a
-  // Administración y el dueño al panel. Sin el rebote extra por `/{slug}`.
-  redirect(homePathForRole(target.role, target.slug))
+  // Mandar staff directo al salón. Owner queda en el manager.
+  const dest = STAFF_ROLES.has(target.role) ? `/${target.slug}/salon` : `/${target.slug}`
+  redirect(dest)
 }

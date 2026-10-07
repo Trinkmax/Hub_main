@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 
-// Link viejo: el regalo de bienvenida vive en /club, pestaña «Bienvenida».
+// El Regalo de bienvenida se unificó en /menu (Club → "Bienvenida").
 export default async function BienvenidaRedirect({
   params,
 }: {

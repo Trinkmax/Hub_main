@@ -2,9 +2,9 @@
 
 import { Loader2, MessageSquare, Star } from 'lucide-react'
 import { useId, useRef, useState, useTransition } from 'react'
-import { Button } from '@/components/ui-legacy/button'
-import { Label } from '@/components/ui-legacy/label'
-import { Textarea } from '@/components/ui-legacy/textarea'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { submitReview } from '@/lib/reviews/actions'
 import { cn } from '@/lib/utils'
 import { ReviewOutcome } from './review-outcome'

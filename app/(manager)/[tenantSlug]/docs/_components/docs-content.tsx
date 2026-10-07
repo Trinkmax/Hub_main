@@ -1,21 +1,15 @@
+'use client'
+
 import {
-  ArrowRight,
-  Bell,
   BookOpen,
-  Check,
   ChefHat,
   ClipboardList,
   Coins,
   HelpCircle,
   LayoutGrid,
   LifeBuoy,
-  Lightbulb,
   type LucideIcon,
   Mail,
-  MoreHorizontal,
-  Printer,
-  Receipt,
-  RefreshCw,
   Shield,
   Smartphone,
   Stamp,
@@ -23,217 +17,151 @@ import {
   UtensilsCrossed,
   Zap,
 } from 'lucide-react'
-import Link from 'next/link'
-import type * as React from 'react'
-import { Fragment } from 'react'
-import { Badge } from '@/components/ui/badge'
-import { Callout } from '@/components/ui/callout'
-import { DataTable } from '@/components/ui/data-table'
-import { ReloadLink } from '@/components/ui/reload-link'
-import { Section } from '@/components/ui/section'
-import { ROLE_DESCRIPTIONS, ROLE_LABELS, roleLabel } from '@/lib/tenant/roles'
-import { TENANT_ROLES, type TenantRole } from '@/lib/tenant/types'
-import { DocsToc } from './docs-toc'
+import { useState } from 'react'
+import { cn } from '@/lib/utils'
 
-/*
- * La guía del sistema. Server Component: el texto es estático y solo el índice
- * (que sigue el scroll) es una isla cliente. Las secciones se dibujan con el
- * kit: `Section` (título en Inter), texto de lectura de 14/24, avisos con
- * `Callout` y la tabla de roles con `DataTable`.
- */
-
-type DocSection = {
+type Section = {
   id: string
-  /** Lo que se lee en el índice (más corto que el título de la sección). */
   label: string
   icon: LucideIcon
-  content: React.ReactNode
+  Component: () => React.ReactNode
 }
 
 export function DocsContent({ tenantSlug, role }: { tenantSlug: string; role: string }) {
-  const sections: DocSection[] = [
-    { id: 'inicio', label: 'Bienvenida', icon: BookOpen, content: <SectionInicio /> },
-    { id: 'roles', label: 'Roles y permisos', icon: Shield, content: <SectionRoles /> },
+  const [active, setActive] = useState<string>('inicio')
+
+  const sections: Section[] = [
+    { id: 'inicio', label: 'Bienvenida', icon: BookOpen, Component: () => <SectionInicio /> },
+    { id: 'roles', label: 'Roles y permisos', icon: Shield, Component: () => <SectionRoles /> },
     {
       id: 'mesas',
       label: 'Mesas y QRs',
       icon: LayoutGrid,
-      content: <SectionMesas slug={tenantSlug} />,
+      Component: () => <SectionMesas slug={tenantSlug} />,
     },
     {
       id: 'menu',
       label: 'La carta',
       icon: UtensilsCrossed,
-      content: <SectionMenu slug={tenantSlug} />,
+      Component: () => <SectionMenu slug={tenantSlug} />,
     },
     {
       id: 'comensal',
       label: 'Flujo del comensal',
       icon: Smartphone,
-      content: <SectionComensal />,
+      Component: () => <SectionComensal />,
     },
     {
       id: 'mozo',
       label: 'Panel del mozo',
       icon: ClipboardList,
-      content: <SectionMozo slug={tenantSlug} />,
+      Component: () => <SectionMozo slug={tenantSlug} />,
     },
     {
       id: 'cocina',
       label: 'Panel de cocina',
       icon: ChefHat,
-      content: <SectionCocina slug={tenantSlug} />,
+      Component: () => <SectionCocina slug={tenantSlug} />,
     },
-    { id: 'cobro', label: 'Cobro y puntos', icon: Coins, content: <SectionCobro /> },
+    { id: 'cobro', label: 'Cobro y puntos', icon: Coins, Component: () => <SectionCobro /> },
     {
       id: 'punch',
       label: 'Punch cards',
       icon: Stamp,
-      content: <SectionPunch slug={tenantSlug} />,
+      Component: () => <SectionPunch slug={tenantSlug} />,
     },
     {
       id: 'equipo',
       label: 'Gestionar equipo',
       icon: UserPlus,
-      content: <SectionEquipo slug={tenantSlug} />,
+      Component: () => <SectionEquipo slug={tenantSlug} />,
     },
     {
       id: 'auto-accept',
       label: 'Auto-aceptación',
       icon: Zap,
-      content: <SectionAutoAccept slug={tenantSlug} />,
+      Component: () => <SectionAutoAccept slug={tenantSlug} />,
     },
-    { id: 'email', label: 'Email transaccional', icon: Mail, content: <SectionEmail /> },
-    { id: 'faq', label: 'Preguntas frecuentes', icon: HelpCircle, content: <SectionFaq /> },
+    { id: 'email', label: 'Email transaccional', icon: Mail, Component: () => <SectionEmail /> },
+    { id: 'faq', label: 'Preguntas frecuentes', icon: HelpCircle, Component: () => <SectionFaq /> },
     {
       id: 'soporte',
       label: 'Soporte y límites',
       icon: LifeBuoy,
-      content: <SectionSoporte />,
+      Component: () => <SectionSoporte />,
     },
   ]
 
   return (
-    // Flex en el celular (el índice pegado se desplaza a lo largo de toda la
-    // guía) y grilla desde `lg` (columna del índice + texto).
-    <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:items-start lg:gap-10">
-      <DocsToc
-        roleLabel={roleLabel(role)}
-        items={sections.map(({ id, label, icon: Icon }) => ({
-          id,
-          label,
-          icon: <Icon aria-hidden="true" className="size-4" strokeWidth={1.75} />,
-        }))}
-      />
-      <div className="flex min-w-0 flex-col gap-12 lg:max-w-2xl">
+    <div className="grid gap-8 lg:grid-cols-[220px_1fr]">
+      <nav className="lg:sticky lg:top-6 lg:self-start">
+        <ul className="space-y-0.5">
+          {sections.map((s) => (
+            <li key={s.id}>
+              <a
+                href={`#${s.id}`}
+                onClick={() => setActive(s.id)}
+                aria-current={active === s.id ? 'page' : undefined}
+                className={cn(
+                  'flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors',
+                  active === s.id
+                    ? 'border border-primary/20 bg-[--cream-tint] font-medium text-primary'
+                    : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                )}
+              >
+                <s.icon className="size-3.5" />
+                {s.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-4 px-2.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+          Tu rol: {role}
+        </p>
+      </nav>
+
+      <div className="space-y-12 lg:max-w-2xl">
         {sections.map((s) => (
-          <Fragment key={s.id}>{s.content}</Fragment>
+          <section key={s.id} id={s.id} className="scroll-mt-6">
+            <s.Component />
+          </section>
         ))}
       </div>
     </div>
   )
 }
 
-// ──────────────────────────────────────────────────────────
-// Piezas de texto
-// ──────────────────────────────────────────────────────────
-
-/**
- * Una sección de la guía. El margen de scroll deja el título a la vista al
- * saltar desde el índice: debajo de la fila pegada en el celular y con aire
- * debajo del topbar en escritorio (el topbar ya lo descuenta `scroll-padding`).
- */
-function DocSection({
-  id,
-  title,
-  children,
-}: {
-  id: string
-  title: string
-  children: React.ReactNode
-}) {
-  return (
-    <Section id={id} title={title} className="scroll-mt-14 lg:scroll-mt-6">
-      <div className="flex flex-col gap-3 text-sm/6 text-foreground">{children}</div>
-    </Section>
-  )
+function H2({ children }: { children: React.ReactNode }) {
+  return <h2 className="font-serif text-2xl font-semibold tracking-tight">{children}</h2>
 }
-
 function H3({ children }: { children: React.ReactNode }) {
-  return <h3 className="mt-3 type-subtitle text-foreground">{children}</h3>
+  return <h3 className="mt-6 font-serif text-lg font-semibold tracking-tight">{children}</h3>
 }
 function P({ children }: { children: React.ReactNode }) {
-  return <p className="text-pretty">{children}</p>
+  return <p className="mt-3 text-sm leading-relaxed text-foreground/80">{children}</p>
 }
 function Tip({ children }: { children: React.ReactNode }) {
   return (
-    <Callout tone="neutral" icon={Lightbulb} title="Tip">
-      {children}
-    </Callout>
+    <div className="mt-4 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-warning">
+      <strong>Tip:</strong> {children}
+    </div>
   )
 }
 function Note({ children }: { children: React.ReactNode }) {
   return (
-    <Callout tone="info" title="Nota">
-      {children}
-    </Callout>
+    <div className="mt-4 rounded-lg border border-info/30 bg-info/10 p-3 text-xs text-info">
+      <strong>Nota:</strong> {children}
+    </div>
   )
 }
 function Code({ children }: { children: React.ReactNode }) {
-  return (
-    <code className="rounded-sm bg-secondary px-1 py-0.5 font-mono type-small">{children}</code>
-  )
+  return <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[12px]">{children}</code>
 }
 function Steps({ children }: { children: React.ReactNode }) {
-  return <ol className="list-decimal space-y-2 ps-5 marker:text-muted-foreground">{children}</ol>
+  return <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm">{children}</ol>
 }
 function Bullets({ children }: { children: React.ReactNode }) {
-  return <ul className="list-disc space-y-1.5 ps-5 marker:text-muted-foreground">{children}</ul>
-}
-
-const LINK_CLASS =
-  'font-medium text-primary underline decoration-1 underline-offset-[3px] hover:decoration-2'
-
-/** Link a otra pantalla del panel (navegación sin recargar). */
-function DocLink({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <Link href={href} className={LINK_CLASS}>
-      {children}
-    </Link>
-  )
-}
-
-/**
- * Link al salón o afuera de HUB. El salón es otro workspace (otro tema, otro
- * Toaster): se entra con recarga completa, nunca con `<Link>`.
- */
-function ExternalDocLink({
-  href,
-  newTab = false,
-  children,
-}: {
-  href: string
-  newTab?: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <ReloadLink href={href} newTab={newTab} className={LINK_CLASS}>
-      {children}
-    </ReloadLink>
-  )
-}
-
-/** Íconos dentro del texto, alineados con la línea. */
-const INLINE_ICON = 'inline-block size-4 align-[-0.1875rem]'
-
-/** La flecha «→» de un flujo. Inter no trae el glifo: se dibuja el ícono y el lector lee la flecha. */
-function Arrow() {
-  return (
-    <>
-      <ArrowRight aria-hidden="true" className={`${INLINE_ICON} mx-0.5 text-muted-foreground`} />
-      <span className="sr-only">→</span>
-    </>
-  )
+  return <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm">{children}</ul>
 }
 
 // ──────────────────────────────────────────────────────────
@@ -242,7 +170,8 @@ function Arrow() {
 
 function SectionInicio() {
   return (
-    <DocSection id="inicio" title="Bienvenido a HUB">
+    <div>
+      <H2>Bienvenido a HUB</H2>
       <P>
         HUB es la plataforma operativa de tu bar. Cubre tres casos:{' '}
         <strong>recibir pedidos por QR</strong>,{' '}
@@ -283,65 +212,62 @@ function SectionInicio() {
         El concepto fundamental es que <strong>sesión y QR son cosas separadas</strong>. La mesa
         física existe siempre con su QR fijo; las sesiones nacen y mueren con cada grupo.
       </Tip>
-    </DocSection>
+    </div>
   )
 }
 
-/**
- * Dónde arranca cada rol (el home de `homePathForRole`). El `satisfies` obliga a
- * sumar acá cada rol nuevo: la tabla de la guía no se puede quedar atrás.
- */
-const ROLE_HOME_SCREEN = {
-  owner: 'Resumen y todas las páginas.',
-  cashier: 'Salón, desde el celular.',
-  waiter: 'Salón, desde el celular.',
-  kitchen: 'Cocina (KDS).',
-  editor: 'Carta.',
-  host: 'Reservas y calendario de eventos.',
-  accountant: 'Administración.',
-} satisfies Record<TenantRole, string>
-
 function SectionRoles() {
   return (
-    <DocSection id="roles" title="Roles y permisos">
-      <P>HUB tiene {TENANT_ROLES.length} roles, cada uno con su panel y sus permisos:</P>
+    <div>
+      <H2>Roles y permisos</H2>
+      <P>HUB tiene 4 roles, cada uno con su panel y sus permisos:</P>
 
-      <DataTable
-        caption="Roles y permisos"
-        rows={[...TENANT_ROLES]}
-        getRowId={(r) => r}
-        columns={[
-          { id: 'rol', header: 'Rol', cell: (r) => ROLE_LABELS[r] },
-          { id: 'acceso', header: 'Acceso', cell: (r) => ROLE_DESCRIPTIONS[r] },
-          {
-            id: 'pantalla',
-            header: 'Pantalla principal',
-            mobile: 'meta',
-            cell: (r) => (
-              <>
-                {/* En la tarjeta del celular no hay encabezado de columna a la vista. */}
-                <span aria-hidden="true" className="md:hidden">
-                  Pantalla principal:{' '}
-                </span>
-                {ROLE_HOME_SCREEN[r]}
-              </>
-            ),
-          },
-        ]}
-      />
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <th className="py-2 pr-3">Rol</th>
+              <th className="py-2 pr-3">Acceso</th>
+              <th className="py-2">Pantalla principal</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-b">
+              <td className="py-3 pr-3 font-medium">Owner</td>
+              <td className="py-3 pr-3">Todo. Configuración, equipo, finanzas, marketing.</td>
+              <td className="py-3">Resumen, todas las páginas.</td>
+            </tr>
+            <tr className="border-b">
+              <td className="py-3 pr-3 font-medium">Mozo</td>
+              <td className="py-3 pr-3">Sesiones abiertas, confirmar comandas, cobrar.</td>
+              <td className="py-3">Sesiones.</td>
+            </tr>
+            <tr className="border-b">
+              <td className="py-3 pr-3 font-medium">Cocina</td>
+              <td className="py-3 pr-3">Avanzar comandas en cocina, marcar sin stock.</td>
+              <td className="py-3">Cocina (KDS).</td>
+            </tr>
+            <tr>
+              <td className="py-3 pr-3 font-medium">Cajero</td>
+              <td className="py-3 pr-3">Cobrar mesas (rol legacy, casi-mozo).</td>
+              <td className="py-3">Sesiones, cerrar mesa legacy.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <Note>
         El sidebar lateral se filtra automáticamente: cada rol solo ve las pantallas a las que tiene
-        permiso. El rol «{ROLE_LABELS.accountant}» solo lo puede dar quien administra los accesos de
-        Administración.
+        permiso.
       </Note>
-    </DocSection>
+    </div>
   )
 }
 
 function SectionMesas({ slug }: { slug: string }) {
   return (
-    <DocSection id="mesas" title="Mesas y QRs">
+    <div>
+      <H2>Mesas y QRs</H2>
       <P>
         Cada mesa física del bar tiene un QR único. El comensal lo escanea y se le abre la carta en
         su celular.
@@ -350,7 +276,11 @@ function SectionMesas({ slug }: { slug: string }) {
       <H3>Crear una mesa</H3>
       <Steps>
         <li>
-          Andá a <DocLink href={`/${slug}/local/mesas`}>Salón › Plano y QRs de mesa</DocLink>.
+          Andá a{' '}
+          <a href={`/${slug}/local/mesas`} className="text-primary underline">
+            Local → Plano
+          </a>
+          .
         </li>
         <li>
           Click <strong>"Nueva mesa"</strong>.
@@ -367,10 +297,7 @@ function SectionMesas({ slug }: { slug: string }) {
 
       <H3>Imprimir el QR</H3>
       <Steps>
-        <li>
-          En la lista de mesas, click el ícono de impresora{' '}
-          <Printer aria-hidden="true" className={INLINE_ICON} /> sobre la mesa.
-        </li>
+        <li>En la lista de mesas, click el ícono de impresora 🖨 sobre la mesa.</li>
         <li>Se abre una nueva pestaña con el QR + nombre de la mesa, listo para imprimir en A6.</li>
         <li>El navegador dispara el diálogo de impresión automáticamente.</li>
         <li>Pegá el QR sobre la mesa física en un lugar visible.</li>
@@ -379,8 +306,7 @@ function SectionMesas({ slug }: { slug: string }) {
       <H3>Regenerar el QR</H3>
       <P>
         Si filtraste el QR (alguien le sacó foto y lo está usando desde fuera del bar), podés
-        rotarlo: en la lista, click el ícono de regenerar{' '}
-        <RefreshCw aria-hidden="true" className={INLINE_ICON} />.{' '}
+        rotarlo: en la lista, click el ícono ↻.{' '}
         <strong>El QR viejo deja de funcionar al instante.</strong> Reimprimí el nuevo y reemplazá
         el sticker físico.
       </P>
@@ -396,13 +322,14 @@ function SectionMesas({ slug }: { slug: string }) {
         datos). En su lugar, editala y marcala como <strong>inactiva</strong>: deja de aparecer para
         los comensales pero el historial queda.
       </P>
-    </DocSection>
+    </div>
   )
 }
 
 function SectionMenu({ slug }: { slug: string }) {
   return (
-    <DocSection id="menu" title="La carta">
+    <div>
+      <H2>La carta</H2>
       <P>
         Tu carta se organiza en categorías (Cervezas, Tragos, Picadas, Postres) con ítems adentro.
         Eso es lo que ve el comensal cuando escanea el QR.
@@ -411,8 +338,11 @@ function SectionMenu({ slug }: { slug: string }) {
       <H3>Cargar el menú</H3>
       <Steps>
         <li>
-          Andá a <DocLink href={`/${slug}/menu`}>Carta</DocLink> (grupo Crecimiento del menú
-          lateral).
+          Andá a{' '}
+          <a href={`/${slug}/menu`} className="text-primary underline">
+            Carta
+          </a>{' '}
+          (grupo Crecimiento del menú lateral).
         </li>
         <li>Creá categorías primero (ej: "Tragos clásicos").</li>
         <li>
@@ -424,9 +354,12 @@ function SectionMenu({ slug }: { slug: string }) {
 
       <H3>Tags de carta</H3>
       <P>
-        En <DocLink href={`/${slug}/menu/tags`}>Carta › Gestionar etiquetas</DocLink> creás
-        etiquetas (#cafe, #vegano, #sin-tacc) y las asignás a ítems del menú. Los tags se usan en
-        las <strong>punch cards</strong> para definir qué cuenta como un "stamp".
+        En{' '}
+        <a href={`/${slug}/menu/tags`} className="text-primary underline">
+          Carta → Gestionar etiquetas
+        </a>{' '}
+        creás etiquetas (#cafe, #vegano, #sin-tacc) y las asignás a ítems del menú. Los tags se usan
+        en las <strong>punch cards</strong> para definir qué cuenta como un "stamp".
       </P>
 
       <Tip>
@@ -434,13 +367,14 @@ function SectionMenu({ slug }: { slug: string }) {
         todos te permite hacer una punch card "5 cafés = 1 gratis" sin importar cuál eligió el
         cliente.
       </Tip>
-    </DocSection>
+    </div>
   )
 }
 
 function SectionComensal() {
   return (
-    <DocSection id="comensal" title="Flujo del comensal">
+    <div>
+      <H2>Flujo del comensal</H2>
       <P>El comensal nunca instala una app. Usa solo el navegador de su celular.</P>
 
       <H3>Paso a paso</H3>
@@ -452,24 +386,20 @@ function SectionComensal() {
           la misma sesión.
         </li>
         <li>
-          Banner arriba:{' '}
-          <em>
-            "Sumá puntos en cada pedido <Arrow />"
-          </em>
-          . Si toca, completa teléfono + nombre + cumpleaños. Es <strong>opcional</strong>: puede
-          pedir igual sin registrarse.
+          Banner arriba: <em>"Sumá puntos en cada pedido →"</em>. Si toca, completa teléfono +
+          nombre + cumpleaños. Es <strong>opcional</strong>: puede pedir igual sin registrarse.
         </li>
         <li>
-          Navega categorías, toca un ítem <Arrow /> sheet con qty + notas opcionales (sin cebolla,
-          bien frío) <Arrow /> <strong>Agregar al carrito</strong>.
+          Navega categorías, toca un ítem → sheet con qty + notas opcionales (sin cebolla, bien
+          frío) → <strong>Agregar al carrito</strong>.
         </li>
         <li>
-          Cuando termina de armar, toca el botón sticky abajo "Carrito (N) $XX" <Arrow /> revisa{' '}
-          <Arrow /> <strong>Realizar orden</strong>.
+          Cuando termina de armar, toca el botón sticky abajo "Carrito (N) $XX" → revisa →{' '}
+          <strong>Realizar orden</strong>.
         </li>
         <li>
           La comanda entra como <Code>pending</Code>. Pestaña <em>Mis órdenes</em> muestra el estado
-          en vivo: pending <Arrow /> accepted <Arrow /> preparing <Arrow /> ready <Arrow /> served.
+          en vivo: pending → accepted → preparing → ready → served.
         </li>
         <li>
           Puede armar más rondas mientras la sesión esté abierta. También puede tocar{' '}
@@ -500,51 +430,49 @@ function SectionComensal() {
           actividad, un cron diario la marca como <Code>abandoned</Code>. No genera puntos.
         </li>
       </Bullets>
-    </DocSection>
+    </div>
   )
 }
 
 function SectionMozo({ slug }: { slug: string }) {
   return (
-    <DocSection id="mozo" title="Panel del mozo">
+    <div>
+      <H2>Panel del mozo</H2>
       <P>
-        El mozo entra desde su celular al salón, en la pestaña{' '}
-        <ExternalDocLink href={`/${slug}/salon/mesas`}>Mesas</ExternalDocLink>. Es su pantalla
-        principal toda la noche.
+        El mozo entra desde su celular a{' '}
+        <a href={`/${slug}/sesiones`} className="text-primary underline">
+          Sesiones
+        </a>
+        . Es su pantalla principal toda la noche.
       </P>
 
-      <H3>Vista de mesas</H3>
+      <H3>Vista de sesiones</H3>
       <P>
         Una grilla con cada mesa abierta. Cada card muestra: nombre de la mesa, hora de apertura,
         total acumulado, cantidad de comensales conectados, y badges de alertas:
       </P>
       <Bullets>
         <li>
-          <Badge tone="warning" icon={Bell}>
-            N pendientes
-          </Badge>{' '}
-          <Arrow /> hay comandas esperando confirmación del mozo.
+          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-warning">
+            N pending
+          </span>{' '}
+          → hay comandas esperando confirmación del mozo.
         </li>
         <li>
-          <Badge tone="danger" icon={Receipt}>
-            Cuenta
-          </Badge>{' '}
-          <Arrow /> el comensal tocó el botón "Pedir la cuenta".
+          <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] text-red-900">
+            Pidieron cuenta
+          </span>{' '}
+          → el comensal tocó el botón "Pedir la cuenta".
         </li>
       </Bullets>
 
       <H3>Vista detalle de una mesa</H3>
-      <P>
-        Click en una mesa <Arrow /> vista detalle con:
-      </P>
+      <P>Click en una mesa → vista detalle con:</P>
       <Bullets>
         <li>
           Header con total + botón <strong>Cobrar mesa</strong>.
         </li>
-        <li>
-          Lista de comensales (registrados con un check{' '}
-          <Check aria-hidden="true" className={INLINE_ICON} />, anónimos como Guest #).
-        </li>
+        <li>Lista de comensales (registrados con check ✓, anónimos como Guest #).</li>
         <li>Lista cronológica de comandas con sus ítems y estado.</li>
         <li>
           Botones contextuales por estado: Confirmar/Rechazar (pending), Empezar (accepted), Marcar
@@ -558,8 +486,7 @@ function SectionMozo({ slug }: { slug: string }) {
       <H3>Tu loop habitual</H3>
       <Steps>
         <li>
-          Llega un ticket pending <Arrow /> revisás visualmente la mesa <Arrow />{' '}
-          <strong>Confirmar</strong>.
+          Llega un ticket pending → revisás visualmente la mesa → <strong>Confirmar</strong>.
         </li>
         <li>
           Cocina lo prepara. Cuando lo marcan <Code>ready</Code>, lo retirás.
@@ -569,8 +496,8 @@ function SectionMozo({ slug }: { slug: string }) {
           los puntos se calculan igual.)
         </li>
         <li>
-          Cuando piden la cuenta, click <strong>Cobrar mesa</strong> <Arrow /> desglose por comensal
-          con sus puntos <Arrow /> <strong>Confirmar cobro</strong>.
+          Cuando piden la cuenta, click <strong>Cobrar mesa</strong> → desglose por comensal con sus
+          puntos → <strong>Confirmar cobro</strong>.
         </li>
       </Steps>
 
@@ -578,16 +505,20 @@ function SectionMozo({ slug }: { slug: string }) {
         Tu pantalla se actualiza en <strong>tiempo real</strong> (Supabase Realtime). No necesitás
         recargar manualmente.
       </Tip>
-    </DocSection>
+    </div>
   )
 }
 
 function SectionCocina({ slug }: { slug: string }) {
   return (
-    <DocSection id="cocina" title="Panel de cocina (KDS)">
+    <div>
+      <H2>Panel de cocina (KDS)</H2>
       <P>
         Pensado para tener una tablet en cocina abierta toda la noche. URL:{' '}
-        <ExternalDocLink href={`/${slug}/salon/cocina`}>/{slug}/salon/cocina</ExternalDocLink>.
+        <a href={`/${slug}/salon/cocina`} className="text-primary underline">
+          /{slug}/salon/cocina
+        </a>
+        .
       </P>
 
       <H3>Cómo funciona</H3>
@@ -609,8 +540,7 @@ function SectionCocina({ slug }: { slug: string }) {
       <H3>Tu loop</H3>
       <Steps>
         <li>
-          Aparece comanda nueva (accepted) <Arrow /> click <strong>Empezar</strong> <Arrow /> pasa a
-          preparing.
+          Aparece comanda nueva (accepted) → click <strong>Empezar</strong> → pasa a preparing.
         </li>
         <li>Preparás los ítems.</li>
         <li>
@@ -630,13 +560,14 @@ function SectionCocina({ slug }: { slug: string }) {
         El KDS hoy es <strong>una sola vista global</strong>. Si querés separación por estación
         (cocina caliente vs barra vs postres), avisanos — está planeado pero fuera del MVP actual.
       </Note>
-    </DocSection>
+    </div>
   )
 }
 
 function SectionCobro() {
   return (
-    <DocSection id="cobro" title="Cobro y puntos">
+    <div>
+      <H2>Cobro y puntos</H2>
       <P>
         Cuando el mozo marca la mesa como cobrada, el sistema dispara un cálculo atómico que cierra
         la sesión y procesa puntos para todos los registrados.
@@ -663,8 +594,8 @@ function SectionCobro() {
       <P>Los puntos se calculan con reglas configurables. Hay dos tipos:</P>
       <Bullets>
         <li>
-          <strong>Por monto</strong> (<Code>per_amount</Code>): cada $X gastados <Arrow /> Y puntos.
-          Ej: cada $1.000 <Arrow /> 10 puntos.
+          <strong>Por monto</strong> (<Code>per_amount</Code>): cada $X gastados → Y puntos. Ej:
+          cada $1.000 → 10 puntos.
         </li>
         <li>
           <strong>Por ítem</strong> (<Code>per_item</Code>): consumir cierto ítem o categoría suma N
@@ -678,13 +609,14 @@ function SectionCobro() {
         puntos para nadie. La regla evita peleas: los puntos se asignan al guest que originó el
         pedido.
       </P>
-    </DocSection>
+    </div>
   )
 }
 
 function SectionPunch({ slug }: { slug: string }) {
   return (
-    <DocSection id="punch" title="Punch cards">
+    <div>
+      <H2>Punch cards</H2>
       <P>
         Las punch cards son tarjetas perforadas digitales: <em>"5 cafés y el sexto gratis"</em>.
         Existen en paralelo al sistema de puntos.
@@ -694,12 +626,17 @@ function SectionPunch({ slug }: { slug: string }) {
       <Steps>
         <li>
           Primero necesitás un <strong>reward</strong> (premio canjeable). Andá a{' '}
-          <DocLink href={`/${slug}/club?tab=programa`}>Club › Puntos y niveles</DocLink> y creá uno
-          (ej: "Café gratis", costo 0 puntos).
+          <a href={`/${slug}/club?tab=programa`} className="text-primary underline">
+            Club → Puntos y niveles
+          </a>{' '}
+          y creá uno (ej: "Café gratis", costo 0 puntos).
         </li>
         <li>
-          Andá a <DocLink href={`/${slug}/club?tab=punch`}>Club › Punch cards</DocLink> <Arrow />{' '}
-          "Nueva punch card".
+          Andá a{' '}
+          <a href={`/${slug}/club?tab=punch`} className="text-primary underline">
+            Club → Punch cards
+          </a>{' '}
+          → "Nueva punch card".
         </li>
         <li>
           Configurá: nombre ("5 cafés = 1 gratis"), descripción opcional, threshold (5), trigger
@@ -724,16 +661,20 @@ function SectionPunch({ slug }: { slug: string }) {
         Las punch cards <strong>no son mutuamente excluyentes</strong> con los puntos genéricos. Un
         mismo café puede sumar 1 stamp en la card y a la vez 10 puntos al wallet.
       </Tip>
-    </DocSection>
+    </div>
   )
 }
 
 function SectionEquipo({ slug }: { slug: string }) {
   return (
-    <DocSection id="equipo" title="Gestionar equipo">
+    <div>
+      <H2>Gestionar equipo</H2>
       <P>
         Como owner, vos creás las cuentas para tus mozos, cocineros y cajeros desde{' '}
-        <DocLink href={`/${slug}/configuracion/equipo`}>Configuración › Equipo</DocLink>.
+        <a href={`/${slug}/configuracion/equipo`} className="text-primary underline">
+          Configuración → Equipo
+        </a>
+        .
       </P>
 
       <H3>Crear un miembro</H3>
@@ -762,33 +703,31 @@ function SectionEquipo({ slug }: { slug: string }) {
         </li>
       </Steps>
 
-      <H3>Cambiar rol o contraseña</H3>
+      <H3>Cambiar rol o resetear contraseña</H3>
       <P>En la lista de miembros podés:</P>
       <Bullets>
-        <li>Cambiar el rol con el desplegable al lado del nombre.</li>
+        <li>Cambiar el rol con el dropdown al lado del nombre.</li>
         <li>
-          Tocar el botón de más acciones{' '}
-          <MoreHorizontal aria-hidden="true" className={INLINE_ICON} /> <Arrow />{' '}
-          <strong>Cambiar contraseña</strong> para asignar una nueva.
+          Click el ⋯ → <strong>Resetear contraseña</strong> para asignar una nueva.
         </li>
         <li>
-          Tocar el botón de más acciones{' '}
-          <MoreHorizontal aria-hidden="true" className={INLINE_ICON} /> <Arrow />{' '}
-          <strong>Quitar del equipo</strong> (no borra la cuenta, solo le saca el acceso a tu bar).
+          Click el ⋯ → <strong>Remover del bar</strong> (no borra la cuenta auth, solo la
+          membership).
         </li>
       </Bullets>
 
       <Note>
         El sistema te <strong>impide quedarte sin owners</strong>. Si solo hay un owner, no podés
-        degradarlo ni quitarlo del equipo.
+        degradarlo ni removerlo.
       </Note>
-    </DocSection>
+    </div>
   )
 }
 
 function SectionAutoAccept({ slug }: { slug: string }) {
   return (
-    <DocSection id="auto-accept" title="Auto-aceptación de comandas">
+    <div>
+      <H2>Auto-aceptación de comandas</H2>
       <P>
         Por default, cada comanda del comensal va a estado <Code>pending</Code> y el mozo tiene que
         confirmarla manualmente. Eso evita pedidos fantasma de bromistas. Pero si tu mozo está
@@ -797,7 +736,11 @@ function SectionAutoAccept({ slug }: { slug: string }) {
 
       <H3>Configurar</H3>
       <P>
-        Andá a <DocLink href={`/${slug}/local/auto-aceptacion`}>Salón › Auto-aceptación</DocLink>.
+        Andá a{' '}
+        <a href={`/${slug}/local/auto-aceptacion`} className="text-primary underline">
+          Local → Auto-aceptación
+        </a>
+        .
       </P>
       <Bullets>
         <li>
@@ -823,13 +766,14 @@ function SectionAutoAccept({ slug }: { slug: string }) {
           sesiones sin actividad &gt; N horas. Default: 8h.
         </li>
       </Bullets>
-    </DocSection>
+    </div>
   )
 }
 
 function SectionEmail() {
   return (
-    <DocSection id="email" title="Email transaccional">
+    <div>
+      <H2>Email transaccional</H2>
       <P>
         HUB usa <strong>Resend</strong> para mandar emails (credenciales del staff, futuras
         notificaciones). Es opcional: el sistema funciona sin email, mostrando las credenciales en
@@ -840,9 +784,14 @@ function SectionEmail() {
       <Steps>
         <li>
           Crear cuenta gratis en{' '}
-          <ExternalDocLink href="https://resend.com" newTab>
+          <a
+            href="https://resend.com"
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary underline"
+          >
             resend.com
-          </ExternalDocLink>{' '}
+          </a>{' '}
           (3000 emails/mes free).
         </li>
         <li>Verificar tu dominio en Resend (4 records DNS — instrucciones en su UI).</li>
@@ -865,27 +814,28 @@ function SectionEmail() {
           con su email + password + rol + link a /login.
         </li>
       </Bullets>
-    </DocSection>
+    </div>
   )
 }
 
 function SectionFaq() {
   return (
-    <DocSection id="faq" title="Preguntas frecuentes">
+    <div>
+      <H2>Preguntas frecuentes</H2>
+
       <H3>El comensal no ve la carta cuando escanea</H3>
       <P>
-        Verificá que la mesa esté <strong>activa</strong> (en Salón › Plano y QRs de mesa, sin el
-        badge gris "Inactiva"). Verificá también que tu menú tenga al menos una categoría con ítems
+        Verificá que la mesa esté <strong>activa</strong> (en Configuración → Mesas, sin el badge
+        gris "Inactiva"). Verificá también que tu menú tenga al menos una categoría con ítems
         activos. Si todo está OK y aún así no carga, pedí al comensal que pruebe en modo incógnito
         por si hay caché.
       </P>
 
-      <H3>El mozo no ve "Mesas" en el salón</H3>
+      <H3>El mozo no ve "Sesiones" en su sidebar</H3>
       <P>
-        Las pestañas del salón dependen de lo que tenga activado tu bar: <strong>Mesas</strong>{' '}
-        aparece solo con el servicio de mesa prendido (lo prende el equipo de HUB). Si ya está
-        prendido y no la ve, andá a Configuración › Equipo y revisá que su rol sea{' '}
-        <strong>{ROLE_LABELS.waiter}</strong>.
+        El sidebar se filtra por rol. Si el mozo no ve Sesiones, probablemente quedó como{' '}
+        <Code>cashier</Code> o <Code>kitchen</Code>. Andá a Equipo, edita su fila y cambia el rol a{' '}
+        <Code>waiter</Code>.
       </P>
 
       <H3>Cobré una mesa pero el cliente no ve los puntos</H3>
@@ -910,13 +860,14 @@ function SectionFaq() {
         Si necesitás, eliminá la cancelación manualmente desde Supabase Studio (no recomendado en
         producción) o el cocinero crea otro ítem manual desde el panel del mozo (Agregar comanda).
       </P>
-    </DocSection>
+    </div>
   )
 }
 
 function SectionSoporte() {
   return (
-    <DocSection id="soporte" title="Soporte y límites del autoservicio">
+    <div>
+      <H2>Soporte y límites del autoservicio</H2>
       <P>
         Algunas cosas las podés resolver vos solo desde la app, otras requieren que toques tu
         proveedor (Vercel, Supabase, Meta) o ayuda técnica. Acá está el mapa:
@@ -928,7 +879,7 @@ function SectionSoporte() {
         <li>Cargar y modificar tu menú.</li>
         <li>Configurar reglas de puntos y punch cards.</li>
         <li>Invitar / dar de baja miembros del equipo.</li>
-        <li>Cambiar las contraseñas de tu staff.</li>
+        <li>Resetear contraseñas de tu staff.</li>
         <li>Activar y configurar la auto-aceptación.</li>
         <li>Ver estadísticas, audiencias, segmentar clientes.</li>
         <li>Gestionar bandeja de WhatsApp/Instagram (si tu canal está conectado).</li>
@@ -962,6 +913,6 @@ function SectionSoporte() {
         Para cualquier consulta técnica, contactanos por el canal que coordinamos. Tenemos logs
         completos en Supabase y Vercel para debuggear cualquier problema reportado.
       </Note>
-    </DocSection>
+    </div>
   )
 }

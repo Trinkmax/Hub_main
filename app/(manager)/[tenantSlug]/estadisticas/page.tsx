@@ -1,21 +1,29 @@
-import { Banknote, CalendarX2, Coins, PartyPopper, Receipt, Sparkles, Users } from 'lucide-react'
+import {
+  ArrowDownToLine,
+  Banknote,
+  Coins,
+  PartyPopper,
+  Receipt,
+  Sparkles,
+  Users,
+} from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { RevenueChart } from '@/components/charts/revenue-chart'
-import { Amount } from '@/components/ui/amount'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { DataTable, ExportButton } from '@/components/ui/data-table'
+import {
+  DataTableBody,
+  DataTableCell,
+  DataTableHead,
+  DataTableHeader,
+  DataTableRoot,
+  DataTableScroll,
+  DataTableShell,
+} from '@/components/ui/data-table'
 import { EmptyState } from '@/components/ui/empty-state'
-import { KPI, KPIGroup } from '@/components/ui/kpi'
 import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
-import { Section } from '@/components/ui/section'
+import { StatCard } from '@/components/ui/stat-card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { formatDate, formatIsoDay } from '@/lib/dates/format'
-import { formatNumber } from '@/lib/format/number-kind'
-import { NBSP } from '@/lib/money/format'
 import { getStaffSummaries } from '@/lib/staff-performance/queries'
 import { resolveFromSearchParams } from '@/lib/staff-performance/range-from-search-params'
 import {
@@ -35,24 +43,19 @@ import {
 } from '@/lib/tenant'
 import { ChurnCard } from './_components/churn-card'
 import { Heatmap } from './_components/heatmap'
+import { RevenueChart } from './_components/revenue-chart'
 import { StaffPerformanceTab } from './_components/staff-performance-tab'
 
 export const metadata = { title: 'Estadísticas' }
 export const dynamic = 'force-dynamic'
 
-/** Las pestañas que entiende `?tab=`; cualquier otro valor cae en la primera. */
-const TABS = ['overview', 'customers', 'events', 'comms', 'mozos'] as const
-type StatsTab = (typeof TABS)[number]
-
-/** `0,45` → `'45 %'` (entero, espacio duro antes del `%`, como el resto del kit). */
-function wholePercent(part: number, total: number): string {
-  return `${formatNumber(Math.round((part / total) * 100))}${NBSP}%`
+function fmtCents(cents: number): string {
+  return `$${(cents / 100).toLocaleString('es-AR', { maximumFractionDigits: 0 })}`
 }
 
-/** `0,123` → `'12,3 %'`. */
-function percentOneDecimal(part: number, total: number): string {
-  return `${formatNumber((part / total) * 100, 1)}${NBSP}%`
-}
+const numberFmt = new Intl.NumberFormat('es-AR')
+
+const TAB_CLASS = 'data-[state=active]:bg-card data-[state=active]:shadow-sm'
 
 export default async function EstadisticasPage({
   params,
@@ -74,10 +77,7 @@ export default async function EstadisticasPage({
   }
 
   const { preset: staffPreset, range: staffRange } = resolveFromSearchParams(sp)
-  const activeTab: StatsTab =
-    typeof sp.tab === 'string' && (TABS as readonly string[]).includes(sp.tab)
-      ? (sp.tab as StatsTab)
-      : 'overview'
+  const activeTab = typeof sp.tab === 'string' ? sp.tab : 'overview'
 
   const [kpis, daily90, heatmap, top, churn, events, comms, staffSummaries] = await Promise.all([
     getKpis(access.tenant.id),
@@ -91,30 +91,30 @@ export default async function EstadisticasPage({
   ])
 
   const totalRevenue = daily90.reduce((acc, d) => acc + Number(d.revenue_cents ?? 0), 0)
-  const exportBase = `/api/stats/export?slug=${encodeURIComponent(tenantSlug)}`
 
   return (
-    <PageShell>
+    <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <PageHeader
+        eyebrow="Insights"
         title="Estadísticas"
         description="Vista profunda de tu bar: clientes, visitas, eventos y comunicaciones."
         actions={
           <>
-            <Button asChild variant="secondary" size="sm">
+            <Button asChild variant="outline" size="sm" className="gap-2">
               <Link href={`/${tenantSlug}/estadisticas/como-nos-fue`}>
-                <PartyPopper aria-hidden />
+                <PartyPopper className="size-3.5" />
                 Cómo nos fue
               </Link>
             </Button>
-            <Button asChild variant="secondary" size="sm">
+            <Button asChild variant="outline" size="sm" className="gap-2">
               <Link href={`/${tenantSlug}/estadisticas/senas`}>
-                <Banknote aria-hidden />
+                <Banknote className="size-3.5" />
                 Señas
               </Link>
             </Button>
-            <Button asChild variant="secondary" size="sm">
+            <Button asChild variant="outline" size="sm" className="gap-2">
               <Link href={`/${tenantSlug}/estadisticas/comisiones`}>
-                <Coins aria-hidden />
+                <Coins className="size-3.5" />
                 Comisiones
               </Link>
             </Button>
@@ -122,205 +122,222 @@ export default async function EstadisticasPage({
         }
       />
 
-      {/* `syncParam`: la pestaña queda en la URL (`?tab=`), así se puede volver
-          o compartir; el selector de período de «Mozos» ya escribe `tab=mozos`. */}
-      <Tabs defaultValue={activeTab} syncParam="tab">
-        <TabsList aria-label="Secciones de estadísticas">
-          <TabsTrigger value="overview">Visión general</TabsTrigger>
-          <TabsTrigger value="customers">Clientes</TabsTrigger>
-          <TabsTrigger value="events">Eventos</TabsTrigger>
-          <TabsTrigger value="comms">Comunicación</TabsTrigger>
-          <TabsTrigger value="mozos">Mozos</TabsTrigger>
+      <Tabs defaultValue={activeTab} className="space-y-6">
+        <TabsList className="bg-secondary/40">
+          <TabsTrigger value="overview" className={TAB_CLASS}>
+            Visión general
+          </TabsTrigger>
+          <TabsTrigger value="customers" className={TAB_CLASS}>
+            Clientes
+          </TabsTrigger>
+          <TabsTrigger value="events" className={TAB_CLASS}>
+            Eventos
+          </TabsTrigger>
+          <TabsTrigger value="comms" className={TAB_CLASS}>
+            Comunicación
+          </TabsTrigger>
+          <TabsTrigger value="mozos" className={TAB_CLASS}>
+            Mozos
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="flex flex-col gap-8 pt-4">
-          <KPIGroup columns={4}>
-            <KPI icon={Users} label="Clientes" value={formatNumber(kpis.customers_total)} />
-            <KPI
+        <TabsContent value="overview" className="space-y-6">
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard
+              icon={Users}
+              iconClassName="text-primary"
+              label="Clientes"
+              value={numberFmt.format(kpis.customers_total)}
+            />
+            <StatCard
               icon={Sparkles}
-              label="Activos en 30 días"
-              value={formatNumber(kpis.customers_active_30d)}
+              iconClassName="text-info"
+              label="Activos 30d"
+              value={numberFmt.format(kpis.customers_active_30d)}
               hint={
                 kpis.customers_total > 0
-                  ? `${wholePercent(kpis.customers_active_30d, kpis.customers_total)} del total`
+                  ? `${Math.round((kpis.customers_active_30d / kpis.customers_total) * 100)}% del total`
                   : undefined
               }
             />
-            <KPI
+            <StatCard
               icon={Receipt}
-              label="Visitas en 30 días"
-              value={formatNumber(kpis.visits_30d)}
-              hint={
-                kpis.visits_30d > 0 ? `${formatNumber(kpis.visits_30d / 30, 1)} por día` : undefined
-              }
+              iconClassName="text-warning"
+              label="Visitas 30d"
+              value={numberFmt.format(kpis.visits_30d)}
+              hint={kpis.visits_30d > 0 ? `${(kpis.visits_30d / 30).toFixed(1)}/día` : undefined}
             />
-            <KPI
+            <StatCard
               icon={Banknote}
+              iconClassName="text-success"
               label="Ticket promedio"
-              value={<Amount cents={kpis.avg_ticket_30d_cents} decimals={0} />}
+              value={fmtCents(kpis.avg_ticket_30d_cents)}
             />
-          </KPIGroup>
+          </section>
 
-          <Section
-            title="Facturación de los últimos 90 días"
-            description={
-              <>
-                <Amount cents={totalRevenue} decimals={0} className="font-medium text-foreground" />{' '}
-                acumulado en 90 días
-              </>
-            }
-          >
-            <Card padding="sm">
-              <div className="h-72">
-                <RevenueChart
-                  data={daily90.map((d) => ({
-                    day: d.day,
-                    visits: d.visits,
-                    revenue_cents: Number(d.revenue_cents ?? 0),
-                  }))}
-                  metric="revenue_cents"
-                />
+          <div className="card-hairline rounded-xl border bg-card">
+            <header className="flex items-center justify-between gap-3 border-b border-border/60 px-5 py-4">
+              <div>
+                <h2 className="font-serif text-lg font-semibold tracking-tight">
+                  Revenue últimos 90 días
+                </h2>
+                <p className="text-xs text-muted-foreground">{fmtCents(totalRevenue)} acumulado</p>
               </div>
-            </Card>
-          </Section>
-
+              <span className="rounded-full bg-secondary/60 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                90d
+              </span>
+            </header>
+            <div className="h-72 px-2 pb-4">
+              <RevenueChart
+                data={daily90.map((d) => ({
+                  day: d.day,
+                  visits: d.visits,
+                  revenue_cents: Number(d.revenue_cents ?? 0),
+                }))}
+                metric="revenue_cents"
+              />
+            </div>
+          </div>
           <Heatmap data={heatmap} />
         </TabsContent>
 
-        <TabsContent value="customers" className="flex flex-col gap-8 pt-4">
-          <Section
-            title="Los 50 que más gastaron"
-            description="Clientes con más gasto acumulado. Tocá uno para abrir su ficha."
-            actions={<ExportButton href={`${exportBase}&type=top_customers`} size="sm" />}
-          >
-            <DataTable
-              caption="Los 50 clientes que más gastaron"
-              rows={top}
-              getRowId={(c) => c.customer_id}
-              rowHref={(c) => `/${tenantSlug}/clientes/${c.customer_id}`}
-              rowLabel={(c) => `${c.first_name} ${c.last_name}`.trim()}
-              columns={[
-                {
-                  id: 'cliente',
-                  header: 'Cliente',
-                  cell: (c) => `${c.first_name} ${c.last_name}`.trim(),
-                },
-                {
-                  id: 'visitas',
-                  header: 'Visitas',
-                  numeric: true,
-                  mobile: 'hidden',
-                  cell: (c) => formatNumber(c.total_visits),
-                },
-                // La plata lleva su `$` en la celda: en el celular la lista pasa
-                // a tarjetas y el encabezado no se ve.
-                {
-                  id: 'gasto',
-                  header: 'Gastó',
-                  numeric: true,
-                  cell: (c) => <Amount cents={c.total_spent_cents} decimals={0} />,
-                },
-                {
-                  id: 'ticket',
-                  header: 'Ticket promedio',
-                  numeric: true,
-                  hideBelow: 'lg',
-                  mobile: 'hidden',
-                  cell: (c) => <Amount cents={c.avg_ticket_cents} decimals={0} tone="muted" />,
-                },
-                {
-                  id: 'ultima',
-                  header: 'Última visita',
-                  mobile: 'meta',
-                  cell: (c) =>
-                    c.last_visit_at ? (
-                      <span className="type-amount text-muted-foreground">
-                        {formatDate(c.last_visit_at)}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    ),
-                },
-              ]}
-              empty={
-                <EmptyState
-                  size="sm"
-                  icon={Users}
-                  title="Todavía no hay ranking"
-                  description="Cuando empieces a registrar visitas, vas a ver acá a los clientes que más gastan."
-                />
-              }
-            />
-          </Section>
+        <TabsContent value="customers" className="space-y-6">
+          <DataTableShell>
+            <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 py-4">
+              <div>
+                <h2 className="font-serif text-lg font-semibold tracking-tight">
+                  Top 50 por gasto
+                </h2>
+                <p className="text-xs text-muted-foreground">Clientes con más spent acumulado.</p>
+              </div>
+              <Button asChild variant="outline" size="sm" className="gap-2">
+                <a
+                  href={`/api/stats/export?slug=${encodeURIComponent(tenantSlug)}&type=top_customers`}
+                  download
+                >
+                  <ArrowDownToLine className="size-3.5" />
+                  Exportar CSV
+                </a>
+              </Button>
+            </header>
+            {top.length === 0 ? (
+              <EmptyState
+                icon={Users}
+                title="Sin datos"
+                description="Cuando empieces a registrar visitas, vas a ver acá tu ranking de clientes."
+                className="m-3 border-0 bg-transparent"
+              />
+            ) : (
+              <DataTableScroll>
+                <DataTableRoot>
+                  <DataTableHead>
+                    <tr>
+                      <DataTableHeader>Cliente</DataTableHeader>
+                      <DataTableHeader>Visitas</DataTableHeader>
+                      <DataTableHeader>Spent</DataTableHeader>
+                      <DataTableHeader>Ticket prom.</DataTableHeader>
+                      <DataTableHeader>Última visita</DataTableHeader>
+                    </tr>
+                  </DataTableHead>
+                  <DataTableBody>
+                    {top.map((c) => (
+                      <tr key={c.customer_id} className="transition-colors hover:bg-secondary/40">
+                        <DataTableCell>
+                          <Link
+                            href={`/${tenantSlug}/clientes/${c.customer_id}`}
+                            className="font-medium hover:text-primary"
+                          >
+                            {c.first_name} {c.last_name}
+                          </Link>
+                        </DataTableCell>
+                        <DataTableCell className="tabular-nums">{c.total_visits}</DataTableCell>
+                        <DataTableCell className="font-display font-semibold tabular-nums">
+                          {fmtCents(c.total_spent_cents)}
+                        </DataTableCell>
+                        <DataTableCell className="tabular-nums text-muted-foreground">
+                          {fmtCents(c.avg_ticket_cents)}
+                        </DataTableCell>
+                        <DataTableCell className="text-xs text-muted-foreground">
+                          {c.last_visit_at
+                            ? new Date(c.last_visit_at).toLocaleDateString('es-AR')
+                            : '—'}
+                        </DataTableCell>
+                      </tr>
+                    ))}
+                  </DataTableBody>
+                </DataTableRoot>
+              </DataTableScroll>
+            )}
+          </DataTableShell>
 
-          <ChurnCard
-            rows={churn}
-            tenantSlug={tenantSlug}
-            exportHref={`${exportBase}&type=churn_risk`}
-          />
+          <ChurnCard rows={churn} tenantSlug={tenantSlug} />
+
+          <div>
+            <Button asChild variant="outline" size="sm" className="gap-2">
+              <a
+                href={`/api/stats/export?slug=${encodeURIComponent(tenantSlug)}&type=churn_risk`}
+                download
+              >
+                <ArrowDownToLine className="size-3.5" />
+                Exportar churn CSV
+              </a>
+            </Button>
+          </div>
         </TabsContent>
 
-        <TabsContent value="events" className="flex flex-col gap-8 pt-4">
-          <Section
-            title="Eventos por asistencia"
-            description="Las últimas 20 fechas del calendario, con la asistencia de sus reservas."
-          >
-            <DataTable
-              caption="Eventos por asistencia"
-              rows={events}
-              getRowId={(e) => e.event_id}
-              // Un reporte de cifras: en el celular se desliza de costado con el
-              // nombre fijo, así cada número sigue debajo de su encabezado.
-              mobile="scroll"
-              columns={[
-                { id: 'evento', header: 'Evento', cell: (e) => e.event_name },
-                {
-                  id: 'fecha',
-                  header: 'Fecha',
-                  // `starts_at` es un `date` civil: se corta el string. Con
-                  // `new Date()` caía un día antes en Córdoba.
-                  cell: (e) => (
-                    <span className="type-amount text-muted-foreground">
-                      {formatIsoDay(e.starts_at)}
-                    </span>
-                  ),
-                },
-                {
-                  id: 'reservas',
-                  header: 'Reservas',
-                  numeric: true,
-                  cell: (e) => formatNumber(e.reservations),
-                },
-                {
-                  id: 'asistieron',
-                  header: 'Vinieron',
-                  numeric: true,
-                  cell: (e) => formatNumber(e.attended),
-                },
-                {
-                  id: 'noshow',
-                  header: 'No vinieron',
-                  align: 'end',
-                  cell: (e) => (
-                    <Badge tone={e.no_show_rate > 0.2 ? 'danger' : 'neutral'}>
-                      {`${formatNumber(Math.round(e.no_show_rate * 100))}${NBSP}%`}
-                    </Badge>
-                  ),
-                },
-              ]}
-              empty={
-                <EmptyState
-                  size="sm"
-                  icon={CalendarX2}
-                  title="Todavía no hay eventos"
-                  description="Cuando programes eventos en el calendario, vas a ver acá cuánta gente vino a cada uno."
-                />
-              }
-            />
-          </Section>
+        <TabsContent value="events" className="space-y-4">
+          <DataTableShell>
+            <header className="border-b border-border/60 px-5 py-4">
+              <h2 className="font-serif text-lg font-semibold tracking-tight">
+                Eventos por asistencia
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Últimos 20 eventos del calendario, por asistencia de las reservas.
+              </p>
+            </header>
+            {events.length === 0 ? (
+              <EmptyState
+                icon={Receipt}
+                title="Sin eventos"
+                description="Cuando organices eventos, vas a ver acá su tasa de asistencia."
+                className="m-3 border-0 bg-transparent"
+              />
+            ) : (
+              <DataTableScroll>
+                <DataTableRoot>
+                  <DataTableHead>
+                    <tr>
+                      <DataTableHeader>Evento</DataTableHeader>
+                      <DataTableHeader>Fecha</DataTableHeader>
+                      <DataTableHeader>Reservas</DataTableHeader>
+                      <DataTableHeader>Asistieron</DataTableHeader>
+                      <DataTableHeader>No-show</DataTableHeader>
+                    </tr>
+                  </DataTableHead>
+                  <DataTableBody>
+                    {events.map((e) => (
+                      <tr key={e.event_id} className="transition-colors hover:bg-secondary/40">
+                        <DataTableCell className="font-medium">{e.event_name}</DataTableCell>
+                        <DataTableCell className="text-xs text-muted-foreground">
+                          {new Date(e.starts_at).toLocaleDateString('es-AR')}
+                        </DataTableCell>
+                        <DataTableCell className="tabular-nums">{e.reservations}</DataTableCell>
+                        <DataTableCell className="tabular-nums">{e.attended}</DataTableCell>
+                        <DataTableCell>
+                          <Badge variant={e.no_show_rate > 0.2 ? 'destructive' : 'secondary'}>
+                            {(e.no_show_rate * 100).toFixed(0)}%
+                          </Badge>
+                        </DataTableCell>
+                      </tr>
+                    ))}
+                  </DataTableBody>
+                </DataTableRoot>
+              </DataTableScroll>
+            )}
+          </DataTableShell>
         </TabsContent>
 
-        <TabsContent value="mozos" className="flex flex-col gap-8 pt-4">
+        <TabsContent value="mozos" className="space-y-6">
           <StaffPerformanceTab
             tenantId={access.tenant.id}
             summaries={staffSummaries}
@@ -328,75 +345,66 @@ export default async function EstadisticasPage({
           />
         </TabsContent>
 
-        <TabsContent value="comms" className="flex flex-col gap-8 pt-4">
-          <KPIGroup columns={4}>
-            <KPI
-              label="Destinatarios"
-              value={formatNumber(comms.total_recipients)}
+        <TabsContent value="comms" className="space-y-6">
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard
+              label="Recipients"
+              value={numberFmt.format(comms.total_recipients)}
               hint="Total alcanzado"
             />
-            <KPI
+            <StatCard
               label="Enviados"
-              value={formatNumber(comms.sent)}
+              value={numberFmt.format(comms.sent)}
               hint={
                 comms.total_recipients > 0
-                  ? `${wholePercent(comms.sent, comms.total_recipients)} del total`
+                  ? `${Math.round((comms.sent / comms.total_recipients) * 100)}% del total`
                   : undefined
               }
             />
-            <KPI
+            <StatCard
               label="Entregados"
-              value={formatNumber(comms.delivered)}
+              value={numberFmt.format(comms.delivered)}
               hint={
                 comms.sent > 0
-                  ? `${wholePercent(comms.delivered, comms.sent)} de los enviados`
+                  ? `${Math.round((comms.delivered / comms.sent) * 100)}% delivery rate`
                   : undefined
               }
             />
-            <KPI
+            <StatCard
               label="Leídos"
-              value={formatNumber(comms.read)}
+              value={numberFmt.format(comms.read)}
               hint={
                 comms.sent > 0
-                  ? `${percentOneDecimal(comms.read, comms.sent)} de los enviados (aprox.)`
+                  ? `${((comms.read / comms.sent) * 100).toFixed(1)}% open (proxy)`
                   : undefined
               }
+              deltaTone={comms.failed > 0 ? 'negative' : 'muted'}
             />
-          </KPIGroup>
+          </section>
 
-          <Section
-            title="Diagnóstico"
-            description="La lectura es aproximada: solo se cuenta cuando el cliente tiene activadas las confirmaciones de lectura."
-          >
-            <Card padding="sm">
-              <dl className="grid gap-x-8 sm:grid-cols-2">
-                <div className="flex items-baseline justify-between gap-4 border-b border-border py-2">
-                  <dt className="type-small text-muted-foreground">Tasa de lectura (aprox.)</dt>
-                  <dd className="type-body type-amount font-medium">
-                    {comms.sent > 0 ? percentOneDecimal(comms.read, comms.sent) : '—'}
-                  </dd>
-                </div>
-                <div className="flex items-baseline justify-between gap-4 border-b border-border py-2">
-                  <dt className="type-small text-muted-foreground">Tasa de respuesta</dt>
-                  <dd className="type-small text-muted-foreground">Todavía no la medimos</dd>
-                </div>
-                <div className="flex items-baseline justify-between gap-4 py-2">
-                  <dt className="type-small text-muted-foreground">Fallidos</dt>
-                  <dd
-                    className={
-                      comms.failed > 0
-                        ? 'type-body type-amount font-medium text-destructive-text'
-                        : 'type-body type-amount font-medium'
-                    }
-                  >
-                    {formatNumber(comms.failed)}
-                  </dd>
-                </div>
-              </dl>
-            </Card>
-          </Section>
+          <div className="card-hairline rounded-xl border bg-card p-5">
+            <h3 className="font-display text-sm font-semibold tracking-tight">Diagnóstico</h3>
+            <dl className="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+              <div className="flex justify-between border-b border-border/40 py-1.5">
+                <dt className="text-muted-foreground">Open rate (proxy)</dt>
+                <dd className="font-medium tabular-nums">
+                  {comms.sent > 0 ? `${((comms.read / comms.sent) * 100).toFixed(1)}%` : '—'}
+                </dd>
+              </div>
+              <div className="flex justify-between border-b border-border/40 py-1.5">
+                <dt className="text-muted-foreground">Reply rate</dt>
+                <dd className="text-xs text-muted-foreground">No implementado en v1</dd>
+              </div>
+              <div className="flex justify-between border-b border-border/40 py-1.5">
+                <dt className="text-muted-foreground">Failed</dt>
+                <dd className="font-medium tabular-nums text-destructive">
+                  {numberFmt.format(comms.failed)}
+                </dd>
+              </div>
+            </dl>
+          </div>
         </TabsContent>
       </Tabs>
-    </PageShell>
+    </div>
   )
 }

@@ -3,8 +3,6 @@
 import { ArrowRight, Lock } from 'lucide-react'
 import Link from 'next/link'
 import type { CSSProperties, ReactNode } from 'react'
-import { Badge } from '@/components/ui/badge'
-import { formatNumber } from '@/lib/format/number-kind'
 import { eventInk } from '@/lib/salon/event-ink'
 import type { EventMarketingRow, MarketingPhase } from '@/lib/salon/event-marketing'
 import type { ReportBlock } from '@/lib/salon/events-report'
@@ -29,17 +27,15 @@ export type NightCardMarketing = {
  * Los tres números que pidió el dueño, del tamaño que merecen, y todo lo demás
  * en gris y chico. La jerarquía sale de su propio pedido: escribió cuatro datos
  * para el evento y dos para las reservas normales, así que el evento es ficha
- * protagonista (tarjeta del kit) y "Sin evento" pesa menos (solo el pelo, sobre
- * el papel) — salvo cuando no hay evento, y ahí la franja se promueve.
- *
- * El color del evento va en un punto al lado del nombre (continuidad con el
- * calendario) y en la tinta del muro (`.ev-ink`), no en un borde de color a la
- * izquierda (kit §1.3).
+ * protagonista y "Sin evento" pesa menos — salvo cuando no hay evento, y ahí la
+ * franja se promueve.
  */
+
+const nf = new Intl.NumberFormat('es-AR')
 
 function avgText(avg: number | null): string {
   if (avg === null) return '—'
-  return formatNumber(avg, 1)
+  return avg.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 }
 
 /** `21:00:00` → `21:00`. */
@@ -66,7 +62,7 @@ function AttendanceLine({ block }: { block: ReportBlock }) {
 
   if (countedTables === 0) {
     return (
-      <p className="type-caption text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         Ninguna mesa se cerró, así que todavía no hay nada contado.
       </p>
     )
@@ -75,8 +71,8 @@ function AttendanceLine({ block }: { block: ReportBlock }) {
   if (countedTables < reservations) {
     const faltan = reservations - countedTables
     return (
-      <p className="type-caption text-muted-foreground">
-        Contamos <span className="font-medium text-foreground">{formatNumber(attendedGuests)}</span>{' '}
+      <p className="text-xs text-muted-foreground">
+        Contamos <span className="font-medium text-foreground">{nf.format(attendedGuests)}</span>{' '}
         {plural(attendedGuests, 'persona', 'personas')} en {countedTables} de {reservations} mesas.
         Las otras <span className="text-warning-text">{faltan}</span> quedaron sin cerrar.
       </p>
@@ -87,8 +83,8 @@ function AttendanceLine({ block }: { block: ReportBlock }) {
   // y va como diferencia absoluta, nunca como porcentaje.
   const diff = attendedGuests - guests
   return (
-    <p className="type-caption text-muted-foreground">
-      Vinieron <span className="font-medium text-foreground">{formatNumber(attendedGuests)}</span>
+    <p className="text-xs text-muted-foreground">
+      Vinieron <span className="font-medium text-foreground">{nf.format(attendedGuests)}</span>
       {diff === 0
         ? ', los que estaban reservados.'
         : diff > 0
@@ -98,12 +94,6 @@ function AttendanceLine({ block }: { block: ReportBlock }) {
   )
 }
 
-/**
- * Un número de la ficha: un par `<dt>`/`<dd>` (el lector oye rótulo, valor y
- * pista; a la vista va primero el número). Tres en fila también en el celular:
- * el `KPIGroup` del kit los apila de a uno debajo de `md`, y acá son tres
- * cifras cortas que se comparan entre sí.
- */
 function Metric({
   value,
   label,
@@ -118,21 +108,22 @@ function Metric({
   muted?: boolean
 }) {
   return (
-    <div className="flex min-w-0 flex-col px-3 first:pl-0 last:pr-0">
-      <dt className="order-2 mt-2 type-label text-muted-foreground">{label}</dt>
-      <dd
+    <div className="min-w-0 px-3 first:pl-0 last:pr-0">
+      <div
         className={cn(
-          'order-1',
-          // Fraunces a 520 (el peso de los números del kit), del tamaño que pidió
-          // el dueño: la ficha protagonista más grande que la franja.
-          'font-display leading-none font-[520] tracking-[-0.01em]',
+          'font-serif font-semibold leading-none tracking-tight tabular-nums',
           big ? 'text-4xl sm:text-5xl' : 'text-2xl sm:text-3xl',
           muted && 'text-muted-foreground',
         )}
       >
         {value}
-      </dd>
-      {hint ? <dd className="order-3 mt-1 type-caption text-muted-foreground">{hint}</dd> : null}
+      </div>
+      <div className="mt-2 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+        {label}
+      </div>
+      {hint ? (
+        <div className="mt-1 text-[11px] leading-snug text-muted-foreground">{hint}</div>
+      ) : null}
     </div>
   )
 }
@@ -208,74 +199,83 @@ export function NightCard({
     <section
       style={ink ? ({ '--ev-l': ink.light, '--ev-d': ink.dark } as CSSProperties) : undefined}
       className={cn(
-        'ev-ink relative min-w-0 rounded-xl border border-border text-card-foreground',
-        big ? 'bg-card p-4 sm:p-6' : 'bg-transparent p-4 sm:p-5',
+        'ev-ink relative overflow-hidden rounded-xl border',
+        big
+          ? 'card-hairline border-primary/50 bg-primary/5 p-5 sm:p-6'
+          : 'border-border/70 bg-card/60 p-4 sm:p-5',
         className,
       )}
     >
+      {/* Franja del color del evento: continuidad con el calendario, sin
+          inventar una paleta nueva. Va inline porque el hex es dato. */}
+      {block.colorHex ? (
+        <span
+          aria-hidden
+          className="absolute inset-y-0 left-0 w-1"
+          style={{ backgroundColor: block.colorHex }}
+        />
+      ) : null}
+
       <header className="mb-4 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <div className="flex min-w-0 items-center gap-2">
           {eyebrow}
-          {/* El color del evento, como en el calendario. Inline porque el hex es dato. */}
-          {block.colorHex ? (
-            <span
-              aria-hidden
-              className="size-2.5 shrink-0 rounded-full"
-              style={{ backgroundColor: block.colorHex }}
-            />
-          ) : null}
-          <h3 className={cn('min-w-0 truncate', big ? 'type-subtitle' : 'type-body font-semibold')}>
+          <h3
+            className={cn(
+              'min-w-0 truncate font-serif font-semibold tracking-tight',
+              big ? 'text-lg' : 'text-base',
+            )}
+          >
             {block.title}
           </h3>
           {hora ? (
-            <span className="shrink-0 type-small type-amount text-muted-foreground">{hora}</span>
+            <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+              {hora}
+            </span>
           ) : null}
           {/* Grupo privado (C1): su gente es de la noche, pero no es un evento.
-              Etiqueta gris con candado, sin link a «Por evento», sin pauta ni cuenta. */}
+              Chip gris con candado, sin link a «Por evento», sin pauta ni cuenta. */}
           {block.kind === 'private' ? (
-            <Badge icon={Lock} className="shrink-0">
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted/60 px-1.5 text-[10px] font-medium leading-4 text-muted-foreground">
+              <Lock aria-hidden className="size-2.5" />
               {PRIVATE_GROUP_CHIP}
-            </Badge>
+            </span>
           ) : null}
         </div>
         {eventHref ? (
           <Link
             href={eventHref}
-            className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-sm type-small font-medium text-muted-foreground underline-offset-[3px] outline-offset-2 outline-(--ring) hover:text-foreground hover:underline focus-visible:outline-2 pointer-fine:min-h-0"
+            className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
           >
             {linkLabel}
-            <ArrowRight aria-hidden className="size-3.5" />
+            <ArrowRight className="size-3.5" />
           </Link>
         ) : null}
       </header>
 
       {block.kind === 'private' ? (
-        <p className="-mt-3 mb-4 type-caption text-muted-foreground">{PRIVATE_BLOCK_NOTE}</p>
+        <p className="-mt-3 mb-4 text-xs leading-snug text-muted-foreground">
+          {PRIVATE_BLOCK_NOTE}
+        </p>
       ) : null}
 
       {vacio ? (
-        <p className="type-body text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           {emptyText ??
             (block.kind === 'plain'
               ? 'No hubo ninguna reserva normal esa noche.'
               : 'Nadie reservó para este evento.')}
         </p>
       ) : cayoEntera ? (
-        <p className="type-body text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Se cayó entera: {caidasTexto}. No quedó ninguna reserva en pie.
         </p>
       ) : (
         <>
-          <dl className="flex divide-x divide-border">
+          <div className="flex divide-x divide-border/60">
+            <Metric big={big} value={nf.format(block.guests)} label="Personas" hint={cupoTexto} />
             <Metric
               big={big}
-              value={formatNumber(block.guests)}
-              label="Personas"
-              hint={cupoTexto}
-            />
-            <Metric
-              big={big}
-              value={formatNumber(block.reservations)}
+              value={nf.format(block.reservations)}
               label="Reservas"
               hint={caidasTexto}
             />
@@ -288,9 +288,9 @@ export function NightCard({
               // tiene que decirlo antes que el texto chico.
               muted={block.reservations === 1}
             />
-          </dl>
+          </div>
 
-          <div className="mt-5 space-y-2 border-t border-border pt-4">
+          <div className="mt-5 space-y-2 border-t border-border/50 pt-4">
             <TablesWall
               key={block.key}
               tables={block.tables}

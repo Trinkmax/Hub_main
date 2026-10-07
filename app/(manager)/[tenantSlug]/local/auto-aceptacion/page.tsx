@@ -1,11 +1,10 @@
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
-import { FormTemplate } from '@/components/ui/page-templates'
+import { PageShell } from '@/components/ui/page-shell'
 import { getTenantConfig } from '@/lib/admin/tenant-config'
 import { requireFeature } from '@/lib/platform/guards'
 import { requireTenantAccess } from '@/lib/tenant'
 import { AutoAcceptForm } from './_components/auto-accept-form'
-import { AUTO_ACCEPT_DESCRIPTION, AUTO_ACCEPT_TITLE } from './_components/page-copy'
 
 export const metadata = { title: 'Auto-aceptación' }
 
@@ -29,10 +28,13 @@ export default async function AutoAcceptPage({
   if (!config) notFound()
 
   return (
-    <FormTemplate
-      header={<PageHeader title={AUTO_ACCEPT_TITLE} description={AUTO_ACCEPT_DESCRIPTION} />}
-    >
+    <PageShell width="compact">
+      <PageHeader
+        eyebrow="Salón"
+        title="Auto-aceptación de comandas"
+        description="Configurá si las comandas del comensal van directo a cocina o esperan al mozo."
+      />
       <AutoAcceptForm tenantSlug={tenantSlug} initialConfig={config} />
-    </FormTemplate>
+    </PageShell>
   )
 }

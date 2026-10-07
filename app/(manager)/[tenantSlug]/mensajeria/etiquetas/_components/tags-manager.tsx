@@ -1,11 +1,19 @@
 'use client'
 
-import { Check, Pencil, Plus, Tags, Trash2 } from 'lucide-react'
-import { useActionState, useEffect, useEffectEvent, useRef, useState } from 'react'
+import { Check, Loader2, Pencil, Plus, Tags, Trash2 } from 'lucide-react'
+import { useActionState, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { DataTable } from '@/components/ui/data-table'
 import {
   Dialog,
   DialogContent,
@@ -13,13 +21,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from '@/components/ui/dialog'
-import { EmptyState } from '@/components/ui/empty-state'
-import { Field } from '@/components/ui/field'
-import { FormActions } from '@/components/ui/form-actions'
 import { Input } from '@/components/ui/input'
-import { Section } from '@/components/ui/section'
-import { SubmitButton } from '@/components/ui/submit-button'
+import { Label } from '@/components/ui/label'
 import {
   type ConversationTagActionState,
   createConversationTag,
@@ -45,19 +50,16 @@ const COLOR_NAMES: Record<string, string> = {
   '#f472b6': 'Rosa',
 }
 
-/**
- * La etiqueta como se ve en los chats: fondo tintado del color y punto sólido.
- * El nombre va en tinta (el color de la paleta como letra no se leía).
- */
+/** Chip grande con el color real de la etiqueta (fondo tintado + punto sólido). */
 function TagChip({ tag }: { tag: ConversationTag }) {
   return (
     <span
-      className="inline-flex min-w-0 items-center gap-2 rounded-full border border-border px-3 py-1 type-body font-medium text-foreground"
+      className="inline-flex min-w-0 items-center gap-2 rounded-full border border-border/70 px-3 py-1.5 text-sm font-medium"
       style={{ backgroundColor: `${tag.color}1f` }}
     >
       <span
         aria-hidden
-        className="size-2.5 shrink-0 rounded-full ring-1 ring-foreground/10 ring-inset"
+        className="size-2.5 shrink-0 rounded-full ring-1 ring-inset ring-foreground/10"
         style={{ backgroundColor: tag.color }}
       />
       <span className="truncate">{tag.name}</span>
@@ -65,22 +67,18 @@ function TagChip({ tag }: { tag: ConversationTag }) {
   )
 }
 
-/**
- * Radios de color desde la paleta curada (`name="color"` para el submit). El
- * elegido lleva check y un aro de tinta (forma y contraste, no solo color); el
- * foco es el contorno del panel. Sin agrandar al pasar el mouse.
- */
+/** Radios de color desde la paleta curada. `name="color"` para el submit. */
 function ColorSwatches({ defaultValue }: { defaultValue?: string }) {
   const palette = TAG_COLORS as readonly string[]
   const inPalette = defaultValue != null && palette.includes(defaultValue)
   return (
-    <fieldset className="flex flex-col gap-2">
-      <legend className="mb-2 type-label text-foreground">Color</legend>
+    <fieldset className="space-y-1.5">
+      <legend className="text-sm font-medium text-foreground">Color</legend>
       <div className="flex flex-wrap gap-2.5">
         {TAG_COLORS.map((c, i) => {
           const checked = inPalette ? c === defaultValue : i === 0
           return (
-            <label key={c} className="relative cursor-pointer hit-area">
+            <label key={c} className="cursor-pointer">
               <input
                 type="radio"
                 name="color"
@@ -90,14 +88,11 @@ function ColorSwatches({ defaultValue }: { defaultValue?: string }) {
               />
               <span
                 aria-hidden
-                className="flex size-8 items-center justify-center rounded-full ring-2 ring-transparent ring-offset-2 ring-offset-background peer-checked:ring-foreground peer-focus-visible:outline-2 peer-focus-visible:outline-offset-4 peer-focus-visible:outline-(--ring) peer-checked:[&>svg]:opacity-100"
+                className="flex size-8 items-center justify-center rounded-full ring-2 ring-transparent ring-offset-2 ring-offset-background transition-transform hover:scale-110 peer-checked:ring-foreground/70 peer-focus-visible:ring-ring peer-checked:[&>svg]:opacity-100"
                 style={{ backgroundColor: c }}
               >
-                {/* El aro de tinta marca la elegida (3:1 o más en los dos temas);
-                    el check blanco acompaña. */}
                 <Check
-                  className="size-4 text-white opacity-0 drop-shadow-sm"
-                  strokeWidth={3}
+                  className="size-4 text-white opacity-0 drop-shadow-sm transition-opacity"
                   aria-hidden
                 />
               </span>
@@ -112,18 +107,17 @@ function ColorSwatches({ defaultValue }: { defaultValue?: string }) {
 
 export function TagsManager({ tenantSlug, tags }: { tenantSlug: string; tags: ConversationTag[] }) {
   const formRef = useRef<HTMLFormElement>(null)
-  const [editing, setEditing] = useState<ConversationTag | null>(null)
-  const [createState, createAction] = useActionState(
+  const firstRun = useRef(true)
+  const [createState, createAction, creating] = useActionState(
     createConversationTag.bind(null, tenantSlug),
     INITIAL,
   )
-  // Cada respuesta se atiende una sola vez, por identidad (con un «primera
-  // vez» en un ref, el doble efecto del modo estricto avisaba al montar).
-  const handledCreate = useRef(createState)
 
   useEffect(() => {
-    if (createState === handledCreate.current) return
-    handledCreate.current = createState
+    if (firstRun.current) {
+      firstRun.current = false
+      return
+    }
     if (createState.ok) {
       toast.success('Etiqueta creada.')
       formRef.current?.reset()
@@ -133,186 +127,177 @@ export function TagsManager({ tenantSlug, tags }: { tenantSlug: string; tags: Co
   }, [createState])
 
   return (
-    <>
-      <Section
-        title="Nueva etiqueta"
-        description="Poné un nombre corto y elegí un color para reconocerla de un vistazo."
-      >
-        <form ref={formRef} action={createAction} className="flex flex-col gap-4">
-          <Field label="Nombre">
-            <Input name="name" placeholder="Reservas, Quejas, VIP…" maxLength={40} required />
-          </Field>
-          <ColorSwatches />
-          <FormActions sticky={false}>
-            <SubmitButton pendingText="Agregando…">
-              <Plus aria-hidden />
-              Agregar etiqueta
-            </SubmitButton>
-          </FormActions>
-        </form>
-      </Section>
-
-      <Section divider title="Tus etiquetas" description={tagsCountText(tags.length)}>
-        <DataTable
-          caption="Tus etiquetas"
-          rows={tags}
-          getRowId={(tag) => tag.id}
-          empty={
-            <EmptyState
-              size="sm"
-              icon={Tags}
-              title="Todavía no hay etiquetas"
-              description="Creá la primera con el formulario de arriba. Ideas para arrancar: Reservas, Quejas, VIP."
+    <div className="space-y-6">
+      <section className="rounded-xl border border-border/70 bg-card p-4 sm:p-5">
+        <h2 className="text-base font-medium tracking-tight">Nueva etiqueta</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Poné un nombre corto y elegí un color para reconocerla de un vistazo.
+        </p>
+        <form ref={formRef} action={createAction} className="mt-4 space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="new-tag-name">Nombre</Label>
+            <Input
+              id="new-tag-name"
+              name="name"
+              placeholder="Reservas, Quejas, VIP…"
+              maxLength={40}
+              required
             />
-          }
-          columns={[
-            {
-              id: 'tag',
-              header: 'Etiqueta',
-              cell: (tag) => <TagChip tag={tag} />,
-            },
-            {
-              id: 'actions',
-              header: 'Acciones',
-              headerHidden: true,
-              align: 'end',
-              width: '6rem',
-              cell: (tag) => (
-                <TagActions tenantSlug={tenantSlug} tag={tag} onEdit={() => setEditing(tag)} />
-              ),
-            },
-          ]}
-        />
-      </Section>
+          </div>
+          <ColorSwatches />
+          <div className="flex justify-end">
+            <Button type="submit" disabled={creating} className="gap-1.5">
+              {creating ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              ) : (
+                <Plus className="size-4" aria-hidden />
+              )}
+              Agregar etiqueta
+            </Button>
+          </div>
+        </form>
+      </section>
 
-      <EditTagDialog
-        tenantSlug={tenantSlug}
-        tag={editing}
-        onOpenChange={(open) => {
-          if (!open) setEditing(null)
-        }}
-      />
-    </>
-  )
-}
-
-function tagsCountText(count: number): string {
-  if (count === 0) return 'Las que crees aparecen acá.'
-  return count === 1 ? '1 etiqueta' : `${count} etiquetas`
-}
-
-function TagActions({
-  tenantSlug,
-  tag,
-  onEdit,
-}: {
-  tenantSlug: string
-  tag: ConversationTag
-  onEdit: () => void
-}) {
-  async function remove(_prev: unknown, formData: FormData) {
-    const result = await deleteConversationTag(tenantSlug, INITIAL, formData)
-    // En éxito, revalidatePath re-renderiza la lista y esta fila se va.
-    if (result.ok) toast.success('Etiqueta borrada.')
-    return result
-  }
-
-  return (
-    <div className="flex items-center justify-end gap-1">
-      <Button variant="ghost" size="icon-sm" aria-label={`Editar ${tag.name}`} onClick={onEdit}>
-        <Pencil aria-hidden />
-      </Button>
-      <ConfirmDialog
-        tone="danger"
-        icon={Trash2}
-        title={`¿Borrar la etiqueta «${tag.name}»?`}
-        description="Se quita de todas las conversaciones que la tengan. No se puede deshacer."
-        confirmLabel="Borrar etiqueta"
-        pendingLabel="Borrando…"
-        formAction={remove}
-        hiddenFields={{ id: tag.id }}
-        trigger={
-          <Button variant="danger-ghost" size="icon-sm" aria-label={`Borrar ${tag.name}`}>
-            <Trash2 aria-hidden />
-          </Button>
-        }
-      />
+      <section className="space-y-3">
+        <h2 className="text-base font-medium tracking-tight">
+          Tus etiquetas
+          {tags.length > 0 ? (
+            <span className="ml-2 text-sm font-normal text-muted-foreground">{tags.length}</span>
+          ) : null}
+        </h2>
+        {tags.length === 0 ? (
+          <div className="flex flex-col items-center rounded-xl border border-dashed border-border/80 bg-card/50 px-6 py-10 text-center">
+            <div className="mb-4 flex size-12 items-center justify-center rounded-full border border-border/70 bg-secondary/60 text-muted-foreground">
+              <Tags className="size-5" aria-hidden />
+            </div>
+            <p className="text-base font-medium">Todavía no hay etiquetas</p>
+            <p className="mt-1 max-w-sm text-sm text-muted-foreground text-pretty">
+              Creá la primera con el formulario de arriba. Ideas para arrancar: Reservas, Quejas,
+              VIP.
+            </p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-card">
+            {tags.map((tag) => (
+              <TagRow key={tag.id} tenantSlug={tenantSlug} tag={tag} />
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   )
 }
 
-function EditTagDialog({
-  tenantSlug,
-  tag,
-  onOpenChange,
-}: {
-  tenantSlug: string
-  tag: ConversationTag | null
-  onOpenChange: (open: boolean) => void
-}) {
-  return (
-    <Dialog open={tag !== null} onOpenChange={onOpenChange}>
-      <DialogContent size="sm">
-        <DialogHeader>
-          <DialogTitle>Editar etiqueta</DialogTitle>
-          <DialogDescription>Cambiá el nombre o el color de la etiqueta.</DialogDescription>
-        </DialogHeader>
-        {/* key: cada etiqueta arranca su formulario de cero. */}
-        {tag ? (
-          <EditTagForm
-            key={tag.id}
-            tenantSlug={tenantSlug}
-            tag={tag}
-            onDone={() => onOpenChange(false)}
-          />
-        ) : null}
-      </DialogContent>
-    </Dialog>
-  )
-}
+function TagRow({ tenantSlug, tag }: { tenantSlug: string; tag: ConversationTag }) {
+  const [editOpen, setEditOpen] = useState(false)
+  const firstUpdate = useRef(true)
+  const firstDelete = useRef(true)
 
-function EditTagForm({
-  tenantSlug,
-  tag,
-  onDone,
-}: {
-  tenantSlug: string
-  tag: ConversationTag
-  onDone: () => void
-}) {
-  const [updateState, updateAction] = useActionState(
+  const [updateState, updateAction, updating] = useActionState(
     updateConversationTag.bind(null, tenantSlug),
     INITIAL,
   )
-  const handledUpdate = useRef(updateState)
-  // Solo la respuesta del server dispara el aviso: que el padre se vuelva a
-  // dibujar (y `onDone` cambie de identidad) no cierra el diálogo.
-  const done = useEffectEvent(onDone)
+  const [deleteState, deleteAction, deleting] = useActionState(
+    deleteConversationTag.bind(null, tenantSlug),
+    INITIAL,
+  )
 
   useEffect(() => {
-    if (updateState === handledUpdate.current) return
-    handledUpdate.current = updateState
+    if (firstUpdate.current) {
+      firstUpdate.current = false
+      return
+    }
     if (updateState.ok) {
       toast.success('Etiqueta actualizada.')
-      done()
+      setEditOpen(false)
     } else {
       toast.error(updateState.message)
     }
   }, [updateState])
 
+  useEffect(() => {
+    if (firstDelete.current) {
+      firstDelete.current = false
+      return
+    }
+    // En éxito, revalidatePath re-renderiza la lista y esta fila se desmonta.
+    if (!deleteState.ok) toast.error(deleteState.message)
+  }, [deleteState])
+
   return (
-    <form action={updateAction} className="flex flex-col gap-4">
-      <input type="hidden" name="id" value={tag.id} />
-      <Field label="Nombre">
-        <Input name="name" defaultValue={tag.name} maxLength={40} required />
-      </Field>
-      <ColorSwatches defaultValue={tag.color} />
-      <DialogFooter>
-        <Button type="button" variant="secondary" onClick={onDone}>
-          Cancelar
-        </Button>
-        <SubmitButton pendingText="Guardando…">Guardar</SubmitButton>
-      </DialogFooter>
-    </form>
+    <li className="flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-secondary/30 sm:px-4">
+      <div className="min-w-0 flex-1">
+        <TagChip tag={tag} />
+      </div>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogTrigger asChild>
+          <Button variant="ghost" size="icon" className="size-8" aria-label={`Editar ${tag.name}`}>
+            <Pencil className="size-4" aria-hidden />
+          </Button>
+        </DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar etiqueta</DialogTitle>
+            <DialogDescription>Cambiá el nombre o el color de la etiqueta.</DialogDescription>
+          </DialogHeader>
+          <form action={updateAction} className="space-y-4">
+            <input type="hidden" name="id" value={tag.id} />
+            <div className="space-y-1.5">
+              <Label htmlFor={`name-${tag.id}`}>Nombre</Label>
+              <Input
+                id={`name-${tag.id}`}
+                name="name"
+                defaultValue={tag.name}
+                maxLength={40}
+                required
+              />
+            </div>
+            <ColorSwatches defaultValue={tag.color} />
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => setEditOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={updating} className="gap-1.5">
+                {updating ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
+                Guardar
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`Borrar ${tag.name}`}
+            className="size-8 text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 className="size-4" aria-hidden />
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Borrar “{tag.name}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se va a quitar de todas las conversaciones que la tengan. Esta acción no se puede
+              deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <form action={deleteAction}>
+              <input type="hidden" name="id" value={tag.id} />
+              <Button type="submit" variant="destructive" disabled={deleting} className="gap-1.5">
+                {deleting ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
+                Borrar
+              </Button>
+            </form>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </li>
   )
 }

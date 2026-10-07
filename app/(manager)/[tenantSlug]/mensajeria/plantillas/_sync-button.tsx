@@ -3,7 +3,7 @@
 import { RefreshCw } from 'lucide-react'
 import { useActionState, useEffect } from 'react'
 import { toast } from 'sonner'
-import { SubmitButton } from '@/components/ui/submit-button'
+import { Button } from '@/components/ui/button'
 import { type MetaActionState, syncTemplatesAction } from '@/lib/meta/actions'
 
 const initial: MetaActionState = { ok: true }
@@ -25,7 +25,10 @@ export function TemplateSyncButton({
   channelId: string
   tenantSlug: string
 }) {
-  const [state, action] = useActionState(syncTemplatesAction.bind(null, tenantSlug), initial)
+  const [state, action, pending] = useActionState(
+    syncTemplatesAction.bind(null, tenantSlug),
+    initial,
+  )
 
   useEffect(() => {
     if (!state.ok && state.message) {
@@ -38,10 +41,10 @@ export function TemplateSyncButton({
   return (
     <form action={action}>
       <input type="hidden" name="channel_id" value={channelId} />
-      <SubmitButton variant="secondary" pendingText="Trayendo novedades…">
-        <RefreshCw aria-hidden />
-        Traer las novedades de WhatsApp
-      </SubmitButton>
+      <Button type="submit" variant="outline" disabled={pending} className="gap-2">
+        <RefreshCw className={`size-4 ${pending ? 'animate-spin' : ''}`} aria-hidden />
+        {pending ? 'Trayendo novedades…' : 'Traer las novedades de WhatsApp'}
+      </Button>
     </form>
   )
 }

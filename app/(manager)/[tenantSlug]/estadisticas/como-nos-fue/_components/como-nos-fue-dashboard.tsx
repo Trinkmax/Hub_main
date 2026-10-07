@@ -1,14 +1,12 @@
 'use client'
 
-import { CalendarDays, Lock, PartyPopper } from 'lucide-react'
-import Link from 'next/link'
+import { CalendarDays, ChevronLeft, ChevronRight, Download, Lock, PartyPopper } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useOptimistic, useTransition } from 'react'
+import { useTransition } from 'react'
 import { Button } from '@/components/ui/button'
-import { Callout } from '@/components/ui/callout'
-import { ExportButton } from '@/components/ui/data-table'
 import { EmptyState } from '@/components/ui/empty-state'
-import { PeriodPicker, type PeriodPickerPreset } from '@/components/ui/period-picker'
+import { Input } from '@/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Select,
   SelectContent,
@@ -16,14 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  capitalizeFirst,
-  formatWeekdayDayMonth,
-  MONTH_NAMES,
-  WEEKDAY_NAMES,
-} from '@/lib/dates/format'
-import { formatNumber } from '@/lib/format/number-kind'
+import { SlidingTabs } from '@/components/ui/sliding-tabs'
 import type { MonthBirthdayReport } from '@/lib/salon/birthdays-report'
 import { buildEventConsolidated } from '@/lib/salon/event-consolidated'
 import { cuadroExport } from '@/lib/salon/event-cuadros'
@@ -68,16 +59,7 @@ export type LastUsdArsRate = { rate: number; loadedAt: string } | null
 type DayReportWithMarketing = DayReport & { marketing: ReportMarketingByEvent }
 type TemplateReportWithMarketing = TemplateReport & { marketing: ReportMarketingByEvent }
 
-const VIEWS: ReadonlyArray<{ value: ComoNosFueView; label: string }> = [
-  { value: 'dia', label: 'Por día' },
-  { value: 'evento', label: 'Por evento' },
-  { value: 'pauta', label: 'Pauta' },
-  { value: 'cumples', label: 'Cumpleaños' },
-]
-
-function isView(value: string): value is ComoNosFueView {
-  return VIEWS.some((v) => v.value === value)
-}
+const nf = new Intl.NumberFormat('es-AR')
 
 function shiftDay(day: string, delta: number): string {
   const [y, m, d] = day.split('-').map(Number)
@@ -85,16 +67,24 @@ function shiftDay(day: string, delta: number): string {
   return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`
 }
 
-/**
- * `'2026-10-03'` → `'Viernes 3 de octubre'`, armado a mano: el `Intl` del
- * server y el del navegador no siempre coinciden y rompían la hidratación.
- */
 function longDay(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number)
   const dt = new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1))
-  const weekday = WEEKDAY_NAMES[dt.getUTCDay()] ?? ''
-  const month = MONTH_NAMES[dt.getUTCMonth()] ?? ''
-  return capitalizeFirst(`${weekday} ${dt.getUTCDate()} de ${month}`)
+  return new Intl.DateTimeFormat('es-AR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'UTC',
+  }).format(dt)
+}
+
+function shortDay(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  const dt = new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1))
+  const weekday = new Intl.DateTimeFormat('es-AR', { weekday: 'short', timeZone: 'UTC' })
+    .format(dt)
+    .replace('.', '')
+  return `${weekday} ${String(dt.getUTCDate()).padStart(2, '0')}/${String(dt.getUTCMonth() + 1).padStart(2, '0')}`
 }
 
 /** "Hoy" / "Ayer" / "Anteayer" / "Mañana", o nada. Ubica sin hacer cuentas. */
@@ -104,21 +94,6 @@ function relativeLabel(day: string, today: string): string | null {
   if (day === shiftDay(today, -2)) return 'Anteayer'
   if (day === shiftDay(today, 1)) return 'Mañana'
   return day > today ? 'Todavía no pasó' : null
-}
-
-/**
- * Los atajos del selector de día: las últimas noches con gente, con cuántas
- * reservas tuvo cada una (lo que antes era la lista del calendario). Sin noches
- * con gente, los atajos de siempre del kit (Hoy · Ayer).
- */
-function recentDayPresets(
-  recentDays: ReadonlyArray<{ day: string; reservations: number }>,
-): PeriodPickerPreset[] | undefined {
-  if (recentDays.length === 0) return undefined
-  return recentDays.map((d) => ({
-    label: `${capitalizeFirst(formatWeekdayDayMonth(d.day))} · ${formatNumber(d.reservations)} ${d.reservations === 1 ? 'reserva' : 'reservas'}`,
-    period: { kind: 'day', date: d.day },
-  }))
 }
 
 export function ComoNosFueDashboard({
@@ -158,27 +133,13 @@ export function ComoNosFueDashboard({
   const router = useRouter()
   const searchParams = useSearchParams()
   const [pending, startTransition] = useTransition()
-  // La pestaña elegida se marca al toque (optimista) mientras el server trae la
-  // vista nueva; si la navegación falla, vuelve a la de la URL.
-  const [shownView, setShownView] = useOptimistic(view)
 
-  /**
-   * Mergea, no reemplaza: ir y volver entre vistas no pierde la selección.
-   * `replace` para las pestañas (no dejan una entrada por cada una en el
-   * historial). Los días y el evento siguen con push.
-   */
-  function push(
-    next: Record<string, string>,
-    mode: 'push' | 'replace' = 'push',
-    optimistic?: () => void,
-  ) {
+  /** Mergea, no reemplaza: ir y volver entre vistas no pierde la selección. */
+  function push(next: Record<string, string>) {
     const params = new URLSearchParams(searchParams.toString())
     for (const [k, v] of Object.entries(next)) params.set(k, v)
-    const href = `?${params.toString()}`
     startTransition(() => {
-      optimistic?.()
-      if (mode === 'replace') router.replace(href, { scroll: false })
-      else router.push(href, { scroll: false })
+      router.push(`?${params.toString()}`, { scroll: false })
     })
   }
 
@@ -213,154 +174,193 @@ export function ComoNosFueDashboard({
   const hayMuro = legend.counted || legend.open
 
   return (
-    <div
-      aria-busy={pending || undefined}
-      className={cn('space-y-5', pending && 'opacity-60 transition-opacity')}
-    >
-      {/* Las cuatro vistas son secciones de la misma página: pestañas del kit.
-          Cada una la arma el server (`?vista=`), así que van en modo manual
-          (las flechas mueven el foco; Enter o Espacio eligen y navegan). */}
-      <Tabs
-        value={shownView}
-        onValueChange={(next) => {
-          if (isView(next)) push({ vista: next }, 'replace', () => setShownView(next))
-        }}
-        activationMode="manual"
-      >
-        <div className="flex items-end justify-between gap-3">
-          <TabsList aria-label="Vistas de Cómo nos fue" className="flex-1">
-            {VIEWS.map((v) => (
-              <TabsTrigger key={v.value} value={v.value}>
-                {v.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-          {/* En «Por evento» cada cuadro trae su propio «Exportar» (C4): la
-              planilla mezclada de antes ya no existe. */}
-          {exportHref ? (
-            <ExportButton
-              href={exportHref}
-              size="sm"
-              title="Descargar planilla (Excel / Sheets)"
-              className="mb-1 shrink-0"
+    <div className={cn('space-y-5', pending && 'opacity-60 transition-opacity')}>
+      {/* Interruptor de vista + planilla */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <SlidingTabs
+          size="sm"
+          value={view}
+          onChange={(v) => push({ vista: v })}
+          tabs={[
+            { value: 'dia', label: 'Por día' },
+            { value: 'evento', label: 'Por evento' },
+            { value: 'pauta', label: 'Pauta' },
+            { value: 'cumples', label: 'Cumpleaños' },
+          ]}
+        />
+        {/* En «Por evento» cada cuadro trae su propio «Exportar» (C4): la planilla
+            mezclada de antes ya no existe. */}
+        {view === 'evento' ? null : (
+          <Button asChild variant="outline" size="sm" className="gap-2">
+            <a href={exportHref ?? undefined} download title="Descargar planilla (Excel / Sheets)">
+              <Download className="size-4" />
+              <span className="sr-only sm:not-sr-only">Exportar</span>
+            </a>
+          </Button>
+        )}
+      </div>
+
+      {view === 'dia' ? (
+        <>
+          {/* Selector de día. Las flechas se mueven de a un día real: una noche
+              sin nadie ES el dato, no un hueco a saltear. El salto largo vive
+              en el calendario, con la lista de las últimas noches con gente. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Día anterior"
+              onClick={() => push({ dia: shiftDay(day, -1) })}
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <div className="min-w-0">
+              {relativo ? (
+                <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                  {relativo}
+                </div>
+              ) : null}
+              <h2 className="truncate font-serif text-xl font-semibold capitalize leading-tight tracking-tight sm:text-2xl">
+                {longDay(day)}
+              </h2>
+            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Día siguiente"
+              onClick={() => push({ dia: shiftDay(day, 1) })}
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="gap-1.5">
+                  <CalendarDays className="size-4" />
+                  <span className="sr-only sm:not-sr-only">Elegir</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-72 space-y-3">
+                <Input
+                  type="date"
+                  value={day}
+                  aria-label="Elegir fecha"
+                  onChange={(e) => {
+                    if (e.target.value) push({ dia: e.target.value })
+                  }}
+                  className="h-10"
+                />
+                {recentDays.length > 0 ? (
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                      Últimas noches con gente
+                    </p>
+                    <ul className="max-h-56 space-y-0.5 overflow-y-auto">
+                      {recentDays.map((d) => (
+                        <li key={d.day}>
+                          <button
+                            type="button"
+                            onClick={() => push({ dia: d.day })}
+                            className={cn(
+                              'flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-secondary/60',
+                              d.day === day && 'bg-secondary/70 font-medium',
+                            )}
+                          >
+                            <span className="capitalize">{shortDay(d.day)}</span>
+                            <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                              {d.reservations}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          {dayReport ? (
+            <DayView
+              report={dayReport}
+              tenantSlug={tenantSlug}
+              today={today}
+              lastUsdArsRate={lastUsdArsRate}
             />
           ) : null}
-        </div>
+        </>
+      ) : view === 'cumples' ? (
+        birthdayReport ? (
+          <BirthdaysMonthView tenantSlug={tenantSlug} report={birthdayReport} onNavigate={push} />
+        ) : null
+      ) : view === 'pauta' ? (
+        monthReport ? (
+          <MarketingMonthView
+            tenantSlug={tenantSlug}
+            today={today}
+            report={monthReport}
+            lastUsdArsRate={lastUsdArsRate}
+            onNavigate={push}
+          />
+        ) : null
+      ) : (
+        <>
+          <Select
+            value={templateId ?? undefined}
+            onValueChange={(v) => push({ vista: 'evento', evento: v })}
+          >
+            <SelectTrigger className="h-11 w-full sm:w-96">
+              <SelectValue placeholder="Elegí un evento" />
+            </SelectTrigger>
+            <SelectContent>
+              {templates.map((t) => (
+                <SelectItem key={t.id} value={t.id}>
+                  <span className="flex w-full items-center gap-2">
+                    <span
+                      aria-hidden
+                      className="size-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: t.colorHex ?? 'var(--muted-foreground)' }}
+                    />
+                    <span className="truncate">{t.name}</span>
+                    <span className="ml-auto shrink-0 pl-3 font-mono text-[11px] tabular-nums text-muted-foreground">
+                      {t.pastEditions === 0
+                        ? t.editions === 0
+                          ? 'sin fechas'
+                          : 'todavía no se hizo'
+                        : `${t.pastEditions} ${t.pastEditions === 1 ? 'fecha' : 'fechas'} · ${nf.format(t.guests)} personas`}
+                    </span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-        <TabsContent value={shownView} className="space-y-5 pt-3">
-          {view === 'dia' ? (
-            <>
-              {/* Selector de día (el `PeriodPicker` del kit). Las flechas se
-                  mueven de a un día real: una noche sin nadie ES el dato, no un
-                  hueco a saltear. El salto largo vive en el calendario, con las
-                  últimas noches con gente como atajos. */}
-              <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
-                <div className="min-w-0">
-                  {relativo ? (
-                    <div className="type-small text-muted-foreground">{relativo}</div>
-                  ) : null}
-                  <h2 className="truncate type-section">{longDay(day)}</h2>
-                </div>
-                <PeriodPicker
-                  aria-label="Día"
-                  kinds={['day']}
-                  value={{ kind: 'day', date: day }}
-                  presets={recentDayPresets(recentDays)}
-                  today={today}
-                  onValueChange={(next) => {
-                    if (next.kind === 'day') push({ dia: next.date })
-                  }}
-                />
-              </div>
-
-              {dayReport ? (
-                <DayView
-                  report={dayReport}
-                  tenantSlug={tenantSlug}
-                  today={today}
-                  lastUsdArsRate={lastUsdArsRate}
-                />
-              ) : null}
-            </>
-          ) : view === 'cumples' ? (
-            birthdayReport ? (
-              <BirthdaysMonthView
-                tenantSlug={tenantSlug}
-                report={birthdayReport}
-                onNavigate={push}
-              />
-            ) : null
-          ) : view === 'pauta' ? (
-            monthReport ? (
-              <MarketingMonthView
-                tenantSlug={tenantSlug}
-                today={today}
-                report={monthReport}
-                lastUsdArsRate={lastUsdArsRate}
-                onNavigate={push}
-              />
-            ) : null
+          {templateReport ? (
+            <EventView report={templateReport} tenantSlug={tenantSlug} />
           ) : (
-            <>
-              <Select
-                value={templateId ?? undefined}
-                onValueChange={(v) => push({ vista: 'evento', evento: v })}
-              >
-                <SelectTrigger aria-label="Evento" className="w-full sm:w-96">
-                  <SelectValue placeholder="Elegí un evento" />
-                </SelectTrigger>
-                <SelectContent>
-                  {templates.map((t) => (
-                    <SelectItem
-                      key={t.id}
-                      value={t.id}
-                      description={
-                        t.pastEditions === 0
-                          ? t.editions === 0
-                            ? 'sin fechas'
-                            : 'todavía no se hizo'
-                          : `${t.pastEditions} ${t.pastEditions === 1 ? 'fecha' : 'fechas'} · ${formatNumber(t.guests)} personas`
-                      }
-                    >
-                      <span
-                        aria-hidden
-                        className="size-2 shrink-0 rounded-full"
-                        style={{ backgroundColor: t.colorHex ?? 'var(--muted-foreground)' }}
-                      />
-                      <span className="truncate">{t.name}</span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              {templateReport ? (
-                <EventView report={templateReport} tenantSlug={tenantSlug} />
-              ) : (
-                <EmptyState
-                  icon={PartyPopper}
-                  title="Elegí un evento"
-                  description="Vas a ver todas sus fechas, una debajo de la otra, para saber si crece o se apaga."
-                />
-              )}
-            </>
+            <EmptyState
+              icon={PartyPopper}
+              title="Elegí un evento"
+              description="Vas a ver todas sus fechas, una debajo de la otra, para saber si crece o se apaga."
+            />
           )}
+        </>
+      )}
 
-          {hayMuro && view !== 'pauta' && view !== 'cumples' ? (
-            <TablesWallLegend flags={legend} />
-          ) : null}
+      {hayMuro && view !== 'pauta' && view !== 'cumples' ? (
+        <TablesWallLegend flags={legend} />
+      ) : null}
 
-          {dayReport?.truncated ||
-          templateReport?.truncated ||
-          templatesTruncated ||
-          monthReport?.truncated ||
-          birthdayReport?.truncated ? (
-            <Callout tone="warning">
-              Hay más reservas de las que entran en una sola lectura: los números pueden estar
-              incompletos.
-            </Callout>
-          ) : null}
-        </TabsContent>
-      </Tabs>
+      {dayReport?.truncated ||
+      templateReport?.truncated ||
+      templatesTruncated ||
+      monthReport?.truncated ||
+      birthdayReport?.truncated ? (
+        <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-text">
+          Hay más reservas de las que entran en una sola lectura: los números pueden estar
+          incompletos.
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -411,9 +411,9 @@ function DayView({
   return (
     <div className="space-y-4">
       {futura ? (
-        <Callout tone="warning">
+        <p className="text-xs text-warning-text">
           Todavía no pasó: estos números se siguen moviendo hasta esa noche.
-        </Callout>
+        </p>
       ) : null}
 
       {eventos.length > 0 ? (
@@ -502,8 +502,8 @@ export function EventView({
         title={`Todavía no le pusiste fecha a ${report.templateName}`}
         description="Cuando lo programes en el calendario, acá vas a ver cómo le fue."
         action={
-          <Button asChild variant="secondary" size="sm">
-            <Link href={`/${tenantSlug}/eventos/programados`}>Ir al calendario</Link>
+          <Button asChild variant="outline" size="sm">
+            <a href={`/${tenantSlug}/eventos/programados`}>Ir al calendario</a>
           </Button>
         }
       />
@@ -523,7 +523,7 @@ export function EventView({
       : vendiendo
         ? `Todavía no terminó ninguna fecha de ${report.templateName} con reservas. ${
             vendiendo.isTonight ? 'La de esta noche va' : 'La que viene ya tiene'
-          } ${formatNumber(vendiendo.guests)} ${vendiendo.guests === 1 ? 'persona' : 'personas'} en ${vendiendo.reservations} ${vendiendo.reservations === 1 ? 'reserva' : 'reservas'}.`
+          } ${nf.format(vendiendo.guests)} ${vendiendo.guests === 1 ? 'persona' : 'personas'} en ${vendiendo.reservations} ${vendiendo.reservations === 1 ? 'reserva' : 'reservas'}.`
         : report.hasPastEditions
           ? `Ninguna fecha de ${report.templateName} tuvo reservas todavía.`
           : `${report.templateName} todavía no se hizo nunca: ${
@@ -551,9 +551,7 @@ export function EventView({
 
   return (
     <div className="space-y-4">
-      {sinHistoria ? (
-        <p className="max-w-prose text-pretty type-body text-muted-foreground">{sinHistoria}</p>
-      ) : null}
+      {sinHistoria ? <p className="text-sm text-muted-foreground">{sinHistoria}</p> : null}
 
       {/* Los dos cuadros, lado a lado desde que el bloque mide 64rem (container
           query: plegar la barra lateral cambia el ancho sin cambiar la
@@ -588,7 +586,7 @@ export function EventView({
 
       {/* Una sola vez, debajo de los dos cuadros: las fechas privadas del
           formato no son ediciones (C1). Las dos planillas la repiten al final. */}
-      {privateNote ? <p className="type-caption text-muted-foreground">{privateNote}</p> : null}
+      {privateNote ? <p className="text-xs text-muted-foreground">{privateNote}</p> : null}
     </div>
   )
 }

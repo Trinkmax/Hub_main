@@ -2,13 +2,7 @@ import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { type CurrentUser, getCurrentUser } from './current'
 import { RoleRequiredError, TenantNotFoundError, UnauthenticatedError } from './errors'
-import {
-  type AccountingAccess,
-  isTenantRole,
-  type MembershipWithTenant,
-  type Tenant,
-  type TenantRole,
-} from './types'
+import { type MembershipWithTenant, TENANT_ROLES, type Tenant, type TenantRole } from './types'
 
 /**
  * Todo lo que el layout, el shell y la page necesitan para un tenant, resuelto
@@ -22,8 +16,6 @@ export type TenantAccess = {
   isPlatformAdmin: boolean
   /** Memberships del usuario, en orden de alta (para el switcher de bares). */
   memberships: MembershipWithTenant[]
-  /** Administración para este usuario en este bar. Todo en `false` si la base no lo manda. */
-  accounting: AccountingAccess
   user: CurrentUser
 }
 
@@ -32,46 +24,12 @@ type RpcPayload = {
   role: TenantRole
   is_platform_admin: boolean
   memberships: MembershipWithTenant[]
-  accounting: AccountingAccess
 }
+
+const ROLE_SET = new Set<string>(TENANT_ROLES)
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-/**
- * Clave `accounting` de `get_tenant_access` → `AccountingAccess`.
- *
- * Falla cerrado: si la clave falta (el código puede salir antes que la
- * migración que la agrega), viene rara o trae algo que no es un `true`
- * literal, todo queda en `false` y Administración cerrada. Además no confía en
- * combinaciones que la base nunca arma: leer o escribir exige el módulo
- * prendido y configurado, escribir exige leer, y la puesta en marcha exige el
- * módulo prendido y sin configurar. `admin` va suelto a propósito: es gobierno
- * de accesos y la base lo respeta aunque el flag esté apagado.
- */
-export function parseAccountingAccess(raw: unknown): AccountingAccess {
-  if (!isRecord(raw)) {
-    return {
-      enabled: false,
-      setUp: false,
-      read: false,
-      write: false,
-      admin: false,
-      canSetUp: false,
-    }
-  }
-  const enabled = raw.enabled === true
-  const setUp = raw.set_up === true
-  const read = enabled && setUp && raw.read === true
-  return {
-    enabled,
-    setUp,
-    read,
-    write: read && raw.write === true,
-    admin: raw.admin === true,
-    canSetUp: enabled && !setUp && raw.can_set_up === true,
-  }
 }
 
 function parseMemberships(raw: unknown): MembershipWithTenant[] {
@@ -80,10 +38,10 @@ function parseMemberships(raw: unknown): MembershipWithTenant[] {
   for (const item of raw) {
     if (!isRecord(item) || !isRecord(item.tenant)) continue
     const { role, tenant } = item
-    if (!isTenantRole(role)) continue
+    if (typeof role !== 'string' || !ROLE_SET.has(role)) continue
     if (typeof tenant.id !== 'string' || typeof tenant.slug !== 'string') continue
     out.push({
-      role,
+      role: role as TenantRole,
       tenant: {
         id: tenant.id,
         name: typeof tenant.name === 'string' ? tenant.name : '',
@@ -98,14 +56,13 @@ function parseMemberships(raw: unknown): MembershipWithTenant[] {
 function parseAccess(raw: unknown): RpcPayload | null {
   if (!isRecord(raw) || !isRecord(raw.tenant)) return null
   const { role } = raw
-  if (!isTenantRole(role)) return null
+  if (typeof role !== 'string' || !ROLE_SET.has(role)) return null
   if (typeof raw.tenant.id !== 'string' || typeof raw.tenant.slug !== 'string') return null
   return {
     tenant: raw.tenant as unknown as Tenant,
-    role,
+    role: role as TenantRole,
     is_platform_admin: raw.is_platform_admin === true,
     memberships: parseMemberships(raw.memberships),
-    accounting: parseAccountingAccess(raw.accounting),
   }
 }
 
@@ -134,7 +91,6 @@ export const requireTenantAccess = cache(async (slug: string): Promise<TenantAcc
     role: parsed.role,
     isPlatformAdmin: parsed.is_platform_admin,
     memberships: parsed.memberships,
-    accounting: parsed.accounting,
     user,
   }
 })

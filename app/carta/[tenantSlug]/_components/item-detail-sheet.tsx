@@ -9,7 +9,7 @@ import {
   SheetDescription,
   SheetGrabber,
   SheetTitle,
-} from '@/components/ui-legacy/sheet'
+} from '@/components/ui/sheet'
 import { posterUrlFor } from '@/lib/menu/media-urls'
 import type { MenuItem } from '@/lib/menu/queries'
 import { formatARS } from './format'

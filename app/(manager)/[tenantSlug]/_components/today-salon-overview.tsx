@@ -1,48 +1,21 @@
-import { ArrowRight, CalendarCheck, Plus } from 'lucide-react'
+import { ArrowRight, CalendarCheck, Clock3, UsersRound } from 'lucide-react'
 import Link from 'next/link'
-import * as React from 'react'
-import { RESERVATION_STATUS } from '@/components/reservations/status-meta'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { EmptyState } from '@/components/ui/empty-state'
-import { KPI, KPIGroup } from '@/components/ui/kpi'
-import { ReloadLink } from '@/components/ui/reload-link'
-import { Section } from '@/components/ui/section'
-import { StatusBadge } from '@/components/ui/status-badge'
-import { capitalizeFirst, monthName, parseIsoDay, weekdayName } from '@/lib/dates'
-import { formatNumber } from '@/lib/format/number-kind'
 import type { TodaySalonOverview as Overview } from '@/lib/salon/queries'
 import { MEAL_TYPE_LABELS, type MealType } from '@/lib/salon/types'
+import { cn } from '@/lib/utils'
 
 const MEAL_ORDER: MealType[] = ['breakfast', 'lunch', 'tea_time', 'dinner', 'hub_event']
 
-type TodayStatus = keyof Overview['byStatus']
-
-const STATUS_ORDER: TodayStatus[] = ['pending', 'arrived', 'seated', 'closed']
-
-/**
- * El desglose de hoy dice la cuenta con la palabra en plural («3 pendientes»),
- * así que la palabra va acá; el tono, el punto y lo que significa cada estado
- * salen del mapa compartido de reservas (`StatusBadge` con `count`), el mismo
- * de la lista y la vista rápida.
- */
-const STATUS_WORDS: Readonly<Record<TodayStatus, { one: string; many: string }>> = {
-  pending: { one: 'pendiente', many: 'pendientes' },
-  arrived: { one: 'llegó', many: 'llegaron' },
-  seated: { one: 'sentada', many: 'sentadas' },
-  closed: { one: 'cerrada', many: 'cerradas' },
-}
-
-function plural(count: number, one: string, many: string): string {
-  return `${formatNumber(count)} ${count === 1 ? one : many}`
-}
-
-/** `'2026-10-07'` → `'Miércoles 7 de octubre'`, armado a mano (sin `Intl`: kit, riesgo 15). */
-function formatDayTitle(iso: string): string {
-  const civil = parseIsoDay(iso)
-  if (!civil) return iso
-  return `${capitalizeFirst(weekdayName(iso))} ${civil.day} de ${monthName(civil.month)}`
+function formatDateLong(date: string): string {
+  const [y, m, d] = date.split('-').map(Number)
+  if (!y || !m || !d) return date
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  return new Intl.DateTimeFormat('es-AR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'UTC',
+  }).format(dt)
 }
 
 export function TodaySalonOverview({
@@ -55,103 +28,148 @@ export function TodaySalonOverview({
   const { reservationsCount, estimatedGuests, peak, byStatus, byMeal, date } = overview
   const hasReservations = reservationsCount > 0
   const activeMeals = MEAL_ORDER.filter((m) => byMeal[m].count > 0)
-  const activeStatuses = STATUS_ORDER.filter((s) => byStatus[s] > 0)
-  const mealsLabelId = React.useId()
 
   return (
-    <Section
-      title="Hoy en el salón"
-      description={formatDayTitle(date)}
-      actions={
-        // El salón es otro workspace (su propio <html> y su Toaster): se entra
-        // recargando, con ReloadLink y no con <Link> (kit §7.a.4, riesgo 19).
-        <Button asChild variant="secondary" size="sm">
-          <ReloadLink href={`/${tenantSlug}/salon/reservas-operativo?date=${date}`}>
-            Ver en el salón
-            <ArrowRight aria-hidden="true" />
-          </ReloadLink>
-        </Button>
-      }
+    <section
+      aria-label="Hoy en el salón"
+      className="card-hairline relative overflow-hidden rounded-2xl border bg-card"
     >
+      <header className="flex items-baseline justify-between gap-3 px-5 pt-4">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            Hoy en el salón
+          </p>
+          <h2 className="font-serif text-lg font-semibold capitalize">{formatDateLong(date)}</h2>
+        </div>
+        <Link
+          href={`/${tenantSlug}/salon/reservas-operativo?date=${date}`}
+          className="group inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+        >
+          Operativo
+          <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+        </Link>
+      </header>
+
       {hasReservations ? (
-        <div className="flex flex-col gap-3">
-          <KPIGroup columns={3}>
-            <KPI
-              label="Reservas"
-              value={formatNumber(reservationsCount)}
-              status={
-                activeStatuses.length > 0 ? (
-                  <ul aria-label="Por estado" className="flex flex-wrap gap-1.5">
-                    {activeStatuses.map((status) => {
-                      const words = STATUS_WORDS[status]
-                      const count = byStatus[status]
-                      return (
-                        <li key={status}>
-                          <StatusBadge status={status} map={RESERVATION_STATUS} count={count}>
-                            {count === 1 ? words.one : words.many}
-                          </StatusBadge>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                ) : null
+        <>
+          <div className="grid gap-4 px-5 py-4 sm:grid-cols-3 sm:gap-6">
+            <Stat
+              icon={CalendarCheck}
+              label="Reservas esperadas"
+              value={reservationsCount}
+              hint={
+                <span className="space-x-1.5">
+                  {byStatus.pending > 0 ? (
+                    <span className="text-amber-700 dark:text-amber-300">
+                      {byStatus.pending} pend
+                    </span>
+                  ) : null}
+                  {byStatus.arrived > 0 ? (
+                    <span className="text-blue-600 dark:text-blue-400">
+                      · {byStatus.arrived} llegó
+                    </span>
+                  ) : null}
+                  {byStatus.seated > 0 ? (
+                    <span className="text-emerald-600 dark:text-emerald-400">
+                      · {byStatus.seated} sent
+                    </span>
+                  ) : null}
+                  {byStatus.closed > 0 ? (
+                    <span className="text-slate-500">· {byStatus.closed} cerr</span>
+                  ) : null}
+                </span>
               }
             />
-            <KPI
+            <Stat
+              icon={UsersRound}
               label="Personas estimadas"
-              value={formatNumber(estimatedGuests)}
+              value={estimatedGuests}
               hint={
-                estimatedGuests > 0
-                  ? `${formatNumber(estimatedGuests / reservationsCount, 1)} por reserva en promedio`
+                estimatedGuests > 0 && reservationsCount > 0
+                  ? `${(estimatedGuests / reservationsCount).toFixed(1)} promedio por reserva`
                   : null
               }
             />
-            <KPI
-              label="Hora pico estimada"
+            <Stat
+              icon={Clock3}
+              label="Pico estimado"
               value={peak ? `${peak.startHHMM}–${peak.endHHMM}` : '—'}
+              valueAsString
               hint={
                 peak
-                  ? `Hasta ${plural(peak.guests, 'persona', 'personas')} a la vez, contando 1 h 30 por reserva`
-                  : 'Faltan datos para calcularla'
+                  ? `${peak.guests} simultáneas · asume 1h30 por reserva`
+                  : 'Sin datos suficientes'
               }
             />
-          </KPIGroup>
+          </div>
 
           {activeMeals.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <span id={mealsLabelId} className="type-small text-muted-foreground">
-                Por servicio
-              </span>
-              <ul aria-labelledby={mealsLabelId} className="flex flex-wrap gap-2">
-                {activeMeals.map((m) => (
-                  <li key={m}>
-                    <Badge size="md">
-                      {`${MEAL_TYPE_LABELS[m]} · ${plural(byMeal[m].count, 'reserva', 'reservas')} · ${plural(byMeal[m].guests, 'persona', 'personas')}`}
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
+            <div className="flex flex-wrap items-center gap-1.5 border-t border-border/40 bg-card/40 px-5 py-3 text-[11px]">
+              <span className="text-muted-foreground">Por servicio:</span>
+              {activeMeals.map((m) => (
+                <span
+                  key={m}
+                  className="inline-flex items-center gap-1 rounded-full bg-secondary/60 px-2 py-0.5 font-medium text-foreground"
+                >
+                  {MEAL_TYPE_LABELS[m]}
+                  <span className="text-muted-foreground tabular-nums">
+                    {byMeal[m].count} · {byMeal[m].guests}p
+                  </span>
+                </span>
+              ))}
             </div>
           ) : null}
-        </div>
+        </>
       ) : (
-        <Card padding="none">
-          <EmptyState
-            size="sm"
-            icon={CalendarCheck}
-            title="Todavía no hay reservas para hoy"
-            description="Cuando se carguen, vas a ver acá cuántas personas esperar y a qué hora se llena el salón."
-            action={
-              <Button asChild variant="secondary" size="sm">
-                <Link href={`/${tenantSlug}/reservas/nuevo`}>
-                  <Plus aria-hidden="true" />
-                  Nueva reserva
-                </Link>
-              </Button>
-            }
-          />
-        </Card>
+        <div className="flex items-center justify-between gap-4 px-5 py-6">
+          <div className="space-y-1">
+            <p className="text-sm text-muted-foreground">
+              No hay reservas cargadas para hoy todavía.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Cuando alguien las cargue aparecerán acá y en el panel operativo.
+            </p>
+          </div>
+          <Link
+            href={`/${tenantSlug}/reservas/nuevo`}
+            className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90"
+          >
+            Nueva reserva
+          </Link>
+        </div>
       )}
-    </Section>
+    </section>
+  )
+}
+
+function Stat({
+  icon: Icon,
+  label,
+  value,
+  valueAsString,
+  hint,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  value: number | string
+  valueAsString?: boolean
+  hint?: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        <Icon className="size-3.5" />
+        {label}
+      </div>
+      <div
+        className={cn(
+          'font-display font-semibold leading-tight tabular-nums',
+          valueAsString ? 'text-2xl sm:text-3xl' : 'text-3xl sm:text-4xl',
+        )}
+      >
+        {value}
+      </div>
+      {hint ? <div className="text-[11px] text-muted-foreground">{hint}</div> : null}
+    </div>
   )
 }

@@ -1,7 +1,6 @@
-import { Building2 } from 'lucide-react'
-import { DataTable } from '@/components/ui/data-table'
-import { EmptyState } from '@/components/ui/empty-state'
-import { PageHeader } from '@/components/ui/page-header'
+import { Building2, ChevronRight } from 'lucide-react'
+import Link from 'next/link'
+import { Card } from '@/components/ui/card'
 import { FEATURE_KEYS, getTenantFeatures } from '@/lib/platform/features'
 import { createClient } from '@/lib/supabase/server'
 
@@ -19,48 +18,45 @@ export default async function PlatformAdminHome() {
   const tenants = (data ?? []) as TenantRow[]
 
   return (
-    <>
-      <PageHeader title="Bares" description="Elegí un bar para decidir qué paneles ve cada uno." />
+    <div className="space-y-6">
+      <div>
+        <h1 className="font-serif text-2xl font-semibold tracking-tight">Bares</h1>
+        <p className="text-sm text-muted-foreground">
+          Elegí un bar para decidir qué paneles ve cada uno.
+        </p>
+      </div>
 
-      <DataTable
-        caption="Bares de la plataforma"
-        rows={tenants}
-        getRowId={(t) => t.id}
-        rowHref={(t) => `/admin/${t.id}`}
-        rowLabel={(t) => t.name}
-        empty={
-          <EmptyState
-            size="sm"
-            icon={Building2}
-            title="Todavía no hay bares"
-            description="Cuando un dueño cree su bar, aparece acá para configurar sus paneles."
-          />
-        }
-        columns={[
-          {
-            id: 'bar',
-            header: 'Bar',
-            cell: (t) => (
-              <span className="flex min-w-0 flex-col">
-                <span className="truncate">{t.name}</span>
-                <span className="truncate font-mono type-caption font-normal text-muted-foreground">
-                  /{t.slug}
-                </span>
-              </span>
-            ),
-          },
-          {
-            id: 'paneles',
-            header: 'Paneles prendidos',
-            numeric: true,
-            cell: (t) => {
-              const features = getTenantFeatures(t)
-              const on = FEATURE_KEYS.filter((k) => features[k]).length
-              return `${on} de ${FEATURE_KEYS.length}`
-            },
-          },
-        ]}
-      />
-    </>
+      {tenants.length === 0 ? (
+        <Card className="p-8 text-center text-sm text-muted-foreground">No hay bares todavía.</Card>
+      ) : (
+        <div className="grid gap-3">
+          {tenants.map((t) => {
+            const features = getTenantFeatures(t)
+            const on = FEATURE_KEYS.filter((k) => features[k]).length
+            return (
+              <Link key={t.id} href={`/admin/${t.id}`} className="group">
+                <Card className="flex items-center justify-between gap-4 border-border/70 p-4 transition-colors group-hover:border-primary/40 group-hover:bg-card">
+                  <div className="flex items-center gap-3">
+                    <div className="flex size-10 items-center justify-center rounded-lg bg-[--cream-tint] text-primary">
+                      <Building2 className="size-5" aria-hidden />
+                    </div>
+                    <div>
+                      <p className="font-medium">{t.name}</p>
+                      <p className="font-mono text-xs text-muted-foreground">/{t.slug}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                    <span className="tabular-nums">
+                      {on}/{FEATURE_KEYS.length} paneles ON
+                    </span>
+                    <ChevronRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+                  </div>
+                </Card>
+              </Link>
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }

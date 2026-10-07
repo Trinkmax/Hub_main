@@ -10,7 +10,6 @@ import {
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
-import { settingsHref } from '../_components/settings-nav'
 import { ReviewSettingsForm } from './_components/review-settings-form'
 
 export const metadata = { title: 'Reseñas' }
@@ -36,21 +35,21 @@ export default async function ResenasSettingsPage({
   const settings = await getReviewSettings(access.tenant.id)
 
   return (
-    <>
+    <div className="space-y-6">
       <PageHeader
-        back={{ href: settingsHref(tenantSlug), label: 'Configuración' }}
+        eyebrow="Configuración"
         title="Reseñas"
         description="Las de 5★ van a tu ficha de Google; el resto llega a tu WhatsApp como feedback privado. Cargá los dos destinos y cuántos puntos das por opinar."
         actions={
-          <Button asChild variant="secondary">
+          <Button asChild variant="outline" size="sm">
             <Link href={`/${tenantSlug}/reviews`}>
-              <MessageSquare aria-hidden="true" />
+              <MessageSquare className="size-4" aria-hidden="true" />
               Ver reseñas
             </Link>
           </Button>
         }
       />
       <ReviewSettingsForm tenantSlug={tenantSlug} settings={settings} />
-    </>
+    </div>
   )
 }

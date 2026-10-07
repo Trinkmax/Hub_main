@@ -630,14 +630,8 @@ export async function updateSalonReservation(
     )
   }
 
-  // Si cambió gestor / actual_guests / meal_type, recalc. La reserva ya quedó
-  // guardada, así que un fallo acá no cambia el resultado; pero deja la
-  // comisión vieja, y antes se tragaba en silencio. Solo el código, sin datos
-  // personales.
-  const { error: recalcError } = await supabase.rpc('recalc_reservation_commission', {
-    p_reservation_id: id,
-  })
-  if (recalcError) console.error('[salon.recalc]', { code: recalcError.code })
+  // Si cambió gestor / actual_guests / meal_type, recalc.
+  await supabase.rpc('recalc_reservation_commission', { p_reservation_id: id })
 
   await logAudit({
     tenantId: access.tenant.id,
@@ -677,11 +671,7 @@ export async function cancelSalonReservation(
     .eq('id', parsed.data.id)
   if (error) return { ok: false, message: humanizeSalonError(error.message) }
 
-  // Igual que al editar: la cancelación ya quedó, el recálculo fallido se loguea.
-  const { error: recalcError } = await supabase.rpc('recalc_reservation_commission', {
-    p_reservation_id: parsed.data.id,
-  })
-  if (recalcError) console.error('[salon.recalc]', { code: recalcError.code })
+  await supabase.rpc('recalc_reservation_commission', { p_reservation_id: parsed.data.id })
 
   await logAudit({
     tenantId: access.tenant.id,

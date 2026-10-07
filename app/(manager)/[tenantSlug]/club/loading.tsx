@@ -1,52 +1,55 @@
-import { PageShell } from '@/components/ui/page-shell'
-import {
-  Skeleton,
-  SkeletonForm,
-  SkeletonPageHeader,
-  SkeletonStatus,
-  SkeletonTable,
-} from '@/components/ui/skeleton'
+import { Skeleton } from '@/components/ui/skeleton'
 
-const TAB_WIDTHS = [
-  { key: 'programa', width: 'w-32' },
-  { key: 'aliados', width: 'w-16' },
-  { key: 'bienvenida', width: 'w-24' },
-  { key: 'punch', width: 'w-24' },
-] as const
-
-// Espejo del ClubEditor: encabezado (título, descripción y tres acciones), la
-// fila de pestañas y la primera sección del programa (el formulario de la
-// regla, las reglas avanzadas y la lista). Así nada salta al hidratar.
+// Espejo del ClubEditor: cabecera (eyebrow + título + descripción + 2 botones),
+// la tira de tabs y bloques de formulario verticales. NO es el viejo dashboard
+// de KPIs — así no hay salto de layout al hidratar.
 export default function Loading() {
   return (
-    <PageShell width="comfortable" aria-busy="true">
-      <SkeletonStatus />
-      <div className="flex flex-col gap-4">
-        <SkeletonPageHeader actions={3} />
-        <div aria-hidden="true" className="flex gap-4 shadow-[inset_0_-1px_0_0_var(--border)]">
-          {TAB_WIDTHS.map((tab) => (
-            <div key={tab.key} className="flex min-h-10 items-center px-1 pointer-coarse:min-h-11">
-              <Skeleton className={`h-3 ${tab.width}`} />
-            </div>
-          ))}
+    <div className="space-y-6">
+      {/* CABECERA */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-2">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-4 w-96 max-w-full" />
+        </div>
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-8 w-28" />
+          <Skeleton className="h-8 w-32" />
         </div>
       </div>
 
-      <div aria-hidden="true" className="flex flex-col gap-4">
-        <div className="flex flex-col gap-1">
-          <div className="flex h-7 items-center">
-            <Skeleton className="h-5 w-48" />
+      {/* TABS */}
+      <Skeleton className="h-9 w-full max-w-md rounded-full" />
+
+      {/* CONTENIDO — bloques de formulario del programa */}
+      <div className="space-y-10">
+        <div className="space-y-4">
+          <div className="flex items-start gap-3">
+            <Skeleton className="size-8 shrink-0 rounded-full" />
+            <div className="space-y-1.5">
+              <Skeleton className="h-5 w-48" />
+              <Skeleton className="h-3 w-72 max-w-full" />
+            </div>
           </div>
-          <div className="flex h-[1.125rem] items-center">
-            <Skeleton className="h-3 w-72 max-w-full" />
+          <Skeleton className="h-32 w-full rounded-xl" />
+          <Skeleton className="h-16 w-full rounded-xl" />
+        </div>
+        <div className="space-y-4">
+          <div className="flex items-start gap-3">
+            <Skeleton className="size-8 shrink-0 rounded-full" />
+            <div className="space-y-1.5">
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-3 w-80 max-w-full" />
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Skeleton className="h-28 w-full rounded-xl" />
+            <Skeleton className="h-28 w-full rounded-xl" />
+            <Skeleton className="h-28 w-full rounded-xl" />
           </div>
         </div>
-        <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
-          <SkeletonForm fields={3} actions={false} />
-        </div>
-        <Skeleton className="h-16 w-full rounded-xl" />
-        <SkeletonTable rows={2} columns={4} />
       </div>
-    </PageShell>
+    </div>
   )
 }

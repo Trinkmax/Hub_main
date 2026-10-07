@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowRight, Lock, Megaphone, Pencil } from 'lucide-react'
+import { ArrowRight, ChevronLeft, ChevronRight, Lock, Megaphone, Pencil } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -15,20 +15,8 @@ import {
   useSyncExternalStore,
 } from 'react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  DataTableBody,
-  DataTableCell,
-  DataTableHead,
-  DataTableHeader,
-  DataTableRoot,
-  DataTableRow,
-} from '@/components/ui/data-table'
 import { EmptyState } from '@/components/ui/empty-state'
-import { KPI, KPIGroup } from '@/components/ui/kpi'
-import { PeriodPicker } from '@/components/ui/period-picker'
-import { toastUndo } from '@/components/ui/toast'
 import { eventInk } from '@/lib/salon/event-ink'
 import {
   buildMonthMarketingReport,
@@ -90,16 +78,20 @@ import { MoneyShareDonut } from './money-share-donut'
  * Desde el 02/10: los grupos privados del mes no son ediciones (se nombran al
  * pie, `monthPrivateGroupsNote`) y, después de las fichas, va la dona «Cómo se
  * repartió el ingreso» (`monthMoneyShare`), sobre la misma cuenta del mes.
- *
- * Kit (lote D): el mes se elige con el `PeriodPicker`, los números del mes van
- * en un `KPIGroup`, la lista es una tabla del kit (primitivos de `DataTable`) y
- * los «Deshacer» son `toastUndo` (6 s en toda la app).
  */
 
-const NBSP = String.fromCharCode(0xa0)
+/** `2026-09` + 1 → `2026-10`. Aritmética en UTC: en local, un runtime en
+ *  UTC-3 se corre de mes en el borde. Copiado de `deposits-dashboard.tsx`. */
+function shiftYM(ym: string, months: number): string {
+  const [y, m] = ym.split('-').map(Number)
+  if (!y || !m) return ym
+  const d = new Date(Date.UTC(y, m - 1 + months, 1))
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+}
 
-/** Las tarjetas de la pestaña: cartulina, pelo y radio del kit, sin sombra. */
-const CARD = 'rounded-xl border border-border bg-card text-card-foreground'
+const NBSP = String.fromCharCode(0xa0)
+/** Mismo tiempo que el «Deshacer» del operativo. */
+const UNDO_MS = 6000
 
 /**
  * El `md` de Tailwind. La lista es tabla desde acá y tarjetas debajo, y las dos
@@ -212,9 +204,7 @@ function MoneyValue({ value }: { value: string }) {
   if (!value.startsWith(prefix)) return <>{value}</>
   return (
     <>
-      <span className="mr-1 font-sans text-xs font-normal tracking-normal text-muted-foreground">
-        US$
-      </span>
+      <span className="mr-1 font-sans text-xs font-normal text-muted-foreground">US$</span>
       {value.slice(prefix.length)}
     </>
   )
@@ -320,9 +310,7 @@ export function MarketingMonthView({
   const rowAt = (source: MonthMarketingReport, eventId: string): string | null =>
     source.editions.find((e) => e.eventId === eventId)?.row?.updatedAt ?? null
 
-  // El selector de mes: el último lugar para el foco cuando ya no queda nada en
-  // el mes (su disparador se busca por el `data-slot` del kit).
-  const monthNavRef = useRef<HTMLDivElement>(null)
+  const headingRef = useRef<HTMLHeadingElement>(null)
   const calloutTitleRef = useRef<HTMLHeadingElement>(null)
   const cargarRefs = useRef(new Map<string, HTMLButtonElement>())
   // `table:<id>`, `card:<id>` y `sin-pauta:<id>`: la tabla y las tarjetas están
@@ -342,7 +330,7 @@ export function MarketingMonthView({
       visibleEdit ??
       cargarRefs.current.get(focusTarget) ??
       calloutTitleRef.current ??
-      monthNavRef.current?.querySelector<HTMLElement>('[data-slot="period-picker-trigger"]')
+      headingRef.current
     target?.focus()
     setFocusTarget(null)
   }, [focusTarget])
@@ -452,9 +440,15 @@ export function MarketingMonthView({
 
     const saved = res.row
     setOverride(p.eventId, saved)
-    toastUndo(`${label(p)} quedó sin pauta.`, {
+    toast(`${label(p)} quedó sin pauta.`, {
       id: `pauta-${p.eventId}`,
-      onUndo: () => undoNoAds(p, saved),
+      duration: UNDO_MS,
+      action: {
+        label: 'Deshacer',
+        onClick: () => {
+          void undoNoAds(p, saved)
+        },
+      },
     })
   }
 
@@ -537,9 +531,15 @@ export function MarketingMonthView({
       if (res.code === 'has_money') router.refresh()
       return
     }
-    toastUndo(copy.toast, {
+    toast(copy.toast, {
       id: `privado-${p.eventId}`,
-      onUndo: () => undoPrivateGroup(p),
+      duration: UNDO_MS,
+      action: {
+        label: 'Deshacer',
+        onClick: () => {
+          void undoPrivateGroup(p)
+        },
+      },
     })
   }
 
@@ -567,20 +567,32 @@ export function MarketingMonthView({
   }
 
   const monthNav = (
-    <div ref={monthNavRef}>
-      {/* El título de la pestaña es para el lector: a la vista ya lo dice el
-          selector. `Septiembre de 2026`: `capitalize` de CSS subía el «De». */}
-      <h2 id={headingId} className="sr-only">
-        Pauta de {report.monthLabel}
+    <div className="flex items-center gap-2">
+      <Button
+        variant="outline"
+        size="icon"
+        aria-label="Mes anterior"
+        onClick={() => onNavigate({ vista: 'pauta', mes: shiftYM(ym, -1) })}
+      >
+        <ChevronLeft className="size-4" />
+      </Button>
+      <h2
+        id={headingId}
+        ref={headingRef}
+        tabIndex={-1}
+        className="min-w-0 truncate font-serif text-xl font-semibold leading-tight tracking-tight outline-none sm:text-2xl"
+      >
+        {/* `Septiembre de 2026`: `capitalize` de CSS subía también el «De». */}
+        {report.monthLabel}
       </h2>
-      <PeriodPicker
-        aria-label="Mes"
-        kinds={['month']}
-        value={{ kind: 'month', month: ym }}
-        onValueChange={(next) => {
-          if (next.kind === 'month') onNavigate({ vista: 'pauta', mes: next.month })
-        }}
-      />
+      <Button
+        variant="outline"
+        size="icon"
+        aria-label="Mes siguiente"
+        onClick={() => onNavigate({ vista: 'pauta', mes: shiftYM(ym, 1) })}
+      >
+        <ChevronRight className="size-4" />
+      </Button>
     </div>
   )
 
@@ -594,7 +606,7 @@ export function MarketingMonthView({
           title={report.emptyState.title}
           description={report.emptyState.description}
         />
-        {note ? <p className="type-caption text-muted-foreground">{note}</p> : null}
+        {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
       </div>
     )
   }
@@ -646,7 +658,7 @@ export function MarketingMonthView({
         onSaved={(row: EventMarketingRow) => handleSaved(e.eventId, row)}
         onCancel={() => handleCancel(e.eventId)}
         onDeleted={() => handleDeleted(e.eventId)}
-        className={cn('rounded-lg bg-card p-4 text-left', className)}
+        className={cn('rounded-lg border border-border/60 bg-card p-4 text-left', className)}
       />
     )
   }
@@ -666,7 +678,7 @@ export function MarketingMonthView({
   const noAdsBlock =
     noAdsEditions.length > 0 ? (
       <div className="space-y-2">
-        <p className="flex flex-wrap items-center gap-x-1 gap-y-0.5 type-caption text-muted-foreground">
+        <p className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] text-muted-foreground">
           <span>Sin pauta:</span>
           {noAdsEditions.map((e, i) => {
             const open = editingPlace === 'sin-pauta' && editingEdition?.eventId === e.eventId
@@ -690,7 +702,7 @@ export function MarketingMonthView({
                   disabled={e.row?.updatedAt === ''}
                   aria-expanded={open}
                   onClick={() => toggleEdit(e.eventId)}
-                  className="inline-flex min-h-8 items-center gap-1 rounded-sm underline decoration-dotted underline-offset-4 outline-offset-2 outline-(--ring) hover:text-foreground focus-visible:outline-2 disabled:pointer-events-none disabled:opacity-50 pointer-coarse:min-h-11"
+                  className="inline-flex min-h-8 items-center gap-1 rounded-sm underline decoration-dotted underline-offset-4 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60"
                 >
                   <span className="sr-only">Editar la pauta de </span>
                   {e.title} {formatDayMonth(e.date)}
@@ -722,14 +734,15 @@ export function MarketingMonthView({
 
       {/* Pendientes: lo primero, porque hasta que estén los totales mienten por corto. */}
       {calloutRows.length > 0 ? (
-        // Un aviso del kit (fondo suave, sin borde de color) que además trae
-        // la lista: lo primero de la pestaña.
-        <section aria-labelledby={calloutTitleId} className="rounded-xl bg-warning-soft p-4">
+        <section
+          aria-labelledby={calloutTitleId}
+          className="rounded-xl border border-warning/40 bg-warning/10 p-4"
+        >
           <h3
             id={calloutTitleId}
             ref={calloutTitleRef}
             tabIndex={-1}
-            className="type-subtitle text-foreground outline-none"
+            className="font-serif text-base font-semibold tracking-tight outline-none"
           >
             {report.pending?.title ?? 'La pauta que estabas cargando'}
           </h3>
@@ -749,14 +762,16 @@ export function MarketingMonthView({
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
                       <InkDot />
-                      <span className="min-w-0 truncate type-body font-medium">{p.title}</span>
-                      <span className="type-caption type-amount text-muted-foreground">
+                      <span className="min-w-0 truncate text-sm font-medium">{p.title}</span>
+                      <span className="font-mono text-xs tabular-nums text-muted-foreground">
                         {p.weekdayLabel}
                       </span>
-                      <span className="type-caption text-muted-foreground">
-                        {p.reservationsLabel}
-                      </span>
-                      {p.incomplete ? <Badge tone="warning">Incompleta</Badge> : null}
+                      <span className="text-xs text-muted-foreground">{p.reservationsLabel}</span>
+                      {p.incomplete ? (
+                        <span className="rounded-full border border-warning/50 bg-warning/15 px-2 py-0.5 text-[10px] font-medium text-warning-text">
+                          Incompleta
+                        </span>
+                      ) : null}
                     </div>
                     {/* En el teléfono los botones van en su propia línea: «Cargar»
                         a lo ancho y abajo «No tuvo pauta» y «Grupo privado» de a
@@ -769,9 +784,9 @@ export function MarketingMonthView({
                           else cargarRefs.current.delete(p.eventId)
                         }}
                         type="button"
-                        variant="secondary"
+                        variant="outline"
                         size="sm"
-                        className="col-span-2"
+                        className="col-span-2 h-10 gap-1.5 sm:h-8"
                         aria-label={p.cargarAriaLabel}
                         aria-expanded={open}
                         onClick={() => {
@@ -779,7 +794,7 @@ export function MarketingMonthView({
                           setOpenRow(open ? null : p)
                         }}
                       >
-                        <Megaphone aria-hidden />
+                        <Megaphone className="size-3.5" aria-hidden />
                         Cargar
                       </Button>
                       {!canMarkNoAds ? null : (
@@ -787,6 +802,7 @@ export function MarketingMonthView({
                           type="button"
                           variant="ghost"
                           size="sm"
+                          className="h-10 sm:h-8"
                           aria-label={p.noAdsAriaLabel}
                           onClick={() => {
                             void markNoAds(p)
@@ -802,12 +818,13 @@ export function MarketingMonthView({
                           type="button"
                           variant="ghost"
                           size="sm"
+                          className="h-10 gap-1.5 sm:h-8"
                           aria-label={privateCopy.ariaLabel}
                           onClick={() => {
                             void markPrivateGroup(p)
                           }}
                         >
-                          <Lock aria-hidden />
+                          <Lock aria-hidden className="size-3.5" />
                           {privateCopy.label}
                         </Button>
                       )}
@@ -849,7 +866,7 @@ export function MarketingMonthView({
           borró): el form sigue acá, con lo escrito, hasta guardar o cancelar. */}
       {editingPlace === 'aparte' && editingEdition ? (
         <section className="ev-ink space-y-2" style={inkStyle(editingEdition.colorHex)}>
-          <p className="type-caption text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {editingEdition.title} {formatDayMonth(editingEdition.date)} ya no tiene pauta cargada.
             Si guardás, se carga de nuevo.
           </p>
@@ -857,10 +874,10 @@ export function MarketingMonthView({
         </section>
       ) : null}
 
-      {report.notice ? <p className="type-body text-muted-foreground">{report.notice}</p> : null}
+      {report.notice ? <p className="text-sm text-muted-foreground">{report.notice}</p> : null}
 
       {report.summary.length > 0 ? (
-        <p className="max-w-prose text-pretty type-body">{report.summary.join(' ')}</p>
+        <p className="max-w-prose text-sm leading-relaxed">{report.summary.join(' ')}</p>
       ) : null}
 
       {/* La cuenta del mes, paso a paso, debajo de su propia oración (que ya
@@ -889,11 +906,11 @@ export function MarketingMonthView({
       {share ? <MoneyShareDonut data={share} headingLevel="h3" /> : null}
 
       {report.rows.length > 0 ? (
-        <section aria-labelledby={listTitleId} className={cn(CARD, 'overflow-clip')}>
-          <header className="border-b border-border px-4 py-3">
-            <h3 id={listTitleId} className="type-subtitle text-foreground">
+        <section aria-labelledby={listTitleId} className="card-hairline rounded-xl border bg-card">
+          <header className="border-b border-border/60 px-4 py-3">
+            <h3 id={listTitleId} className="font-serif text-base font-semibold tracking-tight">
               Fechas con pauta
-              <span className="ml-2 type-caption font-normal tabular-nums text-muted-foreground">
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
                 {report.rows.length}
               </span>
             </h3>
@@ -909,7 +926,7 @@ export function MarketingMonthView({
             />
           </div>
 
-          <ul className="divide-y divide-border md:hidden">
+          <ul className="divide-y divide-border/60 md:hidden">
             {report.rows.map((r) => (
               <MonthCard
                 key={r.eventId}
@@ -921,14 +938,14 @@ export function MarketingMonthView({
           </ul>
 
           {noAdsBlock ? (
-            <div className="border-t border-border px-4 py-2.5">{noAdsBlock}</div>
+            <div className="border-t border-border/60 px-4 py-2.5">{noAdsBlock}</div>
           ) : null}
         </section>
       ) : (
         noAdsBlock
       )}
 
-      <ul className="space-y-0.5 type-caption text-muted-foreground">
+      <ul className="space-y-0.5 text-[11px] text-muted-foreground">
         {report.footnotes.map((f) => (
           <li key={f}>{f}</li>
         ))}
@@ -941,37 +958,53 @@ export function MarketingMonthView({
 }
 
 /**
- * Los números del mes, en el `KPIGroup` del kit (una sola tarjeta con
- * divisores). Cada ficha nombra su base en la pista, porque cada una sale de un
- * conjunto distinto (todo lo invertido, lo que ya pasó, lo que tiene mensajes,
- * lo que tiene facturación). Es un `dl`: el lector oye rótulo, valor y pista.
- *
- * Con cinco (se sumó «Resultado») van de a tres desde `md`: el grupo del kit
- * llega a cuatro columnas, y cinco en 768 px partían los números.
+ * Los números del mes. Cada ficha nombra su base en la pista, porque cada una
+ * sale de un conjunto distinto (todo lo invertido, lo que ya pasó, lo que tiene
+ * mensajes, lo que tiene facturación). `dl`: el lector de pantalla oye rótulo,
+ * valor y pista; a la vista el valor va primero con `order`.
  */
 function MonthTiles({ tiles }: { tiles: ReadonlyArray<MonthMarketingTile> }) {
   return (
-    <KPIGroup columns={tiles.length === 4 ? 4 : 3}>
+    <dl
+      className={cn(
+        'grid grid-cols-2 gap-3',
+        // Con las cinco (se sumó «Resultado») en md entran de a tres y las dos
+        // que sobran quedan abajo: cinco columnas en 768px parten los números.
+        tiles.length >= 5
+          ? 'md:grid-cols-3 xl:grid-cols-5'
+          : tiles.length === 4
+            ? 'md:grid-cols-4'
+            : 'md:grid-cols-3',
+      )}
+    >
       {tiles.map((t) => (
-        <KPI
+        <div
           key={t.key}
-          label={t.label}
-          hint={t.hint}
-          value={
-            t.value === null ? (
-              <span className="text-muted-foreground">
+          className="card-hairline flex min-w-0 flex-col rounded-xl border bg-card p-4"
+        >
+          <dt className="order-2 mt-2 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+            {t.label}
+          </dt>
+          <dd
+            className={cn(
+              'order-1 font-serif text-2xl font-semibold leading-none tracking-tight tabular-nums',
+              t.value === null && 'text-muted-foreground',
+              t.value !== null && t.tone === 'warning' && 'text-warning-text',
+            )}
+          >
+            {t.value === null ? (
+              <>
                 <span className="sr-only">No se puede calcular:</span>
                 <span aria-hidden>—</span>
-              </span>
+              </>
             ) : (
-              <span className={cn(t.tone === 'warning' && 'text-warning-text')}>
-                <MoneyValue value={t.value} />
-              </span>
-            )
-          }
-        />
+              <MoneyValue value={t.value} />
+            )}
+          </dd>
+          <dd className="order-3 mt-1 text-[11px] leading-snug text-muted-foreground">{t.hint}</dd>
+        </div>
       ))}
-    </KPIGroup>
+    </dl>
   )
 }
 
@@ -988,124 +1021,133 @@ function MonthTable({
   dayHref: (date: string) => string
   edit: EditControls
 }) {
+  const th = 'px-3 py-2 font-medium'
+  const num = 'px-3 py-2.5 text-right align-top tabular-nums'
   // Fecha, Evento, Pauta, Mensajes, Cierre, Por reserva, Personas (+ Retorno,
   // + Resultado) + Editar.
   const columns = 8 + (showReturnColumn ? 1 : 0) + (showResultColumn ? 1 : 0)
   return (
-    <DataTableRoot caption="Fechas con pauta" density="compact">
-      <DataTableHead>
-        <tr>
-          <DataTableHeader className="ps-4">Fecha</DataTableHeader>
-          <DataTableHeader>Evento</DataTableHeader>
-          <DataTableHeader numeric>Pauta</DataTableHeader>
-          <DataTableHeader numeric>Mensajes</DataTableHeader>
-          <DataTableHeader numeric>Cierre</DataTableHeader>
-          <DataTableHeader numeric>Por reserva</DataTableHeader>
-          <DataTableHeader numeric>Personas</DataTableHeader>
-          {showReturnColumn ? <DataTableHeader numeric>Retorno</DataTableHeader> : null}
-          {showResultColumn ? <DataTableHeader numeric>Resultado</DataTableHeader> : null}
-          <DataTableHeader className="pe-4">
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="border-b border-border/60 text-left text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          <th scope="col" className={cn(th, 'pl-4')}>
+            Fecha
+          </th>
+          <th scope="col" className={th}>
+            Evento
+          </th>
+          <th scope="col" className={cn(th, 'text-right')}>
+            Pauta
+          </th>
+          <th scope="col" className={cn(th, 'text-right')}>
+            Mensajes
+          </th>
+          <th scope="col" className={cn(th, 'text-right')}>
+            Cierre
+          </th>
+          <th scope="col" className={cn(th, 'text-right')}>
+            Por reserva
+          </th>
+          <th scope="col" className={cn(th, 'text-right')}>
+            Personas
+          </th>
+          {showReturnColumn ? (
+            <th scope="col" className={cn(th, 'text-right')}>
+              Retorno
+            </th>
+          ) : null}
+          {showResultColumn ? (
+            <th scope="col" className={cn(th, 'text-right')}>
+              Resultado
+            </th>
+          ) : null}
+          <th scope="col" className={cn(th, 'pr-4')}>
             <span className="sr-only">Editar</span>
-          </DataTableHeader>
+          </th>
         </tr>
-      </DataTableHead>
-      <DataTableBody>
+      </thead>
+      <tbody className="divide-y divide-border/60">
         {rows.map((r) => {
           const open = edit.editingId === r.eventId
           return (
             <Fragment key={r.eventId}>
-              <DataTableRow
-                className={cn('ev-ink', open && 'bg-muted/40')}
+              <tr
+                className={cn('ev-ink transition-colors', open && 'bg-secondary/40')}
                 style={inkStyle(r.colorHex)}
               >
-                <DataTableCell className="ps-4 align-top">
+                <td className="px-3 py-2.5 pl-4 align-top">
                   <Link
                     href={dayHref(r.date)}
                     title="Ver la noche"
-                    className="whitespace-nowrap rounded-sm type-small type-amount underline-offset-[3px] outline-offset-2 outline-(--ring) hover:underline focus-visible:outline-2"
+                    className="whitespace-nowrap font-mono text-xs tabular-nums underline-offset-4 hover:underline"
                   >
                     {r.weekdayLabel}
                   </Link>
                   {r.phaseLabel ? (
-                    <div className="type-caption text-muted-foreground">{r.phaseLabel}</div>
+                    <div className="text-[11px] text-muted-foreground">{r.phaseLabel}</div>
                   ) : null}
-                </DataTableCell>
-                <DataTableCell className="align-top">
+                </td>
+                <td className="px-3 py-2.5 align-top">
                   <span className="flex min-w-0 items-center gap-2">
                     <InkDot />
                     <span className="truncate">{r.title}</span>
                   </span>
-                </DataTableCell>
-                <DataTableCell numeric className={cn('align-top', toneClass(r.cells.spend.tone))}>
+                </td>
+                <td className={cn(num, toneClass(r.cells.spend.tone))}>
                   <CellText cell={r.cells.spend} />
-                </DataTableCell>
-                <DataTableCell
-                  numeric
-                  className={cn('align-top', toneClass(r.cells.messages.tone))}
-                >
+                </td>
+                <td className={cn(num, toneClass(r.cells.messages.tone))}>
                   <CellText cell={r.cells.messages} />
-                </DataTableCell>
-                <DataTableCell
-                  numeric
-                  className={cn('align-top', toneClass(r.cells.closingRate.tone))}
-                >
+                </td>
+                <td className={cn(num, toneClass(r.cells.closingRate.tone))}>
                   <CellText cell={r.cells.closingRate} />
-                </DataTableCell>
-                <DataTableCell
-                  numeric
-                  className={cn('align-top', toneClass(r.cells.costPerReservation.tone))}
-                >
+                </td>
+                <td className={cn(num, toneClass(r.cells.costPerReservation.tone))}>
                   <CellText cell={r.cells.costPerReservation} />
-                </DataTableCell>
-                <DataTableCell numeric className={cn('align-top', toneClass(r.cells.guests.tone))}>
+                </td>
+                <td className={cn(num, toneClass(r.cells.guests.tone))}>
                   <CellText cell={r.cells.guests} />
-                </DataTableCell>
+                </td>
                 {showReturnColumn ? (
-                  <DataTableCell
-                    numeric
-                    className={cn('align-top', toneClass(r.cells.returnPerDollar.tone))}
-                  >
+                  <td className={cn(num, toneClass(r.cells.returnPerDollar.tone))}>
                     <CellText cell={r.cells.returnPerDollar} />
-                  </DataTableCell>
+                  </td>
                 ) : null}
                 {/* En negativo la celda dice «$ X abajo», nunca un número
                     suelto en ámbar: lo arma `buildMonthMarketingReport`. */}
                 {showResultColumn ? (
-                  <DataTableCell
-                    numeric
-                    className={cn('align-top', toneClass(r.cells.nightResult.tone))}
-                  >
+                  <td className={cn(num, 'whitespace-nowrap', toneClass(r.cells.nightResult.tone))}>
                     <CellText cell={r.cells.nightResult} />
-                  </DataTableCell>
+                  </td>
                 ) : null}
-                <DataTableCell align="end" className="pe-3 align-top">
+                <td className="py-1.5 pr-3 pl-1 text-right align-top">
                   <Button
                     ref={edit.buttonRef(`table:${r.eventId}`)}
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="aria-expanded:text-foreground"
+                    className="h-7 gap-1.5 text-muted-foreground hover:text-foreground aria-expanded:text-foreground"
                     aria-label={marketingCopy(r.title, r.date).editAria}
                     aria-expanded={open}
                     onClick={() => edit.onEdit(r.eventId)}
                   >
-                    <Pencil aria-hidden />
+                    <Pencil className="size-3.5" aria-hidden />
                     Editar
                   </Button>
-                </DataTableCell>
-              </DataTableRow>
+                </td>
+              </tr>
               {open ? (
-                <DataTableRow className="bg-muted/40">
-                  <DataTableCell colSpan={columns} className="px-4 pt-1 pb-4">
+                <tr className="bg-secondary/40">
+                  <td colSpan={columns} className="px-4 pt-1 pb-4">
                     {edit.renderEditor(r.eventId)}
-                  </DataTableCell>
-                </DataTableRow>
+                  </td>
+                </tr>
               ) : null}
             </Fragment>
           )
         })}
-      </DataTableBody>
-    </DataTableRoot>
+      </tbody>
+    </table>
   )
 }
 
@@ -1121,22 +1163,26 @@ function MonthCard({
 }) {
   const open = edit.editingId === r.eventId
   return (
-    <li className={cn('ev-ink px-4 py-3', open && 'bg-muted/40')} style={inkStyle(r.colorHex)}>
+    <li className={cn('ev-ink px-4 py-3', open && 'bg-secondary/40')} style={inkStyle(r.colorHex)}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
           <InkDot />
-          <span className="min-w-0 truncate type-body font-medium">{r.title}</span>
-          <span className="type-caption type-amount text-muted-foreground">{r.weekdayLabel}</span>
+          <span className="min-w-0 truncate text-sm font-medium">{r.title}</span>
+          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+            {r.weekdayLabel}
+          </span>
           {r.phaseLabel ? (
-            <span className="type-caption text-muted-foreground">{r.phaseLabel}</span>
+            <span className="text-[11px] text-muted-foreground">{r.phaseLabel}</span>
           ) : null}
         </div>
         {r.cardHeadline ? (
           <div className="shrink-0 text-right">
-            <div className="font-display text-xl leading-none font-[520] tracking-[-0.01em]">
+            <div className="font-serif text-xl font-semibold leading-none tracking-tight tabular-nums">
               <MoneyValue value={r.cardHeadline} />
             </div>
-            <div className="mt-1 type-caption text-muted-foreground">por reserva</div>
+            <div className="mt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              por reserva
+            </div>
           </div>
         ) : null}
       </div>
@@ -1145,7 +1191,7 @@ function MonthCard({
         <Link
           href={href}
           aria-label={`Ver la noche del ${r.dayMonth}`}
-          className="inline-flex min-h-11 items-center gap-1 rounded-sm type-small font-medium text-muted-foreground underline-offset-[3px] outline-offset-2 outline-(--ring) hover:text-foreground hover:underline focus-visible:outline-2"
+          className="inline-flex min-h-10 items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
         >
           Ver la noche
           <ArrowRight className="size-3.5" aria-hidden />
@@ -1155,12 +1201,12 @@ function MonthCard({
           type="button"
           variant="ghost"
           size="sm"
-          className="aria-expanded:text-foreground"
+          className="h-10 gap-1.5 text-muted-foreground hover:text-foreground aria-expanded:text-foreground"
           aria-label={marketingCopy(r.title, r.date).editAria}
           aria-expanded={open}
           onClick={() => edit.onEdit(r.eventId)}
         >
-          <Pencil aria-hidden />
+          <Pencil className="size-3.5" aria-hidden />
           Editar
         </Button>
       </div>

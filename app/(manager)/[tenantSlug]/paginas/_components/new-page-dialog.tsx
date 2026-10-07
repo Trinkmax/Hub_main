@@ -7,16 +7,14 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
-  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Field, FormError } from '@/components/ui/field'
-import { Input, InputAddon, InputGroup } from '@/components/ui/input'
-import { SubmitButton } from '@/components/ui/submit-button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { createLandingPage, type LandingActionState, saveLandingHtml } from '@/lib/landings/actions'
 import { checkSlugFormat, LANDING_SLUG_HINT, suggestLandingSlug } from '@/lib/landings/schemas'
 
@@ -43,7 +41,7 @@ export function NewPageButton({
           setOpen(true)
         }}
       >
-        <Plus aria-hidden />
+        <Plus className="size-4" aria-hidden />
         Nueva página
       </Button>
       <NewPageDialog
@@ -84,12 +82,11 @@ export function NewPageDialog({
   const effectiveSlug = slugTouched ? slug : suggestLandingSlug(title)
   const slugError = effectiveSlug.length > 0 ? checkSlugFormat(effectiveSlug) : null
 
-  const [state, formAction] = useActionState(
+  const [state, formAction, pending] = useActionState(
     (prev: LandingActionState, fd: FormData) => createLandingPage(tenantSlug, prev, fd),
     INITIAL,
   )
 
-  // El error del server se ve adentro del formulario (FormError).
   useEffect(() => {
     if (state.ok && state.id) {
       const pageId = state.id
@@ -106,14 +103,16 @@ export function NewPageDialog({
       }
       toast.success('Página creada. Ahora pegá el HTML.')
       router.push(`/${tenantSlug}/paginas/${pageId}`)
+    } else if (!state.ok && state.message) {
+      toast.error(state.message)
     }
   }, [state, onOpenChange, router, tenantSlug, initialHtml])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[92dvh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Nueva página</DialogTitle>
+          <DialogTitle className="font-serif text-xl">Nueva página</DialogTitle>
           <DialogDescription>
             {initialHtml !== null
               ? 'Ponele nombre y link a tu archivo. El código ya lo tenemos.'
@@ -121,88 +120,72 @@ export function NewPageDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form action={formAction} className="flex min-h-0 flex-1 flex-col gap-4">
-          <DialogBody className="grid gap-4">
-            <FormError message={state.ok ? null : state.message} />
-
-            <Field
-              label="Nombre"
+        <form action={formAction} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="title">
+              Nombre<span className="text-destructive"> *</span>
+            </Label>
+            <Input
+              id="title"
               name="title"
               required
-              hint="Es para vos: así la encontrás en la lista. Lo que ve la gente es el título que pongas dentro del HTML."
-            >
-              <Input
-                autoFocus
-                maxLength={80}
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                placeholder="Halloween 2026"
-              />
-            </Field>
+              autoFocus
+              maxLength={80}
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="Halloween 2026"
+            />
+            <p className="text-xs text-muted-foreground">
+              Es para vos: así la encontrás en la lista. Lo que ve la gente es el título que pongas
+              dentro del HTML.
+            </p>
+          </div>
 
-            <Field
-              label="Link público"
-              name="slug"
-              required
-              hint={slugError ? undefined : LANDING_SLUG_HINT}
-              error={slugError}
-            >
-              <SlugInput
-                prefix={urlPrefix}
+          <div className="space-y-1.5">
+            <Label htmlFor="slug">
+              Link público<span className="text-destructive"> *</span>
+            </Label>
+            <div className="flex items-center gap-0 overflow-hidden rounded-lg border border-input bg-background focus-within:ring-[3px] focus-within:ring-ring/50">
+              <span className="shrink-0 truncate border-r border-input bg-cream-tint px-2.5 py-2 font-mono text-xs text-muted-foreground">
+                {urlPrefix}
+              </span>
+              <input
+                id="slug"
+                name="slug"
+                required
+                maxLength={40}
                 value={effectiveSlug}
-                onChange={(next) => {
+                onChange={(event) => {
                   setSlugTouched(true)
-                  setSlug(next.toLowerCase())
+                  setSlug(event.target.value.toLowerCase())
                 }}
                 placeholder="halloween-2026"
+                className="min-w-0 flex-1 bg-transparent px-2.5 py-2 font-mono text-sm outline-none placeholder:text-muted-foreground/70"
+                aria-describedby="slug-hint"
               />
-            </Field>
-          </DialogBody>
+            </div>
+            <p
+              id="slug-hint"
+              className={slugError ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}
+            >
+              {slugError ?? LANDING_SLUG_HINT}
+            </p>
+          </div>
 
           <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
-            <SubmitButton pendingText="Creando…" disabled={slugError !== null}>
-              {initialHtml !== null ? 'Crear con este archivo' : 'Crear y cargar el HTML'}
-            </SubmitButton>
+            <Button type="submit" disabled={pending || slugError !== null}>
+              {pending
+                ? 'Creando…'
+                : initialHtml !== null
+                  ? 'Crear con este archivo'
+                  : 'Crear y cargar el HTML'}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
-  )
-}
-
-/**
- * El final del link, con la dirección fija adelante («hubbar.com.ar/p/»). Va
- * adentro de un `Field`: el Input toma de ahí id, name y la ayuda.
- */
-export function SlugInput({
-  prefix,
-  value,
-  onChange,
-  placeholder,
-}: {
-  prefix: string
-  value: string
-  onChange: (value: string) => void
-  placeholder?: string
-}) {
-  return (
-    <InputGroup>
-      <InputAddon className="min-w-0 max-w-[55%] shrink">
-        <span className="truncate font-mono type-caption">{prefix}</span>
-      </InputAddon>
-      <Input
-        maxLength={40}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        autoComplete="off"
-        autoCapitalize="off"
-        spellCheck={false}
-        className="font-mono"
-      />
-    </InputGroup>
   )
 }

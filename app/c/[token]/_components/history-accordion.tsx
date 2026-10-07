@@ -2,8 +2,8 @@
 
 import { ChevronDown, History } from 'lucide-react'
 import { useId, useState } from 'react'
-import { Badge } from '@/components/ui-legacy/badge'
-import { Separator } from '@/components/ui-legacy/separator'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 import type { WalletData } from '@/lib/wallet/queries'
 import {

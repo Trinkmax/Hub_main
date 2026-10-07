@@ -2,8 +2,8 @@
 
 import { Minus, Plus, ShoppingBag, Trash2, Utensils } from 'lucide-react'
 import { useState } from 'react'
-import { Button } from '@/components/ui-legacy/button'
-import { Sheet, SheetContent, SheetGrabber } from '@/components/ui-legacy/sheet'
+import { Button } from '@/components/ui/button'
+import { Sheet, SheetContent, SheetGrabber } from '@/components/ui/sheet'
 import { submitTicket } from '@/lib/m-session/actions'
 import type { CartItem } from './mesa-screen'
 import { useDismissOnBack } from './use-dismiss-on-back'

@@ -1,29 +1,25 @@
 'use client'
 
-import { Cake, CircleCheck, CircleDashed, Clock4, TriangleAlert, Wallet } from 'lucide-react'
+import { AlertTriangle, Cake, CheckCircle2, Circle, Clock4, Wallet } from 'lucide-react'
 import { ContactButton } from '@/components/messaging/contact-button'
 import { CakeChip } from '@/components/reservations/cake-chip'
 import { ChampagneChip } from '@/components/reservations/celebration-chip'
 import { ReservationStatusControls } from '@/components/reservations/reservation-status-controls'
-import { Amount } from '@/components/ui/amount'
-import { Callout } from '@/components/ui/callout'
-import { Card, CardHeader, CardTitle } from '@/components/ui/card'
-import { formatDayMonth } from '@/lib/dates/format'
-import { cordobaDateTime } from '@/lib/dates/zone'
+import { ARSFormat } from '@/lib/salon/format'
 import type { ReservationWithJoins } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
-/** `'2026-09-10T17:32:00Z'` → `'10/09 14:32'`, en hora de Córdoba y sin `Intl`. */
-function formatMoment(iso: string | null): string {
-  const parts = cordobaDateTime(iso)
-  return parts ? `${formatDayMonth(parts.date)} ${parts.time}` : '—'
+function formatRelative(iso: string | null): string {
+  if (!iso) return '—'
+  const date = new Date(iso)
+  return new Intl.DateTimeFormat('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
 }
 
-/**
- * La columna de la ficha de una reserva: el estado (y sus botones), contactar,
- * lo que prepara el bar, la seña y el comentario, y la línea de tiempo.
- * Tarjetas del kit una al lado de la otra (nunca una adentro de otra).
- */
 export function ReservationDetailSidebar({
   tenantSlug,
   reservation,
@@ -34,27 +30,30 @@ export function ReservationDetailSidebar({
   const contactPhone = reservation.customer?.phone ?? reservation.guest_phone ?? null
 
   return (
-    <aside aria-label="Estado y datos de la reserva" className="grid content-start gap-4">
+    <aside className="space-y-4">
       <ReservationStatusControls tenantSlug={tenantSlug} reservation={reservation} />
 
       {contactPhone ? (
-        <ContactButton
-          tenantSlug={tenantSlug}
-          phone={contactPhone}
-          customerId={reservation.customer?.id}
-          name={reservation.guest_name}
-          size="md"
-        />
+        <div className="flex justify-end">
+          <ContactButton
+            tenantSlug={tenantSlug}
+            phone={contactPhone}
+            customerId={reservation.customer?.id}
+            name={reservation.guest_name}
+          />
+        </div>
       ) : null}
 
       {/* Lo que el bar tiene que PRODUCIR para esta mesa. Va arriba de la seña:
           la torta hay que encargarla con días, la seña se mira el mismo día. */}
       {reservation.cake_count > 0 || reservation.champagne_count > 0 ? (
-        <Card padding="sm" className="gap-3">
-          <CardHeader className="grid-cols-[auto_1fr] items-center gap-2">
-            <Cake className="size-4 text-brand-text" aria-hidden />
-            <CardTitle className="type-label text-muted-foreground">Lo prepara el bar</CardTitle>
-          </CardHeader>
+        <section className="space-y-2 rounded-xl border border-primary/30 bg-primary/[0.06] p-4">
+          <header className="flex items-center gap-2">
+            <Cake className="size-4 text-primary" />
+            <span className="text-xs uppercase tracking-wide text-muted-foreground">
+              Lo prepara el bar
+            </span>
+          </header>
           <div className="flex flex-wrap gap-1.5">
             <CakeChip
               count={reservation.cake_count}
@@ -65,30 +64,32 @@ export function ReservationDetailSidebar({
             <ChampagneChip count={reservation.champagne_count} />
           </div>
           {reservation.cake_count > 0 && !reservation.cake_option ? (
-            <Callout tone="warning" className="p-2 sm:p-3">
-              Falta definir qué torta va. La elegís en el formulario, en el bloque de la torta.
-            </Callout>
+            <p className="rounded-md border border-warning/50 bg-warning/10 px-2 py-1 text-[11px] text-foreground">
+              Falta definir qué torta va. La elegís abajo, en el bloque de la torta.
+            </p>
           ) : null}
-        </Card>
+        </section>
       ) : null}
 
       {/* Seña + nota: los dos datos que el dueño mira antes de sentar la mesa.
           Se leen acá sin tener que bajar hasta el bloque "Extras" del form. */}
-      <Card padding="sm" className="gap-3">
-        <CardHeader className="grid-cols-[auto_1fr] items-center gap-2">
-          <Wallet className="size-4 text-muted-foreground" aria-hidden />
-          <CardTitle className="type-label text-muted-foreground">Seña y nota</CardTitle>
-        </CardHeader>
+      <section className="space-y-3 rounded-xl border border-border/70 bg-card p-4">
+        <header className="flex items-center gap-2">
+          <Wallet className="size-4 text-muted-foreground" />
+          <span className="text-xs uppercase tracking-wide text-muted-foreground">Seña y nota</span>
+        </header>
         <div className="flex items-baseline justify-between gap-2">
-          <span className="type-small text-muted-foreground">Seña</span>
+          <span className="text-sm text-muted-foreground">Seña</span>
           {reservation.deposit_cents > 0 ? (
-            <Amount cents={reservation.deposit_cents} decimals={0} className="type-subtitle" />
+            <span className="font-mono text-base font-semibold tabular-nums">
+              {ARSFormat(reservation.deposit_cents)}
+            </span>
           ) : (
-            <span className="type-small text-muted-foreground">Sin seña</span>
+            <span className="text-sm text-muted-foreground">Sin seña</span>
           )}
         </div>
-        <div className="grid gap-1 border-t border-border pt-3">
-          <span className="type-small text-muted-foreground">
+        <div className="space-y-1 border-t border-border/60 pt-3">
+          <span className="text-sm text-muted-foreground">
             {reservation.highlight_comment && reservation.comments
               ? 'Comentario destacado'
               : 'Comentario del cliente'}
@@ -99,25 +100,26 @@ export function ReservationDetailSidebar({
             // el switch no sirve para nada acá.
             <p
               className={cn(
-                'max-h-56 overflow-y-auto whitespace-pre-wrap break-words type-body',
-                reservation.highlight_comment && 'rounded-lg bg-warning-soft px-3 py-2 font-medium',
+                'max-h-56 overflow-y-auto whitespace-pre-wrap break-words text-sm',
+                reservation.highlight_comment &&
+                  'rounded-lg border border-warning/50 bg-warning/10 px-3 py-2 font-medium',
               )}
             >
               {reservation.comments}
             </p>
           ) : (
-            <p className="type-body text-muted-foreground">Sin comentarios.</p>
+            <p className="text-sm text-muted-foreground">Sin comentarios.</p>
           )}
         </div>
-      </Card>
+      </section>
 
-      {/* Línea de tiempo operativa, en hora de Córdoba. */}
-      <Card padding="sm" className="gap-3">
-        <CardHeader className="grid-cols-[auto_1fr] items-center gap-2">
-          <Clock4 className="size-4 text-muted-foreground" aria-hidden />
-          <CardTitle className="type-label text-muted-foreground">Línea de tiempo</CardTitle>
-        </CardHeader>
-        <ol className="grid gap-2">
+      {/* Timeline operativo */}
+      <section className="rounded-xl border border-border/70 bg-card p-4">
+        <header className="mb-3 flex items-center gap-2">
+          <Clock4 className="size-4 text-muted-foreground" />
+          <span className="text-xs uppercase tracking-wide text-muted-foreground">Timeline</span>
+        </header>
+        <ol className="space-y-2 text-sm">
           <Step label="Creada" at={reservation.created_at} done />
           <Step label="Llegó" at={reservation.arrived_at} done={!!reservation.arrived_at} />
           <Step label="Sentada" at={reservation.seated_at} done={!!reservation.seated_at} />
@@ -132,7 +134,7 @@ export function ReservationDetailSidebar({
             />
           ) : null}
         </ol>
-      </Card>
+      </section>
     </aside>
   )
 }
@@ -155,25 +157,24 @@ function Step({
       <div className="mt-0.5">
         {done ? (
           negative ? (
-            <TriangleAlert className="size-4 text-destructive-text" aria-hidden />
+            <AlertTriangle className="size-4 text-rose-500" />
           ) : (
-            <CircleCheck className="size-4 text-success-text" aria-hidden />
+            <CheckCircle2 className="size-4 text-emerald-500" />
           )
         ) : (
-          <CircleDashed className="size-4 text-subtle-foreground" aria-hidden />
+          <Circle className="size-4 text-muted-foreground/40" />
         )}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <span className={cn('type-body', done ? 'text-foreground' : 'text-muted-foreground')}>
+          <span className={cn('text-sm', done ? 'text-foreground' : 'text-muted-foreground')}>
             {label}
-            {done ? null : <span className="sr-only"> (todavía no)</span>}
           </span>
-          <span className="type-caption tabular-nums text-muted-foreground">
-            {formatMoment(at)}
+          <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+            {formatRelative(at)}
           </span>
         </div>
-        {note ? <p className="type-caption text-muted-foreground">{note}</p> : null}
+        {note ? <p className="text-[11px] text-muted-foreground">{note}</p> : null}
       </div>
     </li>
   )

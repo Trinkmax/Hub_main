@@ -3,14 +3,14 @@
 import { type IDetectedBarcode, Scanner } from '@yudiel/react-qr-scanner'
 import { CameraOff, ScanLine } from 'lucide-react'
 import { useCallback, useState } from 'react'
-import { Button } from '@/components/ui-legacy/button'
+import { Button } from '@/components/ui/button'
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from '@/components/ui-legacy/sheet'
+} from '@/components/ui/sheet'
 import { parseQrInput } from '@/lib/sessions-waiter/qr-parse'
 
 export function QrScannerSheet({

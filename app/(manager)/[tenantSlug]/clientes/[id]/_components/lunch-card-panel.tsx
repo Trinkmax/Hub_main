@@ -1,11 +1,9 @@
 'use client'
 
-import { CircleCheck, UtensilsCrossed } from 'lucide-react'
+import { CheckCircle2, Loader2, UtensilsCrossed } from 'lucide-react'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { formatNumber } from '@/lib/format/number-kind'
 import { registerLunchVisit } from '@/lib/punch-cards/actions'
 import { cn } from '@/lib/utils'
 
@@ -48,7 +46,7 @@ export function LunchCardPanel({
         threshold: r.threshold,
       }))
       if (r.completed) {
-        toast.success('¡Tarjeta completa! La recompensa está lista.')
+        toast.success('¡Tarjeta completa! Recompensa lista.')
       } else {
         toast.success('Almuerzo marcado.')
       }
@@ -58,59 +56,62 @@ export function LunchCardPanel({
   const stamps = Array.from({ length: state.threshold }, (_, i) => i < state.current_stamps)
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>
-          <h2>{state.template_name}</h2>
-        </CardTitle>
-        <CardDescription className="type-amount">
-          {completed
-            ? `¡Completa! Recompensa: ${state.reward_name ?? 'a definir'}.`
-            : `${formatNumber(state.current_stamps)} de ${formatNumber(state.threshold)} almuerzos${
-                state.reward_name ? ` · al ${state.threshold}.º llega ${state.reward_name}` : ''
-              }`}
-        </CardDescription>
-        <CardAction>
-          <UtensilsCrossed aria-hidden="true" className="size-4 text-muted-foreground" />
-        </CardAction>
-      </CardHeader>
+    <div className="card-hairline rounded-xl border bg-card p-5">
+      <header className="mb-3 flex items-baseline justify-between gap-3">
+        <div>
+          <h2 className="font-display text-base font-semibold tracking-tight">
+            {state.template_name}
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            {completed
+              ? `¡Completa! Recompensa: ${state.reward_name ?? 'pendiente'}.`
+              : `${state.current_stamps} de ${state.threshold} almuerzos${
+                  state.reward_name ? ` · al ${state.threshold}° llega ${state.reward_name}` : ''
+                }`}
+          </p>
+        </div>
+        <UtensilsCrossed className="size-4 text-primary" />
+      </header>
 
-      <div
-        role="img"
-        aria-label={`${state.current_stamps} de ${state.threshold} almuerzos marcados`}
-        className="flex flex-wrap gap-2"
-      >
+      <div className="flex flex-wrap gap-2">
         {stamps.map((filled, i) => (
           <span
-            // biome-ignore lint/suspicious/noArrayIndexKey: los sellos son un progreso fijo, posicional
+            // biome-ignore lint/suspicious/noArrayIndexKey: stamps are a fixed visual progress
             key={i}
-            aria-hidden="true"
+            role="img"
+            aria-label={filled ? 'Almuerzo marcado' : 'Pendiente'}
             className={cn(
               'size-7 rounded-full',
-              filled ? 'bg-primary' : 'border border-dashed border-input bg-secondary',
+              filled
+                ? 'bg-primary shadow-sm'
+                : 'border border-dashed border-border bg-secondary/40',
             )}
           />
         ))}
       </div>
 
       {state.hours_from && state.hours_to ? (
-        <p className="type-caption text-muted-foreground">
-          Vale de {state.hours_from.slice(0, 5)} a {state.hours_to.slice(0, 5)} h.
+        <p className="mt-3 text-[11px] text-muted-foreground">
+          Válido de {state.hours_from.slice(0, 5)} a {state.hours_to.slice(0, 5)} hs.
         </p>
       ) : null}
 
-      <div className="flex justify-end">
-        <Button
-          onClick={onMark}
-          disabled={completed}
-          loading={pending}
-          loadingText="Marcando…"
-          size="sm"
-        >
-          {completed ? <CircleCheck aria-hidden="true" /> : <UtensilsCrossed aria-hidden="true" />}
-          {completed ? 'Tarjeta lista para canjear' : 'Marcar el almuerzo de hoy'}
+      <div className="mt-4 flex justify-end">
+        <Button onClick={onMark} disabled={pending || completed} size="sm" className="gap-2">
+          {pending ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : completed ? (
+            <CheckCircle2 className="size-3.5" />
+          ) : (
+            <UtensilsCrossed className="size-3.5" />
+          )}
+          {completed
+            ? 'Tarjeta lista para canjear'
+            : pending
+              ? 'Marcando…'
+              : 'Marcar almuerzo de hoy'}
         </Button>
       </div>
-    </Card>
+    </div>
   )
 }

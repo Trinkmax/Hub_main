@@ -13,19 +13,11 @@ import {
 } from '@/components/ui/dropdown-menu'
 import type { TenantRole } from '@/lib/tenant/types'
 import { cn } from '@/lib/utils'
-import { MAIN_ITEMS, SETTINGS_ITEMS, UnreadBadge, unreadLabel, visibleFor } from './wa-rail'
+import { MAIN_ITEMS, SETTINGS_ITEMS, visibleFor } from './wa-rail'
 
 /**
  * Tabs de secciones abajo (solo mobile), como WhatsApp en el teléfono.
  * Dentro de un chat abierto se ocultan para dejar el composer al fondo.
- *
- * Piso de 12 px del kit: las etiquetas pasaron de 10 a 12 px y la cuenta de
- * sin leer de 9 a 12 (con su pastilla más grande). Para que entren cinco
- * tabs en 360 px, la etiqueta es corta («Automático») y se recorta si no entra.
- *
- * Su alto (8 + 28 + 2 + 16 + 8 px, el pelo y el área segura) es el
- * `--form-actions-offset` del layout: la barra fija de un formulario queda
- * arriba de estas pestañas. Si cambia el alto, cambia también allá.
  */
 export function WaBottomTabs({
   tenantSlug,
@@ -58,13 +50,15 @@ export function WaBottomTabs({
         const href = `/${tenantSlug}/mensajeria/${item.segment}`
         const active = pathname === href || pathname.startsWith(`${href}/`)
         const Icon = item.icon
-        const showUnread = item.segment === 'inbox' && unreadTotal > 0
         return (
           <Link
             key={item.segment}
             href={href}
             aria-current={active ? 'page' : undefined}
-            className={cn(tabClass, active ? 'text-(--wa-accent-deep)' : 'text-(--wa-muted)')}
+            className={cn(
+              'flex min-w-0 flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition-colors',
+              active ? 'text-(--wa-accent-deep)' : 'text-(--wa-muted)',
+            )}
           >
             <span
               className={cn(
@@ -72,18 +66,16 @@ export function WaBottomTabs({
                 active && 'bg-(--wa-accent-soft)',
               )}
             >
-              <Icon className="size-5" strokeWidth={active ? 2.2 : 1.8} aria-hidden />
-              {showUnread ? (
-                <UnreadBadge
-                  count={unreadTotal}
-                  className="absolute -top-1.5 -right-0.5 ring-2 ring-(--wa-panel)"
-                />
+              <Icon className="size-[20px]" strokeWidth={active ? 2.2 : 1.8} aria-hidden />
+              {item.segment === 'inbox' && unreadTotal > 0 ? (
+                <span className="absolute -top-0.5 right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-(--wa-unread) px-1 text-[9px] font-bold tabular-nums text-white">
+                  {unreadTotal > 99 ? '99+' : unreadTotal}
+                </span>
               ) : null}
             </span>
             <span className="max-w-full truncate">
               {item.segment === 'flows' ? 'Automático' : item.label}
             </span>
-            {showUnread ? <span className="sr-only">, {unreadLabel(unreadTotal)}</span> : null}
           </Link>
         )
       })}
@@ -93,7 +85,7 @@ export function WaBottomTabs({
           <DropdownMenuTrigger
             aria-label="Ajustes de mensajería"
             className={cn(
-              tabClass,
+              'flex min-w-0 flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition-colors focus-visible:outline-none',
               settingsActive ? 'text-(--wa-accent-deep)' : 'text-(--wa-muted)',
             )}
           >
@@ -103,7 +95,11 @@ export function WaBottomTabs({
                 settingsActive && 'bg-(--wa-accent-soft)',
               )}
             >
-              <Settings className="size-5" strokeWidth={settingsActive ? 2.2 : 1.8} aria-hidden />
+              <Settings
+                className="size-[20px]"
+                strokeWidth={settingsActive ? 2.2 : 1.8}
+                aria-hidden
+              />
             </span>
             <span className="max-w-full truncate">Ajustes</span>
           </DropdownMenuTrigger>
@@ -127,8 +123,3 @@ export function WaBottomTabs({
     </nav>
   )
 }
-
-// Cada tab: toda la columna es el objetivo (más de 44 px de alto). El foco va
-// «adentro» (las tabs están pegadas entre sí) y es contorno, no sombra.
-const tabClass =
-  'flex min-w-0 flex-1 flex-col items-center gap-0.5 px-0.5 py-2 type-caption font-medium transition-colors outline-(--ring) -outline-offset-2 focus-visible:outline-2'

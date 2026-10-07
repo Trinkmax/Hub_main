@@ -1,24 +1,19 @@
 'use client'
 
-import { BadgeCheck, Lock, Plus, SendHorizontal, Zap } from 'lucide-react'
-import Link from 'next/link'
+import { BadgeCheck, Loader2, Lock, Plus, SendHorizontal, Zap } from 'lucide-react'
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Spinner } from '@/components/ui/spinner'
 import type { TemplateLite } from '@/lib/bandeja/template-view'
 import { sendTextMessage } from '@/lib/meta/actions'
 import type { QuickMessageRow } from '@/lib/quick-messages/queries'
 import { cn } from '@/lib/utils'
 import type { ChannelType } from '@/types/database'
-import { waActionClass } from '../../_components/wa-classes'
 import { TemplateDialog } from './template-dialog'
 
 function QuickMessagePicker({
@@ -69,12 +64,10 @@ function QuickMessagePicker({
     <div
       role="listbox"
       aria-label="Mensajes rápidos"
-      className="absolute right-0 bottom-full left-0 mb-2 max-h-56 overflow-y-auto rounded-xl border border-(--wa-border) bg-(--wa-panel) py-1 shadow-float"
+      className="absolute bottom-full left-0 right-0 mb-2 max-h-56 overflow-y-auto rounded-xl border border-(--wa-border) bg-(--wa-panel) py-1 shadow-lg"
     >
       {filtered.length === 0 ? (
-        <p className="px-3 py-2.5 text-xs text-(--wa-muted)">
-          No hay mensajes rápidos con «/{query}». Seguí escribiendo o borrá la barra.
-        </p>
+        <p className="px-3 py-2.5 text-xs text-(--wa-muted)">Sin resultados para «/{query}»</p>
       ) : (
         filtered.map((msg, i) => (
           <button
@@ -83,8 +76,7 @@ function QuickMessagePicker({
             role="option"
             aria-selected={i === highlighted}
             className={cn(
-              // Sin transición: el resaltado se mueve con las flechas (§2.10).
-              'flex min-h-11 w-full flex-col justify-center gap-0.5 px-3 py-2 text-left text-sm',
+              'flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm transition-colors',
               i === highlighted ? 'bg-(--wa-active)' : 'hover:bg-(--wa-hover)',
             )}
             onClick={() => onSelect(msg.body)}
@@ -92,7 +84,7 @@ function QuickMessagePicker({
           >
             <span className="flex items-center gap-1.5">
               <span className="font-medium leading-tight text-(--wa-text)">{msg.title}</span>
-              <span className="rounded-sm bg-(--wa-panel-soft) px-1 font-mono text-xs text-(--wa-text-soft)">
+              <span className="rounded bg-(--wa-panel-soft) px-1 font-mono text-[10px] text-(--wa-muted)">
                 /{msg.shortcut}
               </span>
             </span>
@@ -202,25 +194,25 @@ export function Composer({
             </span>
           </p>
           {templates.length > 0 ? (
-            <Button
+            <button
               type="button"
               onClick={() => setTemplateOpen(true)}
-              className={cn('rounded-full', waActionClass)}
+              className="inline-flex items-center gap-2 rounded-full bg-(--wa-accent) px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-(--wa-accent-deep)"
             >
-              <BadgeCheck aria-hidden />
+              <BadgeCheck className="size-4" aria-hidden />
               Enviar mensaje aprobado
-            </Button>
+            </button>
           ) : (
             <p className="text-xs text-(--wa-muted)">
               {canManageTemplates ? (
                 <>
                   Todavía no tenés mensajes aprobados. Crealos en{' '}
-                  <Link
+                  <a
                     href={`/${tenantSlug}/mensajeria/plantillas`}
                     className="font-medium text-(--wa-accent-deep) underline underline-offset-2"
                   >
                     Plantillas
-                  </Link>
+                  </a>
                   .
                 </>
               ) : (
@@ -258,7 +250,7 @@ export function Composer({
         <DropdownMenu>
           <DropdownMenuTrigger
             aria-label="Más opciones"
-            className="relative hit-area flex size-10 shrink-0 items-center justify-center rounded-full text-(--wa-text-soft) transition-colors hover:bg-(--wa-hover) hover:text-(--wa-text)"
+            className="flex size-10 shrink-0 items-center justify-center rounded-full text-(--wa-text-soft) transition-colors hover:bg-(--wa-hover) hover:text-(--wa-text) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--wa-accent)"
           >
             <Plus className="size-6" aria-hidden />
           </DropdownMenuTrigger>
@@ -273,7 +265,7 @@ export function Composer({
               >
                 <Zap className="size-4" aria-hidden />
                 Mensaje rápido
-                <DropdownMenuShortcut className="font-mono">/</DropdownMenuShortcut>
+                <span className="ml-auto font-mono text-[10px] text-muted-foreground">/</span>
               </DropdownMenuItem>
             ) : null}
             {channelType === 'whatsapp' && templates.length > 0 ? (
@@ -285,8 +277,7 @@ export function Composer({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* El foco se dibuja en la píldora entera (contorno del panel), como en el buscador. */}
-        <div className="flex min-h-10 flex-1 items-center rounded-3xl bg-(--wa-input) px-4 py-2 outline-(--ring) -outline-offset-1 has-[textarea:focus-visible]:outline-2">
+        <div className="flex min-h-10 flex-1 items-center rounded-3xl bg-(--wa-input) px-4 py-2">
           <textarea
             ref={textareaRef}
             value={body}
@@ -304,22 +295,15 @@ export function Composer({
           />
         </div>
 
-        {/* El botón redondo de WhatsApp. Verde profundo con el ícono del color
-            del panel: pasa 3:1 en claro y en oscuro (el verde claro con blanco
-            de antes quedaba en 2,4:1 en oscuro). */}
         <button
           type="button"
           onClick={handleSend}
           disabled={isPending || body.trim() === ''}
           aria-label="Enviar mensaje"
-          aria-busy={isPending || undefined}
-          className={cn(
-            'press flex size-10 shrink-0 items-center justify-center rounded-full disabled:cursor-default disabled:opacity-40',
-            waActionClass,
-          )}
+          className="flex size-10 shrink-0 items-center justify-center rounded-full bg-(--wa-accent) text-white transition-all hover:bg-(--wa-accent-deep) disabled:cursor-default disabled:opacity-40"
         >
           {isPending ? (
-            <Spinner size={20} aria-hidden />
+            <Loader2 className="size-5 animate-spin" aria-hidden />
           ) : (
             <SendHorizontal className="size-5" aria-hidden />
           )}

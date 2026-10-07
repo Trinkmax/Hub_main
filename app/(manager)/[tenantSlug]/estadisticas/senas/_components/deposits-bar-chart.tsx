@@ -1,9 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { formatDayLabel, MONTH_NAMES_SHORT } from '@/lib/dates/format'
-import { formatNumber } from '@/lib/format/number-kind'
-import { formatCents } from '@/lib/money/format'
+import { formatARS } from '@/lib/commissions/calculate'
+import { formatDayLabel } from '@/lib/salon/date-presets'
 import type { DepositDay } from '@/lib/salon/deposits'
 import { cn } from '@/lib/utils'
 
@@ -21,21 +20,10 @@ import { cn } from '@/lib/utils'
  * que le mentiría al ojo.
  */
 
-/** Sin centavos, como el resto del tablero. */
-function money(cents: number): string {
-  return formatCents(cents, { decimals: 0 })
-}
+const MONTH_FMT = new Intl.DateTimeFormat('es-AR', { month: 'short', timeZone: 'UTC' })
 
-/**
- * `'2026-09-09'` → `'Mié 09/09'`: `formatDayLabel` de `lib/dates` (armada a
- * mano, sin `Intl`, la misma de la agenda de reservas). Se reexporta con este
- * nombre para el tablero, que la usa en el día pico y en la tabla.
- */
-export { formatDayLabel as dayLabel }
-
-/** `'2026-09-01'` → `'sep'`. */
 function monthTick(iso: string): string {
-  return MONTH_NAMES_SHORT[Number(iso.slice(5, 7)) - 1] ?? ''
+  return MONTH_FMT.format(new Date(`${iso}T00:00:00Z`)).replace('.', '')
 }
 
 /**
@@ -70,44 +58,40 @@ export function DepositsBarChart({
   const hovered = active ? days.find((d) => d.day === active) : undefined
 
   return (
-    // Una figura con nombre (no `role="img"`, que escondería lo de adentro):
-    // hay un botón por día que se recorre con Tab y dice su monto.
     <figure
       className="m-0"
       onMouseLeave={() => setActive(null)}
-      aria-label={`Señas por día: ${daysWithDeposit} días con seña, mediana diaria ${money(median)}.`}
+      role="img"
+      aria-label={`Señas por día: ${daysWithDeposit} días con seña, mediana diaria ${formatARS(median)}.`}
     >
       {/* Una sola línea que cambia de contenido: sin hover cuenta cómo se lee
           el gráfico, con hover dice el día exacto. Alto fijo para que la barra
           no salte cuando el mouse entra. */}
-      <figcaption className="flex min-h-9 items-center type-small">
+      <figcaption className="flex h-9 items-center text-xs">
         {hovered ? (
           <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
             <span className="font-medium text-foreground">{formatDayLabel(hovered.day)}</span>
-            <span className="type-amount font-semibold text-foreground">
-              {money(hovered.total_cents)}
+            <span className="font-mono font-semibold tabular-nums text-foreground">
+              {formatARS(hovered.total_cents)}
             </span>
             {hovered.fallen_cents > 0 ? (
               <span className="text-muted-foreground">
-                vigente <span className="type-amount">{money(hovered.active_cents)}</span> · caídas{' '}
-                <span className="type-amount text-destructive-text">
-                  {money(hovered.fallen_cents)}
-                </span>
+                vigente {formatARS(hovered.active_cents)} · caídas{' '}
+                <span className="text-destructive">{formatARS(hovered.fallen_cents)}</span>
               </span>
             ) : null}
             <span className="text-muted-foreground">
               {hovered.reservations === 0
                 ? 'sin reservas'
-                : `${formatNumber(hovered.reservations)} ${hovered.reservations === 1 ? 'reserva' : 'reservas'}`}
+                : `${hovered.reservations} ${hovered.reservations === 1 ? 'reserva' : 'reservas'}`}
               {hovered.reservations > 0 && hovered.with_deposit === 0 ? ', ninguna con seña' : ''}
             </span>
           </span>
         ) : (
           <span className="text-muted-foreground">
             Mediana diaria{' '}
-            <strong className="type-amount font-medium text-foreground">{money(median)}</strong> ·
-            promedio <span className="type-amount">{money(avg)}</span> ·{' '}
-            {formatNumber(daysWithDeposit)}{' '}
+            <strong className="font-medium text-foreground">{formatARS(median)}</strong> · promedio{' '}
+            {formatARS(avg)} · {daysWithDeposit}{' '}
             {daysWithDeposit === 1 ? 'día con seña' : 'días con seña'}
           </span>
         )}
@@ -119,7 +103,7 @@ export function DepositsBarChart({
         {median > 0 ? (
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-x-0 border-t border-dashed border-border-strong"
+            className="pointer-events-none absolute inset-x-0 border-t border-dashed border-border"
             style={{ bottom: `${pct(median)}%` }}
           />
         ) : null}
@@ -131,14 +115,14 @@ export function DepositsBarChart({
             <button
               key={d.day}
               type="button"
-              aria-label={`${formatDayLabel(d.day)}: ${money(d.total_cents)}`}
+              aria-label={`${formatDayLabel(d.day)}: ${formatARS(d.total_cents)}`}
               onMouseEnter={() => setActive(d.day)}
               onFocus={() => setActive(d.day)}
               onBlur={() => setActive(null)}
               className={cn(
-                'flex h-full flex-1 cursor-default flex-col justify-end overflow-hidden rounded-t-sm',
-                'outline-(--ring) -outline-offset-2 focus-visible:outline-2',
-                active === d.day ? 'bg-active' : 'hover:bg-hover',
+                'flex h-full flex-1 cursor-default flex-col justify-end overflow-hidden rounded-t-sm transition-colors',
+                'outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                active === d.day ? 'bg-secondary/70' : 'hover:bg-secondary/40',
               )}
             >
               {d.fallen_cents > 0 ? (
@@ -156,17 +140,14 @@ export function DepositsBarChart({
               {/* Hubo reservas y ninguna dejó seña: una rayita, no un hueco.
                   Un día vacío y un día en cero no son la misma información. */}
               {d.total_cents === 0 && d.reservations > 0 ? (
-                <div className="h-px w-full bg-border-strong" />
+                <div className="h-px w-full bg-border" />
               ) : null}
             </button>
           ))}
         </div>
       </div>
 
-      <div
-        aria-hidden="true"
-        className="mt-1.5 flex gap-px type-caption tabular-nums text-muted-foreground"
-      >
+      <div className="mt-1.5 flex gap-px font-mono text-[10px] tabular-nums text-muted-foreground">
         {days.map((d, i) => (
           <span key={d.day} className="flex-1 overflow-visible whitespace-nowrap text-left">
             {ticks[i]}

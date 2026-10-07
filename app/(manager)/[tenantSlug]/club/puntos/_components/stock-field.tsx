@@ -1,8 +1,8 @@
 'use client'
 
-import { Infinity as InfinityIcon, TriangleAlert } from 'lucide-react'
+import { Infinity as InfinityIcon } from 'lucide-react'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { NumberField } from '@/components/ui/number-field'
 import { Switch } from '@/components/ui/switch'
 
 // Stock con switch "Ilimitado" explícito.
@@ -27,51 +27,55 @@ export function StockField({
   idPrefix: string
   unlimited: boolean
   onUnlimitedChange: (unlimited: boolean) => void
-  /** Unidades disponibles, o `null` mientras el campo está vacío. */
-  value: number | null
-  onValueChange: (value: number | null) => void
+  /** Valor crudo del input (string, para no pelear con el vacío intermedio). */
+  value: string
+  onValueChange: (value: string) => void
 }): React.JSX.Element {
   const stockId = `${idPrefix}-stock`
   const switchId = `${idPrefix}-stock-unlimited`
-  const hintId = `${idPrefix}-stock-hint`
-  const soldOut = !unlimited && value === 0
+  const soldOut = !unlimited && value.trim() === '0'
 
   return (
-    <div className="grid gap-2">
-      <div className="flex min-h-[1.125rem] items-center justify-between gap-2">
-        <Label htmlFor={unlimited ? switchId : stockId}>Stock</Label>
-        <div className="flex items-center gap-2">
-          <Label htmlFor={switchId} className="font-normal text-muted-foreground">
+    <div className="grid gap-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <Label
+          htmlFor={unlimited ? switchId : stockId}
+          className="text-[11px] text-muted-foreground"
+        >
+          Stock
+        </Label>
+        <div className="flex items-center gap-1.5">
+          <Label htmlFor={switchId} className="text-[11px] font-normal text-muted-foreground">
             Ilimitado
           </Label>
-          <Switch id={switchId} size="sm" checked={unlimited} onCheckedChange={onUnlimitedChange} />
+          <Switch id={switchId} checked={unlimited} onCheckedChange={onUnlimitedChange} />
         </div>
       </div>
 
       {unlimited ? (
-        // Del mismo alto que el campo: sin esto la fila salta cada vez que se
-        // toca el interruptor.
-        <p className="flex h-(--control-md) items-center gap-1.5 rounded-md border border-dashed border-border-strong px-3 type-small text-muted-foreground">
-          <InfinityIcon className="size-4 shrink-0" aria-hidden="true" />
+        // Placeholder de la misma altura que el input: sin esto la fila salta
+        // cada vez que tocás el switch.
+        <p className="flex h-9 items-center gap-1.5 rounded-md border border-dashed px-3 text-xs text-muted-foreground">
+          <InfinityIcon className="size-3.5 shrink-0" aria-hidden="true" />
           Sin límite de canjes
         </p>
       ) : (
-        <NumberField
+        <Input
           id={stockId}
           name="stock"
+          type="number"
           min={0}
           required
           value={value}
-          onValueChange={onValueChange}
+          onChange={(e) => onValueChange(e.target.value)}
           placeholder="0"
-          aria-describedby={soldOut ? hintId : undefined}
+          className="tabular-nums"
         />
       )}
 
       {soldOut ? (
-        <p id={hintId} className="flex items-start gap-1 type-caption text-warning-text">
-          <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden="true" />
-          Con stock 0 la recompensa se ve agotada y nadie puede canjearla.
+        <p className="text-[11px] text-warning">
+          Con stock 0 la recompensa se muestra agotada y nadie puede canjearla.
         </p>
       ) : null}
     </div>

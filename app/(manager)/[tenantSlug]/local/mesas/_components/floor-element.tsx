@@ -2,7 +2,6 @@
 
 import { type CSSProperties, memo, useCallback, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
-import { readStageTransform } from '@/components/floor-plan/pan-zoom-stage'
 import {
   bodyRadius,
   ChairsSvg,
@@ -14,7 +13,7 @@ import { clampToAreaRotated, freeDragPosition, snapToGrid } from '@/lib/floor-pl
 import type { ElementRow } from '@/lib/floor-plan/queries'
 import { type Box, computeSnap, type Guide } from '@/lib/floor-plan/snap'
 import { cn } from '@/lib/utils'
-import { KIND_LABELS } from './element-labels'
+import { readStageTransform } from './pan-zoom-stage'
 import { ResizeHandles } from './resize-handles'
 import { RotateHandle } from './rotate-handle'
 
@@ -45,6 +44,19 @@ export type FloorElementProps = {
   /** Inicio/fin de gesto: el editor frena el re-seed del RSC y asegura la selección. */
   onDragStart?: (id: string) => void
   onDragEnd?: () => void
+}
+
+// Etiquetas es-AR por tipo (para aria-label de decoración).
+const KIND_LABELS: Record<ElementRow['kind'], string> = {
+  table: 'Mesa',
+  wall: 'Pared',
+  pillar: 'Columna',
+  island: 'Isla',
+  bar: 'Barra',
+  door: 'Puerta',
+  text: 'Texto',
+  stage: 'Escenario',
+  booth: 'Box',
 }
 
 // Umbral (px de pantalla) para distinguir click (selección) de drag (mover).
@@ -301,14 +313,12 @@ function FloorElementImpl({
           onPointerCancel={endDrag}
           aria-label={ariaLabel}
           style={decorStyle}
-          // El cuerpo es parte del dibujo (no cambia). Lo elegido lo marca el aro de
-          // abajo (sin halo de color: §2.9) y el foco es un outline de 2 px «afuera».
           className={cn(
-            'absolute inset-0 flex cursor-grab touch-none items-center justify-center overflow-hidden text-center active:cursor-grabbing',
-            'outline-offset-2 outline-(--ring) focus-visible:outline-2',
+            'absolute inset-0 flex cursor-grab touch-none items-center justify-center overflow-hidden text-center transition-shadow active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             isTable
               ? 'border border-primary/35 bg-card text-card-foreground shadow-sm'
               : decorSurfaceClass(element.kind),
+            selected && 'shadow-[var(--shadow-glow)]',
           )}
         >
           {isTable ? (

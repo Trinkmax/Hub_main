@@ -90,8 +90,7 @@ export function usePaletteDrag({ wrapperRef, onDrop }: UsePaletteDragArgs) {
     <div
       ref={ghostRef}
       aria-hidden
-      // Flota mientras se arrastra: la sombra de lo que flota (shadow-float), 12 px.
-      className="pointer-events-none fixed top-0 left-0 z-[60] hidden select-none items-center rounded-md bg-primary px-2 py-1 type-caption font-medium text-primary-foreground shadow-float"
+      className="pointer-events-none fixed left-0 top-0 z-[60] hidden select-none items-center rounded-md border border-primary/30 bg-primary px-2 py-1 text-xs font-medium text-primary-foreground shadow-lg"
       style={{ display: 'none' }}
     />
   )

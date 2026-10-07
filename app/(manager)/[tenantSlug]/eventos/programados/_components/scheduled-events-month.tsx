@@ -17,11 +17,12 @@ import {
   ChevronLeft,
   ChevronRight,
   GripVertical,
+  Info,
+  Loader2,
   Lock,
   PartyPopper,
   SlidersHorizontal,
   Sparkles,
-  TriangleAlert,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -38,16 +39,9 @@ import {
   useTransition,
 } from 'react'
 import { toast } from 'sonner'
-import { longDayLabel } from '@/components/reservations/day-labels'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Callout } from '@/components/ui/callout'
-import { Spinner } from '@/components/ui/spinner'
-import { addMonthsToYearMonth } from '@/lib/dates/civil'
-import { capitalizeFirst, formatDayMonth, formatMonthYear, WEEKDAY_NAMES } from '@/lib/dates/format'
 import { moveScheduledEvent } from '@/lib/salon/actions'
 import { calendarHref, hrefWithoutZone, newReservationHref } from '@/lib/salon/calendar-links'
-import { eventInk } from '@/lib/salon/event-ink'
 import { PRIVATE_GROUP_CALENDAR_TITLE, PRIVATE_GROUP_LABEL } from '@/lib/salon/private-groups'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import type { DayOverview } from '@/lib/salon/segment-queries'
@@ -78,41 +72,24 @@ import { TemplateDropDialog } from './template-drop-dialog'
 import { ZoneFilterControl } from './zone-filter-control'
 
 function shiftYM(ym: string, months: number): string {
-  return /^\d{4}-\d{2}$/.test(ym) ? addMonthsToYearMonth(ym, months) : ym
+  const [y, m] = ym.split('-').map(Number)
+  if (!y || !m) return ym
+  const d = new Date(Date.UTC(y, m - 1 + months, 1))
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
 }
 
-/** `'2026-09'` → `'Septiembre de 2026'`, a mano (sin `Intl`: hidratación). */
 function formatYM(ym: string): string {
-  return capitalizeFirst(formatMonthYear(ym)) || ym
+  const [y, m] = ym.split('-').map(Number)
+  if (!y || !m) return ym
+  const d = new Date(Date.UTC(y, m - 1, 1))
+  return new Intl.DateTimeFormat('es-AR', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(d)
 }
 
 const DOW_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
-
-/** Color del formato cuando no trae el suyo (o el de la DB no es un hex). */
-const EVENT_FALLBACK_COLOR = '#7c3aed'
-
-/** Solo hex: el color viene de la DB y va a un `style`. */
-function safeColor(colorHex: string | null | undefined): string {
-  return colorHex && /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(colorHex)
-    ? colorHex
-    : EVENT_FALLBACK_COLOR
-}
-
-/**
- * La tinta del formato para los chips de evento: el tono del template con la
- * luz recortada para que se lea sobre el papel (`lib/salon/event-ink.ts`, la
- * misma de «Cómo nos fue»). Los colores de calendario crudos (un amarillo
- * limón) daban 1,2:1 como texto. Va con la clase `ev-ink` (globals.css), que
- * elige la tinta clara u oscura según el tema y cae a `--primary` sin color.
- */
-function eventInkStyle(colorHex: string | null | undefined): CSSProperties {
-  const ink = eventInk(safeColor(colorHex))
-  return {
-    ...(ink ? { '--ev-l': ink.light, '--ev-d': ink.dark } : {}),
-    color: 'var(--ev)',
-    backgroundColor: 'color-mix(in oklch, var(--ev) 10%, transparent)',
-  } as CSSProperties
-}
 
 // Prefijos de ID para distinguir qué clase de cosa se está arrastrando/dropeando.
 const TMPL_PREFIX = 'tmpl:'
@@ -429,34 +406,42 @@ export function ScheduledEventsMonth({
           <TemplateRail templates={templates} tenantSlug={tenantSlug} />
         ) : null}
 
-        <div className="rounded-xl border border-border bg-card p-3 sm:p-4 lg:p-5">
+        <div className="card-hairline rounded-2xl border bg-card p-3 sm:p-5">
           <header className="mb-3 flex items-center justify-between gap-2">
             <Button
               variant="ghost"
               size="icon"
-              aria-label={`Mes anterior: ${formatMonthYear(shiftYM(ym, -1))}`}
+              aria-label="Mes anterior"
               onClick={() => gotoMonth(shiftYM(ym, -1))}
             >
-              <ChevronLeft aria-hidden />
+              <ChevronLeft className="size-4" />
             </Button>
             <div className="flex items-center gap-2.5">
-              <h2 className="type-section">{formatYM(ym)}</h2>
+              <h2 className="font-serif text-xl font-semibold capitalize">{formatYM(ym)}</h2>
               {ym !== today.slice(0, 7) ? (
-                <Button variant="secondary" size="sm" onClick={() => gotoMonth(today.slice(0, 7))}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2.5 text-xs"
+                  onClick={() => gotoMonth(today.slice(0, 7))}
+                >
                   Hoy
                 </Button>
               ) : null}
               {moving ? (
-                <Spinner size={14} label="Guardando cambios" className="text-muted-foreground" />
+                <Loader2
+                  className="size-3.5 animate-spin text-muted-foreground"
+                  aria-label="Guardando cambios"
+                />
               ) : null}
             </div>
             <Button
               variant="ghost"
               size="icon"
-              aria-label={`Mes siguiente: ${formatMonthYear(shiftYM(ym, 1))}`}
+              aria-label="Mes siguiente"
               onClick={() => gotoMonth(shiftYM(ym, 1))}
             >
-              <ChevronRight aria-hidden />
+              <ChevronRight className="size-4" />
             </Button>
           </header>
 
@@ -470,14 +455,14 @@ export function ScheduledEventsMonth({
           <p
             data-tour="eventos-leyenda"
             aria-live="polite"
-            className="mb-3 text-center text-pretty type-caption text-muted-foreground"
+            className="mb-3 text-center text-[11px] text-muted-foreground text-pretty"
           >
             {calendarLegend(zoneFilter, monthSegments.zoneCaps)}
           </p>
 
           {/* Agenda vertical para mobile: la grilla 7-col deja celdas ilegibles en celular.
               El drag-and-drop queda solo en >=sm. */}
-          <div className="flex flex-col gap-2 sm:hidden">
+          <div className="space-y-2 sm:hidden">
             <MonthAgenda
               ym={ym}
               events={events}
@@ -489,17 +474,13 @@ export function ScheduledEventsMonth({
               onOpenDay={openDayAt}
             />
           </div>
-          {/* 12 px como piso (kit): el aire entre celdas y su relleno se achican
-              en sm para que "C 119/120" entre entero a 640 px. */}
-          <div className="hidden grid-cols-7 gap-1 sm:grid lg:gap-1.5">
-            {DOW_LABELS.map((d, i) => (
+          <div className="hidden grid-cols-7 gap-1.5 text-xs sm:grid">
+            {DOW_LABELS.map((d) => (
               <div
                 key={d}
-                className="px-1 py-1 text-center type-caption font-medium text-muted-foreground"
+                className="px-1 py-1 text-center uppercase tracking-wide text-muted-foreground"
               >
-                <span aria-hidden>{d}</span>
-                {/* Para el lector: el nombre entero (la grilla empieza el lunes). */}
-                <span className="sr-only">{WEEKDAY_NAMES[(i + 1) % 7]}</span>
+                {d}
               </div>
             ))}
             {grid.map((cell, idx) => (
@@ -520,20 +501,18 @@ export function ScheduledEventsMonth({
               />
             ))}
           </div>
-          <p className="mt-3 hidden text-center text-pretty type-caption text-muted-foreground sm:block">
+          <p className="mt-3 hidden text-center text-[11px] text-muted-foreground text-pretty sm:block">
             Arrastrá un formato a un día para programarlo o un evento para moverlo. Tocá un evento
             para reservar adentro; tocá un servicio para ver el día.
           </p>
-          <p className="mt-3 text-center text-pretty type-caption text-muted-foreground sm:hidden">
+          <p className="mt-3 text-center text-[11px] text-muted-foreground text-pretty sm:hidden">
             Tocá un día o un servicio para ver cómo viene y reservar. Tocá un evento para reservar
             adentro.
           </p>
         </div>
 
         <DragOverlay dropAnimation={null}>
-          {activeDrag?.kind === 'template' ? (
-            <TemplateChip template={activeDrag.template} floating />
-          ) : null}
+          {activeDrag?.kind === 'template' ? <TemplateChip template={activeDrag.template} /> : null}
           {activeDrag?.kind === 'event' ? (
             <EventCardOverlay
               event={activeDrag.event}
@@ -578,17 +557,40 @@ export function ScheduledEventsMonth({
 // Subcomponentes
 // ───────────────────────────────────────────────────────────────
 
-/** `'2026-09-19'` → `'19/09'` (el aviso de «evento movido»). */
-const formatShortDate = formatDayMonth
+function formatShortDate(date: string): string {
+  const [y, m, d] = date.split('-').map(Number)
+  if (!y || !m || !d) return date
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  return new Intl.DateTimeFormat('es-AR', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  }).format(dt)
+}
 
-/** `'2026-09-10'` → `'Jueves 10'`: el renglón de un día en la agenda del celu. */
 function formatAgendaDate(date: string): string {
-  const label = longDayLabel(date)
-  return capitalizeFirst(label.slice(0, label.indexOf(' de ')))
+  const [y, m, d] = date.split('-').map(Number)
+  if (!y || !m || !d) return date
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  return new Intl.DateTimeFormat('es-AR', {
+    weekday: 'long',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(dt)
 }
 
 /** 'jueves 10 de septiembre': para los aria-label (la celda solo muestra el número). */
-const formatLongDate = longDayLabel
+function formatLongDate(date: string): string {
+  const [y, m, d] = date.split('-').map(Number)
+  if (!y || !m || !d) return date
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  return new Intl.DateTimeFormat('es-AR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'UTC',
+  }).format(dt)
+}
 
 /**
  * Solo para el dueño y solo mientras no cargó cupos por servicio: el mes está
@@ -603,22 +605,20 @@ function UnconfiguredBanner({
   fallbackTotal: number
 }) {
   return (
-    <Callout
-      tone="info"
-      className="mb-4"
-      action={
-        <Button asChild variant="secondary" size="sm">
-          <Link href={`/${tenantSlug}/configuracion/salon`}>
-            Configurar almuerzo, merienda y cena
-            <ChevronRight aria-hidden />
-          </Link>
-        </Button>
-      }
-    >
-      {fallbackTotal > 0
-        ? `Estás usando el cupo general del salón (${fallbackTotal} por servicio): cada servicio se mide contra eso.`
-        : 'Todavía no cargaste cupos: cada servicio muestra personas, sin tope.'}
-    </Callout>
+    <div className="mb-4 flex items-start gap-2 rounded-xl border border-info/40 bg-info/10 px-3 py-2.5 text-sm">
+      <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden />
+      <p className="text-pretty">
+        {fallbackTotal > 0
+          ? `Estás usando el cupo general del salón (${fallbackTotal} por servicio).`
+          : 'Todavía no cargaste cupos: cada servicio muestra personas, sin tope.'}{' '}
+        <Link
+          href={`/${tenantSlug}/configuracion/salon`}
+          className="rounded-sm font-medium underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          Configurá almuerzo, merienda y cena →
+        </Link>
+      </p>
+    </div>
   )
 }
 
@@ -635,7 +635,7 @@ function OverrideMark({ day }: { day: DaySegments }) {
   const text = labels.join('; ')
   return (
     <span role="img" aria-label={text} title={text} className="inline-flex shrink-0">
-      <SlidersHorizontal className="size-3.5 text-muted-foreground" aria-hidden />
+      <SlidersHorizontal className="size-3 text-muted-foreground" aria-hidden />
     </span>
   )
 }
@@ -717,9 +717,9 @@ function MonthAgenda({
             key={date}
             ref={isToday ? todayRef : undefined}
             className={cn(
-              'scroll-mt-[calc(var(--topbar-h)+1rem)] rounded-lg border',
-              isEmpty ? 'px-2 py-1' : 'bg-background p-2',
-              isToday ? 'border-primary' : 'border-border',
+              'scroll-mt-4 rounded-lg border',
+              isEmpty ? 'bg-card/20 px-2 py-1' : 'bg-card/40 p-2',
+              isToday ? 'border-primary/40 ring-1 ring-primary/30' : 'border-border/60',
             )}
           >
             <div className={cn('flex items-center justify-between gap-2', !isEmpty && 'mb-1.5')}>
@@ -727,21 +727,21 @@ function MonthAgenda({
                 <button
                   type="button"
                   onClick={() => onOpenDay(date)}
-                  className="-mx-1 flex min-h-8 min-w-0 items-center gap-2 rounded-sm px-1 py-0.5 text-left outline-offset-2 outline-(--ring) hover:bg-hover focus-visible:outline-2"
+                  className="-mx-1 flex min-w-0 items-center gap-2 rounded px-1 py-0.5 text-left outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring/50"
                   aria-label={`Ver el día ${longLabel}`}
                 >
                   <span
                     className={cn(
-                      'type-body tabular-nums',
-                      isEmpty ? 'text-muted-foreground' : 'font-semibold',
+                      'capitalize tabular-nums',
+                      isEmpty ? 'text-sm text-muted-foreground' : 'text-sm font-semibold',
                     )}
                   >
                     {formatAgendaDate(date)}
                   </span>
                   {isToday ? (
-                    <Badge tone="brand" appearance="solid">
+                    <span className="rounded-full bg-primary px-1.5 py-px text-[10px] font-semibold text-primary-foreground">
                       Hoy
-                    </Badge>
+                    </span>
                   ) : null}
                   {celebrations ? <CelebrationBadge {...celebrations} /> : null}
                 </button>
@@ -756,7 +756,7 @@ function MonthAgenda({
               />
             </div>
             {isEmpty ? null : (
-              <div className="flex flex-col gap-1.5">
+              <div className="space-y-1.5">
                 {day ? (
                   <MonthDaySegments
                     day={day}
@@ -768,8 +768,9 @@ function MonthAgenda({
                   />
                 ) : null}
                 {dayEvents.length > 0 ? (
-                  <div className="flex flex-col gap-1">
+                  <div className="space-y-1">
                     {dayEvents.map((e) => {
+                      const color = e.template?.color_hex ?? '#7c3aed'
                       const load = eventLoad[e.id] ?? null
                       return (
                         <EventTap
@@ -779,13 +780,15 @@ function MonthAgenda({
                           tenantSlug={tenantSlug}
                           today={today}
                           onOpenDay={onOpenDay}
-                          className="ev-ink flex min-h-9 w-full items-center gap-2 rounded-md px-2 py-1.5 text-left type-caption font-medium outline-offset-2 outline-(--ring) focus-visible:outline-2 pointer-coarse:min-h-11"
-                          style={eventInkStyle(e.template?.color_hex)}
+                          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-medium leading-snug outline-none transition-transform focus-visible:ring-2 focus-visible:ring-ring/50"
+                          style={{ backgroundColor: `${color}1f`, color }}
                         >
-                          <span className="tabular-nums">{e.starts_at_local.slice(0, 5)}</span>
+                          <span className="font-mono text-[11px] tabular-nums opacity-80">
+                            {e.starts_at_local.slice(0, 5)}
+                          </span>
                           <span className="truncate">{eventDisplayName(e)}</span>
                           <PrivateMark event={e} />
-                          <span className="ml-auto shrink-0">
+                          <span className="ml-auto shrink-0 text-[10px] opacity-70">
                             <EventLoad load={load} capacity={e.capacity} />
                           </span>
                         </EventTap>
@@ -878,21 +881,23 @@ function TemplateRail({
   tenantSlug: string
 }) {
   return (
-    <div className="mb-4 rounded-xl border border-border bg-card p-3">
-      <div className="mb-2 flex items-center gap-1.5 px-1 type-caption text-muted-foreground">
-        <Sparkles className="size-3.5" aria-hidden />
+    <div className="mb-4 rounded-2xl border border-border/60 bg-card/40 p-3">
+      <div className="mb-2 flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
+        <Sparkles className="size-3.5" />
         {/* En mobile no hay grilla adonde soltar: el drag-and-drop es solo
             >=sm. Decirle "arrastrá" a alguien que está en el celular es pedirle
             algo que no puede hacer. */}
-        <span className="hidden sm:inline">Arrastrá un formato a un día del calendario</span>
-        <span className="sm:hidden">Formatos del bar: tocá uno para programarlo</span>
+        <span className="hidden uppercase tracking-wide sm:inline">
+          Arrastrá un template al calendario
+        </span>
+        <span className="uppercase tracking-wide sm:hidden">
+          Formatos del bar · programalos con el + de cada día
+        </span>
       </div>
-      {/* En el celular, 6 px arriba y abajo: el área táctil de 44 px de cada
-          chip (`hit-area`) no queda recortada por el scroll de la tira. */}
       <div
         role="toolbar"
-        aria-label="Formatos disponibles para programar"
-        className="flex gap-2 overflow-x-auto pb-1 max-sm:py-1.5"
+        aria-label="Templates disponibles para programar"
+        className="flex gap-2 overflow-x-auto pb-1"
       >
         {templates.map((t) => (
           <Fragment key={t.id}>
@@ -903,11 +908,9 @@ function TemplateRail({
             <span className="hidden sm:contents">
               <DraggableTemplate template={t} />
             </span>
-            {/* `shrink-0`: en la tira que scrollea de costado el link no se
-                achica (se partía en dos renglones: «Noche de / Jazz»). */}
             <Link
               href={`/${tenantSlug}/eventos/programados/nuevo?template=${t.id}`}
-              className="relative shrink-0 rounded-full outline-offset-2 outline-(--ring) hit-area focus-visible:outline-2 sm:hidden"
+              className="sm:hidden"
             >
               <TemplateChip template={t} />
             </Link>
@@ -927,53 +930,46 @@ function DraggableTemplate({ template }: { template: ScheduledEventTemplateRow }
     <button
       ref={setNodeRef}
       type="button"
-      aria-label={`Arrastrar el formato ${template.name}`}
+      aria-label={`Arrastrar template ${template.name}`}
       {...attributes}
       {...listeners}
       className={cn(
-        'group flex min-h-8 shrink-0 cursor-grab items-center gap-2 rounded-full border border-border-strong bg-card px-3 type-label active:cursor-grabbing',
-        'hover:bg-hover outline-offset-2 outline-(--ring) focus-visible:outline-2',
+        'group flex shrink-0 cursor-grab items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-xs font-medium transition-shadow active:cursor-grabbing',
+        'hover:shadow-md',
         isDragging && 'opacity-30',
       )}
+      style={{
+        borderColor: `${template.color_hex}55`,
+        backgroundColor: `${template.color_hex}10`,
+      }}
     >
-      <GripVertical className="size-3.5 text-muted-foreground" aria-hidden />
+      <GripVertical
+        className="size-3 text-muted-foreground opacity-60 group-hover:opacity-100"
+        aria-hidden
+      />
       <span
         aria-hidden
-        className="size-2.5 rounded-full"
-        style={{ backgroundColor: safeColor(template.color_hex) }}
+        className="size-2 rounded-full"
+        style={{ backgroundColor: template.color_hex }}
       />
-      <span className="text-foreground">{template.name}</span>
+      <span style={{ color: template.color_hex }}>{template.name}</span>
       {template.default_capacity ? (
-        <span className="type-caption tabular-nums text-muted-foreground">
-          · {template.default_capacity}
-        </span>
+        <span className="text-[10px] text-muted-foreground">· {template.default_capacity}</span>
       ) : null}
     </button>
   )
 }
 
-/**
- * El formato como chip. `floating`: el que se arrastra (flota sobre el mes, con
- * sombra); quieto, en la tira del celular, va sin sombra (kit §2.13).
- */
-function TemplateChip({
-  template,
-  floating = false,
-}: {
-  template: ScheduledEventTemplateRow
-  floating?: boolean
-}) {
+function TemplateChip({ template }: { template: ScheduledEventTemplateRow }) {
   return (
     <div
-      className={cn(
-        'flex min-h-8 items-center gap-2 whitespace-nowrap rounded-full border border-border-strong bg-card px-3 type-label text-foreground',
-        floating && 'shadow-float',
-      )}
+      className="flex items-center gap-2 rounded-full border bg-background px-3 py-1.5 text-xs font-medium shadow-lg"
+      style={{ borderColor: `${template.color_hex}99`, color: template.color_hex }}
     >
       <span
         aria-hidden
-        className="size-2.5 rounded-full"
-        style={{ backgroundColor: safeColor(template.color_hex) }}
+        className="size-2 rounded-full"
+        style={{ backgroundColor: template.color_hex }}
       />
       {template.name}
     </div>
@@ -989,7 +985,7 @@ function PrivateMark({ event }: { event: ScheduledEventWithTemplate }) {
   if (!event.private_group) return null
   return (
     <span aria-hidden title={PRIVATE_GROUP_CALENDAR_TITLE} className="inline-flex shrink-0">
-      <Lock className="size-3" />
+      <Lock className="size-2.5" />
     </span>
   )
 }
@@ -1001,17 +997,20 @@ function EventCardOverlay({
   event: ScheduledEventWithTemplate
   load: SegmentEventLoad | null
 }) {
+  const color = event.template?.color_hex ?? '#7c3aed'
   return (
-    <div className="block rounded-md border border-border-strong bg-card shadow-float">
-      <div
-        className="ev-ink rounded-md px-2 py-1 type-caption font-medium"
-        style={eventInkStyle(event.template?.color_hex)}
-      >
-        <span className="block truncate">{eventDisplayName(event)}</span>
-        <span className="block tabular-nums">
-          {event.starts_at_local.slice(0, 5)} · <EventLoad load={load} capacity={event.capacity} />
-        </span>
-      </div>
+    <div
+      className="block rounded-md border bg-background px-2 py-1 text-[11px] font-medium leading-snug shadow-lg"
+      style={{
+        borderColor: `${color}66`,
+        backgroundColor: `${color}1f`,
+        color,
+      }}
+    >
+      <span className="block truncate">{eventDisplayName(event)}</span>
+      <span className="block text-[10px] opacity-70 tabular-nums">
+        {event.starts_at_local.slice(0, 5)} · <EventLoad load={load} capacity={event.capacity} />
+      </span>
     </div>
   )
 }
@@ -1027,19 +1026,11 @@ function EventLoad({ load, capacity }: { load: SegmentEventLoad | null; capacity
   const full = !over && capacity > 0 && used >= capacity
   return (
     <span
-      className={cn(
-        'inline-flex items-center gap-0.5 tabular-nums',
-        (over || full) && 'font-semibold',
-      )}
+      className={cn('tabular-nums', (over || full) && 'font-semibold')}
       title={`${used} de ${capacity} lugares reservados`}
     >
       {used}/{capacity}
-      {over ? (
-        <>
-          <TriangleAlert className="size-3" aria-hidden />
-          <span className="sr-only"> (se pasó del cupo)</span>
-        </>
-      ) : null}
+      {over ? ' ⚠' : null}
     </span>
   )
 }
@@ -1081,13 +1072,15 @@ function DayCell({
   })
 
   if (!date) {
-    return <div aria-hidden className="min-h-24 rounded-lg" />
+    return <div className="min-h-[92px] rounded-lg border border-transparent bg-transparent p-2" />
   }
 
   const isToday = date === today
   const dragging = isDraggingTemplate || isDraggingEvent
   const hasEvents = events.length > 0
   const busy = hasEvents || hasSegmentActivity(day, zone)
+  // Acento de borde-izquierdo con el color del primer evento del día.
+  const accent = hasEvents ? (events[0]?.template?.color_hex ?? null) : null
   const longLabel = formatLongDate(date)
   // Cumpleaños y tortas del día: lo que hay que PREPARAR, no lo que hay que
   // sentar. Con el filtro, los de esa planta (los mismos que dice la celda).
@@ -1096,32 +1089,36 @@ function DayCell({
   return (
     <div
       ref={setNodeRef}
-      // `isWeekend` ya no pinta nada: el bar trabaja el fin de semana (kit §3.2,
-      // calendario). Se sigue recibiendo para no tocar quien arma la grilla.
-      data-weekend={isWeekend ? '' : undefined}
       className={cn(
-        'group relative min-h-24 min-w-0 overflow-hidden rounded-lg border p-1.5 lg:p-2',
+        'group relative min-h-[92px] min-w-0 overflow-hidden rounded-lg border p-2 transition-colors',
         // Día con actividad resalta; día vacío queda liviano.
-        busy ? 'border-border bg-background' : 'border-border/60',
-        isToday && 'border-primary',
+        busy ? 'border-border/70 bg-card/70' : 'border-border/40 bg-transparent',
+        isWeekend && !busy && 'bg-cream-tint/40',
+        isToday && 'ring-1 ring-primary/40',
         // Resalta destinos válidos al arrastrar
-        dragging && !isOver && 'border-dashed',
-        isOver && 'border-primary bg-selected',
+        dragging && !isOver && 'border-dashed border-border/40',
+        isOver && 'border-primary/70 bg-primary/10 ring-2 ring-primary/30',
       )}
     >
+      {accent ? (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 left-0 w-0.5"
+          style={{ backgroundColor: accent }}
+        />
+      ) : null}
       <div className="flex h-full flex-col gap-1">
         <div className="flex items-center justify-between gap-1">
           <div className="flex min-w-0 items-center gap-1">
             <button
               type="button"
               onClick={() => onOpenDay(date)}
-              className="-mx-0.5 flex items-center gap-1 rounded-sm px-0.5 outline-offset-2 outline-(--ring) hover:bg-hover focus-visible:outline-2"
+              className="-mx-1 flex items-center gap-1.5 rounded px-1 py-0.5 outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring/50"
               aria-label={`Ver el día ${longLabel}`}
-              aria-current={isToday ? 'date' : undefined}
             >
               <span
                 className={cn(
-                  'flex h-6 min-w-6 items-center justify-center rounded-full px-1 type-caption font-semibold tabular-nums',
+                  'flex size-5 items-center justify-center rounded-full font-mono text-[11px] font-semibold tabular-nums',
                   isToday ? 'bg-primary text-primary-foreground' : 'text-muted-foreground',
                 )}
               >
@@ -1183,12 +1180,18 @@ function CelebrationBadge({ birthdays, cakes }: { birthdays: number; cakes: numb
       ? `${cakes} ${cakes === 1 ? 'torta' : 'tortas'}${birthdays > 0 ? ` · ${birthdays} ${birthdays === 1 ? 'cumple' : 'cumples'}` : ''}`
       : `${birthdays} ${birthdays === 1 ? 'cumpleaños' : 'cumpleaños'}`
   return (
-    <Badge tone="brand" icon={cakes > 0 ? Cake : PartyPopper} title={label} className="px-1.5">
+    <span
+      title={label}
+      className="inline-flex items-center gap-0.5 rounded-full border border-primary/30 bg-primary/10 px-1.5 py-px text-[10px] font-medium leading-tight text-primary"
+    >
       <span className="sr-only">{label}</span>
-      <span aria-hidden className="tabular-nums">
-        {cakes > 0 ? cakes : birthdays}
-      </span>
-    </Badge>
+      {cakes > 0 ? (
+        <Cake className="size-2.5" aria-hidden />
+      ) : (
+        <PartyPopper className="size-2.5" aria-hidden />
+      )}
+      {cakes > 0 ? cakes : birthdays}
+    </span>
   )
 }
 
@@ -1208,10 +1211,14 @@ function DraggableEvent({
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `${EVENT_PREFIX}${event.id}`,
   })
-  // Si está siendo arrastrado, queda su lugar punteado y solo se ve el overlay.
+  const color = event.template?.color_hex ?? '#7c3aed'
+  // Si está siendo arrastrado, lo ocultamos para que solo se vea el overlay.
   if (isDragging) {
     return (
-      <div className="rounded-md border border-dashed border-border-strong px-1.5 py-0.5 type-caption text-muted-foreground">
+      <div
+        className="rounded-md border border-dashed px-1.5 py-0.5 text-[11px] leading-snug"
+        style={{ borderColor: `${color}66`, color: `${color}99` }}
+      >
         <span className="block truncate">{eventDisplayName(event)}</span>
       </div>
     )
@@ -1232,19 +1239,19 @@ function DraggableEvent({
         tenantSlug={tenantSlug}
         today={today}
         onOpenDay={onOpenDay}
-        className="ev-ink block w-full rounded-md px-1.5 py-1 text-left type-caption font-medium outline-offset-2 outline-(--ring) focus-visible:outline-2"
-        style={eventInkStyle(event.template?.color_hex)}
+        className="block w-full rounded-md px-1.5 py-1 text-left text-[11px] font-medium leading-snug outline-none transition-transform hover:scale-[1.02] focus-visible:ring-2 focus-visible:ring-ring/50"
+        style={{ backgroundColor: `${color}2e`, color }}
       >
         <span className="flex items-center gap-1">
           <span
             aria-hidden
             className="size-1.5 shrink-0 rounded-full"
-            style={{ backgroundColor: safeColor(event.template?.color_hex) }}
+            style={{ backgroundColor: color }}
           />
           <span className="truncate">{eventDisplayName(event)}</span>
           <PrivateMark event={event} />
         </span>
-        <span className="block truncate font-normal tabular-nums">
+        <span className="block pl-2.5 text-[10px] opacity-80 tabular-nums">
           {event.starts_at_local.slice(0, 5)} · <EventLoad load={load} capacity={event.capacity} />
         </span>
       </EventTap>

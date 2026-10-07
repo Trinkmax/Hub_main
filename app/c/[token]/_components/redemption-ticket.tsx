@@ -4,7 +4,7 @@ import { Check, Clock3, Copy, QrCode, RefreshCw, X } from 'lucide-react'
 import Image from 'next/image'
 import { useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui-legacy/button'
+import { Button } from '@/components/ui/button'
 import { cancelRedemption, claimPendingRedemption } from '@/lib/wallet/actions'
 import { formatCountdown, formatPoints } from './wallet-format'
 

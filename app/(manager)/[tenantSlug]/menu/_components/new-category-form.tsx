@@ -2,14 +2,24 @@
 
 import { Plus } from 'lucide-react'
 import { useActionState, useEffect, useRef, useState } from 'react'
+import { useFormStatus } from 'react-dom'
 import { toast } from 'sonner'
-import { MenuImageUploader } from '@/components/media/image-uploader'
-import { Field } from '@/components/ui/field'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { SubmitButton } from '@/components/ui/submit-button'
 import { createCategory, type MenuActionState } from '@/lib/menu/actions'
+import { MenuImageUploader } from './image-uploader'
 
 const initial: MenuActionState = { ok: true }
+
+function SubmitBtn() {
+  const { pending } = useFormStatus()
+  return (
+    <Button type="submit" disabled={pending} className="gap-1.5">
+      <Plus className="size-3.5" />
+      {pending ? 'Creando…' : 'Crear categoría'}
+    </Button>
+  )
+}
 
 export function NewCategoryForm({
   tenantId,
@@ -34,22 +44,25 @@ export function NewCategoryForm({
   }, [state])
 
   return (
-    <form ref={formRef} action={formAction} className="grid gap-4">
+    <form ref={formRef} action={formAction} className="grid gap-3">
       <input type="hidden" name="image_url" value={imageUrl ?? ''} />
       <input type="hidden" name="parent_id" value={parentId ?? ''} />
-      <Field label="Nombre" name="name" required>
-        <Input maxLength={60} placeholder="Tragos, Comida, Postres…" autoComplete="off" />
-      </Field>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Input
+          name="name"
+          required
+          maxLength={60}
+          placeholder="Tragos, Comida, Postres…"
+          className="flex-1"
+        />
+        <SubmitBtn />
+      </div>
       <MenuImageUploader
         tenantId={tenantId}
         value={imageUrl}
         onChange={setImageUrl}
         label="Foto de la categoría (opcional)"
       />
-      <SubmitButton pendingText="Creando…" className="w-full">
-        <Plus aria-hidden="true" />
-        Crear categoría
-      </SubmitButton>
     </form>
   )
 }

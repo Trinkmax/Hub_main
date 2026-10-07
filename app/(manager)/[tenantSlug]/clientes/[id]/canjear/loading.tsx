@@ -1,23 +1,20 @@
-import { PageShell } from '@/components/ui/page-shell'
-import {
-  Skeleton,
-  SkeletonCardGrid,
-  SkeletonKPIGroup,
-  SkeletonPageHeader,
-  SkeletonStatus,
-} from '@/components/ui/skeleton'
+import { Skeleton } from '@/components/ui/skeleton'
 
-/** Copia «Canjear puntos»: volver a la ficha, cliente y saldo, y la grilla de recompensas. */
 export default function Loading() {
   return (
-    <PageShell width="compact" aria-busy="true">
-      <SkeletonStatus />
-      <SkeletonPageHeader context />
-      <SkeletonKPIGroup count={2} columns={2} />
-      <div className="flex flex-col gap-4">
-        <Skeleton aria-hidden="true" className="h-5 w-32" />
-        <SkeletonCardGrid count={4} className="lg:grid-cols-2" />
+    <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      <Skeleton className="h-4 w-32" />
+      <div className="space-y-2">
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-4 w-80" />
       </div>
-    </PageShell>
+      <Skeleton className="h-24 w-full rounded-xl" />
+      <div className="grid gap-4 sm:grid-cols-2">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={`reward-${i.toString()}`} className="h-24 rounded-xl" />
+        ))}
+      </div>
+    </div>
   )
 }

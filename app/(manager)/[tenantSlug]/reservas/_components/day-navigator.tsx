@@ -1,19 +1,32 @@
 'use client'
 
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTransition } from 'react'
 import { SegmentChip } from '@/components/reservations/segment-meter'
 import { Button } from '@/components/ui/button'
-import { DatePicker } from '@/components/ui/date-picker'
-import { addDays } from '@/lib/dates/civil'
-import { capitalizeFirst, formatDayMonth, weekdayName } from '@/lib/dates/format'
+import { Input } from '@/components/ui/input'
 import type { SegmentLoad } from '@/lib/salon/segments'
 import { segmentAriaLabel } from '@/lib/salon/segments-copy'
 
-/** `'2026-09-10'` → `'Jueves 10/09'`. A mano, sin `Intl` (hidratación). */
+function shiftDay(day: string, delta: number): string {
+  const [y, m, d] = day.split('-').map(Number)
+  const dt = new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, (d ?? 1) + delta))
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(
+    dt.getUTCDate(),
+  ).padStart(2, '0')}`
+}
+
 function formatDayLong(day: string): string {
-  return `${capitalizeFirst(weekdayName(day))} ${formatDayMonth(day)}`
+  const [y, m, d] = day.split('-').map(Number)
+  if (!y || !m || !d) return day
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  return new Intl.DateTimeFormat('es-AR', {
+    weekday: 'long',
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: 'UTC',
+  }).format(dt)
 }
 
 /**
@@ -24,10 +37,6 @@ function formatDayLong(day: string): string {
  * calendario ("Cena 46/120"). El viejo "Cubiertos 171/130" sumaba el día entero
  * contra PA + PB y pintaba de rojo un jueves sin sobrecupo; el dueño pidió que
  * no vuelva (22/09/2026). Los números llegan resueltos desde el server.
- *
- * Kit HUB: flechas de ícono, la fecha con el `DatePicker` (se tipea «15/9» o se
- * elige en el calendario; antes era el `type="date"` del navegador) y «Hoy»
- * solo cuando no se está en hoy.
  */
 export function DayNavigator({
   tenantSlug,
@@ -60,57 +69,49 @@ export function DayNavigator({
   const isToday = day === today
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-      <div className="flex items-center gap-1">
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center gap-1 rounded-xl border border-border/70 bg-card/60 p-1">
         <Button
           variant="ghost"
           size="icon"
           aria-label="Día anterior"
           disabled={pending}
-          onClick={() => goTo(addDays(day, -1))}
+          onClick={() => goTo(shiftDay(day, -1))}
         >
-          <ChevronLeft aria-hidden />
+          <ChevronLeft className="size-4" />
         </Button>
-        <p aria-live="polite" className="min-w-36 text-center type-subtitle tabular-nums">
-          {formatDayLong(day)}
-          {isToday ? <span className="font-normal text-muted-foreground"> · hoy</span> : null}
-        </p>
+        <div className="flex items-center gap-2 px-2">
+          <CalendarDays className="size-4 text-muted-foreground" />
+          <span className="min-w-[150px] text-center text-sm font-medium capitalize tabular-nums">
+            {formatDayLong(day)}
+          </span>
+        </div>
         <Button
           variant="ghost"
           size="icon"
           aria-label="Día siguiente"
           disabled={pending}
-          onClick={() => goTo(addDays(day, 1))}
+          onClick={() => goTo(shiftDay(day, 1))}
         >
-          <ChevronRight aria-hidden />
+          <ChevronRight className="size-4" />
         </Button>
       </div>
 
-      <div className="flex items-center gap-2">
-        {/* `key`: al cambiar de día por las flechas, el campo arranca limpio
-            con la fecha nueva (sin arrastrar un texto a medio tipear).
-            `onCommit`: tipeando, navega al salir del campo o con Enter (no a
-            medio tipear); del calendario, en el momento. */}
-        <DatePicker
-          key={day}
-          defaultValue={day}
-          size="sm"
-          aria-label="Ir a una fecha"
-          today={today}
-          disabled={pending}
-          onCommit={(iso) => {
-            if (iso && iso !== day) goTo(iso)
-          }}
-          // 160 px: con el dedo el campo pasa a 16 px y en 144 el año quedaba
-          // tapado por el ícono del calendario («07/10/202»).
-          className="w-40"
-        />
-        {!isToday ? (
-          <Button variant="secondary" size="sm" disabled={pending} onClick={() => goTo(today)}>
-            Hoy
-          </Button>
-        ) : null}
-      </div>
+      <Input
+        type="date"
+        value={day}
+        aria-label="Elegir fecha"
+        onChange={(e) => {
+          if (e.target.value) goTo(e.target.value)
+        }}
+        className="h-9 w-[150px]"
+      />
+
+      {!isToday ? (
+        <Button variant="outline" size="sm" disabled={pending} onClick={() => goTo(today)}>
+          Hoy
+        </Button>
+      ) : null}
 
       {segments.length > 0 ? (
         // En el celu envuelve a su propia fila; en la compu se va a la
@@ -118,7 +119,7 @@ export function DayNavigator({
         // el title/sr-only da la causa ("te pasaste por 13…").
         <ul
           aria-label="Cómo viene cada servicio"
-          className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:justify-end"
+          className="flex w-full flex-wrap items-center gap-1.5 sm:ml-auto sm:w-auto sm:justify-end"
         >
           {segments.map((s) => (
             <li key={s.key}>

@@ -17,12 +17,7 @@ import {
 } from '@/lib/tenant/roles'
 // Fuente ÚNICA de slugs reservados (evitamos el set duplicado/divergente de antes).
 import { RESERVED_SLUGS } from '@/lib/tenant/types'
-import {
-  PATH_HEADER,
-  PUBLIC_WORKSPACE_SEGMENTS,
-  WORKSPACE_HEADER,
-  type Workspace,
-} from '@/lib/workspace'
+import { WORKSPACE_HEADER } from '@/lib/workspace'
 
 const PUBLIC_PATHS = new Set([
   '/login',
@@ -145,22 +140,6 @@ export function isSalonWorkspacePath(pathname: string): boolean {
   return SALON_PATH_RE.test(pathname)
 }
 
-/**
- * `/carta…`, `/c…`, `/m…`, `/r…`, `/v…`, `/l…`, `/p…`, `/print…`, `/capture…`:
- * lo público, congelado con el kit viejo (ver lib/workspace.ts). Se mira el
- * primer segmento entero: `/cartas/clientes` es un tenant, no la carta.
- */
-export function isPublicWorkspacePath(pathname: string): boolean {
-  const first = pathname.split('/').filter(Boolean)[0]
-  return first !== undefined && PUBLIC_WORKSPACE_SEGMENTS.has(first)
-}
-
-export function workspaceForPath(pathname: string): Workspace {
-  if (isSalonWorkspacePath(pathname)) return 'salon'
-  if (isPublicWorkspacePath(pathname)) return 'public'
-  return 'manager'
-}
-
 /** El mismo formato de slug que valida el Route Handler de /p/[slug]. */
 const LANDING_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,39}$/
 
@@ -222,26 +201,20 @@ export async function updateSession(request: NextRequest) {
   const landingsResponse = serveLandingsHost(request)
   if (landingsResponse) return landingsResponse
 
-  // Marcamos el request para el render:
-  //  - workspace: el root layout emite el `<html>` de cada uno DESDE EL SERVER,
-  //    sin flash. El salón va SIEMPRE claro (lo usa el mozo con el celular a
-  //    plena luz, y el dueño lo pidió explícito); lo público va con
-  //    `legacy-theme`, congelado con el kit viejo.
-  //  - path: el backstop de roles del layout del panel lo cruza con el rol real
-  //    de la base (el JWT puede traer un rol viejo hasta 1 h).
-  // Se setean sobre `request.headers` — no sobre la response — porque
-  // `NextResponse.next({ request })` es lo que reenvía los headers al render, y
-  // `response` se reasigna adentro de `setAll` en cada refresh de cookies
-  // (setearlos ahí se perdería). Van siempre, también 'manager': así un header
-  // con el mismo nombre que mande el cliente no llega al render. Y van antes de
-  // la salida temprana de las rutas de máquina, que incluye las landings.
-  try {
-    request.headers.set(WORKSPACE_HEADER, workspaceForPath(pathname))
-    request.headers.set(PATH_HEADER, pathname)
-  } catch {
-    // Headers inmutables en algún runtime: el script no-flash del <head> es la
-    // red de seguridad del tema y corre igual antes del primer paint; el ruteo
-    // por rol de acá abajo no depende de estos headers.
+  // El panel del salón se sirve SIEMPRE en modo claro (lo usa el mozo con el
+  // celular a plena luz, y el dueño lo pidió explícito). Marcamos el request
+  // acá para que el root layout emita el `<html>` claro DESDE EL SERVER y no
+  // haya flash oscuro. Se setea sobre `request.headers` — no sobre la response —
+  // porque `NextResponse.next({ request })` es lo que reenvía los headers al
+  // render, y `response` se reasigna adentro de `setAll` en cada refresh de
+  // cookies (setearlo ahí se perdería).
+  if (isSalonWorkspacePath(pathname)) {
+    try {
+      request.headers.set(WORKSPACE_HEADER, 'salon')
+    } catch {
+      // Headers inmutables en algún runtime: el script no-flash del <head> es
+      // la red de seguridad y corre igual antes del primer paint.
+    }
   }
 
   let response = NextResponse.next({ request })

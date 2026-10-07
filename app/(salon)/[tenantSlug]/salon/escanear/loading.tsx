@@ -1,4 +1,4 @@
-import { Skeleton } from '@/components/ui-legacy/skeleton'
+import { Skeleton } from '@/components/ui/skeleton'
 
 export default function EscanearLoading() {
   return (

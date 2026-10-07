@@ -1,4 +1,5 @@
-import { Disclosure } from '@/components/ui/disclosure'
+import { ChevronRight } from 'lucide-react'
+import type { ReactNode } from 'react'
 import {
   computeMarketingKpis,
   type EventMarketingRow,
@@ -27,12 +28,10 @@ import { cn } from '@/lib/utils'
  * aclaración de que facturar no es ganar. Las cuentas y los textos salen
  * enteros de `lib/salon/event-marketing.ts`: acá solo se dibujan.
  *
- * Los tres números van en Fraunces pero un escalón por debajo de los tres de
- * gente: la ficha es de la gente que entró, la pauta es el costo de traerla.
- * Las oraciones van en Inter (Fraunces queda para nombres y números, kit §1.2)
- * y los rótulos en `type-label`, en minúscula normal. Todo con container
- * queries y no con breakpoints de pantalla: en una noche con dos eventos, cada
- * ficha mide lo mismo que un celular.
+ * Los tres números van en serif pero un escalón por debajo de los tres de
+ * gente (4xl/5xl): la ficha es de la gente que entró, la pauta es el costo de
+ * traerla. Todo con container queries y no con breakpoints de pantalla: en una
+ * noche con dos eventos, cada ficha mide lo mismo que un celular.
  */
 
 const TILES: ReadonlyArray<{ kind: KpiTileKind; label: string }> = [
@@ -40,6 +39,8 @@ const TILES: ReadonlyArray<{ kind: KpiTileKind; label: string }> = [
   { kind: 'closingRate', label: 'De cierre' },
   { kind: 'costPerReservation', label: 'Por reserva' },
 ]
+
+const EYEBROW = 'text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground'
 
 // Espacio duro armado por código: un NBSP literal en el fuente es invisible y
 // cualquier editor lo puede cambiar por un espacio común sin que nadie lo note.
@@ -90,6 +91,36 @@ export function MathStep({ step }: { step: NightMathStep }) {
   )
 }
 
+/** Un `<details>` de la casa: chevron que gira, sin el triángulo nativo. */
+export function Disclosure({
+  summary,
+  children,
+  className,
+}: {
+  summary: string
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <details className={cn('group text-xs', className)}>
+      <summary
+        className={cn(
+          'inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-muted-foreground',
+          'outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50',
+          'pointer-coarse:min-h-10 [&::-webkit-details-marker]:hidden',
+        )}
+      >
+        <ChevronRight
+          aria-hidden
+          className="size-3.5 transition-transform duration-(--duration-fast) ease-(--ease-out) group-open:rotate-90 motion-reduce:transition-none"
+        />
+        {summary}
+      </summary>
+      <div className="mt-2 pl-[1.125rem]">{children}</div>
+    </details>
+  )
+}
+
 export function MarketingReport({
   block,
   row,
@@ -109,7 +140,7 @@ export function MarketingReport({
 
   return (
     <div className={className}>
-      <p className="mt-2 max-w-prose text-pretty type-body">{sentence}</p>
+      <p className="mt-2 max-w-prose text-sm leading-relaxed">{sentence}</p>
 
       {/* Tres fichas en un `dl`: el lector de pantalla lee etiqueta, número y
           cuenta; a la vista va primero el número. Abajo de @xl cada ficha es
@@ -124,12 +155,12 @@ export function MarketingReport({
               key={kind}
               className="grid grid-cols-[7.5rem_1fr] items-baseline gap-x-3 @xl:flex @xl:flex-col @xl:items-start @xl:gap-x-0 @xl:px-4 @xl:first:pl-0 @xl:last:pr-0"
             >
-              <dt className="col-start-2 row-start-1 type-label text-muted-foreground @xl:order-2 @xl:mt-2">
+              <dt className={cn(EYEBROW, 'col-start-2 row-start-1 @xl:order-2 @xl:mt-2')}>
                 {label}
               </dt>
               <dd
                 className={cn(
-                  'col-start-1 row-start-1 font-display text-2xl font-[520] leading-none tracking-[-0.01em] @xl:order-1 @xl:text-3xl',
+                  'col-start-1 row-start-1 font-serif text-2xl font-semibold leading-none tracking-tight tabular-nums @xl:order-1 @xl:text-3xl',
                   tile.value === null && 'text-muted-foreground',
                 )}
               >
@@ -142,7 +173,7 @@ export function MarketingReport({
                   <KpiNumber value={tile.value} />
                 )}
               </dd>
-              <dd className="col-start-2 row-start-2 type-caption text-muted-foreground @xl:order-3 @xl:mt-1">
+              <dd className="col-start-2 row-start-2 text-[11px] leading-snug text-muted-foreground @xl:order-3 @xl:mt-1">
                 {tile.hint}
               </dd>
             </div>
@@ -166,8 +197,8 @@ export function MarketingReport({
           02/10). Ver `night-account-box.tsx`. */}
       {ret ? (
         <div className="mt-4 rounded-lg bg-secondary/40 p-3 @md:p-4">
-          <p className="type-label text-muted-foreground">Retorno</p>
-          <p className="mt-1.5 text-base leading-snug font-medium text-pretty">
+          <p className={EYEBROW}>Retorno</p>
+          <p className="mt-1.5 font-serif text-base leading-snug tracking-tight @md:text-lg">
             {ret.lead}
             {ret.warning ? (
               <>
@@ -188,7 +219,9 @@ export function MarketingReport({
               ))}
             </p>
           ) : null}
-          <p className="mt-1.5 type-caption text-muted-foreground">{RETURN_DISCLAIMER}</p>
+          <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+            {RETURN_DISCLAIMER}
+          </p>
         </div>
       ) : null}
 
@@ -211,7 +244,7 @@ function MarketingNote({ notes }: { notes: string }) {
 export function HowItsCalculated({ bullets }: { bullets: string[] }) {
   if (bullets.length === 0) return null
   return (
-    <Disclosure variant="inline" title="¿Cómo se calcula?" className="mt-3">
+    <Disclosure summary="¿Cómo se calcula?" className="mt-3">
       <ul className="max-w-prose list-disc space-y-1 pl-4 leading-relaxed text-muted-foreground">
         {bullets.map((b) => (
           <li key={b}>{b}</li>
@@ -232,7 +265,7 @@ export function NightAccountBody({ night }: { night: NightResultReport }) {
       {night.headline ? (
         <p
           className={cn(
-            'mt-1.5 text-base leading-snug font-medium text-pretty',
+            'mt-1.5 font-serif text-base leading-snug tracking-tight @md:text-lg',
             // En negativo el número NUNCA va solo: la frase ya dice «quedó
             // $ X abajo», y el ámbar se apoya en esas palabras.
             night.negative && 'text-warning-text',
@@ -274,7 +307,7 @@ export function NightAccountBody({ night }: { night: NightResultReport }) {
       ) : null}
 
       {night.basis || night.revenueNote ? (
-        <p className="mt-1.5 type-caption text-muted-foreground">
+        <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
           {night.basis}
           {night.basis && night.revenueNote ? ' ' : null}
           {night.revenueNote}
@@ -284,7 +317,7 @@ export function NightAccountBody({ night }: { night: NightResultReport }) {
       {/* La aclaración acompaña a un número: si no se pudo calcular ni uno, no
           hay nada que aclarar. */}
       {night.headline ? (
-        <p className="mt-1.5 type-caption text-muted-foreground">{night.disclaimer}</p>
+        <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">{night.disclaimer}</p>
       ) : null}
     </>
   )

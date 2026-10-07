@@ -1,6 +1,4 @@
 import { notFound } from 'next/navigation'
-import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import {
   RoleRequiredError,
   requireRole,
@@ -34,13 +32,19 @@ export default async function SimularPage({
   if (!config) notFound()
 
   return (
-    <PageShell width="comfortable">
-      <PageHeader
-        back={{ href: `/${tenantSlug}/club`, label: 'Club de beneficios' }}
-        title="Simular wallet"
-        description="Probá la tarjeta del socio en todos sus estados (puntos, niveles, vencimientos y canjes) sin tocar datos reales. Usa la configuración real de niveles, beneficios y catálogo de tu club."
-      />
+    <div className="space-y-5">
+      <div>
+        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+          Club de beneficios
+        </p>
+        <h1 className="font-serif text-3xl font-semibold tracking-tight">Simular wallet</h1>
+        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+          Probá la tarjeta del socio en todos sus estados —puntos, niveles, vencimientos y canjes—
+          sin tocar datos reales. Usa la configuración real de niveles, beneficios y catálogo de tu
+          club.
+        </p>
+      </div>
       <WalletSimulator config={config} />
-    </PageShell>
+    </div>
   )
 }

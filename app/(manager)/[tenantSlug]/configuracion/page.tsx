@@ -1,23 +1,58 @@
-import { ChevronRight } from 'lucide-react'
+import { Armchair, ArrowRight, Cake, type LucideIcon, Palette, UsersRound } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { PageHeader } from '@/components/ui/page-header'
-import { Section } from '@/components/ui/section'
 import {
   RoleRequiredError,
   requireRole,
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
-import {
-  SETTINGS_GROUPS,
-  SETTINGS_SECTIONS,
-  type SettingsSection,
-  settingsHref,
-} from './_components/settings-nav'
 
 export const metadata = { title: 'Configuración' }
+
+type SettingsCard = {
+  icon: LucideIcon
+  title: string
+  description: string
+  topics: string[]
+  href: (slug: string) => string
+}
+
+const CARDS: SettingsCard[] = [
+  {
+    icon: UsersRound,
+    title: 'Equipo',
+    description: 'Sumá owners, cajeros, mozos y cocineros con el rol que corresponde.',
+    topics: ['Miembros', 'Roles e invitaciones'],
+    href: (s) => `/${s}/configuracion/equipo`,
+  },
+  {
+    icon: Armchair,
+    title: 'Capacidad del salón',
+    description: 'Cuánta gente entra por zona y los cupos puntuales de un día.',
+    topics: ['Planta Alta · Planta Baja', 'Cupos por fecha'],
+    href: (s) => `/${s}/configuracion/salon`,
+  },
+  {
+    // Card propia y no un "topic" de Capacidad: el nav lateral de esta sección
+    // es `lg:block`, así que en un celular esta card es la ÚNICA forma de llegar
+    // a Tortas — y la app es mobile-first.
+    icon: Cake,
+    title: 'Tortas de cumpleaños',
+    description: 'El menú de tortas que hace el bar. Es lo que se elige al cargar una reserva.',
+    topics: ['Bizcochuelos', 'Rellenos'],
+    href: (s) => `/${s}/configuracion/tortas`,
+  },
+  {
+    icon: Palette,
+    title: 'Apariencia',
+    description: 'Logo del bar, idioma y zona horaria. El acento de tenant llega pronto.',
+    topics: ['Logo', 'Idioma · TZ'],
+    href: (s) => `/${s}/configuracion/apariencia`,
+  },
+]
 
 export default async function ConfiguracionIndexPage({
   params,
@@ -36,47 +71,51 @@ export default async function ConfiguracionIndexPage({
   }
 
   return (
-    <>
+    <div className="space-y-8">
       <PageHeader
+        eyebrow="Ajustes"
         title="Configuración"
-        description="Lo que define cómo funciona el bar en HUB: quién entra al panel, cuánta gente recibe el salón y cómo se ve tu marca."
+        description="Cada grupo con lo que se toca junto, para que encuentres rápido."
       />
 
-      {SETTINGS_GROUPS.map((group) => (
-        <Section key={group} title={group}>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {SETTINGS_SECTIONS.filter((section) => section.group === group).map((section) => (
-              <SettingsCard key={section.path} section={section} tenantSlug={tenantSlug} />
-            ))}
-          </div>
-        </Section>
-      ))}
-    </>
-  )
-}
-
-/** Toda la tarjeta es el link: borde que se marca al pasar, foco afuera, sin «float». */
-function SettingsCard({ section, tenantSlug }: { section: SettingsSection; tenantSlug: string }) {
-  const Icon = section.icon
-  return (
-    <Card asChild interactive>
-      <Link href={settingsHref(tenantSlug, section.path)}>
-        <div className="flex items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-secondary text-primary">
-            <Icon className="size-5" strokeWidth={1.75} aria-hidden />
-          </span>
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <span className="type-subtitle text-foreground">{section.title}</span>
-            <span className="text-pretty type-small text-muted-foreground">
-              {section.description}
-            </span>
-            <span className="mt-1 type-caption text-subtle-foreground">
-              {section.topics.join(' · ')}
-            </span>
-          </div>
-          <ChevronRight className="mt-0.5 size-4 shrink-0 text-subtle-foreground" aria-hidden />
-        </div>
-      </Link>
-    </Card>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {CARDS.map((card) => {
+          const Icon = card.icon
+          return (
+            <Link
+              key={card.title}
+              href={card.href(tenantSlug)}
+              className="group block focus-visible:outline-none"
+            >
+              <Card className="card-hairline relative h-full gap-3 border-border/70 bg-card/85 p-6 transition-[transform,box-shadow,background-color] duration-[var(--duration-base)] ease-[var(--ease-out)] hover:-translate-y-0.5 hover:bg-card hover:shadow-md focus-visible:ring-[3px] focus-visible:ring-ring/40">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex size-10 items-center justify-center rounded-lg border border-primary/20 bg-[--cream-tint] text-primary shadow-2xs">
+                    <Icon className="size-5" aria-hidden />
+                  </div>
+                  <ArrowRight
+                    className="size-4 text-muted-foreground transition-transform duration-[var(--duration-fast)] group-hover:translate-x-0.5 group-hover:text-foreground"
+                    aria-hidden
+                  />
+                </div>
+                <h2 className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                  {card.title}
+                </h2>
+                <p className="text-sm text-muted-foreground">{card.description}</p>
+                <ul className="mt-1 flex flex-wrap gap-1.5">
+                  {card.topics.map((topic) => (
+                    <li
+                      key={topic}
+                      className="rounded-full border border-border/60 bg-background/60 px-2 py-0.5 text-[11px] text-muted-foreground"
+                    >
+                      {topic}
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            </Link>
+          )
+        })}
+      </div>
+    </div>
   )
 }

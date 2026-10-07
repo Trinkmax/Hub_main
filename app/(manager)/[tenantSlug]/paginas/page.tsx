@@ -1,7 +1,6 @@
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
-import { todayInCordoba } from '@/lib/dates'
 import { listLandingPages } from '@/lib/landings/queries'
 import { getLandingsBase, landingsPrefix } from '@/lib/landings/urls'
 import {
@@ -40,17 +39,13 @@ export default async function PaginasPage({ params }: { params: Promise<{ tenant
   return (
     <PageShell width="comfortable">
       <PageHeader
+        eyebrow="Marketing"
         title="Páginas"
-        description="Subí el HTML de una landing y queda publicada en un link propio, lista para mandar por WhatsApp o pegar en una historia. También podés arrastrar el archivo a la lista."
+        description="Subí el HTML de una landing y queda publicada en un link propio, listo para mandar por WhatsApp o pegar en una historia."
         actions={<NewPageButton tenantSlug={tenantSlug} urlPrefix={urlPrefix} />}
       />
 
-      <PagesList
-        tenantSlug={tenantSlug}
-        pages={pages}
-        landingsBase={landingsBase}
-        today={todayInCordoba()}
-      />
+      <PagesList tenantSlug={tenantSlug} pages={pages} landingsBase={landingsBase} />
     </PageShell>
   )
 }

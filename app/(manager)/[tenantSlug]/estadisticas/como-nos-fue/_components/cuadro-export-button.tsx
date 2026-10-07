@@ -9,8 +9,8 @@ import { cn } from '@/lib/utils'
  * la vista, y el nombre accesible (`ariaLabel`, de `cuadroExport`) dice cuál es
  * cuál y contiene la palabra que se ve.
  *
- * `<a download>` y no un `<Link>`: un `<Link>` prefetchearía el route handler.
- * Mide lo que el botón `sm` del kit (32 px con mouse, 44 de área con el dedo).
+ * 40 px de alto mientras la tarjeta mide menos de 24rem (el celular), 32 px
+ * desde ahí: mismo criterio que los botones de la pauta.
  */
 export function CuadroExportButton({
   href,
@@ -26,9 +26,14 @@ export function CuadroExportButton({
   className?: string
 }) {
   return (
-    <Button asChild variant="secondary" size="sm" className={cn('shrink-0', className)}>
+    <Button
+      asChild
+      variant="outline"
+      size="sm"
+      className={cn('h-10 shrink-0 gap-1.5 @sm:h-8', className)}
+    >
       <a href={href} download aria-label={ariaLabel} title={title}>
-        <Download aria-hidden />
+        <Download aria-hidden className="size-4" />
         {label}
       </a>
     </Button>

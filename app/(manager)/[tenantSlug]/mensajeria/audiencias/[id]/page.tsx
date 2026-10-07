@@ -1,9 +1,9 @@
+import { ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import { getAudience, getAudienceBuilderOptions } from '@/lib/audiences/queries'
 import type { AudienceFilter } from '@/lib/audiences/schemas'
-import { formatNumber } from '@/lib/format/number-kind'
 import {
   RoleRequiredError,
   requireRole,
@@ -37,16 +37,20 @@ export default async function EditAudiencePage({
   ])
   if (!audience) notFound()
 
-  const listHref = `/${tenantSlug}/mensajeria/audiencias`
-  const count = audience.customer_count_cached
-
   return (
-    <PageShell width="compact">
+    <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      <Link
+        href={`/${tenantSlug}/mensajeria/audiencias`}
+        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="size-3" />
+        Volver a audiencias
+      </Link>
       <PageHeader
-        back={{ href: listHref, label: 'Audiencias' }}
+        eyebrow="Mensajería"
         title="Editar audiencia"
-        description={`${formatNumber(count)} ${
-          count === 1 ? 'cliente' : 'clientes'
+        description={`${audience.customer_count_cached.toLocaleString('es-AR')} ${
+          audience.customer_count_cached === 1 ? 'cliente' : 'clientes'
         } en el último conteo. Si cambiás las condiciones, el número se actualiza solo.`}
       />
       <AudienceForm
@@ -55,8 +59,7 @@ export default async function EditAudiencePage({
         audienceId={audience.id}
         initialName={audience.name}
         initialFilters={audience.filters as unknown as AudienceFilter}
-        cancelHref={listHref}
       />
-    </PageShell>
+    </div>
   )
 }

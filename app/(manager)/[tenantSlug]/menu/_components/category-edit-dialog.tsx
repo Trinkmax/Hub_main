@@ -2,22 +2,20 @@
 
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { MenuImageUploader } from '@/components/media/image-uploader'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
-  DialogBody,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { updateCategory } from '@/lib/menu/actions'
 import type { MenuCategory } from '@/lib/menu/queries'
 import { deleteMenuImageByUrl } from '@/lib/menu/upload-image'
+import { MenuImageUploader } from './image-uploader'
 
 export function CategoryEditDialog({
   category,
@@ -34,9 +32,7 @@ export function CategoryEditDialog({
   const [imageUrl, setImageUrl] = useState<string | null>(category.image_url)
   const [pending, start] = useTransition()
 
-  const onSave = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (name.trim().length === 0) return
+  const onSave = () => {
     start(async () => {
       const r = await updateCategory(tenantSlug, {
         id: category.id,
@@ -68,34 +64,32 @@ export function CategoryEditDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Editar categoría</DialogTitle>
-          <DialogDescription>El nombre y la foto de portada que ve el cliente.</DialogDescription>
         </DialogHeader>
-        <form onSubmit={onSave} className="flex min-h-0 flex-1 flex-col gap-4">
-          <DialogBody className="grid gap-4">
-            <Field label="Nombre" required>
-              <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
-            </Field>
-            <MenuImageUploader
-              tenantId={tenantId}
-              value={imageUrl}
-              onChange={setImageUrl}
-              label="Foto de la categoría"
+        <div className="grid gap-3">
+          <div className="grid gap-1.5">
+            <Label htmlFor="cat-edit-name">Nombre</Label>
+            <Input
+              id="cat-edit-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={60}
             />
-          </DialogBody>
-          <DialogFooter>
-            <Button type="button" variant="secondary" onClick={onClose} disabled={pending}>
-              Cancelar
-            </Button>
-            <Button
-              type="submit"
-              loading={pending}
-              loadingText="Guardando…"
-              disabled={name.trim().length === 0}
-            >
-              Guardar
-            </Button>
-          </DialogFooter>
-        </form>
+          </div>
+          <MenuImageUploader
+            tenantId={tenantId}
+            value={imageUrl}
+            onChange={setImageUrl}
+            label="Foto de la categoría"
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={pending}>
+            Cancelar
+          </Button>
+          <Button onClick={onSave} disabled={pending || name.trim().length === 0}>
+            {pending ? 'Guardando…' : 'Guardar'}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

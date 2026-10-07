@@ -1,3 +1,5 @@
+import { ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -9,7 +11,6 @@ import {
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
-import { settingsHref } from '../_components/settings-nav'
 import { BonusRuleCard } from './_components/bonus-rule-card'
 import { ManagersList, type TeamMemberOption } from './_components/managers-list'
 import { RateTiersEditor } from './_components/rate-tiers-editor'
@@ -72,36 +73,37 @@ export default async function ComisionesConfigPage({
     full_name: r.full_name,
   }))
 
-  // Las pestañas escriben ?tab= al cambiar (`syncParam`): el link de una
-  // pestaña se puede copiar y «atrás» vuelve a donde estaba.
   return (
-    <Tabs syncParam="tab" defaultValue={activeTab} className="gap-8">
+    <div className="space-y-6">
       <PageHeader
-        back={{ href: settingsHref(tenantSlug), label: 'Configuración' }}
-        title="Comisiones"
-        description="Cuánto cobra cada gestor por persona reservada, el extra cuando un evento se llena y quiénes cobran."
-        tabs={
-          <TabsList aria-label="Partes de las comisiones">
-            <TabsTrigger value="tarifas">Tarifas</TabsTrigger>
-            <TabsTrigger value="bonus">Evento lleno</TabsTrigger>
-            <TabsTrigger value="gestores">Gestores</TabsTrigger>
-          </TabsList>
+        eyebrow={
+          <Link
+            href={`/${tenantSlug}/configuracion`}
+            className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="size-3.5" />
+            Configuración
+          </Link>
         }
+        title="Comisiones"
+        description="Tarifas por tipo de servicio + bonus por evento lleno + qué gestores cobran."
       />
-      <TabsContent value="tarifas">
-        <RateTiersEditor tenantSlug={tenantSlug} initial={tiers} />
-      </TabsContent>
-      <TabsContent value="bonus">
-        <BonusRuleCard tenantSlug={tenantSlug} initial={bonus} />
-      </TabsContent>
-      <TabsContent value="gestores">
-        <ManagersList
-          tenantSlug={tenantSlug}
-          initial={managers}
-          members={members}
-          membersUnavailable={Boolean(membersRes.error)}
-        />
-      </TabsContent>
-    </Tabs>
+      <Tabs defaultValue={activeTab}>
+        <TabsList>
+          <TabsTrigger value="tarifas">Tarifas</TabsTrigger>
+          <TabsTrigger value="bonus">Bonus full</TabsTrigger>
+          <TabsTrigger value="gestores">Gestores</TabsTrigger>
+        </TabsList>
+        <TabsContent value="tarifas" className="mt-4">
+          <RateTiersEditor tenantSlug={tenantSlug} initial={tiers} />
+        </TabsContent>
+        <TabsContent value="bonus" className="mt-4">
+          <BonusRuleCard tenantSlug={tenantSlug} initial={bonus} />
+        </TabsContent>
+        <TabsContent value="gestores" className="mt-4">
+          <ManagersList tenantSlug={tenantSlug} initial={managers} members={members} />
+        </TabsContent>
+      </Tabs>
+    </div>
   )
 }

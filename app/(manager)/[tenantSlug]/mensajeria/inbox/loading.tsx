@@ -1,25 +1,15 @@
-import { Skeleton, SkeletonStatus } from '@/components/ui/skeleton'
+import { Skeleton } from '@/components/ui/skeleton'
 
-// Copia la bandeja real: lista de chats (encabezado, buscador, chips y filas
-// con avatar) y el panel vacío de la derecha en escritorio.
 export default function Loading() {
   return (
-    <div className="flex h-full min-h-0" aria-busy="true">
-      <SkeletonStatus label="Cargando los chats…" />
-      <aside
-        aria-hidden="true"
-        className="w-full min-w-0 border-r border-(--wa-border) bg-(--wa-panel) md:w-[340px] md:shrink-0 lg:w-[380px] xl:w-[420px]"
-      >
-        <div className="flex items-center justify-between px-4 pt-3.5 pb-1">
+    <div className="flex h-full min-h-0">
+      <aside className="w-full min-w-0 border-r border-(--wa-border) bg-(--wa-panel) md:w-[340px] md:shrink-0 lg:w-[380px] xl:w-[420px]">
+        <div className="flex items-center justify-between px-4 pb-2 pt-4">
           <Skeleton className="h-6 w-20" />
-          <Skeleton className="size-9 rounded-full" />
+          <Skeleton className="size-8 rounded-full" />
         </div>
-        <div className="px-3 pt-1 pb-2">
+        <div className="px-3 pb-3">
           <Skeleton className="h-9 w-full rounded-full" />
-        </div>
-        <div className="flex gap-1.5 px-3 pb-2">
-          <Skeleton className="h-7 w-16 rounded-full" />
-          <Skeleton className="h-7 w-24 rounded-full" />
         </div>
         <div className="space-y-1 px-3">
           {Array.from({ length: 8 }).map((_, i) => (
@@ -34,7 +24,7 @@ export default function Loading() {
           ))}
         </div>
       </aside>
-      <section aria-hidden="true" className="hidden min-w-0 flex-1 bg-(--wa-panel-soft) md:block" />
+      <section className="hidden min-w-0 flex-1 bg-(--wa-panel-soft) md:block" />
     </div>
   )
 }

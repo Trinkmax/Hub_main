@@ -1,10 +1,9 @@
+import { ArrowLeft, Star } from 'lucide-react'
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { KPI, KPIGroup } from '@/components/ui/kpi'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
-import { Section } from '@/components/ui/section'
 import { getCustomerById } from '@/lib/customers/queries'
-import { formatNumber } from '@/lib/format/number-kind'
 import { listActiveRewards } from '@/lib/points/queries'
 import {
   RoleRequiredError,
@@ -45,34 +44,59 @@ export default async function CanjearPage({
     last_name: string
     points_balance: number
   }
-  const fullName = `${c.first_name} ${c.last_name}`.trim() || 'Cliente sin nombre'
+  const initials = `${c.first_name?.[0] ?? ''}${c.last_name?.[0] ?? ''}`.toUpperCase() || '?'
 
   return (
-    <PageShell width="compact">
+    <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      <Link
+        href={`/${tenantSlug}/clientes/${id}`}
+        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="size-3" />
+        Volver a la ficha
+      </Link>
+
       <PageHeader
-        back={{ href: `/${tenantSlug}/clientes/${id}`, label: fullName }}
+        eyebrow="Operación"
         title="Canjear puntos"
-        description="Tocá la recompensa que eligió y confirmá el descuento."
+        description="Tocá la recompensa que el cliente quiere y confirmá el descuento."
       />
 
-      <KPIGroup columns={2}>
-        <KPI label="Cliente" value={fullName} />
-        <KPI
-          label="Puntos disponibles"
-          value={formatNumber(c.points_balance)}
-          unit={c.points_balance === 1 ? 'punto' : 'puntos'}
+      <div className="card-hairline relative overflow-hidden rounded-xl border bg-card p-5">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-12 -top-12 size-40 rounded-full bg-primary/15 blur-3xl"
         />
-      </KPIGroup>
+        <div className="relative flex items-center gap-4">
+          <Avatar className="size-12">
+            <AvatarFallback className="bg-secondary font-display text-base font-semibold">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">Cliente</p>
+            <p className="font-display text-lg font-semibold">
+              {c.first_name} {c.last_name}
+            </p>
+          </div>
+          <div className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-2 text-right">
+            <p className="flex items-center justify-end gap-1 text-[11px] font-medium uppercase tracking-wider text-primary">
+              <Star className="size-3" />
+              Balance
+            </p>
+            <p className="font-display text-2xl font-semibold tabular-nums text-primary">
+              {c.points_balance.toLocaleString('es-AR')}
+            </p>
+          </div>
+        </div>
+      </div>
 
-      <Section title="Recompensas">
-        <RedeemForm
-          tenantSlug={tenantSlug}
-          customerId={c.id}
-          customerName={fullName}
-          balance={c.points_balance}
-          rewards={rewards}
-        />
-      </Section>
-    </PageShell>
+      <RedeemForm
+        tenantSlug={tenantSlug}
+        customerId={c.id}
+        balance={c.points_balance}
+        rewards={rewards}
+      />
+    </div>
   )
 }

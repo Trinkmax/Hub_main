@@ -1,5 +1,4 @@
 import { Cake } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
 import { type CakeOptionSummary, describeCake } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 
@@ -9,12 +8,9 @@ import { cn } from '@/lib/utils'
  * cuál es el único dato que la cocina necesita, porque la torta la hace el bar.
  *
  * Tres estados, los tres distintos a propósito:
- *   · elegida  → "Opción 2 · Bizcochuelo de chocolate" (etiqueta de marca)
- *   · sin definir → etiqueta de aviso, porque es una tarea pendiente del bar
+ *   · elegida  → "Opción 2 · Bizcochuelo de chocolate"
+ *   · sin definir → se ve en ámbar, porque es una tarea pendiente del bar
  *   · sin torta → no se renderiza nada
- *
- * Es la `Badge` del kit (fondo suave + texto del tono, 12 px): el color nunca
- * va solo, la palabra dice qué pasa.
  */
 export function CakeChip({
   count,
@@ -45,9 +41,7 @@ export function CakeChip({
   const label = option ? option.name : pending ? 'Falta elegir torta' : 'Torta elegida'
 
   return (
-    <Badge
-      tone={pending ? 'warning' : 'brand'}
-      icon={Cake}
+    <span
       title={
         option
           ? describeCake(option)
@@ -55,16 +49,30 @@ export function CakeChip({
             ? 'Lleva torta pero todavía no eligieron cuál'
             : 'La torta ya está elegida — abrí la reserva para ver cuál'
       }
-      className={cn('max-w-full justify-start', className)}
+      className={cn(
+        'inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium leading-tight',
+        // `text-warning-foreground` es para ir sobre el ámbar SÓLIDO: sobre un
+        // tinte al 10% queda casi negro sobre casi negro en dark (1.3:1). El
+        // patrón de la casa sobre tinte es texto en `foreground` con el ícono
+        // tintado — el mismo que ya usan los chips de aviso de servicio.
+        pending
+          ? 'border-warning/50 bg-warning/10 text-foreground'
+          : 'border-primary/30 bg-primary/10 text-foreground',
+        className,
+      )}
     >
-      {count > 1 ? <span className="tabular-nums">{count}×</span> : null}
-      <span className="min-w-0 truncate">{label}</span>
+      <Cake
+        className={cn('size-3 shrink-0', pending ? 'text-warning' : 'text-primary')}
+        aria-hidden
+      />
+      {count > 1 ? <span className="font-mono tabular-nums">{count}×</span> : null}
+      <span className="truncate">{label}</span>
       {detailed && option ? (
-        <span className="min-w-0 truncate font-normal opacity-80">
+        <span className="truncate font-normal text-muted-foreground">
           · {option.base}
           {option.fillings.length > 0 ? ` · ${option.fillings.join(' y ')}` : ''}
         </span>
       ) : null}
-    </Badge>
+    </span>
   )
 }

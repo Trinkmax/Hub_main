@@ -10,8 +10,7 @@
       "**",
       "!.next",
       "!node_modules",
-      "!components/ui-legacy",
-      "!components/legacy",
+      "!components/ui",
       "!supabase/.branches",
       "!supabase/.temp",
       "!coverage",
@@ -55,93 +54,5 @@
         "organizeImports": "on"
       }
     }
-  },
-  "overrides": [
-    {
-      "includes": [
-        "app/(salon)/**",
-        "app/carta/**",
-        "app/c/**",
-        "app/m/**",
-        "app/r/**",
-        "app/v/**",
-        "app/l/**",
-        "app/p/**",
-        "app/print/**",
-        "app/capture/**",
-        "components/shell/salon/**",
-        "components/public-links/**"
-      ],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": {
-              "level": "error",
-              "options": {
-                "patterns": [
-                  {
-                    "group": ["@/components/ui", "@/components/ui/**"],
-                    "message": "Superficie congelada: importá de @/components/ui-legacy"
-                  },
-                  {
-                    "group": [
-                      "@/app/(manager)",
-                      "@/app/(manager)/**",
-                      "@/components/reservations/**",
-                      "@/components/loyalty/**",
-                      "@/components/floor-plan/**"
-                    ],
-                    "message": "Superficie congelada: no importes vistas del panel; usá su copia de @/components/legacy (ver components/legacy/README.md)"
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "includes": [
-        "app/*/**",
-        "components/**",
-        "lib/**",
-        "!app/(salon)/**",
-        "!app/carta/**",
-        "!app/c/**",
-        "!app/m/**",
-        "!app/r/**",
-        "!app/v/**",
-        "!app/l/**",
-        "!app/p/**",
-        "!app/print/**",
-        "!app/capture/**",
-        "!components/shell/salon/**",
-        "!components/public-links/**",
-        "!components/legacy/**",
-        "!components/ui-legacy/**"
-      ],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedImports": {
-              "level": "error",
-              "options": {
-                "patterns": [
-                  {
-                    "group": [
-                      "@/components/ui-legacy",
-                      "@/components/ui-legacy/**",
-                      "@/components/legacy",
-                      "@/components/legacy/**"
-                    ],
-                    "message": "Las copias congeladas son solo del salón y lo público: en el panel importá de @/components/ui o del componente original"
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    }
-  ]
+  }
 }

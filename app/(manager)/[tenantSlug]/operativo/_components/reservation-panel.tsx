@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Clock,
   DoorClosed,
+  GlassWater,
   MoreHorizontal,
   Pencil,
   RotateCcw,
@@ -18,28 +19,31 @@ import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { ContactButton } from '@/components/messaging/contact-button'
 import { CakeChip } from '@/components/reservations/cake-chip'
-import { CelebrationChip, ChampagneChip } from '@/components/reservations/celebration-chip'
+import { CelebrationChip } from '@/components/reservations/celebration-chip'
+import { GuestCountStepper } from '@/components/reservations/guest-count-stepper'
 import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
-import { RESERVATION_STATUS } from '@/components/reservations/status-meta'
-import { Amount } from '@/components/ui/amount'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Callout } from '@/components/ui/callout'
-import { useConfirm } from '@/components/ui/confirm-dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Field } from '@/components/ui/field'
-import { NumberField } from '@/components/ui/number-field'
-import { StatusBadge } from '@/components/ui/status-badge'
-import { formatTime } from '@/lib/dates'
-import { formatPhoneForDisplay } from '@/lib/phone'
 import type { EarnRate } from '@/lib/points/earn-rate'
 import type { RecentQrAward } from '@/lib/points/queries'
 import { resolveReservationAlerts } from '@/lib/salon/alerts'
-import { endsNextDay } from '@/lib/salon/format'
+import { ARSFormat, endsNextDay } from '@/lib/salon/format'
 import { minutesUntil, relativeTimeLabel, reverseLabel } from '@/lib/salon/operativo'
 import { joinedEventName, placeLabel } from '@/lib/salon/place-label'
 import {
@@ -47,6 +51,7 @@ import {
   ORIGIN_LABELS,
   RESERVATION_KIND_LABELS,
   type ReservationWithJoins,
+  STATUS_LABELS,
 } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
 import { ArrivalForm } from './arrival-form'
@@ -56,23 +61,36 @@ import { TableEditor } from './table-editor'
 
 export type PanelMode = 'detail' | 'arrive' | 'table' | 'close'
 
-/** Lo mismo que acepta la acción (`actualGuestsSchema`): cero no es un conteo, es «no vino». */
-const MIN_GUESTS = 1
-const MAX_GUESTS = 99
+const STATUS_BADGE: Record<
+  ReservationWithJoins['status'],
+  'default' | 'secondary' | 'success' | 'info' | 'destructive' | 'muted'
+> = {
+  pending: 'muted',
+  arrived: 'success',
+  seated: 'success',
+  closed: 'secondary',
+  no_show: 'destructive',
+  cancelled: 'muted',
+}
 
 function fmtTime(t: string | null | undefined): string {
   return t ? t.slice(0, 5) : ''
 }
 
-/** 'HH:mm' del reloj del bar (a mano, sin `Intl`). */
 function fmtStamp(iso: string | null): string | null {
-  return iso ? formatTime(iso) || null : null
+  if (!iso) return null
+  return new Intl.DateTimeFormat('es-AR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'America/Argentina/Cordoba',
+  }).format(new Date(iso))
 }
 
 /**
- * La ficha de UNA reserva: en mobile vive en una hoja, en desktop en el aside.
+ * La ficha de UNA reserva: en mobile vive en un sheet, en desktop en el aside.
  * Es la misma pieza en los dos, y tiene un solo nivel: cuando hay que contar
- * gente o poner la mesa, el CONTENIDO se reemplaza (no se apila otra hoja).
+ * gente o poner la mesa, el CONTENIDO se reemplaza (no se apila otro sheet).
  *
  * Arriba lo que se hace (acciones por estado), después lo que hay que saber
  * (avisos, torta, comentario), el club, y al final los datos fríos.
@@ -117,7 +135,6 @@ export function ReservationPanel({
   remoteTouched: boolean
 }) {
   const reduced = useReducedMotion()
-  const confirm = useConfirm()
   const alerts = resolveReservationAlerts(r.service_alerts, r.customer?.service_alerts)
   const guests = r.actual_guests ?? r.estimated_guests
   const inside = r.status === 'arrived' || r.status === 'seated'
@@ -130,6 +147,7 @@ export function ReservationPanel({
   // sabía que venía al evento.
   const zone = placeLabel(r, joinedEventName(r))
   const phone = r.customer?.phone ?? r.guest_phone ?? ''
+  const [revertOpen, setRevertOpen] = useState(false)
   const [tableDraft, setTableDraft] = useState(r.table_label ?? '')
   useEffect(() => setTableDraft(r.table_label ?? ''), [r.table_label])
 
@@ -164,33 +182,22 @@ export function ReservationPanel({
     if (ok) onModeChange('detail')
   }
 
-  // Volver a pendiente desde llegó: la única que confirma (liquida comisión).
-  // El diálogo vive en el shell (`useConfirm`), no adentro del menú que lo abre.
-  const confirmNotArrived = async () => {
-    const ok = await confirm({
-      title: `¿No llegó ${r.guest_name}?`,
-      description:
-        'Vuelve a «por llegar» y se recalcula la comisión del gestor. Si la gente está adentro, dejá la reserva como está.',
-      confirmLabel: 'Sí, no llegó',
-      cancelLabel: 'Volver',
-      tone: 'danger',
-    })
-    if (!ok) return
-    void actions.revert(r.id, 'pending')
-    onClose()
-  }
-
   return (
     <div className="flex flex-col">
       {/* Cabecera */}
-      <div className="flex items-start gap-3 px-4 pt-4 pb-3 sm:px-5">
+      <div className="flex items-start gap-3 px-4 pb-3 pt-4 sm:px-5">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="type-section text-balance">{r.guest_name}</h2>
-            <StatusBadge status={r.status} map={RESERVATION_STATUS} />
+            <h2 className="font-serif text-xl font-semibold leading-tight tracking-tight">
+              {r.guest_name}
+            </h2>
+            <Badge variant={STATUS_BADGE[r.status]} className="gap-1">
+              {inside ? <Check className="size-3" strokeWidth={3} aria-hidden /> : null}
+              {STATUS_LABELS[r.status]}
+            </Badge>
           </div>
-          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 type-body text-muted-foreground">
-            <span className="font-semibold text-foreground type-amount">
+          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground">
+            <span className="font-mono font-semibold tabular-nums text-foreground">
               {fmtTime(r.reservation_time_local)}
               {r.reservation_end_time_local ? (
                 <span
@@ -211,21 +218,21 @@ export function ReservationPanel({
                 {relativeTimeLabel(diff)}
               </span>
             ) : null}
-            <span aria-hidden="true">·</span>
+            <span aria-hidden>·</span>
             <span className="inline-flex items-center gap-1 tabular-nums">
-              <Users className="size-3.5" aria-hidden="true" />
+              <Users className="size-3.5" aria-hidden />
               {guests}
               {r.actual_guests !== null && r.actual_guests !== r.estimated_guests ? (
-                <span className="type-caption">(reservaron {r.estimated_guests})</span>
+                <span className="text-xs">(reservaron {r.estimated_guests})</span>
               ) : null}
             </span>
-            <span aria-hidden="true">·</span>
+            <span aria-hidden>·</span>
             <span>{zone}</span>
             {r.table_label ? (
               <>
-                <span aria-hidden="true">·</span>
+                <span aria-hidden>·</span>
                 <span className="inline-flex items-center gap-1 font-semibold text-foreground">
-                  <Armchair className="size-3.5" aria-hidden="true" />
+                  <Armchair className="size-3.5" aria-hidden />
                   Mesa {r.table_label}
                 </span>
               </>
@@ -239,20 +246,27 @@ export function ReservationPanel({
               phone={phone}
               customerId={r.customer_id ?? undefined}
               name={r.guest_name}
-              variant="secondary"
+              variant="outline"
               size="icon"
             />
           ) : null}
-          <Button type="button" variant="ghost" size="icon" aria-label="Cerrar" onClick={onClose}>
-            <X aria-hidden="true" />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-11 rounded-full text-muted-foreground"
+            aria-label="Cerrar"
+            onClick={onClose}
+          >
+            <X className="size-4" aria-hidden />
           </Button>
         </div>
       </div>
 
       {remoteTouched ? (
-        <Callout tone="info" announce="polite" className="mx-4 mb-2 sm:mx-5">
+        <p className="mx-4 mb-2 rounded-lg bg-info/10 px-3 py-1.5 text-xs text-foreground sm:mx-5">
           Actualizada desde el salón recién.
-        </Callout>
+        </p>
       ) : null}
 
       <AnimatePresence mode="wait" initial={false}>
@@ -287,25 +301,25 @@ export function ReservationPanel({
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -12 }}
             transition={{ duration: 0.16 }}
-            className="flex flex-col gap-4 px-4 pb-4 sm:px-5"
+            className="space-y-4 px-4 pb-4 sm:px-5"
           >
-            {/* El campo de mesa toma etiqueta, ayuda e id del Field (kit). */}
-            <Field label={`Mesa de ${r.guest_name}`} hint="Juntá mesas con «+»: 12+13.">
-              <TableEditor
-                value={tableDraft}
-                onChange={setTableDraft}
-                occupied={occupied}
-                currentId={r.id}
-                usedToday={usedToday}
-                autoFocus
-                onSubmit={saveTable}
-              />
-            </Field>
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+              Mesa de {r.guest_name}
+            </p>
+            <TableEditor
+              value={tableDraft}
+              onChange={setTableDraft}
+              occupied={occupied}
+              currentId={r.id}
+              usedToday={usedToday}
+              autoFocus
+              onSubmit={saveTable}
+            />
             <div className="flex gap-2">
               <Button
                 type="button"
-                variant="secondary"
-                size="lg"
+                variant="outline"
+                className="h-12 rounded-xl px-5"
                 onClick={() => {
                   setTableDraft(r.table_label ?? '')
                   onModeChange('detail')
@@ -313,11 +327,9 @@ export function ReservationPanel({
               >
                 Volver
               </Button>
-              <Button type="button" size="lg" className="flex-1" onClick={saveTable}>
-                <Check aria-hidden="true" />
-                <span className="truncate">
-                  {tableDraft.trim() ? `Guardar mesa ${tableDraft.trim()}` : 'Quitar mesa'}
-                </span>
+              <Button type="button" className="h-12 flex-1 gap-2 rounded-xl" onClick={saveTable}>
+                <Check className="size-4" aria-hidden />
+                {tableDraft.trim() ? `Guardar mesa ${tableDraft.trim()}` : 'Quitar mesa'}
               </Button>
             </div>
           </motion.div>
@@ -328,107 +340,103 @@ export function ReservationPanel({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.12 }}
-            className="flex flex-col gap-4 px-4 pb-5 sm:px-5"
+            className="space-y-4 px-4 pb-5 sm:px-5"
           >
             {/* Acciones del momento */}
             {operable ? (
-              <div className="flex flex-col gap-2">
+              <div className="space-y-2">
                 {r.status === 'pending' ? (
                   <div className="flex gap-2">
                     <Button
                       type="button"
-                      size="lg"
-                      className="flex-1"
+                      variant="success"
+                      className="h-14 flex-1 gap-2 rounded-2xl text-base"
                       onClick={() => onModeChange('arrive')}
                     >
-                      <Check strokeWidth={2.5} aria-hidden="true" />
+                      <Check className="size-5" strokeWidth={2.5} aria-hidden />
                       Llegó
                     </Button>
                     <Button
                       type="button"
-                      variant="danger-ghost"
-                      size="lg"
+                      variant="outline"
+                      className="h-14 gap-2 rounded-2xl border-destructive/40 px-4 text-destructive hover:bg-destructive/10 hover:text-destructive"
                       onClick={() => {
                         void actions.noShow(r.id)
                         onClose()
                       }}
                     >
-                      <XCircle aria-hidden="true" />
+                      <XCircle className="size-5" aria-hidden />
                       No vino
                     </Button>
                   </div>
                 ) : null}
 
                 {inside ? (
-                  <div className="grid grid-cols-2 items-start gap-3">
-                    <div className="flex min-w-0 flex-col gap-2">
-                      <p className="type-label">Mesa</p>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        className="justify-between"
-                        onClick={() => onModeChange('table')}
-                        aria-label={
-                          r.table_label ? `Mesa ${r.table_label}, cambiar` : 'Asignar mesa'
-                        }
-                      >
-                        <span className="inline-flex min-w-0 items-center gap-2">
-                          <Armchair className="text-muted-foreground" aria-hidden="true" />
-                          <span className="truncate font-semibold">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-14 justify-between gap-2 rounded-2xl px-4"
+                      onClick={() => onModeChange('table')}
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <Armchair className="size-5 text-muted-foreground" aria-hidden />
+                        <span className="text-left leading-tight">
+                          <span className="block text-[10px] uppercase tracking-wider text-muted-foreground">
+                            Mesa
+                          </span>
+                          <span className="block font-serif text-lg font-semibold">
                             {r.table_label ?? 'Asignar'}
                           </span>
                         </span>
-                        <ChevronRight className="text-muted-foreground" aria-hidden="true" />
-                      </Button>
-                    </div>
-                    <Field label="Personas" hint={`Reservaron ${r.estimated_guests}`}>
-                      <NumberField
+                      </span>
+                      <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
+                    </Button>
+                    <div className="flex h-14 items-center justify-between rounded-2xl border border-border/70 bg-card px-1.5 pl-3">
+                      <span className="text-left leading-tight">
+                        <span className="block text-[10px] uppercase tracking-wider text-muted-foreground">
+                          Personas
+                        </span>
+                        <span className="block text-[11px] text-muted-foreground tabular-nums">
+                          de {r.estimated_guests}
+                        </span>
+                      </span>
+                      <GuestCountStepper
                         value={guestsDraft}
-                        onValueChange={(n) => {
-                          if (n !== null) bumpGuests(n)
-                        }}
-                        min={MIN_GUESTS}
-                        max={MAX_GUESTS}
-                        incrementLabel="Una persona más"
-                        decrementLabel="Una persona menos"
+                        onChange={bumpGuests}
+                        size="md"
+                        className="gap-1 [&_button]:size-11"
                       />
-                    </Field>
+                    </div>
                   </div>
                 ) : null}
 
                 {r.status === 'no_show' ? (
-                  <div className="flex flex-col gap-2">
-                    <Callout tone="danger" icon={XCircle}>
-                      Marcada como <strong className="font-medium text-foreground">no vino</strong>
-                      {fmtStamp(r.updated_at) ? (
-                        <>
-                          {' '}
-                          a las <span className="type-amount">{fmtStamp(r.updated_at)}</span>
-                        </>
-                      ) : null}
-                      .
-                    </Callout>
+                  <div className="space-y-2">
+                    <p className="rounded-xl bg-destructive/8 px-3 py-2 text-sm">
+                      Marcada como <strong>no vino</strong>
+                      {fmtStamp(r.updated_at) ? ` a las ${fmtStamp(r.updated_at)}` : ''}.
+                    </p>
                     <div className="flex gap-2">
                       <Button
                         type="button"
-                        variant="secondary"
-                        size="lg"
-                        className="flex-1"
+                        variant="outline"
+                        className="h-14 flex-1 gap-2 rounded-2xl"
                         onClick={() => {
                           void actions.revert(r.id, 'pending')
                           onClose()
                         }}
                       >
-                        <RotateCcw aria-hidden="true" />
+                        <RotateCcw className="size-4" aria-hidden />
                         Apareció, esperar
                       </Button>
                       <Button
                         type="button"
-                        size="lg"
-                        className="flex-1"
+                        variant="success"
+                        className="h-14 flex-1 gap-2 rounded-2xl"
                         onClick={() => onModeChange('arrive')}
                       >
-                        <Check strokeWidth={2.5} aria-hidden="true" />
+                        <Check className="size-5" strokeWidth={2.5} aria-hidden />
                         Llegó igual
                       </Button>
                     </div>
@@ -438,14 +446,13 @@ export function ReservationPanel({
                 {r.status === 'closed' ? (
                   <Button
                     type="button"
-                    variant="secondary"
-                    size="lg"
-                    className="w-full"
+                    variant="outline"
+                    className="h-12 w-full gap-2 rounded-2xl"
                     onClick={() => {
                       void actions.revert(r.id, 'seated')
                     }}
                   >
-                    <RotateCcw aria-hidden="true" />
+                    <RotateCcw className="size-4" aria-hidden />
                     Reabrir mesa
                   </Button>
                 ) : null}
@@ -454,8 +461,14 @@ export function ReservationPanel({
                 {inside ? (
                   <div className="flex items-center justify-between gap-2">
                     {isOwner ? (
-                      <Button type="button" variant="ghost" onClick={() => onModeChange('close')}>
-                        <DoorClosed aria-hidden="true" />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-11 gap-1.5 rounded-xl text-muted-foreground"
+                        onClick={() => onModeChange('close')}
+                      >
+                        <DoorClosed className="size-4" aria-hidden />
                         Cerrar mesa
                       </Button>
                     ) : (
@@ -463,8 +476,14 @@ export function ReservationPanel({
                     )}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button type="button" variant="ghost" aria-label="Más opciones">
-                          <MoreHorizontal aria-hidden="true" />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-11 gap-1.5 rounded-xl text-muted-foreground"
+                          aria-label="Más opciones"
+                        >
+                          <MoreHorizontal className="size-4" aria-hidden />
                           Más
                         </Button>
                       </DropdownMenuTrigger>
@@ -473,15 +492,15 @@ export function ReservationPanel({
                             desde "sentada" primero se vuelve a "llegó". */}
                         {r.status === 'seated' ? (
                           <DropdownMenuItem onSelect={() => void actions.revert(r.id, 'arrived')}>
-                            <RotateCcw aria-hidden="true" />
+                            <RotateCcw className="size-4" aria-hidden />
                             {reverseLabel('seated')}
                           </DropdownMenuItem>
                         ) : (
                           <DropdownMenuItem
-                            variant="destructive"
-                            onSelect={() => void confirmNotArrived()}
+                            onSelect={() => setRevertOpen(true)}
+                            className="text-destructive focus:text-destructive"
                           >
-                            <RotateCcw aria-hidden="true" />
+                            <RotateCcw className="size-4" aria-hidden />
                             Me equivoqué, no llegó
                           </DropdownMenuItem>
                         )}
@@ -491,7 +510,9 @@ export function ReservationPanel({
                 ) : null}
               </div>
             ) : isFuture && r.status === 'pending' ? (
-              <Callout tone="info">Todavía no es el día: las llegadas se marcan ese día.</Callout>
+              <p className="rounded-xl bg-secondary/60 px-3 py-2 text-sm text-muted-foreground">
+                Todavía no es el día: las llegadas se marcan ese día.
+              </p>
             ) : null}
 
             {/* Lo que hay que saber antes de sentarlos */}
@@ -511,15 +532,22 @@ export function ReservationPanel({
                     className="basis-full"
                   />
                 ) : null}
-                <ChampagneChip count={r.champagne_count} />
+                {r.champagne_count > 0 ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-card px-2 py-0.5 text-xs">
+                    <GlassWater className="size-3.5 text-primary" aria-hidden />
+                    {r.champagne_count} {r.champagne_count === 1 ? 'champagne' : 'champagnes'}
+                  </span>
+                ) : null}
               </div>
             ) : null}
 
             {r.comments ? (
               <div
                 className={cn(
-                  'rounded-lg px-3 py-2.5 type-body text-pretty',
-                  r.highlight_comment ? 'bg-warning-soft font-medium' : 'bg-muted',
+                  'rounded-xl px-3 py-2.5 text-sm leading-snug',
+                  r.highlight_comment
+                    ? 'border border-warning/40 bg-warning/10 font-medium'
+                    : 'bg-secondary/60',
                 )}
               >
                 {r.comments}
@@ -533,17 +561,14 @@ export function ReservationPanel({
               earnRate={earnRate}
               canAward={canAward}
               canLink={canLink}
-              // Una sola acción principal por vista: si arriba está «Llegó», sumar
-              // puntos pasa a secundaria.
-              primary={!(operable && (r.status === 'pending' || r.status === 'no_show'))}
               actions={actions}
             />
 
             {/* Datos fríos */}
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border pt-4">
-              <Datum label="Servicio">{MEAL_TYPE_LABELS[r.meal_type]}</Datum>
-              <Datum label="Naturaleza">{RESERVATION_KIND_LABELS[r.kind]}</Datum>
-              <Datum label="Gestor">
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-sm">
+              <Field label="Servicio">{MEAL_TYPE_LABELS[r.meal_type]}</Field>
+              <Field label="Naturaleza">{RESERVATION_KIND_LABELS[r.kind]}</Field>
+              <Field label="Gestor">
                 {r.primary_manager?.display_name ?? '—'}
                 {r.assistant_manager ? (
                   <span className="text-muted-foreground">
@@ -551,44 +576,44 @@ export function ReservationPanel({
                     + {r.assistant_manager.display_name}
                   </span>
                 ) : null}
-              </Datum>
-              <Datum label="Origen">{ORIGIN_LABELS[r.origin]}</Datum>
+              </Field>
+              <Field label="Origen">{ORIGIN_LABELS[r.origin]}</Field>
               {r.scheduled_event?.template ? (
-                <Datum label="Evento">
+                <Field label="Evento">
                   <span className="inline-flex items-center gap-1.5">
                     <span
-                      aria-hidden="true"
+                      aria-hidden
                       className="size-2 rounded-full"
                       style={{ backgroundColor: r.scheduled_event.template.color_hex }}
                     />
                     {r.scheduled_event.template.name}
                   </span>
-                </Datum>
+                </Field>
               ) : null}
               {r.deposit_cents > 0 ? (
-                <Datum label="Seña">
-                  <Amount cents={r.deposit_cents} decimals={0} />
-                </Datum>
+                <Field label="Seña">
+                  <span className="font-mono tabular-nums">{ARSFormat(r.deposit_cents)}</span>
+                </Field>
               ) : null}
               {phone ? (
-                <Datum label="Teléfono">
-                  <span className="type-amount">{formatPhoneForDisplay(phone)}</span>
-                </Datum>
+                <Field label="Teléfono">
+                  <span className="font-mono text-xs">{phone}</span>
+                </Field>
               ) : null}
             </dl>
 
             {/* Pie: la historia del turno + edición completa */}
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 type-caption text-muted-foreground">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3 text-xs text-muted-foreground">
               <span className="inline-flex flex-wrap items-center gap-x-2 tabular-nums">
-                <Clock className="size-3.5" aria-hidden="true" />
+                <Clock className="size-3.5" aria-hidden />
                 {fmtStamp(r.arrived_at) ? <span>llegó {fmtStamp(r.arrived_at)}</span> : null}
                 {fmtStamp(r.seated_at) ? <span>· sentada {fmtStamp(r.seated_at)}</span> : null}
                 {fmtStamp(r.closed_at) ? <span>· cerrada {fmtStamp(r.closed_at)}</span> : null}
                 {!r.arrived_at && !r.closed_at ? <span>sin movimientos todavía</span> : null}
               </span>
-              <Button asChild variant="ghost" size="sm">
+              <Button asChild variant="ghost" size="sm" className="h-8 gap-1.5">
                 <Link href={`/${tenantSlug}/reservas/${r.id}`} prefetch={false}>
-                  <Pencil aria-hidden="true" />
+                  <Pencil className="size-3.5" aria-hidden />
                   Edición completa
                 </Link>
               </Button>
@@ -596,16 +621,40 @@ export function ReservationPanel({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Volver a pendiente desde llegó: la única que confirma (liquida comisión). */}
+      <AlertDialog open={revertOpen} onOpenChange={setRevertOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿No llegó {r.guest_name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Vuelve a "por llegar" y se recalcula la comisión del gestor. Si la gente está adentro,
+              dejá la reserva como está.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Volver</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setRevertOpen(false)
+                void actions.revert(r.id, 'pending')
+                onClose()
+              }}
+            >
+              Sí, no llegó
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
 
-/** Un dato de la reserva: etiqueta chica arriba, valor abajo. */
-function Datum({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="type-caption text-muted-foreground">{label}</dt>
-      <dd className="truncate type-body font-medium">{children}</dd>
+      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dd className="truncate font-medium">{children}</dd>
     </div>
   )
 }

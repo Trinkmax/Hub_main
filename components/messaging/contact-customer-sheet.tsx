@@ -1,13 +1,11 @@
 'use client'
 
-import { ExternalLink, MessageCircle, Send } from 'lucide-react'
+import { ExternalLink, Loader2, MessageCircle, Send } from 'lucide-react'
 import Link from 'next/link'
 import { type ReactNode, useCallback, useEffect, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Field } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
-import { SegmentedControl } from '@/components/ui/segmented-control'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -17,7 +15,6 @@ import {
 } from '@/components/ui/select'
 import {
   Sheet,
-  SheetBody,
   SheetContent,
   SheetDescription,
   SheetFooter,
@@ -25,17 +22,11 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
-import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { type ContactTemplateItem, contactCustomer, getContactTemplates } from '@/lib/meta/contact'
 import { buildWaMeUrl, formatPhoneForDisplay } from '@/lib/phone'
 
 type Mode = 'message' | 'template'
-
-const MODE_ITEMS = [
-  { value: 'message' as const, label: 'Mensaje' },
-  { value: 'template' as const, label: 'Mensaje aprobado' },
-]
 
 export interface ContactCustomerSheetProps {
   tenantSlug: string
@@ -44,11 +35,6 @@ export interface ContactCustomerSheetProps {
   name?: string
   trigger?: ReactNode
 }
-
-// How many {{n}} params does the selected template body have? The list of
-// templates doesn't bring the body, so we expose up to 5 inputs and the
-// backend takes whatever variables[] we send (empty ones are dropped).
-const VARIABLE_SLOTS = 5
 
 export function ContactCustomerSheet({
   tenantSlug,
@@ -94,7 +80,7 @@ export function ContactCustomerSheet({
       setTemplates(data)
       templatesLoaded.current = true
     } catch {
-      toast.error('No se pudieron cargar los mensajes aprobados. Probá de nuevo.')
+      toast.error('No se pudieron cargar las plantillas.')
     } finally {
       setTemplatesLoading(false)
     }
@@ -106,16 +92,15 @@ export function ContactCustomerSheet({
     }
   }, [mode, loadTemplates])
 
-  function conversationLink(conversationId: string) {
-    return (
-      <Link
-        href={`/${tenantSlug}/mensajeria/inbox?c=${conversationId}`}
-        className="underline underline-offset-2"
-      >
-        Ver la conversación
-      </Link>
-    )
+  function switchToTemplate() {
+    setMode('template')
   }
+
+  // How many {{n}} params does the selected template body have?
+  // We infer variable count from the template name heuristic (0 for now)
+  // but expose up to 5 variable inputs when the user selects a template.
+  // The backend accepts whatever variables[] array we send.
+  const VARIABLE_SLOTS = 5
 
   function handleSendMessage() {
     if (!body.trim()) return
@@ -127,28 +112,36 @@ export function ContactCustomerSheet({
       })
 
       if (result.ok) {
-        toast.success('Mensaje enviado', { description: conversationLink(result.conversationId) })
+        toast.success('Mensaje enviado', {
+          description: (
+            <Link
+              href={`/${tenantSlug}/mensajeria/inbox?c=${result.conversationId}`}
+              className="underline underline-offset-2"
+            >
+              Ver conversación →
+            </Link>
+          ),
+        })
         setOpen(false)
         return
       }
 
       if (result.code === 'window_closed') {
-        toast.info('Pasaron más de 24 horas', {
-          description:
-            'El cliente no te escribió hace poco: para retomar la charla va un mensaje aprobado.',
+        toast.info('Ventana de 24 hs cerrada', {
+          description: 'El cliente no te escribió recientemente. Enviá una plantilla.',
         })
-        setMode('template')
+        switchToTemplate()
         return
       }
 
       if (result.code === 'no_channel') {
-        toast.warning('No hay un WhatsApp conectado', {
-          description: 'Escribile desde tu teléfono con «Abrir en WhatsApp».',
+        toast.warning('Sin canal de WhatsApp conectado', {
+          description: 'Usá el enlace wa.me para contactar directamente.',
         })
         return
       }
 
-      toast.error(result.message ?? 'No se pudo enviar el mensaje. Probá de nuevo.')
+      toast.error(result.message ?? 'Error al enviar el mensaje.')
     })
   }
 
@@ -164,14 +157,21 @@ export function ContactCustomerSheet({
       })
 
       if (result.ok) {
-        toast.success('Mensaje aprobado enviado', {
-          description: conversationLink(result.conversationId),
+        toast.success('Plantilla enviada', {
+          description: (
+            <Link
+              href={`/${tenantSlug}/mensajeria/inbox?c=${result.conversationId}`}
+              className="underline underline-offset-2"
+            >
+              Ver conversación →
+            </Link>
+          ),
         })
         setOpen(false)
         return
       }
 
-      toast.error(result.message ?? 'No se pudo enviar el mensaje aprobado. Probá de nuevo.')
+      toast.error(result.message ?? 'Error al enviar la plantilla.')
     })
   }
 
@@ -179,130 +179,186 @@ export function ContactCustomerSheet({
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetTrigger asChild>
         {trigger ?? (
-          <Button variant="secondary" size="sm">
-            <MessageCircle aria-hidden />
+          <Button variant="outline" size="sm">
+            <MessageCircle className="size-4" aria-hidden />
             Contactar
           </Button>
         )}
       </SheetTrigger>
 
-      <SheetContent side="right" size="sm">
-        <SheetHeader>
+      <SheetContent side="right" className="flex flex-col gap-0 sm:max-w-sm">
+        <SheetHeader className="border-b pb-4">
           <SheetTitle>{title}</SheetTitle>
-          <SheetDescription>{displayPhone}</SheetDescription>
+          <SheetDescription className="font-mono text-xs">{displayPhone}</SheetDescription>
         </SheetHeader>
 
-        <SheetBody className="flex flex-col gap-4">
-          {/* Una sola opción entre dos: segmentado del kit (flechas incluidas). */}
-          <SegmentedControl
-            aria-label="Qué mandar"
-            fullWidth
-            items={MODE_ITEMS}
-            value={mode}
-            onValueChange={setMode}
-          />
-
-          {mode === 'message' ? (
-            <Field
-              label="Mensaje"
-              hint="Solo sale si el cliente te escribió en las últimas 24 horas. Si no, te pedimos un mensaje aprobado."
+        <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
+          {/* Mode tabs */}
+          <div className="flex gap-1 rounded-lg border p-1">
+            <button
+              type="button"
+              onClick={() => setMode('message')}
+              className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                mode === 'message'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              aria-pressed={mode === 'message'}
             >
-              <Textarea
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                placeholder="Escribí tu mensaje…"
-                rows={5}
-                maxLength={4096}
-                className="resize-none"
-              />
-            </Field>
-          ) : templatesLoading ? (
-            <p role="status" className="flex items-center gap-2 type-body text-muted-foreground">
-              <Spinner size={16} aria-hidden />
-              Cargando los mensajes aprobados…
-            </p>
-          ) : templates.length === 0 ? (
-            <p className="type-body text-muted-foreground">
-              Todavía no hay mensajes aprobados. Se crean en{' '}
-              <Link
-                href={`/${tenantSlug}/mensajeria/plantillas`}
-                className="text-foreground underline underline-offset-2"
-              >
-                Mensajería, en Plantillas
-              </Link>
-              .
-            </p>
-          ) : (
-            <>
-              <Field label="Mensaje aprobado">
-                <Select
-                  value={selectedTemplateId}
-                  onValueChange={(v) => {
-                    setSelectedTemplateId(v)
-                    setTemplateVars([])
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Elegí un mensaje…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {templates.map((t) => (
-                      <SelectItem key={t.id} value={t.id} description={t.language}>
-                        {t.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
+              Mensaje
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('template')}
+              className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                mode === 'template'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              aria-pressed={mode === 'template'}
+            >
+              Plantilla
+            </button>
+          </div>
 
-              {selectedTemplateId ? (
-                <fieldset className="flex flex-col gap-3">
-                  <legend className="mb-1 type-small text-muted-foreground">
-                    Datos del mensaje (dejá vacío lo que no use)
-                  </legend>
-                  {Array.from({ length: VARIABLE_SLOTS }, (_, i) => (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: lista de slots fija, sin reordenamiento
-                    <Field key={`var-${i}`} label={`Dato ${i + 1}`} optional>
-                      <Input
-                        size="sm"
-                        value={templateVars[i] ?? ''}
-                        onChange={(e) => {
-                          const next = [...templateVars]
-                          next[i] = e.target.value
-                          setTemplateVars(next)
-                        }}
-                        placeholder={`Va en {{${i + 1}}}`}
-                      />
-                    </Field>
-                  ))}
-                </fieldset>
-              ) : null}
-            </>
-          )}
-        </SheetBody>
-
-        <SheetFooter>
           {mode === 'message' ? (
-            <Button onClick={handleSendMessage} disabled={!body.trim()} loading={isPending}>
-              <Send aria-hidden />
-              Enviar mensaje
-            </Button>
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="contact-body">Mensaje</Label>
+                <Textarea
+                  id="contact-body"
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  placeholder="Escribí tu mensaje…"
+                  rows={5}
+                  maxLength={4096}
+                  className="resize-none"
+                  aria-describedby="contact-body-hint"
+                />
+                <p id="contact-body-hint" className="text-[11px] text-muted-foreground">
+                  Solo disponible dentro de la ventana de 24 hs desde el último mensaje del cliente.
+                </p>
+              </div>
+            </div>
           ) : (
-            <Button onClick={handleSendTemplate} disabled={!selectedTemplateId} loading={isPending}>
-              <Send aria-hidden />
-              Enviar mensaje aprobado
-            </Button>
-          )}
+            <div className="flex flex-col gap-4">
+              {templatesLoading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                  Cargando plantillas…
+                </div>
+              ) : templates.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No hay plantillas aprobadas. Creá una en{' '}
+                  <Link
+                    href={`/${tenantSlug}/configuracion`}
+                    className="underline underline-offset-2"
+                  >
+                    Configuración
+                  </Link>
+                  .
+                </p>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="contact-template">Plantilla</Label>
+                    <Select
+                      value={selectedTemplateId}
+                      onValueChange={(v) => {
+                        setSelectedTemplateId(v)
+                        setTemplateVars([])
+                      }}
+                    >
+                      <SelectTrigger id="contact-template" className="w-full">
+                        <SelectValue placeholder="Seleccioná una plantilla…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {templates.map((t) => (
+                          <SelectItem key={t.id} value={t.id}>
+                            {t.name}
+                            <span className="ml-1 text-[10px] text-muted-foreground uppercase">
+                              {t.language}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-          {waMeUrl ? (
-            <Button asChild variant="secondary">
-              <a href={waMeUrl} target="_blank" rel="noopener noreferrer">
-                <ExternalLink aria-hidden />
-                Abrir en WhatsApp
-                <span className="sr-only">, abre en otra pestaña</span>
-              </a>
-            </Button>
-          ) : null}
+                  {selectedTemplateId ? (
+                    <div className="flex flex-col gap-2">
+                      <p className="text-xs text-muted-foreground">
+                        Variables de la plantilla (dejá vacío lo que no aplique):
+                      </p>
+                      {Array.from({ length: VARIABLE_SLOTS }, (_, i) => (
+                        // biome-ignore lint/suspicious/noArrayIndexKey: lista de slots fija, sin reordenamiento
+                        <div key={`var-${i}`} className="flex flex-col gap-1">
+                          <Label htmlFor={`tvar-${i}`} className="text-xs">
+                            {'{{'}
+                            {i + 1}
+                            {'}}'}
+                          </Label>
+                          <input
+                            id={`tvar-${i}`}
+                            type="text"
+                            value={templateVars[i] ?? ''}
+                            onChange={(e) => {
+                              const next = [...templateVars]
+                              next[i] = e.target.value
+                              setTemplateVars(next)
+                            }}
+                            className="border-input bg-background focus-visible:border-ring focus-visible:ring-ring/50 flex h-8 w-full rounded-md border px-3 py-1 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px]"
+                            placeholder={`Variable ${i + 1}`}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        <SheetFooter className="border-t">
+          <div className="flex w-full flex-col gap-2">
+            {mode === 'message' ? (
+              <Button
+                onClick={handleSendMessage}
+                disabled={!body.trim() || isPending}
+                className="w-full"
+              >
+                {isPending ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                ) : (
+                  <Send className="size-4" aria-hidden />
+                )}
+                Enviar mensaje
+              </Button>
+            ) : (
+              <Button
+                onClick={handleSendTemplate}
+                disabled={!selectedTemplateId || isPending}
+                className="w-full"
+              >
+                {isPending ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                ) : (
+                  <Send className="size-4" aria-hidden />
+                )}
+                Enviar plantilla
+              </Button>
+            )}
+
+            {waMeUrl ? (
+              <Button asChild variant="outline" size="sm" className="w-full">
+                <a href={waMeUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="size-4" aria-hidden />
+                  Abrir en WhatsApp
+                </a>
+              </Button>
+            ) : null}
+          </div>
         </SheetFooter>
       </SheetContent>
     </Sheet>

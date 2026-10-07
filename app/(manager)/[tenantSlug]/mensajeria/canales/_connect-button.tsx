@@ -23,11 +23,11 @@ export function ConnectButton({
   if (disabled) {
     return (
       <div className="flex flex-wrap items-center gap-2">
-        <Button disabled>
-          <Plug aria-hidden />
+        <Button disabled className="gap-2">
+          <Plug className="size-4" aria-hidden />
           {text}
         </Button>
-        <span className="type-small text-muted-foreground">
+        <span className="text-xs text-muted-foreground">
           Se habilita cuando la plataforma termine la configuración de Meta.
         </span>
       </div>
@@ -35,10 +35,9 @@ export function ConnectButton({
   }
 
   return (
-    // Un <a> y no un <Link>: el endpoint redirige a Meta (navegación completa).
-    <Button asChild>
+    <Button asChild className="gap-2">
       <a href={href}>
-        <Plug aria-hidden />
+        <Plug className="size-4" aria-hidden />
         {text}
       </a>
     </Button>

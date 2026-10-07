@@ -1,11 +1,8 @@
 'use client'
 
-import { Cake, Megaphone, Pencil } from 'lucide-react'
+import { Cake, ChevronLeft, ChevronRight, Megaphone, Pencil } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Disclosure } from '@/components/ui/disclosure'
-import { PeriodPicker } from '@/components/ui/period-picker'
 import {
   type BirthdayDay,
   type BirthdayMarketingRow,
@@ -16,6 +13,7 @@ import {
 } from '@/lib/salon/birthdays-report'
 import { cn } from '@/lib/utils'
 import { BirthdayMarketingForm } from './birthday-marketing-form'
+import { Disclosure } from './marketing-report'
 
 /**
  * La pestaña «Cumpleaños»: cuántos cumples tuvo el mes, día por día, con
@@ -28,16 +26,18 @@ import { BirthdayMarketingForm } from './birthday-marketing-form'
  * La pauta guardada se muestra al instante (`local`) y la reemplaza la que trae
  * el refresh apenas llega: mismo patrón que la ficha de la pauta de eventos,
  * atado a la versión de props para no parpadear entre las dos.
- *
- * El mes se elige con el `PeriodPicker` del kit (flechas de mes anterior y
- * siguiente, y la grilla de meses), el mismo de «Pauta».
  */
 
+const EYEBROW = 'text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground'
 const WEEKDAY_HEADERS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'] as const
 const WEEKDAY_NAMES = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo']
 
-/** Las tarjetas de la pestaña: cartulina, pelo y radio del kit, sin sombra. */
-const CARD = 'rounded-xl border border-border bg-card text-card-foreground'
+function shiftYM(ym: string, months: number): string {
+  const [y, m] = ym.split('-').map(Number)
+  if (!y || !m) return ym
+  const d = new Date(Date.UTC(y, m - 1 + months, 1))
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+}
 
 /** Lo que se guardó o borró recién (`row: null` = se borró), atado a la versión de props que había. */
 type LocalRow = { row: BirthdayMarketingRow | null; propsAt: string | null }
@@ -86,22 +86,36 @@ export function BirthdaysMonthView({
           : null
 
   return (
-    <div className="space-y-6">
-      {/* Mes: el título de la pestaña es para el lector (a la vista ya lo dice
-          el selector). */}
-      <h2 className="sr-only">Cumpleaños de {report.monthLabel}</h2>
-      <PeriodPicker
-        aria-label="Mes"
-        kinds={['month']}
-        value={{ kind: 'month', month: ym }}
-        onValueChange={(next) => {
-          if (next.kind === 'month') onNavigate({ vista: 'cumples', mes: next.month })
-        }}
-      />
+    <div className="space-y-5">
+      {/* Mes */}
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="Mes anterior"
+          onClick={() => onNavigate({ vista: 'cumples', mes: shiftYM(ym, -1) })}
+        >
+          <ChevronLeft className="size-4" />
+        </Button>
+        <h2 className="min-w-0 truncate font-serif text-xl font-semibold leading-tight tracking-tight sm:text-2xl">
+          {report.monthLabel}
+        </h2>
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="Mes siguiente"
+          onClick={() => onNavigate({ vista: 'cumples', mes: shiftYM(ym, 1) })}
+        >
+          <ChevronRight className="size-4" />
+        </Button>
+      </div>
 
       {/* Los números del mes */}
-      <section aria-label="Cumpleaños del mes" className={cn(CARD, '@container p-4 sm:p-5')}>
-        <p className="max-w-prose text-base leading-snug font-medium text-pretty">
+      <section
+        aria-label="Cumpleaños del mes"
+        className="card-hairline rounded-xl border bg-card p-4 @container sm:p-5"
+      >
+        <p className="max-w-prose font-serif text-base leading-snug tracking-tight sm:text-lg">
           {report.headline}
         </p>
         <Tiles tiles={report.tiles} className="mt-4" size="lg" />
@@ -116,18 +130,18 @@ export function BirthdaysMonthView({
 
       {/* Calendario */}
       <section aria-labelledby="cumples-calendario" className="space-y-2">
-        <h3 id="cumples-calendario" className="type-label text-muted-foreground">
+        <h3 id="cumples-calendario" className={EYEBROW}>
           Día por día
         </h3>
         <Calendar report={report} onDay={(day) => onNavigate({ vista: 'dia', dia: day })} />
-        <p className="type-caption text-muted-foreground">
+        <p className="text-[11px] leading-snug text-muted-foreground">
           Cuantos más cumples, más fuerte el color. Borde punteado: todavía no pasó. Tocá un día
           para ver la noche entera.
         </p>
       </section>
 
       {/* Pauta de cumpleaños */}
-      <section className={cn(CARD, '@container p-4 sm:p-5')}>
+      <section className="card-hairline rounded-xl border bg-card p-4 @container sm:p-5">
         {editing ? (
           <BirthdayMarketingForm
             tenantSlug={tenantSlug}
@@ -149,27 +163,27 @@ export function BirthdaysMonthView({
         ) : row === null || pauta === null ? (
           <>
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-              <h3 className="type-label text-muted-foreground">Pauta de cumpleaños</h3>
+              <h3 className={EYEBROW}>Pauta de cumpleaños</h3>
               <span
                 className={cn(
-                  'type-caption font-medium',
+                  'text-xs font-medium',
                   report.phase === 'past' ? 'text-warning-text' : 'text-muted-foreground',
                 )}
               >
                 Sin cargar
               </span>
             </div>
-            <p className="mt-2 max-w-prose text-pretty type-body">{report.bookedLine}</p>
-            <p className="mt-1 max-w-prose text-pretty text-xs leading-relaxed text-muted-foreground">
+            <p className="mt-2 max-w-prose text-sm leading-relaxed">{report.bookedLine}</p>
+            <p className="mt-1 max-w-prose text-xs leading-relaxed text-muted-foreground">
               {report.phase === 'past'
                 ? 'Cargá lo que se gastó en la campaña de cumpleaños y los mensajes del mes para ver cuánto cerró.'
                 : 'Si la campaña de cumpleaños ya está corriendo, cargala y la vas actualizando.'}
             </p>
             <Button
               ref={actionRef}
-              variant="secondary"
+              variant="outline"
               size="sm"
-              className="mt-3"
+              className="mt-3 h-10 @sm:h-8"
               onClick={() => setEditing(true)}
             >
               <Megaphone aria-hidden />
@@ -180,30 +194,39 @@ export function BirthdaysMonthView({
           <>
             <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
               <div className="flex items-baseline gap-2">
-                <h3 className="type-label text-muted-foreground">Pauta de cumpleaños</h3>
+                <h3 className={EYEBROW}>Pauta de cumpleaños</h3>
                 {chip ? (
-                  <Badge tone={chip.tone === 'warning' ? 'warning' : 'neutral'}>{chip.text}</Badge>
+                  <span
+                    className={cn(
+                      'inline-flex items-center rounded-full border px-1.5 text-[10px] font-medium leading-4',
+                      chip.tone === 'warning'
+                        ? 'border-warning/40 bg-warning/10 text-warning-text'
+                        : 'border-border bg-muted/60 text-muted-foreground',
+                    )}
+                  >
+                    {chip.text}
+                  </span>
                 ) : null}
               </div>
-              <div className="flex items-center gap-1">
-                <span className="type-caption tabular-nums text-muted-foreground">
+              <div className="flex items-baseline gap-1">
+                <span className="text-[11px] tabular-nums text-muted-foreground">
                   {birthdayLoadedByLabel(row)}
                 </span>
                 <Button
                   ref={actionRef}
                   variant="ghost"
                   size="sm"
-                  className="-mr-2"
+                  className="-mr-2 h-10 px-2 text-xs @sm:h-7"
                   aria-label={`Editar la pauta de cumpleaños de ${report.monthName}`}
                   onClick={() => setEditing(true)}
                 >
-                  <Pencil aria-hidden />
+                  <Pencil aria-hidden className="size-3.5" />
                   Editar
                 </Button>
               </div>
             </header>
 
-            <p className="mt-2 max-w-prose text-pretty type-body">{pauta.sentence}</p>
+            <p className="mt-2 max-w-prose text-sm leading-relaxed">{pauta.sentence}</p>
 
             <Tiles tiles={pauta.tiles} className="mt-3" size="md" />
 
@@ -212,9 +235,11 @@ export function BirthdaysMonthView({
             ) : null}
 
             {pauta.gap ? (
-              <div className="mt-4 rounded-lg bg-secondary/60 p-3 @md:p-4">
-                <p className="type-label text-muted-foreground">Lo que falta cerrar</p>
-                <p className="mt-1.5 text-base leading-snug font-medium text-pretty">{pauta.gap}</p>
+              <div className="mt-4 rounded-lg border border-border/60 bg-secondary/30 p-3 @md:p-4">
+                <p className={EYEBROW}>Lo que falta cerrar</p>
+                <p className="mt-1.5 font-serif text-base leading-snug tracking-tight @md:text-lg">
+                  {pauta.gap}
+                </p>
               </div>
             ) : null}
 
@@ -240,7 +265,7 @@ export function BirthdaysMonthView({
               </p>
             ) : null}
 
-            <Disclosure variant="inline" title="¿Cómo se calcula?" className="mt-3">
+            <Disclosure summary="¿Cómo se calcula?" className="mt-3">
               <ul className="max-w-prose list-disc space-y-1 pl-4 leading-relaxed text-muted-foreground">
                 {report.howItsCalculated.map((b) => (
                   <li key={b}>{b}</li>
@@ -269,8 +294,8 @@ function Tiles({
       className={cn(
         'grid gap-y-3',
         tiles.length === 4
-          ? 'grid-cols-2 gap-x-4 @xl:grid-cols-4 @xl:divide-x @xl:divide-border'
-          : 'grid-cols-3 gap-x-3 divide-x divide-border',
+          ? 'grid-cols-2 gap-x-4 @xl:grid-cols-4 @xl:divide-x @xl:divide-border/60'
+          : 'grid-cols-3 gap-x-3 divide-x divide-border/60',
         className,
       )}
     >
@@ -286,7 +311,7 @@ function Tiles({
         >
           <dd
             className={cn(
-              'order-1 font-display leading-none font-[520] tracking-[-0.01em]',
+              'order-1 font-serif font-semibold leading-none tracking-tight tabular-nums',
               size === 'lg' ? 'text-3xl sm:text-4xl' : 'text-2xl @xl:text-3xl',
               t.value === null && 'text-muted-foreground',
             )}
@@ -300,8 +325,10 @@ function Tiles({
               t.value
             )}
           </dd>
-          <dt className="order-2 mt-2 type-label text-muted-foreground">{t.label}</dt>
-          <dd className="order-3 mt-0.5 type-caption text-muted-foreground">{t.hint}</dd>
+          <dt className={cn(EYEBROW, 'order-2 mt-2')}>{t.label}</dt>
+          <dd className="order-3 mt-0.5 text-[11px] leading-snug text-muted-foreground">
+            {t.hint}
+          </dd>
         </div>
       ))}
     </dl>
@@ -322,13 +349,13 @@ function Calendar({
 }) {
   const max = Math.max(1, report.maxBirthdaysInDay)
   return (
-    <div className={cn(CARD, 'p-2 sm:p-3')}>
+    <div className="card-hairline rounded-xl border bg-card p-2 sm:p-3">
       <div className="grid grid-cols-7 gap-1 sm:gap-1.5" role="presentation">
         {WEEKDAY_HEADERS.map((w, i) => (
           <div
             key={WEEKDAY_NAMES[i]}
             aria-hidden
-            className="pb-1 text-center type-caption font-medium text-muted-foreground"
+            className="pb-1 text-center text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground"
           >
             {w}
           </div>
@@ -373,18 +400,16 @@ function DayCell({
           : undefined
       }
       className={cn(
-        // Sin transición en el hover: se recorre el mes con el mouse. Foco
-        // «afuera», del kit.
-        'relative flex min-h-14 flex-col items-center justify-center rounded-lg border text-center sm:min-h-20',
-        'outline-offset-2 outline-(--ring) hover:border-foreground/30 focus-visible:outline-2',
-        has ? 'border-primary/20' : 'border-border bg-muted/20',
+        'relative flex min-h-14 flex-col items-center justify-center rounded-lg border text-center outline-none transition-colors sm:min-h-20',
+        'focus-visible:ring-[3px] focus-visible:ring-ring/50 hover:border-foreground/30',
+        has ? 'border-primary/20' : 'border-border/50 bg-muted/20',
         day.phase === 'future' && 'border-dashed',
         day.phase === 'tonight' && 'ring-2 ring-primary',
       )}
     >
       <span
         aria-hidden
-        className="absolute left-1.5 top-1 type-caption tabular-nums text-muted-foreground sm:left-2 sm:top-1.5"
+        className="absolute left-1.5 top-1 text-[10px] tabular-nums text-muted-foreground sm:left-2 sm:top-1.5"
       >
         {day.dayOfMonth}
       </span>
@@ -392,14 +417,14 @@ function DayCell({
         <>
           <span
             aria-hidden
-            className="mt-2 inline-flex items-center gap-1 font-display text-lg leading-none font-[520] sm:text-2xl"
+            className="mt-2 inline-flex items-center gap-1 font-serif text-lg font-semibold leading-none tabular-nums sm:text-2xl"
           >
             <Cake className="hidden size-3.5 text-primary sm:inline" />
             {day.birthdays}
           </span>
           <span
             aria-hidden
-            className="mt-1 hidden type-caption tabular-nums text-muted-foreground sm:block"
+            className="mt-1 hidden text-[10px] leading-none tabular-nums text-muted-foreground sm:block"
           >
             {day.guests} pers.
           </span>

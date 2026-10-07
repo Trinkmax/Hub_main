@@ -1,6 +1,5 @@
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import { getAppUrl } from '@/lib/app-url'
 import { getOrCreateCanonicalCaptureLink } from '@/lib/capture/canonical'
 import {
@@ -41,17 +40,17 @@ export default async function CapturaConfigPage({
   const clubUrl = `${cartaUrl}?club=1`
 
   return (
-    // Dos tarjetas de QR lado a lado: 4xl, entre el ancho compacto y el cómodo.
-    <PageShell width="compact" className="max-w-4xl">
+    <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <PageHeader
+        eyebrow="Tu local"
         title="QR de la carta y del club"
-        description="Son dos y no cambian nunca. El de la carta va en las mesas; el del club lo muestra el mozo al cerrar la cuenta para invitar a sumarse."
+        description="Dos QRs, nada más. La carta para las mesas, y el del club que el mozo muestra al cerrar la cuenta para invitar a sumarse."
       />
 
-      <div className="grid gap-6 sm:grid-cols-2">
+      <div className="grid gap-5 sm:grid-cols-2">
         <QrCard
           title="Carta"
-          description="Pegalo en las mesas. Tus clientes ven la carta completa, sin descargar nada ni registrarse."
+          description="Pegalo en las mesas. Tus clientes ven la carta completa, sin descargar nada ni loguearse."
           url={cartaUrl}
           downloadName={`qr-carta-${tenantSlug}.png`}
           printHref={`/print/carta/${tenantSlug}`}
@@ -63,6 +62,6 @@ export default async function CapturaConfigPage({
           downloadName={`qr-club-${tenantSlug}.png`}
         />
       </div>
-    </PageShell>
+    </div>
   )
 }

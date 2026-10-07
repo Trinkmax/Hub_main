@@ -6,8 +6,8 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui-legacy/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui-legacy/tabs'
+import { Button } from '@/components/ui/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   type ActiveSessionStateData,
   joinSession,
@@ -287,7 +287,7 @@ export function MesaScreen({
       {/* Glow sutil top */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-72 bg-gradient-to-b to-transparent"
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-72 bg-gradient-to-b from-[--forest-glow] via-[--forest-glow]/40 to-transparent"
       />
 
       <div className="mx-auto max-w-md px-4 pt-6">

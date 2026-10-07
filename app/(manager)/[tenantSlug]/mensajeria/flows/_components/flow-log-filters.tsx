@@ -4,9 +4,6 @@ import { RefreshCw, X } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useTransition } from 'react'
 import { Button } from '@/components/ui/button'
-import { Combobox } from '@/components/ui/combobox'
-import { DataTableToolbar } from '@/components/ui/data-table'
-import { type Period, PeriodPicker } from '@/components/ui/period-picker'
 import {
   Select,
   SelectContent,
@@ -14,22 +11,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { endOfMonth, periodRange, todayInCordoba } from '@/lib/dates'
 import { ACTION_OPTIONS, STATUS_OPTIONS } from '@/lib/flows/execution-log-labels'
 import type { FlowLogContact } from '@/lib/flows/execution-log-queries'
 
 // Filtros del registro de ejecuciones. Todo vive en la URL (searchParams) para
 // que la página siga siendo un Server Component y el estado sea compartible.
-// El período sigue viajando como `desde`/`hasta` (los links viejos andan): el
-// PeriodPicker del kit va en modo controlado y escribe esos dos parámetros.
-
-/** `desde`/`hasta` → el período que mejor los describe: un día, un mes entero o un rango. */
-function periodFromRange(desde: string, hasta: string): Period {
-  if (desde === hasta) return { kind: 'day', date: desde }
-  const month = desde.slice(0, 7)
-  if (desde.endsWith('-01') && hasta === endOfMonth(month)) return { kind: 'month', month }
-  return { kind: 'range', from: desde, to: hasta }
-}
 
 export function FlowLogFilters({
   contacts,
@@ -46,27 +32,13 @@ export function FlowLogFilters({
   const searchParams = useSearchParams()
   const [pending, start] = useTransition()
 
-  // `replace` y no `push`: cambiar un filtro no deja una entrada por tecla en el historial.
-  const navigate = (next: URLSearchParams) => {
-    // Cambiar un filtro siempre vuelve a la primera página.
-    next.delete('page')
-    const query = next.toString()
-    start(() => router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false }))
-  }
-
   const setParam = (key: string, value: string | null) => {
     const next = new URLSearchParams(searchParams.toString())
     if (value && value.length > 0) next.set(key, value)
     else next.delete(key)
-    navigate(next)
-  }
-
-  const setPeriod = (period: Period) => {
-    const { from, to } = periodRange(period)
-    const next = new URLSearchParams(searchParams.toString())
-    next.set('desde', from)
-    next.set('hasta', to)
-    navigate(next)
+    // Cambiar un filtro siempre vuelve a la primera página.
+    next.delete('page')
+    start(() => router.replace(`${pathname}?${next.toString()}`, { scroll: false }))
   }
 
   const accion = searchParams.get('accion') ?? ''
@@ -77,24 +49,41 @@ export function FlowLogFilters({
   )
 
   return (
-    <DataTableToolbar
-      role="group"
-      aria-label="Filtros del registro"
-      aria-busy={pending || undefined}
+    <div
+      className="card-hairline flex flex-col gap-2 rounded-xl border bg-card/60 p-2 sm:flex-row sm:flex-wrap sm:items-center"
+      aria-busy={pending}
     >
-      <PeriodPicker
-        aria-label="Período del registro"
-        kinds={['day', 'month', 'range']}
-        value={periodFromRange(desde, hasta)}
-        onValueChange={setPeriod}
-        max={todayInCordoba()}
-      />
+      <div className="flex items-center gap-1.5">
+        <label className="sr-only" htmlFor="log-desde">
+          Desde
+        </label>
+        <input
+          id="log-desde"
+          type="date"
+          value={desde}
+          max={hasta}
+          onChange={(e) => setParam('desde', e.target.value)}
+          className="h-9 rounded-lg border border-transparent bg-background/40 px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/40"
+        />
+        <span className="text-xs text-muted-foreground">a</span>
+        <label className="sr-only" htmlFor="log-hasta">
+          Hasta
+        </label>
+        <input
+          id="log-hasta"
+          type="date"
+          value={hasta}
+          min={desde}
+          onChange={(e) => setParam('hasta', e.target.value)}
+          className="h-9 rounded-lg border border-transparent bg-background/40 px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/40"
+        />
+      </div>
 
       <Select
         value={accion || 'all'}
         onValueChange={(v) => setParam('accion', v === 'all' ? null : v)}
       >
-        <SelectTrigger aria-label="Acción" className="sm:w-44">
+        <SelectTrigger className="h-9 sm:w-[180px]">
           <SelectValue placeholder="Todas las acciones" />
         </SelectTrigger>
         <SelectContent>
@@ -111,7 +100,7 @@ export function FlowLogFilters({
         value={estado || 'all'}
         onValueChange={(v) => setParam('estado', v === 'all' ? null : v)}
       >
-        <SelectTrigger aria-label="Estado" className="sm:w-40">
+        <SelectTrigger className="h-9 sm:w-[170px]">
           <SelectValue placeholder="Todos los estados" />
         </SelectTrigger>
         <SelectContent>
@@ -124,43 +113,47 @@ export function FlowLogFilters({
         </SelectContent>
       </Select>
 
-      {/* Muchos contactos: buscador (Combobox) en vez de una lista larga. */}
-      <Combobox
-        aria-label="Contacto"
-        className="sm:w-52"
-        clearable
-        placeholder="Todos los contactos"
-        searchPlaceholder="Buscar contacto…"
-        emptyText="No encontramos ese contacto en este registro."
-        value={contacto || null}
-        onValueChange={(v) => setParam('contacto', typeof v === 'string' ? v : null)}
-        options={contacts.map((c) => ({
-          value: c.id,
-          label: `${c.first_name} ${c.last_name}`.trim(),
-        }))}
-      />
+      <Select
+        value={contacto || 'all'}
+        onValueChange={(v) => setParam('contacto', v === 'all' ? null : v)}
+      >
+        <SelectTrigger className="h-9 sm:w-[200px]">
+          <SelectValue placeholder="Seleccionar contacto" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Todos los contactos</SelectItem>
+          {contacts.map((c) => (
+            <SelectItem key={c.id} value={c.id}>
+              {c.first_name} {c.last_name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
-      <div className="flex items-center gap-2 sm:ms-auto">
+      <div className="flex items-center gap-1.5 sm:ml-auto">
         {hasFilters ? (
           <Button
             type="button"
             variant="ghost"
+            size="sm"
             onClick={() => start(() => router.replace(pathname, { scroll: false }))}
+            className="h-9 gap-1.5 text-muted-foreground"
           >
-            <X aria-hidden />
-            Limpiar filtros
+            <X className="size-3.5" />
+            Limpiar
           </Button>
         ) : null}
         <Button
           type="button"
-          variant="secondary"
+          variant="outline"
+          size="sm"
           onClick={() => start(() => router.refresh())}
-          loading={pending}
+          className="h-9 gap-1.5"
         >
-          <RefreshCw aria-hidden />
+          <RefreshCw className={pending ? 'size-3.5 animate-spin' : 'size-3.5'} />
           Actualizar
         </Button>
       </div>
-    </DataTableToolbar>
+    </div>
   )
 }

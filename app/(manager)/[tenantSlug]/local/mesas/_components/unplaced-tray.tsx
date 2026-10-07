@@ -2,18 +2,27 @@
 
 import { MapPin, Trash2 } from 'lucide-react'
 import { useState } from 'react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { ConfirmDialog, type ConfirmResult } from '@/components/ui/confirm-dialog'
 import type { UnplacedTable } from '@/lib/floor-plan/queries'
 
 type UnplacedTrayProps = {
   tables: UnplacedTable[]
   onPlace: (tableId: string) => void
-  /** Borra la mesa (y su QR) definitivamente. Si falla, el diálogo queda abierto con el error. */
-  onDelete: (tableId: string) => Promise<ConfirmResult>
+  /** Borra la mesa (y su QR) definitivamente. */
+  onDelete: (tableId: string) => void
 }
 
-function TrayRow({
+function TrayChip({
   table,
   onPlace,
   onAskDelete,
@@ -23,76 +32,75 @@ function TrayRow({
   onAskDelete: (table: UnplacedTable) => void
 }) {
   return (
-    <li className="flex items-center gap-2 py-2">
+    <li className="flex items-center gap-1.5 rounded-lg border bg-background px-2 py-1.5">
       <div className="min-w-0 flex-1">
-        <p className="truncate type-body font-medium text-foreground">{table.label}</p>
-        {/* Puede bajar un renglón: truncado, el código del QR quedaba en «mesa…». */}
-        <p className="break-words type-caption text-muted-foreground">
-          {table.capacity != null ? `${table.capacity} personas` : 'Sin capacidad'} ·{' '}
-          <code className="font-mono">{table.qr_token}</code>
+        <p className="truncate font-medium text-sm">{table.label}</p>
+        <p className="truncate text-muted-foreground text-xs">
+          {table.capacity != null ? `${table.capacity} pers.` : 'Sin capacidad'} ·{' '}
+          <code>{table.qr_token}</code>
         </p>
       </div>
       <Button
-        type="button"
-        size="icon-sm"
-        variant="danger-ghost"
+        size="icon"
+        variant="ghost"
+        className="size-8 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
         onClick={() => onAskDelete(table)}
-        aria-label={`Borrar la mesa ${table.label}`}
+        aria-label={`Eliminar mesa ${table.label}`}
+        title="Eliminar mesa"
       >
-        <Trash2 aria-hidden />
+        <Trash2 className="size-3.5" />
       </Button>
-      <Button type="button" size="sm" variant="secondary" onClick={() => onPlace(table.id)}>
-        <MapPin aria-hidden />
+      <Button size="sm" variant="outline" className="shrink-0" onClick={() => onPlace(table.id)}>
+        <MapPin className="size-3.5" />
         Colocar
       </Button>
     </li>
   )
 }
 
-/**
- * Bandeja del costado cuando no hay nada elegido: las mesas activas que no
- * están en ningún plano. «Colocar» la pone en el centro del área.
- */
 export function UnplacedTray({ tables, onPlace, onDelete }: UnplacedTrayProps) {
-  // La mesa a borrar queda guardada al cerrar: el título no cambia durante la salida.
-  const [target, setTarget] = useState<UnplacedTable | null>(null)
-  const [confirmOpen, setConfirmOpen] = useState(false)
-  const askDelete = (table: UnplacedTable) => {
-    setTarget(table)
-    setConfirmOpen(true)
-  }
+  const [pending, setPending] = useState<UnplacedTable | null>(null)
 
   return (
-    <section aria-labelledby="unplaced-tray-title" className="flex flex-col gap-2">
-      <div className="flex flex-col gap-1">
-        <h2 id="unplaced-tray-title" className="type-subtitle text-foreground">
-          Mesas sin ubicar
-        </h2>
-        <p className="type-small text-pretty text-muted-foreground">
-          {tables.length === 0
-            ? 'No hay ninguna. Las mesas que quites del plano aparecen acá, con su QR.'
-            : 'Tocá «Colocar» para ponerla en el centro del área y después arrastrala.'}
-        </p>
-      </div>
-      {tables.length > 0 ? (
-        <ul className="divide-y divide-border">
+    <section aria-label="Mesas no ubicadas" className="grid gap-2">
+      <h2 className="font-display font-semibold text-sm">Mesas sin ubicar</h2>
+      {tables.length === 0 ? (
+        <p className="text-muted-foreground text-xs">No hay mesas activas pendientes de ubicar.</p>
+      ) : (
+        <ul className="grid gap-1.5">
           {tables.map((table) => (
-            <TrayRow key={table.id} table={table} onPlace={onPlace} onAskDelete={askDelete} />
+            <TrayChip key={table.id} table={table} onPlace={onPlace} onAskDelete={setPending} />
           ))}
         </ul>
-      ) : null}
+      )}
 
-      <ConfirmDialog
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        tone="danger"
-        icon={Trash2}
-        title={`¿Borrar la mesa «${target?.label ?? ''}»?`}
-        description="Se borran la mesa y su QR para siempre. Si ya se usó alguna vez, no se puede borrar: desactivala desde «Lista de mesas»."
-        confirmLabel="Borrar mesa"
-        pendingLabel="Borrando…"
-        onConfirm={() => (target ? onDelete(target.id) : undefined)}
-      />
+      <AlertDialog
+        open={pending !== null}
+        onOpenChange={(o) => {
+          if (!o) setPending(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar la mesa "{pending?.label}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se borra la mesa y su QR de forma definitiva. Si la mesa tuvo sesiones, no se podrá
+              borrar (desactivala en su lugar). Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pending) onDelete(pending.id)
+                setPending(null)
+              }}
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   )
 }

@@ -1,35 +1,21 @@
-import { PageShell } from '@/components/ui/page-shell'
-import { Skeleton, SkeletonForm, SkeletonStatus } from '@/components/ui/skeleton'
-import { WaSkeletonPageHeader } from '../../_components/wa-skeletons'
+import { Skeleton } from '@/components/ui/skeleton'
 
 export default function Loading() {
   return (
-    <PageShell width="compact" aria-busy="true">
-      <SkeletonStatus label="Preparando la difusión…" />
-      <WaSkeletonPageHeader />
-      {/* Pasos del asistente (en el celular, solo el actual) */}
-      <div aria-hidden="true" className="flex items-center gap-3">
-        {[0, 1, 2, 3, 4, 5].map((i) => (
-          <div
-            key={i}
-            className={
-              i === 0
-                ? 'flex flex-1 items-center gap-3'
-                : 'hidden flex-1 items-center gap-3 sm:flex'
-            }
-          >
-            <Skeleton className="size-6 shrink-0 rounded-full" />
-            <Skeleton className="h-3 w-full max-w-20" />
-          </div>
+    <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      <Skeleton className="h-4 w-32" />
+      <div className="space-y-2">
+        <Skeleton className="h-3 w-20" />
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-4 w-80" />
+      </div>
+      <Skeleton className="h-14 w-full rounded-xl" />
+      <div className="card-hairline space-y-4 rounded-xl border bg-card p-6">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={`field-${i.toString()}`} className="h-10 w-full" />
         ))}
+        <Skeleton className="h-10 w-32" />
       </div>
-      <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
-        <SkeletonForm fields={2} actions={false} />
-      </div>
-      <div aria-hidden="true" className="flex justify-between gap-2">
-        <Skeleton className="h-(--control-md) w-24 rounded-md" />
-        <Skeleton className="h-(--control-md) w-28 rounded-md" />
-      </div>
-    </PageShell>
+    </div>
   )
 }

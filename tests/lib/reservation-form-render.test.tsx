@@ -126,24 +126,17 @@ async function render(initialValues: Record<string, unknown>, mode: 'create' | '
   )
 }
 
-/**
- * El `<button role="radio">` de una tarjeta de "Dónde se sienta" (las
- * `RadioCards` del kit), por el texto que muestra.
- */
+/** El `<button>` de una tarjeta de "Dónde se sienta", por el texto que muestra. */
 function tile(html: string, text: string): string {
   const at = html.indexOf(`>${text}<`)
   expect(at).toBeGreaterThan(-1)
   const start = html.lastIndexOf('<button', at)
-  const button = html.slice(start, html.indexOf('>', start) + 1)
-  expect(button).toContain('role="radio"')
-  return button
+  return html.slice(start, html.indexOf('>', start) + 1)
 }
 
-/** La opción (radio) de "¿Dónde se sientan?" para una zona: las que vienen después de la pregunta. */
+/** El `<input type="radio">` de "¿Dónde se sientan?" para una zona. */
 function floorRadio(html: string, zone: string): string {
-  const question = html.indexOf('¿Dónde se sientan?')
-  expect(question).toBeGreaterThan(-1)
-  const radios = html.slice(question).match(/<button[^>]*role="radio"[^>]*>/g) ?? []
+  const radios = html.match(/<input[^>]*name="event_floor"[^>]*>/g) ?? []
   const radio = radios.find((r) => r.includes(`value="${zone}"`))
   expect(radio).toBeDefined()
   return radio ?? ''
@@ -156,15 +149,15 @@ describe('ReservationForm · planta dentro de un evento (SSR)', () => {
       'edit',
     )
     // La tarjeta suelta de Planta Alta NO: la reserva es del evento.
-    expect(tile(html, 'Planta Alta')).toContain('aria-checked="false"')
-    expect(tile(html, 'Pizza libre')).toContain('aria-checked="true"')
+    expect(tile(html, 'Planta Alta')).toContain('aria-pressed="false"')
+    expect(tile(html, 'Pizza libre')).toContain('aria-pressed="true"')
     // La tarjeta del evento repite la planta elegida.
     expect(html).toContain('Evento · Planta Alta')
     // La pregunta aparece y Planta Alta es la elegida.
     expect(html).toContain('¿Dónde se sientan?')
     expect(html).toContain('(opcional)')
-    expect(floorRadio(html, 'planta_alta')).toContain('aria-checked="true"')
-    expect(floorRadio(html, 'event_floating')).toContain('aria-checked="false"')
+    expect(floorRadio(html, 'planta_alta')).toContain('checked')
+    expect(floorRadio(html, 'event_floating')).not.toContain('checked')
   })
 
   it('alta desde un evento, sin planta: "Sin definir" elegido', async () => {
@@ -172,20 +165,21 @@ describe('ReservationForm · planta dentro de un evento (SSR)', () => {
       { zone: 'event_floating', scheduled_event_id: PIZZA_ID, meal_type: 'dinner' },
       'create',
     )
-    expect(tile(html, 'Pizza libre')).toContain('aria-checked="true"')
-    expect(floorRadio(html, 'event_floating')).toContain('aria-checked="true"')
+    expect(tile(html, 'Pizza libre')).toContain('aria-pressed="true"')
+    expect(floorRadio(html, 'event_floating')).toContain('checked')
     expect(html).toContain('Sin definir')
     // Al lado de cada planta de la pregunta, la gente que ya hay en la cena.
     const question = html.indexOf('¿Dónde se sientan?')
-    const chooser = html.slice(question, html.indexOf('Tipo de reserva', question))
+    const chooser = html.slice(question, html.indexOf('</fieldset>', question))
     expect(chooser).toContain('10 en la cena')
     expect(chooser).toContain('0 en la cena')
   })
 
   it('reserva normal: la tarjeta de su planta y sin la pregunta del evento', async () => {
     const html = await render({ zone: 'planta_baja', meal_type: 'dinner' }, 'create')
-    expect(tile(html, 'Planta Baja')).toContain('aria-checked="true"')
-    expect(tile(html, 'Pizza libre')).toContain('aria-checked="false"')
+    expect(tile(html, 'Planta Baja')).toContain('aria-pressed="true"')
+    expect(tile(html, 'Pizza libre')).toContain('aria-pressed="false"')
     expect(html).not.toContain('¿Dónde se sientan?')
+    expect(html).not.toContain('name="event_floor"')
   })
 })

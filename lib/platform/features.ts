@@ -15,9 +15,8 @@ export type FeatureKey =
   | 'auto_accept' // auto-aceptación de comandas /local/auto-aceptacion
   | 'kitchen' // pantalla de cocina /salon/cocina
   | 'reviews' // panel de reseñas del manager (Fase 4)
-  | 'accounting' // Administración: contabilidad de la SAS /administracion (Sprint 1)
 
-export type FeatureGroup = 'Salón' | 'Fidelización' | 'Administración'
+export type FeatureGroup = 'Salón' | 'Fidelización'
 
 export type FeatureDef = {
   key: FeatureKey
@@ -69,17 +68,6 @@ export const FEATURE_REGISTRY: Readonly<Record<FeatureKey, FeatureDef>> = {
     label: 'Reseñas',
     description: 'Panel de reseñas y pedido de reseña al cliente.',
     group: 'Fidelización',
-    defaultEnabled: false,
-  },
-  // El interruptor de emergencia de todo el módulo: apagado, las RLS no
-  // devuelven nada, las RPC dan `accounting_not_enabled` y /administracion da
-  // 404. A diferencia del resto, prenderlo no le abre nada al superadmin por
-  // serlo: además tiene que ser dueño con acceso (lo decide la base).
-  accounting: {
-    key: 'accounting',
-    label: 'Administración',
-    description: 'Contabilidad de la SAS: compras, pagos, ventas, cajas, IVA y libros.',
-    group: 'Administración',
     defaultEnabled: false,
   },
 } as const

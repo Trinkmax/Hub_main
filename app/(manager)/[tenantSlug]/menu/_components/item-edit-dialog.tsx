@@ -1,28 +1,32 @@
 'use client'
 
-import { Megaphone, Plus, Sparkles, Tag, Trash2 } from 'lucide-react'
+import { Check, Megaphone, Plus, Sparkles, Tag, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { MenuImageUploader } from '@/components/media/image-uploader'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { Callout } from '@/components/ui/callout'
-import { Checkbox } from '@/components/ui/checkbox'
-import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import {
   Dialog,
-  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Field, FieldRow } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { MoneyField } from '@/components/ui/money-field'
-import { NumberField } from '@/components/ui/number-field'
+import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
@@ -32,15 +36,16 @@ import { deleteMenuItem, updateMenuItem } from '@/lib/menu/actions'
 import type { MenuCategory, MenuItem } from '@/lib/menu/queries'
 import { deleteMenuImageByUrl } from '@/lib/menu/upload-image'
 import { deleteMenuVideoByUrl } from '@/lib/menu/upload-video'
-import { cn } from '@/lib/utils'
 import { CategoryTreePicker } from './category-tree-picker'
-import { TagDot } from './menu-ui'
-import { WHOLE_PESOS_MESSAGE } from './new-item-form'
+import { MenuImageUploader } from './image-uploader'
 import { MenuVideoUploader } from './video-uploader'
 
 const NEW_TAG_DEFAULT_COLOR = '#94a3b8'
 
-type EditTab = 'info' | 'tags' | 'advanced'
+function fmtARS(cents: number): string {
+  if (!Number.isFinite(cents)) return ''
+  return `$${(cents / 100).toLocaleString('es-AR', { maximumFractionDigits: 0 })}`
+}
 
 export function ItemEditDialog({
   item,
@@ -64,37 +69,33 @@ export function ItemEditDialog({
   /** Se llama con el id tras eliminar, para sacar la card sin re-navegar. */
   onDeleted?: (id: string) => void
   /** Pestaña inicial. 'tags' cuando se abre desde "Etiquetas…" del card. */
-  defaultTab?: EditTab
+  defaultTab?: 'info' | 'tags' | 'advanced'
 }) {
-  const [tab, setTab] = useState<EditTab>(defaultTab)
   const [name, setName] = useState(item.name)
-  const [nameError, setNameError] = useState<string | null>(null)
   const [description, setDescription] = useState(item.description ?? '')
   const [categoryId, setCategoryId] = useState(item.category_id)
-  // El precio se edita en pesos enteros (la carta no muestra centavos) y viaja
-  // en centavos, como guarda la base (CLAUDE.md §2). Arranca redondeado a pesos,
-  // como antes.
-  const [priceCents, setPriceCents] = useState<number | null>(
-    Math.round(item.price_cents / 100) * 100,
+  // Input en pesos (entero). Internamente convertimos a centavos antes de
+  // mandar al action — la DB sigue guardando en centavos (CLAUDE.md §2).
+  const [priceInput, setPriceInput] = useState(String(Math.round(item.price_cents / 100)))
+  const [pointsOverride, setPointsOverride] = useState(
+    item.points_override === null ? '' : String(item.points_override),
   )
-  const [priceError, setPriceError] = useState<string | null>(null)
-  const [pointsOverride, setPointsOverride] = useState<number | null>(item.points_override)
   const [imageUrl, setImageUrl] = useState<string | null>(item.image_url ?? null)
   const [videoUrl, setVideoUrl] = useState<string | null>(item.video_url ?? null)
   const [active, setActive] = useState(item.active)
   const router = useRouter()
   const [featured, setFeatured] = useState(item.featured)
 
-  // Estado local de tags asignadas. El diálogo trabaja optimista contra la UI;
+  // Estado local de tags asignadas. El sheet trabaja optimista contra la UI;
   // recién al hacer "Guardar" mandamos el set completo a updateMenuItem,
   // que internamente llama a setItemTags con approach diff.
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(item.tags.map((t) => t.id))
 
   // Lista local de tags del tenant — la mutamos cuando creamos una nueva
-  // desde acá adentro, para no cerrar el diálogo y volver a abrirlo.
+  // desde acá adentro, para no cerrar el sheet y volver a abrirlo.
   const [tagsLocal, setTagsLocal] = useState<ItemTagRow[]>(allTags)
 
-  // Sub-form de "crear tag" dentro de la pestaña.
+  // Sub-form de "crear tag" dentro de la tab.
   const [showNewTagForm, setShowNewTagForm] = useState(false)
   const [newTagName, setNewTagName] = useState('')
   const [newTagColor, setNewTagColor] = useState(NEW_TAG_DEFAULT_COLOR)
@@ -102,6 +103,11 @@ export function ItemEditDialog({
 
   const [pending, startTransition] = useTransition()
   const [creatingTag, startCreatingTag] = useTransition()
+  const [deleting, startDelete] = useTransition()
+
+  const priceParsedPesos = Number.parseInt(priceInput, 10)
+  const priceValid = !Number.isNaN(priceParsedPesos) && priceParsedPesos >= 0
+  const priceCents = priceValid ? priceParsedPesos * 100 : 0
 
   const toggleTagLocal = (id: string) => {
     setSelectedTagIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
@@ -109,21 +115,18 @@ export function ItemEditDialog({
 
   const onSave = () => {
     if (name.trim().length === 0) {
-      setNameError('El nombre es obligatorio.')
-      setTab('info')
+      toast.error('El nombre es obligatorio.')
       return
     }
-    if (priceCents === null) {
-      setPriceError('Escribí el precio en pesos.')
-      setTab('info')
+    if (!priceValid) {
+      toast.error('Precio inválido.')
       return
     }
-    if (priceCents % 100 !== 0) {
-      setPriceError(WHOLE_PESOS_MESSAGE)
-      setTab('info')
+    const pts = pointsOverride === '' ? null : Number.parseInt(pointsOverride, 10)
+    if (pts !== null && Number.isNaN(pts)) {
+      toast.error('Puntos extra inválidos.')
       return
     }
-    const pts = pointsOverride
     startTransition(async () => {
       const r = await updateMenuItem(tenantSlug, {
         id: item.id,
@@ -222,79 +225,115 @@ export function ItemEditDialog({
       setNewTagName('')
       setNewTagColor(NEW_TAG_DEFAULT_COLOR)
       setShowNewTagForm(false)
-      toast.success(`Etiqueta «${trimmed}» creada.`)
+      toast.success(`Etiqueta "${trimmed}" creada.`)
+    })
+  }
+
+  const onDelete = () => {
+    startDelete(async () => {
+      const r = await deleteMenuItem(tenantSlug, item.id)
+      if (r.ok) {
+        onDeleted?.(item.id)
+        toast.success('Ítem eliminado.')
+        router.refresh()
+        onClose()
+      } else {
+        toast.error(r.message)
+      }
     })
   }
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent size="lg">
-        <DialogHeader>
-          <DialogTitle>Editar ítem</DialogTitle>
+      <DialogContent className="flex max-h-[92dvh] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogHeader className="border-b border-border/60 px-6 py-4">
+          <DialogTitle className="font-serif text-2xl font-semibold tracking-tight">
+            Editar ítem
+          </DialogTitle>
           <DialogDescription>
-            Nombre, precio, fotos, etiquetas y la configuración avanzada.
+            Cambios en nombre, precio, etiquetas y configuración avanzada.
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs
-          value={tab}
-          onValueChange={(v) => setTab(v as EditTab)}
-          className="flex min-h-0 flex-1 flex-col gap-4"
-        >
-          <TabsList aria-label="Partes del ítem">
+        <Tabs defaultValue={defaultTab} className="flex flex-1 min-h-0 flex-col">
+          <TabsList className="mx-6 mt-4 grid w-auto grid-cols-3">
             <TabsTrigger value="info">Información</TabsTrigger>
-            <TabsTrigger value="tags" count={selectedTagIds.length}>
-              Etiquetas
-            </TabsTrigger>
+            <TabsTrigger value="tags">Etiquetas</TabsTrigger>
             <TabsTrigger value="advanced">Avanzado</TabsTrigger>
           </TabsList>
 
-          <DialogBody>
-            <TabsContent value="info" className="grid gap-4">
-              <Field label="Nombre" required error={nameError}>
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+            <TabsContent value="info" className="m-0 grid gap-4 outline-none">
+              <div className="grid gap-1.5">
+                <Label htmlFor="item-name">Nombre</Label>
                 <Input
+                  id="item-name"
                   value={name}
-                  onChange={(e) => {
-                    setName(e.target.value)
-                    if (nameError) setNameError(null)
-                  }}
+                  onChange={(e) => setName(e.target.value)}
                   maxLength={80}
+                  required
                 />
-              </Field>
+              </div>
 
-              <Field label="Descripción" optional>
+              <div className="grid gap-1.5">
+                <Label htmlFor="item-desc">Descripción</Label>
                 <Textarea
+                  id="item-desc"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   maxLength={300}
-                  showCount
                   rows={3}
-                  placeholder="Lo que lee el cliente: ingredientes, si pica, de dónde viene…"
+                  placeholder="Notas que verá el cliente (ingredientes, picante, etc.)"
                 />
-              </Field>
+                <p className="text-[11px] tabular-nums text-muted-foreground">
+                  {description.length}/300
+                </p>
+              </div>
 
-              <FieldRow>
-                <Field label="Precio" required error={priceError} hint="En pesos, sin centavos.">
-                  <MoneyField
-                    decimals="auto"
-                    cents={priceCents}
-                    onCentsChange={(cents) => {
-                      setPriceCents(cents)
-                      if (priceError) setPriceError(null)
-                    }}
-                    placeholder="15.500"
-                  />
-                </Field>
-                <Field label="Puntos extra" optional hint="Se suman cuando alguien pide este ítem.">
-                  <NumberField
-                    min={0}
-                    steppers={false}
-                    placeholder="—"
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="item-price">Precio</Label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                      $
+                    </span>
+                    <Input
+                      id="item-price"
+                      type="number"
+                      min={0}
+                      step={1}
+                      inputMode="numeric"
+                      value={priceInput}
+                      onChange={(e) => setPriceInput(e.target.value)}
+                      className="pl-7 tabular-nums"
+                      placeholder="15500"
+                    />
+                  </div>
+                  <p className="text-[11px] tabular-nums text-muted-foreground">
+                    {priceValid ? fmtARS(priceCents) : 'Ingresá el precio en pesos.'}
+                  </p>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="item-pts" className="flex items-center gap-1.5">
+                    Puntos extra
+                    <span className="text-[10px] font-normal text-muted-foreground">
+                      (opcional)
+                    </span>
+                  </Label>
+                  <Input
+                    id="item-pts"
+                    type="number"
+                    step={1}
                     value={pointsOverride}
-                    onValueChange={setPointsOverride}
+                    onChange={(e) => setPointsOverride(e.target.value)}
+                    placeholder="—"
+                    className="tabular-nums"
                   />
-                </Field>
-              </FieldRow>
+                  <p className="text-[11px] text-muted-foreground">
+                    Sumá estos puntos cuando alguien pida este ítem.
+                  </p>
+                </div>
+              </div>
 
               <MenuImageUploader
                 tenantId={tenantId}
@@ -306,49 +345,46 @@ export function ItemEditDialog({
               <MenuVideoUploader tenantId={tenantId} value={videoUrl} onChange={setVideoUrl} />
             </TabsContent>
 
-            <TabsContent value="tags" className="grid gap-4">
-              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                <div className="grid gap-0.5">
-                  <p className="type-label text-foreground">Etiquetas del ítem</p>
-                  <p className="type-small text-muted-foreground">
-                    Marcá las que apliquen: se ven como chips en la carta.
+            <TabsContent value="tags" className="m-0 grid gap-4 outline-none">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">Etiquetas asignadas</p>
+                  <p className="text-xs text-muted-foreground">
+                    Marcá las que apliquen. Aparecen como pills en la carta.
                   </p>
                 </div>
-                <span className="type-caption type-amount text-muted-foreground">
+                <span className="text-[11px] tabular-nums text-muted-foreground">
                   {selectedTagIds.length} de {tagsLocal.length}
                 </span>
               </div>
 
               {tagsLocal.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-border-strong px-4 py-6 text-center type-small text-muted-foreground">
-                  <Tag className="mx-auto mb-2 size-5" aria-hidden="true" />
-                  Todavía no creaste etiquetas.
-                </p>
+                <div className="rounded-lg border border-dashed border-border/70 bg-background/30 p-6 text-center">
+                  <Tag className="mx-auto mb-2 size-5 text-muted-foreground" aria-hidden />
+                  <p className="text-sm text-muted-foreground">Todavía no creaste etiquetas.</p>
+                </div>
               ) : (
-                <ul
-                  aria-label="Etiquetas"
-                  className="grid gap-0.5 rounded-lg border border-border bg-card p-1"
-                >
+                <ul className="card-hairline grid gap-1 rounded-lg border bg-card p-1.5">
                   {tagsLocal.map((t) => {
                     const checked = selectedTagIds.includes(t.id)
-                    const checkboxId = `item-${item.id}-tag-${t.id}`
                     return (
                       <li key={t.id}>
-                        <label
-                          htmlFor={checkboxId}
-                          className={cn(
-                            'flex min-h-11 cursor-pointer items-center gap-3 rounded-md px-2.5',
-                            checked ? 'bg-selected' : 'hover:bg-hover',
-                          )}
+                        <button
+                          type="button"
+                          onClick={() => toggleTagLocal(t.id)}
+                          aria-pressed={checked}
+                          className={`flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left text-sm transition-colors ${
+                            checked ? 'bg-primary/10 text-foreground' : 'hover:bg-secondary/40'
+                          }`}
                         >
-                          <Checkbox
-                            id={checkboxId}
-                            checked={checked}
-                            onCheckedChange={() => toggleTagLocal(t.id)}
+                          <span
+                            aria-hidden
+                            className="size-3 shrink-0 rounded-full border border-border/40"
+                            style={{ backgroundColor: t.color }}
                           />
-                          <TagDot color={t.color} className="size-3" />
-                          <span className="flex-1 truncate type-body font-medium">{t.name}</span>
-                        </label>
+                          <span className="flex-1 truncate font-medium">{t.name}</span>
+                          {checked ? <Check className="size-4 text-primary" aria-hidden /> : null}
+                        </button>
                       </li>
                     )
                   })}
@@ -356,134 +392,160 @@ export function ItemEditDialog({
               )}
 
               {showNewTagForm ? (
-                <div className="grid gap-2 rounded-lg border border-border p-3">
-                  <p className="type-label text-foreground">Nueva etiqueta</p>
-                  <div className="flex flex-wrap items-center gap-2">
+                <div className="card-hairline rounded-lg border bg-card p-3">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Nueva etiqueta
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-[auto_1fr_auto] sm:items-center">
                     <input
                       type="color"
                       value={newTagColor}
                       onChange={(e) => setNewTagColor(e.target.value)}
-                      aria-label="Color de la etiqueta"
-                      className="size-(--control-md) shrink-0 cursor-pointer rounded-md border border-input bg-card p-0.5 outline-offset-2 outline-(--ring) focus-visible:outline-2"
+                      className="h-9 w-12 cursor-pointer rounded border border-border bg-transparent"
+                      aria-label="Color"
                     />
                     <Input
                       value={newTagName}
                       onChange={(e) => setNewTagName(e.target.value)}
                       maxLength={40}
                       placeholder="Vegano, Sin TACC, Picante…"
-                      aria-label="Nombre de la etiqueta"
-                      invalid={newTagError !== null}
-                      className="min-w-40 flex-1"
                     />
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={onCreateInlineTag}
-                      loading={creatingTag}
-                    >
-                      <Plus aria-hidden="true" />
-                      Crear
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        setShowNewTagForm(false)
-                        setNewTagError(null)
-                        setNewTagName('')
-                      }}
-                      disabled={creatingTag}
-                    >
-                      Cancelar
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={onCreateInlineTag}
+                        disabled={creatingTag}
+                        className="gap-1"
+                      >
+                        <Plus className="size-3.5" />
+                        Crear
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setShowNewTagForm(false)
+                          setNewTagError(null)
+                          setNewTagName('')
+                        }}
+                        disabled={creatingTag}
+                      >
+                        Cancelar
+                      </Button>
+                    </div>
                   </div>
                   {newTagError ? (
-                    <p role="alert" className="type-caption text-destructive-text">
-                      {newTagError}
-                    </p>
+                    <p className="mt-2 text-xs text-destructive">{newTagError}</p>
                   ) : null}
                 </div>
               ) : (
                 <Button
                   type="button"
-                  variant="secondary"
+                  variant="outline"
                   size="sm"
                   onClick={() => setShowNewTagForm(true)}
-                  className="w-fit"
+                  className="w-fit gap-1.5"
                 >
-                  <Plus aria-hidden="true" />
-                  Crear una etiqueta nueva
+                  <Plus className="size-3.5" />
+                  Crear nueva etiqueta
                 </Button>
               )}
             </TabsContent>
 
-            <TabsContent value="advanced" className="grid gap-5">
-              <Field label="Categoría" hint="Mové el ítem a otra categoría sin perder sus datos.">
+            <TabsContent value="advanced" className="m-0 grid gap-5 outline-none">
+              <div className="grid gap-1.5">
+                <Label>Categoría</Label>
                 <CategoryTreePicker
                   categories={categories}
                   value={categoryId}
                   onChange={(id) => id && setCategoryId(id)}
-                  aria-label="Categoría del ítem"
                 />
-              </Field>
+                <p className="text-[11px] text-muted-foreground">
+                  Mové el ítem a otra categoría sin perder sus datos.
+                </p>
+              </div>
 
-              <Field
-                label="Disponible"
-                layout="toggle"
-                hint="Si está apagado, el ítem se oculta del cliente."
-              >
-                <Switch checked={active} onCheckedChange={setActive} />
-              </Field>
+              <div className="flex items-start justify-between gap-3 rounded-lg border border-border/60 bg-card p-3">
+                <div className="space-y-0.5">
+                  <Label htmlFor="item-active" className="text-sm font-medium">
+                    Disponible
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Si está apagado, el ítem se oculta del cliente.
+                  </p>
+                </div>
+                <Switch
+                  id="item-active"
+                  checked={active}
+                  onCheckedChange={setActive}
+                  aria-label="Disponible"
+                />
+              </div>
 
-              <Field
-                label={
-                  <>
-                    <Sparkles className="size-3.5 text-primary" aria-hidden="true" />
+              <div className="flex items-start justify-between gap-3 rounded-lg border border-border/60 bg-card p-3">
+                <div className="space-y-0.5">
+                  <Label
+                    htmlFor="item-featured"
+                    className="flex items-center gap-1.5 text-sm font-medium"
+                  >
+                    <Sparkles className="size-3.5 text-primary" aria-hidden />
                     Destacado
-                  </>
-                }
-                layout="toggle"
-                hint="Aparece en la sección «Destacados», arriba de la carta."
-              >
-                <Switch checked={featured} onCheckedChange={setFeatured} />
-              </Field>
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Aparece en la sección "Destacados" arriba de la carta.
+                  </p>
+                </div>
+                <Switch
+                  id="item-featured"
+                  checked={featured}
+                  onCheckedChange={setFeatured}
+                  aria-label="Destacado"
+                />
+              </div>
 
-              <Callout
-                tone="danger"
-                title="Borrar el ítem"
-                action={
-                  <ConfirmDialog
-                    tone="danger"
-                    title={`¿Borrar «${item.name}»?`}
-                    description="Sale de la carta para siempre. No se puede deshacer."
-                    confirmLabel="Borrar ítem"
-                    pendingLabel="Borrando…"
-                    trigger={
-                      <Button variant="danger-ghost" size="sm">
-                        <Trash2 aria-hidden="true" />
-                        Borrar ítem
-                      </Button>
-                    }
-                    onConfirm={async () => {
-                      const r = await deleteMenuItem(tenantSlug, item.id)
-                      if (!r.ok) return r
-                      onDeleted?.(item.id)
-                      toast.success('Ítem borrado.')
-                      router.refresh()
-                      onClose()
-                    }}
-                  />
-                }
-              >
-                Si el ítem aparece en visitas pasadas no se va a poder borrar: pausalo en su lugar.
-              </Callout>
+              <div className="space-y-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3">
+                <p className="text-sm font-medium text-destructive">Zona de riesgo</p>
+                <p className="text-xs text-muted-foreground">
+                  Si el ítem aparece en visitas pasadas, no podrás eliminarlo. Pausalo en su lugar.
+                </p>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" size="sm" className="gap-1.5" disabled={deleting}>
+                      <Trash2 className="size-3.5" />
+                      Eliminar ítem
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>¿Eliminar "{item.name}"?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Esta acción no se puede deshacer.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={(e) => {
+                          e.preventDefault()
+                          onDelete()
+                        }}
+                        disabled={deleting}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        {deleting ? 'Eliminando…' : 'Eliminar'}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
             </TabsContent>
-          </DialogBody>
+          </div>
         </Tabs>
 
-        <DialogFooter className="sm:justify-between">
-          <Button asChild variant="ghost" size="sm">
+        <DialogFooter className="flex flex-col gap-2 border-t border-border/60 px-6 py-4 sm:flex-row sm:justify-between">
+          <Button asChild variant="ghost" size="sm" className="gap-1.5">
             <Link
               href={`/${tenantSlug}/mensajeria/difusiones/nueva?prefillName=${encodeURIComponent(
                 `Novedad: ${name}`,
@@ -491,16 +553,16 @@ export function ItemEditDialog({
               target="_blank"
               rel="noopener"
             >
-              <Megaphone aria-hidden="true" />
+              <Megaphone className="size-3.5" />
               Anunciar este ítem
             </Link>
           </Button>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button variant="secondary" onClick={onClose} disabled={pending}>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose} disabled={pending}>
               Cancelar
             </Button>
-            <Button onClick={onSave} loading={pending} loadingText="Guardando…">
-              Guardar
+            <Button onClick={onSave} disabled={pending}>
+              {pending ? 'Guardando…' : 'Guardar'}
             </Button>
           </div>
         </DialogFooter>

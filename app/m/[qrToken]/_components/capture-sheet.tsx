@@ -1,12 +1,6 @@
 'use client'
 
-import {
-  Sheet,
-  SheetContent,
-  SheetGrabber,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui-legacy/sheet'
+import { Sheet, SheetContent, SheetGrabber, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import type { RegisterCustomerResult } from '@/lib/m-session/actions'
 import { CaptureHero } from './capture-hero'
 import { RegisterForm } from './register-form'

@@ -2,7 +2,6 @@
 
 import { Calculator, Pencil } from 'lucide-react'
 import { type Ref, useId } from 'react'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   type EventMarketingRow,
@@ -20,26 +19,36 @@ import { HowItsCalculated, NightAccountBody } from './marketing-report'
  * 02/10/2026: «es ideal que siempre tenga la misma info»). Va debajo de la
  * sección «Pauta en Meta», con la misma anatomía en todos los estados:
  *
- *   ┌ La cuenta de la noche  [estado]                 [botón] ┐
+ *   ┌ LA CUENTA DE LA NOCHE  [estado]                 [botón] ┐
  *   │ frase (sin nada calculado)  ·  o la cuenta de siempre   │
  *   │ ▸ ¿Cómo se calcula?                                     │
  *   └─────────────────────────────────────────────────────────┘
- *
- * Es un panel suave adentro de la ficha (fondo, sin borde): una tarjeta adentro
- * de otra no va (kit §3.5).
  *
  * El estado, los textos y el botón salen de `nightAccountView` (regla 13 de
  * `event-marketing.ts`); el botón abre el MISMO formulario de la pauta con «la
  * plata de la noche» desplegada (lo maneja `EventMarketingSection`, que dibuja
  * las dos secciones). El indicador copia al de «Pauta en Meta»: «Sin cargar» en
- * ámbar suelto; «Incompleta» y «Por ahora» como etiqueta.
+ * ámbar suelto; «Incompleta» y «Por ahora» como chip.
  */
+
+const EYEBROW = 'text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground'
 
 function Indicator({ chip }: { chip: NonNullable<NightAccountView['chip']> }) {
   if (chip.text === 'Sin cargar') {
-    return <span className="type-caption font-medium text-warning-text">{chip.text}</span>
+    return <span className="text-xs font-medium text-warning-text">{chip.text}</span>
   }
-  return <Badge tone={chip.tone === 'warning' ? 'warning' : 'neutral'}>{chip.text}</Badge>
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full border px-1.5 text-[10px] font-medium leading-4',
+        chip.tone === 'warning'
+          ? 'border-warning/40 bg-warning/10 text-warning-text'
+          : 'border-border bg-muted/60 text-muted-foreground',
+      )}
+    >
+      {chip.text}
+    </span>
+  )
 }
 
 export function NightAccountBox({
@@ -73,11 +82,14 @@ export function NightAccountBox({
   return (
     <section
       aria-labelledby={headingId}
-      className={cn('@container mt-4 rounded-lg bg-secondary/60 p-3 @md:p-4', className)}
+      className={cn(
+        '@container mt-4 rounded-lg border border-border/60 bg-secondary/30 p-3 @md:p-4',
+        className,
+      )}
     >
       <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <div className="flex items-center gap-2">
-          <h4 id={headingId} className="type-label text-muted-foreground">
+        <div className="flex items-baseline gap-2">
+          <h4 id={headingId} className={EYEBROW}>
             {NIGHT_ACCOUNT_TITLE}
           </h4>
           {view.chip ? <Indicator chip={view.chip} /> : null}
@@ -88,20 +100,21 @@ export function NightAccountBox({
             type="button"
             variant="ghost"
             size="sm"
-            className="-mr-2"
+            className="-mr-2 h-10 px-2 text-xs @sm:h-7"
             aria-label={ariaLabel}
             onClick={onAction}
             disabled={disabled}
           >
-            <Pencil aria-hidden />
+            <Pencil aria-hidden className="size-3.5" />
             {NIGHT_ACCOUNT_ACTION_LABELS.edit}
           </Button>
         ) : kind ? (
           <Button
             ref={actionRef}
             type="button"
-            variant="secondary"
+            variant="outline"
             size="sm"
+            className="h-10 @sm:h-8"
             aria-label={ariaLabel}
             onClick={onAction}
             disabled={disabled}
@@ -113,7 +126,7 @@ export function NightAccountBox({
       </header>
 
       {view.lead ? (
-        <p className="mt-1.5 max-w-prose text-pretty type-body text-muted-foreground">
+        <p className="mt-1.5 max-w-prose text-sm leading-relaxed text-muted-foreground">
           {view.lead}
         </p>
       ) : null}

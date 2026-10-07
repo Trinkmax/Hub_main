@@ -1,6 +1,7 @@
+import { ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import { resolveCommissionPeriod } from '@/lib/commissions/period'
 import { todayInCordoba } from '@/lib/salon/date-presets'
 import { listCommissionBreakdown, listManagers } from '@/lib/salon/queries'
@@ -62,14 +63,17 @@ export default async function ManagerCommissionsPage({
   if (!manager) notFound()
 
   return (
-    <PageShell width="comfortable">
+    <div className="mx-auto w-full max-w-5xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <PageHeader
-        // Vuelve a la liquidación con el MISMO rango: si volviera al mes
-        // calendario, el dueño perdería el período que estaba revisando.
-        back={{
-          href: `/${tenantSlug}/estadisticas/comisiones?from=${period.from}&to=${period.to}`,
-          label: 'Liquidación',
-        }}
+        eyebrow={
+          <Link
+            href={`/${tenantSlug}/estadisticas/comisiones?from=${period.from}&to=${period.to}`}
+            className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="size-3.5" />
+            Liquidación
+          </Link>
+        }
         title={manager.display_name}
         description={`Comisiones de ${period.label}`}
       />
@@ -81,6 +85,6 @@ export default async function ManagerCommissionsPage({
         truncated={breakdown.truncated}
         today={today}
       />
-    </PageShell>
+    </div>
   )
 }

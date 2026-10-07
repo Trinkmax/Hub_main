@@ -1,16 +1,30 @@
 'use client'
 
-import { ArrowDownToLine, ArrowUpToLine, Combine, RefreshCw, Split, Trash2, X } from 'lucide-react'
-import { useActionState, useEffect, useEffectEvent, useId, useState, useTransition } from 'react'
+import { ArrowDownToLine, ArrowUpToLine, Copy, RefreshCw, Trash2, X } from 'lucide-react'
+import { useActionState, useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { Combobox } from '@/components/ui/combobox'
-import { ConfirmDialog, type ConfirmResult } from '@/components/ui/confirm-dialog'
-import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { NumberField } from '@/components/ui/number-field'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
-import { SubmitButton } from '@/components/ui/submit-button'
 import { Switch } from '@/components/ui/switch'
 import {
   mergeTablesAction,
@@ -23,7 +37,6 @@ import {
 import type { ElementRow } from '@/lib/floor-plan/queries'
 import { regenerateQrToken, updateTable } from '@/lib/tables/actions'
 import { PrintQrButton } from './print-qr-button'
-import { type TableShape, TableShapeChips } from './table-shape-chips'
 
 type TableInspectorProps = {
   slug: string
@@ -35,17 +48,6 @@ type TableInspectorProps = {
 
 const initialUpdate = { ok: false as const, message: '' }
 
-const SHAPES: { value: TableShape; label: string }[] = [
-  { value: 'circle', label: 'Redonda' },
-  { value: 'rect', label: 'Rectangular' },
-  { value: 'banquette', label: 'Banquette' },
-]
-
-/**
- * Panel de la mesa elegida en el plano. El editor lo monta con `key` por
- * elemento: al elegir otra mesa arranca de cero (campos, interruptor y
- * respuesta del guardado).
- */
 export function TableInspector({
   slug,
   element,
@@ -53,35 +55,26 @@ export function TableInspector({
   onChanged,
   onClose,
 }: TableInspectorProps) {
-  const titleId = useId()
   const tableId = element.physical_table_id as string
   const meta = element.table
-  const tableLabel = meta?.label ?? element.label ?? ''
   const [active, setActive] = useState(meta?.active ?? true)
-  const [mergeTarget, setMergeTarget] = useState<string | null>(null)
+  const [mergeTarget, setMergeTarget] = useState<string>('')
   const [pending, start] = useTransition()
 
   // Editar nombre/capacidad → updateTable (FormData id,label,capacity; NUNCA active).
-  const [updateState, updateAction] = useActionState(
+  const [updateState, updateAction, updatePending] = useActionState(
     (prev: Awaited<ReturnType<typeof updateTable>>, fd: FormData) => updateTable(slug, prev, fd),
     initialUpdate,
   )
 
-  // Una vez por respuesta del server: `onChanged` cambia de identidad con cada
-  // render del editor y, en las dependencias, repetía el aviso de error.
-  const onUpdateResult = useEffectEvent((result: typeof updateState) => {
-    if (result.ok && result.tableId) {
+  useEffect(() => {
+    if (updateState.ok && updateState.tableId) {
       toast.success('Mesa actualizada.')
       onChanged()
-    } else if (!result.ok && result.message && !result.fieldErrors) {
-      // Los errores de un campo se ven al lado del campo; el resto, en un aviso.
-      toast.error(result.message)
+    } else if (!updateState.ok && updateState.message) {
+      toast.error(updateState.message)
     }
-  })
-  useEffect(() => {
-    onUpdateResult(updateState)
-  }, [updateState])
-  const fieldErrors = updateState.ok ? undefined : updateState.fieldErrors
+  }, [updateState, onChanged])
 
   // Sincroniza el switch local si cambia la mesa seleccionada.
   useEffect(() => {
@@ -103,28 +96,16 @@ export function TableInspector({
     })
   }
 
-  // Confirmaciones: esperan con el diálogo abierto y, si fallan, muestran el error adentro.
-  const onRegenerate = async (): Promise<ConfirmResult> => {
-    const r = await regenerateQrToken(slug, tableId)
-    if (!r.ok) return r
-    toast.success('QR regenerado.')
-    onChanged()
-  }
-
-  const onMerge = async (): Promise<ConfirmResult> => {
-    if (!mergeTarget) return
-    const r = await mergeTablesAction(slug, tableId, mergeTarget)
-    if (!r.ok) return r
-    toast.success('Mesas combinadas.')
-    // `onChanged` suelta la selección y este panel se desmonta: no hace falta limpiar la elegida.
-    onChanged()
-  }
-
-  const onRemove = async (): Promise<ConfirmResult> => {
-    const r = await removeFromPlanAction(slug, element.id)
-    if (!r.ok) return r
-    toast.success('Mesa quitada del plano.')
-    onChanged()
+  const onRegenerate = () => {
+    start(async () => {
+      const r = await regenerateQrToken(slug, tableId)
+      if (r.ok) {
+        toast.success('QR regenerado.')
+        onChanged()
+      } else {
+        toast.error(r.message)
+      }
+    })
   }
 
   const onSplit = () => {
@@ -132,6 +113,32 @@ export function TableInspector({
       const r = await splitTableAction(slug, element.id)
       if (r.ok) {
         toast.success('Mesa dividida.')
+        onChanged()
+      } else {
+        toast.error(r.message)
+      }
+    })
+  }
+
+  const onMerge = () => {
+    if (!mergeTarget) return
+    start(async () => {
+      const r = await mergeTablesAction(slug, tableId, mergeTarget)
+      if (r.ok) {
+        toast.success('Mesas combinadas.')
+        setMergeTarget('')
+        onChanged()
+      } else {
+        toast.error(r.message)
+      }
+    })
+  }
+
+  const onRemove = () => {
+    start(async () => {
+      const r = await removeFromPlanAction(slug, element.id)
+      if (r.ok) {
+        toast.success('Mesa quitada del plano.')
         onChanged()
       } else {
         toast.error(r.message)
@@ -147,7 +154,7 @@ export function TableInspector({
     })
   }
 
-  const onSetShape = (shape: TableShape) => {
+  const onSetShape = (shape: 'rect' | 'circle' | 'banquette') => {
     if (shape === element.shape) return
     start(async () => {
       const r = await setElementShapeAction(slug, element.id, shape)
@@ -156,198 +163,219 @@ export function TableInspector({
     })
   }
 
-  const mergeOptions = allTables
-    .filter((t) => t.id !== tableId)
-    .map((t) => ({ value: t.id, label: t.label }))
-  const mergeLabel = mergeOptions.find((o) => o.value === mergeTarget)?.label ?? ''
+  const busy = pending || updatePending
+  const mergeOptions = allTables.filter((t) => t.id !== tableId)
 
   return (
-    <section aria-labelledby={titleId} className="flex flex-col gap-4">
-      <div className="flex items-start justify-between gap-2">
-        <h2 id={titleId} className="min-w-0 truncate type-subtitle text-foreground">
-          Mesa {tableLabel}
-        </h2>
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="ghost"
-          onClick={onClose}
-          aria-label="Cerrar el panel de la mesa"
-          className="-my-1"
-        >
-          <X aria-hidden />
+    <aside
+      aria-label="Panel de mesa"
+      className="flex w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l bg-card p-4"
+    >
+      <div className="flex items-center justify-between">
+        <h2 className="font-display text-sm font-semibold">Mesa</h2>
+        <Button size="icon" variant="ghost" onClick={onClose} aria-label="Cerrar panel">
+          <X className="size-4" />
         </Button>
       </div>
 
-      {/* Nombre y capacidad → updateTable (FormData id, label, capacity). */}
-      <form action={updateAction} className="flex flex-col gap-3">
+      {/* Editar nombre / capacidad */}
+      <form action={updateAction} className="grid gap-3">
         <input type="hidden" name="id" value={tableId} />
-        <Field label="Nombre" name="label" required error={fieldErrors?.label}>
-          <Input maxLength={40} defaultValue={meta?.label ?? ''} autoComplete="off" />
-        </Field>
-        <Field label="Personas" name="capacity" optional error={fieldErrors?.capacity}>
-          <NumberField
+        <div className="grid gap-1.5">
+          <Label htmlFor="ti-label">Nombre</Label>
+          <Input
+            id="ti-label"
+            name="label"
+            required
+            maxLength={40}
+            defaultValue={meta?.label ?? ''}
+          />
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="ti-capacity">Capacidad</Label>
+          <Input
+            id="ti-capacity"
+            name="capacity"
+            type="number"
             min={1}
             max={50}
-            defaultValue={meta?.capacity ?? null}
+            defaultValue={meta?.capacity ?? ''}
             placeholder="Sin definir"
           />
-        </Field>
-        <SubmitButton size="sm" pendingText="Guardando…" disabled={pending}>
-          Guardar
-        </SubmitButton>
+        </div>
+        <Button type="submit" size="sm" disabled={busy}>
+          {updatePending ? 'Guardando…' : 'Guardar'}
+        </Button>
       </form>
 
       <Separator />
 
-      {/* Las sillas se redibujan según forma + capacidad. */}
-      <TableShapeChips
-        legend="Forma"
-        options={SHAPES}
-        value={element.shape}
-        onValueChange={onSetShape}
-        disabled={pending}
-      />
-
-      <Separator />
-
-      <div className="flex flex-col gap-2">
-        <span className="type-label text-foreground">Código QR</span>
-        <div className="flex items-center gap-1">
-          <code className="min-w-0 flex-1 truncate rounded-md bg-muted px-2 py-1.5 font-mono type-caption text-muted-foreground">
-            {meta?.qr_token}
-          </code>
-          <PrintQrButton qrToken={meta?.qr_token ?? ''} tableLabel={tableLabel} />
-        </div>
-        <ConfirmDialog
-          tone="danger"
-          icon={RefreshCw}
-          title={`¿Regenerar el QR de «${tableLabel}»?`}
-          description="El QR impreso deja de funcionar. Vas a tener que imprimir el nuevo y pegarlo en la mesa."
-          confirmLabel="Regenerar QR"
-          pendingLabel="Regenerando…"
-          onConfirm={onRegenerate}
-          trigger={
-            <Button
+      {/* Forma de la mesa (las sillas se redibujan según forma + capacidad) */}
+      <div className="grid gap-1.5">
+        <Label>Forma</Label>
+        <div className="grid grid-cols-3 gap-1 rounded-lg border border-border/60 bg-muted/40 p-0.5">
+          {(
+            [
+              { value: 'circle', label: 'Redonda' },
+              { value: 'rect', label: 'Rectangular' },
+              { value: 'banquette', label: 'Banquette' },
+            ] as const
+          ).map((opt) => (
+            <button
+              key={opt.value}
               type="button"
-              size="sm"
-              variant="ghost"
-              disabled={pending}
-              className="self-start"
+              disabled={busy}
+              onClick={() => onSetShape(opt.value)}
+              aria-pressed={element.shape === opt.value}
+              className={
+                element.shape === opt.value
+                  ? 'rounded-md bg-card px-2 py-1.5 text-center font-medium text-xs shadow-sm'
+                  : 'rounded-md px-2 py-1.5 text-center text-muted-foreground text-xs transition-colors hover:text-foreground'
+              }
             >
-              <RefreshCw aria-hidden />
-              Regenerar QR
-            </Button>
-          }
-        />
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <Separator />
 
-      {/* Activar / desactivar (RPC-only, NUNCA updateTable). */}
-      <Field
-        layout="toggle"
-        label="Mesa activa"
-        hint="Apagala si ya no se usa: no se borra y conserva su historial."
-      >
-        <Switch checked={active} onCheckedChange={onToggleActive} disabled={pending} />
-      </Field>
+      {/* QR */}
+      <div className="grid gap-2">
+        <Label>Código QR</Label>
+        <code className="block truncate rounded-md bg-muted px-2 py-1 text-xs">
+          {meta?.qr_token}
+        </code>
+        <div className="flex items-center gap-1">
+          <PrintQrButton qrToken={meta?.qr_token ?? ''} />
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button size="sm" variant="ghost" disabled={busy}>
+                <RefreshCw className="size-3.5" />
+                Regenerar
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>¿Regenerar el QR?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  El QR impreso anterior dejará de funcionar. Vas a tener que imprimir y pegar el
+                  nuevo en la mesa.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={onRegenerate}>Regenerar</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </div>
 
       <Separator />
 
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-1">
-          <Button type="button" size="sm" variant="secondary" onClick={onSplit} disabled={pending}>
-            <Split aria-hidden />
-            Dividir
-          </Button>
-          <p className="type-caption text-pretty text-subtle-foreground">
-            Suma una mesa igual al lado, con su propio QR.
-          </p>
-        </div>
+      {/* Activar / desactivar (RPC-only, NUNCA updateTable) */}
+      <div className="flex items-center justify-between">
+        <Label htmlFor="ti-active">Mesa activa</Label>
+        <Switch id="ti-active" checked={active} onCheckedChange={onToggleActive} disabled={busy} />
+      </div>
+
+      <Separator />
+
+      {/* Dividir / combinar */}
+      <div className="grid gap-2">
+        <Button size="sm" variant="outline" onClick={onSplit} disabled={busy}>
+          <Copy className="size-3.5" />
+          Dividir
+        </Button>
 
         {mergeOptions.length > 0 ? (
-          <div className="flex flex-col gap-2">
-            <Field
-              label="Combinar con"
-              hint="La mesa que elijas se suma a esta y su QR se desactiva. El historial no se pierde."
-            >
-              <Combobox
-                options={mergeOptions}
-                value={mergeTarget}
-                onValueChange={(value) => setMergeTarget(typeof value === 'string' ? value : null)}
-                placeholder="Elegí una mesa…"
-                searchPlaceholder="Buscar mesa…"
-                emptyText="No hay otra mesa con ese nombre"
-                disabled={pending}
-              />
-            </Field>
-            <ConfirmDialog
-              tone="danger"
-              icon={Combine}
-              title={`¿Combinar «${mergeLabel}» con «${tableLabel}»?`}
-              description={`La mesa «${tableLabel}» absorbe a «${mergeLabel}». El QR de «${mergeLabel}» se desactiva y el historial no se pierde. No se puede deshacer.`}
-              confirmLabel="Combinar mesas"
-              pendingLabel="Combinando…"
-              onConfirm={onMerge}
-              trigger={
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  disabled={pending || !mergeTarget}
-                >
-                  <Combine aria-hidden />
+          <div className="grid gap-2">
+            <Select value={mergeTarget} onValueChange={setMergeTarget} disabled={busy}>
+              <SelectTrigger aria-label="Mesa a absorber">
+                <SelectValue placeholder="Combinar con…" />
+              </SelectTrigger>
+              <SelectContent>
+                {mergeOptions.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" variant="outline" disabled={busy || !mergeTarget}>
                   Combinar
                 </Button>
-              }
-            />
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>¿Combinar las mesas?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    La mesa seleccionada absorbe a la otra. El QR de la mesa absorbida se desactiva
+                    (no se pierde el historial). Esta acción no se puede deshacer.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction onClick={onMerge}>Combinar</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         ) : null}
       </div>
 
       <Separator />
 
-      <div className="flex flex-wrap items-center gap-2">
+      {/* z-index */}
+      <div className="flex items-center gap-2">
         <Button
-          type="button"
           size="sm"
           variant="ghost"
           onClick={() => onZIndex(element.z_index + 1)}
-          disabled={pending}
+          disabled={busy}
         >
-          <ArrowUpToLine aria-hidden />
+          <ArrowUpToLine className="size-3.5" />
           Al frente
         </Button>
         <Button
-          type="button"
           size="sm"
           variant="ghost"
           onClick={() => onZIndex(element.z_index - 1)}
-          disabled={pending}
+          disabled={busy}
         >
-          <ArrowDownToLine aria-hidden />
+          <ArrowDownToLine className="size-3.5" />
           Al fondo
         </Button>
       </div>
 
       <Separator />
 
-      {/* Quitar del plano: la mesa sigue activa y vuelve a la bandeja. */}
-      <ConfirmDialog
-        icon={Trash2}
-        title={`¿Quitar la mesa «${tableLabel}» del plano?`}
-        description="Sigue activa, con su QR, y la podés volver a colocar desde «Mesas sin ubicar». Si está ocupada en este momento, no se puede quitar."
-        confirmLabel="Quitar del plano"
-        pendingLabel="Quitando…"
-        onConfirm={onRemove}
-        trigger={
-          <Button type="button" size="sm" variant="danger-ghost" disabled={pending}>
-            <Trash2 aria-hidden />
+      {/* Quitar del plano (la mesa sigue activa; vuelve a la bandeja) */}
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button size="sm" variant="destructive" disabled={busy}>
+            <Trash2 className="size-3.5" />
             Quitar del plano
           </Button>
-        }
-      />
-    </section>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Quitar la mesa del plano?</AlertDialogTitle>
+            <AlertDialogDescription>
+              La mesa sigue activa y se puede volver a colocar desde la bandeja. Si tiene una sesión
+              abierta no se podrá quitar.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={onRemove}>Quitar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </aside>
   )
 }

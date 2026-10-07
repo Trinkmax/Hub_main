@@ -1,4 +1,4 @@
-import { Skeleton } from '@/components/ui-legacy/skeleton'
+import { Skeleton } from '@/components/ui/skeleton'
 
 // Esqueleto de la wallet mientras resuelve el server component de la page.
 // Espeja el layout: header → hero → canjeables → QR.

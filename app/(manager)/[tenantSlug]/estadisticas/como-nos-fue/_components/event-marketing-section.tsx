@@ -4,9 +4,7 @@ import { Megaphone, Pencil } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { toastUndo } from '@/components/ui/toast'
 import {
   type EventMarketingRow,
   loadedBeforeEventLine,
@@ -52,13 +50,16 @@ import { NightAccountBox } from './night-account-box'
  * formulario ocupa el lugar de las dos (su vista previa ya muestra la cuenta),
  * y al cerrarlo el foco vuelve al botón que lo abrió.
  *
- * **«No tuvo pauta» es optimista** con «Deshacer» (`toastUndo` del kit, los
- * mismos 6 s en toda la app): es un click, casi siempre es cierto, y
- * equivocarse se arregla con otro click. Guardar números NO es optimista (ver
- * `marketing-form.tsx`).
+ * **«No tuvo pauta» es optimista** con Deshacer 6 s (el patrón del tablero
+ * operativo): es un click, casi siempre es cierto, y equivocarse se arregla con
+ * otro click. Guardar números NO es optimista (ver `marketing-form.tsx`).
  *
  * Solo dueños llegan acá: la page es owner-only y la RLS de la tabla también.
  */
+
+const UNDO_MS = 6000
+
+const EYEBROW = 'text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground'
 
 export type EventMarketingSectionProps = {
   tenantSlug: string
@@ -78,7 +79,18 @@ export type EventMarketingSectionProps = {
 type LocalRow = { row: EventMarketingRow | null; propsAt: string | null }
 
 function StatusChip({ text, tone }: { text: string; tone: 'warning' | 'muted' }) {
-  return <Badge tone={tone === 'warning' ? 'warning' : 'neutral'}>{text}</Badge>
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full border px-1.5 text-[10px] font-medium leading-4',
+        tone === 'warning'
+          ? 'border-warning/40 bg-warning/10 text-warning-text'
+          : 'border-border bg-muted/60 text-muted-foreground',
+      )}
+    >
+      {text}
+    </span>
+  )
 }
 
 export function EventMarketingSection({
@@ -236,23 +248,29 @@ export function EventMarketingSection({
     const active = document.activeElement
     if (active === null || active === document.body) refocus.current = true
     showLocal(marked)
-    toastUndo(copy.noAdsToast, {
+    toast(copy.noAdsToast, {
       id: `pauta-${scheduledEventId}`,
-      onUndo: () => undoNoAds(marked),
+      duration: UNDO_MS,
+      action: {
+        label: 'Deshacer',
+        onClick: () => {
+          void undoNoAds(marked)
+        },
+      },
     })
   }
 
   const shell = (children: ReactNode, labelled = true) => (
     <section
       aria-labelledby={labelled ? headingId : undefined}
-      className={cn('@container mt-5 border-t border-border pt-4', className)}
+      className={cn('@container mt-5 border-t border-border/50 pt-4', className)}
     >
       {children}
     </section>
   )
 
   const heading = (
-    <h4 id={headingId} className="type-label text-muted-foreground">
+    <h4 id={headingId} className={EYEBROW}>
       Pauta en Meta
     </h4>
   )
@@ -318,13 +336,14 @@ export function EventMarketingSection({
           <>
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
               {heading}
-              <span className="type-caption font-medium text-warning-text">Sin cargar</span>
+              <span className="text-xs font-medium text-warning-text">Sin cargar</span>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 @sm:flex @sm:flex-wrap">
               <Button
                 ref={actionRef}
-                variant="secondary"
+                variant="outline"
                 size="sm"
+                className="h-10 @sm:h-8"
                 aria-label={copy.loadAria}
                 onClick={openForm}
                 disabled={busy}
@@ -335,6 +354,7 @@ export function EventMarketingSection({
               <Button
                 variant="ghost"
                 size="sm"
+                className="h-10 text-muted-foreground @sm:h-8"
                 aria-label={copy.noAdsAria}
                 onClick={() => void markNoAds()}
                 disabled={busy}
@@ -353,14 +373,15 @@ export function EventMarketingSection({
       shell(
         <>
           {heading}
-          <p className="mt-1.5 max-w-prose text-pretty type-caption text-muted-foreground">
+          <p className="mt-1.5 max-w-prose text-xs leading-relaxed text-muted-foreground">
             Todavía no se cargó. Si la campaña ya está corriendo, cargala y la vas actualizando.
           </p>
           <div className="mt-3 flex">
             <Button
               ref={actionRef}
-              variant="secondary"
+              variant="outline"
               size="sm"
+              className="h-10 @sm:h-8"
               aria-label={copy.loadAria}
               onClick={openForm}
             >
@@ -390,11 +411,11 @@ export function EventMarketingSection({
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
             <div className="flex items-baseline gap-2">
               {heading}
-              <span className="type-caption text-muted-foreground">{noAdsLabel}</span>
+              <span className="text-xs text-muted-foreground">{noAdsLabel}</span>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-baseline gap-1">
               {signed && !unsaved ? (
-                <span className="type-caption tabular-nums text-muted-foreground">
+                <span className="text-[11px] tabular-nums text-muted-foreground">
                   {loadedByLabel(row)}
                 </span>
               ) : null}
@@ -402,7 +423,7 @@ export function EventMarketingSection({
                 ref={actionRef}
                 variant="ghost"
                 size="sm"
-                className="-mr-2"
+                className="-mr-2 h-10 px-2 text-xs @sm:h-7"
                 aria-label={copy.changeAria}
                 onClick={openForm}
                 disabled={unsaved}
@@ -429,26 +450,26 @@ export function EventMarketingSection({
             {heading}
             {chip ? <StatusChip text={chip.text} tone={chip.tone} /> : null}
           </div>
-          <div className="flex items-center gap-1">
-            <span className="type-caption tabular-nums text-muted-foreground">
+          <div className="flex items-baseline gap-1">
+            <span className="text-[11px] tabular-nums text-muted-foreground">
               {loadedByLabel(row)}
             </span>
             <Button
               ref={actionRef}
               variant="ghost"
               size="sm"
-              className="-mr-2"
+              className="-mr-2 h-10 px-2 text-xs @sm:h-7"
               aria-label={copy.editAria}
               onClick={openForm}
             >
-              <Pencil aria-hidden />
+              <Pencil aria-hidden className="size-3.5" />
               Editar
             </Button>
           </div>
         </header>
 
         {beforeLine ? (
-          <p className="mt-2 max-w-prose text-pretty text-xs leading-relaxed text-muted-foreground">
+          <p className="mt-2 max-w-prose text-xs leading-relaxed text-muted-foreground">
             {beforeLine}{' '}
             <Button
               variant="link"

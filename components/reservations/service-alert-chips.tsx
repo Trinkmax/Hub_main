@@ -1,5 +1,4 @@
 import { Info, TriangleAlert } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
 import {
   type AlertSeverity,
   type ResolvedAlert,
@@ -9,17 +8,27 @@ import {
 import { cn } from '@/lib/utils'
 
 /**
- * Los avisos de una reserva, como etiquetas.
+ * Los avisos de una reserva, como pastillas.
  *
  * El color NUNCA va solo: siempre con la etiqueta escrita. Un encargado
  * daltónico tiene que poder leerlo, y el mozo necesita saber QUÉ aviso es —
  * "hay algo rojo en esa fila" no le sirve para nada cuando está por servir.
  *
- * Rojo (`danger`) es riesgo médico: celíaco y alergia. Ámbar (`warning`) es
- * logística: vegetariano, vegano, acceso, silla de bebé. Reservar el rojo para
- * lo que puede lastimar a alguien es lo que hace que el rojo signifique algo
- * cuando aparece. Además del color cambia el ícono (triángulo contra «i»).
+ * Rojo (`destructive`) es riesgo médico: celíaco y alergia. Ámbar (`warning`)
+ * es logística: vegetariano, vegano, acceso, silla de bebé. Reservar el rojo
+ * para lo que puede lastimar a alguien es lo que hace que el rojo signifique
+ * algo cuando aparece.
  */
+
+const CHIP_BASE =
+  'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-semibold uppercase leading-none tracking-wide'
+
+const CHIP_TONE: Record<AlertSeverity, string> = {
+  critical: 'border-destructive/50 bg-destructive/10 text-destructive',
+  // `--warning` es claro: el texto va en foreground, como en el resto de la app.
+  info: 'border-warning/50 bg-warning/10 text-foreground',
+}
+
 export function ServiceAlertChip({
   alert,
   className,
@@ -28,16 +37,12 @@ export function ServiceAlertChip({
   className?: string
 }) {
   const meta = SERVICE_ALERT_META[alert]
-  const critical = meta.severity === 'critical'
+  const Icon = meta.severity === 'critical' ? TriangleAlert : Info
   return (
-    <Badge
-      tone={critical ? 'danger' : 'warning'}
-      icon={critical ? TriangleAlert : Info}
-      title={meta.hint}
-      className={cn(critical && 'font-semibold', className)}
-    >
+    <span className={cn(CHIP_BASE, CHIP_TONE[meta.severity], className)} title={meta.hint}>
+      <Icon className="size-2.5 shrink-0" aria-hidden />
       {meta.short}
-    </Badge>
+    </span>
   )
 }
 
@@ -48,14 +53,11 @@ export function ServiceAlertChip({
 export function ServiceAlertChips({
   alerts,
   className,
-  size: _size = 'sm',
+  size = 'sm',
 }: {
   alerts: ResolvedAlert[]
   className?: string
-  /**
-   * @deprecated Las dos medidas son la misma desde el kit HUB (12 px, el
-   * mínimo): se acepta para no romper a quien la pasa.
-   */
+  /** `xs` para la tarjeta del mozo y la agenda; `sm` para fichas y detalle. */
   size?: 'xs' | 'sm'
 }) {
   if (alerts.length === 0) return null
@@ -66,7 +68,11 @@ export function ServiceAlertChips({
     // la etiqueta accesible.
     <span className={cn('flex flex-wrap items-center gap-1', className)}>
       {alerts.map(({ alert }) => (
-        <ServiceAlertChip key={alert} alert={alert} />
+        <ServiceAlertChip
+          key={alert}
+          alert={alert}
+          className={size === 'xs' ? 'text-[9px]' : 'text-[10px]'}
+        />
       ))}
     </span>
   )
@@ -78,7 +84,7 @@ export function ServiceAlertChips({
  * lista de cuarenta. Un fondo fuerte convertiría la agenda en un semáforo.
  */
 export function alertRowTint(severity: AlertSeverity | null): string {
-  if (severity === 'critical') return 'bg-destructive-soft/60'
-  if (severity === 'info') return 'bg-warning-soft/60'
+  if (severity === 'critical') return 'bg-destructive/[0.06] hover:bg-destructive/[0.10]'
+  if (severity === 'info') return 'bg-warning/[0.07] hover:bg-warning/[0.12]'
   return ''
 }

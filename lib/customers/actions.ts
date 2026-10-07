@@ -268,26 +268,7 @@ export async function rotateQrToken(
   const { data, error } = await supabase.rpc('rotate_customer_qr_token', {
     p_customer_id: parsed.data.id,
   })
-  if (error) {
-    // La RPC exige ser dueño del bar DEL CLIENTE. El rol ya se chequeó arriba
-    // contra la base, así que `forbidden` es un cliente de otro bar (pantalla
-    // vieja) o un permiso que cambió en el medio: recargar lo resuelve.
-    if (error.message === 'forbidden') {
-      return {
-        ok: false,
-        message:
-          'Este cliente no es de tu bar o cambiaron tus permisos. Recargá la página y probá de nuevo.',
-      }
-    }
-    if (error.message === 'customer_not_found') {
-      return { ok: false, message: 'Este cliente ya no existe. Recargá la página.' }
-    }
-    console.error('[customers.rotateQrToken]', { code: error.code })
-    return { ok: false, message: 'No pudimos regenerar el QR. Probá de nuevo.' }
-  }
-  if (typeof data !== 'string' || !data) {
-    return { ok: false, message: 'No pudimos regenerar el QR. Probá de nuevo.' }
-  }
+  if (error || !data) return { ok: false, message: 'No pudimos regenerar el QR.' }
 
   await logAudit({
     tenantId: access.tenant.id,
@@ -298,7 +279,7 @@ export async function rotateQrToken(
   })
 
   revalidatePath(`/${slug}/clientes/${parsed.data.id}`)
-  return { ok: true, token: data }
+  return { ok: true, token: data as string }
 }
 
 export async function softDeleteCustomer(

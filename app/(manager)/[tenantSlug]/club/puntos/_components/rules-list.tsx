@@ -1,20 +1,25 @@
 'use client'
 
-import { Coins, Trash2 } from 'lucide-react'
+import { Pause, Play, Trash2 } from 'lucide-react'
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { DataTable } from '@/components/ui/data-table'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Switch } from '@/components/ui/switch'
-import { formatNumber } from '@/lib/format/number-kind'
 import type { MenuCategory, MenuItem } from '@/lib/menu/queries'
 import { categoryPathLabel } from '@/lib/menu/tree'
-import { formatCents } from '@/lib/money/format'
 import { deleteRule, toggleRule } from '@/lib/points/actions'
 import type { PointsRule } from '@/lib/points/types'
-import { cn } from '@/lib/utils'
 
 export function RulesList({
   tenantSlug,
@@ -26,126 +31,111 @@ export function RulesList({
   menu: { items: MenuItem[]; categories: MenuCategory[] }
 }) {
   const [, start] = useTransition()
-  const [togglingId, setTogglingId] = useState<string | null>(null)
-  const [toDelete, setToDelete] = useState<PointsRule | null>(null)
-  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
 
   const describe = (rule: PointsRule): string => {
     if (rule.type === 'per_amount') {
       const cfg = rule.config as { every_cents: number; points: number }
-      const every = formatCents(cfg.every_cents, {
-        decimals: cfg.every_cents % 100 === 0 ? 0 : 2,
-      })
-      return `Cada ${every} gastados → ${formatNumber(cfg.points)} pts`
+      return `Cada $${(cfg.every_cents / 100).toLocaleString('es-AR')} → ${cfg.points} pts`
     }
     const cfg = rule.config as Record<string, unknown>
-    const points = typeof cfg.points === 'number' ? formatNumber(cfg.points) : '—'
     if (typeof cfg.item_id === 'string') {
       const item = menu.items.find((i) => i.id === cfg.item_id)
-      return `Ítem «${item?.name ?? 'borrado'}» → ${points} pts`
+      return `Ítem "${item?.name ?? '???'}" → ${cfg.points as number} pts`
     }
     if (typeof cfg.category_id === 'string') {
       const label = categoryPathLabel(menu.categories, cfg.category_id)
-      return `Categoría «${label || 'borrada'}» → ${points} pts por ítem`
+      return `Cat "${label || '???'}" → ${cfg.points as number} pts c/u`
     }
     return 'Regla desconocida'
   }
 
-  const onToggle = (rule: PointsRule) => {
-    setTogglingId(rule.id)
+  const onToggle = (id: string, current: boolean) => {
     start(async () => {
-      const r = await toggleRule(tenantSlug, rule.id, !rule.active)
+      const r = await toggleRule(tenantSlug, id, !current)
       if (!r.ok) toast.error(r.message)
-      setTogglingId(null)
     })
   }
 
-  return (
-    <>
-      <DataTable
-        caption="Reglas de puntos"
-        rows={rules}
-        getRowId={(r) => r.id}
-        empty={
-          <EmptyState
-            size="sm"
-            icon={Coins}
-            title="Sin reglas todavía"
-            description="Creá una regla arriba para que tus clientes sumen puntos cada vez que se cierra su mesa."
-          />
-        }
-        columns={[
-          {
-            id: 'regla',
-            header: 'Regla',
-            cell: (r) => (
-              <span className={cn(!r.active && 'text-muted-foreground')}>{describe(r)}</span>
-            ),
-          },
-          {
-            id: 'prioridad',
-            header: 'Prioridad',
-            numeric: true,
-            width: '7rem',
-            mobile: 'meta',
-            cell: (r) => <span className="text-muted-foreground">{formatNumber(r.priority)}</span>,
-          },
-          {
-            id: 'activa',
-            header: 'Activa',
-            width: '6rem',
-            mobile: 'value',
-            cell: (r) => (
-              <Switch
-                checked={r.active}
-                onCheckedChange={() => onToggle(r)}
-                pending={togglingId === r.id}
-                disabled={togglingId === r.id}
-                aria-label={`Regla activa: ${describe(r)}`}
-              />
-            ),
-          },
-          {
-            id: 'acciones',
-            header: 'Acciones',
-            headerHidden: true,
-            align: 'end',
-            width: '3.5rem',
-            cell: (r) => (
-              <Button
-                size="icon-sm"
-                variant="danger-ghost"
-                onClick={() => {
-                  setToDelete(r)
-                  setDeleteOpen(true)
-                }}
-                aria-label={`Borrar la regla: ${describe(r)}`}
-              >
-                <Trash2 aria-hidden="true" />
-              </Button>
-            ),
-          },
-        ]}
-      />
+  const onConfirmDelete = () => {
+    if (!pendingDelete) return
+    const id = pendingDelete
+    start(async () => {
+      const r = await deleteRule(tenantSlug, id)
+      if (!r.ok) toast.error(r.message)
+      setPendingDelete(null)
+    })
+  }
 
-      <ConfirmDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        tone="danger"
-        title="¿Borrar esta regla?"
-        description={
-          toDelete
-            ? `«${describe(toDelete)}» deja de dar puntos desde hoy. Los puntos ya dados no se tocan.`
-            : undefined
-        }
-        confirmLabel="Borrar regla"
-        pendingLabel="Borrando…"
-        onConfirm={async () => {
-          if (!toDelete) return
-          const r = await deleteRule(tenantSlug, toDelete.id)
-          if (!r.ok) return r
-        }}
+  if (rules.length === 0) {
+    return (
+      <EmptyState
+        title="Sin reglas configuradas"
+        description="Creá una regla arriba para empezar a otorgar puntos cada vez que se cierre una mesa."
       />
-    </>
+    )
+  }
+
+  return (
+    <div className="card-hairline divide-y divide-border/60 overflow-hidden rounded-xl border bg-card">
+      {rules.map((r) => (
+        <div key={r.id} className="flex items-center gap-2 px-4 py-2.5 text-sm">
+          {r.active ? (
+            <Badge className="gap-1 bg-success text-success-foreground hover:bg-success/90">
+              Activa
+            </Badge>
+          ) : (
+            <Badge variant="outline">Pausada</Badge>
+          )}
+          <span className="flex-1 truncate">{describe(r)}</span>
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground tabular-nums">
+            prio {r.priority}
+          </span>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-7 text-muted-foreground hover:text-foreground"
+            onClick={() => onToggle(r.id, r.active)}
+            aria-label={r.active ? 'Pausar' : 'Activar'}
+          >
+            {r.active ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-7 text-muted-foreground hover:text-destructive"
+            onClick={() => setPendingDelete(r.id)}
+            aria-label="Borrar"
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
+      ))}
+
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Borrar esta regla?</AlertDialogTitle>
+            <AlertDialogDescription>
+              La regla dejará de otorgar puntos. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={onConfirmDelete}
+            >
+              Borrar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   )
 }

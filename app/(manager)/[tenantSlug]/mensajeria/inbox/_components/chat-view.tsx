@@ -2,7 +2,6 @@ import { getConversation, listMessages } from '@/lib/bandeja/queries'
 import type { TemplateLite } from '@/lib/bandeja/template-view'
 import { getTagsForConversationIds, listConversationTags } from '@/lib/conversation-tags/queries'
 import { getCustomerById } from '@/lib/customers/queries'
-import { formatTime, isoDayInCordoba, todayInCordoba } from '@/lib/dates'
 import { formatPhoneForDisplay } from '@/lib/phone'
 import { listTiers } from '@/lib/points/queries'
 import { progressToNext, type TierProgress } from '@/lib/points/tiers'
@@ -44,11 +43,8 @@ export async function ChatView({
 
   if (!convo) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-1 bg-(--wa-panel-soft) p-4 text-center">
-        <p className="text-sm font-medium text-(--wa-text)">No encontramos esta conversación.</p>
-        <p className="text-sm text-(--wa-muted)">
-          Puede que se haya borrado. Elegí otra charla de la lista.
-        </p>
+      <div className="flex h-full items-center justify-center bg-(--wa-panel-soft) p-4 text-sm text-(--wa-muted)">
+        No encontramos esta conversación.
       </div>
     )
   }
@@ -81,14 +77,12 @@ export async function ChatView({
   const isWhatsApp = convo.channel_type === 'whatsapp'
   const phoneDisplay = isWhatsApp ? formatPhoneForDisplay(convo.external_user_id) : null
   const display = convo.customer_name ?? phoneDisplay ?? 'Cliente de Instagram'
-  // "las 14:30" si vence hoy, "mañana a las 14:30" si cruza medianoche. En hora
-  // de Córdoba y escrito a mano: el server corre en UTC y `toLocale*` daba la
-  // hora y el día del server, no los del bar.
+  // "las 14:30" si vence hoy, "mañana a las 14:30" si cruza medianoche
   let replyUntil: string | null = null
   if (insideWindow && lastInboundMs > 0) {
     const expiry = new Date(lastInboundMs + 24 * 3600 * 1000)
-    const hora = formatTime(expiry)
-    const sameDay = isoDayInCordoba(expiry) === todayInCordoba()
+    const hora = expiry.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+    const sameDay = expiry.toDateString() === new Date().toDateString()
     replyUntil = sameDay ? `las ${hora}` : `mañana a las ${hora}`
   }
   const assignedTags = tagsMap.get(conversationId) ?? []

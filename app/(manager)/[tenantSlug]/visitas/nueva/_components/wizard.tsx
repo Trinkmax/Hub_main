@@ -1,7 +1,7 @@
 'use client'
 
 import { useReducer, useState } from 'react'
-import { Steps } from '@/components/ui/steps'
+import { Stepper } from '@/components/ui/stepper'
 import type { MenuCategory, MenuItem } from '@/lib/menu/queries'
 import type { PointsRule } from '@/lib/points/types'
 import { CustomerStep } from './customer-step'
@@ -32,9 +32,6 @@ type Action =
   | { type: 'set_quantity'; item_id: string; quantity: number }
   | { type: 'set_notes'; notes: string }
   | { type: 'go'; step: 1 | 2 | 3 }
-  | { type: 'restart' }
-
-const INITIAL_STATE: State = { step: 1, customer: null, lines: [], notes: '' }
 
 function reducer(s: State, a: Action): State {
   switch (a.type) {
@@ -65,15 +62,13 @@ function reducer(s: State, a: Action): State {
       return { ...s, notes: a.notes }
     case 'go':
       return { ...s, step: a.step }
-    case 'restart':
-      return INITIAL_STATE
   }
 }
 
 const STEPS = [
-  { label: 'Cliente', description: 'Buscalo o crealo' },
+  { label: 'Cliente', description: 'Buscá o creá' },
   { label: 'Consumo', description: 'Cargá los ítems' },
-  { label: 'Confirmar', description: 'Cobrar y dar los puntos' },
+  { label: 'Confirmar', description: 'Cobrar y otorgar puntos' },
 ]
 
 export function CloseTableWizard({
@@ -87,12 +82,17 @@ export function CloseTableWizard({
   items: MenuItem[]
   rules: PointsRule[]
 }) {
-  const [state, dispatch] = useReducer(reducer, INITIAL_STATE)
+  const [state, dispatch] = useReducer(reducer, {
+    step: 1,
+    customer: null,
+    lines: [],
+    notes: '',
+  } as State)
   const [submitting, setSubmitting] = useState(false)
 
   return (
-    <div className="flex flex-col gap-8">
-      <Steps steps={STEPS} current={state.step - 1} aria-label="Pasos para cerrar la mesa" />
+    <div className="space-y-6">
+      <Stepper steps={STEPS} current={state.step - 1} />
 
       {state.step === 1 ? (
         <CustomerStep
@@ -132,14 +132,6 @@ export function CloseTableWizard({
           submitting={submitting}
           setSubmitting={setSubmitting}
           onBack={() => dispatch({ type: 'go', step: 2 })}
-          // «Cerrar otra mesa»: vuelve al paso 1 vacío. Antes navegaba a la
-          // misma URL, y como el asistente no se remonta, quedaba mostrando
-          // la mesa recién cerrada.
-          onRestart={() => {
-            setSubmitting(false)
-            dispatch({ type: 'restart' })
-            window.scrollTo({ top: 0 })
-          }}
         />
       ) : null}
     </div>

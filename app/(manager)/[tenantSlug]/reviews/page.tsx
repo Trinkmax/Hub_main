@@ -4,9 +4,6 @@ import { notFound } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
-import { Section } from '@/components/ui/section'
-import { formatNumber } from '@/lib/format/number-kind'
 import { requireFeature } from '@/lib/platform/guards'
 import { getReviewInsights, listReviews } from '@/lib/reviews/queries'
 import { parseRatingFilter } from '@/lib/reviews/schemas'
@@ -53,17 +50,17 @@ export default async function ReviewsPage({
   ])
 
   const filterLabel = rating ? `${rating} ${rating === 1 ? 'estrella' : 'estrellas'}` : null
-  const settingsHref = `/${tenantSlug}/configuracion/resenas`
 
   return (
-    <PageShell>
+    <main className="space-y-8 py-6">
       <PageHeader
+        eyebrow="Fidelización"
         title="Reseñas"
-        description="Lo que opinan tus clientes. Las de 5 estrellas pueden derivarse a Google Maps; el resto queda como opinión privada para vos."
+        description="Lo que opinan tus clientes. Las de 5★ pueden derivarse a Google Maps; el resto queda como feedback privado."
         actions={
-          <Button asChild variant="secondary">
-            <Link href={settingsHref}>
-              <Settings2 aria-hidden="true" />
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/${tenantSlug}/configuracion/resenas`}>
+              <Settings2 className="size-4" aria-hidden="true" />
               Configurar
             </Link>
           </Button>
@@ -72,13 +69,12 @@ export default async function ReviewsPage({
 
       {insights.total === 0 ? (
         <EmptyState
-          size="lg"
           icon={MessageSquare}
           title="Todavía no hay reseñas"
-          description="Cuando tus clientes dejen su opinión desde la wallet, las vas a ver acá con su puntaje y su comentario."
+          description="Cuando tus clientes dejen su opinión desde la wallet, vas a verlas acá con sus calificaciones y comentarios."
           action={
-            <Button asChild variant="secondary">
-              <Link href={settingsHref}>Configurar reseñas</Link>
+            <Button asChild variant="outline">
+              <Link href={`/${tenantSlug}/configuracion/resenas`}>Configurar reseñas</Link>
             </Button>
           }
         />
@@ -86,14 +82,17 @@ export default async function ReviewsPage({
         <>
           <ReviewsInsights tenantSlug={tenantSlug} insights={insights} active={rating} />
 
-          <Section
-            title={filterLabel ? `Reseñas de ${filterLabel}` : 'Últimas reseñas'}
-            actions={
-              <p className="type-small type-amount text-muted-foreground">
-                {formatNumber(reviews.length)} {reviews.length === 1 ? 'reseña' : 'reseñas'}
+          <section className="space-y-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="font-serif text-xl font-semibold tracking-tight">
+                {filterLabel ? `Reseñas de ${filterLabel}` : 'Últimas reseñas'}
+              </h2>
+              <p className="text-sm text-muted-foreground tabular-nums">
+                {reviews.length.toLocaleString('es-AR')}{' '}
+                {reviews.length === 1 ? 'reseña' : 'reseñas'}
               </p>
-            }
-          >
+            </div>
+
             <ReviewsFilters tenantSlug={tenantSlug} insights={insights} active={rating} />
 
             {reviews.length === 0 ? (
@@ -102,7 +101,7 @@ export default async function ReviewsPage({
                 title={`No hay reseñas de ${filterLabel}`}
                 description="Probá con otro puntaje o volvé a ver todas las opiniones."
                 action={
-                  <Button asChild variant="secondary">
+                  <Button asChild variant="outline">
                     <Link href={`/${tenantSlug}/reviews`}>Ver todas las reseñas</Link>
                   </Button>
                 }
@@ -110,9 +109,9 @@ export default async function ReviewsPage({
             ) : (
               <ReviewsList tenantSlug={tenantSlug} reviews={reviews} />
             )}
-          </Section>
+          </section>
         </>
       )}
-    </PageShell>
+    </main>
   )
 }

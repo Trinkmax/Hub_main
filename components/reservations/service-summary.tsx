@@ -16,13 +16,7 @@ import { cn } from '@/lib/utils'
  * Sin estado: la dibuja el RSC de la lista /reservas, un encabezado por servicio.
  */
 
-/**
- * Cada zona con su color de gráfico, estable en claro y en oscuro: verde,
- * azul y terracota. Es el mismo reparto de antes del kit: la paleta nueva
- * reordenó los `--chart-*` (el azul pasó de 4 a 3 y la terracota de 2 a 4), y
- * con los números viejos Planta Baja salía en terracota, que al lado del verde
- * se lee como «sobrecupo».
- */
+/** Cada zona con su color de gráfico, estable en claro y en oscuro. */
 const ZONE_STYLE: Record<keyof ZoneCovers, { label: string; bar: string; dot: string }> = {
   planta_alta: {
     label: ZONE_LABELS.planta_alta,
@@ -31,10 +25,8 @@ const ZONE_STYLE: Record<keyof ZoneCovers, { label: string; bar: string; dot: st
   },
   planta_baja: {
     label: ZONE_LABELS.planta_baja,
-    // Azul en los dos temas (en el oscuro del kit, `--chart-1` y `--chart-3`
-    // ya no comparten el ámbar del tema viejo).
-    bar: 'bg-chart-3',
-    dot: 'bg-chart-3',
+    bar: 'bg-chart-4',
+    dot: 'bg-chart-4',
   },
   event_floating: {
     // Reservas de evento SIN planta elegida. Desde el 22/09 una reserva de
@@ -42,9 +34,10 @@ const ZONE_STYLE: Record<keyof ZoneCovers, { label: string; bar: string; dot: st
     // ya no describía este tramo: es la gente que todavía no tiene dónde
     // sentarse. Mismo nombre que el filtro de planta del calendario.
     label: UNPLACED_LABEL,
-    // Terracota: la gente sin lugar asignado es lo que pide atención.
-    bar: 'bg-chart-4',
-    dot: 'bg-chart-4',
+    // chart-2 (terracota) y NO chart-3: en dark `--chart-1` y `--chart-3` son el
+    // mismo ámbar (misma L, hue 88 vs 70) y la barra se leía como un bloque.
+    bar: 'bg-chart-2',
+    dot: 'bg-chart-2',
   },
 }
 
@@ -70,17 +63,22 @@ export function ServiceSummary({
   return (
     <div className={cn('min-w-0', className)}>
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-        <span className="type-subtitle text-foreground">{bucket.label}</span>
+        <span className="font-serif text-base font-semibold tracking-tight text-foreground">
+          {bucket.label}
+        </span>
         {range ? (
-          <span className="type-caption tabular-nums text-muted-foreground">{range}</span>
+          <span className="font-mono text-[11px] tabular-nums text-muted-foreground">{range}</span>
         ) : null}
 
         <span className="ml-auto flex items-baseline gap-1.5 whitespace-nowrap">
-          <span className="type-subtitle type-amount text-foreground">{bucket.covers}</span>
-          <span className="type-caption font-normal text-muted-foreground">
+          <span className="font-mono text-lg font-semibold leading-none tabular-nums">
+            {bucket.covers}
+          </span>
+          <span className="text-[11px] text-muted-foreground">
             {bucket.covers === 1 ? 'cubierto' : 'cubiertos'}
-            {' · '}
-            {bucket.activeCount} {bucket.activeCount === 1 ? 'reserva' : 'reservas'}
+          </span>
+          <span className="text-[11px] text-muted-foreground/70">
+            · {bucket.activeCount} {bucket.activeCount === 1 ? 'reserva' : 'reservas'}
           </span>
         </span>
       </div>
@@ -104,7 +102,7 @@ export function ServiceSummary({
             ))}
           </div>
 
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 type-caption font-normal text-muted-foreground">
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
             {zones.map(({ zone, covers, tables }) => (
               <span key={zone} className="inline-flex items-center gap-1.5">
                 <span
@@ -112,10 +110,12 @@ export function ServiceSummary({
                   className={cn('size-1.5 shrink-0 rounded-full', ZONE_STYLE[zone].dot)}
                 />
                 {ZONE_STYLE[zone].label}
-                <span className="font-semibold tabular-nums text-foreground">{covers}</span>
+                <span className="font-mono font-semibold tabular-nums text-foreground">
+                  {covers}
+                </span>
                 {/* Cubiertos y mesas no son lo mismo: 38 personas pueden ser 9
                     mesas o 19, y para armar el salón hacen falta las dos. */}
-                <span className="tabular-nums">
+                <span className="tabular-nums text-muted-foreground/70">
                   ({tables} {tables === 1 ? 'mesa' : 'mesas'})
                 </span>
               </span>
@@ -123,22 +123,24 @@ export function ServiceSummary({
 
             {/* Lo que hay que preparar aparte, no lo que hay que sentar. */}
             {bucket.birthdays > 0 ? (
-              <span className="inline-flex items-center gap-1 text-brand-text">
-                <PartyPopper className="size-3.5" aria-hidden />
+              <span className="inline-flex items-center gap-1 text-primary">
+                <PartyPopper className="size-3" aria-hidden />
                 {bucket.birthdays} {bucket.birthdays === 1 ? 'cumple' : 'cumples'}
               </span>
             ) : null}
             {bucket.cakes > 0 ? (
-              <span className="inline-flex items-center gap-1 text-brand-text">
-                <Cake className="size-3.5" aria-hidden />
+              <span className="inline-flex items-center gap-1 text-primary">
+                <Cake className="size-3" aria-hidden />
                 {bucket.cakes} {bucket.cakes === 1 ? 'torta' : 'tortas'}
               </span>
             ) : null}
-            {bucket.inactiveCount > 0 ? <span>{bucket.inactiveCount} sin efecto</span> : null}
+            {bucket.inactiveCount > 0 ? (
+              <span className="text-muted-foreground/70">{bucket.inactiveCount} sin efecto</span>
+            ) : null}
           </div>
         </>
       ) : (
-        <p className="mt-1 type-caption font-normal text-muted-foreground">
+        <p className="mt-1 text-[11px] text-muted-foreground">
           {bucket.inactiveCount} {bucket.inactiveCount === 1 ? 'reserva' : 'reservas'} sin efecto
           (canceladas o que no vinieron).
         </p>

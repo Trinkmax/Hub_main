@@ -26,24 +26,19 @@ const ITEMS: { kind: Kind; label: string; Icon: typeof Box; primary?: boolean }[
   { kind: 'text', label: 'Texto', Icon: Type },
 ]
 
-/**
- * La paleta del editor: «Mesa» es la acción principal (la única `primary` de la
- * barra) y el resto, estructura. Cada botón se arrastra al lienzo o, con un
- * toque o Enter, suma el elemento al centro del área.
- */
 export function ElementPalette({
   onQuickAdd,
   onChipPointerDown,
   shouldSuppressClick,
 }: ElementPaletteProps) {
   return (
-    <fieldset className="flex min-w-0 flex-wrap items-center gap-2">
+    <fieldset className="flex flex-wrap items-center gap-2 border-0 p-0">
       <legend className="sr-only">Agregar al plano (arrastrá al lienzo o tocá para agregar)</legend>
       {ITEMS.map(({ kind, label, Icon, primary }) => (
         <Button
           key={kind}
           type="button"
-          variant={primary ? 'primary' : 'secondary'}
+          variant={primary ? 'default' : 'outline'}
           size="sm"
           // Drag por pointer (mouse + touch); el drop sobre el stage crea el elemento.
           onPointerDown={(e) => onChipPointerDown(kind, label, e)}
@@ -53,10 +48,10 @@ export function ElementPalette({
             onQuickAdd(kind)
           }}
           // touch-none: que el drag de la chip no dispare scroll en tablet/celular.
-          className="cursor-grab touch-none active:cursor-grabbing"
+          className="cursor-grab touch-none gap-1.5 active:cursor-grabbing"
           aria-label={`Agregar ${label} (arrastrá al plano o tocá para agregar en el centro)`}
         >
-          <Icon aria-hidden />
+          <Icon className="size-4" aria-hidden />
           {label}
         </Button>
       ))}

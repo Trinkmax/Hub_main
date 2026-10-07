@@ -108,19 +108,20 @@ export default async function CalendarioPage({
   return (
     <PageShell width="wide">
       <PageHeader
+        eyebrow="Agenda"
         title="Calendario"
-        description="Almuerzo, merienda y cena de cada día contra su cupo. Tocá un día para ver cómo viene y reservar, o un evento para reservar adentro; para programar un evento, arrastrá un formato a su fecha."
+        description="Cada día, almuerzo, merienda y cena contra su cupo. Tocá un día para ver cómo viene y reservar, o un evento para reservar adentro. Los eventos se programan arrastrando un formato (Sushi Libre, Pizza Libre…) a su fecha."
         actions={
-          <>
+          <div className="flex flex-wrap gap-2">
             <EventosTourButton role={access.role} />
             <CalendarSearch tenantSlug={tenantSlug} ym={ym} initialQuery={sp.buscar ?? null} />
-            <Button asChild>
+            <Button asChild className="gap-2">
               <Link href={`/${tenantSlug}/eventos/programados/nuevo`} data-tour="eventos-programar">
-                <CalendarPlus aria-hidden />
+                <CalendarPlus className="size-4" />
                 Programar evento
               </Link>
             </Button>
-          </>
+          </div>
         }
       />
 

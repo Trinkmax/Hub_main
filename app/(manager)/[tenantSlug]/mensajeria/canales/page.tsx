@@ -1,12 +1,17 @@
-import { Camera, Check, MessageCircle, Unplug } from 'lucide-react'
+import { format } from 'date-fns'
+import {
+  Camera,
+  Check,
+  CheckCircle2,
+  MessageCircle,
+  Settings,
+  TriangleAlert,
+  Unplug,
+} from 'lucide-react'
 import { notFound } from 'next/navigation'
-import { Callout } from '@/components/ui/callout'
-import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
-import { Section } from '@/components/ui/section'
-import { StatusBadge } from '@/components/ui/status-badge'
-import { formatDate } from '@/lib/dates'
 import { getChannelsForTenant } from '@/lib/meta/channels'
 import { isMetaConfigured } from '@/lib/meta/env'
 import { isTokenExpiringSoon } from '@/lib/meta/token-refresh'
@@ -18,7 +23,6 @@ import {
   TenantNotFoundError,
 } from '@/lib/tenant'
 import { ChannelCardActions } from './_channel-actions'
-import { CHANNEL_STATUS } from './_channel-status'
 import { ConnectButton } from './_connect-button'
 
 export const metadata = { title: 'Canales' }
@@ -133,117 +137,136 @@ export default async function CanalesPage({
   return (
     <PageShell width="compact">
       <PageHeader
+        eyebrow="Configuración"
         title="Canales"
         description="Acá conectás el WhatsApp y el Instagram de tu bar. Una vez conectados, todos los mensajes con tus clientes entran y salen desde esta plataforma."
       />
 
       {meta_ok ? (
-        <Callout
-          tone="success"
-          announce="polite"
-          title={`¡Listo! ${meta_ok === 'whatsapp' ? 'WhatsApp' : 'Instagram'} quedó conectado.`}
-        >
-          {meta_ok === 'whatsapp'
-            ? 'Siguiente paso: traé tus plantillas desde Plantillas para poder mandar difusiones.'
-            : 'Los mensajes directos de Instagram van a empezar a caer en los chats.'}
-        </Callout>
+        <div className="flex items-start gap-2.5 rounded-xl border border-success/30 bg-success/10 px-4 py-3 text-sm">
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
+          <div className="space-y-0.5">
+            <p className="font-medium">
+              ¡Listo! {meta_ok === 'whatsapp' ? 'WhatsApp' : 'Instagram'} quedó conectado.
+            </p>
+            <p className="text-muted-foreground">
+              {meta_ok === 'whatsapp'
+                ? 'Siguiente paso: sincronizá tus plantillas para poder mandar difusiones.'
+                : 'Los mensajes directos de Instagram van a empezar a caer en la bandeja.'}
+            </p>
+          </div>
+        </div>
       ) : null}
 
       {connectError ? (
-        <Callout tone="danger" announce="polite" title="No se pudo conectar">
-          <p>{connectError.friendly}</p>
-          {connectError.technical ? <TechnicalDetail text={connectError.technical} /> : null}
-        </Callout>
+        <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm">
+          <div className="flex items-start gap-2.5">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0 text-destructive" />
+            <div className="space-y-1">
+              <p className="font-medium">No se pudo conectar</p>
+              <p>{connectError.friendly}</p>
+              {connectError.technical ? <TechnicalDetail text={connectError.technical} /> : null}
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {/* Aviso claro cuando la plataforma todavía no tiene credenciales de Meta */}
       {!configured ? (
-        <Callout tone="warning" title="WhatsApp e Instagram todavía no están habilitados">
-          Falta un paso técnico que no depende de vos: cargar las credenciales de la app de Meta (
-          <span className="font-mono">META_APP_ID</span> y{' '}
-          <span className="font-mono">META_APP_SECRET</span>). Avisale a quien administra la
-          plataforma y se resuelve una sola vez. Mientras tanto podés dejar listos los chats, las
-          difusiones y las plantillas.
-        </Callout>
+        <div className="card-hairline rounded-xl border border-warning/30 bg-warning/10 p-5">
+          <div className="flex items-start gap-3">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-warning/20 text-warning">
+              <Settings className="size-5" />
+            </div>
+            <div className="space-y-1.5">
+              <h3 className="font-display text-sm font-semibold tracking-tight">
+                WhatsApp e Instagram todavía no están habilitados
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Falta un paso técnico que no depende de vos: cargar las credenciales de la app de
+                Meta (<span className="font-mono text-xs">META_APP_ID</span> y{' '}
+                <span className="font-mono text-xs">META_APP_SECRET</span>). Avisale a quien
+                administra la plataforma y se resuelve una sola vez. Mientras tanto podés dejar
+                listas la bandeja, las difusiones y las plantillas.
+              </p>
+            </div>
+          </div>
+        </div>
       ) : null}
 
-      <div className="flex flex-col gap-4">
-        {/* WhatsApp */}
-        <ChannelCard
-          icon={<MessageCircle className="size-5" aria-hidden />}
-          iconClass="bg-success-soft text-success-text"
-          title="WhatsApp Business"
-          purpose="Por acá entran y salen los mensajes de WhatsApp con tus clientes: chats, difusiones y automatizaciones."
-          status={wa?.status ?? null}
-          accountLabel={wa?.display_name ? formatAccountName(wa.display_name) : null}
-          connectedAt={wa?.connected_at ? formatDate(wa.connected_at) : null}
-          lastError={wa?.last_error ?? null}
-          tokenExpiringSoon={isTokenExpiringSoon(wa?.token_expires_at ?? null, now)}
-        >
-          {wa && wa.status === 'connected' ? (
-            <ChannelCardActions channelId={wa.id} type="whatsapp" tenantSlug={tenantSlug} />
-          ) : (
-            <ConnectButton
-              type="whatsapp"
-              tenantSlug={tenantSlug}
-              disabled={!configured}
-              label={wa?.status === 'error' ? 'Volver a conectar' : undefined}
-            />
-          )}
-        </ChannelCard>
+      {/* WhatsApp */}
+      <ChannelCard
+        icon={<MessageCircle className="size-5" />}
+        iconClass="bg-success/15 text-success"
+        title="WhatsApp Business"
+        purpose="Por acá entran y salen los mensajes de WhatsApp con tus clientes: bandeja, difusiones y automatizaciones."
+        status={wa?.status ?? null}
+        accountLabel={wa?.display_name ? formatAccountName(wa.display_name) : null}
+        connectedAt={wa?.connected_at ? format(new Date(wa.connected_at), 'dd/MM/yyyy') : null}
+        lastError={wa?.last_error ?? null}
+        tokenExpiringSoon={isTokenExpiringSoon(wa?.token_expires_at ?? null, now)}
+      >
+        {wa && wa.status === 'connected' ? (
+          <ChannelCardActions channelId={wa.id} type="whatsapp" tenantSlug={tenantSlug} />
+        ) : (
+          <ConnectButton
+            type="whatsapp"
+            tenantSlug={tenantSlug}
+            disabled={!configured}
+            label={wa?.status === 'error' ? 'Volver a conectar' : undefined}
+          />
+        )}
+      </ChannelCard>
 
-        {/* Instagram */}
-        <ChannelCard
-          icon={<Camera className="size-5" aria-hidden />}
-          iconClass="bg-secondary text-foreground"
-          title="Instagram"
-          purpose="Por acá entran los mensajes directos de Instagram, para responderlos desde los chats."
-          status={ig?.status ?? null}
-          accountLabel={ig?.display_name ? `@${ig.display_name}` : null}
-          connectedAt={ig?.connected_at ? formatDate(ig.connected_at) : null}
-          lastError={ig?.last_error ?? null}
-          tokenExpiringSoon={isTokenExpiringSoon(ig?.token_expires_at ?? null, now)}
-        >
-          {ig && ig.status === 'connected' ? (
-            <ChannelCardActions channelId={ig.id} type="instagram" tenantSlug={tenantSlug} />
-          ) : (
-            <ConnectButton
-              type="instagram"
-              tenantSlug={tenantSlug}
-              disabled={!configured}
-              label={ig?.status === 'error' ? 'Volver a conectar' : undefined}
-            />
-          )}
-        </ChannelCard>
-      </div>
+      {/* Instagram */}
+      <ChannelCard
+        icon={<Camera className="size-5" />}
+        iconClass="bg-warning/15 text-warning"
+        title="Instagram"
+        purpose="Por acá entran los mensajes directos de Instagram, para responderlos desde la bandeja."
+        status={ig?.status ?? null}
+        accountLabel={ig?.display_name ? `@${ig.display_name}` : null}
+        connectedAt={ig?.connected_at ? format(new Date(ig.connected_at), 'dd/MM/yyyy') : null}
+        lastError={ig?.last_error ?? null}
+        tokenExpiringSoon={isTokenExpiringSoon(ig?.token_expires_at ?? null, now)}
+      >
+        {ig && ig.status === 'connected' ? (
+          <ChannelCardActions channelId={ig.id} type="instagram" tenantSlug={tenantSlug} />
+        ) : (
+          <ConnectButton
+            type="instagram"
+            tenantSlug={tenantSlug}
+            disabled={!configured}
+            label={ig?.status === 'error' ? 'Volver a conectar' : undefined}
+          />
+        )}
+      </ChannelCard>
 
       {/* Guía de pasos */}
-      <Section divider title="Cómo conectar WhatsApp">
-        <ol className="flex flex-col gap-3 type-body text-muted-foreground">
+      <div className="card-hairline rounded-xl border border-border/60 bg-card/60 p-5">
+        <h3 className="font-display text-sm font-semibold tracking-tight">
+          Cómo conectar WhatsApp
+        </h3>
+        <ol className="mt-3 space-y-2.5 text-sm text-muted-foreground">
           {[
-            'Tocá «Conectar mi WhatsApp» y seguí los pasos de Meta (vas a entrar con tu cuenta de Facebook).',
+            'Tocá “Conectar mi WhatsApp” y seguí los pasos de Meta (vas a entrar con tu cuenta de Facebook).',
             'Elegí tu cuenta de WhatsApp Business y el número del bar.',
-            'Traé tus plantillas desde la pantalla de Plantillas.',
+            'Sincronizá tus plantillas desde la pantalla de Plantillas.',
             'Mandá un mensaje de prueba desde Difusiones para confirmar que todo funciona.',
           ].map((step, i) => (
             <li key={step} className="flex gap-3">
-              <span
-                aria-hidden="true"
-                className="flex size-6 shrink-0 items-center justify-center rounded-full bg-secondary type-caption font-semibold tabular-nums text-foreground"
-              >
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-secondary text-[11px] font-semibold tabular-nums text-foreground">
                 {i + 1}
               </span>
-              <span className="pt-0.5">{step}</span>
+              <span>{step}</span>
             </li>
           ))}
         </ol>
-        {/* Nota al pie, después de los pasos: como bajada del título se leía
-            antes de explicar WhatsApp. */}
-        <p className="max-w-prose text-pretty type-small text-muted-foreground">
-          Instagram se conecta igual de fácil: tocá «Conectar mi Instagram» y entrá con la cuenta
+        <p className="mt-3 border-t border-border/60 pt-3 text-xs text-muted-foreground">
+          Instagram se conecta igual de fácil: tocá “Conectar mi Instagram” y entrá con la cuenta
           del bar.
         </p>
-      </Section>
+      </div>
     </PageShell>
   )
 }
@@ -272,45 +295,47 @@ function ChannelCard({
   children: React.ReactNode
 }) {
   return (
-    <Card asChild padding="none" className="gap-0 overflow-clip">
-      <section aria-label={title}>
-        <header className="flex items-start justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
-          <div className="flex min-w-0 items-start gap-3">
-            <div
-              className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${iconClass}`}
-            >
-              {icon}
-            </div>
-            <div className="min-w-0">
-              <h2 className="type-subtitle text-foreground">{title}</h2>
-              <p className="mt-0.5 type-small text-pretty text-muted-foreground">{purpose}</p>
-            </div>
+    <section aria-label={title} className="card-hairline overflow-hidden rounded-xl border bg-card">
+      <header className="flex items-start justify-between gap-3 border-b border-border/60 px-5 py-4">
+        <div className="flex items-start gap-3">
+          <div
+            className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${iconClass}`}
+          >
+            {icon}
           </div>
-          <StatusBadge status={status ?? 'disconnected'} map={CHANNEL_STATUS} />
-        </header>
-
-        <div className="flex flex-col gap-3 p-4 sm:p-5">
-          <StatusHero
-            status={status}
-            title={title}
-            accountLabel={accountLabel}
-            connectedAt={connectedAt}
-            lastError={lastError}
-          />
-
-          {tokenExpiringSoon && status === 'connected' ? (
-            <Callout tone="warning" title="La autorización de Meta está por vencer">
-              Tocá «Reconectar» para que los mensajes sigan saliendo sin cortes.
-            </Callout>
-          ) : null}
-
-          {/* Error suelto con la conexión todavía activa (ej. falló la renovación automática) */}
-          {status === 'connected' && lastError ? <ConnectedWarning lastError={lastError} /> : null}
-
-          <div className="flex flex-wrap items-center gap-2">{children}</div>
+          <div>
+            <h2 className="font-serif text-lg font-semibold tracking-tight">{title}</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground text-pretty">{purpose}</p>
+          </div>
         </div>
-      </section>
-    </Card>
+        <StatusBadge status={status} />
+      </header>
+
+      <div className="space-y-3 p-5">
+        <StatusHero
+          status={status}
+          title={title}
+          accountLabel={accountLabel}
+          connectedAt={connectedAt}
+          lastError={lastError}
+        />
+
+        {tokenExpiringSoon && status === 'connected' ? (
+          <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs">
+            <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-warning" />
+            <span>
+              La autorización de Meta está por vencer (o ya venció). Tocá “Reconectar” para que los
+              mensajes sigan saliendo sin cortes.
+            </span>
+          </div>
+        ) : null}
+
+        {/* Error suelto con la conexión todavía activa (ej. falló la renovación automática) */}
+        {status === 'connected' && lastError ? <ConnectedWarning lastError={lastError} /> : null}
+
+        <div className="flex flex-wrap items-center gap-2">{children}</div>
+      </div>
+    </section>
   )
 }
 
@@ -318,10 +343,10 @@ function ChannelCard({
 function ConnectedWarning({ lastError }: { lastError: string }) {
   const info = translateMetaError(lastError)
   return (
-    <Callout tone="warning">
+    <div className="space-y-1 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs">
       <p>{info.friendly}</p>
       {info.technical ? <TechnicalDetail text={info.technical} /> : null}
-    </Callout>
+    </div>
   )
 }
 
@@ -340,44 +365,82 @@ function StatusHero({
 }) {
   if (status === 'connected') {
     return (
-      <Callout tone="success" icon={Check} title={accountLabel ?? title}>
-        Conectado{connectedAt ? ` desde el ${connectedAt}` : ''}: los mensajes entran y salen con
-        normalidad.
-      </Callout>
+      <div className="flex items-center gap-3.5 rounded-lg border border-success/25 bg-success/10 px-4 py-3.5">
+        <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-success text-success-foreground">
+          <Check className="size-6" strokeWidth={3} aria-hidden />
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-base font-semibold leading-tight">{accountLabel ?? title}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Conectado{connectedAt ? ` desde el ${connectedAt}` : ''} · los mensajes entran y salen
+            con normalidad.
+          </p>
+        </div>
+      </div>
     )
   }
 
   if (status === 'error') {
     const info = lastError ? translateMetaError(lastError) : null
     return (
-      <Callout tone="danger" title="La conexión se cortó">
-        <p>
-          {accountLabel ? `${accountLabel}: ` : ''}los mensajes no están entrando ni saliendo.{' '}
+      <div className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3.5">
+        <div className="flex items-center gap-3.5">
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-destructive/15 text-destructive">
+            <TriangleAlert className="size-5" aria-hidden />
+          </div>
+          <div className="min-w-0">
+            <p className="text-base font-semibold leading-tight">La conexión se cortó</p>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {accountLabel ? `${accountLabel} · ` : ''}Los mensajes no están entrando ni saliendo.
+            </p>
+          </div>
+        </div>
+        <p className="text-sm">
           {info?.friendly ??
-            'No sabemos bien qué pasó. Tocá «Volver a conectar» y, si sigue fallando, avisanos.'}
+            'No sabemos bien qué pasó. Tocá "Volver a conectar" y, si sigue fallando, avisanos.'}
         </p>
         {info?.technical ? <TechnicalDetail text={info.technical} /> : null}
-      </Callout>
+      </div>
     )
   }
 
   return (
-    <Callout tone="neutral" icon={Unplug} title="Sin conectar">
-      Conectalo y los mensajes de tus clientes empiezan a entrar solos a los chats.
-    </Callout>
+    <div className="flex items-center gap-3.5 rounded-lg border border-dashed border-border px-4 py-3.5">
+      <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground">
+        <Unplug className="size-5" aria-hidden />
+      </div>
+      <div>
+        <p className="text-base font-semibold leading-tight">Sin conectar</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Conectalo y los mensajes de tus clientes empiezan a entrar solos a la bandeja.
+        </p>
+      </div>
+    </div>
   )
 }
 
 /** Mensaje crudo de Meta, plegado: útil solo si hay que pedir ayuda. */
 function TechnicalDetail({ text }: { text: string }) {
   return (
-    <details className="mt-1">
-      <summary className="cursor-pointer type-caption text-muted-foreground underline underline-offset-2">
-        Ver el detalle técnico (para soporte)
+    <details>
+      <summary className="cursor-pointer text-xs text-muted-foreground underline-offset-2 hover:underline">
+        Ver detalle técnico (para soporte)
       </summary>
-      <code className="mt-1 block overflow-x-auto rounded-sm bg-card px-2 py-1.5 font-mono type-caption text-muted-foreground">
+      <code className="mt-1 block overflow-x-auto rounded bg-secondary px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
         {text}
       </code>
     </details>
   )
+}
+
+function StatusBadge({ status }: { status: 'connected' | 'disconnected' | 'error' | null }) {
+  if (status === 'connected')
+    return (
+      <Badge variant="success" className="gap-1">
+        <span className="size-1.5 rounded-full bg-current" aria-hidden />
+        Conectado
+      </Badge>
+    )
+  if (status === 'error') return <Badge variant="destructive">Necesita atención</Badge>
+  return <Badge variant="outline">Sin conectar</Badge>
 }

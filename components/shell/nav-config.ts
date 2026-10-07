@@ -1,11 +1,5 @@
 import type { FeatureKey, TenantFeatures } from '@/lib/platform/features'
-import { ACCOUNTING_READ_ROLES } from '@/lib/tenant/roles'
-import type { AccountingAccess, TenantRole } from '@/lib/tenant/types'
-import {
-  type NavAccountingGate,
-  NO_ACCOUNTING_ACCESS,
-  navAccountingAllows,
-} from './accounting-gates'
+import type { TenantRole } from '@/lib/tenant/types'
 import type { NavIconKey } from './nav-icons'
 
 export type NavItem = {
@@ -13,22 +7,13 @@ export type NavItem = {
   href: (slug: string) => string
   icon: NavIconKey
   /** Si está, sólo se muestra a estos roles. Si no, a todos. */
-  roles?: ReadonlyArray<TenantRole>
+  roles?: TenantRole[]
   /** Match exacto (true) o prefijo (false, default). */
   exact?: boolean
   /** Abre en nueva pestaña (p. ej. "Salón en vivo" desde el manager). */
   newTab?: boolean
-  /**
-   * Si está, sólo se muestra cuando la feature está ON (o quien mira es
-   * superadmin, salvo en lo que lleva `accounting`: ver `itemVisible`).
-   */
+  /** Si está, sólo se muestra cuando la feature está ON (o quien mira es superadmin). */
   feature?: FeatureKey
-  /**
-   * Administración: además del rol y del flag, el acceso por persona que trae
-   * `TenantAccess.accounting` (contable §H.0). `read` = ve el módulo;
-   * `read_or_setup` = también quien puede hacer la puesta en marcha.
-   */
-  accounting?: NavAccountingGate
   /**
    * El padre NO navega: al clickearlo sólo expande/colapsa sus hijos. Para
    * categorías-madre que son puro agrupador (ej. "Personas") y cuya "vista
@@ -40,11 +25,6 @@ export type NavItem = {
 }
 
 export type NavGroup = {
-  /**
-   * Clave estable: guarda si el grupo quedó plegado (localStorage). Antes la
-   * clave era la etiqueta y renombrar un grupo reseteaba la preferencia.
-   */
-  id: string
   label: string
   items: NavItem[]
   /**
@@ -69,8 +49,6 @@ export type ResolvedNavItem = {
 }
 
 export type ResolvedNavGroup = {
-  /** La clave estable del grupo (`NavGroup.id`). Sin ella, la etiqueta (como antes). */
-  id?: string
   label: string
   items: ResolvedNavItem[]
   collapsible?: boolean
@@ -82,18 +60,16 @@ export type ResolvedNavGroup = {
  * Orden por el FLUJO del dueño: primero el hoy (resumen, operativo del día,
  * mensajería), después la agenda (reservas + calendario: se reserva desde los
  * dos), el CRM (personas + acreditar puntos), el crecimiento (carta, club de
- * beneficios), el negocio (estadísticas), la administración (contabilidad de
- * la SAS) y, anclada abajo, la configuración. Lo de servicio de mesa (Salón)
- * queda OCULTO detrás de feature-flags de superadmin.
+ * beneficios), el negocio (estadísticas) y, anclada abajo, la configuración.
+ * Lo de servicio de mesa (Salón) queda OCULTO detrás de feature-flags de
+ * superadmin.
  *
  * Roles acotados (el proxy además limita sus rutas — lib/tenant/roles.ts):
- *   editor     → sólo Carta (+ ver la carta pública)
- *   host       → Operativo, Reservas, Calendario y Mis números
- *   accountant → sólo Administración (lee y exporta; no carga nada)
+ *   editor → sólo Carta (+ ver la carta pública)
+ *   host   → Operativo, Reservas, Calendario y Mis números
  */
 export const NAV_GROUPS: NavGroup[] = [
   {
-    id: 'hoy',
     label: 'Hoy',
     items: [
       {
@@ -120,7 +96,6 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    id: 'agenda',
     label: 'Agenda',
     collapsible: true,
     items: [
@@ -143,7 +118,6 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    id: 'clientes',
     label: 'Clientes',
     collapsible: true,
     items: [
@@ -180,7 +154,6 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    id: 'crecimiento',
     label: 'Crecimiento',
     collapsible: true,
     items: [
@@ -241,7 +214,6 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     // Lo que el bar muestra puertas afuera y cómo se organiza el equipo para
     // producirlo. Owner-only: es la mesa de los socios.
-    id: 'marketing',
     label: 'Marketing',
     collapsible: true,
     items: [
@@ -267,7 +239,6 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    id: 'negocio',
     label: 'Negocio',
     collapsible: true,
     items: [
@@ -316,67 +287,6 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    // Sprint 1 «Administración» (contable §H.0): dueños con acceso y la
-    // contadora, detrás del flag `accounting`. Cada ítem lleva rol + flag +
-    // acceso por persona. Antes de configurar, quien puede hacer la puesta en
-    // marcha ve solo «Resumen», que lo lleva al asistente.
-    id: 'administracion',
-    label: 'Administración',
-    collapsible: true,
-    items: [
-      {
-        label: 'Resumen',
-        href: (s) => `/${s}/administracion`,
-        icon: 'Landmark',
-        exact: true,
-        roles: ACCOUNTING_READ_ROLES,
-        feature: 'accounting',
-        accounting: 'read_or_setup',
-      },
-      {
-        label: 'Compras y proveedores',
-        href: (s) => `/${s}/administracion/compras`,
-        icon: 'Truck',
-        roles: ACCOUNTING_READ_ROLES,
-        feature: 'accounting',
-        accounting: 'read',
-      },
-      {
-        label: 'Ventas y clientes',
-        href: (s) => `/${s}/administracion/ventas`,
-        icon: 'HandCoins',
-        roles: ACCOUNTING_READ_ROLES,
-        feature: 'accounting',
-        accounting: 'read',
-      },
-      {
-        label: 'Cajas y bancos',
-        href: (s) => `/${s}/administracion/cajas`,
-        icon: 'Wallet',
-        roles: ACCOUNTING_READ_ROLES,
-        feature: 'accounting',
-        accounting: 'read',
-      },
-      {
-        label: 'Libros',
-        href: (s) => `/${s}/administracion/libros`,
-        icon: 'BookText',
-        roles: ACCOUNTING_READ_ROLES,
-        feature: 'accounting',
-        accounting: 'read',
-      },
-      {
-        label: 'Plan de cuentas',
-        href: (s) => `/${s}/administracion/plan-de-cuentas`,
-        icon: 'ListTree',
-        roles: ACCOUNTING_READ_ROLES,
-        feature: 'accounting',
-        accounting: 'read',
-      },
-    ],
-  },
-  {
-    id: 'salon',
     label: 'Salón',
     collapsible: true,
     items: [
@@ -414,7 +324,6 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     // Anclado al fondo, sin header: siempre a un click, nunca en el medio.
-    id: 'sistema',
     label: 'Sistema',
     pinned: true,
     items: [
@@ -436,70 +345,57 @@ function itemVisible(
   role: TenantRole,
   features: TenantFeatures,
   isPlatformAdmin: boolean,
-  accounting: AccountingAccess,
 ): boolean {
   const roleOk = !item.roles || item.roles.includes(role)
-  // El superadmin ve los paneles apagados (para revisarlos), salvo
-  // Administración: la base no lo deja entrar por ser superadmin (contable
-  // §B.1), así que mostrarle el menú sería llevarlo a un 404.
-  const featureOk = !item.feature || features[item.feature] || (isPlatformAdmin && !item.accounting)
-  const accountingOk = navAccountingAllows(item.accounting, accounting)
-  return roleOk && featureOk && accountingOk
+  const featureOk = !item.feature || isPlatformAdmin || features[item.feature]
+  return roleOk && featureOk
 }
 
 /**
- * Filtra los grupos por rol + feature-flag (+ superadmin bypass) + acceso a
- * Administración, recursando en los children. Un padre se mantiene si él pasa
- * o si le sobrevive algún hijo; en el segundo caso queda como puro agrupador
- * (`expanderOnly`): su propio link no tiene por qué abrirse para quien no lo
- * puede ver.
+ * Filtra los grupos por rol + feature-flag (+ superadmin bypass), recursando en
+ * los children. Un padre se mantiene si él pasa o si le sobrevive algún hijo.
  */
 export function visibleGroups(
   role: TenantRole,
   features: TenantFeatures,
   isPlatformAdmin: boolean,
-  accounting: AccountingAccess = NO_ACCOUNTING_ACCESS,
 ): NavGroup[] {
-  const visible = (item: NavItem) => itemVisible(item, role, features, isPlatformAdmin, accounting)
   return NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items
-      .map((item) => ({
-        item,
-        selfVisible: visible(item),
-        children: item.children?.filter(visible),
-      }))
-      .filter(({ selfVisible, children }) => selfVisible || (children?.length ?? 0) > 0)
-      .map(({ item, selfVisible, children }) => ({
-        ...item,
-        expanderOnly: item.expanderOnly || !selfVisible || undefined,
-        children,
-      })),
+      .map((item) => {
+        const children = item.children?.filter((child) =>
+          itemVisible(child, role, features, isPlatformAdmin),
+        )
+        return { item, children }
+      })
+      .filter(
+        ({ item, children }) =>
+          itemVisible(item, role, features, isPlatformAdmin) || (children?.length ?? 0) > 0,
+      )
+      .map(({ item, children }) => ({ ...item, children })),
   })).filter((group) => group.items.length > 0)
 }
 
 /**
  * Resuelve los grupos a estructuras serializables (href ejecutado, icon como key).
- * Llamar con (role, slug, features, isPlatformAdmin, accounting): todo viene de
- * `requireTenantAccess` en el layout, sin otro round-trip. `accounting` falta =
- * Administración cerrada.
+ * Llamar con (role, slug, features, isPlatformAdmin); features/isPlatformAdmin
+ * vienen del tenant (requireTenantAccess) + lib/platform/is-admin.
  *
- * Si al rol le quedan pocos items (editor, host, contadora), los grupos dejan
- * de colapsar: no tiene sentido esconder 3 entradas detrás de accordions.
+ * Si al rol le quedan pocos items (editor/host), los grupos dejan de colapsar:
+ * no tiene sentido esconder 3 entradas detrás de accordions.
  */
 export function resolveNavGroups(
   role: TenantRole,
   slug: string,
   features: TenantFeatures,
   isPlatformAdmin: boolean,
-  accounting: AccountingAccess = NO_ACCOUNTING_ACCESS,
 ): ResolvedNavGroup[] {
-  const groups = visibleGroups(role, features, isPlatformAdmin, accounting)
+  const groups = visibleGroups(role, features, isPlatformAdmin)
   const totalItems = groups.reduce((n, g) => n + g.items.length, 0)
   const fewItems = totalItems <= 8
 
   return groups.map((group) => ({
-    id: group.id,
     label: group.label,
     collapsible: fewItems ? false : group.collapsible,
     pinned: group.pinned,

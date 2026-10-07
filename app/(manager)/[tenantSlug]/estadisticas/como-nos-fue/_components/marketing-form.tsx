@@ -13,13 +13,19 @@ import {
   useTransition,
 } from 'react'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { Callout } from '@/components/ui/callout'
-import { ConfirmDialog, type ConfirmResult } from '@/components/ui/confirm-dialog'
-import { Disclosure } from '@/components/ui/disclosure'
-import { Field } from '@/components/ui/field'
-import { FormActions } from '@/components/ui/form-actions'
 import { Kbd } from '@/components/ui/kbd'
+import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
   canonicalInput,
@@ -61,6 +67,7 @@ import {
   withoutMoney,
 } from '@/lib/salon/event-marketing-draft'
 import { cn } from '@/lib/utils'
+import { Disclosure } from './marketing-report'
 import { MoneyField, scrollIntoViewOnTouch } from './money-field'
 
 /**
@@ -88,21 +95,7 @@ import { MoneyField, scrollIntoViewOnTouch } from './money-field'
  * montada (`initialDraft` / `onKeepDraft`), junto con la versión contra la que
  * se escribió: si al reabrir la fila es otra, se avisa como en el stale. Sin
  * localStorage ni diálogo.
- *
- * Borrar pide confirmación con el `ConfirmDialog` del kit: espera al server con
- * el diálogo abierto («Borrando…») y, si falla, el error queda adentro.
  */
-
-/**
- * A dónde vuelve el foco cuando el diálogo de borrar se cierra porque el form
- * ya se desmontó (borrado con éxito): a donde lo haya puesto la sección (el
- * «Cargar pauta» de la ficha, el «Editar» de la fila del mes). Si nadie lo
- * movió, el diálogo lo lleva al título de la página.
- */
-function focusWherePageLeftIt(): HTMLElement | null {
-  const active = document.activeElement
-  return active instanceof HTMLElement && active !== document.body ? active : null
-}
 
 export type MarketingFormProps = {
   tenantSlug: string
@@ -132,6 +125,8 @@ export type MarketingFormProps = {
 }
 
 type FieldErrors = Partial<Record<MarketingField, string>>
+
+const EYEBROW = 'text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground'
 
 function withoutFields<T>(source: Partial<Record<MarketingField, T>>, fields: MarketingField[]) {
   const next = { ...source }
@@ -192,14 +187,19 @@ export function MarketingForm({
   const [srPreview, setSrPreview] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [saving, startSaving] = useTransition()
-  // Borrar espera adentro del diálogo (modal): mientras tanto el form no se toca.
-  const pending = saving
+  const [deleting, startDeleting] = useTransition()
+  const pending = saving || deleting
 
   const formRef = useRef<HTMLFormElement>(null)
+  const deleteButtonRef = useRef<HTMLButtonElement>(null)
   const inputs = useRef<Partial<Record<MarketingField, HTMLInputElement | HTMLTextAreaElement>>>({})
   // Al abrir la sección de plata el foco va a su primer campo, que se monta en
   // el mismo render: se pide acá y lo cumple el `ref` cuando aparece.
   const focusMoneyOnMount = useRef(false)
+  // Al confirmar el borrado el diálogo cierra en el mismo click que prende
+  // `deleting`: «Borrar pauta» está apagado y `focus()` no hace nada. Se pide
+  // acá y se cumple cuando termina (si falló; si salió bien, el form ya no está).
+  const refocusDelete = useRef(false)
 
   // Si el form se desmonta SIN cerrarse (rotar el teléfono y pasar de tarjeta a
   // tabla, la fila que cambia de lugar después de un refresh, abrir otro
@@ -236,6 +236,13 @@ export function MarketingForm({
   useEffect(() => {
     inputs.current[initialFocus]?.focus()
   }, [initialFocus])
+
+  useEffect(() => {
+    if (pending || !refocusDelete.current) return
+    refocusDelete.current = false
+    // Un stale que trae la fila borrada desmonta el botón: el foco va al primer campo.
+    ;(deleteButtonRef.current ?? inputs.current.adSpendUsd)?.focus()
+  }, [pending])
 
   // ─── Derivados ──────────────────────────────────────────────────────────────
 
@@ -441,28 +448,30 @@ export function MarketingForm({
     })
   }
 
-  /** Lo corre el `ConfirmDialog`: si falla, el diálogo queda abierto con el error. */
-  const confirmDelete = async (): Promise<ConfirmResult> => {
-    if (!row) return
+  const confirmDelete = () => {
+    if (!row || pending) return
     const expected = row.updatedAt
-    let res: MarketingActionState
-    try {
-      res = await deleteEventMarketing(tenantSlug, scheduledEventId, expected)
-    } catch (error) {
-      console.error(
-        '[como-nos-fue.pauta.delete]',
-        error instanceof Error ? error.message : 'sin respuesta',
-      )
-      return { ok: false, error: MARKETING_UNREACHABLE.delete }
-    }
-    if (res.ok) {
-      toast.success(copy.deletedToast)
-      closed.current = true
-      onDeleted?.()
-      return
-    }
-    if (res.code === 'stale') router.refresh()
-    return res
+    startDeleting(async () => {
+      let res: MarketingActionState
+      try {
+        res = await deleteEventMarketing(tenantSlug, scheduledEventId, expected)
+      } catch (error) {
+        console.error(
+          '[como-nos-fue.pauta.delete]',
+          error instanceof Error ? error.message : 'sin respuesta',
+        )
+        toast.error(MARKETING_UNREACHABLE.delete)
+        return
+      }
+      if (res.ok) {
+        toast.success(copy.deletedToast)
+        closed.current = true
+        onDeleted?.()
+        return
+      }
+      toast.error(res.message)
+      if (res.code === 'stale') router.refresh()
+    })
   }
 
   const onFormKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
@@ -486,14 +495,17 @@ export function MarketingForm({
         onKeyDown={onFormKeyDown}
       >
         <div className="flex items-baseline justify-between gap-3">
-          <h4 className="type-label text-muted-foreground">Pauta en Meta</h4>
-          <span className="hidden items-center gap-1 type-caption text-muted-foreground pointer-fine:inline-flex">
+          <h4 className={EYEBROW}>Pauta en Meta</h4>
+          <span className="hidden items-center gap-1 text-[11px] text-muted-foreground pointer-fine:inline-flex">
             <Kbd>Esc</Kbd> para cancelar
           </span>
         </div>
 
         {changedUnderneath ? (
-          <Callout tone="warning" announce="polite" className="mt-3">
+          <div
+            role="status"
+            className="mt-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-relaxed"
+          >
             {row ? (
               <>
                 <span className="text-foreground">
@@ -513,7 +525,7 @@ export function MarketingForm({
                 Otro dueño borró esta pauta recién. Si guardás, se carga de nuevo.
               </span>
             )}
-          </Callout>
+          </div>
         ) : resumed ? (
           <p role="status" className="mt-3 text-xs text-muted-foreground">
             Seguís con lo que habías escrito.{' '}
@@ -528,7 +540,7 @@ export function MarketingForm({
           </p>
         ) : null}
 
-        <Disclosure variant="inline" title="¿Qué fechas filtro en Meta?" className="mt-2">
+        <Disclosure summary="¿Qué fechas filtro en Meta?" className="mt-2">
           <p className="max-w-prose text-muted-foreground">
             Filtrá la campaña de esta fecha, desde que arrancó hasta el día del evento.
           </p>
@@ -575,7 +587,7 @@ export function MarketingForm({
             type="button"
             variant="ghost"
             size="sm"
-            className="-ml-2"
+            className="-ml-2 h-10 px-2 text-xs @sm:h-8"
             aria-expanded={draft.moneyOpen}
             aria-controls={`${uid}-money`}
             onClick={toggleMoney}
@@ -583,12 +595,12 @@ export function MarketingForm({
           >
             {draft.moneyOpen ? (
               <>
-                <X aria-hidden />
+                <X aria-hidden className="size-3.5" />
                 Quitar la plata
               </>
             ) : (
               <>
-                <Plus aria-hidden />
+                <Plus aria-hidden className="size-3.5" />
                 Sumar la plata de la noche (opcional)
               </>
             )}
@@ -596,7 +608,7 @@ export function MarketingForm({
           {draft.moneyOpen ? (
             <div
               id={`${uid}-money`}
-              className="mt-2 grid gap-x-4 gap-y-3 border-l border-border pl-3 @md:grid-cols-2 @md:pl-4"
+              className="mt-2 grid gap-x-4 gap-y-3 border-l border-border/60 pl-3 @md:grid-cols-2 @md:pl-4"
             >
               {/* Ninguno lleva «(opcional)»: opcional es la sección entera, y
                   seis veces la misma aclaración tapa las ayudas, que son las
@@ -650,7 +662,7 @@ export function MarketingForm({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="-ml-2 justify-self-start tabular-nums"
+                    className="-ml-2 h-7 justify-self-start px-2 text-xs tabular-nums pointer-coarse:h-10"
                     onClick={applyLastRate}
                     disabled={pending}
                   >
@@ -658,7 +670,9 @@ export function MarketingForm({
                   </Button>
                 ) : null}
                 {/* Aviso, no error: sin el dólar no hay retorno, pero se guarda igual. */}
-                {rateNotice ? <p className="type-caption text-warning-text">{rateNotice}</p> : null}
+                {rateNotice ? (
+                  <p className="text-[11px] leading-snug text-warning-text">{rateNotice}</p>
+                ) : null}
               </MoneyField>
             </div>
           ) : null}
@@ -666,8 +680,8 @@ export function MarketingForm({
 
         {/* La vista previa va ÚLTIMA de los números: es el resumen de todo lo
             que se acaba de tipear, incluida la cuenta de la noche. */}
-        <div className="mt-4 border-t border-border pt-3">
-          <p aria-hidden className="type-label text-muted-foreground">
+        <div className="mt-4 border-t border-border/50 pt-3">
+          <p aria-hidden className={EYEBROW}>
             Con estos números
           </p>
           <ul
@@ -692,26 +706,28 @@ export function MarketingForm({
           </p>
         </div>
 
-        <Field
-          id={fieldId('notes')}
-          label="Nota"
-          optional
-          error={notesError}
-          // El contador aparece cerca del tope, no antes: antes sería ruido.
-          hint={
-            draft.notes.length >= 240 ? (
-              <span className="tabular-nums">{draft.notes.length}/280</span>
-            ) : undefined
-          }
-          disabled={pending}
-          className="mt-4"
-        >
+        <div className="mt-4 grid gap-1.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <Label htmlFor={fieldId('notes')} className="gap-1 text-xs">
+              Nota
+              <span className="font-normal text-muted-foreground">(opcional)</span>
+            </Label>
+            {draft.notes.length >= 240 ? (
+              <span className="text-[11px] tabular-nums text-muted-foreground">
+                {draft.notes.length}/280
+              </span>
+            ) : null}
+          </div>
           <Textarea
             ref={register('notes')}
+            id={fieldId('notes')}
             rows={2}
             maxLength={280}
             placeholder="Ej.: campaña de reels del 1/9 al 9/9"
             value={draft.notes}
+            disabled={pending}
+            aria-invalid={notesError ? true : undefined}
+            aria-describedby={notesError ? `${fieldId('notes')}-error` : undefined}
             onChange={(e) => {
               const value = e.target.value
               setDraft((d) => ({ ...d, notes: value }))
@@ -727,57 +743,82 @@ export function MarketingForm({
               }
             }}
           />
-        </Field>
+          {notesError ? (
+            <p
+              id={`${fieldId('notes')}-error`}
+              role="alert"
+              className="text-xs leading-snug text-destructive"
+            >
+              {notesError}
+            </p>
+          ) : null}
+        </div>
 
-        {/* Las acciones del kit, en línea (no fijas abajo: el form vive adentro
-            de una ficha y puede haber más de uno en la pantalla). En el celular
-            van de a dos, del mismo ancho, y «Guardar» queda solo abajo, a mano
-            del pulgar; en escritorio, «Borrar» a la izquierda. */}
-        <FormActions sticky={false} className="mt-5">
+        {/* Abajo de @sm: Guardar primero y a lo ancho (es lo que se busca con el
+            pulgar), Cancelar abajo y Borrar como link al final. El orden del DOM
+            es el de escritorio, que es donde se navega con Tab. */}
+        <div className="mt-5 flex flex-col gap-2 @sm:flex-row @sm:items-center @sm:justify-end">
           {row ? (
             <Button
+              ref={deleteButtonRef}
               type="button"
-              variant="danger-ghost"
+              variant="ghost"
+              size="sm"
+              className="order-last h-10 self-center text-destructive hover:text-destructive @sm:order-none @sm:mr-auto @sm:h-9 @sm:self-auto"
               onClick={() => setDeleteOpen(true)}
               disabled={pending}
-              className="sm:me-auto"
             >
-              Borrar pauta
+              {deleting ? 'Borrando…' : 'Borrar pauta'}
             </Button>
           ) : null}
-          <Button type="button" variant="secondary" onClick={cancel} disabled={pending}>
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-11 w-full @sm:h-9 @sm:w-auto"
+            onClick={cancel}
+            disabled={pending}
+          >
             Cancelar
           </Button>
           <Button
             type="submit"
-            loading={saving}
-            loadingText="Guardando…"
-            disabled={blocked !== null}
+            className="order-first h-11 w-full @sm:order-none @sm:h-9 @sm:w-auto"
+            disabled={pending || blocked !== null}
           >
-            Guardar pauta
+            {saving ? 'Guardando…' : 'Guardar pauta'}
           </Button>
-        </FormActions>
-        <p
-          aria-live="polite"
-          className="mt-2 type-caption text-destructive-text empty:hidden @sm:text-right"
-        >
+        </div>
+        <p aria-live="polite" className="mt-2 text-xs text-destructive empty:hidden @sm:text-right">
           {blocked ?? ''}
         </p>
       </form>
 
       {/* Fuera del <form>: así su Esc y sus botones no pasan por los handlers
           del form (React burbujea los eventos del portal por este árbol). */}
-      <ConfirmDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        tone="danger"
-        title={copy.deleteTitle}
-        description={copy.deleteDescription}
-        confirmLabel="Borrar pauta"
-        pendingLabel="Borrando…"
-        onConfirm={confirmDelete}
-        returnFocus={focusWherePageLeftIt}
-      />
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent
+          onCloseAutoFocus={(e) => {
+            e.preventDefault()
+            const button = deleteButtonRef.current
+            if (button && !button.disabled) button.focus()
+            else refocusDelete.current = true
+          }}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>{copy.deleteTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{copy.deleteDescription}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmDelete}
+            >
+              Borrar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

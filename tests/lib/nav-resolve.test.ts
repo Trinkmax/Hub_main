@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { NAV_GROUPS, resolveNavGroups } from '@/components/shell/nav-config'
+import { resolveNavGroups } from '@/components/shell/nav-config'
 import { type FeatureKey, getTenantFeatures, type TenantFeatures } from '@/lib/platform/features'
-import type { AccountingAccess } from '@/lib/tenant/types'
 
 const SLUG = 'hub'
 const allOff: TenantFeatures = getTenantFeatures({ feature_flags: {} })
@@ -84,7 +83,7 @@ describe('resolveNavGroups — rol + feature + superadmin', () => {
     expect(paginas?.href).toBe('/hub/paginas')
 
     // Ningún rol acotado lo ve: es la mesa de los socios.
-    for (const role of ['waiter', 'cashier', 'kitchen', 'editor', 'host', 'accountant'] as const) {
+    for (const role of ['waiter', 'cashier', 'kitchen', 'editor', 'host'] as const) {
       expect(group(resolveNavGroups(role, SLUG, allOff, false), 'Marketing')).toBeUndefined()
     }
   })
@@ -148,7 +147,7 @@ describe('resolveNavGroups — rol + feature + superadmin', () => {
   })
 
   it('Mensajería queda owner-only en el sidebar (los roles de salón no ven el manager)', () => {
-    for (const role of ['waiter', 'cashier', 'kitchen', 'editor', 'host', 'accountant'] as const) {
+    for (const role of ['waiter', 'cashier', 'kitchen', 'editor', 'host'] as const) {
       const all = resolveNavGroups(role, SLUG, allOff, false).flatMap((g) =>
         g.items.map((i) => i.label),
       )
@@ -156,146 +155,5 @@ describe('resolveNavGroups — rol + feature + superadmin', () => {
     }
     const owner = resolveNavGroups('owner', SLUG, allOff, false)
     expect(itemLabels(owner, 'Hoy')).toContain('Mensajería')
-  })
-})
-
-// ─── Administración (contable §H.0) ──────────────────────────────────────────
-
-const accountingOn = withFeature('accounting')
-const noAccess: AccountingAccess = {
-  enabled: true,
-  setUp: true,
-  read: false,
-  write: false,
-  admin: false,
-  canSetUp: false,
-}
-/** Lo que manda la base para la contadora: lee, nunca escribe. */
-const readOnly: AccountingAccess = { ...noAccess, read: true }
-/** Dueño con acceso vigente. */
-const readWrite: AccountingAccess = { ...noAccess, read: true, write: true }
-/** Módulo prendido y sin configurar: el dueño puede hacer la puesta en marcha. */
-const setupOnly: AccountingAccess = { ...noAccess, setUp: false, canSetUp: true }
-
-const ADMIN_ITEMS = [
-  'Resumen',
-  'Compras y proveedores',
-  'Ventas y clientes',
-  'Cajas y bancos',
-  'Libros',
-  'Plan de cuentas',
-]
-
-describe('resolveNavGroups — Administración', () => {
-  it('la contadora ve SOLO Administración, con sus 6 ítems y sin colapsar', () => {
-    const groups = resolveNavGroups('accountant', SLUG, accountingOn, false, readOnly)
-    expect(labels(groups)).toEqual(['Administración'])
-    expect(itemLabels(groups, 'Administración')).toEqual(ADMIN_ITEMS)
-    // 6 ítems ≤ 8: no colapsa y conserva su título.
-    expect(group(groups, 'Administración')?.collapsible).toBe(false)
-    // «Sistema» (Configuración) es solo del dueño: desaparece.
-    expect(group(groups, 'Sistema')).toBeUndefined()
-  })
-
-  it('las rutas son las de §H.0 y el Resumen matchea exacto', () => {
-    const items = group(
-      resolveNavGroups('accountant', SLUG, accountingOn, false, readOnly),
-      'Administración',
-    )?.items
-    expect(items?.map((i) => i.href)).toEqual([
-      '/hub/administracion',
-      '/hub/administracion/compras',
-      '/hub/administracion/ventas',
-      '/hub/administracion/cajas',
-      '/hub/administracion/libros',
-      '/hub/administracion/plan-de-cuentas',
-    ])
-    expect(items?.[0]?.exact).toBe(true)
-    expect(items?.slice(1).every((i) => !i.exact)).toBe(true)
-    expect(items?.map((i) => i.iconKey)).toEqual([
-      'Landmark',
-      'Truck',
-      'HandCoins',
-      'Wallet',
-      'BookText',
-      'ListTree',
-    ])
-  })
-
-  it('el dueño con acceso lo ve entre Negocio y Salón, colapsable como los demás', () => {
-    const groups = resolveNavGroups(
-      'owner',
-      SLUG,
-      { ...accountingOn, kitchen: true },
-      false,
-      readWrite,
-    )
-    const order = labels(groups)
-    expect(order.indexOf('Administración')).toBe(order.indexOf('Negocio') + 1)
-    expect(order.indexOf('Salón')).toBe(order.indexOf('Administración') + 1)
-    expect(itemLabels(groups, 'Administración')).toEqual(ADMIN_ITEMS)
-    expect(group(groups, 'Administración')?.collapsible).toBe(true)
-  })
-
-  it('un dueño sin acceso no lo ve (aunque el módulo esté prendido y configurado)', () => {
-    expect(
-      group(resolveNavGroups('owner', SLUG, accountingOn, false, noAccess), 'Administración'),
-    ).toBeUndefined()
-    // Sin el acceso (lo que pasa si alguien se olvida de pasarlo): cerrado.
-    expect(
-      group(resolveNavGroups('owner', SLUG, accountingOn, false), 'Administración'),
-    ).toBeUndefined()
-  })
-
-  it('antes de configurar, quien puede hacer la puesta en marcha ve solo «Resumen»', () => {
-    const groups = resolveNavGroups('owner', SLUG, accountingOn, false, setupOnly)
-    expect(itemLabels(groups, 'Administración')).toEqual(['Resumen'])
-    expect(group(groups, 'Administración')?.items[0]?.href).toBe('/hub/administracion')
-  })
-
-  it('con el flag apagado no aparece nada, ni para la contadora ni para el superadmin', () => {
-    // Combinaciones que la base nunca manda (leer exige el flag): igual cerrado.
-    expect(labels(resolveNavGroups('accountant', SLUG, allOff, false, readOnly))).toEqual([])
-    expect(
-      group(resolveNavGroups('owner', SLUG, allOff, false, readWrite), 'Administración'),
-    ).toBeUndefined()
-    // El superadmin ve los paneles apagados del Salón, pero no Administración.
-    const admin = resolveNavGroups('owner', SLUG, allOff, true, readWrite)
-    expect(group(admin, 'Salón')).toBeDefined()
-    expect(group(admin, 'Administración')).toBeUndefined()
-  })
-
-  it('el superadmin sin acceso tampoco lo ve con el flag prendido', () => {
-    expect(
-      group(resolveNavGroups('owner', SLUG, accountingOn, true, noAccess), 'Administración'),
-    ).toBeUndefined()
-  })
-
-  it('los roles que no son dueño ni contadora nunca lo ven', () => {
-    for (const role of ['cashier', 'waiter', 'kitchen', 'editor', 'host'] as const) {
-      expect(
-        group(resolveNavGroups(role, SLUG, accountingOn, false, readWrite), 'Administración'),
-      ).toBeUndefined()
-    }
-  })
-
-  it('la contadora no ve nada fuera de Administración, ni con todos los flags prendidos', () => {
-    const everything = getTenantFeatures({
-      feature_flags: Object.fromEntries(Object.keys(allOff).map((key) => [key, true])),
-    })
-    const groups = resolveNavGroups('accountant', SLUG, everything, false, readOnly)
-    expect(labels(groups)).toEqual(['Administración'])
-    // Sin acceso, a la contadora no le queda ningún ítem.
-    expect(resolveNavGroups('accountant', SLUG, everything, false, noAccess)).toEqual([])
-  })
-})
-
-describe('NAV_GROUPS — claves de grupo', () => {
-  it('cada grupo tiene un id estable y único (guarda el plegado en localStorage)', () => {
-    const ids = NAV_GROUPS.map((g) => g.id)
-    expect(new Set(ids).size).toBe(ids.length)
-    expect(ids.every((id) => /^[a-z]+$/.test(id))).toBe(true)
-    const resolved = resolveNavGroups('owner', SLUG, accountingOn, true, readWrite)
-    expect(resolved.every((g) => typeof g.id === 'string' && g.id.length > 0)).toBe(true)
   })
 })

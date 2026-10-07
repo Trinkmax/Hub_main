@@ -35,6 +35,7 @@ export default async function QuickMessagesPage({
   return (
     <PageShell width="compact">
       <PageHeader
+        eyebrow="Mensajería"
         title="Mensajes rápidos"
         description="Respuestas guardadas para contestar en un toque. En el chat, escribí / y el atajo, y el mensaje se completa solo."
       />

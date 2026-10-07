@@ -46,19 +46,19 @@ export function DayAddMenu({
           type="button"
           aria-label={`Opciones del ${dayLabel}`}
           className={cn(
-            // `hit-area`: 24 px de objetivo con mouse y 44 con el dedo sin mover
-            // el layout ni engordar la fila del día vacío: es EL gesto de la
-            // agenda en el celular, tiene que ser cómodo con el pulgar.
-            'relative hit-area flex shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-[color,background-color,opacity] duration-(--duration-quick) hover:bg-hover hover:text-foreground outline-offset-2 outline-(--ring) focus-visible:outline-2 data-[state=open]:bg-hover data-[state=open]:opacity-100',
+            'relative shrink-0 rounded text-muted-foreground outline-none transition-[color,background-color,opacity] hover:bg-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:bg-secondary data-[state=open]:opacity-100',
             variant === 'cell'
               ? // En la compu aparece al pasar el mouse; con teclado (foco) y en
                 // pantallas táctiles (sin hover) se ve siempre. Antes era
                 // opacity-0 fijo con group-hover: invisible con el dedo y con Tab.
-                'size-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100'
-              : 'size-7',
+                'p-0.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100'
+              : // El `after` le estira el área táctil a ~44 px sin mover el
+                // layout ni engordar la fila del día vacío: es EL gesto de la
+                // agenda en el celular, tiene que ser cómodo con el pulgar.
+                "p-1 after:absolute after:-inset-2.5 after:content-['']",
           )}
         >
-          <Plus className="size-4" aria-hidden />
+          <Plus className={variant === 'cell' ? 'size-3' : 'size-4'} aria-hidden />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent

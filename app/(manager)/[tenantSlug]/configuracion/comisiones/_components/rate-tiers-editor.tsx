@@ -1,50 +1,32 @@
 'use client'
 
-import { Plus, Trash2 } from 'lucide-react'
-import { type FormEvent, useId, useMemo, useRef, useState, useTransition } from 'react'
+import { Plus, Save, Trash2 } from 'lucide-react'
+import { useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { ConfirmDialog, type ConfirmResult } from '@/components/ui/confirm-dialog'
-import { Field } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { MoneyField } from '@/components/ui/money-field'
-import { NumberField } from '@/components/ui/number-field'
 import { Switch } from '@/components/ui/switch'
 import { removeRateTier, upsertRateTier } from '@/lib/salon/actions'
 import { type CommissionRateTierRow, MEAL_TYPE_LABELS, type MealType } from '@/lib/salon/types'
 
 const MEAL_TYPES: MealType[] = ['breakfast', 'lunch', 'tea_time', 'dinner', 'hub_event']
 
-/** Lo que acepta la action (`rateTierSchema`): de 1 a 999 personas y hasta $ 999.999,99. */
-const MAX_GUESTS = 999
-const MAX_RATE_CENTS = 99_999_999
+type Draft = Partial<CommissionRateTierRow> & { _isNew?: boolean }
 
-/**
- * Un tramo en edición. `_key` es la clave de React: estable aunque el id
- * llegue después de guardar (antes un tramo nuevo usaba `Math.random()` y se
- * volvía a montar en cada tecla: el campo perdía el foco al tipear). La plata
- * puede quedar vacía mientras se escribe (`null`): se guarda como $ 0, igual
- * que antes.
- */
-type Draft = Omit<Partial<CommissionRateTierRow>, 'rate_per_guest_cents'> & {
-  _key: string
-  _isNew?: boolean
-  rate_per_guest_cents?: number | null
-}
-
-/** Por servicio y, adentro, por «desde». Solo al cargar: mientras se edita las filas no saltan. */
-function sortTiers(rows: CommissionRateTierRow[]): CommissionRateTierRow[] {
-  return [...rows].sort((a, b) => (a.min_guests ?? 0) - (b.min_guests ?? 0))
-}
-
-/** «de 1 a 10 personas» · «de 11 personas en adelante». */
-function rangeText(t: Pick<Draft, 'min_guests' | 'max_guests'>): string {
-  const from = t.min_guests ?? 1
-  if (t.max_guests === null || t.max_guests === undefined) {
-    return `de ${from} ${from === 1 ? 'persona' : 'personas'} en adelante`
-  }
-  return `de ${from} a ${t.max_guests} personas`
+function toARS(cents: number | undefined): string {
+  if (!cents) return ''
+  return String(Math.round(cents / 100))
 }
 
 export function RateTiersEditor({
@@ -54,14 +36,9 @@ export function RateTiersEditor({
   tenantSlug: string
   initial: CommissionRateTierRow[]
 }) {
-  const [tiers, setTiers] = useState<Draft[]>(() =>
-    sortTiers(initial).map((t) => ({ ...t, _key: t.id })),
-  )
+  const [tiers, setTiers] = useState<Draft[]>(initial)
   const [pending, startTransition] = useTransition()
-  const [savingKey, setSavingKey] = useState<string | null>(null)
-  const [toDelete, setToDelete] = useState<Draft | null>(null)
-  const [deleteOpen, setDeleteOpen] = useState(false)
-  const keySeq = useRef(0)
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
 
   const byMeal = useMemo(() => {
     const out = new Map<MealType, Draft[]>()
@@ -69,46 +46,46 @@ export function RateTiersEditor({
     for (const t of tiers) {
       if (t.meal_type) out.get(t.meal_type as MealType)?.push(t)
     }
+    for (const list of out.values()) {
+      list.sort((a, b) => (a.min_guests ?? 0) - (b.min_guests ?? 0))
+    }
     return out
   }, [tiers])
 
   function addTier(meal: MealType) {
-    keySeq.current += 1
     setTiers((prev) => [
       ...prev,
       {
-        _key: `nuevo-${keySeq.current}`,
         _isNew: true,
         meal_type: meal,
         min_guests: 1,
         max_guests: null,
-        rate_per_guest_cents: null,
+        rate_per_guest_cents: 0,
         active: true,
-      },
+      } as Draft,
     ])
   }
 
-  function patch<K extends keyof Draft>(key: string, field: K, value: Draft[K]) {
-    setTiers((prev) => prev.map((x) => (x._key === key ? { ...x, [field]: value } : x)))
+  function patch(t: Draft, key: keyof Draft, value: unknown) {
+    setTiers((prev) => prev.map((x) => (x === t ? { ...x, [key]: value } : x)))
   }
 
   function save(t: Draft) {
-    setSavingKey(t._key)
     startTransition(async () => {
       const r = await upsertRateTier(tenantSlug, {
         ...(t.id && !t._isNew ? { id: t.id } : {}),
         meal_type: t.meal_type,
         min_guests: t.min_guests,
         max_guests: t.max_guests,
-        rate_per_guest_cents: t.rate_per_guest_cents ?? 0,
+        rate_per_guest_cents: t.rate_per_guest_cents,
         active: t.active ?? true,
       } as Record<string, unknown>)
-      setSavingKey(null)
       if (r.ok) {
-        toast.success('Tramo guardado.')
+        toast.success('Tier guardado.')
         if (t._isNew && r.data?.id) {
-          const id = r.data.id as string
-          setTiers((prev) => prev.map((x) => (x._key === t._key ? { ...x, id, _isNew: false } : x)))
+          setTiers((prev) =>
+            prev.map((x) => (x === t ? { ...x, id: r.data?.id as string, _isNew: false } : x)),
+          )
         }
       } else {
         toast.error(r.message)
@@ -117,199 +94,129 @@ export function RateTiersEditor({
   }
 
   function remove(t: Draft) {
-    // Un tramo que nunca se guardó se descarta sin preguntar: no hay nada que borrar.
-    if (!t.id || t._isNew) {
-      setTiers((prev) => prev.filter((x) => x._key !== t._key))
+    if (!t.id) {
+      setTiers((prev) => prev.filter((x) => x !== t))
       return
     }
-    setToDelete(t)
-    setDeleteOpen(true)
+    setPendingDelete(t.id)
   }
 
-  async function confirmRemove(): Promise<ConfirmResult> {
-    const target = toDelete
-    if (!target?.id) return
-    const r = await removeRateTier(tenantSlug, target.id)
-    if (!r.ok) return r
-    setTiers((prev) => prev.filter((x) => x._key !== target._key))
-    toast.success('Tramo borrado.')
+  function confirmRemove() {
+    if (!pendingDelete) return
+    const id = pendingDelete
+    startTransition(async () => {
+      const r = await removeRateTier(tenantSlug, id)
+      if (r.ok) {
+        setTiers((prev) => prev.filter((x) => x.id !== id))
+        toast.success('Tier eliminado.')
+      } else {
+        toast.error(r.message)
+      }
+      setPendingDelete(null)
+    })
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <p className="max-w-prose text-pretty type-body text-muted-foreground">
-        Cuánto cobra el gestor por cada persona, según el tamaño de la reserva. Si una reserva no
-        entra en ningún tramo activo, no suma comisión. Dejá «Hasta» vacío para que el tramo no
-        tenga tope.
-      </p>
-
-      {MEAL_TYPES.map((meal) => {
-        const rows = byMeal.get(meal) ?? []
-        return (
-          <MealCard key={meal} meal={meal} onAdd={() => addTier(meal)} empty={rows.length === 0}>
-            {rows.map((t) => (
-              <TierRow
-                key={t._key}
-                tier={t}
-                busy={pending && savingKey === t._key}
-                disabled={pending}
-                onPatch={(field, value) => patch(t._key, field, value)}
-                onSave={() => save(t)}
-                onRemove={() => remove(t)}
-              />
+    <div className="space-y-6">
+      {MEAL_TYPES.map((meal) => (
+        <section key={meal} className="rounded-xl border bg-card/60 p-4">
+          <header className="mb-3 flex items-center justify-between">
+            <h2 className="font-serif text-base font-semibold">{MEAL_TYPE_LABELS[meal]}</h2>
+            <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => addTier(meal)}>
+              <Plus className="size-4" />
+              Tier
+            </Button>
+          </header>
+          <div className="space-y-2">
+            {byMeal.get(meal)?.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Sin tiers configurados.</p>
+            ) : null}
+            {byMeal.get(meal)?.map((t) => (
+              <div
+                key={t.id ?? `new-${meal}-${Math.random()}`}
+                className="grid items-end gap-2 sm:grid-cols-[1fr_1fr_1fr_auto_auto_auto]"
+              >
+                <div>
+                  <Label className="text-[10px] uppercase tracking-wide">Desde</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={t.min_guests ?? 1}
+                    onChange={(e) => patch(t, 'min_guests', Number(e.target.value))}
+                  />
+                </div>
+                <div>
+                  <Label className="text-[10px] uppercase tracking-wide">Hasta</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={t.max_guests ?? ''}
+                    placeholder="∞"
+                    onChange={(e) =>
+                      patch(t, 'max_guests', e.target.value ? Number(e.target.value) : null)
+                    }
+                  />
+                </div>
+                <div>
+                  <Label className="text-[10px] uppercase tracking-wide">$ por persona</Label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                      $
+                    </span>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={10}
+                      value={toARS(t.rate_per_guest_cents)}
+                      onChange={(e) =>
+                        patch(t, 'rate_per_guest_cents', Math.max(0, Number(e.target.value) * 100))
+                      }
+                      className="pl-7 tabular-nums"
+                    />
+                  </div>
+                </div>
+                <Switch
+                  checked={t.active ?? true}
+                  onCheckedChange={(v) => patch(t, 'active', v)}
+                  aria-label="Activo"
+                />
+                <Button size="sm" variant="ghost" onClick={() => save(t)} disabled={pending}>
+                  <Save className="size-4" />
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => remove(t)} disabled={pending}>
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
             ))}
-          </MealCard>
-        )
-      })}
+          </div>
+        </section>
+      ))}
 
-      <ConfirmDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title="¿Borrar este tramo?"
-        description={
-          toDelete
-            ? `${MEAL_TYPE_LABELS[toDelete.meal_type as MealType] ?? 'Tramo'}, ${rangeText(toDelete)}. Deja de aplicarse a las comisiones y no se puede deshacer.`
-            : undefined
-        }
-        confirmLabel="Borrar tramo"
-        pendingLabel="Borrando…"
-        tone="danger"
-        onConfirm={confirmRemove}
-      />
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Borrar este tier?</AlertDialogTitle>
+            <AlertDialogDescription>
+              El tramo de comisión dejará de aplicarse. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={pending}
+              onClick={confirmRemove}
+            >
+              Borrar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
-  )
-}
-
-function MealCard({
-  meal,
-  empty,
-  onAdd,
-  children,
-}: {
-  meal: MealType
-  empty: boolean
-  onAdd: () => void
-  children: React.ReactNode
-}) {
-  const titleId = useId()
-  return (
-    <Card role="group" aria-labelledby={titleId}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id={titleId} className="type-subtitle">
-          {MEAL_TYPE_LABELS[meal]}
-        </h2>
-        <Button type="button" size="sm" variant="secondary" onClick={onAdd}>
-          <Plus aria-hidden />
-          Agregar tramo
-        </Button>
-      </div>
-      {empty ? (
-        <p className="type-small text-muted-foreground">
-          Sin tramos todavía: las reservas de este servicio no suman comisión.
-        </p>
-      ) : (
-        // Contenedor de consulta: el tramo pasa a una sola línea según el ancho
-        // de la tarjeta, no de la pantalla (con el menú de Configuración al
-        // costado, a 1280 px la tarjeta mide ~650 px).
-        <div className="@container flex flex-col divide-y divide-border">{children}</div>
-      )}
-    </Card>
-  )
-}
-
-/**
- * Un tramo es su propio formulario: Enter guarda y, si un número o un importe
- * no se entiende, el navegador frena el envío y el campo muestra por qué.
- */
-function TierRow({
-  tier,
-  busy,
-  disabled,
-  onPatch,
-  onSave,
-  onRemove,
-}: {
-  tier: Draft
-  busy: boolean
-  disabled: boolean
-  onPatch: <K extends keyof Draft>(field: K, value: Draft[K]) => void
-  onSave: () => void
-  onRemove: () => void
-}) {
-  const activeId = useId()
-  const meal = MEAL_TYPE_LABELS[tier.meal_type as MealType] ?? ''
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    onSave()
-  }
-
-  return (
-    // Sin nombre accesible a propósito: con nombre, cada tramo sería un punto de
-    // referencia «formulario» y el lector anunciaría diez. El contexto lo da la
-    // tarjeta del servicio (un grupo con su título).
-    <form
-      onSubmit={handleSubmit}
-      className="grid grid-cols-2 items-start gap-3 py-4 first:pt-0 last:pb-0 @xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto]"
-    >
-      <Field label="Desde" required>
-        <NumberField
-          value={tier.min_guests ?? null}
-          onValueChange={(n) => onPatch('min_guests', n ?? undefined)}
-          min={1}
-          max={MAX_GUESTS}
-          steppers={false}
-        />
-      </Field>
-      <Field label="Hasta">
-        <NumberField
-          value={tier.max_guests ?? null}
-          onValueChange={(n) => onPatch('max_guests', n)}
-          min={1}
-          max={MAX_GUESTS}
-          steppers={false}
-          placeholder="Sin tope"
-        />
-      </Field>
-      <Field label="Por persona" className="col-span-2 @xl:col-span-1">
-        <MoneyField
-          cents={tier.rate_per_guest_cents ?? null}
-          onCentsChange={(cents) => onPatch('rate_per_guest_cents', cents)}
-          decimals="auto"
-          maxCents={MAX_RATE_CENTS}
-        />
-      </Field>
-      {/* 1,625 rem = etiqueta (18 px) + 8 px: los botones quedan a la altura de
-          los campos. En una tarjeta angosta bajan a su propia fila. */}
-      <div className="col-span-2 flex flex-wrap items-center gap-2 @xl:col-span-1 @xl:mt-[1.625rem] @xl:min-h-(--control-md) @xl:flex-nowrap @xl:justify-end">
-        <div className="me-auto flex items-center gap-2 @xl:me-2">
-          <Switch
-            id={activeId}
-            checked={tier.active ?? true}
-            onCheckedChange={(v) => onPatch('active', v)}
-          />
-          <Label htmlFor={activeId}>Activo</Label>
-        </div>
-        <Button
-          type="submit"
-          variant="secondary"
-          size="sm"
-          loading={busy}
-          disabled={disabled && !busy}
-        >
-          Guardar
-        </Button>
-        <Button
-          type="button"
-          variant="danger-ghost"
-          size="icon-sm"
-          disabled={disabled}
-          aria-label={`Borrar el tramo de ${meal}, ${rangeText(tier)}`}
-          onClick={onRemove}
-        >
-          <Trash2 aria-hidden />
-        </Button>
-      </div>
-    </form>
   )
 }

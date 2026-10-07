@@ -1,52 +1,33 @@
-import {
-  addDays,
-  addMonthsToYearMonth,
-  CORDOBA_TZ,
-  cordobaDayStartUtc,
-  endOfMonth,
-  isoDayInCordoba,
-  monthOf,
-  startOfMonth,
-  todayInCordoba,
-} from '@/lib/dates'
+import { endOfMonth, startOfMonth, subDays, subMonths } from 'date-fns'
+import { formatInTimeZone, fromZonedTime, toZonedTime } from 'date-fns-tz'
 
-/**
- * Períodos de «Mozos» (Estadísticas) y del cajón de cada mozo.
- *
- * Todo se piensa en días del calendario del bar (America/Argentina/Cordoba) con
- * `lib/dates`, igual en cualquier runtime: los atajos se cuentan desde
- * `todayInCordoba` y un rango a mano llega como días civiles `yyyy-MM-dd`.
- * Recién al final cada borde se pasa a un instante para filtrar `paid_at`:
- * `from` = las 00:00 de Córdoba del primer día y `to` = el último milisegundo
- * del último día.
- *
- * Por qué el rango a mano no viaja como `Date`: `new Date('2026-03-10')` es la
- * medianoche UTC, que en Córdoba (UTC−3) todavía es el 9 a las 21:00, y el
- * rango arrancaba (y terminaba) un día antes.
- */
-
-export const TZ = CORDOBA_TZ
+export const TZ = 'America/Argentina/Cordoba'
 
 export const PRESETS = ['today', 'last7', 'last30', 'this_month', 'last_month', 'custom'] as const
 export type DateRangePreset = (typeof PRESETS)[number]
 
 export type DateRange = { from: Date; to: Date }
 
-/** El rango a mano trae días civiles de Córdoba (`yyyy-MM-dd`), inclusivos de los dos bordes. */
 export type DateRangeInput =
   | { preset: Exclude<DateRangePreset, 'custom'> }
-  | { preset: 'custom'; from: string; to: string }
+  | { preset: 'custom'; from: Date; to: Date }
 
 /**
- * `[00:00 de from, 23:59:59.999 de to]` en Córdoba, como instantes. El fin es
- * las 00:00 del día siguiente menos un milisegundo: las queries filtran con
- * `.lte(to)`.
+ * Devuelve el instante UTC que corresponde a las 00:00 del día calendario de
+ * `d` en la zona Córdoba.
+ *
+ * Cómo funciona: tomamos el "qué día calendario es ahora en Córdoba" (string
+ * `yyyy-MM-dd`), y lo interpretamos como 00:00 en Córdoba con `fromZonedTime`.
+ * Eso devuelve el instante UTC correcto y es estable al TZ del runtime.
  */
-function cordobaDayBounds(from: string, to: string): DateRange {
-  return {
-    from: new Date(cordobaDayStartUtc(from)),
-    to: new Date(Date.parse(cordobaDayStartUtc(addDays(to, 1))) - 1),
-  }
+function startOfDayInTz(d: Date): Date {
+  const isoDay = formatInTimeZone(d, TZ, 'yyyy-MM-dd')
+  return fromZonedTime(`${isoDay}T00:00:00`, TZ)
+}
+
+function endOfDayInTz(d: Date): Date {
+  const isoDay = formatInTimeZone(d, TZ, 'yyyy-MM-dd')
+  return fromZonedTime(`${isoDay}T23:59:59.999`, TZ)
 }
 
 /**
@@ -55,21 +36,35 @@ function cordobaDayBounds(from: string, to: string): DateRange {
  * "Hoy" empieza a las 00:00 hora Córdoba, no UTC.
  */
 export function resolveDateRange(input: DateRangeInput, now: Date = new Date()): DateRange {
-  if (input.preset === 'custom') return cordobaDayBounds(input.from, input.to)
+  if (input.preset === 'custom') {
+    return { from: startOfDayInTz(input.from), to: endOfDayInTz(input.to) }
+  }
 
-  const today = todayInCordoba(now)
+  // Las operaciones de date-fns (startOfMonth, subDays, etc.) operan en el TZ
+  // del runtime. Para que calculen sobre el calendario de Córdoba, primero
+  // "movemos" el instant a una representación en Córdoba (toZonedTime), hacemos
+  // la operación, y después volvemos al instant UTC con fromZonedTime.
+  const cordobaNow = toZonedTime(now, TZ)
+
   switch (input.preset) {
     case 'today':
-      return cordobaDayBounds(today, today)
+      return { from: startOfDayInTz(now), to: endOfDayInTz(now) }
     case 'last7':
-      return cordobaDayBounds(addDays(today, -6), today)
+      return { from: startOfDayInTz(subDays(now, 6)), to: endOfDayInTz(now) }
     case 'last30':
-      return cordobaDayBounds(addDays(today, -29), today)
-    case 'this_month':
-      return cordobaDayBounds(startOfMonth(today), today)
+      return { from: startOfDayInTz(subDays(now, 29)), to: endOfDayInTz(now) }
+    case 'this_month': {
+      const firstDay = startOfMonth(cordobaNow)
+      return { from: fromZonedTime(firstDay, TZ), to: endOfDayInTz(now) }
+    }
     case 'last_month': {
-      const prev = addMonthsToYearMonth(monthOf(today), -1)
-      return cordobaDayBounds(startOfMonth(prev), endOfMonth(prev))
+      const prev = subMonths(cordobaNow, 1)
+      const firstDay = startOfMonth(prev)
+      const lastDay = endOfMonth(prev)
+      return {
+        from: fromZonedTime(firstDay, TZ),
+        to: fromZonedTime(lastDay, TZ),
+      }
     }
   }
 }
@@ -110,5 +105,5 @@ export function toIsoBounds(range: DateRange): { fromIso: string; toIso: string 
  * runtime de los tests.
  */
 export function dayInTz(d: Date): string {
-  return isoDayInCordoba(d) ?? ''
+  return formatInTimeZone(d, TZ, 'yyyy-MM-dd')
 }

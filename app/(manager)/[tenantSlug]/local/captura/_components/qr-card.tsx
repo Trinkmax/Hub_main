@@ -1,14 +1,11 @@
 import { Download, Printer } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { CopyButton } from '@/components/ui/copy-button'
 import { renderQrPngDataUrl, renderQrSvg } from '@/lib/qr'
 
 /**
  * Tarjeta de un QR fijo del local (carta o club). Server component: renderiza el
- * QR como SVG inline y ofrece descarga PNG (data URL), copiar el link e
- * impresión opcional.
+ * QR como SVG inline y ofrece descarga PNG (data URL) e impresión opcional.
  */
 export async function QrCard({
   title,
@@ -26,49 +23,37 @@ export async function QrCard({
   const [svg, pngDataUrl] = await Promise.all([renderQrSvg(url), renderQrPngDataUrl(url)])
 
   return (
-    <Card className="items-center text-center">
-      {/* El QR va sobre blanco siempre (también en oscuro): los lectores lo necesitan así. */}
+    <div className="card-hairline flex flex-col items-center gap-4 rounded-xl border bg-card p-6 text-center">
       <div
-        className="size-44 rounded-lg border border-border bg-white p-2 [&_svg]:h-full [&_svg]:w-full"
+        className="size-44 rounded-xl border border-border/60 bg-white p-2 shadow-sm [&_svg]:h-full [&_svg]:w-full"
         role="img"
-        aria-label={`QR de ${title.toLowerCase()}`}
+        aria-label={`QR: ${title}`}
         // biome-ignore lint/security/noDangerouslySetInnerHtml: SVG generado server-side por la lib qrcode (input controlado)
         dangerouslySetInnerHTML={{ __html: svg }}
       />
-      <div className="flex flex-col gap-1">
-        <h2 className="type-subtitle">{title}</h2>
-        <p className="mx-auto max-w-xs text-pretty type-small text-muted-foreground">
-          {description}
-        </p>
+      <div className="space-y-1">
+        <h3 className="font-display text-lg font-semibold tracking-tight">{title}</h3>
+        <p className="mx-auto max-w-xs text-pretty text-sm text-muted-foreground">{description}</p>
       </div>
-      <div className="flex w-full min-w-0 items-center gap-2">
-        <code className="min-w-0 flex-1 truncate rounded-md bg-muted px-2 py-1.5 text-left font-mono type-caption text-muted-foreground">
-          {url}
-        </code>
-        <CopyButton
-          value={url}
-          iconOnly
-          size="icon-sm"
-          label={`Copiar el link de ${title.toLowerCase()}`}
-          copiedLabel="Link copiado"
-        />
-      </div>
+      <code className="block w-full truncate rounded-md bg-muted/60 px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground">
+        {url}
+      </code>
       <div className="flex flex-wrap items-center justify-center gap-2">
-        <Button asChild>
+        <Button asChild className="gap-1.5">
           <a href={pngDataUrl} download={downloadName}>
-            <Download aria-hidden="true" />
+            <Download className="size-4" />
             Descargar PNG
           </a>
         </Button>
         {printHref ? (
-          <Button asChild variant="secondary">
+          <Button asChild variant="outline" className="gap-1.5">
             <Link href={printHref}>
-              <Printer aria-hidden="true" />
+              <Printer className="size-4" />
               Imprimir
             </Link>
           </Button>
         ) : null}
       </div>
-    </Card>
+    </div>
   )
 }

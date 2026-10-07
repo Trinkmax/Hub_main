@@ -1,6 +1,7 @@
+import { ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
-import { FormTemplate } from '@/components/ui/page-templates'
 import {
   RoleRequiredError,
   requireRole,
@@ -28,16 +29,22 @@ export default async function NuevoClientePage({
   }
 
   return (
-    <FormTemplate
-      header={
-        <PageHeader
-          back={{ href: `/${tenantSlug}/clientes`, label: 'Clientes' }}
-          title="Nuevo cliente"
-          description="Cargá los datos básicos. El teléfono lo acomodamos solo al formato internacional."
-        />
-      }
-    >
-      <NewCustomerForm tenantSlug={tenantSlug} />
-    </FormTemplate>
+    <div className="mx-auto w-full max-w-2xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      <Link
+        href={`/${tenantSlug}/clientes`}
+        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="size-3" />
+        Volver a clientes
+      </Link>
+      <PageHeader
+        eyebrow="Clientes"
+        title="Nuevo cliente"
+        description="Cargá los datos básicos. Vamos a normalizar el teléfono automáticamente."
+      />
+      <div className="card-hairline rounded-xl border bg-card p-6">
+        <NewCustomerForm tenantSlug={tenantSlug} />
+      </div>
+    </div>
   )
 }

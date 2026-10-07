@@ -5,10 +5,9 @@ import { useActionState, useCallback, useEffect, useMemo, useRef, useState } fro
 import { toast } from 'sonner'
 import { WhatsAppBubble } from '@/components/messaging/whatsapp-bubble'
 import { Button } from '@/components/ui/button'
-import { Callout } from '@/components/ui/callout'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
-  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -16,8 +15,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { Field, FieldRow, FormError } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -25,8 +24,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { SubmitButton } from '@/components/ui/submit-button'
-import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import {
   TEMPLATE_VARIABLES,
@@ -88,7 +85,7 @@ export function CreateTemplateDialog({
   const [urlUrl, setUrlUrl] = useState('')
 
   const boundAction = createTemplateAction.bind(null, tenantSlug)
-  const [state, action] = useActionState(boundAction, initial)
+  const [state, action, pending] = useActionState(boundAction, initial)
 
   const bodyVars = useMemo(() => extractPositionalVars(bodyText), [bodyText])
   const headerVars = useMemo(() => extractPositionalVars(headerText), [headerText])
@@ -119,8 +116,9 @@ export function CreateTemplateDialog({
       )
       setOpen(false)
       reset()
+    } else if (!state.ok && state.message) {
+      toast.error(state.message)
     }
-    // El error queda adentro del diálogo (FormError), no en un aviso que se va.
   }, [state, reset])
 
   // Ejemplos en el orden de las variables del cuerpo (1..n).
@@ -208,13 +206,13 @@ export function CreateTemplateDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button>
-          <PlusIcon aria-hidden />
+        <Button className="gap-2">
+          <PlusIcon className="size-4" />
           Nueva plantilla
         </Button>
       </DialogTrigger>
 
-      <DialogContent size="lg">
+      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Nueva plantilla de WhatsApp</DialogTitle>
           <DialogDescription>
@@ -223,271 +221,278 @@ export function CreateTemplateDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {/* El formulario abraza cuerpo y pie: el cuerpo scrollea y «Mandar a
-            revisión» queda siempre a la vista. */}
-        <form action={action} className="flex min-h-0 flex-1 flex-col gap-4">
+        <form action={action} className="grid gap-5 md:grid-cols-[1fr_15rem]">
           {/* Campos serializados que no son inputs de texto simples */}
           <input type="hidden" name="channel_id" value={channelId} />
           <input type="hidden" name="bodyExamples" value={JSON.stringify(orderedBodyExamples)} />
           <input type="hidden" name="variableHints" value={JSON.stringify(variableHints)} />
           <input type="hidden" name="optOut" value={optOut ? 'true' : 'false'} />
 
-          <DialogBody>
-            <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_14rem]">
-              {/* Columna izquierda: formulario */}
-              <div className="grid content-start gap-4">
-                <FormError
-                  title="WhatsApp no recibió la plantilla"
-                  message={state.ok ? null : state.message}
-                />
+          {/* Columna izquierda: formulario */}
+          <div className="grid content-start gap-4">
+            <div className="grid gap-1.5">
+              <Label htmlFor="tmpl-name">
+                Nombre técnico <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="tmpl-name"
+                name="name"
+                value={name}
+                onChange={(e) => setName(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                placeholder="ej. bienvenida_nuevo_cliente"
+                autoComplete="off"
+              />
+              <p className="text-muted-foreground text-xs">
+                Tus clientes nunca lo ven. WhatsApp lo exige único, en minúsculas y con guión bajo
+                (_) en vez de espacios.
+              </p>
+            </div>
 
-                <Field
-                  label="Nombre técnico"
-                  hint="Tus clientes nunca lo ven. WhatsApp lo exige único, en minúsculas y con guion bajo (_) en vez de espacios."
-                >
-                  <Input
-                    name="name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
-                    placeholder="ej. bienvenida_nuevo_cliente"
-                    autoComplete="off"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                  />
-                </Field>
-
-                <FieldRow>
-                  <Field label="¿Para qué es?">
-                    <Select name="category" value={category} onValueChange={setCategory}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Elegí…" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {TEMPLATE_CATEGORIES.map((cat) => (
-                          <SelectItem key={cat} value={cat}>
-                            {CATEGORY_LABELS[cat] ?? cat}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-
-                  <Field label="Idioma">
-                    <Select name="language" value={language} onValueChange={setLanguage}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Elegí…" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {LANGUAGE_OPTIONS.map((lang) => (
-                          <SelectItem key={lang.code} value={lang.code}>
-                            {lang.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                </FieldRow>
-                {CATEGORY_HELP[category] ? (
-                  <p className="-mt-2 type-caption text-subtle-foreground">
-                    {CATEGORY_HELP[category]}
-                  </p>
-                ) : null}
-
-                <Field label="Encabezado" optional hint="Una línea en negrita arriba del mensaje.">
-                  <Input
-                    name="headerText"
-                    value={headerText}
-                    onChange={(e) => setHeaderText(e.target.value)}
-                    placeholder="ej. Novedades de HUB"
-                    maxLength={60}
-                  />
-                </Field>
-                {headerVars.length > 0 ? (
-                  <Field
-                    label="Ejemplo del dato del encabezado"
-                    hint="Lo ve WhatsApp para aprobarla; no se le manda a nadie."
-                  >
-                    <Input
-                      size="sm"
-                      name="headerExample"
-                      value={headerExample}
-                      onChange={(e) => setHeaderExample(e.target.value)}
-                      placeholder="ej. Juan"
-                    />
-                  </Field>
-                ) : null}
-
-                <Field label="Cuerpo del mensaje">
-                  <Textarea
-                    name="bodyText"
-                    ref={bodyRef}
-                    value={bodyText}
-                    onChange={(e) => changeBody(e.target.value)}
-                    placeholder="ej. ¡Hola {{1}}! Te esperamos con un beneficio especial."
-                    maxLength={1024}
-                    showCount
-                    className="min-h-24"
-                  />
-                </Field>
-
-                {/* Los datos del cliente, como botones. Se insertan donde está el
-                    cursor: el dueño escribe "¡Hola " y toca Nombre. */}
-                <fieldset className="-mt-1 flex min-w-0 flex-col gap-2">
-                  <legend className="mb-2 type-caption text-muted-foreground">
-                    <span className="font-medium text-foreground">Insertá un dato del cliente</span>{' '}
-                    — se completa solo en cada mensaje
-                  </legend>
-                  <div className="flex flex-wrap gap-2">
-                    {TEMPLATE_VARIABLES.map((v) => (
-                      <Button
-                        key={v.key}
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        className="rounded-full"
-                        title={v.hint}
-                        onClick={() => insertVariable(v.key)}
-                      >
-                        <PlusIcon aria-hidden />
-                        {v.label}
-                      </Button>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-1.5">
+                <Label htmlFor="tmpl-category">
+                  ¿Para qué es? <span className="text-destructive">*</span>
+                </Label>
+                <Select name="category" value={category} onValueChange={setCategory}>
+                  <SelectTrigger id="tmpl-category" className="w-full">
+                    <SelectValue placeholder="Seleccioná…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TEMPLATE_CATEGORIES.map((cat) => (
+                      <SelectItem key={cat} value={cat}>
+                        {CATEGORY_LABELS[cat] ?? cat}
+                      </SelectItem>
                     ))}
-                  </div>
-                </fieldset>
-
-                {bodyVars.length > 0 ? (
-                  <Callout tone="neutral" icon={LightbulbIcon} title="Qué va en cada hueco">
-                    <p>
-                      Cada hueco se completa con el dato de ese cliente. El ejemplo es lo que ve
-                      WhatsApp para aprobar el mensaje: no se le manda a nadie.
-                    </p>
-                    <div className="mt-3 flex flex-col gap-2">
-                      {bodyVars.map((n) => {
-                        const hint = variableHints[String(n)] ?? 'custom'
-                        return (
-                          <div key={n} className="flex items-center gap-2">
-                            <span
-                              aria-hidden="true"
-                              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-card font-mono type-caption font-semibold tabular-nums text-foreground"
-                            >
-                              {n}
-                            </span>
-                            <Select
-                              value={hint}
-                              onValueChange={(v) => changeHint(n, v as VariableSourceKey)}
-                            >
-                              <SelectTrigger
-                                size="sm"
-                                className="w-36 shrink-0"
-                                aria-label={`Qué dato va en el hueco ${n}`}
-                              >
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {TEMPLATE_VARIABLES.map((v) => (
-                                  <SelectItem key={v.key} value={v.key}>
-                                    {v.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <Input
-                              size="sm"
-                              value={bodyExamples[n - 1] ?? ''}
-                              onChange={(e) => setExampleAt(n, e.target.value)}
-                              placeholder={`ej. ${variableDefinition(hint)?.example ?? 'Juan'}`}
-                              aria-label={`Ejemplo del hueco ${n}`}
-                            />
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </Callout>
-                ) : null}
-
-                <Field
-                  label="Pie"
-                  optional
-                  hint="Texto chiquito al final. Ideal para la firma del bar."
-                >
-                  <Input
-                    name="footerText"
-                    value={footerText}
-                    onChange={(e) => setFooterText(e.target.value)}
-                    placeholder="ej. HUB · Córdoba"
-                    maxLength={60}
-                  />
-                </Field>
-
-                <div className="flex flex-col gap-3 border-t border-border pt-4">
-                  <Field
-                    layout="toggle"
-                    label="Botón para dejar de recibir promos"
-                    hint="Recomendado: el cliente se da de baja solo y no te marca el número como spam."
-                  >
-                    <Switch checked={optOut} onCheckedChange={(v) => setOptOut(v === true)} />
-                  </Field>
-                  {optOut ? (
-                    <Field label="Texto del botón">
-                      <Input
-                        size="sm"
-                        name="optOutLabel"
-                        value={optOutLabel}
-                        onChange={(e) => setOptOutLabel(e.target.value)}
-                        maxLength={25}
-                      />
-                    </Field>
-                  ) : null}
-                  <FieldRow>
-                    <Field label="Botón que abre un enlace" optional>
-                      <Input
-                        size="sm"
-                        name="urlButtonText"
-                        value={urlText}
-                        onChange={(e) => setUrlText(e.target.value)}
-                        placeholder="Texto (ej. Ver la carta)"
-                        maxLength={25}
-                      />
-                    </Field>
-                    <Field label="Enlace del botón" optional>
-                      <Input
-                        size="sm"
-                        inputMode="url"
-                        autoCapitalize="none"
-                        spellCheck={false}
-                        name="urlButtonUrl"
-                        value={urlUrl}
-                        onChange={(e) => setUrlUrl(e.target.value)}
-                        placeholder="https://…"
-                      />
-                    </Field>
-                  </FieldRow>
-                </div>
+                  </SelectContent>
+                </Select>
               </div>
 
-              {/* Columna derecha: vista previa */}
-              <div className="md:sticky md:top-0 md:self-start">
-                <p className="mb-2 type-label text-foreground">Así lo va a ver el cliente</p>
-                <WhatsAppBubble
-                  header={headerText ? fillExamples(headerText, [headerExample]) : ''}
-                  body={fillExamples(bodyText, bodyExamples)}
-                  footer={footerText}
-                  buttons={previewButtons}
-                />
+              <div className="grid gap-1.5">
+                <Label htmlFor="tmpl-language">
+                  Idioma <span className="text-destructive">*</span>
+                </Label>
+                <Select name="language" value={language} onValueChange={setLanguage}>
+                  <SelectTrigger id="tmpl-language" className="w-full">
+                    <SelectValue placeholder="Seleccioná…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LANGUAGE_OPTIONS.map((lang) => (
+                      <SelectItem key={lang.code} value={lang.code}>
+                        {lang.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-          </DialogBody>
+            {CATEGORY_HELP[category] ? (
+              <p className="-mt-2 text-muted-foreground text-xs">{CATEGORY_HELP[category]}</p>
+            ) : null}
 
-          <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
+            <div className="grid gap-1.5">
+              <Label htmlFor="tmpl-header">Encabezado (opcional)</Label>
+              <Input
+                id="tmpl-header"
+                name="headerText"
+                value={headerText}
+                onChange={(e) => setHeaderText(e.target.value)}
+                placeholder="ej. Novedades de HUB"
+                maxLength={60}
+              />
+              <p className="text-muted-foreground text-xs">
+                Una línea en negrita arriba del mensaje.
+              </p>
+              {headerVars.length > 0 ? (
+                <Input
+                  name="headerExample"
+                  value={headerExample}
+                  onChange={(e) => setHeaderExample(e.target.value)}
+                  placeholder="Ejemplo para la variable del encabezado"
+                  className="h-8 text-xs"
+                />
+              ) : null}
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label htmlFor="tmpl-body">
+                Cuerpo del mensaje <span className="text-destructive">*</span>
+              </Label>
+              <Textarea
+                id="tmpl-body"
+                name="bodyText"
+                ref={bodyRef}
+                value={bodyText}
+                onChange={(e) => changeBody(e.target.value)}
+                placeholder="ej. ¡Hola {{1}}! Te esperamos con un beneficio especial."
+                maxLength={1024}
+                className="min-h-24 resize-y"
+              />
+
+              {/* Los datos del cliente, como botones. Se insertan donde está el
+                  cursor: el dueño escribe "¡Hola " y toca Nombre. */}
+              <div className="grid gap-1.5 rounded-lg border border-border/60 bg-secondary/30 p-2.5">
+                <p className="text-[11px] font-medium">
+                  Insertá un dato del cliente
+                  <span className="ml-1 font-normal text-muted-foreground">
+                    — se completa solo en cada mensaje
+                  </span>
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {TEMPLATE_VARIABLES.map((v) => (
+                    <Button
+                      key={v.key}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 gap-1 rounded-full px-2.5 text-[11px]"
+                      title={v.hint}
+                      onClick={() => insertVariable(v.key)}
+                    >
+                      <PlusIcon className="size-3" aria-hidden />
+                      {v.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {bodyVars.length > 0 ? (
+              <div className="grid gap-2 rounded-lg border border-border/60 bg-secondary/20 p-3">
+                <div className="flex gap-2">
+                  <LightbulbIcon
+                    className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
+                    aria-hidden
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Cada hueco se completa con el dato de ese cliente. El ejemplo es lo que ve
+                    WhatsApp para aprobar el mensaje — no se le manda a nadie.
+                  </p>
+                </div>
+                {bodyVars.map((n) => {
+                  const hint = variableHints[String(n)] ?? 'custom'
+                  return (
+                    <div key={n} className="flex items-center gap-2">
+                      <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-foreground/10 font-mono text-[10px] font-semibold tabular-nums">
+                        {n}
+                      </span>
+                      <Select
+                        value={hint}
+                        onValueChange={(v) => changeHint(n, v as VariableSourceKey)}
+                      >
+                        <SelectTrigger
+                          className="h-8 w-40 text-xs"
+                          aria-label={`Qué dato va en el hueco ${n}`}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TEMPLATE_VARIABLES.map((v) => (
+                            <SelectItem key={v.key} value={v.key}>
+                              {v.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        value={bodyExamples[n - 1] ?? ''}
+                        onChange={(e) => setExampleAt(n, e.target.value)}
+                        placeholder={`ej. ${variableDefinition(hint)?.example ?? 'Juan'}`}
+                        aria-label={`Ejemplo del hueco ${n}`}
+                        className="h-8 flex-1 text-xs"
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+            ) : null}
+
+            <div className="grid gap-1.5">
+              <Label htmlFor="tmpl-footer">Pie (opcional)</Label>
+              <Input
+                id="tmpl-footer"
+                name="footerText"
+                value={footerText}
+                onChange={(e) => setFooterText(e.target.value)}
+                placeholder="ej. HUB · Córdoba"
+                maxLength={60}
+              />
+              <p className="text-muted-foreground text-xs">
+                Texto chiquito al final. Ideal para la firma del bar.
+              </p>
+            </div>
+
+            <div className="grid gap-2 rounded-lg border border-border/60 p-3">
+              <div className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  id="tmpl-optout"
+                  checked={optOut}
+                  onCheckedChange={(v) => setOptOut(v === true)}
+                />
+                <Label htmlFor="tmpl-optout" className="font-normal">
+                  Botón para dejar de recibir promos{' '}
+                  <span className="text-muted-foreground">(recomendado)</span>
+                </Label>
+              </div>
+              {optOut ? (
+                <Input
+                  name="optOutLabel"
+                  value={optOutLabel}
+                  onChange={(e) => setOptOutLabel(e.target.value)}
+                  maxLength={25}
+                  className="h-8 text-xs"
+                  aria-label="Texto del botón para dejar de recibir promos"
+                />
+              ) : null}
+              <div className="mt-1 grid gap-1.5">
+                <Label className="text-xs text-muted-foreground">
+                  Botón que abre un enlace (opcional)
+                </Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    name="urlButtonText"
+                    value={urlText}
+                    onChange={(e) => setUrlText(e.target.value)}
+                    placeholder="Texto (ej. Ver la carta)"
+                    maxLength={25}
+                    className="h-8 text-xs"
+                  />
+                  <Input
+                    name="urlButtonUrl"
+                    value={urlUrl}
+                    onChange={(e) => setUrlUrl(e.target.value)}
+                    placeholder="https://…"
+                    className="h-8 text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Columna derecha: preview */}
+          <div className="md:sticky md:top-0 md:self-start">
+            <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+              Así lo va a ver el cliente
+            </p>
+            <WhatsAppBubble
+              header={headerText ? fillExamples(headerText, [headerExample]) : ''}
+              body={fillExamples(bodyText, bodyExamples)}
+              footer={footerText}
+              buttons={previewButtons}
+            />
+          </div>
+
+          <DialogFooter className="md:col-span-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+              disabled={pending}
+            >
               Cancelar
             </Button>
-            <SubmitButton
-              pendingText="Mandando a WhatsApp…"
-              disabled={!name.trim() || !bodyText.trim()}
-            >
-              Mandar a revisión
-            </SubmitButton>
+            <Button type="submit" disabled={pending || !name.trim() || !bodyText.trim()}>
+              {pending ? 'Mandando a WhatsApp…' : 'Mandar a revisión'}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

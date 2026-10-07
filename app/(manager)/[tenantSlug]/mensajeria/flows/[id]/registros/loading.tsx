@@ -1,21 +1,20 @@
 import { PageShell } from '@/components/ui/page-shell'
-import { Skeleton, SkeletonStatus, SkeletonTable } from '@/components/ui/skeleton'
-import { WaSkeletonPageHeader } from '../../../_components/wa-skeletons'
+import { Skeleton } from '@/components/ui/skeleton'
 
 export default function Loading() {
   return (
-    <PageShell width="comfortable" aria-busy="true">
-      <SkeletonStatus label="Cargando los registros…" />
-      <WaSkeletonPageHeader />
-      {/* Barra de filtros: período, acción, estado, contacto y actualizar */}
-      <div aria-hidden="true" className="flex flex-wrap items-center gap-2">
-        <Skeleton className="h-(--control-sm) w-52 rounded-md" />
-        <Skeleton className="h-(--control-sm) w-44 rounded-md" />
-        <Skeleton className="h-(--control-sm) w-40 rounded-md" />
-        <Skeleton className="h-(--control-sm) w-52 rounded-md" />
-        <Skeleton className="ms-auto h-(--control-sm) w-28 rounded-md" />
+    <PageShell width="comfortable">
+      <Skeleton className="h-4 w-44" />
+      <div className="space-y-3">
+        <Skeleton className="h-6 w-64" />
+        <Skeleton className="h-4 w-96 max-w-full" />
       </div>
-      <SkeletonTable rows={8} columns={5} />
+      <Skeleton className="h-14 w-full rounded-xl" />
+      <div className="space-y-2">
+        {[0, 1, 2, 3, 4, 5].map((i) => (
+          <Skeleton key={i} className="h-14 w-full rounded-xl" />
+        ))}
+      </div>
     </PageShell>
   )
 }

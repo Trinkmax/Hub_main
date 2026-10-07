@@ -22,12 +22,7 @@ export async function logAudit(entry: AuditEntry): Promise<void> {
   })
   if (error) {
     // No bloqueamos la operación principal por un fallo de auditoría;
-    // pero sí logueamos para investigar después. Sin el payload: puede traer
-    // datos personales (CLAUDE.md §9); alcanza con qué se quiso auditar.
-    console.error('[audit] failed to write log', {
-      action: entry.action,
-      entity: entry.entity,
-      code: error.code,
-    })
+    // pero sí logueamos para investigar después.
+    console.error('[audit] failed to write log', { entry, error })
   }
 }

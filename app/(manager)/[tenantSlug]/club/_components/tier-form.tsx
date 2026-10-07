@@ -1,25 +1,25 @@
 'use client'
 
+import { Loader2 } from 'lucide-react'
 import { type ReactNode, useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
-  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Field, FieldRow } from '@/components/ui/field'
 import { IconPicker } from '@/components/ui/icon-picker'
 import { Input } from '@/components/ui/input'
-import { NumberField } from '@/components/ui/number-field'
+import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { createTier, type LoyaltyActionState, updateTier } from '@/lib/points/actions'
 import type { LoyaltyTier } from '@/lib/points/tiers'
+import { cn } from '@/lib/utils'
 
 const DEFAULT_COLOR = '#8a6d3b'
 
@@ -74,7 +74,7 @@ export function TierForm({
   const [color, setColor] = useState<string>(defaults?.color ?? DEFAULT_COLOR)
   const [active, setActive] = useState<boolean>(tier?.active ?? true)
   const [badgeIcon, setBadgeIcon] = useState<string | null>(defaults?.badge_icon ?? null)
-  const [nameError, setNameError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   // Reset a los valores de partida cada vez que se abre (importante al reusar
   // el mismo form para distintas filas en una lista).
@@ -82,22 +82,17 @@ export function TierForm({
     if (isOpen) {
       setColor(defaults?.color ?? DEFAULT_COLOR)
       setActive(tier?.active ?? true)
-      setBadgeIcon(defaults?.badge_icon ?? null)
-      setNameError(null)
+      setFieldErrors({})
     }
   }, [isOpen, tier, defaults])
 
-  // onSubmit y no `action`: la acción corre en el cliente y, si el server
-  // rechaza, lo tipeado queda (un `<form action>` resetea los campos al volver).
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const formData = new FormData(event.currentTarget)
+  const handleSubmit = (formData: FormData) => {
     const name = String(formData.get('name') ?? '').trim()
     if (!name) {
-      setNameError('Poné un nombre para el nivel.')
+      setFieldErrors({ name: 'Poné un nombre.' })
       return
     }
-    setNameError(null)
+    setFieldErrors({})
 
     const hexInput = String(formData.get('color') ?? '').trim()
     const badgeInput = String(formData.get('badge_icon') ?? '').trim()
@@ -131,107 +126,160 @@ export function TierForm({
   return (
     <Dialog open={isOpen} onOpenChange={setOpen}>
       {trigger}
-      <DialogContent size="lg">
+      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{isEdit ? 'Editar nivel' : 'Nuevo nivel'}</DialogTitle>
+          <DialogTitle className="font-serif">
+            {isEdit ? 'Editar nivel' : 'Nuevo nivel'}
+          </DialogTitle>
           <DialogDescription>
-            El nivel se alcanza juntando puntos de categoría (los ganados en los últimos 4 meses).
-            Acá va su umbral y cómo se ve; los beneficios se cargan aparte.
+            El nivel se alcanza acumulando puntos de categoría (los ganados en los últimos 4 meses).
+            Definí su umbral y estética; los beneficios se cargan aparte.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col gap-4">
-          <DialogBody className="grid gap-4">
-            <Field label="Nombre" name="name" required error={nameError}>
-              <Input
-                autoFocus
-                maxLength={40}
-                defaultValue={defaults?.name ?? ''}
-                placeholder="Oro"
-              />
-            </Field>
+        <form action={handleSubmit} className="space-y-4">
+          {/* Nombre */}
+          <div className="grid gap-1.5">
+            <Label htmlFor="tier-name">Nombre</Label>
+            <Input
+              id="tier-name"
+              name="name"
+              autoFocus
+              required
+              maxLength={40}
+              defaultValue={defaults?.name ?? ''}
+              placeholder="Oro"
+              aria-invalid={fieldErrors.name ? true : undefined}
+            />
+            {fieldErrors.name ? (
+              <p className="text-xs text-destructive">{fieldErrors.name}</p>
+            ) : null}
+          </div>
 
-            <FieldRow>
-              <Field label="Color" optional hint="Formato #RRGGBB. Vacío usa el color por defecto.">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={/^#[0-9a-fA-F]{6}$/.test(color) ? color : DEFAULT_COLOR}
-                    onChange={(e) => setColor(e.target.value)}
-                    aria-label="Elegir el color en la paleta"
-                    className="size-(--control-md) shrink-0 cursor-pointer rounded-md border border-input bg-card p-0.5 outline-offset-2 outline-(--ring) focus-visible:outline-2"
-                  />
-                  <Input
-                    name="color"
-                    value={color}
-                    onChange={(e) => setColor(e.target.value)}
-                    placeholder="#8a6d3b"
-                    maxLength={7}
-                    className="font-mono type-amount"
-                  />
-                </div>
-              </Field>
-
-              <Field
-                label="Ícono del nivel"
-                optional
-                hint="Acompaña al nombre del nivel en el carnet del socio."
-              >
-                <IconPicker value={badgeIcon} onChange={setBadgeIcon} name="badge_icon" />
-              </Field>
-            </FieldRow>
-
-            <FieldRow>
-              <Field
-                label="Puntos de categoría para alcanzarlo"
-                name="min_category_points"
-                required
-                hint="Puntos ganados en los últimos 4 meses. El nivel sube y baja con la actividad."
-              >
-                <NumberField
-                  min={0}
-                  step={50}
-                  largeStep={500}
-                  suffix="pts"
-                  defaultValue={defaults?.min_category_points ?? 0}
+          {/* Color + ícono */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="tier-color">Color (opcional)</Label>
+              <div className="flex items-center gap-2">
+                <input
+                  id="tier-color"
+                  type="color"
+                  value={color}
+                  onChange={(e) => setColor(e.target.value)}
+                  aria-label="Elegir color del nivel"
+                  className="size-9 shrink-0 cursor-pointer rounded-md border border-border/70 bg-transparent p-0.5"
                 />
-              </Field>
+                <Input
+                  name="color"
+                  value={color}
+                  onChange={(e) => setColor(e.target.value)}
+                  placeholder="#8a6d3b"
+                  maxLength={7}
+                  className="font-mono text-xs tabular-nums"
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Formato hex #RRGGBB. Dejalo vacío para usar el color por defecto.
+              </p>
+            </div>
 
-              <Field label="Orden" name="sort" hint="Desempata niveles con el mismo umbral.">
-                <NumberField min={0} defaultValue={defaults?.sort ?? 0} />
-              </Field>
-            </FieldRow>
+            <input type="hidden" name="badge_icon" value={badgeIcon ?? ''} />
+            <IconPicker
+              id="tier-badge"
+              value={badgeIcon}
+              onChange={setBadgeIcon}
+              label="Ícono del nivel (opcional)"
+              hint="Acompaña al nombre del nivel en el carnet del socio."
+            />
+          </div>
 
-            <Field
-              label="Nota visible al cliente"
-              name="perks"
-              optional
-              hint="Texto libre que describe las ventajas. Lo ve el cliente."
-            >
-              <Textarea
-                maxLength={300}
-                showCount
-                rows={2}
-                defaultValue={defaults?.perks ?? ''}
-                placeholder="Ej: 10% off siempre, acceso a la barra VIP…"
+          {/* Umbral + orden */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="tier-min">Puntos de categoría para alcanzarlo</Label>
+              <Input
+                id="tier-min"
+                name="min_category_points"
+                type="number"
+                min={0}
+                required
+                defaultValue={defaults?.min_category_points ?? 0}
+                className="tabular-nums"
               />
-            </Field>
+              <p className="text-[11px] text-muted-foreground">
+                Puntos ganados en los últimos 4 meses. El nivel sube y baja con la actividad.
+              </p>
+            </div>
 
-            <Field
-              label="Nivel activo"
-              layout="toggle"
-              hint="Los niveles inactivos no se asignan ni se muestran."
-            >
-              <Switch checked={active} onCheckedChange={setActive} />
-            </Field>
-          </DialogBody>
+            <div className="grid gap-1.5">
+              <Label htmlFor="tier-sort">Orden</Label>
+              <Input
+                id="tier-sort"
+                name="sort"
+                type="number"
+                defaultValue={defaults?.sort ?? 0}
+                className="tabular-nums"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Desempata niveles con el mismo umbral.
+              </p>
+            </div>
+          </div>
+
+          {/* Perks */}
+          <div className="grid gap-1.5">
+            <Label htmlFor="tier-perks">Nota visible al cliente (opcional)</Label>
+            <Textarea
+              id="tier-perks"
+              name="perks"
+              maxLength={300}
+              rows={2}
+              defaultValue={defaults?.perks ?? ''}
+              className="resize-none"
+              placeholder="Ej: 10% off siempre, acceso a la barra VIP…"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Texto libre que describe las ventajas. Se muestra al cliente.
+            </p>
+          </div>
+
+          {/* Activo */}
+          <div
+            className={cn(
+              'flex items-center justify-between rounded-lg border border-border/70 bg-card/60 px-3 py-2.5',
+            )}
+          >
+            <div className="space-y-0.5">
+              <Label htmlFor="tier-active" className="text-sm font-medium">
+                Nivel activo
+              </Label>
+              <p className="text-[11px] text-muted-foreground">
+                Los niveles inactivos no se asignan ni se muestran.
+              </p>
+            </div>
+            <Switch
+              id="tier-active"
+              checked={active}
+              onCheckedChange={setActive}
+              aria-label="Nivel activo"
+            />
+          </div>
 
           <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               Cancelar
             </Button>
-            <Button type="submit" loading={pending} loadingText="Guardando…">
-              {isEdit ? 'Guardar cambios' : 'Crear nivel'}
+            <Button type="submit" disabled={pending} className="min-w-[140px]">
+              {pending ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Guardando…
+                </>
+              ) : isEdit ? (
+                'Guardar cambios'
+              ) : (
+                'Crear nivel'
+              )}
             </Button>
           </DialogFooter>
         </form>

@@ -2,33 +2,41 @@
 
 import { Plus } from 'lucide-react'
 import { useActionState, useEffect, useRef, useState } from 'react'
+import { useFormStatus } from 'react-dom'
 import { toast } from 'sonner'
-import { MenuImageUploader } from '@/components/media/image-uploader'
-import { Card } from '@/components/ui/card'
-import { Field, FieldRow } from '@/components/ui/field'
-import { FormActions } from '@/components/ui/form-actions'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { NumberField } from '@/components/ui/number-field'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { SubmitButton } from '@/components/ui/submit-button'
+import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { createReward, type LoyaltyActionState } from '@/lib/points/actions'
 import { REWARD_CATEGORIES } from '@/lib/points/schemas'
 import type { LoyaltyTier } from '@/lib/points/tiers'
-import { REWARD_CATEGORY_LABELS } from './reward-options'
+import { MenuImageUploader } from '../../../menu/_components/image-uploader'
 import { StockField } from './stock-field'
 
 const initial: LoyaltyActionState = { ok: true }
 
-/** «Ninguna»: Radix Select no admite el valor vacío; el hidden manda `''`. */
-const NONE = '__none__'
+const SELECT_CLASS =
+  'border-input h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
+
+/** Etiquetas legibles para las categorías canónicas del catálogo. */
+const CATEGORY_LABELS: Record<string, string> = {
+  desayuno: 'Desayuno y merienda',
+  almuerzo: 'Almuerzo',
+  cena: 'Cena',
+  evento: 'Eventos',
+}
+
+function SubmitBtn() {
+  const { pending } = useFormStatus()
+  return (
+    <Button type="submit" disabled={pending} size="sm" className="gap-1.5">
+      <Plus className="size-3.5" />
+      {pending ? 'Creando…' : 'Crear recompensa'}
+    </Button>
+  )
+}
 
 export function NewRewardForm({
   tenantSlug,
@@ -50,12 +58,10 @@ export function NewRewardForm({
   const [visible, setVisible] = useState(true)
   // La foto viaja por un input hidden; la URL la resuelve el uploader (Storage).
   const [imageUrl, setImageUrl] = useState<string | null>(null)
-  const [category, setCategory] = useState(NONE)
-  const [minTierId, setMinTierId] = useState(NONE)
   // Stock: arranca ilimitado, que es lo que quiere el 90% de las recompensas de
   // un bar. Con el switch prendido no se manda `stock` y el schema lo deja null.
   const [unlimitedStock, setUnlimitedStock] = useState(true)
-  const [stock, setStock] = useState<number | null>(null)
+  const [stock, setStock] = useState('')
 
   useEffect(() => {
     if (state.ok && state.message) {
@@ -63,112 +69,116 @@ export function NewRewardForm({
       formRef.current?.reset()
       setVisible(true)
       setImageUrl(null)
-      setCategory(NONE)
-      setMinTierId(NONE)
       setUnlimitedStock(true)
-      setStock(null)
+      setStock('')
     } else if (!state.ok) {
       toast.error(state.message)
     }
   }, [state])
 
   return (
-    <Card asChild>
-      <form ref={formRef} action={formAction} aria-labelledby="new-reward-title">
-        <h3 id="new-reward-title" className="type-subtitle text-foreground">
-          Nueva recompensa
-        </h3>
-
-        <Field label="Nombre" name="name" required>
-          <Input maxLength={80} placeholder="Trago gratis" />
-        </Field>
-        <Field label="Descripción" name="description" optional>
-          <Textarea
-            maxLength={300}
-            showCount
-            rows={2}
-            placeholder="Lo que ve el cajero al canjear: qué incluye, con qué se puede elegir…"
-          />
-        </Field>
-
-        {/* Foto que ve el cliente en el catálogo de canje de la carta. */}
-        <input type="hidden" name="image_url" value={imageUrl ?? ''} />
-        <MenuImageUploader
-          tenantId={tenantId}
-          value={imageUrl}
-          onChange={setImageUrl}
-          label="Foto de la recompensa"
+    <form
+      ref={formRef}
+      action={formAction}
+      className="card-hairline rounded-xl border bg-card p-4 space-y-3"
+    >
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Nueva recompensa
+      </h3>
+      <div className="grid gap-1.5">
+        <Label htmlFor="rw-name" className="text-[11px] text-muted-foreground">
+          Nombre
+        </Label>
+        <Input id="rw-name" name="name" required maxLength={80} placeholder="Trago gratis" />
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor="rw-desc" className="text-[11px] text-muted-foreground">
+          Descripción
+        </Label>
+        <Textarea
+          id="rw-desc"
+          name="description"
+          maxLength={300}
+          rows={2}
+          className="resize-none"
+          placeholder="Detalles que ve el cajero al canjear…"
         />
-
-        <input type="hidden" name="category" value={category === NONE ? '' : category} />
-        <input type="hidden" name="min_tier_id" value={minTierId === NONE ? '' : minTierId} />
-        <FieldRow>
-          <Field label="Categoría" optional>
-            <Select value={category} onValueChange={setCategory}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>Sin categoría</SelectItem>
-                {REWARD_CATEGORIES.map((cat) => (
-                  <SelectItem key={cat} value={cat}>
-                    {REWARD_CATEGORY_LABELS[cat] ?? cat}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          {sortedTiers.length > 0 ? (
-            <Field
-              label="Disponibilidad por nivel"
-              hint="Con un nivel elegido, solo la canjean los clientes que lo alcanzaron."
-            >
-              <Select value={minTierId} onValueChange={setMinTierId}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>Disponible para todos</SelectItem>
-                  {sortedTiers.map((tier) => (
-                    <SelectItem key={tier.id} value={tier.id}>
-                      Desde {tier.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-          ) : null}
-        </FieldRow>
-
-        <Field
-          label="Mostrar en el catálogo de canje"
-          layout="toggle"
-          hint="Si la ocultás, sigue vigente pero no aparece en la carta pública."
-        >
-          <Switch checked={visible} onCheckedChange={setVisible} />
-        </Field>
-        <input type="hidden" name="visible_in_catalog" value={visible ? 'true' : 'false'} />
-
-        <FieldRow>
-          <Field label="Costo" name="cost_points" required>
-            <NumberField min={1} step={10} suffix="pts" placeholder="100" />
-          </Field>
-          <StockField
-            idPrefix="rw"
-            unlimited={unlimitedStock}
-            onUnlimitedChange={setUnlimitedStock}
-            value={stock}
-            onValueChange={setStock}
+      </div>
+      {/* Foto que ve el cliente en el catálogo de canje de la carta. */}
+      <input type="hidden" name="image_url" value={imageUrl ?? ''} />
+      <MenuImageUploader
+        tenantId={tenantId}
+        value={imageUrl}
+        onChange={setImageUrl}
+        label="Foto de la recompensa"
+      />
+      <div className="grid gap-1.5">
+        <Label htmlFor="rw-category" className="text-[11px] text-muted-foreground">
+          Categoría
+        </Label>
+        <select id="rw-category" name="category" defaultValue="" className={SELECT_CLASS}>
+          <option value="">Sin categoría</option>
+          {REWARD_CATEGORIES.map((cat) => (
+            <option key={cat} value={cat}>
+              {CATEGORY_LABELS[cat] ?? cat}
+            </option>
+          ))}
+        </select>
+      </div>
+      {sortedTiers.length > 0 ? (
+        <div className="grid gap-1.5">
+          <Label htmlFor="rw-tier" className="text-[11px] text-muted-foreground">
+            Disponibilidad por nivel
+          </Label>
+          <select id="rw-tier" name="min_tier_id" defaultValue="" className={SELECT_CLASS}>
+            <option value="">Disponible para todos</option>
+            {sortedTiers.map((tier) => (
+              <option key={tier.id} value={tier.id}>
+                Desde {tier.name}
+              </option>
+            ))}
+          </select>
+          <p className="text-[11px] text-muted-foreground">
+            Si elegís un nivel, solo los clientes que lo hayan alcanzado podrán canjearla.
+          </p>
+        </div>
+      ) : null}
+      <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2">
+        <div className="grid gap-0.5">
+          <Label htmlFor="rw-visible" className="text-xs font-medium">
+            Mostrar en el catálogo de canje
+          </Label>
+          <p className="text-[11px] text-muted-foreground">
+            Si la ocultás, sigue vigente pero no aparece en la carta pública.
+          </p>
+        </div>
+        <Switch id="rw-visible" checked={visible} onCheckedChange={setVisible} />
+      </div>
+      <input type="hidden" name="visible_in_catalog" value={visible ? 'true' : 'false'} />
+      <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+        <div className="grid gap-1.5">
+          <Label htmlFor="rw-cost" className="text-[11px] text-muted-foreground">
+            Costo (puntos)
+          </Label>
+          <Input
+            id="rw-cost"
+            name="cost_points"
+            type="number"
+            min={1}
+            required
+            placeholder="100"
+            className="tabular-nums"
           />
-        </FieldRow>
-
-        <FormActions sticky={false}>
-          <SubmitButton pendingText="Creando…">
-            <Plus aria-hidden="true" />
-            Crear recompensa
-          </SubmitButton>
-        </FormActions>
-      </form>
-    </Card>
+        </div>
+        <StockField
+          idPrefix="rw"
+          unlimited={unlimitedStock}
+          onUnlimitedChange={setUnlimitedStock}
+          value={stock}
+          onValueChange={setStock}
+        />
+        <SubmitBtn />
+      </div>
+    </form>
   )
 }

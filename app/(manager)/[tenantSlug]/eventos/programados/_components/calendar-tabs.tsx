@@ -4,7 +4,6 @@ import { CalendarPlus, Settings2 } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Callout } from '@/components/ui/callout'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import type { DayOverview } from '@/lib/salon/segment-queries'
@@ -77,42 +76,49 @@ export function CalendarTabs({
     if (dayParam !== null) setTab('calendario')
   }
 
-  // Las pestañas no escriben `?tab=` en la URL (el `syncParam` del kit): el
-  // calendario maneja su URL a mano con la History API (?day, ?seg, ?res,
-  // ?planta) y abrir o cerrar un día la reescribe sin `tab`; sincronizar las
-  // dos cosas devolvía la pestaña al default del server al cerrar un día.
   return (
     <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="gap-5">
-      <TabsList data-tour="eventos-tabs">
-        <TabsTrigger value="calendario" icon={CalendarPlus}>
+      <TabsList className="h-10" data-tour="eventos-tabs">
+        <TabsTrigger value="calendario" className="gap-1.5 px-3">
+          <CalendarPlus className="size-4" />
           Calendario
         </TabsTrigger>
         {canEditTemplates ? (
-          <TabsTrigger value="eventos" icon={Settings2}>
+          <TabsTrigger value="eventos" className="gap-1.5 px-3">
+            <Settings2 className="size-4" />
             Formatos
           </TabsTrigger>
         ) : null}
       </TabsList>
 
-      <TabsContent value="calendario" className="flex flex-col gap-4" data-tour="eventos-mes">
+      <TabsContent value="calendario" className="space-y-4" data-tour="eventos-mes">
         {activeTemplates.length === 0 ? (
-          <Callout
-            tone="neutral"
-            icon={Settings2}
-            title={canEditTemplates ? 'Creá tus formatos' : 'Todavía no hay formatos'}
-            action={
-              canEditTemplates ? (
-                <Button variant="secondary" size="sm" onClick={() => setTab('eventos')}>
-                  <Settings2 aria-hidden />
-                  Ir a Formatos
-                </Button>
-              ) : undefined
-            }
-          >
-            {canEditTemplates
-              ? 'Sushi Libre, Pizza Libre, Ramen… definí tus formatos en la pestaña Formatos y arrastralos al calendario para programar eventos. Las reservas se cargan igual desde cada día.'
-              : 'El dueño todavía no cargó formatos de eventos (Sushi Libre, Pizza Libre…). Las reservas se cargan igual desde cada día.'}
-          </Callout>
+          <div className="flex flex-col gap-3 rounded-xl border border-dashed border-border bg-card/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <Settings2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium">
+                  {canEditTemplates ? 'Creá tus formatos' : 'Todavía no hay formatos'}
+                </p>
+                <p className="text-sm text-muted-foreground text-pretty">
+                  {canEditTemplates
+                    ? 'Sushi Libre, Pizza Libre, Ramen… definí tus formatos en la pestaña Formatos y arrastralos al calendario para programar eventos. Las reservas se cargan igual desde cada día.'
+                    : 'El dueño todavía no cargó formatos de eventos (Sushi Libre, Pizza Libre…). Las reservas se cargan igual desde cada día.'}
+                </p>
+              </div>
+            </div>
+            {canEditTemplates ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 gap-2 self-start sm:self-center"
+                onClick={() => setTab('eventos')}
+              >
+                <Settings2 className="size-4" aria-hidden />
+                Ir a Formatos
+              </Button>
+            ) : null}
+          </div>
         ) : null}
         <ScheduledEventsMonth
           tenantSlug={tenantSlug}
@@ -127,8 +133,8 @@ export function CalendarTabs({
       </TabsContent>
 
       {canEditTemplates ? (
-        <TabsContent value="eventos" className="flex flex-col gap-4">
-          <p className="max-w-prose text-pretty type-small text-muted-foreground">
+        <TabsContent value="eventos" className="space-y-4">
+          <p className="text-sm text-muted-foreground text-pretty">
             El catálogo de formatos reutilizables — Sushi Libre, Pizza Libre, Ramen, etc. Cada uno
             se programa después en fechas concretas desde la pestaña Calendario.
           </p>

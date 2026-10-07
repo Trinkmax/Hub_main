@@ -2,7 +2,7 @@
 
 import { Check, Download } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { Button, type ButtonVariant } from '@/components/ui/button'
+import { Button } from '@/components/ui/button'
 import { downloadLandingHtml } from '@/lib/landings/download'
 
 /**
@@ -16,8 +16,7 @@ export function DownloadHtmlButton({
   fileName,
   label,
   showLabel = true,
-  variant = 'secondary',
-  size = 'md',
+  variant = 'outline',
   onDownloaded,
 }: {
   html: string
@@ -27,9 +26,7 @@ export function DownloadHtmlButton({
   label: string
   /** Muestra "Descargar" al lado del ícono (sólo desde sm; en celular, ícono). */
   showLabel?: boolean
-  variant?: ButtonVariant
-  /** Con `showLabel`, el alto del botón; sin etiqueta es cuadrado del mismo alto. */
-  size?: 'sm' | 'md'
+  variant?: React.ComponentProps<typeof Button>['variant']
   onDownloaded?: () => void
 }) {
   const [done, setDone] = useState(false)
@@ -54,19 +51,20 @@ export function DownloadHtmlButton({
     <Button
       type="button"
       variant={variant}
-      size={showLabel ? size : size === 'sm' ? 'icon-sm' : 'icon'}
+      size={showLabel ? 'sm' : 'icon'}
       onClick={download}
       // Un archivo vacío no le sirve a nadie, y subirlo después dejaría la
       // página en blanco.
       disabled={html.trim().length === 0}
       aria-label={label}
       title={label}
-      // En el celular queda solo el ícono: cuadrado, del alto del botón (si no,
-      // medía 42 × 44 y no llegaba al objetivo táctil).
-      className={showLabel ? 'max-sm:aspect-square' : undefined}
     >
-      {done ? <Check className="text-success-text" aria-hidden /> : <Download aria-hidden />}
-      {showLabel ? <span className="max-sm:hidden">Descargar</span> : null}
+      {done ? (
+        <Check className="size-4 text-success" aria-hidden />
+      ) : (
+        <Download className="size-4" aria-hidden />
+      )}
+      {showLabel ? <span className="hidden sm:inline">Descargar</span> : null}
     </Button>
   )
 }

@@ -7,7 +7,6 @@ import {
   Zap,
 } from 'lucide-react'
 import type { FlowTriggerConfig } from '@/lib/flows/schemas'
-import { formatCents } from '@/lib/money/format'
 
 // Metadatos compartidos entre el editor de grafo y el builder legacy:
 // mismas etiquetas, mismos iconos y mismos colores por tipo de paso,
@@ -41,17 +40,15 @@ export const KIND_ICON: Record<StepKind, LucideIcon> = {
   add_tag: TagIcon,
 }
 
-// Chip de color por tipo de paso, con los tonos del kit (sin paleta cruda ni
-// `dark:`: los tokens ya resuelven el oscuro). El verde de WhatsApp usa los
-// tokens --wa-* que solo existen dentro del frame de mensajería — este módulo
-// siempre se renderiza ahí (no portaliza a <body>). El ícono y la etiqueta
-// van siempre al lado: el color acompaña, nunca es la única señal.
+// Chip de color por tipo de paso. El verde de WhatsApp usa los tokens
+// --wa-* que solo existen dentro del frame de mensajería — este módulo
+// siempre se renderiza ahí (no portaliza a <body>).
 export const KIND_CHIP_CLASS: Record<StepKind, string> = {
-  trigger: 'border-transparent bg-brand-soft text-brand-text',
-  send_template: 'border-transparent bg-(--wa-accent-soft) text-(--wa-accent-deep)',
-  wait: 'border-transparent bg-warning-soft text-warning-text',
-  condition: 'border-transparent bg-info-soft text-info-text',
-  add_tag: 'border-border-strong bg-card text-foreground',
+  trigger: 'border-primary/30 bg-primary/10 text-primary',
+  send_template: 'border-(--wa-accent-soft) bg-(--wa-accent-soft) text-(--wa-accent-deep)',
+  wait: 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  condition: 'border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400',
+  add_tag: 'border-violet-500/30 bg-violet-500/10 text-violet-600 dark:text-violet-400',
 }
 
 // ─── Canales ─────────────────────────────────────────────────────────────────
@@ -171,9 +168,14 @@ export function opsForFieldKind(kind: ConditionFieldKind | 'custom'): string[] {
   return ['is_true', 'is_false', 'eq', 'neq', 'gte', 'gt', 'lte', 'lt']
 }
 
-/** Pesos enteros con el formato del kit (escrito a mano, sin `Intl`). */
+const arsFormatter = new Intl.NumberFormat('es-AR', {
+  style: 'currency',
+  currency: 'ARS',
+  maximumFractionDigits: 0,
+})
+
 export function formatPesosFromCents(cents: number): string {
-  return formatCents(cents, { decimals: 0 })
+  return arsFormatter.format(cents / 100)
 }
 
 export function conditionSummary(field: string, op: string, value: unknown): string {

@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { PageHeader } from '@/components/ui-legacy/page-header'
+import { PageHeader } from '@/components/ui/page-header'
 import type { LiveFloorData } from '@/lib/floor-plan/queries'
 import { getLiveFloor, listFloorAreas } from '@/lib/floor-plan/queries'
 import { requireFeature } from '@/lib/platform/guards'

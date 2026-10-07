@@ -1,7 +1,4 @@
-import { SwatchBook } from 'lucide-react'
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
 import {
@@ -34,15 +31,6 @@ export default async function DocsPage({ params }: { params: Promise<{ tenantSlu
       <PageHeader
         title="Documentación"
         description="Guía completa del sistema. Consultala cuando tengas dudas."
-        actions={
-          // El catálogo del kit (kit §6.1) no está en el menú: se llega desde acá y desde ⌘K.
-          <Button variant="secondary" asChild>
-            <Link href={`/${tenantSlug}/docs/componentes`}>
-              <SwatchBook aria-hidden="true" />
-              Catálogo de componentes
-            </Link>
-          </Button>
-        }
       />
       <DocsContent tenantSlug={tenantSlug} role={role} />
     </PageShell>

@@ -1,15 +1,18 @@
+import { formatInTimeZone } from 'date-fns-tz'
 import { MapPin } from 'lucide-react'
 import Link from 'next/link'
 import { StarRating } from '@/components/reviews/star-rating'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
-import { Card } from '@/components/ui/card'
-import { formatDateTime } from '@/lib/dates'
 import type { ReviewListItem } from '@/lib/reviews/queries'
 
 // Lista de reseñas del manager. Server component puro. Fecha en el reloj del bar.
-// Es una lista de lectura y no una tabla: el comentario es el protagonista y
-// necesita el ancho entero.
+
+const TZ = 'America/Argentina/Cordoba'
+
+function formatReviewDate(iso: string): string {
+  return formatInTimeZone(new Date(iso), TZ, 'dd/MM/yyyy HH:mm')
+}
 
 function initialsOf(name: string): string {
   const [first = '', last = ''] = name.split(' ')
@@ -24,61 +27,62 @@ export function ReviewsList({
   reviews: ReviewListItem[]
 }): React.JSX.Element {
   return (
-    <Card padding="none" className="gap-0 overflow-hidden">
-      <ul className="divide-y divide-border">
-        {reviews.map((review) => {
-          const name = review.customerName?.trim()
-          return (
-            <li key={review.id} className="flex flex-col gap-2 px-4 py-4 sm:px-5">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                <StarRating rating={review.rating} />
+    <ul className="card-hairline divide-y divide-border/60 overflow-hidden rounded-xl border bg-card">
+      {reviews.map((review) => {
+        const name = review.customerName?.trim()
+        return (
+          <li key={review.id} className="flex flex-col gap-2 px-4 py-4 sm:px-5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <StarRating rating={review.rating} />
 
-                {/* Si la reseña tiene cliente asociado, es puerta a su ficha del CRM:
-                    leer un "3★" sin poder ver quién es no sirve para nada. */}
-                {review.customerId && name ? (
-                  <Link
-                    href={`/${tenantSlug}/clientes/${review.customerId}`}
-                    className="group -mx-1 flex min-h-9 items-center gap-2 rounded-md px-1 outline-offset-2 outline-(--ring) hover:bg-hover focus-visible:outline-2"
-                  >
-                    <Avatar size="sm">
-                      <AvatarFallback className="font-semibold">{initialsOf(name)}</AvatarFallback>
-                    </Avatar>
-                    <span className="type-body font-medium underline-offset-2 group-hover:underline">
-                      {name}
-                    </span>
-                  </Link>
-                ) : (
-                  <span className="flex items-center gap-2 type-body text-muted-foreground">
-                    <Avatar size="sm">
-                      <AvatarFallback className="font-semibold">?</AvatarFallback>
-                    </Avatar>
-                    Anónimo
-                  </span>
-                )}
-
-                {review.redirectedToMaps ? (
-                  <Badge tone="success" icon={MapPin}>
-                    Fue a Google Maps
-                  </Badge>
-                ) : null}
-                <time
-                  dateTime={review.createdAt}
-                  className="ms-auto shrink-0 type-small type-amount text-muted-foreground"
+              {/* Si la reseña tiene cliente asociado, es puerta a su ficha del CRM:
+                  leer un "3★" sin poder ver quién es no sirve para nada. */}
+              {review.customerId && name ? (
+                <Link
+                  href={`/${tenantSlug}/clientes/${review.customerId}`}
+                  className="group flex min-h-9 items-center gap-2 rounded-md px-1 -mx-1 transition-colors hover:bg-(--cream-tint) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                 >
-                  {formatDateTime(review.createdAt)}
-                </time>
-              </div>
-              {review.comment ? (
-                <p className="max-w-prose whitespace-pre-line text-pretty type-body text-muted-foreground">
-                  “{review.comment}”
-                </p>
+                  <Avatar className="size-7">
+                    <AvatarFallback className="bg-secondary text-[10px] font-semibold">
+                      {initialsOf(name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="text-sm font-medium group-hover:underline">{name}</span>
+                </Link>
               ) : (
-                <p className="type-small text-subtle-foreground">Sin comentario</p>
+                <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Avatar className="size-7">
+                    <AvatarFallback className="bg-secondary/50 text-[10px] font-semibold text-muted-foreground">
+                      ?
+                    </AvatarFallback>
+                  </Avatar>
+                  Anónimo
+                </span>
               )}
-            </li>
-          )
-        })}
-      </ul>
-    </Card>
+
+              {review.redirectedToMaps ? (
+                <Badge variant="success" className="gap-1">
+                  <MapPin className="size-3" aria-hidden="true" />
+                  Maps
+                </Badge>
+              ) : null}
+              <time
+                dateTime={review.createdAt}
+                className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums"
+              >
+                {formatReviewDate(review.createdAt)}
+              </time>
+            </div>
+            {review.comment ? (
+              <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground text-pretty">
+                “{review.comment}”
+              </p>
+            ) : (
+              <p className="text-sm italic text-muted-foreground/60">Sin comentario</p>
+            )}
+          </li>
+        )
+      })}
+    </ul>
   )
 }

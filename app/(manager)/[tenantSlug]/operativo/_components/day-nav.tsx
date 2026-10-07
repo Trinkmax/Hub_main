@@ -1,56 +1,60 @@
 'use client'
 
-import { ScanLine, WifiOff } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, ScanLine, Wifi, WifiOff } from 'lucide-react'
 import Link from 'next/link'
-import { Badge } from '@/components/ui/badge'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Callout } from '@/components/ui/callout'
-import { PageHeader } from '@/components/ui/page-header'
-import { type Period, PeriodPicker, type PeriodPickerPreset } from '@/components/ui/period-picker'
-import {
-  addDays,
-  capitalizeFirst,
-  daysBetween,
-  formatDayMonth,
-  monthName,
-  weekdayName,
-} from '@/lib/dates'
+import { Input } from '@/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 
-type LiveState = 'connecting' | 'live' | 'offline'
-
-/** Lo mismo que aceptaba el calendario nativo de antes. */
-const MIN_DAY = '2020-01-01'
-const MAX_DAY = '2100-12-31'
-
-/** «Sábado 5 de septiembre» (con el año si no es el de hoy). A mano, sin `Intl`. */
-function dayTitle(day: string, today: string): string {
-  const base = `${weekdayName(day)} ${Number(day.slice(8, 10))} de ${monthName(Number(day.slice(5, 7)))}`
-  return capitalizeFirst(
-    day.slice(0, 4) === today.slice(0, 4) ? base : `${base} de ${day.slice(0, 4)}`,
-  )
+function shiftDay(day: string, delta: number): string {
+  const [y, m, d] = day.split('-').map(Number)
+  const dt = new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, (d ?? 1) + delta))
+  return dt.toISOString().slice(0, 10)
 }
 
-/** «Hoy», «Ayer», «Mañana», «Hace 3 días», «En 5 días». */
-function relativeDay(day: string, today: string): string {
-  const diff = daysBetween(today, day)
-  if (diff === 0) return 'Hoy'
-  if (diff === -1) return 'Ayer'
-  if (diff === 1) return 'Mañana'
-  return diff < 0 ? `Hace ${-diff} días` : `En ${diff} días`
+function parseIso(day: string): Date {
+  const [y, m, d] = day.split('-').map(Number)
+  return new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1))
+}
+
+/** "sábado 5 de septiembre" */
+function longLabel(day: string): string {
+  return new Intl.DateTimeFormat('es-AR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'UTC',
+  }).format(parseIso(day))
+}
+
+/** "sáb 5 sep" */
+function shortLabel(day: string): string {
+  return new Intl.DateTimeFormat('es-AR', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  })
+    .format(parseIso(day))
+    .replace(/\./g, '')
+}
+
+function relativeDay(date: string, today: string): 'today' | 'yesterday' | 'tomorrow' | null {
+  if (date === today) return 'today'
+  if (date === shiftDay(today, -1)) return 'yesterday'
+  if (date === shiftDay(today, 1)) return 'tomorrow'
+  return null
 }
 
 /**
  * La cabecera del día: dónde estoy parado y cómo me muevo.
  *
- * - Título: el día, con todas las letras. "Hoy" es el día de SERVICIO (hasta
- *   las 5 AM sigue siendo la noche anterior), así que el contexto lo dice.
- * - El `PeriodPicker` del kit mueve de a un día con las flechas y abre un
- *   calendario (con atajos Hoy, Mañana, Ayer) para saltos largos.
- * - «En vivo» cuenta si Realtime está conectado: el único punto que respira en
- *   la pantalla.
- * - Mirando otro día que no es hoy, un aviso con «Volver a hoy»: es fácil
- *   marcar una llegada en la noche equivocada.
+ * "Hoy" es el día de SERVICIO (hasta las 5 AM sigue siendo la noche
+ * anterior), así que cuando no coincide con el calendario se dice con todas las
+ * letras. Las flechas mueven de a un día; el título abre un calendario nativo
+ * para saltos largos. El punto "en vivo" cuenta si Realtime está conectado.
  */
 export function DayNav({
   date,
@@ -63,110 +67,173 @@ export function DayNav({
   date: string
   today: string
   onChange: (date: string) => void
-  live: LiveState
+  live: 'connecting' | 'live' | 'offline'
   tenantSlug: string
   canAward: boolean
 }) {
-  const isToday = date === today
-  const presets: PeriodPickerPreset[] = [
-    { label: 'Hoy', period: { kind: 'day', date: today } },
-    { label: 'Mañana', period: { kind: 'day', date: addDays(today, 1) } },
-    { label: 'Ayer', period: { kind: 'day', date: addDays(today, -1) } },
-  ]
+  const [open, setOpen] = useState(false)
+  const rel = relativeDay(date, today)
+  const eyebrow =
+    rel === 'today'
+      ? 'Hoy'
+      : rel === 'yesterday'
+        ? 'Ayer'
+        : rel === 'tomorrow'
+          ? 'Mañana'
+          : date < today
+            ? 'Pasado'
+            : 'Próximamente'
 
   return (
-    <PageHeader
-      title={dayTitle(date, today)}
-      context={
-        <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className={cn(isToday && 'font-medium text-primary')}>
-            {relativeDay(date, today)}
-          </span>
-          <span aria-hidden="true">·</span>
-          {/* Cortés: si se corta la conexión, el lector lo dice sin interrumpir. */}
-          <span aria-live="polite" className="inline-flex">
-            <LiveIndicator state={live} />
-          </span>
-        </span>
-      }
-      actions={
-        <>
-          <PeriodPicker
-            aria-label="Día"
-            kinds={['day']}
-            value={{ kind: 'day', date }}
-            onValueChange={(p: Period) => {
-              if (p.kind === 'day' && p.date !== date) onChange(p.date)
-            }}
-            today={today}
-            presets={presets}
-            min={MIN_DAY}
-            max={MAX_DAY}
-          />
-          {/* En el celular estas dos viven en la barra de búsqueda, a mano. */}
+    <header className="flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            <span>Operativo</span>
+            <span aria-hidden>·</span>
+            <span className={cn(rel === 'today' && 'text-primary')}>{eyebrow}</span>
+            <LiveDot state={live} />
+          </p>
+
+          <div className="mt-1 flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-11 shrink-0 rounded-full"
+              aria-label="Día anterior"
+              onClick={() => onChange(shiftDay(date, -1))}
+            >
+              <ChevronLeft className="size-5" aria-hidden />
+            </Button>
+
+            <h1 className="min-w-0 truncate font-serif text-2xl font-semibold capitalize leading-none tracking-tight sm:text-3xl">
+              {longLabel(date)}
+            </h1>
+
+            <Popover open={open} onOpenChange={setOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-11 shrink-0 rounded-full text-muted-foreground"
+                  aria-label={`Elegir otro día (viendo ${longLabel(date)})`}
+                >
+                  <CalendarDays className="size-5" aria-hidden />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-64 space-y-2">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Ir a un día
+                </p>
+                <Input
+                  type="date"
+                  defaultValue={date}
+                  className="h-11"
+                  aria-label="Fecha"
+                  min="2020-01-01"
+                  max="2100-12-31"
+                  onChange={(e) => {
+                    const v = e.target.value
+                    // Mientras se tipea el año en desktop el valor pasa por
+                    // fechas absurdas ("0002-09-05"): esperar a un año real.
+                    if (/^\d{4}-\d{2}-\d{2}$/.test(v) && Number(v.slice(0, 4)) >= 2020) {
+                      setOpen(false)
+                      onChange(v)
+                    }
+                  }}
+                />
+                {rel !== 'today' ? (
+                  <Button
+                    variant="secondary"
+                    className="h-11 w-full"
+                    onClick={() => {
+                      setOpen(false)
+                      onChange(today)
+                    }}
+                  >
+                    Volver a hoy · {shortLabel(today)}
+                  </Button>
+                ) : null}
+              </PopoverContent>
+            </Popover>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-11 shrink-0 rounded-full"
+              aria-label="Día siguiente"
+              onClick={() => onChange(shiftDay(date, 1))}
+            >
+              <ChevronRight className="size-5" aria-hidden />
+            </Button>
+          </div>
+        </div>
+
+        {/* Acciones globales, siempre a mano. En mobile el buscador las repite. */}
+        <div className="hidden items-center gap-2 sm:flex">
           {canAward ? (
-            <Button asChild variant="secondary" className="max-sm:hidden">
+            <Button asChild variant="outline" className="h-11 gap-2 rounded-full px-4">
               <Link href={`/${tenantSlug}/acreditar`} prefetch={false}>
-                <ScanLine aria-hidden="true" />
+                <ScanLine className="size-4" aria-hidden />
                 Escanear QR
               </Link>
             </Button>
           ) : null}
-          <Button asChild className="max-sm:hidden">
+          <Button asChild className="h-11 gap-2 rounded-full px-4">
             <Link href={`/${tenantSlug}/reservas/nuevo?date=${date}`} prefetch={false}>
               Nueva reserva
             </Link>
           </Button>
-        </>
-      }
-    >
-      {isToday ? null : (
-        <Callout
-          tone="warning"
-          action={
-            <Button type="button" variant="secondary" size="sm" onClick={() => onChange(today)}>
-              Volver a hoy
-            </Button>
-          }
-        >
-          Estás viendo el{' '}
-          <strong className="font-medium text-foreground">
-            {weekdayName(date)} {formatDayMonth(date)}
-          </strong>
-          , no hoy
-          {date > today ? ': todavía no se puede marcar llegadas.' : '.'}
-        </Callout>
-      )}
-    </PageHeader>
+        </div>
+      </div>
+
+      {rel !== 'today' ? (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
+          <span>
+            Estás viendo <strong className="capitalize">{shortLabel(date)}</strong>
+            {date > today ? ' · todavía no se puede marcar llegadas.' : '.'}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 shrink-0"
+            onClick={() => onChange(today)}
+          >
+            Volver a hoy
+          </Button>
+        </div>
+      ) : null}
+    </header>
   )
 }
 
-function LiveIndicator({ state }: { state: LiveState }) {
+function LiveDot({ state }: { state: 'connecting' | 'live' | 'offline' }) {
   if (state === 'offline') {
     return (
-      <Badge tone="danger" icon={WifiOff}>
+      <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-destructive">
+        <WifiOff className="size-3" aria-hidden />
         Sin conexión
-      </Badge>
+      </span>
     )
   }
-  const live = state === 'live'
   return (
     <span
-      className="inline-flex items-center gap-1.5"
-      title={live ? 'Los cambios del salón aparecen solos' : undefined}
+      className="inline-flex items-center gap-1 normal-case tracking-normal"
+      title={state === 'live' ? 'En vivo: los cambios del salón aparecen solos' : 'Conectando…'}
     >
-      <span aria-hidden="true" className="relative flex size-2">
-        {live ? (
+      <span className="relative flex size-2">
+        {state === 'live' ? (
           <span className="absolute inline-flex size-full animate-ping rounded-full bg-success/60 [animation-duration:2.4s] motion-reduce:hidden" />
         ) : null}
         <span
           className={cn(
             'relative inline-flex size-2 rounded-full',
-            live ? 'bg-success' : 'bg-subtle-foreground',
+            state === 'live' ? 'bg-success' : 'bg-muted-foreground/40',
           )}
         />
       </span>
-      {live ? 'En vivo' : 'Conectando…'}
+      <Wifi className="size-3 text-muted-foreground" aria-hidden />
+      <span className="sr-only">{state === 'live' ? 'En vivo' : 'Conectando'}</span>
     </span>
   )
 }

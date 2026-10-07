@@ -1,10 +1,7 @@
 'use client'
 
-import { useId } from 'react'
-import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { MoneyField } from '@/components/ui/money-field'
-import { NumberField } from '@/components/ui/number-field'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -42,27 +39,25 @@ export function WaitEditor({
   onChange: (minutes: number) => void
 }) {
   const { amount, unit } = minutesToParts(minutes)
-  const unitId = useId()
 
   return (
-    <Field label="¿Cuánto esperar?" hint="Como máximo, 30 días.">
-      <div className="flex items-start gap-2">
-        {/* Un número fuera de rango muestra el error al salir; mientras tanto
-            queda el último valor válido (nada se recorta en silencio). */}
-        <NumberField
-          className="w-36"
+    <div className="space-y-1.5">
+      <Label className="text-xs text-muted-foreground">¿Cuánto esperar?</Label>
+      <div className="flex items-center gap-2">
+        <Input
+          type="number"
           min={1}
           max={UNIT_MAX[unit]}
           value={amount}
-          onValueChange={(n) => {
-            if (n !== null) onChange(clampMinutes(n * WAIT_UNIT_FACTOR[unit]))
-          }}
+          onChange={(e) => onChange(clampMinutes(Number(e.target.value) * WAIT_UNIT_FACTOR[unit]))}
+          className="w-24"
+          aria-label="Cantidad de tiempo"
         />
         <Select
           value={unit}
           onValueChange={(u) => onChange(clampMinutes(amount * WAIT_UNIT_FACTOR[u as WaitUnit]))}
         >
-          <SelectTrigger id={unitId} className="w-32" aria-label="Unidad de tiempo">
+          <SelectTrigger className="w-32" aria-label="Unidad de tiempo">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -74,7 +69,8 @@ export function WaitEditor({
           </SelectContent>
         </Select>
       </div>
-    </Field>
+      <p className="text-[11px] text-muted-foreground">Como máximo, 30 días.</p>
+    </div>
   )
 }
 
@@ -116,14 +112,12 @@ export function ConditionEditor({
     })
   }
 
-  const cents = Number(value)
-  const hasCents = value !== '' && value != null && Number.isFinite(cents)
-
   return (
-    <div className="flex flex-col gap-4">
-      <Field label="¿Qué mirar del cliente?">
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">¿Qué mirar del cliente?</Label>
         <Select value={selectValue} onValueChange={handleFieldChange}>
-          <SelectTrigger>
+          <SelectTrigger aria-label="Qué mirar del cliente">
             <SelectValue placeholder="Elegí un dato" />
           </SelectTrigger>
           <SelectContent>
@@ -135,28 +129,25 @@ export function ConditionEditor({
             <SelectItem value={CUSTOM_FIELD}>Otro dato (avanzado)</SelectItem>
           </SelectContent>
         </Select>
-      </Field>
+      </div>
 
       {!known && (
-        <Field
-          label="Dato (avanzado)"
-          hint="El nombre técnico del dato, como lo guarda el sistema."
-        >
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Dato (avanzado)</Label>
           <Input
-            size="sm"
             value={field}
             onChange={(e) => onPatch({ field: e.target.value })}
             placeholder="customer.total_visits"
-            className="font-mono"
-            autoCapitalize="none"
-            spellCheck={false}
+            className="font-mono text-xs"
+            aria-label="Dato avanzado a evaluar"
           />
-        </Field>
+        </div>
       )}
 
-      <Field label="Cómo comparar">
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">Cómo comparar</Label>
         <Select value={op} onValueChange={(v) => onPatch({ op: v })}>
-          <SelectTrigger>
+          <SelectTrigger aria-label="Cómo comparar">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -167,45 +158,60 @@ export function ConditionEditor({
             ))}
           </SelectContent>
         </Select>
-      </Field>
+      </div>
 
       {!booleanOp && fieldKind === 'money' && (
-        <Field label="Monto" hint="En pesos. Se compara con lo que gastó en total.">
-          <MoneyField
-            decimals="auto"
-            align="start"
-            cents={hasCents ? cents : null}
-            onCentsChange={(next) => onPatch({ value: next ?? undefined })}
-            placeholder="Ej: 15.000"
-          />
-        </Field>
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Monto (en pesos)</Label>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">$</span>
+            <Input
+              type="number"
+              min={0}
+              step="any"
+              value={(() => {
+                const cents = Number(value)
+                return Number.isFinite(cents) && value !== '' && value != null ? cents / 100 : ''
+              })()}
+              onChange={(e) =>
+                onPatch({
+                  value:
+                    e.target.value === '' ? undefined : Math.round(Number(e.target.value) * 100),
+                })
+              }
+              placeholder="1500"
+              aria-label="Monto en pesos"
+            />
+          </div>
+        </div>
       )}
 
       {!booleanOp && fieldKind === 'number' && (
-        <Field label="Número">
-          <NumberField
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Número</Label>
+          <Input
+            type="number"
             min={0}
-            value={
-              typeof value === 'number'
-                ? value
-                : typeof value === 'string' && value !== '' && Number.isFinite(Number(value))
-                  ? Number(value)
-                  : null
+            value={typeof value === 'number' || typeof value === 'string' ? String(value) : ''}
+            onChange={(e) =>
+              onPatch({ value: e.target.value === '' ? undefined : Number(e.target.value) })
             }
-            onValueChange={(n) => onPatch({ value: n ?? undefined })}
-            placeholder="Ej: 3"
+            placeholder="3"
+            aria-label="Número a comparar"
           />
-        </Field>
+        </div>
       )}
 
       {!booleanOp && fieldKind === 'custom' && (
-        <Field label="Valor">
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Valor</Label>
           <Input
             value={typeof value === 'string' || typeof value === 'number' ? String(value) : ''}
             onChange={(e) => onPatch({ value: e.target.value })}
             placeholder="valor"
+            aria-label="Valor a comparar"
           />
-        </Field>
+        </div>
       )}
     </div>
   )

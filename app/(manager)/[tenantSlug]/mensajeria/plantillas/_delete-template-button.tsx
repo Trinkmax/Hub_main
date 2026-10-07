@@ -1,9 +1,20 @@
 'use client'
 
 import { Trash2Icon } from 'lucide-react'
+import { useActionState, useEffect } from 'react'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import type { MetaActionState } from '@/lib/meta/actions'
 import { deleteTemplateAction } from '@/lib/meta/template-actions'
 import { humanizeTemplateName } from './_template-display'
@@ -19,45 +30,58 @@ export function DeleteTemplateButton({
   channelId: string
   templateName: string
 }) {
+  const boundAction = deleteTemplateAction.bind(null, tenantSlug)
+  const [state, action, pending] = useActionState(boundAction, initial)
+
   const displayName = humanizeTemplateName(templateName)
 
-  // La confirmación espera la respuesta: si WhatsApp no la deja borrar, el
-  // motivo queda en el diálogo.
-  async function remove(_prev: unknown, formData: FormData): Promise<MetaActionState> {
-    const result = await deleteTemplateAction(tenantSlug, initial, formData)
-    if (result.ok) {
-      if (result.message) toast.success(result.message)
-      return result
+  useEffect(() => {
+    if (state.ok && state.message) {
+      toast.success(state.message)
+    } else if (!state.ok && state.message) {
+      toast.error(`No se pudo eliminar la plantilla. ${state.message}`)
     }
-    return { ok: false, message: `No se pudo borrar la plantilla. ${result.message}` }
-  }
+  }, [state])
 
   return (
-    <ConfirmDialog
-      tone="danger"
-      icon={Trash2Icon}
-      title={`¿Borrar la plantilla «${displayName}»?`}
-      description={
-        <>
-          Se borra de acá y también de tu cuenta de WhatsApp (
-          <span className="font-mono type-small">{templateName}</span>). No se puede deshacer: si
-          una difusión o automatización la usa, ese mensaje deja de salir.
-        </>
-      }
-      confirmLabel="Borrar plantilla"
-      pendingLabel="Borrando…"
-      formAction={remove}
-      hiddenFields={{ name: templateName, channel_id: channelId }}
-      trigger={
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
         <Button
-          variant="danger-ghost"
-          size="icon-sm"
-          className="shrink-0"
-          aria-label={`Borrar la plantilla ${displayName}`}
+          variant="ghost"
+          size="icon"
+          className="size-8 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          disabled={pending}
+          aria-label={`Eliminar la plantilla ${displayName}`}
         >
-          <Trash2Icon aria-hidden />
+          <Trash2Icon className="size-4" aria-hidden />
         </Button>
-      }
-    />
+      </AlertDialogTrigger>
+
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>¿Eliminar esta plantilla?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Vas a borrar <strong>«{displayName}»</strong>{' '}
+            <span className="font-mono text-xs">({templateName})</span> de acá y también de tu
+            cuenta de WhatsApp. No se puede deshacer: si una difusión o automatización la usa, ese
+            mensaje va a dejar de salir.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <form action={action}>
+            <input type="hidden" name="name" value={templateName} />
+            <input type="hidden" name="channel_id" value={channelId} />
+            <AlertDialogAction
+              type="submit"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 w-full"
+            >
+              {pending ? 'Eliminando…' : 'Sí, eliminar'}
+            </AlertDialogAction>
+          </form>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }

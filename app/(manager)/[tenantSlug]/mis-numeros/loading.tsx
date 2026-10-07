@@ -1,29 +1,30 @@
-import { PageShell } from '@/components/ui/page-shell'
-import {
-  Skeleton,
-  SkeletonKPIGroup,
-  SkeletonPageHeader,
-  SkeletonStatus,
-  SkeletonTable,
-} from '@/components/ui/skeleton'
+import { PageHeader } from '@/components/ui/page-header'
+import { Skeleton } from '@/components/ui/skeleton'
 
-// Copia «Mis números»: título, el selector de período, los cuatro KPIs y la
-// lista reserva por reserva. Mismo `PageShell` que la página.
 export default function Loading() {
   return (
-    <PageShell width="compact" aria-busy="true">
-      <SkeletonStatus />
-      <SkeletonPageHeader />
-      <div aria-hidden="true" className="flex flex-wrap items-center gap-3">
-        <Skeleton className="h-(--control-md) w-64" />
-        <Skeleton className="h-3 w-48" />
+    <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      <PageHeader
+        eyebrow="Negocio"
+        title="Mis números"
+        description={<Skeleton className="h-4 w-56" />}
+      />
+      <Skeleton className="h-12 w-full rounded-xl" />
+      <div className="flex items-center justify-between gap-2">
+        <Skeleton className="h-8 w-32" />
+        <Skeleton className="h-6 w-36" />
+        <Skeleton className="h-8 w-32" />
       </div>
-      <SkeletonKPIGroup count={4} columns={4} />
-      <div aria-hidden="true" className="flex flex-col gap-4">
-        <Skeleton className="h-6 w-48" />
-        <Skeleton className="h-11 w-full rounded-xl" />
-        <SkeletonTable rows={5} columns={6} />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {['k1', 'k2', 'k3', 'k4'].map((k) => (
+          <Skeleton key={k} className="h-28 w-full rounded-xl" />
+        ))}
       </div>
-    </PageShell>
+      <div className="space-y-2">
+        {['s1', 's2', 's3', 's4', 's5'].map((k) => (
+          <Skeleton key={k} className="h-14 w-full rounded-lg" />
+        ))}
+      </div>
+    </div>
   )
 }

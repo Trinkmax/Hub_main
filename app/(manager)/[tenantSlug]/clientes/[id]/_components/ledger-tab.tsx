@@ -1,26 +1,9 @@
-import { Gift, Wallet } from 'lucide-react'
+import { format } from 'date-fns'
+import { es } from 'date-fns/locale'
+import { ArrowDownRight, ArrowUpRight, Gift, Wallet } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { DataTable } from '@/components/ui/data-table'
-import { EmptyState } from '@/components/ui/empty-state'
-import { Section } from '@/components/ui/section'
-import { StatusBadge } from '@/components/ui/status-badge'
-import { formatDate, formatDateTime } from '@/lib/dates'
-import { formatNumber } from '@/lib/format/number-kind'
-import { MINUS_SIGN } from '@/lib/money/format'
 import type { LedgerEntry, RedemptionListEntry } from '@/lib/points/queries'
-import { REDEMPTION_STATUS, type RedemptionStatus } from '../../_components/customer-meta'
 
-/** «+10» o «−5»: el signo siempre a la vista (el color acompaña, nunca es la única señal). */
-function signedPoints(delta: number): string {
-  if (delta > 0) return `+${formatNumber(delta)}`
-  if (delta < 0) return `${MINUS_SIGN}${formatNumber(Math.abs(delta))}`
-  return '0'
-}
-
-/**
- * La cuenta de puntos del cliente: movimientos (lo que sumó y gastó) y canjes.
- * Server Component; cada lista es una `DataTable` con tarjetas en el celular.
- */
 export function LedgerTab({
   ledger,
   redemptions,
@@ -31,120 +14,92 @@ export function LedgerTab({
   balance: number
 }) {
   return (
-    <div className="grid gap-8 lg:grid-cols-2 lg:gap-6">
-      <Section
-        title="Movimientos"
-        headingLevel={3}
-        actions={
-          <Badge tone="gold" size="md" className="type-amount">
-            Saldo: {formatNumber(balance)} pts
-          </Badge>
-        }
-      >
-        <DataTable<LedgerEntry>
-          caption="Movimientos de puntos"
-          rows={ledger}
-          getRowId={(e) => e.id}
-          empty={
-            <EmptyState
-              size="sm"
-              icon={Wallet}
-              title="Sin movimientos todavía"
-              description="Cada visita que suma puntos y cada canje aparecen acá."
-            />
-          }
-          columns={[
-            {
-              id: 'detalle',
-              header: 'Detalle',
-              mobile: 'primary',
-              cell: (e) => describeReason(e),
-            },
-            {
-              id: 'fecha',
-              header: 'Fecha',
-              mobile: 'secondary',
-              cell: (e) => (
-                <span className="type-amount text-muted-foreground">
-                  {formatDateTime(e.created_at)}
-                </span>
-              ),
-            },
-            {
-              id: 'puntos',
-              header: 'Puntos',
-              numeric: true,
-              width: '6rem',
-              cell: (e) => (
-                <span
-                  className={
-                    e.delta > 0
-                      ? 'font-semibold text-success-text'
-                      : e.delta < 0
-                        ? 'font-semibold text-destructive-text'
-                        : 'text-muted-foreground'
-                  }
-                >
-                  {signedPoints(e.delta)}
-                </span>
-              ),
-            },
-          ]}
-        />
-      </Section>
+    <div className="grid gap-4 lg:grid-cols-2">
+      <div className="card-hairline overflow-hidden rounded-xl border bg-card">
+        <header className="border-b border-border/60 px-5 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Wallet className="size-4 text-primary" />
+              <h3 className="font-display text-sm font-semibold tracking-tight">Movimientos</h3>
+            </div>
+            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold tabular-nums text-primary">
+              {balance.toLocaleString('es-AR')} pts
+            </span>
+          </div>
+        </header>
+        {ledger.length === 0 ? (
+          <p className="px-5 py-10 text-center text-sm text-muted-foreground">
+            Sin movimientos todavía.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border/60">
+            {ledger.map((e) => {
+              const positive = e.delta > 0
+              return (
+                <li key={e.id} className="flex items-start gap-3 px-5 py-3 text-sm">
+                  <div
+                    className={`flex size-8 shrink-0 items-center justify-center rounded-full ${positive ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive'}`}
+                  >
+                    {positive ? (
+                      <ArrowUpRight className="size-3.5" />
+                    ) : (
+                      <ArrowDownRight className="size-3.5" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm">{describeReason(e)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {format(new Date(e.created_at), "d 'de' MMM yyyy · HH:mm", { locale: es })}
+                    </p>
+                  </div>
+                  <span
+                    className={`shrink-0 font-mono text-sm font-semibold tabular-nums ${positive ? 'text-success' : 'text-destructive'}`}
+                  >
+                    {positive ? '+' : ''}
+                    {e.delta}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
 
-      <Section title="Canjes" headingLevel={3}>
-        <DataTable<RedemptionListEntry>
-          caption="Canjes de recompensas"
-          rows={redemptions}
-          getRowId={(r) => r.id}
-          empty={
-            <EmptyState
-              size="sm"
-              icon={Gift}
-              title="Todavía no canjeó nada"
-              description="Cuando cambie puntos por una recompensa, el canje queda acá."
-            />
-          }
-          columns={[
-            {
-              id: 'recompensa',
-              header: 'Recompensa',
-              mobile: 'primary',
-              cell: (r) => r.reward_name,
-            },
-            {
-              id: 'fecha',
-              header: 'Fecha',
-              mobile: 'secondary',
-              cell: (r) => (
-                <span className="type-amount text-muted-foreground">
-                  {formatDate(r.redeemed_at)}
+      <div className="card-hairline overflow-hidden rounded-xl border bg-card">
+        <header className="border-b border-border/60 px-5 py-4">
+          <div className="flex items-center gap-2">
+            <Gift className="size-4 text-primary" />
+            <h3 className="font-display text-sm font-semibold tracking-tight">Canjes</h3>
+          </div>
+        </header>
+        {redemptions.length === 0 ? (
+          <p className="px-5 py-10 text-center text-sm text-muted-foreground">
+            Aún no canjeó ninguna recompensa.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border/60">
+            {redemptions.map((r) => (
+              <li key={r.id} className="flex items-center gap-3 px-5 py-3 text-sm">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-warning/15 text-warning">
+                  <Gift className="size-3.5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">{r.reward_name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {format(new Date(r.redeemed_at), "d 'de' MMM yyyy", { locale: es })}
+                  </p>
+                </div>
+                <Badge variant="outline" className="capitalize">
+                  {r.status}
+                </Badge>
+                <span className="shrink-0 font-mono text-sm font-semibold tabular-nums text-destructive">
+                  −{r.points_spent}
                 </span>
-              ),
-            },
-            {
-              id: 'estado',
-              header: 'Estado',
-              mobile: 'meta',
-              cell: (r) => (
-                <StatusBadge status={r.status as RedemptionStatus} map={REDEMPTION_STATUS} />
-              ),
-            },
-            {
-              id: 'puntos',
-              header: 'Puntos',
-              numeric: true,
-              width: '6rem',
-              cell: (r) => (
-                <span className="font-semibold text-destructive-text">
-                  {signedPoints(-r.points_spent)}
-                </span>
-              ),
-            },
-          ]}
-        />
-      </Section>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   )
 }

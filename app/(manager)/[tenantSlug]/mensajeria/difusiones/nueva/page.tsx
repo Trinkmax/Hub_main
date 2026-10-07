@@ -1,7 +1,7 @@
+import { ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
-import { addDays, todayInCordoba } from '@/lib/dates'
 import { visibleTemplates } from '@/lib/meta/template-visibility'
 import { listScheduledEventsForDateRange } from '@/lib/salon/queries'
 import { createClient } from '@/lib/supabase/server'
@@ -12,6 +12,17 @@ import {
   TenantNotFoundError,
 } from '@/lib/tenant'
 import { BroadcastForm } from '../_components/broadcast-form'
+
+const TZ = 'America/Argentina/Cordoba'
+
+function ymdInTz(d: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d)
+}
 
 export const metadata = { title: 'Nueva difusión' }
 export const dynamic = 'force-dynamic'
@@ -37,9 +48,9 @@ export default async function NuevaDifusionPage({
   }
 
   const supabase = await createClient()
-  // Próximos 90 días del calendario del bar (hora de Córdoba).
-  const fromYmd = todayInCordoba()
-  const toYmd = addDays(fromYmd, 90)
+  const now = new Date()
+  const fromYmd = ymdInTz(now)
+  const toYmd = ymdInTz(new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000))
   const [channelsRes, templatesRes, audiencesRes, scheduled] = await Promise.all([
     supabase
       .from('channels')
@@ -69,9 +80,16 @@ export default async function NuevaDifusionPage({
   }))
 
   return (
-    <PageShell width="compact">
+    <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      <Link
+        href={`/${tenantSlug}/mensajeria/difusiones`}
+        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="size-3" />
+        Volver a difusiones
+      </Link>
       <PageHeader
-        back={{ href: `/${tenantSlug}/mensajeria/difusiones`, label: 'Difusiones' }}
+        eyebrow="Mensajería"
         title="Nueva difusión"
         description="Elegís el mensaje, a quién se lo mandás y cuándo. Antes de que salga, ves un resumen para confirmar."
       />
@@ -83,6 +101,6 @@ export default async function NuevaDifusionPage({
         events={events}
         initialName={prefillName}
       />
-    </PageShell>
+    </div>
   )
 }

@@ -1,16 +1,10 @@
 'use client'
 
 import { Check } from 'lucide-react'
-import { useId } from 'react'
 import type { MenuCategory } from '@/lib/menu/queries'
 import { flattenForPicker } from '@/lib/menu/tree'
 import { cn } from '@/lib/utils'
 
-/**
- * Elegir una categoría del árbol (con sangría por nivel). Son radios de verdad:
- * Tab entra a la elegida y las flechas recorren la lista. La elegida lleva el
- * check a la derecha y el fondo de selección.
- */
 export function CategoryTreePicker({
   categories,
   value,
@@ -18,8 +12,7 @@ export function CategoryTreePicker({
   excludeSubtreeOf,
   excludeIds,
   allowRoot = false,
-  rootLabel = 'Raíz (sin categoría madre)',
-  'aria-label': ariaLabel = 'Categoría',
+  rootLabel = 'Raíz (sin categoría padre)',
 }: {
   categories: MenuCategory[]
   value: string | null
@@ -30,50 +23,48 @@ export function CategoryTreePicker({
   excludeIds?: string[]
   allowRoot?: boolean
   rootLabel?: string
-  'aria-label'?: string
 }) {
-  const groupName = useId()
   const excluded = excludeIds ? new Set(excludeIds) : null
   const entries = flattenForPicker(categories, excludeSubtreeOf).filter((e) => !excluded?.has(e.id))
 
-  const option = (key: string, id: string | null, label: string, depth: number, strong = false) => {
-    const checked = value === id
-    return (
-      <label
-        key={key}
-        style={{ paddingInlineStart: `${0.625 + depth}rem` }}
-        className={cn(
-          'flex min-h-11 cursor-pointer items-center gap-2 rounded-md py-2 pe-2.5 type-body',
-          '-outline-offset-2 outline-(--ring) has-[:focus-visible]:outline-2',
-          checked ? 'bg-selected text-foreground' : 'hover:bg-hover',
-        )}
-      >
-        <input
-          type="radio"
-          name={groupName}
-          checked={checked}
-          onChange={() => onChange(id)}
-          className="sr-only"
-        />
-        <span className={cn('flex-1 truncate', strong && 'font-medium')}>{label}</span>
-        {checked ? <Check className="size-4 shrink-0 text-primary" aria-hidden="true" /> : null}
-      </label>
-    )
-  }
-
   return (
-    <div
-      role="radiogroup"
-      aria-label={ariaLabel}
-      className="grid max-h-64 gap-0.5 overflow-y-auto rounded-lg border border-border bg-card p-1"
-    >
-      {allowRoot ? option('__root__', null, rootLabel, 0, true) : null}
-      {entries.map((e) => option(e.id, e.id, e.name, e.depth))}
-      {entries.length === 0 && !allowRoot ? (
-        <p className="px-2.5 py-3 type-small text-muted-foreground">
-          No hay otra categoría a la que mover.
-        </p>
+    <ul className="card-hairline max-h-64 overflow-y-auto rounded-lg border bg-card p-1.5">
+      {allowRoot ? (
+        <li>
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            aria-pressed={value === null}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors',
+              value === null ? 'bg-primary/10 text-foreground' : 'hover:bg-secondary/40',
+            )}
+          >
+            <span className="flex-1 truncate font-medium">{rootLabel}</span>
+            {value === null ? <Check className="size-4 text-primary" aria-hidden /> : null}
+          </button>
+        </li>
       ) : null}
-    </div>
+      {entries.map((e) => {
+        const checked = value === e.id
+        return (
+          <li key={e.id}>
+            <button
+              type="button"
+              onClick={() => onChange(e.id)}
+              aria-pressed={checked}
+              style={{ paddingLeft: `${0.625 + e.depth * 1}rem` }}
+              className={cn(
+                'flex w-full items-center gap-2 rounded-md py-2 pr-2.5 text-left text-sm transition-colors',
+                checked ? 'bg-primary/10 text-foreground' : 'hover:bg-secondary/40',
+              )}
+            >
+              <span className="flex-1 truncate">{e.name}</span>
+              {checked ? <Check className="size-4 text-primary" aria-hidden /> : null}
+            </button>
+          </li>
+        )
+      })}
+    </ul>
   )
 }

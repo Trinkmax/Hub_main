@@ -1,29 +1,25 @@
 'use client'
 
-import { UserPlus } from 'lucide-react'
-import { useState, useTransition } from 'react'
-import { CustomerPicker } from '@/components/customers/customer-picker'
+import { Phone, Search, Sparkles, UserPlus } from 'lucide-react'
+import { useEffect, useState, useTransition } from 'react'
+import { toast } from 'sonner'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Field, FieldRow, FormError } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Section } from '@/components/ui/section'
+import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
 import { createCustomer } from '@/lib/customers/actions'
+import { type CustomerSearchResult, searchCustomers } from '@/lib/customers/search'
+import { formatPhoneForDisplay } from '@/lib/phone'
 import type { WizardCustomer } from './wizard'
 
-/**
- * Paso 1 de «Cerrar mesa»: quién está en la mesa. El buscador es el
- * `CustomerPicker` del kit (búsqueda por Route Handler GET, con teclado y
- * «Crear…» al final de la lista); arranca con el foco puesto, así el cajero
- * escribe apenas entra.
- */
 export function CustomerStep({
   tenantSlug,
   selected,
@@ -33,61 +29,149 @@ export function CustomerStep({
   selected: WizardCustomer | null
   onSelect: (c: WizardCustomer) => void
 }) {
-  // `null`: el diálogo de alta está cerrado; un texto: abierto, con ese nombre de arranque.
-  const [newName, setNewName] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<CustomerSearchResult[]>([])
+  const [searching, setSearching] = useState(false)
+  const [newOpen, setNewOpen] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    const handle = setTimeout(async () => {
+      if (query.trim().length < 2) {
+        setResults([])
+        return
+      }
+      setSearching(true)
+      const data = await searchCustomers(tenantSlug, query)
+      if (!cancelled) {
+        setResults(data)
+        setSearching(false)
+      }
+    }, 200)
+    return () => {
+      cancelled = true
+      clearTimeout(handle)
+    }
+  }, [query, tenantSlug])
+
+  const empty = query.trim().length < 2
+  const noResults = !empty && !searching && results.length === 0
 
   return (
-    <Section
-      title="¿Quién está en la mesa?"
-      description="Buscá por nombre, apellido o teléfono. Si es la primera vez que viene, lo creás en el momento."
-    >
-      <div className="flex max-w-xl flex-col gap-4">
-        <Field label="Cliente" hint="Escribí al menos 2 letras o números.">
-          <CustomerPicker
-            tenantSlug={tenantSlug}
-            size="lg"
-            // Paso 1 del asistente: el cajero escribe apenas entra.
-            autoFocus
-            value={selected?.id ?? null}
-            selectedCustomer={selected}
-            onValueChange={(id, customer) => {
-              if (customer) {
-                onSelect({
-                  id: customer.id,
-                  first_name: customer.first_name,
-                  last_name: customer.last_name,
-                  phone: customer.phone,
-                  points_balance: customer.points_balance,
-                })
-              } else if (id !== null && selected && id === selected.id) {
-                // El elegido antes (vuelve con «Atrás»): seguir con él.
-                onSelect(selected)
-              }
-            }}
-            onCreate={(query) => setNewName(query)}
-            createLabel={(query) => `Crear cliente «${query}»`}
-          />
-        </Field>
-        <div>
-          <Button variant="secondary" onClick={() => setNewName('')}>
-            <UserPlus aria-hidden="true" />
-            Nuevo cliente
-          </Button>
-        </div>
+    <div className="card-hairline rounded-xl border bg-card p-5 sm:p-6">
+      <div className="space-y-1">
+        <h2 className="font-display text-lg font-semibold tracking-tight">
+          ¿Quién está en la mesa?
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Buscá por nombre, apellido o teléfono. Si es nuevo, lo creás en el momento.
+        </p>
       </div>
 
-      {newName !== null ? (
+      <label className="relative mt-5 flex items-center">
+        <Search className="pointer-events-none absolute left-3 size-4 text-muted-foreground" />
+        <input
+          type="search"
+          placeholder="Empezá a escribir…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          // biome-ignore lint/a11y/noAutofocus: paso 1 del wizard, foco inmediato en buscador
+          autoFocus
+          className="h-11 w-full rounded-lg border border-border/60 bg-background/40 pl-9 pr-3 text-base shadow-none outline-none placeholder:text-muted-foreground/70 focus:border-ring focus:ring-2 focus:ring-ring/40"
+        />
+      </label>
+
+      <div className="mt-4 overflow-hidden rounded-lg border border-border/60 bg-background/30">
+        {searching ? (
+          <div className="space-y-1 p-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={`s-${i.toString()}`} className="flex items-center gap-3 px-2 py-2">
+                <Skeleton className="size-9 rounded-full" />
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-3.5 w-32" />
+                  <Skeleton className="h-3 w-24" />
+                </div>
+                <Skeleton className="h-4 w-12" />
+              </div>
+            ))}
+          </div>
+        ) : empty ? (
+          <div className="flex items-center gap-2 px-4 py-6 text-sm text-muted-foreground">
+            <Sparkles className="size-4 text-primary" />
+            Empezá a escribir para encontrar al cliente.
+          </div>
+        ) : noResults ? (
+          <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+            <p className="text-sm font-medium">Sin resultados para “{query}”</p>
+            <p className="text-xs text-muted-foreground">
+              Creá un cliente nuevo si no está registrado.
+            </p>
+            <Button onClick={() => setNewOpen(true)} className="mt-2 gap-2" size="sm">
+              <UserPlus className="size-3.5" />
+              Crear “{query}”
+            </Button>
+          </div>
+        ) : (
+          <ul className="divide-y divide-border/60">
+            {results.map((c) => {
+              const initials =
+                `${c.first_name?.[0] ?? ''}${c.last_name?.[0] ?? ''}`.toUpperCase() || '?'
+              return (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(c)}
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-secondary/40"
+                  >
+                    <Avatar className="size-9">
+                      <AvatarFallback className="bg-secondary text-xs font-semibold">
+                        {initials}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">
+                        {c.first_name} {c.last_name}
+                      </p>
+                      <p className="flex items-center gap-1 truncate font-mono text-[11px] text-muted-foreground">
+                        <Phone className="size-3" />
+                        {formatPhoneForDisplay(c.phone)}
+                      </p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-primary">
+                      {c.points_balance} pts
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+        <Button variant="outline" onClick={() => setNewOpen(true)} className="gap-2">
+          <UserPlus className="size-4" />
+          Nuevo cliente
+        </Button>
+        {selected ? (
+          <span className="text-xs text-muted-foreground">
+            Seleccionado: <strong className="text-foreground">{selected.first_name}</strong>
+          </span>
+        ) : null}
+      </div>
+
+      {newOpen ? (
         <NewCustomerDialog
           tenantSlug={tenantSlug}
-          initialName={newName}
-          onClose={() => setNewName(null)}
+          initialName={query}
+          onClose={() => setNewOpen(false)}
           onCreated={(c) => {
-            setNewName(null)
+            setNewOpen(false)
             onSelect(c)
           }}
         />
       ) : null}
-    </Section>
+    </div>
   )
 }
 
@@ -105,13 +189,10 @@ function NewCustomerDialog({
   const [phone, setPhone] = useState('')
   const [first, setFirst] = useState(initialName)
   const [last, setLast] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [pending, start] = useTransition()
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (pending) return
     const fd = new FormData()
     fd.set('phone', phone)
     fd.set('first_name', first)
@@ -127,59 +208,51 @@ function NewCustomerDialog({
           points_balance: 0,
         })
       } else if (!r.ok) {
-        const fields = r.fieldErrors ?? {}
-        setFieldErrors(fields)
-        // Si el error es de un campo, se ve abajo de ese campo; si no, arriba.
-        setError(Object.keys(fields).length > 0 ? null : r.message)
+        toast.error(r.message)
       }
     })
   }
 
   return (
-    <Dialog open onOpenChange={(o) => !o && !pending && onClose()}>
-      <DialogContent size="sm">
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Nuevo cliente</DialogTitle>
-          <DialogDescription>Lo sumamos a tus clientes y seguís con la mesa.</DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="grid gap-4">
-          <FormError message={error} />
-          <Field
-            label="Teléfono"
-            hint="Con característica. El 0 y el 15 los sacamos solos."
-            error={fieldErrors.phone}
-            required
-          >
+          <div className="grid gap-1.5">
+            <Label htmlFor="nc-phone">Teléfono</Label>
             <Input
+              id="nc-phone"
+              required
               type="tel"
-              inputMode="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="351 555 1234"
               autoComplete="off"
             />
-          </Field>
-          <FieldRow>
-            <Field label="Nombre" error={fieldErrors.first_name} required>
-              <Input value={first} onChange={(e) => setFirst(e.target.value)} maxLength={60} />
-            </Field>
-            <Field label="Apellido" error={fieldErrors.last_name} required>
-              <Input value={last} onChange={(e) => setLast(e.target.value)} maxLength={60} />
-            </Field>
-          </FieldRow>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="nc-first">Nombre</Label>
+              <Input
+                id="nc-first"
+                required
+                value={first}
+                onChange={(e) => setFirst(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="nc-last">Apellido</Label>
+              <Input id="nc-last" required value={last} onChange={(e) => setLast(e.target.value)} />
+            </div>
+          </div>
           <DialogFooter>
-            <Button
-              type="button"
-              variant="secondary"
-              aria-disabled={pending}
-              onClick={() => {
-                if (!pending) onClose()
-              }}
-            >
+            <Button variant="outline" onClick={onClose} disabled={pending} type="button">
               Cancelar
             </Button>
-            <Button type="submit" loading={pending} loadingText="Creando…">
-              Crear y seguir
+            <Button type="submit" disabled={pending}>
+              {pending ? 'Creando…' : 'Crear y continuar'}
             </Button>
           </DialogFooter>
         </form>

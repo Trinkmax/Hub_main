@@ -16,39 +16,46 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import {
   Gift,
+  GripVertical,
   Handshake,
-  type LucideIcon,
+  Loader2,
+  Pause,
   Pencil,
   Percent,
+  Play,
   Plus,
   Sparkles,
   Trash2,
   X,
 } from 'lucide-react'
-import { type ReactNode, useRef, useState, useTransition } from 'react'
+import { type ComponentType, type ReactNode, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { MenuImageUploader } from '@/components/media/image-uploader'
 import { StorageImage } from '@/components/media/storage-image'
-import { Badge } from '@/components/ui/badge'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { Callout } from '@/components/ui/callout'
-import { Combobox } from '@/components/ui/combobox'
-import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import {
   Dialog,
-  DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { Field, FieldRow, useFocusFirstInvalid } from '@/components/ui/field'
 import { IconPicker } from '@/components/ui/icon-picker'
 import { Input } from '@/components/ui/input'
-import { NumberField } from '@/components/ui/number-field'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -56,7 +63,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { isStorageUrl } from '@/lib/menu/media-urls'
 import { deleteMenuImageByUrl } from '@/lib/menu/upload-image'
@@ -77,12 +83,12 @@ import {
   type TierBenefitKind,
 } from '@/lib/points/benefits'
 import { cn } from '@/lib/utils'
-import { DRAGGING_ROW_CLASSES, DragHandle, ROW_LIST_CLASSES, sortableStyle } from './club-ui'
+import { MenuImageUploader } from '../../menu/_components/image-uploader'
 
 type IdName = { id: string; name: string }
 
-/** Ícono por tipo de beneficio (espejo de BENEFIT_KIND_META[k].icon). */
-const KIND_ICON: Record<TierBenefitKind, LucideIcon> = {
+/** Icono Lucide por tipo de beneficio (espejo de BENEFIT_KIND_META[k].icon). */
+const KIND_ICON: Record<TierBenefitKind, ComponentType<{ className?: string }>> = {
   recurring_reward: Gift,
   discount: Percent,
   perk: Sparkles,
@@ -100,15 +106,13 @@ type FormState = {
   imageUrl: string | null
   rewardId: string
   cadence: TierBenefitCadence
-  quantity: number | null
-  discountPct: number | null
+  quantity: string
+  discountPct: string
   discountScope: string
   partnerId: string
   sort: number
   active: boolean
 }
-
-type FormErrors = Partial<Record<'label' | 'rewardId' | 'discountPct' | 'partnerId', string>>
 
 const EMPTY_FORM: FormState = {
   editingId: null,
@@ -119,12 +123,22 @@ const EMPTY_FORM: FormState = {
   imageUrl: null,
   rewardId: '',
   cadence: 'monthly',
-  quantity: 1,
-  discountPct: null,
+  quantity: '1',
+  discountPct: '',
   discountScope: '',
   partnerId: '',
   sort: 0,
   active: true,
+}
+
+function KindChip({ kind }: { kind: TierBenefitKind }) {
+  const Icon = KIND_ICON[kind]
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-secondary/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+      <Icon className="size-3" aria-hidden />
+      {BENEFIT_KIND_META[kind].label}
+    </span>
+  )
 }
 
 /** Orden visual estable: `sort` asc y label como desempate. */
@@ -167,69 +181,75 @@ function BenefitRow({
   return (
     <li
       ref={setNodeRef}
-      style={sortableStyle(transform, transition, isDragging)}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.55 : 1,
+      }}
       className={cn(
-        'flex flex-wrap items-center gap-2 bg-card px-2 py-2 sm:flex-nowrap',
-        isDragging && DRAGGING_ROW_CLASSES,
+        'flex items-center gap-2 bg-card px-2 py-2.5',
+        !benefit.active && 'opacity-60',
+        isDragging && 'relative z-10 shadow-md',
       )}
     >
-      <DragHandle
-        label={`Reordenar ${benefit.label}`}
-        attributes={attributes}
-        listeners={listeners}
-      />
+      <button
+        {...attributes}
+        {...listeners}
+        type="button"
+        aria-label={`Reordenar ${benefit.label}`}
+        // touch-none: sin esto el gesto de arrastre en tablet scrollea el diálogo.
+        className="size-10 shrink-0 cursor-grab touch-none rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground active:cursor-grabbing"
+      >
+        <GripVertical className="mx-auto size-4" />
+      </button>
 
       {/* Miniatura: la foto real si la cargó, si no el ícono del tipo. */}
-      <span className="relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-secondary">
+      <span className="relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-secondary/60">
         {benefit.image_url ? (
           <StorageImage src={benefit.image_url} alt="" sizes="40px" />
         ) : (
-          <Icon className="size-4 text-subtle-foreground" aria-hidden="true" />
+          <Icon className="size-4 text-muted-foreground/70" />
         )}
       </span>
 
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
+      <div className="min-w-0 flex-1 space-y-1">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span
-            className={cn(
-              'truncate type-body font-medium',
-              !benefit.active && 'text-muted-foreground',
-            )}
-          >
-            {benefit.label}
-          </span>
-          <Badge icon={Icon}>{BENEFIT_KIND_META[benefit.kind].label}</Badge>
+          <span className="truncate text-sm font-medium">{benefit.label}</span>
+          <KindChip kind={benefit.kind} />
         </div>
         {benefit.description ? (
-          <p className="truncate type-caption text-muted-foreground">{benefit.description}</p>
+          <p className="truncate text-[11px] text-muted-foreground">{benefit.description}</p>
         ) : null}
       </div>
 
-      {/* En el celular los controles bajan a su propia línea: en una sola, el
-          interruptor quedaba cortado contra el borde del diálogo. */}
-      <div className="flex shrink-0 items-center gap-1 max-sm:basis-full max-sm:justify-end">
-        <Switch
-          checked={benefit.active}
-          onCheckedChange={onToggle}
-          disabled={pending}
-          aria-label={`${benefit.label} activo`}
-          className="mr-1"
-        />
+      <div className="flex shrink-0 items-center gap-0.5">
         <Button
-          size="icon-sm"
+          size="icon"
           variant="ghost"
+          className="size-10 text-muted-foreground hover:text-foreground"
+          onClick={onToggle}
+          disabled={pending}
+          aria-label={benefit.active ? `Pausar ${benefit.label}` : `Reactivar ${benefit.label}`}
+        >
+          {benefit.active ? <Pause className="size-4" /> : <Play className="size-4" />}
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-10 text-muted-foreground hover:text-foreground"
           onClick={onEdit}
           aria-label={`Editar ${benefit.label}`}
         >
-          <Pencil aria-hidden="true" />
+          <Pencil className="size-4" />
         </Button>
         <Button
-          size="icon-sm"
-          variant="danger-ghost"
+          size="icon"
+          variant="ghost"
+          className="size-10 text-muted-foreground hover:text-destructive"
           onClick={onDelete}
           aria-label={`Borrar ${benefit.label}`}
         >
-          <Trash2 aria-hidden="true" />
+          <Trash2 className="size-4" />
         </Button>
       </div>
     </li>
@@ -258,16 +278,8 @@ export function BenefitsEditor({
 }) {
   const [open, setOpen] = useState(false)
   const [pending, startTransition] = useTransition()
-  const [saving, startSaving] = useTransition()
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
-  const [errors, setErrors] = useState<FormErrors>({})
-  const formRef = useRef<HTMLFormElement>(null)
-  // Cada envío que no pasa la validación lleva el foco al primer campo a
-  // corregir (solo al enviar: mientras se escribe, el foco no salta).
-  const [failedSubmits, setFailedSubmits] = useState(0)
-  useFocusFirstInvalid(formRef, failedSubmits === 0 ? null : failedSubmits)
-  const [toDelete, setToDelete] = useState<TierBenefit | null>(null)
-  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<TierBenefit | null>(null)
 
   // Orden optimista de la lista (el drag no espera al server).
   const [order, setOrder] = useState<TierBenefit[]>(() => sortBenefits(benefits))
@@ -280,21 +292,12 @@ export function BenefitsEditor({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
-  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }))
-    // Lo que se corrige deja de marcarse como error.
-    setErrors((prev) =>
-      prev[key as keyof FormErrors] !== undefined ? { ...prev, [key]: undefined } : prev,
-    )
-  }
 
-  const resetForm = () => {
-    setForm(EMPTY_FORM)
-    setErrors({})
-  }
+  const resetForm = () => setForm(EMPTY_FORM)
 
   const startEdit = (b: TierBenefit) => {
-    setErrors({})
     setForm({
       editingId: b.id,
       kind: b.kind,
@@ -304,8 +307,8 @@ export function BenefitsEditor({
       imageUrl: b.image_url,
       rewardId: b.reward_id ?? '',
       cadence: b.cadence === 'none' ? 'monthly' : b.cadence,
-      quantity: b.quantity ?? 1,
-      discountPct: b.discount_pct,
+      quantity: String(b.quantity ?? 1),
+      discountPct: b.discount_pct === null ? '' : String(b.discount_pct),
       discountScope: b.discount_scope ?? '',
       partnerId: b.partner_id ?? '',
       sort: b.sort,
@@ -330,23 +333,22 @@ export function BenefitsEditor({
     }
   }
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  const handleSubmit = () => {
     const label = form.label.trim()
-    const nextErrors: FormErrors = {}
-    if (!label) nextErrors.label = 'Poné un nombre para el beneficio.'
-    if (form.kind === 'recurring_reward' && !form.rewardId) {
-      nextErrors.rewardId = 'Elegí la recompensa gratis.'
+    if (!label) {
+      toast.error('Poné un nombre para el beneficio.')
+      return
     }
-    if (form.kind === 'discount' && form.discountPct === null) {
-      nextErrors.discountPct = 'Indicá el % de descuento.'
+    if (form.kind === 'recurring_reward' && !form.rewardId) {
+      toast.error('Elegí la recompensa gratis.')
+      return
+    }
+    if (form.kind === 'discount' && form.discountPct.trim() === '') {
+      toast.error('Indicá el % de descuento.')
+      return
     }
     if (form.kind === 'partner' && !form.partnerId) {
-      nextErrors.partnerId = 'Elegí la marca aliada.'
-    }
-    if (Object.keys(nextErrors).length > 0) {
-      setErrors(nextErrors)
-      setFailedSubmits((n) => n + 1)
+      toast.error('Elegí la marca aliada.')
       return
     }
 
@@ -360,8 +362,8 @@ export function BenefitsEditor({
       image_url: form.imageUrl,
       reward_id: form.rewardId || null,
       cadence: form.cadence,
-      quantity: form.quantity ?? 1,
-      discount_pct: form.discountPct,
+      quantity: Number(form.quantity) || 1,
+      discount_pct: form.discountPct.trim() === '' ? null : Number(form.discountPct),
       discount_scope: form.discountScope.trim() || null,
       partner_id: form.partnerId || null,
       sort: form.sort,
@@ -370,7 +372,7 @@ export function BenefitsEditor({
 
     const previousImage = editingOriginal?.image_url ?? null
 
-    startSaving(async () => {
+    startTransition(async () => {
       const result: LoyaltyActionState = form.editingId
         ? await updateTierBenefit(tenantSlug, input)
         : await createTierBenefit(tenantSlug, input)
@@ -390,6 +392,22 @@ export function BenefitsEditor({
     startTransition(async () => {
       const result = await toggleTierBenefit(tenantSlug, b.id, !b.active)
       if (!result.ok) toast.error(result.message)
+    })
+  }
+
+  const onConfirmDelete = () => {
+    if (!pendingDelete) return
+    const target = pendingDelete
+    startTransition(async () => {
+      const result = await deleteTierBenefit(tenantSlug, target.id)
+      if (result.ok) {
+        await pruneImage(target.image_url, null)
+        toast.success('Beneficio eliminado.')
+        if (form.editingId === target.id) resetForm()
+      } else {
+        toast.error(result.message)
+      }
+      setPendingDelete(null)
     })
   }
 
@@ -415,17 +433,6 @@ export function BenefitsEditor({
     })
   }
 
-  const nameField = (placeholder: string, className?: string) => (
-    <Field label="Nombre" error={errors.label} className={className}>
-      <Input
-        value={form.label}
-        onChange={(e) => set('label', e.target.value)}
-        maxLength={80}
-        placeholder={placeholder}
-      />
-    </Field>
-  )
-
   return (
     <Dialog
       open={open}
@@ -433,278 +440,367 @@ export function BenefitsEditor({
         setOpen(next)
         if (!next) {
           resetForm()
-          setDeleteOpen(false)
+          setPendingDelete(null)
         }
       }}
     >
       {trigger ?? (
         <DialogTrigger asChild>
-          <Button size="sm" variant="secondary">
-            <Sparkles aria-hidden="true" />
+          <Button size="sm" variant="outline">
+            <Sparkles className="size-4" />
             Beneficios
           </Button>
         </DialogTrigger>
       )}
 
-      <DialogContent size="lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Beneficios de {tier.name}</DialogTitle>
+          <DialogTitle className="font-serif">Beneficios de {tier.name}</DialogTitle>
           <DialogDescription>
-            Qué desbloquea este nivel: ítems gratis que se repiten, descuentos, beneficios o marcas
-            aliadas.
+            Definí qué desbloquea este nivel: ítems gratis recurrentes, descuentos, beneficios o
+            marcas aliadas.
           </DialogDescription>
         </DialogHeader>
 
-        <DialogBody className="flex flex-col gap-6">
-          {/* Lista de beneficios actuales — arrastrable */}
-          <section aria-labelledby={`tier-benefits-${tier.id}-title`} className="grid gap-2">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <h3 id={`tier-benefits-${tier.id}-title`} className="type-label text-foreground">
-                Beneficios cargados
-              </h3>
-              {order.length > 1 ? (
-                <p className="type-caption text-muted-foreground">
-                  Arrastrá desde el asa para cambiar el orden en que los ve el socio.
-                </p>
-              ) : null}
-            </div>
-            {order.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-border-strong px-3 py-4 text-center type-small text-muted-foreground">
-                Todavía no hay beneficios en este nivel. Cargá el primero acá abajo.
+        {/* Lista de beneficios actuales — arrastrable */}
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Beneficios cargados
+            </p>
+            {order.length > 1 ? (
+              <p className="text-[11px] text-muted-foreground">
+                Arrastrá para cambiar el orden en que los ve el socio.
               </p>
-            ) : (
-              <DndContext
-                id={`tier-benefits-${tier.id}`}
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={onDragEnd}
-              >
-                <SortableContext
-                  items={order.map((b) => b.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <ul className={ROW_LIST_CLASSES}>
-                    {order.map((b) => (
-                      <BenefitRow
-                        key={b.id}
-                        benefit={b}
-                        pending={pending}
-                        onEdit={() => startEdit(b)}
-                        onToggle={() => onToggle(b)}
-                        onDelete={() => {
-                          setToDelete(b)
-                          setDeleteOpen(true)
-                        }}
-                      />
-                    ))}
-                  </ul>
-                </SortableContext>
-              </DndContext>
-            )}
-          </section>
-
-          {/* Form: agregar / editar beneficio */}
-          <form
-            ref={formRef}
-            onSubmit={handleSubmit}
-            aria-labelledby={`tier-benefit-form-${tier.id}`}
-            className="grid gap-4 border-t border-border pt-6"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <h3 id={`tier-benefit-form-${tier.id}`} className="type-subtitle text-foreground">
-                {isEditing ? 'Editar beneficio' : 'Agregar beneficio'}
-              </h3>
-              {isEditing ? (
-                <Button type="button" size="sm" variant="ghost" onClick={resetForm}>
-                  <X aria-hidden="true" />
-                  Cancelar la edición
-                </Button>
-              ) : null}
-            </div>
-
-            <Field
-              label="Tipo de beneficio"
-              hint={
-                isEditing ? 'El tipo no se cambia: para otro tipo, cargá uno nuevo.' : undefined
-              }
+            ) : null}
+          </div>
+          {order.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-border/70 px-3 py-4 text-center text-xs text-muted-foreground">
+              Todavía no hay beneficios en este nivel. Cargá el primero acá abajo.
+            </p>
+          ) : (
+            <DndContext
+              id={`tier-benefits-${tier.id}`}
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={onDragEnd}
             >
-              <Select
-                value={form.kind}
-                onValueChange={(v) => set('kind', v as TierBenefitKind)}
-                disabled={isEditing}
+              <SortableContext
+                items={order.map((b) => b.id)}
+                strategy={verticalListSortingStrategy}
               >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {BENEFIT_KINDS.map((k) => (
-                    <SelectItem key={k} value={k}>
-                      {BENEFIT_KIND_META[k].label}
-                    </SelectItem>
+                <ul className="card-hairline divide-y divide-border/60 overflow-hidden rounded-xl border">
+                  {order.map((b) => (
+                    <BenefitRow
+                      key={b.id}
+                      benefit={b}
+                      pending={pending}
+                      onEdit={() => startEdit(b)}
+                      onToggle={() => onToggle(b)}
+                      onDelete={() => setPendingDelete(b)}
+                    />
                   ))}
-                </SelectContent>
-              </Select>
-            </Field>
+                </ul>
+              </SortableContext>
+            </DndContext>
+          )}
+        </div>
 
-            {/* Campos según el tipo */}
-            {form.kind === 'recurring_reward' ? (
-              <>
-                <FieldRow>
-                  <Field label="Recompensa gratis" error={errors.rewardId}>
-                    {rewards.length === 0 ? (
-                      <Callout tone="warning">
-                        No hay recompensas activas. Creá una en «Cómo canjean sus puntos».
-                      </Callout>
-                    ) : (
-                      <Combobox
-                        options={rewards.map((r) => ({ value: r.id, label: r.name }))}
-                        value={form.rewardId || null}
-                        onValueChange={(v) => set('rewardId', typeof v === 'string' ? v : '')}
-                        placeholder="Elegí la recompensa…"
-                        searchPlaceholder="Buscar recompensa…"
-                      />
-                    )}
-                  </Field>
-                  <Field label="Frecuencia">
-                    <Select
-                      value={form.cadence}
-                      onValueChange={(v) => set('cadence', v as TierBenefitCadence)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {CADENCE_OPTIONS.map((c) => (
-                          <SelectItem key={c} value={c}>
-                            {CADENCE_LABEL[c]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                </FieldRow>
-                <FieldRow>
-                  <Field label="Cantidad">
-                    <NumberField
-                      min={1}
-                      max={20}
-                      value={form.quantity}
-                      onValueChange={(n) => set('quantity', n)}
-                    />
-                  </Field>
-                  {nameField('Ej: 1 café gratis')}
-                </FieldRow>
-              </>
+        {/* Form: agregar / editar beneficio */}
+        <div className="card-hairline space-y-3 rounded-xl border bg-card p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {isEditing ? 'Editar beneficio' : 'Agregar beneficio'}
+            </p>
+            {isEditing ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-9 gap-1 px-2 text-muted-foreground"
+                onClick={resetForm}
+              >
+                <X className="size-3.5" />
+                Cancelar
+              </Button>
             ) : null}
+          </div>
 
-            {form.kind === 'discount' ? (
-              <>
-                <FieldRow>
-                  <Field label="Descuento" error={errors.discountPct}>
-                    <NumberField
-                      min={0}
-                      max={100}
-                      decimals={2}
-                      suffix="%"
-                      steppers={false}
-                      placeholder="10"
-                      value={form.discountPct}
-                      onValueChange={(n) => set('discountPct', n)}
-                    />
-                  </Field>
-                  <Field label="Aplica a" optional>
-                    <Input
-                      value={form.discountScope}
-                      onChange={(e) => set('discountScope', e.target.value)}
-                      maxLength={60}
-                      placeholder="Ej: Desayunos L-V"
-                    />
-                  </Field>
-                </FieldRow>
-                {nameField('Ej: 10% off en desayunos')}
-              </>
-            ) : null}
+          {/* Tipo */}
+          <div className="grid gap-1.5">
+            <Label className="text-xs text-muted-foreground">Tipo de beneficio</Label>
+            <Select
+              value={form.kind}
+              onValueChange={(v) => set('kind', v as TierBenefitKind)}
+              disabled={isEditing}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {BENEFIT_KINDS.map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {BENEFIT_KIND_META[k].label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-            {form.kind === 'perk' ? (
-              <>
-                {nameField('Ej: Acceso a la barra VIP')}
-                <Field label="Descripción" optional>
-                  <Textarea
-                    value={form.description}
-                    onChange={(e) => set('description', e.target.value)}
-                    maxLength={200}
-                    showCount
-                    rows={2}
-                    placeholder="El detalle de la ventaja."
-                  />
-                </Field>
-              </>
-            ) : null}
-
-            {form.kind === 'partner' ? (
-              <>
-                <Field
-                  label="Marca aliada"
-                  error={errors.partnerId}
-                  hint="El descuento de cada nivel se carga en la ficha de la marca, en Aliados."
+          {/* Campos según kind */}
+          {form.kind === 'recurring_reward' ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-1.5">
+                <Label className="text-xs text-muted-foreground">Recompensa gratis</Label>
+                {rewards.length === 0 ? (
+                  <p className="rounded-md border border-warning/40 bg-warning/15 px-2.5 py-2 text-[11px] text-warning">
+                    No hay recompensas activas. Creá una en Puntos y recompensas.
+                  </p>
+                ) : (
+                  <Select value={form.rewardId} onValueChange={(v) => set('rewardId', v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Elegí…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {rewards.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {r.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs text-muted-foreground">Frecuencia</Label>
+                <Select
+                  value={form.cadence}
+                  onValueChange={(v) => set('cadence', v as TierBenefitCadence)}
                 >
-                  {partners.length === 0 ? (
-                    <Callout tone="warning">No hay marcas aliadas. Creá una en Aliados.</Callout>
-                  ) : (
-                    <Combobox
-                      options={partners.map((p) => ({ value: p.id, label: p.name }))}
-                      value={form.partnerId || null}
-                      onValueChange={(v) => set('partnerId', typeof v === 'string' ? v : '')}
-                      placeholder="Elegí la marca…"
-                      searchPlaceholder="Buscar marca…"
-                    />
-                  )}
-                </Field>
-                {nameField('Ej: 15% off en la librería aliada')}
-              </>
-            ) : null}
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CADENCE_OPTIONS.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {CADENCE_LABEL[c]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="benefit-qty" className="text-xs text-muted-foreground">
+                  Cantidad
+                </Label>
+                <Input
+                  id="benefit-qty"
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={form.quantity}
+                  onChange={(e) => set('quantity', e.target.value)}
+                  className="tabular-nums"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="benefit-label-rr" className="text-xs text-muted-foreground">
+                  Nombre
+                </Label>
+                <Input
+                  id="benefit-label-rr"
+                  value={form.label}
+                  onChange={(e) => set('label', e.target.value)}
+                  maxLength={80}
+                  placeholder="Ej: 1 café gratis"
+                />
+              </div>
+            </div>
+          ) : null}
 
-            {/* Cómo se ve: foto (billetera) + ícono (listados). Conviven a propósito. */}
+          {form.kind === 'discount' ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-1.5">
+                <Label htmlFor="benefit-pct" className="text-xs text-muted-foreground">
+                  % de descuento
+                </Label>
+                <Input
+                  id="benefit-pct"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={form.discountPct}
+                  onChange={(e) => set('discountPct', e.target.value)}
+                  className="tabular-nums"
+                  placeholder="10"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="benefit-scope" className="text-xs text-muted-foreground">
+                  Aplica a
+                </Label>
+                <Input
+                  id="benefit-scope"
+                  value={form.discountScope}
+                  onChange={(e) => set('discountScope', e.target.value)}
+                  maxLength={60}
+                  placeholder="Ej: Desayunos L-V"
+                />
+              </div>
+              <div className="grid gap-1.5 sm:col-span-2">
+                <Label htmlFor="benefit-label-disc" className="text-xs text-muted-foreground">
+                  Nombre
+                </Label>
+                <Input
+                  id="benefit-label-disc"
+                  value={form.label}
+                  onChange={(e) => set('label', e.target.value)}
+                  maxLength={80}
+                  placeholder="Ej: 10% off en desayunos"
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {form.kind === 'perk' ? (
+            <div className="grid gap-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="benefit-label-perk" className="text-xs text-muted-foreground">
+                  Nombre
+                </Label>
+                <Input
+                  id="benefit-label-perk"
+                  value={form.label}
+                  onChange={(e) => set('label', e.target.value)}
+                  maxLength={80}
+                  placeholder="Ej: Acceso a la barra VIP"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="benefit-desc" className="text-xs text-muted-foreground">
+                  Descripción (opcional)
+                </Label>
+                <Textarea
+                  id="benefit-desc"
+                  value={form.description}
+                  onChange={(e) => set('description', e.target.value)}
+                  maxLength={200}
+                  rows={2}
+                  className="resize-none"
+                  placeholder="Detalle de la ventaja."
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {form.kind === 'partner' ? (
+            <div className="grid gap-3">
+              <div className="grid gap-1.5">
+                <Label className="text-xs text-muted-foreground">Marca aliada</Label>
+                {partners.length === 0 ? (
+                  <p className="rounded-md border border-warning/40 bg-warning/15 px-2.5 py-2 text-[11px] text-warning">
+                    No hay marcas aliadas. Creá una en Aliados.
+                  </p>
+                ) : (
+                  <Select value={form.partnerId} onValueChange={(v) => set('partnerId', v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Elegí…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {partners.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <p className="text-[11px] text-muted-foreground">
+                  El descuento por nivel se carga en la ficha de la marca, en Aliados.
+                </p>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="benefit-label-partner" className="text-xs text-muted-foreground">
+                  Nombre
+                </Label>
+                <Input
+                  id="benefit-label-partner"
+                  value={form.label}
+                  onChange={(e) => set('label', e.target.value)}
+                  maxLength={80}
+                  placeholder="Ej: 15% off en la librería aliada"
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {/* Cómo se ve: foto (billetera) + ícono (listados). Conviven a propósito. */}
+          <div className="grid gap-3 rounded-lg border border-border/60 bg-background/40 p-3">
+            <p className="text-[11px] text-muted-foreground text-pretty">
+              La foto se ve en la billetera del socio; el ícono, en los listados y chips.
+            </p>
             <MenuImageUploader
               tenantId={tenantId}
               value={form.imageUrl}
               onChange={(url) => set('imageUrl', url)}
               label="Foto del beneficio (opcional)"
             />
-            <Field
-              label="Ícono"
-              optional
-              hint="La foto se ve en la billetera del socio; el ícono, en los listados y chips."
-            >
-              <IconPicker value={form.icon || null} onChange={(name) => set('icon', name ?? '')} />
-            </Field>
+            <IconPicker
+              id="benefit-icon"
+              value={form.icon || null}
+              onChange={(name) => set('icon', name ?? '')}
+              hint="Se usa en los listados compactos. En la tarjeta grande manda la foto."
+            />
+          </div>
 
-            <Button type="submit" loading={saving} loadingText="Guardando…" className="w-full">
-              {isEditing ? null : <Plus aria-hidden="true" />}
-              {isEditing ? 'Guardar cambios' : 'Agregar beneficio'}
-            </Button>
-          </form>
-        </DialogBody>
+          <Button type="button" onClick={handleSubmit} disabled={pending} className="h-11 w-full">
+            {pending ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                Guardando…
+              </>
+            ) : isEditing ? (
+              'Guardar cambios'
+            ) : (
+              <>
+                <Plus className="size-4" />
+                Agregar beneficio
+              </>
+            )}
+          </Button>
+        </div>
       </DialogContent>
 
-      <ConfirmDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        tone="danger"
-        title={`¿Borrar «${toDelete?.label ?? ''}»?`}
-        description="El beneficio deja de mostrarse a los clientes de este nivel. No se puede deshacer."
-        confirmLabel="Borrar beneficio"
-        pendingLabel="Borrando…"
-        onConfirm={async () => {
-          if (!toDelete) return
-          const target = toDelete
-          const result = await deleteTierBenefit(tenantSlug, target.id)
-          if (!result.ok) return result
-          await pruneImage(target.image_url, null)
-          toast.success('Beneficio borrado.')
-          if (form.editingId === target.id) resetForm()
+      {/* Confirmación de borrado */}
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(next) => {
+          if (!next) setPendingDelete(null)
         }}
-      />
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Borrar "{pendingDelete?.label}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              El beneficio deja de mostrarse a los clientes de este nivel. Esta acción no se puede
+              deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => {
+                e.preventDefault()
+                onConfirmDelete()
+              }}
+              disabled={pending}
+            >
+              {pending ? 'Borrando…' : 'Borrar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   )
 }

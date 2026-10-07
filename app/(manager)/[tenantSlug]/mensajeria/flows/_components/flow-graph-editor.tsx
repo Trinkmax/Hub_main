@@ -22,12 +22,11 @@ import { useRouter } from 'next/navigation'
 import { useCallback, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { useTheme } from '@/components/theme/theme-provider'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Callout } from '@/components/ui/callout'
-import { Field } from '@/components/ui/field'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { NumberField } from '@/components/ui/number-field'
 import {
   Select,
   SelectContent,
@@ -35,7 +34,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import { saveFlowGraph } from '@/lib/flows/graph-actions'
 import type { FlowEdge as DBFlowEdge, FlowNode as DBFlowNode } from '@/lib/flows/graph-queries'
 import type { FlowGraphNode } from '@/lib/flows/graph-schemas'
@@ -108,11 +106,11 @@ function NodeShell({
   const isTrigger = kind === 'trigger'
 
   return (
-    // Elegida: borde y anillo verdes (vocabulario de selección del kit). Sin
-    // sombra: las tarjetas del lienzo son quietas, el pelo alcanza.
     <div
-      className={`relative w-56 rounded-xl border bg-card ${
-        selected ? 'border-primary ring-1 ring-primary' : 'border-border-strong'
+      className={`relative w-56 rounded-xl border bg-card transition-shadow ${
+        selected
+          ? 'border-primary/50 shadow-md ring-2 ring-primary/40'
+          : 'shadow-sm ring-1 ring-inset ring-border/60'
       }`}
     >
       {/* Target handle — all nodes except trigger accept incoming */}
@@ -124,21 +122,21 @@ function NodeShell({
         />
       )}
 
-      <div className="flex items-center gap-2 rounded-t-xl border-b border-border px-3 py-2">
+      <div className="flex items-center gap-2 rounded-t-xl border-b border-border/60 px-3 py-2">
         <div
           className={`flex size-6 shrink-0 items-center justify-center rounded-md border ${KIND_CHIP_CLASS[kind]}`}
         >
-          <Icon className="size-3.5" aria-hidden />
+          <Icon className="size-3.5" />
         </div>
         <span className="flex-1 truncate text-xs font-semibold">{KIND_LABEL[kind]}</span>
         {!isTrigger && (
           <button
             type="button"
             onClick={() => _onNodeDelete(id)}
-            className="nodrag relative hit-area rounded-sm p-0.5 text-muted-foreground hover:text-destructive-text"
-            aria-label={`Borrar el paso «${KIND_LABEL[kind]}»`}
+            className="rounded p-0.5 text-muted-foreground/50 hover:text-destructive"
+            aria-label="Eliminar paso"
           >
-            <X className="size-3.5" aria-hidden />
+            <X className="size-3" />
           </button>
         )}
       </div>
@@ -153,18 +151,18 @@ function NodeShell({
             position={Position.Bottom}
             id="true"
             style={{ left: '30%' }}
-            className="!size-3 !rounded-full !border-2 !border-success !bg-background"
+            className="!size-3 !rounded-full !border-2 !border-emerald-500 !bg-background"
           />
           <Handle
             type="source"
             position={Position.Bottom}
             id="false"
             style={{ left: '70%' }}
-            className="!size-3 !rounded-full !border-2 !border-destructive !bg-background"
+            className="!size-3 !rounded-full !border-2 !border-rose-500 !bg-background"
           />
-          <div className="flex justify-between px-3 pb-2 text-xs font-medium">
-            <span className="text-success-text">Sí</span>
-            <span className="text-destructive-text">No</span>
+          <div className="flex justify-between px-3 pb-2 text-[10px] font-medium">
+            <span className="text-emerald-600 dark:text-emerald-400">Sí</span>
+            <span className="text-rose-600 dark:text-rose-400">No</span>
           </div>
         </>
       ) : (
@@ -207,12 +205,16 @@ function SendTemplateNodeComponent({ id, data, selected }: NodeProps<FlowNode>) 
             {channel.display_name ?? CHANNEL_TYPE_LABEL[channel.type]}
           </div>
         ) : (
-          <div className="truncate font-medium text-warning-text">Falta elegir el canal</div>
+          <div className="truncate font-medium text-amber-600 dark:text-amber-400">
+            Falta elegir el canal
+          </div>
         )}
         {template ? (
           <div className="truncate font-medium text-foreground">{template.name}</div>
         ) : channel ? (
-          <div className="truncate font-medium text-warning-text">Falta elegir el mensaje</div>
+          <div className="truncate font-medium text-amber-600 dark:text-amber-400">
+            Falta elegir el mensaje
+          </div>
         ) : null}
       </div>
     </NodeShell>
@@ -255,7 +257,7 @@ function AddTagNodeComponent({ id, data, selected }: NodeProps<FlowNode>) {
       {tag ? (
         <span className="text-muted-foreground">“{tag.name}”</span>
       ) : (
-        <span className="text-warning-text">Falta elegir la etiqueta</span>
+        <span className="text-amber-600 dark:text-amber-400">Falta elegir la etiqueta</span>
       )}
     </NodeShell>
   )
@@ -355,9 +357,8 @@ function NodeConfigPanel({
           value={data.config.value}
           onPatch={(patch) => onChange({ kind: 'condition', config: { ...data.config, ...patch } })}
         />
-        <p className="type-caption text-muted-foreground">
-          Desde este paso salen dos caminos: el punto verde (Sí) sigue si se cumple; el rojo (No),
-          si no.
+        <p className="text-[11px] text-muted-foreground">
+          Desde este paso salen dos caminos: el punto verde sigue si se cumple, el rojo si no.
         </p>
       </div>
     )
@@ -386,8 +387,9 @@ function TriggerConfig({
   tags: Tag[]
 }) {
   return (
-    <div className="flex flex-col gap-4">
-      <Field label="¿Cuándo arranca?">
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">¿Cuándo arranca?</Label>
         <Select
           value={config.type}
           onValueChange={(v) => {
@@ -399,7 +401,7 @@ function TriggerConfig({
             else onChange({ type: t })
           }}
         >
-          <SelectTrigger>
+          <SelectTrigger aria-label="Cuándo arranca la automatización">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -410,20 +412,18 @@ function TriggerConfig({
             ))}
           </SelectContent>
         </Select>
-      </Field>
+      </div>
 
       {config.type === 'birthday' && (
-        <Field
-          label="¿Qué día se manda?"
-          hint="Se revisa una vez por día y se le manda a quien le toque."
-        >
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">¿Qué día se manda?</Label>
           <Select
             value={String(config.offset_days)}
             onValueChange={(v) =>
               onChange({ type: 'birthday', offset_days: Number.parseInt(v, 10) })
             }
           >
-            <SelectTrigger>
+            <SelectTrigger aria-label="Qué día se manda el saludo">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -435,46 +435,57 @@ function TriggerConfig({
               <SelectItem value="1">1 día después</SelectItem>
             </SelectContent>
           </Select>
-        </Field>
+          <p className="text-[11px] text-muted-foreground">
+            Se revisa una vez por día y se le manda a quien le toque.
+          </p>
+        </div>
       )}
 
       {config.type === 'customer_inactive' && (
-        <Field label="¿Cuántos días sin venir?" hint="Entre 1 y 365.">
-          <NumberField
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">¿Cuántos días sin venir?</Label>
+          <Input
+            type="number"
             min={1}
             max={365}
-            suffix="días"
             value={config.days}
-            onValueChange={(n) => {
-              if (n !== null) onChange({ type: 'customer_inactive', days: Math.max(1, n) })
-            }}
+            onChange={(e) =>
+              onChange({ type: 'customer_inactive', days: Math.max(1, Number(e.target.value)) })
+            }
+            aria-label="Días sin venir"
           />
-        </Field>
+        </div>
       )}
 
       {config.type === 'event_starting' && (
-        <Field label="¿Cuántas horas antes?" hint="Entre 1 y 168 (una semana).">
-          <NumberField
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">¿Cuántas horas antes?</Label>
+          <Input
+            type="number"
             min={1}
             max={168}
-            suffix="horas"
             value={config.hours_before}
-            onValueChange={(n) => {
-              if (n !== null) onChange({ type: 'event_starting', hours_before: Math.max(1, n) })
-            }}
+            onChange={(e) =>
+              onChange({
+                type: 'event_starting',
+                hours_before: Math.max(1, Number(e.target.value)),
+              })
+            }
+            aria-label="Horas antes del evento"
           />
-        </Field>
+        </div>
       )}
 
       {config.type === 'tag_added' && (
-        <Field label="¿Qué etiqueta?">
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">¿Qué etiqueta?</Label>
           <Select
             value={config.tag_id ?? '__any'}
             onValueChange={(v) =>
               onChange({ type: 'tag_added', tag_id: v === '__any' ? undefined : v })
             }
           >
-            <SelectTrigger>
+            <SelectTrigger aria-label="Etiqueta que dispara la automatización">
               <SelectValue placeholder="Cualquier etiqueta" />
             </SelectTrigger>
             <SelectContent>
@@ -486,7 +497,7 @@ function TriggerConfig({
               ))}
             </SelectContent>
           </Select>
-        </Field>
+        </div>
       )}
     </div>
   )
@@ -505,20 +516,14 @@ function SendTemplateConfig({
 }) {
   const filtered = templates.filter((t) => t.channel_id === config.channel_id)
   return (
-    <div className="flex flex-col gap-4">
-      <Field
-        label="¿Por dónde sale?"
-        hint={
-          channels.length === 0
-            ? 'No tenés ningún canal conectado. Conectá WhatsApp desde Canales.'
-            : undefined
-        }
-      >
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">¿Por dónde sale?</Label>
         <Select
           value={config.channel_id}
           onValueChange={(v) => onChange({ ...config, channel_id: v, template_id: '' })}
         >
-          <SelectTrigger>
+          <SelectTrigger aria-label="Canal por el que sale el mensaje">
             <SelectValue placeholder="Elegí el canal" />
           </SelectTrigger>
           <SelectContent>
@@ -529,31 +534,39 @@ function SendTemplateConfig({
             ))}
           </SelectContent>
         </Select>
-      </Field>
-      <Field
-        label="¿Qué mensaje se manda?"
-        hint={
-          config.channel_id !== '' && filtered.length === 0
-            ? 'No hay mensajes aprobados para este canal. Crealos desde Plantillas.'
-            : 'Solo se pueden mandar mensajes que WhatsApp ya aprobó.'
-        }
-      >
+        {channels.length === 0 && (
+          <p className="text-[11px] text-muted-foreground">
+            No tenés ningún canal conectado. Conectá WhatsApp desde Canales.
+          </p>
+        )}
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">¿Qué mensaje se manda?</Label>
         <Select
           value={config.template_id}
           onValueChange={(v) => onChange({ ...config, template_id: v })}
         >
-          <SelectTrigger>
+          <SelectTrigger aria-label="Mensaje aprobado a mandar">
             <SelectValue placeholder="Elegí el mensaje" />
           </SelectTrigger>
           <SelectContent>
             {filtered.map((t) => (
-              <SelectItem key={t.id} value={t.id} description={t.language}>
-                {t.name}
+              <SelectItem key={t.id} value={t.id}>
+                {t.name} <span className="text-muted-foreground">({t.language})</span>
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-      </Field>
+        {config.channel_id !== '' && filtered.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground">
+            No hay mensajes aprobados para este canal. Crealos desde Plantillas.
+          </p>
+        ) : (
+          <p className="text-[11px] text-muted-foreground">
+            Solo se pueden mandar mensajes que Meta ya aprobó.
+          </p>
+        )}
+      </div>
     </div>
   )
 }
@@ -568,16 +581,10 @@ function AddTagConfig({
   onChange: (c: AddTagData['config']) => void
 }) {
   return (
-    <Field
-      label="¿Qué etiqueta le ponemos?"
-      hint={
-        tags.length === 0
-          ? 'Todavía no tenés etiquetas. Crealas desde Etiquetas y volvé acá.'
-          : undefined
-      }
-    >
+    <div className="space-y-1.5">
+      <Label className="text-xs text-muted-foreground">¿Qué etiqueta le ponemos?</Label>
       <Select value={config.tag_id} onValueChange={(v) => onChange({ tag_id: v })}>
-        <SelectTrigger>
+        <SelectTrigger aria-label="Etiqueta a poner al cliente">
           <SelectValue placeholder="Elegí una etiqueta" />
         </SelectTrigger>
         <SelectContent>
@@ -588,7 +595,12 @@ function AddTagConfig({
           ))}
         </SelectContent>
       </Select>
-    </Field>
+      {tags.length === 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          Todavía no tenés etiquetas. Crealas desde Etiquetas y volvé acá.
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -824,96 +836,88 @@ export function FlowGraphEditor({
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex min-h-[28rem] flex-1 flex-col overflow-clip rounded-xl border border-border bg-card">
-      {/* Barra de arriba: nombre, prendida/en pausa y guardar */}
-      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border bg-card px-4 py-3">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-card shadow-sm">
+      {/* Top bar */}
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border/60 bg-card px-4 py-3">
         <Input
-          size="sm"
           value={flowName}
           onChange={(e) => setFlowName(e.target.value)}
           placeholder="Nombre, ej.: Gracias por venir"
           aria-label="Nombre de la automatización"
-          className="max-w-64"
+          className="h-8 max-w-64 text-sm"
           maxLength={80}
         />
 
-        <div
-          className="flex items-center gap-2"
+        <Label
+          className="flex cursor-pointer items-center gap-2 text-sm"
           title="Si está en pausa, no manda nada aunque se cumpla el disparador."
         >
-          <Switch
-            id="graph-flow-active"
+          <Checkbox
             checked={active}
             onCheckedChange={(v) => setActive(v === true)}
-            aria-describedby="graph-flow-active-hint"
+            id="graph-flow-active"
           />
-          <Label htmlFor="graph-flow-active">{active ? 'Activa' : 'En pausa'}</Label>
-          <span id="graph-flow-active-hint" className="sr-only">
-            Si está en pausa, no manda nada aunque se cumpla el disparador.
-          </span>
-        </div>
+          Activa
+        </Label>
+
+        {validationError && (
+          <Badge variant="destructive" className="max-w-72 text-xs">
+            <span className="truncate">{validationError}</span>
+          </Badge>
+        )}
 
         <div className="ml-auto flex items-center gap-2">
           <Button
-            variant="secondary"
+            variant="outline"
             size="sm"
             onClick={() => router.push(`/${tenantSlug}/mensajeria/flows`)}
           >
             Cancelar
           </Button>
-          <Button size="sm" onClick={handleSave} loading={isPending} loadingText="Guardando…">
-            Guardar
+          <Button size="sm" onClick={handleSave} disabled={isPending}>
+            {isPending ? 'Guardando…' : 'Guardar'}
           </Button>
         </div>
       </div>
 
-      {/* El motivo entero, en la página: antes era una pastilla recortada. */}
-      {validationError ? (
-        <Callout tone="danger" announce="assertive" className="mx-4 mt-3 shrink-0">
-          {validationError}
-        </Callout>
-      ) : null}
-
       {/* Canvas + side panel */}
       <div className="flex min-h-0 flex-1">
         {/* Palette */}
-        <div className="flex w-44 shrink-0 flex-col gap-1.5 overflow-y-auto border-r border-border bg-card p-3">
-          <fieldset className="flex min-w-0 flex-col gap-1.5">
-            <legend className="mb-2 type-caption font-medium text-muted-foreground">
-              Agregar paso
-            </legend>
-            {(['trigger', 'send_template', 'wait', 'condition', 'add_tag'] as NodeKind[]).map(
-              (kind) => {
-                const Icon = KIND_ICON[kind]
-                const disabled = kind === 'trigger' && hasTrigger
-                return (
-                  <button
-                    key={kind}
-                    type="button"
-                    onClick={() => addNode(kind)}
-                    disabled={disabled}
-                    title={disabled ? 'Ya tenés un disparador' : KIND_HINT[kind]}
-                    className="flex min-h-11 items-start gap-2 rounded-lg border border-border bg-background px-2 py-2 text-left transition-colors hover:border-border-strong hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+        <div className="flex w-44 shrink-0 flex-col gap-1.5 overflow-y-auto border-r border-border/60 bg-card/60 p-3">
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Agregar paso
+          </p>
+          {(['trigger', 'send_template', 'wait', 'condition', 'add_tag'] as NodeKind[]).map(
+            (kind) => {
+              const Icon = KIND_ICON[kind]
+              const disabled = kind === 'trigger' && hasTrigger
+              return (
+                <button
+                  key={kind}
+                  type="button"
+                  onClick={() => addNode(kind)}
+                  disabled={disabled}
+                  title={disabled ? 'Ya tenés un disparador' : KIND_HINT[kind]}
+                  className="flex items-start gap-2 rounded-lg border border-border/60 bg-background/60 px-2 py-2 text-left transition-colors hover:border-border hover:bg-secondary/60 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <span
+                    className={`flex size-6 shrink-0 items-center justify-center rounded-md border ${KIND_CHIP_CLASS[kind]}`}
                   >
-                    <span
-                      className={`flex size-6 shrink-0 items-center justify-center rounded-md border ${KIND_CHIP_CLASS[kind]}`}
-                    >
-                      <Icon className="size-3.5" aria-hidden />
+                    <Icon className="size-3.5" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-xs font-medium leading-tight">
+                      {KIND_LABEL[kind]}
                     </span>
-                    <span className="min-w-0">
-                      <span className="block text-xs font-medium leading-tight">
-                        {KIND_LABEL[kind]}
-                      </span>
-                      <span className="block text-xs leading-tight text-muted-foreground">
-                        {disabled ? 'Ya tenés uno' : KIND_HINT[kind]}
-                      </span>
+                    <span className="block text-[10px] leading-tight text-muted-foreground">
+                      {KIND_HINT[kind]}
                     </span>
-                  </button>
-                )
-              },
-            )}
-          </fieldset>
-          <p className="mt-2 text-xs leading-snug text-muted-foreground">
+                  </span>
+                </button>
+              )
+            },
+          )}
+          <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
             Uní los pasos arrastrando desde el puntito de abajo de cada tarjeta.
           </p>
         </div>
@@ -939,7 +943,7 @@ export function FlowGraphEditor({
           </ReactFlow>
           {nodes.length === 1 && (
             <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center px-4">
-              <p className="rounded-full border border-border bg-card px-3.5 py-1.5 text-center text-xs text-muted-foreground">
+              <p className="rounded-full border border-border/60 bg-card/95 px-3.5 py-1.5 text-center text-[11px] text-muted-foreground shadow-sm">
                 Agregá un paso desde el panel de la izquierda y unilo al disparador arrastrando
                 desde el puntito de abajo.
               </p>
@@ -949,11 +953,8 @@ export function FlowGraphEditor({
 
         {/* Config panel */}
         {selectedNode && (
-          <section
-            aria-label="Ajustes del paso"
-            className="flex w-72 shrink-0 flex-col border-l border-border bg-card"
-          >
-            <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+          <div className="flex w-72 shrink-0 flex-col border-l border-border/60 bg-card">
+            <div className="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-3">
               <div className="flex min-w-0 items-center gap-2">
                 {(() => {
                   const kind = selectedNode.type as NodeKind
@@ -962,36 +963,38 @@ export function FlowGraphEditor({
                     <span
                       className={`flex size-6 shrink-0 items-center justify-center rounded-md border ${KIND_CHIP_CLASS[kind]}`}
                     >
-                      <Icon className="size-3.5" aria-hidden />
+                      <Icon className="size-3.5" />
                     </span>
                   )
                 })()}
                 <div className="min-w-0">
-                  <p className="type-caption text-muted-foreground">Ajustes del paso</p>
-                  <h2 className="truncate text-sm font-semibold">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Ajustes del paso
+                  </p>
+                  <p className="truncate text-xs font-semibold">
                     {KIND_LABEL[selectedNode.type as NodeKind]}
-                  </h2>
+                  </p>
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 {selectedNode.type !== 'trigger' && (
-                  <Button
-                    variant="danger-ghost"
-                    size="icon-sm"
+                  <button
+                    type="button"
                     onClick={() => _onNodeDelete(selectedNode.id)}
-                    aria-label="Borrar este paso"
+                    className="rounded p-1 text-muted-foreground hover:text-destructive"
+                    aria-label="Eliminar paso"
                   >
-                    <Trash2 aria-hidden />
-                  </Button>
+                    <Trash2 className="size-3.5" />
+                  </button>
                 )}
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
+                <button
+                  type="button"
                   onClick={() => setSelectedNodeId(null)}
-                  aria-label="Cerrar los ajustes del paso"
+                  className="rounded p-1 text-muted-foreground hover:text-foreground"
+                  aria-label="Cerrar panel de ajustes"
                 >
-                  <X aria-hidden />
-                </Button>
+                  <X className="size-3.5" />
+                </button>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-4">
@@ -1003,7 +1006,7 @@ export function FlowGraphEditor({
                 onChange={(data) => _onNodeDataChange(selectedNode.id, data)}
               />
             </div>
-          </section>
+          </div>
         )}
       </div>
     </div>

@@ -2,9 +2,9 @@
 
 import { ChevronDown, XCircle } from 'lucide-react'
 import Link from 'next/link'
-import { useId, useState } from 'react'
-import { dayLabel } from '@/components/reservations/day-labels'
+import { useState } from 'react'
 import { editReservationHref } from '@/lib/salon/calendar-links'
+import { formatDayLabel } from '@/lib/salon/date-presets'
 import { hhmm } from '@/lib/salon/format'
 import type { ReservationWithJoins } from '@/lib/salon/types'
 import { cn } from '@/lib/utils'
@@ -38,71 +38,64 @@ export function CancelledSection({
   showDate: boolean
 }) {
   const [open, setOpen] = useState(false)
-  const listId = useId()
 
   if (totalCount === 0) return null
 
   return (
-    <section
-      aria-label="Reservas canceladas"
-      className="overflow-clip rounded-xl border border-dashed border-border-strong"
-    >
+    <div className="rounded-xl border border-dashed border-border/70 bg-card/20">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        aria-controls={listId}
-        className="flex min-h-12 w-full items-center gap-2 px-4 py-3 text-left outline-(--ring) -outline-offset-2 hover:bg-hover focus-visible:outline-2"
+        className="flex w-full items-center gap-2 rounded-xl px-4 py-3 text-left transition-colors hover:bg-secondary/50"
       >
         <XCircle className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        {/* En el celular la aclaración baja a su propio renglón, sin el «·»
-            colgando al principio, y la flecha se queda arriba a la derecha. */}
-        <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="type-label text-foreground">
-            {totalCount} {totalCount === 1 ? 'reserva cancelada' : 'reservas canceladas'}
-          </span>
-          <span className="type-caption text-muted-foreground max-sm:basis-full">
-            <span aria-hidden className="max-sm:hidden">
-              ·{' '}
-            </span>
-            no cuentan para cubiertos ni para armar mesas
-          </span>
+        <span className="text-sm font-medium text-muted-foreground">
+          {totalCount} {totalCount === 1 ? 'reserva cancelada' : 'reservas canceladas'}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          · no cuentan para cubiertos ni para armar mesas
         </span>
         <ChevronDown
-          className={cn('size-4 shrink-0 text-muted-foreground', open && 'rotate-180')}
+          className={cn(
+            'ml-auto size-4 shrink-0 text-muted-foreground transition-transform',
+            open && 'rotate-180',
+          )}
           aria-hidden
         />
       </button>
 
       {open ? (
-        <ul id={listId} className="divide-y divide-border border-t border-border">
+        <ul className="space-y-1 border-t border-border/50 px-3 py-2">
           {rows.map((r) => (
             <li key={r.id}>
               <Link
                 href={editReservationHref(tenantSlug, r.id)}
-                className="flex min-h-11 flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2 type-body text-muted-foreground outline-(--ring) -outline-offset-2 hover:bg-hover hover:text-foreground focus-visible:outline-2"
+                className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded-lg px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-secondary"
               >
                 {showDate ? (
-                  <span className="type-caption tabular-nums">{dayLabel(r.reservation_date)}</span>
+                  <span className="font-mono text-xs tabular-nums">
+                    {formatDayLabel(r.reservation_date)}
+                  </span>
                 ) : null}
-                <span className="type-caption tabular-nums">{hhmm(r.reservation_time_local)}</span>
-                <span className="font-medium line-through">{r.guest_name}</span>
-                <span className="type-caption tabular-nums">
-                  {r.estimated_guests} {r.estimated_guests === 1 ? 'persona' : 'personas'}
+                <span className="font-mono text-xs tabular-nums">
+                  {hhmm(r.reservation_time_local)}
                 </span>
+                <span className="font-medium line-through">{r.guest_name}</span>
+                <span className="text-xs tabular-nums">{r.estimated_guests}p</span>
                 {r.cancelled_reason ? (
-                  <span className="type-caption italic">· {r.cancelled_reason}</span>
+                  <span className="text-xs italic">· {r.cancelled_reason}</span>
                 ) : null}
               </Link>
             </li>
           ))}
           {rows.length < totalCount ? (
-            <li className="px-4 py-2 type-caption text-muted-foreground">
+            <li className="px-2 py-1.5 text-xs text-muted-foreground">
               y {totalCount - rows.length} más. Filtrá por estado «Cancelada» para verlas todas.
             </li>
           ) : null}
         </ul>
       ) : null}
-    </section>
+    </div>
   )
 }

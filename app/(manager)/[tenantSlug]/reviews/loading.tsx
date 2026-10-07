@@ -1,49 +1,25 @@
-import { PageShell } from '@/components/ui/page-shell'
-import {
-  Skeleton,
-  SkeletonKPIGroup,
-  SkeletonPageHeader,
-  SkeletonStatus,
-  SkeletonText,
-} from '@/components/ui/skeleton'
+import { PageHeader } from '@/components/ui/page-header'
+import { Skeleton } from '@/components/ui/skeleton'
 
-/** Copia Reseñas: los tres números y la distribución, el filtro por estrellas y la lista. */
 export default function Loading() {
   return (
-    <PageShell aria-busy="true">
-      <SkeletonStatus />
-      <SkeletonPageHeader actions={1} />
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:items-start">
-        <SkeletonKPIGroup count={3} columns={3} />
-        <div
-          aria-hidden="true"
-          className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:p-6"
-        >
-          <Skeleton className="h-3 w-24" />
-          {['w-full', 'w-3/4', 'w-1/2', 'w-1/3', 'w-1/4'].map((width) => (
-            <Skeleton key={width} className={`h-2 ${width}`} />
-          ))}
-        </div>
+    <div className="space-y-8 py-6">
+      <PageHeader
+        eyebrow="Fidelización"
+        title="Reseñas"
+        description={<Skeleton className="h-4 w-[28rem] max-w-full" />}
+      />
+      {/* Mismo grid que ReviewsInsights: 3 tarjetas chicas + distribución. */}
+      <div className="grid gap-4 md:grid-cols-[repeat(3,minmax(0,1fr))_1.4fr]">
+        {['s1', 's2', 's3', 's4'].map((k) => (
+          <Skeleton key={k} className="h-32 w-full rounded-xl" />
+        ))}
       </div>
-      <div className="flex flex-col gap-4">
-        <Skeleton aria-hidden="true" className="h-6 w-48" />
-        <Skeleton aria-hidden="true" className="h-(--control-md) w-full max-w-md" />
-        <div
-          aria-hidden="true"
-          className="flex flex-col divide-y divide-border rounded-xl border border-border bg-card"
-        >
-          {['r1', 'r2', 'r3', 'r4'].map((key) => (
-            <div key={key} className="flex flex-col gap-3 px-4 py-4 sm:px-5">
-              <div className="flex items-center gap-3">
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="size-8 rounded-full" />
-                <Skeleton className="h-3 w-28" />
-              </div>
-              <SkeletonText lines={2} className="max-w-prose" />
-            </div>
-          ))}
-        </div>
+      <div className="space-y-3">
+        <Skeleton className="h-7 w-48" />
+        <Skeleton className="h-14 w-full rounded-xl" />
+        <Skeleton className="h-72 w-full rounded-xl" />
       </div>
-    </PageShell>
+    </div>
   )
 }

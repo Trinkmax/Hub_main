@@ -43,7 +43,7 @@ vi.mock('@/lib/realtime/subscribe', () => ({ subscribeChanges: () => () => {} })
 vi.mock('@/components/messaging/contact-button', () => ({
   ContactButton: () => createElement('button', { type: 'button' }, 'Contactar'),
 }))
-vi.mock('@/components/loyalty/punch-stamper', () => ({
+vi.mock('@/app/(manager)/[tenantSlug]/acreditar/_components/punch-stamper', () => ({
   PunchStamper: () => createElement('div', null, 'stamper'),
 }))
 

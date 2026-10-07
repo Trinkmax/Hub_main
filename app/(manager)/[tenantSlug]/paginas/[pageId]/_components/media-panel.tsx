@@ -1,15 +1,22 @@
 'use client'
 
-import { ImagePlus, Plus, Trash2 } from 'lucide-react'
+import { ImagePlus, Loader2, Plus, Trash2 } from 'lucide-react'
 import Image from 'next/image'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Button, buttonVariants } from '@/components/ui/button'
-import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
-import { ErrorState } from '@/components/ui/error-state'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Spinner } from '@/components/ui/spinner'
 import {
   deleteLandingImage,
   type LandingImage,
@@ -17,8 +24,6 @@ import {
   uploadLandingImage,
 } from '@/lib/landings/media'
 import { cn } from '@/lib/utils'
-
-const SKELETON_TILES = ['a', 'b', 'c', 'd'] as const
 
 /**
  * La galería de imágenes de las landings de este bar.
@@ -40,23 +45,19 @@ export function MediaPanel({
 }) {
   const [images, setImages] = useState<LandingImage[]>([])
   const [loading, setLoading] = useState(true)
-  const [loadFailed, setLoadFailed] = useState(false)
   // Contador y no booleano: si entra un segundo lote mientras el primero sigue,
   // el `false` del primero apagaba el spinner con archivos todavía subiendo.
   const [batches, setBatches] = useState(0)
   const uploading = batches > 0
   const [dragging, setDragging] = useState(false)
-  // La imagen a borrar queda guardada mientras el diálogo se cierra.
-  const [toDelete, setToDelete] = useState<LandingImage | null>(null)
-  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleting, setDeleting] = useState<LandingImage | null>(null)
 
   const refresh = useCallback(async () => {
     try {
       setImages(await listLandingImages(tenantId))
-      setLoadFailed(false)
     } catch (error) {
       console.error('[landings.media.list]', error)
-      setLoadFailed(true)
+      toast.error('No pudimos cargar las imágenes.')
     } finally {
       setLoading(false)
     }
@@ -90,8 +91,23 @@ export function MediaPanel({
     [tenantId],
   )
 
+  async function confirmDelete() {
+    const image = deleting
+    if (!image) return
+    try {
+      await deleteLandingImage(image.path)
+      setImages((current) => current.filter((item) => item.path !== image.path))
+      toast.success('Imagen borrada.')
+    } catch (error) {
+      console.error('[landings.media.delete]', error)
+      toast.error('No pudimos borrar la imagen.')
+    } finally {
+      setDeleting(null)
+    }
+  }
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className="space-y-4">
       {/* biome-ignore lint/a11y/noStaticElementInteractions: el drop es un atajo; el botón de adentro hace lo mismo con teclado. */}
       <div
         onDragOver={(event) => {
@@ -110,26 +126,24 @@ export function MediaPanel({
           if (event.dataTransfer.files.length > 0) void upload(event.dataTransfer.files)
         }}
         className={cn(
-          'flex flex-col items-center justify-center rounded-xl border border-dashed px-6 py-8 text-center transition-colors duration-(--duration-quick)',
-          dragging ? 'border-primary bg-selected' : 'border-border-strong',
+          'flex flex-col items-center justify-center rounded-xl border border-dashed border-border/80 bg-card/50 px-6 py-8 text-center transition-colors',
+          dragging && 'border-primary bg-primary/5',
         )}
       >
-        <div className="mb-3 flex size-10 items-center justify-center rounded-full bg-secondary text-primary">
+        <div className="mb-3 flex size-11 items-center justify-center rounded-full border border-primary/20 bg-cream-tint text-primary">
           {uploading ? (
-            <Spinner size={20} aria-hidden />
+            <Loader2 className="size-5 animate-spin" aria-hidden />
           ) : (
-            <ImagePlus className="size-5" strokeWidth={1.75} aria-hidden />
+            <ImagePlus className="size-5" aria-hidden />
           )}
         </div>
-        <p className="type-label text-foreground" aria-live="polite">
-          {uploading ? 'Subiendo…' : 'Arrastrá las fotos acá'}
-        </p>
-        <p className="mt-1 max-w-sm type-caption text-pretty text-muted-foreground">
+        <p className="text-sm font-medium">{uploading ? 'Subiendo…' : 'Arrastrá las fotos acá'}</p>
+        <p className="mt-1 max-w-sm text-xs text-muted-foreground text-pretty">
           Las achicamos y las convertimos al formato más liviano. Los GIF quedan animados. Después
           copiás el link o lo insertás directo en el código.
         </p>
-        {/* El input queda sr-only (sigue siendo enfocable): el anillo de foco lo
-            pinta el `span` que se ve, con `peer-focus-visible`. */}
+        {/* El input queda sr-only (sigue siendo focusable) y el outline global
+            está apagado: el anillo lo pinta el `span` con focus-within. */}
         <label className="mt-4">
           <input
             type="file"
@@ -141,46 +155,31 @@ export function MediaPanel({
               event.target.value = ''
             }}
           />
-          <span
-            className={cn(
-              buttonVariants({ variant: 'secondary', size: 'sm' }),
-              'cursor-pointer peer-focus-visible:outline-2',
-            )}
-          >
-            <Plus aria-hidden />
+          <span className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium shadow-2xs transition-colors hover:bg-cream-tint peer-focus-visible:ring-[3px] peer-focus-visible:ring-ring/50">
+            <Plus className="size-4" aria-hidden />
             Elegir imágenes
           </span>
         </label>
       </div>
 
       {loading ? (
-        <div aria-hidden className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          {SKELETON_TILES.map((tile) => (
-            <Skeleton key={tile} className="aspect-square rounded-xl" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((n) => (
+            <Skeleton key={n} className="aspect-square rounded-xl" />
           ))}
         </div>
-      ) : loadFailed ? (
-        <ErrorState
-          size="sm"
-          title="No pudimos cargar las imágenes"
-          description="Revisá la conexión y probá de nuevo. Las que ya subiste siguen guardadas."
-          onRetry={refresh}
-        />
       ) : images.length === 0 ? (
-        <p className="px-1 type-small text-muted-foreground">
+        <p className="px-1 text-xs text-muted-foreground">
           Todavía no subiste ninguna imagen para tus páginas.
         </p>
       ) : (
-        <ul
-          aria-label="Imágenes subidas"
-          className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
-        >
+        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {images.map((image) => (
             <li
               key={image.path}
-              className="flex flex-col overflow-clip rounded-xl border border-border bg-card"
+              className="card-hairline group relative overflow-hidden rounded-xl border bg-card"
             >
-              <div className="relative aspect-square bg-secondary">
+              <div className="relative aspect-square bg-cream-tint">
                 <Image
                   src={image.publicUrl}
                   alt=""
@@ -191,10 +190,11 @@ export function MediaPanel({
                 />
               </div>
 
-              <div className="flex items-center justify-between gap-1 border-t border-border p-1.5">
+              <div className="flex items-center justify-between gap-1 border-t border-border/60 px-1.5 py-1.5">
                 <Button
                   variant="ghost"
                   size="sm"
+                  className="h-7 px-2 text-xs"
                   onClick={() =>
                     onInsert(
                       `<img src="${image.publicUrl}" alt="" style="max-width:100%;height:auto">`,
@@ -203,25 +203,23 @@ export function MediaPanel({
                 >
                   Insertar
                 </Button>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center">
                   <CopyButton
                     value={image.publicUrl}
                     iconOnly
                     variant="ghost"
-                    size="icon-sm"
-                    label="Copiar el link de la imagen"
-                    copiedLabel="Link copiado"
+                    size="sm"
+                    label="Copiar link de la imagen"
+                    copiedLabel="¡Copiado!"
                   />
                   <Button
-                    variant="danger-ghost"
-                    size="icon-sm"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 text-muted-foreground hover:text-destructive"
                     aria-label="Borrar imagen"
-                    onClick={() => {
-                      setToDelete(image)
-                      setDeleteOpen(true)
-                    }}
+                    onClick={() => setDeleting(image)}
                   >
-                    <Trash2 aria-hidden />
+                    <Trash2 className="size-3.5" aria-hidden />
                   </Button>
                 </div>
               </div>
@@ -230,28 +228,28 @@ export function MediaPanel({
         </ul>
       )}
 
-      <ConfirmDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        tone="danger"
-        icon={Trash2}
-        title="¿Borrar la imagen?"
-        description="Si alguna página publicada la está usando, ahí va a quedar un cuadrado roto. No se puede deshacer."
-        confirmLabel="Borrar imagen"
-        pendingLabel="Borrando…"
-        onConfirm={async () => {
-          const image = toDelete
-          if (!image) return
-          try {
-            await deleteLandingImage(image.path)
-          } catch (error) {
-            console.error('[landings.media.delete]', error)
-            return { ok: false, error: 'No pudimos borrar la imagen. Probá de nuevo.' }
-          }
-          setImages((current) => current.filter((item) => item.path !== image.path))
-          toast.success('Imagen borrada.')
-        }}
-      />
+      <AlertDialog open={deleting !== null} onOpenChange={(open) => !open && setDeleting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Borrar la imagen?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Si alguna página publicada la está usando, ahí va a quedar un cuadrado roto. No se
+              puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault()
+                void confirmDelete()
+              }}
+            >
+              Sí, borrar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

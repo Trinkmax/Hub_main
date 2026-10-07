@@ -2,7 +2,7 @@
 
 import { Receipt } from 'lucide-react'
 import { useState } from 'react'
-import { Button } from '@/components/ui-legacy/button'
+import { Button } from '@/components/ui/button'
 import type { WalletData } from '@/lib/wallet/queries'
 import { formatDate } from './wallet-format'
 

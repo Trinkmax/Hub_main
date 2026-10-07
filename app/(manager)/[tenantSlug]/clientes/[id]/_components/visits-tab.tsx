@@ -1,10 +1,9 @@
+import { format } from 'date-fns'
+import { es } from 'date-fns/locale'
 import { Receipt, Star } from 'lucide-react'
-import { Amount } from '@/components/ui/amount'
-import { DataTable } from '@/components/ui/data-table'
+import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
-import { formatDateTime } from '@/lib/dates'
 import type { VisitListEntry } from '@/lib/points/queries'
-import { visitSourceLabel } from '../../_components/customer-meta'
 
 export function VisitsTab({
   visits,
@@ -15,77 +14,62 @@ export function VisitsTab({
   visits: VisitListEntry[]
   reviewedVisits?: Record<string, number>
 }) {
+  if (visits.length === 0) {
+    return (
+      <EmptyState
+        icon={Receipt}
+        title="Sin visitas registradas"
+        description="Cuando le cierres una mesa, las visitas van a aparecer acá con detalle."
+      />
+    )
+  }
+
   return (
-    <DataTable<VisitListEntry>
-      caption="Visitas del cliente"
-      rows={visits}
-      getRowId={(v) => v.id}
-      empty={
-        <EmptyState
-          size="sm"
-          icon={Receipt}
-          title="Sin visitas registradas"
-          description="Cuando le cierres una mesa, cada visita aparece acá con su total."
-        />
-      }
-      columns={[
-        {
-          id: 'fecha',
-          header: 'Fecha',
-          mobile: 'primary',
-          cell: (v) => {
-            const rating = reviewedVisits[v.id]
-            return (
-              <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="type-amount">{formatDateTime(v.visited_at)}</span>
-                {rating !== undefined ? (
-                  <span
-                    className="inline-flex items-center gap-0.5 type-caption font-semibold type-amount text-warning-text"
-                    title={`Dejó una reseña de ${rating} de 5 estrellas`}
-                  >
-                    <Star className="size-3 fill-warning text-warning" aria-hidden="true" />
-                    <span className="sr-only">Dejó una reseña de </span>
-                    {rating}
-                    <span className="sr-only"> de 5 estrellas</span>
-                  </span>
-                ) : null}
-              </span>
-            )
-          },
-        },
-        {
-          id: 'notas',
-          header: 'Notas',
-          mobile: 'secondary',
-          cell: (v) =>
-            v.notes ? (
-              <span className="line-clamp-2 text-muted-foreground">{v.notes}</span>
-            ) : (
-              <span className="text-subtle-foreground">Sin notas</span>
-            ),
-        },
-        {
-          id: 'origen',
-          header: 'Origen',
-          mobile: 'meta',
-          hideBelow: 'lg',
-          cell: (v) => <span className="text-muted-foreground">{visitSourceLabel(v.source)}</span>,
-        },
-        {
-          id: 'total',
-          header: 'Total $',
-          numeric: true,
-          width: '8rem',
-          cell: (v) => (
-            <Amount
-              cents={v.total_amount_cents}
-              decimals={0}
-              currency={false}
-              className="font-medium"
-            />
-          ),
-        },
-      ]}
-    />
+    <div className="card-hairline overflow-hidden rounded-xl border bg-card">
+      <ul className="divide-y divide-border/60">
+        {visits.map((v) => {
+          const rating = reviewedVisits[v.id]
+          return (
+            <li
+              key={v.id}
+              className="flex items-center gap-4 px-5 py-3.5 transition-colors hover:bg-secondary/30"
+            >
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
+                <Receipt className="size-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center gap-1.5 text-sm font-medium">
+                  {format(new Date(v.visited_at), "d 'de' MMM yyyy · HH:mm", { locale: es })}
+                  {rating !== undefined ? (
+                    <span
+                      className="inline-flex items-center gap-0.5 text-xs font-semibold text-amber-500 tabular-nums"
+                      title={`Dejó una reseña de ${rating} de 5 estrellas`}
+                    >
+                      <Star className="size-3 fill-amber-400 text-amber-400" aria-hidden="true" />
+                      <span className="sr-only">Dejó una reseña de </span>
+                      {rating}
+                      <span className="sr-only"> de 5 estrellas</span>
+                    </span>
+                  ) : null}
+                </p>
+                {v.notes ? (
+                  <p className="truncate text-xs text-muted-foreground">{v.notes}</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Sin notas</p>
+                )}
+              </div>
+              <div className="text-right">
+                <p className="font-display text-sm font-semibold tabular-nums">
+                  ${(v.total_amount_cents / 100).toLocaleString('es-AR')}
+                </p>
+                <Badge variant="outline" className="mt-0.5 text-[10px] capitalize">
+                  {v.source}
+                </Badge>
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
   )
 }

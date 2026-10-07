@@ -24,12 +24,11 @@ export const metadata = { title: 'Operativo' }
 export const dynamic = 'force-dynamic'
 
 // La pantalla se usa como app (acceso directo en el celular): con `cover` el
-// fondo llega hasta los bordes y `env(safe-area-inset-*)` deja de valer 0. Los
-// colores son los del papel del kit (`--background`), los mismos del layout raíz.
+// fondo llega hasta los bordes y `env(safe-area-inset-*)` deja de valer 0.
 export const viewport: Viewport = {
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f6f0e1' },
-    { media: '(prefers-color-scheme: dark)', color: '#05100b' },
+    { media: '(prefers-color-scheme: light)', color: '#f5edd7' },
+    { media: '(prefers-color-scheme: dark)', color: '#0f2a20' },
   ],
   width: 'device-width',
   initialScale: 1,

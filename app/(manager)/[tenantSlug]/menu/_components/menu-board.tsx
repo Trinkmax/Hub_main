@@ -16,11 +16,14 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import {
+  Camera,
   ChevronRight,
   FolderInput,
   FolderTree,
-  House,
+  GripVertical,
+  Home,
   MoreHorizontal,
   Move,
   Pause,
@@ -33,14 +36,22 @@ import {
 import { useRouter } from 'next/navigation'
 import { useMemo, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { PhotoButton } from '@/components/media/photo-button'
+import { StorageImage } from '@/components/media/storage-image'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { useConfirm } from '@/components/ui/confirm-dialog'
 import {
   Dialog,
-  DialogBody,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -53,16 +64,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { EmptyState } from '@/components/ui/empty-state'
-import {
-  Popover,
-  PopoverContent,
-  PopoverDescription,
-  PopoverHeader,
-  PopoverTitle,
-  PopoverTrigger,
-} from '@/components/ui/popover'
-import { Section } from '@/components/ui/section'
-import { StatusBadge } from '@/components/ui/status-badge'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { ItemTagRow } from '@/lib/item-tags/queries'
 import {
   deleteCategory,
@@ -73,13 +75,10 @@ import {
 } from '@/lib/menu/actions'
 import type { MenuCategory, MenuItem } from '@/lib/menu/queries'
 import { buildCategoryTree, categoryPath, type MenuTreeNode } from '@/lib/menu/tree'
-import { cn } from '@/lib/utils'
 import { CategoryEditDialog } from './category-edit-dialog'
 import { CategoryRow } from './category-row'
 import { CategoryTreePicker } from './category-tree-picker'
 import { MenuSearch } from './menu-search'
-import { CATEGORY_STATUS } from './menu-status'
-import { DRAGGING_CLASSES, DragHandle, ROW_LIST_CLASSES, sortableStyle } from './menu-ui'
 import { NewCategoryForm } from './new-category-form'
 import { NewItemForm } from './new-item-form'
 
@@ -91,10 +90,6 @@ function totalItemsOf(node: MenuTreeNode): number {
 // Normaliza texto para búsqueda insensible a acentos y mayúsculas.
 function norm(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-}
-
-function plural(n: number, one: string, many: string): string {
-  return `${n} ${n === 1 ? one : many}`
 }
 
 export function MenuBoard({
@@ -145,7 +140,7 @@ export function MenuBoard({
 
   if (search.trim().length > 0) {
     return (
-      <div className="flex flex-col gap-6">
+      <div className="space-y-5">
         <div className="sm:max-w-md">
           <MenuSearch value={search} onChange={setSearch} />
         </div>
@@ -153,15 +148,10 @@ export function MenuBoard({
           <EmptyState
             icon={Search}
             title="Sin resultados"
-            description={`No encontramos categorías con «${search.trim()}».`}
-            action={
-              <Button variant="secondary" onClick={() => setSearch('')}>
-                Limpiar la búsqueda
-              </Button>
-            }
+            description={`No encontramos categorías con "${search}".`}
           />
         ) : (
-          <ul className={ROW_LIST_CLASSES} aria-label="Categorías encontradas">
+          <ul className="card-hairline divide-y divide-border/60 overflow-hidden rounded-xl border bg-card">
             {searchHits.map(({ cat, path }) => (
               <li key={cat.id}>
                 <button
@@ -170,16 +160,13 @@ export function MenuBoard({
                     setSearch('')
                     setCurrentId(cat.id)
                   }}
-                  className="flex min-h-11 w-full items-center gap-2 px-4 py-2 text-left -outline-offset-2 outline-(--ring) hover:bg-hover focus-visible:outline-2 active:bg-active"
+                  className="flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-secondary/40"
                 >
-                  <FolderTree
-                    className="size-4 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <span className="flex-1 truncate type-body">
+                  <FolderTree className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                  <span className="flex-1 truncate text-sm">
                     {path.map((c) => c.name).join(' › ')}
                   </span>
-                  <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
+                  <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
                 </button>
               </li>
             ))}
@@ -190,76 +177,54 @@ export function MenuBoard({
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="sm:max-w-md">
-        <MenuSearch value={search} onChange={setSearch} />
+    <div className="space-y-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex-1 sm:max-w-md">
+          <MenuSearch value={search} onChange={setSearch} />
+        </div>
       </div>
 
-      {/* Dónde estoy: Carta › Comida › Pizzas */}
-      <nav aria-label="Ruta de categorías">
-        <ol className="flex flex-wrap items-center gap-1 type-small">
-          <li>
-            {current ? (
-              <button
-                type="button"
-                onClick={() => setCurrentId(null)}
-                className="relative hit-area inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-muted-foreground outline-offset-2 outline-(--ring) hover:bg-hover hover:text-foreground focus-visible:outline-2"
-              >
-                <House className="size-3.5" aria-hidden="true" />
-                Carta
-              </button>
-            ) : (
-              <span
-                aria-current="location"
-                className="inline-flex items-center gap-1 px-1.5 py-1 font-medium text-foreground"
-              >
-                <House className="size-3.5" aria-hidden="true" />
-                Carta
-              </span>
-            )}
-          </li>
-          {breadcrumb.map((c, index) => {
-            const isLast = index === breadcrumb.length - 1
-            return (
-              <li key={c.id} className="inline-flex items-center gap-1">
-                <ChevronRight className="size-3.5 text-subtle-foreground" aria-hidden="true" />
-                {isLast ? (
-                  <span aria-current="location" className="px-1.5 py-1 font-medium text-foreground">
-                    {c.name}
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setCurrentId(c.id)}
-                    className="relative hit-area rounded-md px-1.5 py-1 text-muted-foreground outline-offset-2 outline-(--ring) hover:bg-hover hover:text-foreground focus-visible:outline-2"
-                  >
-                    {c.name}
-                  </button>
-                )}
-              </li>
-            )
-          })}
-        </ol>
+      {/* Breadcrumb */}
+      <nav className="flex flex-wrap items-center gap-1 text-sm" aria-label="Ruta de categorías">
+        <button
+          type="button"
+          onClick={() => setCurrentId(null)}
+          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+        >
+          <Home className="size-3.5" aria-hidden />
+          Carta
+        </button>
+        {breadcrumb.map((c) => (
+          <span key={c.id} className="inline-flex items-center gap-1">
+            <ChevronRight className="size-3.5 text-muted-foreground/60" aria-hidden />
+            <button
+              type="button"
+              onClick={() => setCurrentId(c.id)}
+              className="rounded-md px-1.5 py-1 font-medium hover:bg-secondary/50"
+            >
+              {c.name}
+            </button>
+          </span>
+        ))}
       </nav>
 
-      {/* Acciones del nivel: adentro de una categoría se carga un ítem o una
-          subcategoría (en la raíz, la categoría nueva está arriba, en el encabezado). */}
-      {current ? (
-        <div className="flex flex-wrap items-center gap-2">
+      {/* Acciones del nivel */}
+      <div className="flex flex-wrap items-center gap-2">
+        {current ? (
           <Popover>
             <PopoverTrigger asChild>
-              <Button data-tour="menu-agregar-item">
-                <Plus aria-hidden="true" />
-                Agregar ítem
+              <Button size="sm" variant="outline" className="gap-1.5" data-tour="menu-agregar-item">
+                <Plus className="size-3.5" /> Agregar ítem
               </Button>
             </PopoverTrigger>
             <PopoverContent
               align="start"
-              className="flex w-[min(560px,calc(100vw-2rem))] flex-col gap-3"
+              className="w-[min(560px,calc(100vw-2rem))] p-3"
+              sideOffset={6}
             >
-              <PopoverHeader>
-                <PopoverTitle>Nuevo ítem en {current.name}</PopoverTitle>
-              </PopoverHeader>
+              <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                Nuevo ítem en {current.name}
+              </p>
               <NewItemForm
                 tenantSlug={tenantSlug}
                 tenantId={tenantId}
@@ -268,49 +233,46 @@ export function MenuBoard({
               />
             </PopoverContent>
           </Popover>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="secondary">
-                <Plus aria-hidden="true" />
-                Agregar subcategoría
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="flex w-80 flex-col gap-3">
-              <PopoverHeader>
-                <PopoverTitle>Nueva subcategoría</PopoverTitle>
-                <PopoverDescription>
-                  Adentro de {current.name}. Ej: Comida → Pizzas.
-                </PopoverDescription>
-              </PopoverHeader>
-              <NewCategoryForm tenantId={tenantId} tenantSlug={tenantSlug} parentId={current.id} />
-            </PopoverContent>
-          </Popover>
-        </div>
-      ) : null}
+        ) : null}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button size="sm" className="gap-1.5">
+              <Plus className="size-3.5" /> Agregar {current ? 'subcategoría' : 'categoría'}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-80 p-3" sideOffset={6}>
+            <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              Nueva {current ? 'subcategoría' : 'categoría'}
+            </p>
+            <NewCategoryForm
+              tenantId={tenantId}
+              tenantSlug={tenantSlug}
+              parentId={current?.id ?? null}
+            />
+          </PopoverContent>
+        </Popover>
+      </div>
 
       {/* Subcategorías primero: en una categoría contenedora SON el contenido.
           El bloque de ítems directos solo aparece cuando hay ítems (o cuando la
           categoría es hoja, para invitar a cargar el primero). */}
-      <SubcategoryList
-        key={current?.id ?? 'root'}
-        tenantSlug={tenantSlug}
-        tenantId={tenantId}
-        parentId={current?.id ?? null}
-        heading={current ? `Dentro de ${current.name}` : 'Categorías'}
-        nodes={levelNodes}
-        allCategories={categories}
-        onEnter={setCurrentId}
-      />
+      <div data-tour="menu-categorias">
+        <SubcategoryList
+          tenantSlug={tenantSlug}
+          tenantId={tenantId}
+          parentId={current?.id ?? null}
+          heading={current ? `Dentro de ${current.name}` : 'Categorías'}
+          nodes={levelNodes}
+          allCategories={categories}
+          onEnter={setCurrentId}
+        />
+      </div>
 
       {current && (levelItems.length > 0 || current.children.length === 0) ? (
-        <Section
-          title={`Ítems de ${current.name}`}
-          description={
-            levelItems.length > 1
-              ? 'Tocá un ítem para editarlo. Arrastrá desde el asa para cambiar el orden.'
-              : undefined
-          }
-        >
+        <div className="card-hairline rounded-xl border border-border/70 bg-card p-4 sm:p-5">
+          <p className="mb-3 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+            Ítems de {current.name}
+          </p>
           {/* key por categoría: CategoryRow tiene estado optimista propio (useState
               de items) y sin remount arrastraría los ítems del nivel anterior. */}
           <CategoryRow
@@ -323,15 +285,15 @@ export function MenuBoard({
             allTags={tags}
             hideAddButton
           />
-        </Section>
+        </div>
       ) : null}
 
-      {/* Dentro de una categoría, el vacío ya lo comunica la sección de ítems. */}
+      {/* Dentro de una categoría, el vacío ya lo comunica la tarjeta de ítems. */}
       {!current && levelNodes.length === 0 ? (
         <EmptyState
           icon={FolderTree}
           title="Empezá creando una categoría"
-          description="Las categorías agrupan la carta. Podés anidar subcategorías adentro."
+          description="Las categorías agrupan tu carta. Podés anidar subcategorías dentro."
         />
       ) : null}
     </div>
@@ -402,37 +364,30 @@ function SubcategoryList({
   if (order.length === 0) return null
 
   return (
-    <Section
-      title={heading}
-      description={
-        order.length > 1
-          ? 'El orden es el de la carta: arrastrá desde el asa lo que más querés vender primero.'
-          : undefined
-      }
-      data-tour="menu-categorias"
+    <DndContext
+      id="menu-subcategorias"
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={onDragEnd}
     >
-      <DndContext
-        id="menu-subcategorias"
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={onDragEnd}
-      >
-        <SortableContext items={order.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-          <ul className={ROW_LIST_CLASSES}>
-            {order.map((node) => (
-              <SubcategoryRow
-                key={node.id}
-                node={node}
-                tenantSlug={tenantSlug}
-                tenantId={tenantId}
-                allCategories={allCategories}
-                onEnter={onEnter}
-              />
-            ))}
-          </ul>
-        </SortableContext>
-      </DndContext>
-    </Section>
+      <SortableContext items={order.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+        <div className="space-y-2">
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+            {heading}
+          </p>
+          {order.map((node) => (
+            <SubcategoryRow
+              key={node.id}
+              node={node}
+              tenantSlug={tenantSlug}
+              tenantId={tenantId}
+              allCategories={allCategories}
+              onEnter={onEnter}
+            />
+          ))}
+        </div>
+      </SortableContext>
+    </DndContext>
   )
 }
 
@@ -452,13 +407,12 @@ function SubcategoryRow({
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
     id: node.id,
   })
-  const confirm = useConfirm()
   const [editing, setEditing] = useState(false)
+  const [toDelete, setToDelete] = useState(false)
   const [moving, setMoving] = useState(false)
   const [moveTarget, setMoveTarget] = useState<string | null>(node.parent_id)
   const [movingItems, setMovingItems] = useState(false)
   const [itemsTarget, setItemsTarget] = useState<string | null>(null)
-  const [movePending, startMove] = useTransition()
   const [, startTransition] = useTransition()
   const router = useRouter()
 
@@ -479,42 +433,32 @@ function SubcategoryRow({
     })
   }
 
-  const onDelete = async () => {
-    await confirm({
-      title: `¿Borrar «${node.name}» y todo su contenido?`,
-      description:
-        'Se borran sus subcategorías e ítems. Los ítems que aparecen en visitas o pedidos pasados quedan archivados (ocultos) para no romper el historial. No se puede deshacer.',
-      confirmLabel: 'Borrar todo',
-      pendingLabel: 'Borrando…',
-      tone: 'danger',
-      onConfirm: async () => {
-        const r = await deleteCategory(tenantSlug, node.id)
-        if (!r.ok) return r
-        toast.success(r.message ?? 'Categoría borrada.')
-      },
+  const onDelete = () => {
+    setToDelete(false)
+    startTransition(async () => {
+      const r = await deleteCategory(tenantSlug, node.id)
+      if (r.ok) toast.success(r.message ?? 'Categoría eliminada.')
+      else toast.error(r.message)
     })
   }
 
   const onConfirmMove = () => {
-    startMove(async () => {
+    setMoving(false)
+    startTransition(async () => {
       const r = await moveCategory(tenantSlug, { id: node.id, parent_id: moveTarget })
-      if (r.ok) {
-        toast.success('Categoría movida.')
-        setMoving(false)
-      } else {
-        toast.error(r.message)
-      }
+      if (r.ok) toast.success('Categoría movida.')
+      else toast.error(r.message)
     })
   }
 
   const onConfirmMoveItems = () => {
     if (!itemsTarget || directItems === 0) return
     const ids = node.items.map((i) => i.id)
-    startMove(async () => {
+    setMovingItems(false)
+    startTransition(async () => {
       const r = await moveItemsToCategory(tenantSlug, ids, itemsTarget)
       if (r.ok) {
         toast.success(r.message ?? 'Ítems movidos.')
-        setMovingItems(false)
         router.refresh()
       } else {
         toast.error(r.message)
@@ -522,68 +466,92 @@ function SubcategoryRow({
     })
   }
 
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.55 : 1,
+  }
+
   return (
-    <li
+    <div
       ref={setNodeRef}
-      style={sortableStyle(transform, transition, isDragging)}
-      className={cn('flex items-center gap-2 bg-card px-2 py-2', isDragging && DRAGGING_CLASSES)}
+      style={style}
+      className="card-hairline group flex items-center gap-2 rounded-xl border border-border/70 bg-card p-2 pr-3 transition-[box-shadow,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:shadow-md"
     >
-      <DragHandle label={`Mover ${node.name}`} attributes={attributes} listeners={listeners} />
-      <PhotoButton
-        src={node.image_url}
-        sizes="48px"
-        fallbackIcon={FolderTree}
-        label={`Cambiar el nombre y la foto de ${node.name}`}
+      <button
+        {...attributes}
+        {...listeners}
+        type="button"
+        aria-label={`Mover ${node.name}`}
+        className="cursor-grab rounded-md p-1 text-muted-foreground hover:bg-secondary hover:text-foreground active:cursor-grabbing"
+      >
+        <GripVertical className="size-4" />
+      </button>
+      <button
+        type="button"
         onClick={() => setEditing(true)}
-      />
+        aria-label={`Editar foto y nombre de ${node.name}`}
+        title="Foto de la categoría"
+        className="group/foto relative flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-secondary/50 transition-shadow hover:ring-2 hover:ring-primary/50"
+      >
+        {node.image_url ? (
+          <StorageImage src={node.image_url} alt="" sizes="48px" />
+        ) : (
+          <FolderTree className="size-5 text-muted-foreground/70" aria-hidden />
+        )}
+        <span className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 transition-opacity group-hover/foto:opacity-100">
+          <Camera className="size-4 text-white" aria-hidden />
+        </span>
+      </button>
       <button
         type="button"
         onClick={() => onEnter(node.id)}
-        className="group/entrar ms-1 flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-md px-1 text-left outline-offset-2 outline-(--ring) focus-visible:outline-2"
+        className="flex min-w-0 flex-1 items-center gap-3 text-left"
       >
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
-            <span
-              className={cn(
-                'truncate type-body font-medium',
-                node.active ? 'text-foreground' : 'text-muted-foreground',
-              )}
-            >
+            <span className="truncate font-serif text-base font-semibold tracking-tight">
               {node.name}
             </span>
-            {node.active ? null : <StatusBadge status="paused" map={CATEGORY_STATUS} />}
+            {!node.active ? (
+              <Badge variant="muted" className="shrink-0 text-[10px]">
+                Pausada
+              </Badge>
+            ) : null}
           </span>
-          <span className="type-caption type-amount text-muted-foreground">
+          <span className="block text-xs tabular-nums text-muted-foreground">
             {subcats > 0
-              ? `${plural(subcats, 'subcategoría', 'subcategorías')} · ${plural(totalItems, 'ítem', 'ítems')} en total`
-              : plural(directItems, 'ítem', 'ítems')}
+              ? `${subcats} subcategoría${subcats === 1 ? '' : 's'} · ${totalItems} ítem${totalItems === 1 ? '' : 's'} en total`
+              : `${directItems} ítem${directItems === 1 ? '' : 's'}`}
           </span>
         </span>
-        <span className="hidden shrink-0 items-center gap-1 type-label text-muted-foreground group-hover/entrar:text-foreground sm:inline-flex">
-          Entrar
-        </span>
-        <ChevronRight
-          className="size-4 shrink-0 text-muted-foreground group-hover/entrar:text-foreground"
-          aria-hidden="true"
-        />
       </button>
+      <span className="hidden shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground/80 transition-colors group-hover:text-foreground sm:flex">
+        Entrar
+        <ChevronRight
+          className="size-4 transition-transform duration-[var(--duration-fast)] group-hover:translate-x-0.5"
+          aria-hidden
+        />
+      </span>
+      <ChevronRight className="size-4 shrink-0 text-muted-foreground sm:hidden" aria-hidden />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             type="button"
-            size="icon-sm"
+            size="icon"
             variant="ghost"
+            className="size-8 text-muted-foreground hover:text-foreground"
             aria-label={`Acciones de ${node.name}`}
           >
-            <MoreHorizontal aria-hidden="true" />
+            <MoreHorizontal className="size-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="w-44">
           <DropdownMenuItem onSelect={() => setEditing(true)}>
-            <Pencil aria-hidden="true" /> Editar (nombre y foto)
+            <Pencil className="size-3.5" /> Editar (nombre y foto)
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setMoving(true)}>
-            <Move aria-hidden="true" /> Mover a…
+            <Move className="size-3.5" /> Mover a…
           </DropdownMenuItem>
           <DropdownMenuItem
             disabled={directItems === 0}
@@ -592,22 +560,22 @@ function SubcategoryRow({
               setMovingItems(true)
             }}
           >
-            <FolderInput aria-hidden="true" /> Mover los ítems a…
+            <FolderInput className="size-3.5" /> Mover ítems a…
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={onToggle}>
             {node.active ? (
               <>
-                <Pause aria-hidden="true" /> Pausar
+                <Pause className="size-3.5" /> Pausar
               </>
             ) : (
               <>
-                <Play aria-hidden="true" /> Activar
+                <Play className="size-3.5" /> Activar
               </>
             )}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" onSelect={onDelete}>
-            <Trash2 aria-hidden="true" /> Borrar
+          <DropdownMenuItem variant="destructive" onSelect={() => setToDelete(true)}>
+            <Trash2 className="size-3.5" /> Eliminar
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -625,30 +593,25 @@ function SubcategoryRow({
       <Dialog
         open={moving}
         onOpenChange={(o) => {
-          if (movePending) return
           if (!o) setMoveTarget(node.parent_id)
           setMoving(o)
         }}
       >
-        <DialogContent size="sm">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Mover «{node.name}»</DialogTitle>
-            <DialogDescription>Elegí la categoría que la va a contener.</DialogDescription>
+            <DialogTitle>Mover "{node.name}"</DialogTitle>
           </DialogHeader>
-          <DialogBody>
-            <CategoryTreePicker
-              categories={allCategories}
-              value={moveTarget}
-              onChange={setMoveTarget}
-              excludeSubtreeOf={node.id}
-              allowRoot
-              aria-label="Categoría destino"
-            />
-          </DialogBody>
+          <p className="text-sm text-muted-foreground">Elegí la categoría que la va a contener.</p>
+          <CategoryTreePicker
+            categories={allCategories}
+            value={moveTarget}
+            onChange={setMoveTarget}
+            excludeSubtreeOf={node.id}
+            allowRoot
+          />
           <DialogFooter>
             <Button
-              variant="secondary"
-              disabled={movePending}
+              variant="outline"
               onClick={() => {
                 setMoving(false)
                 setMoveTarget(node.parent_id)
@@ -656,45 +619,38 @@ function SubcategoryRow({
             >
               Cancelar
             </Button>
-            <Button onClick={onConfirmMove} loading={movePending} loadingText="Moviendo…">
-              Mover
-            </Button>
+            <Button onClick={onConfirmMove}>Mover</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Mover TODOS los ítems de esta categoría a otra (atajo masivo) */}
+      {/* Mover TODOS los ítems de esta categoría a otra (atajo bulk) */}
       <Dialog
         open={movingItems}
         onOpenChange={(o) => {
-          if (movePending) return
           if (!o) setItemsTarget(null)
           setMovingItems(o)
         }}
       >
-        <DialogContent size="sm">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              Mover {plural(directItems, 'ítem', 'ítems')} de «{node.name}»
+              Mover {directItems} ítem{directItems === 1 ? '' : 's'} de "{node.name}"
             </DialogTitle>
-            <DialogDescription>
-              Todos los ítems de esta categoría pasan a la que elijas. Las subcategorías quedan como
-              están.
-            </DialogDescription>
           </DialogHeader>
-          <DialogBody>
-            <CategoryTreePicker
-              categories={allCategories}
-              value={itemsTarget}
-              onChange={setItemsTarget}
-              excludeIds={[node.id]}
-              aria-label="Categoría destino"
-            />
-          </DialogBody>
+          <p className="text-sm text-muted-foreground">
+            Se mueven todos los ítems de esta categoría a la que elijas. Las subcategorías quedan
+            como están.
+          </p>
+          <CategoryTreePicker
+            categories={allCategories}
+            value={itemsTarget}
+            onChange={setItemsTarget}
+            excludeIds={[node.id]}
+          />
           <DialogFooter>
             <Button
-              variant="secondary"
-              disabled={movePending}
+              variant="outline"
               onClick={() => {
                 setMovingItems(false)
                 setItemsTarget(null)
@@ -702,17 +658,37 @@ function SubcategoryRow({
             >
               Cancelar
             </Button>
-            <Button
-              onClick={onConfirmMoveItems}
-              disabled={!itemsTarget}
-              loading={movePending}
-              loadingText="Moviendo…"
-            >
-              Mover los ítems
+            <Button onClick={onConfirmMoveItems} disabled={!itemsTarget}>
+              Mover ítems
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </li>
+
+      {/* Eliminar en cascada */}
+      <AlertDialog open={toDelete} onOpenChange={setToDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar "{node.name}" y todo su contenido?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se borran sus subcategorías e ítems. Los ítems que aparezcan en visitas o pedidos
+              pasados quedan archivados (ocultos) para no romper el historial. No se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                onDelete()
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Eliminar todo
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   )
 }

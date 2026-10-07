@@ -56,7 +56,7 @@ export function TourLauncher({
     <>
       <Button
         type="button"
-        variant="secondary"
+        variant="outline"
         size="sm"
         onClick={() => setOpen(true)}
         className={className}

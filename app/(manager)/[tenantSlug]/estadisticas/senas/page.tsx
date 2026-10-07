@@ -1,3 +1,5 @@
+import { ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
@@ -79,7 +81,15 @@ export default async function SenasPage({
   return (
     <PageShell width="comfortable">
       <PageHeader
-        back={{ href: `/${tenantSlug}/estadisticas`, label: 'Estadísticas' }}
+        eyebrow={
+          <Link
+            href={`/${tenantSlug}/estadisticas`}
+            className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="size-3.5" />
+            Estadísticas
+          </Link>
+        }
         title="Señas"
         description="La plata que entra por señas, día por día. Cuenta todas las reservas: las que están en pie y las que se cayeron."
       />

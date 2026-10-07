@@ -1,3 +1,5 @@
+import { ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { countReservationsByCakeOption, listCakeOptions } from '@/lib/salon/queries'
@@ -7,7 +9,6 @@ import {
   requireTenantAccess,
   TenantNotFoundError,
 } from '@/lib/tenant'
-import { settingsHref } from '../_components/settings-nav'
 import { CakeCatalogEditor } from './_components/cake-catalog-editor'
 
 export const metadata = { title: 'Tortas de cumpleaños' }
@@ -36,13 +37,21 @@ export default async function TortasConfigPage({
   ])
 
   return (
-    <>
+    <div className="space-y-6">
       <PageHeader
-        back={{ href: settingsHref(tenantSlug), label: 'Configuración' }}
+        eyebrow={
+          <Link
+            href={`/${tenantSlug}/configuracion`}
+            className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="size-3.5" />
+            Configuración
+          </Link>
+        }
         title="Tortas de cumpleaños"
-        description="El menú de tortas que hace el bar. Cuando una reserva de cumpleaños lleva torta, quien la carga elige de esta lista, y la cocina sabe cuál hacer."
+        description="El menú de tortas que hace el bar. Cuando una reserva de cumpleaños marca que lleva torta, quien la carga elige de esta lista — y la cocina sabe cuál hacer."
       />
       <CakeCatalogEditor tenantSlug={tenantSlug} initial={options} usage={usage} />
-    </>
+    </div>
   )
 }

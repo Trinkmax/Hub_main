@@ -1,6 +1,5 @@
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import { resolveEarnRate } from '@/lib/points/earn-rate'
 import { listRules } from '@/lib/points/queries'
 import {
@@ -37,13 +36,13 @@ export default async function AcreditarPage({
   const earnRate = resolveEarnRate(await listRules({ tenantId }))
 
   return (
-    // Una sola columna angosta: es una pantalla de mostrador, se usa en la tablet.
-    <PageShell width="compact" className="max-w-xl">
+    <div className="mx-auto w-full max-w-xl space-y-6 px-4 py-8 sm:px-6">
       <PageHeader
+        eyebrow="Cajero"
         title="Acreditar puntos"
-        description="Un escáner para todo: el QR del socio acredita y sella, el QR de un canje lo entrega."
+        description="Un escáner para todo: QR del socio para acreditar y sellar, QR de canje para entregarlo."
       />
       <AwardScreen tenantSlug={tenantSlug} earnRate={earnRate} />
-    </PageShell>
+    </div>
   )
 }

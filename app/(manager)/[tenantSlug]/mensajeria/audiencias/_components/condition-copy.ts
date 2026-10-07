@@ -9,7 +9,6 @@ import type {
   ConditionField,
   ConditionOp,
 } from '@/lib/audiences/schemas'
-import { formatCents } from '@/lib/money/format'
 
 export type ValueKind =
   | 'number'
@@ -212,8 +211,7 @@ function valueLabel(
     case 'pesos': {
       const cents = Number(raw)
       if (!Number.isFinite(cents)) return '…'
-      // Pesos enteros con el formato del kit (sin `Intl`: igual en server y cliente).
-      return formatCents(cents, { decimals: 0 })
+      return `$ ${Math.round(cents / 100).toLocaleString('es-AR')}`
     }
     case 'month': {
       const idx = Number(raw)

@@ -1,12 +1,9 @@
 'use client'
 
-import { X } from 'lucide-react'
+import { Mail, Search, Star, Users, X } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { useState, useTransition } from 'react'
+import { useTransition } from 'react'
 import { Button } from '@/components/ui/button'
-import { Combobox, type EntityOption } from '@/components/ui/combobox'
-import { SearchField } from '@/components/ui/input'
-import { SegmentedControl } from '@/components/ui/segmented-control'
 import {
   Select,
   SelectContent,
@@ -14,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
+import { cn } from '@/lib/utils'
 
 type Tag = { id: string; name: string; color: string }
 
@@ -26,28 +23,17 @@ export type ProgramaCounts = {
 
 type Programa = 'all' | 'with_points' | 'contact_only'
 
-const PROGRAMA_OPTIONS: { value: Programa; label: string; hint: string }[] = [
-  { value: 'all', label: 'Todos', hint: 'toda la base' },
-  { value: 'with_points', label: 'Con puntos', hint: 'ya consumieron' },
-  { value: 'contact_only', label: 'Solo contacto', hint: 'todavía sin visitas' },
+const PROGRAMA_TABS: {
+  value: Programa
+  label: string
+  icon: typeof Users
+  hint: string
+}[] = [
+  { value: 'all', label: 'Todos', icon: Users, hint: 'Base completa' },
+  { value: 'with_points', label: 'Con puntos', icon: Star, hint: 'Ya consumieron' },
+  { value: 'contact_only', label: 'Solo contacto', icon: Mail, hint: 'Sin visitas' },
 ]
 
-const SINCE_OPTIONS = [
-  { value: 'any', label: 'Cualquier visita' },
-  { value: '30d', label: 'Últimos 30 días' },
-  { value: '90d', label: 'Últimos 90 días' },
-  { value: 'never', label: 'Sin visitas' },
-] as const
-
-/**
- * Los filtros de la lista de clientes, en la barra de la tabla (kit HUB §5.2).
- * Todo vive en la URL, como antes: `q`, `programa`, `tag` y `since`; cambiar
- * cualquiera vuelve a la página 1. El `segment` del menú (Reservas, Walk-in)
- * no se toca: «Limpiar filtros» lo conserva.
- *
- * Devuelve los controles sueltos (un fragmento): la página los pone adentro de
- * `DataTableToolbar`, que los alinea en una fila del mismo alto.
- */
 export function CustomersFilters({
   tags,
   programaCounts,
@@ -60,125 +46,135 @@ export function CustomersFilters({
   const searchParams = useSearchParams()
   const [pending, start] = useTransition()
 
-  const hrefWith = (key: string, value: string | null) => {
+  const setParam = (key: string, value: string | null) => {
     const next = new URLSearchParams(searchParams.toString())
     if (value && value.length > 0) next.set(key, value)
     else next.delete(key)
     next.delete('page')
-    const query = next.toString()
-    return query ? `${pathname}?${query}` : pathname
-  }
-
-  const setParam = (key: string, value: string | null) => {
-    start(() => router.replace(hrefWith(key, value), { scroll: false }))
+    start(() => router.replace(`${pathname}?${next.toString()}`, { scroll: false }))
   }
 
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    const q = new FormData(e.currentTarget).get('q')
-    setParam('q', typeof q === 'string' ? q.trim() : null)
+    const fd = new FormData(e.currentTarget)
+    const q = fd.get('q')
+    setParam('q', typeof q === 'string' ? q : null)
+  }
+
+  const clearAll = () => {
+    start(() => router.replace(pathname, { scroll: false }))
   }
 
   const q = searchParams.get('q') ?? ''
-  // El texto del buscador sigue a la URL cuando cambia desde afuera («Limpiar
-  // filtros», atrás); al buscar, la URL ya dice lo tipeado y el foco se queda.
-  const [text, setText] = useState(q)
-  const [syncedQ, setSyncedQ] = useState(q)
-  if (q !== syncedQ) {
-    setSyncedQ(q)
-    setText(q)
-  }
   const tag = searchParams.get('tag') ?? ''
   const since = searchParams.get('since') ?? ''
-  const segment = searchParams.get('segment')
   const programaRaw = searchParams.get('programa') ?? 'all'
   const programa: Programa =
     programaRaw === 'with_points' || programaRaw === 'contact_only' ? programaRaw : 'all'
   const hasFilters = q.length > 0 || tag.length > 0 || since.length > 0 || programa !== 'all'
 
-  const clearAll = () => {
-    const next = segment ? `${pathname}?${new URLSearchParams({ segment })}` : pathname
-    start(() => router.replace(next, { scroll: false }))
-  }
-
-  const tagOptions: EntityOption[] = tags.map((t) => ({ value: t.id, label: t.name }))
-
   return (
-    <>
-      <search className="flex min-w-48 flex-1">
-        <form onSubmit={onSubmit} className="flex w-full items-center gap-2">
-          <SearchField
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            aria-label="Buscar clientes por nombre o teléfono"
-            placeholder="Buscar por nombre o teléfono"
-            onClear={() => {
-              setText('')
-              if (q) setParam('q', null)
-            }}
-          />
-          <Button type="submit" variant="secondary">
-            Buscar
-          </Button>
-        </form>
-      </search>
-
-      {/* En un celular angosto las tres opciones con sus cuentas pueden no
-          entrar: el segmentado se desliza solo (overflow="scroll", el default). */}
-      <SegmentedControl
-        aria-label="Programa de puntos"
-        value={programa}
-        items={PROGRAMA_OPTIONS.map((option) => ({
-          value: option.value,
-          label: (
-            <>
-              {option.label}
-              <span className="sr-only"> ({option.hint})</span>
-            </>
-          ),
-          count: programaCounts[option.value],
-          href: hrefWith('programa', option.value === 'all' ? null : option.value),
-        }))}
-      />
-
-      {tags.length > 0 ? (
-        <Combobox
-          options={tagOptions}
-          value={tag || null}
-          onValueChange={(value) => setParam('tag', typeof value === 'string' ? value : null)}
-          placeholder="Todas las etiquetas"
-          searchPlaceholder="Buscar etiqueta"
-          emptyText="No hay una etiqueta con ese nombre."
-          clearable
-          aria-label="Filtrar por etiqueta"
-          className="w-full sm:w-52"
-        />
-      ) : null}
-
-      <Select
-        value={since || 'any'}
-        onValueChange={(v) => setParam('since', v === 'any' ? null : v)}
+    <div className="space-y-2" aria-busy={pending}>
+      <div
+        role="tablist"
+        aria-label="Segmento de clientes"
+        className="card-hairline flex w-full overflow-x-auto rounded-xl border bg-card/60 p-1"
       >
-        <SelectTrigger aria-label="Filtrar por última visita" className="w-full sm:w-48">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {SINCE_OPTIONS.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+        {PROGRAMA_TABS.map((tab) => {
+          const active = programa === tab.value
+          const count = programaCounts[tab.value]
+          const Icon = tab.icon
+          return (
+            <button
+              key={tab.value}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setParam('programa', tab.value === 'all' ? null : tab.value)}
+              className={cn(
+                'flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors sm:text-sm',
+                active
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <Icon className="size-3.5" />
+              <span>{tab.label}</span>
+              <span
+                className={cn(
+                  'ml-1 inline-flex min-w-[1.5rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums',
+                  active ? 'bg-primary/15 text-primary' : 'bg-secondary/60 text-muted-foreground',
+                )}
+              >
+                {count.toLocaleString('es-AR')}
+              </span>
+              <span className="sr-only">{tab.hint}</span>
+            </button>
+          )
+        })}
+      </div>
 
-      {hasFilters ? (
-        <Button type="button" variant="ghost" onClick={clearAll}>
-          <X aria-hidden="true" />
-          Limpiar filtros
+      <form
+        onSubmit={onSubmit}
+        className="card-hairline flex flex-col gap-2 rounded-xl border bg-card/60 p-2 sm:flex-row sm:items-center"
+      >
+        <label className="relative flex flex-1 items-center">
+          <Search className="pointer-events-none absolute left-3 size-4 text-muted-foreground" />
+          <input
+            name="q"
+            defaultValue={q}
+            placeholder="Buscar por nombre o teléfono…"
+            autoComplete="off"
+            className="h-9 w-full rounded-lg border border-transparent bg-background/40 pl-9 pr-3 text-sm shadow-none outline-none placeholder:text-muted-foreground/70 focus:border-ring focus:ring-2 focus:ring-ring/40"
+          />
+        </label>
+
+        <Select value={tag || 'all'} onValueChange={(v) => setParam('tag', v === 'all' ? null : v)}>
+          <SelectTrigger className="h-9 sm:w-[180px]">
+            <SelectValue placeholder="Etiqueta" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas las etiquetas</SelectItem>
+            {tags.map((t) => (
+              <SelectItem key={t.id} value={t.id}>
+                {t.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={since || 'any'}
+          onValueChange={(v) => setParam('since', v === 'any' ? null : v)}
+        >
+          <SelectTrigger className="h-9 sm:w-[180px]">
+            <SelectValue placeholder="Última visita" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="any">Cualquier visita</SelectItem>
+            <SelectItem value="30d">Últimos 30 días</SelectItem>
+            <SelectItem value="90d">Últimos 90 días</SelectItem>
+            <SelectItem value="never">Nunca volvió</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {hasFilters ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={clearAll}
+            className="h-9 gap-1.5 text-muted-foreground"
+          >
+            <X className="size-3.5" />
+            Limpiar
+          </Button>
+        ) : null}
+
+        <Button type="submit" size="sm" className="h-9">
+          Buscar
         </Button>
-      ) : null}
-
-      {pending ? <Spinner size={16} label="Actualizando la lista…" /> : null}
-    </>
+      </form>
+    </div>
   )
 }

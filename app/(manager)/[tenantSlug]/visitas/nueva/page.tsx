@@ -1,6 +1,7 @@
+import { ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import { listActiveMenu } from '@/lib/menu/queries'
 import { listRules } from '@/lib/points/queries'
 import {
@@ -36,11 +37,18 @@ export default async function NuevaVisitaPage({
   ])
 
   return (
-    <PageShell width="comfortable">
+    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      <Link
+        href={`/${tenantSlug}`}
+        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="size-3" />
+        Volver al resumen
+      </Link>
       <PageHeader
-        back={{ href: `/${tenantSlug}`, label: 'Resumen' }}
+        eyebrow="Operación"
         title="Cerrar mesa"
-        description="Identificá al cliente, cargá lo que consumió y dale los puntos en pocos toques."
+        description="Identificá al cliente, cargá el consumo y otorgá los puntos en pocos toques."
       />
       <CloseTableWizard
         tenantSlug={tenantSlug}
@@ -48,6 +56,6 @@ export default async function NuevaVisitaPage({
         items={menu.items}
         rules={rules}
       />
-    </PageShell>
+    </div>
   )
 }

@@ -24,9 +24,9 @@ export function ZeroAreaCta({ slug }: { slug: string }) {
   }
 
   return (
-    <Button type="button" onClick={onClick} loading={pending} loadingText="Creando…">
-      <Plus aria-hidden />
-      Crear la primera área
+    <Button type="button" onClick={onClick} disabled={pending} className="gap-1.5">
+      <Plus className="size-4" aria-hidden />
+      {pending ? 'Creando…' : 'Crear primera área'}
     </Button>
   )
 }

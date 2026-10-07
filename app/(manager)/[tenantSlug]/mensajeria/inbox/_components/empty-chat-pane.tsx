@@ -14,8 +14,7 @@ export function EmptyChatPane({
         <span className="flex size-24 items-center justify-center rounded-full bg-(--wa-panel)">
           <MessageCircle className="size-11 text-(--wa-muted)" strokeWidth={1.5} aria-hidden />
         </span>
-        {/* Plano, con un aro del fondo para separarlo del círculo (sin sombra). */}
-        <span className="absolute -right-1 -bottom-1 flex size-9 items-center justify-center rounded-full bg-(--wa-accent-deep) text-(--wa-panel) ring-4 ring-(--wa-panel-soft)">
+        <span className="absolute -bottom-1 -right-1 flex size-9 items-center justify-center rounded-full bg-(--wa-accent) text-white shadow-md">
           <Star className="size-4.5" aria-hidden />
         </span>
       </div>
@@ -36,7 +35,7 @@ export function EmptyChatPane({
         ) : (
           <>
             <Unplug className="size-3" aria-hidden />
-            Todavía no conectaste tu WhatsApp: hacelo desde Ajustes, en Canales conectados.
+            Todavía no conectaste tu WhatsApp: hacelo desde el engranaje → Canales
           </>
         )}
       </p>

@@ -1,11 +1,10 @@
-import { Plus, UsersRound } from 'lucide-react'
+import { format } from 'date-fns'
+import { ChevronRight, Plus, UsersRound } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { DataTable } from '@/components/ui/data-table'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
-import { PageShell } from '@/components/ui/page-shell'
 import {
   type AudienceBuilderOptions,
   type AudienceListRow,
@@ -13,8 +12,6 @@ import {
   listAudiences,
 } from '@/lib/audiences/queries'
 import type { AudienceFilter } from '@/lib/audiences/schemas'
-import { formatDateTime } from '@/lib/dates'
-import { formatNumber } from '@/lib/format/number-kind'
 import {
   RoleRequiredError,
   requireRole,
@@ -51,93 +48,75 @@ export default async function AudiencesPage({
     getAudienceBuilderOptions(access.tenant.id),
   ])
   const summaries = buildSummaries(audiences, options)
-  const newHref = `/${tenantSlug}/mensajeria/audiencias/nueva`
 
   return (
-    <PageShell width="comfortable">
+    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <PageHeader
+        eyebrow="Mensajería"
         title="Audiencias"
         description="Grupos de clientes (frecuentes, cumpleañeros, los que no vienen) para usar en difusiones y automatizaciones."
         actions={
-          audiences.length > 0 ? (
-            <Button asChild>
-              <Link href={newHref}>
-                <Plus aria-hidden />
-                Nueva audiencia
-              </Link>
-            </Button>
-          ) : null
+          <Button asChild className="gap-2">
+            <Link href={`/${tenantSlug}/mensajeria/audiencias/nueva`}>
+              <Plus className="size-4" />
+              Nueva audiencia
+            </Link>
+          </Button>
         }
       />
 
       {audiences.length === 0 ? (
         <EmptyState
-          size="lg"
           icon={UsersRound}
-          title="Todavía no armaste audiencias"
-          description="Una audiencia es un grupo de clientes con condiciones simples, como «frecuentes que no vinieron en 30 días». Después la usás para mandar difusiones o automatizaciones."
+          title="Aún no hay audiencias"
+          description="Las audiencias son grupos de clientes con condiciones simples (ej: 'frecuentes que no vinieron en 30 días'). Sirven para difusiones y automatizaciones."
           action={
-            <Button asChild>
-              <Link href={newHref}>
-                <Plus aria-hidden />
-                Armar la primera audiencia
+            <Button asChild className="gap-2">
+              <Link href={`/${tenantSlug}/mensajeria/audiencias/nueva`}>
+                <Plus className="size-4" />
+                Crear primera audiencia
               </Link>
             </Button>
           }
         />
       ) : (
-        <DataTable
-          caption="Audiencias"
-          rows={audiences}
-          getRowId={(a) => a.id}
-          rowHref={(a) => `/${tenantSlug}/mensajeria/audiencias/${a.id}`}
-          rowLabel={(a) => a.name}
-          columns={[
-            {
-              id: 'name',
-              header: 'Audiencia',
-              cell: (a) => (
-                <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="truncate">{a.name}</span>
-                  <span className="line-clamp-2 type-small font-normal text-muted-foreground">
-                    {summaries.get(a.id) ?? 'Grupo de clientes.'}
-                  </span>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {audiences.map((a) => (
+            <Link
+              key={a.id}
+              href={`/${tenantSlug}/mensajeria/audiencias/${a.id}`}
+              className="group flex flex-col gap-2.5 rounded-xl border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-secondary/30"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 truncate text-sm font-medium group-hover:text-primary">
+                  {a.name}
+                </p>
+                <ChevronRight
+                  className="size-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground"
+                  aria-hidden
+                />
+              </div>
+              <p className="flex items-baseline gap-1.5">
+                <span className="font-display text-3xl font-semibold leading-none tabular-nums">
+                  {a.customer_count_cached.toLocaleString('es-AR')}
                 </span>
-              ),
-            },
-            {
-              id: 'customers',
-              header: 'Clientes',
-              numeric: true,
-              width: '8rem',
-              cell: (a) => (
-                <>
-                  {formatNumber(a.customer_count_cached)}
-                  {/* En la tarjeta del celular no está el encabezado «Clientes»: sin
-                      la unidad quedaba un número suelto. */}
-                  <span className="font-normal text-muted-foreground md:hidden">
-                    {a.customer_count_cached === 1 ? ' cliente' : ' clientes'}
-                  </span>
-                </>
-              ),
-            },
-            {
-              id: 'calculated',
-              header: 'Último conteo',
-              width: '11rem',
-              mobile: 'meta',
-              cell: (a) => (
-                <span className="type-small text-muted-foreground">
-                  {a.last_calculated_at
-                    ? formatDateTime(a.last_calculated_at)
-                    : 'Todavía no se calculó'}
+                <span className="text-sm text-muted-foreground">
+                  {a.customer_count_cached === 1 ? 'cliente' : 'clientes'}
                 </span>
-              ),
-            },
-          ]}
-        />
+              </p>
+              <p className="line-clamp-2 min-h-10 text-xs leading-relaxed text-muted-foreground">
+                {summaries.get(a.id) ?? 'Grupo de clientes.'}
+              </p>
+              <p className="mt-auto text-[11px] text-muted-foreground/70">
+                {a.last_calculated_at
+                  ? `Calculado el ${format(new Date(a.last_calculated_at), 'dd/MM/yyyy HH:mm')}`
+                  : 'Todavía no se calculó'}
+              </p>
+            </Link>
+          ))}
+        </div>
       )}
-    </PageShell>
+    </div>
   )
 }
 
@@ -150,7 +129,7 @@ function buildSummaries(
     try {
       map.set(detail.id, summarizeFilter(detail.filters as unknown as AudienceFilter, options))
     } catch {
-      // Filtro con forma inesperada: la fila sigue mostrándose sin resumen.
+      // Filtro con forma inesperada: la card sigue mostrándose sin resumen.
     }
   }
   return map

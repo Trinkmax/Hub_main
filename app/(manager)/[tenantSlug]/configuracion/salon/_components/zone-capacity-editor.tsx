@@ -1,13 +1,11 @@
 'use client'
 
-import { Save } from 'lucide-react'
-import { type FormEvent, useState, useTransition } from 'react'
+import { Layers, Loader2, Save } from 'lucide-react'
+import { useId, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Field, FieldRow } from '@/components/ui/field'
-import { FormActions } from '@/components/ui/form-actions'
-import { NumberField } from '@/components/ui/number-field'
-import { Section } from '@/components/ui/section'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { setZoneCapacityDefaults } from '@/lib/salon/actions'
 import { ZONE_LABELS } from '@/lib/salon/types'
 
@@ -24,8 +22,15 @@ import { ZONE_LABELS } from '@/lib/salon/types'
  * era la receta para que el calendario mostrara uno y la config el otro.
  */
 
-/** El tope de cada planta (lo que acepta la action). Vacío cuenta como 0 al guardar. */
-const MAX_PER_ZONE = 999
+/** Solo dígitos y hasta 3 (el tope es 999). Vacío cuenta como 0 al guardar. */
+function onlyDigits(raw: string): string {
+  return raw.replace(/\D/g, '').slice(0, 3)
+}
+
+function toCount(raw: string): number {
+  const n = Number(raw)
+  return raw.trim() === '' || !Number.isFinite(n) ? 0 : n
+}
 
 export function ZoneCapacityEditor({
   tenantSlug,
@@ -34,19 +39,17 @@ export function ZoneCapacityEditor({
   tenantSlug: string
   defaults: { planta_alta: number; planta_baja: number }
 }) {
-  const [pa, setPA] = useState<number | null>(defaults.planta_alta)
-  const [pb, setPB] = useState<number | null>(defaults.planta_baja)
+  const baseId = useId()
+  const [pa, setPA] = useState(String(defaults.planta_alta))
+  const [pb, setPB] = useState(String(defaults.planta_baja))
   const [saved, setSaved] = useState(defaults)
   const [pending, startTransition] = useTransition()
 
-  const total = (pa ?? 0) + (pb ?? 0)
-  const dirty = (pa ?? 0) !== saved.planta_alta || (pb ?? 0) !== saved.planta_baja
+  const total = toCount(pa) + toCount(pb)
+  const dirty = toCount(pa) !== saved.planta_alta || toCount(pb) !== saved.planta_baja
 
-  // Un número que no se entiende frena el envío antes de llegar acá (el campo
-  // muestra por qué).
-  function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const next = { planta_alta: pa ?? 0, planta_baja: pb ?? 0 }
+  function save() {
+    const next = { planta_alta: toCount(pa), planta_baja: toCount(pb) }
     startTransition(async () => {
       try {
         const r = await setZoneCapacityDefaults(tenantSlug, next)
@@ -67,53 +70,78 @@ export function ZoneCapacityEditor({
   }
 
   return (
-    <Section
-      divider
-      title="Cupo general por planta"
-      description={
-        <>
-          Se usa para los servicios que no configuraste arriba: PA + PB ={' '}
-          <span className="type-amount font-semibold text-foreground">{total}</span> personas por
-          servicio.{total === 0 ? ' Con 0, esos servicios quedan sin tope.' : null}
-        </>
-      }
+    <section
+      aria-labelledby={`${baseId}-title`}
+      className="card-hairline min-w-0 space-y-4 rounded-xl border border-border/70 bg-card/85 p-4 sm:p-5"
     >
-      <form onSubmit={save} className="flex max-w-sm flex-col gap-4">
-        {/* Dos números cortos: lado a lado también en el celular. */}
-        <FieldRow className="grid-cols-2">
-          <Field label={ZONE_LABELS.planta_alta}>
-            <NumberField
-              value={pa}
-              onValueChange={setPA}
-              min={0}
-              max={MAX_PER_ZONE}
-              steppers={false}
-              placeholder="0"
-            />
-          </Field>
-          <Field label={ZONE_LABELS.planta_baja}>
-            <NumberField
-              value={pb}
-              onValueChange={setPB}
-              min={0}
-              max={MAX_PER_ZONE}
-              steppers={false}
-              placeholder="0"
-            />
-          </Field>
-        </FieldRow>
-        <FormActions sticky={false}>
-          <Button
-            type="submit"
-            disabled={!dirty && !pending}
-            loading={pending}
-            loadingText="Guardando…"
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-2">
+          <Layers className="size-4 text-primary" aria-hidden />
+          <h2 id={`${baseId}-title`} className="font-serif text-lg font-semibold">
+            Cupo general por planta
+          </h2>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Se usa para los servicios que no configuraste arriba: PA + PB ={' '}
+          <span className="font-semibold text-foreground tabular-nums">{total}</span> personas por
+          servicio.
+          {total === 0 ? ' Con 0, esos servicios quedan sin tope.' : null}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:max-w-sm">
+        <div className="min-w-0 space-y-1.5">
+          <Label
+            htmlFor={`${baseId}-pa`}
+            className="text-[11px] uppercase tracking-wide text-muted-foreground"
           >
-            <Save aria-hidden />
-            Guardar cupo general
-          </Button>
-        </FormActions>
-      </form>
-    </Section>
+            {ZONE_LABELS.planta_alta}
+          </Label>
+          <Input
+            id={`${baseId}-pa`}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="off"
+            maxLength={3}
+            value={pa}
+            onChange={(e) => setPA(onlyDigits(e.target.value))}
+            placeholder="0"
+            className="h-10 text-base tabular-nums"
+          />
+        </div>
+        <div className="min-w-0 space-y-1.5">
+          <Label
+            htmlFor={`${baseId}-pb`}
+            className="text-[11px] uppercase tracking-wide text-muted-foreground"
+          >
+            {ZONE_LABELS.planta_baja}
+          </Label>
+          <Input
+            id={`${baseId}-pb`}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="off"
+            maxLength={3}
+            value={pb}
+            onChange={(e) => setPB(onlyDigits(e.target.value))}
+            placeholder="0"
+            className="h-10 text-base tabular-nums"
+          />
+        </div>
+      </div>
+
+      <div className="flex justify-end">
+        <Button onClick={save} disabled={pending || !dirty} className="gap-2">
+          {pending ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : (
+            <Save className="size-4" aria-hidden />
+          )}
+          {pending ? 'Guardando…' : 'Guardar cupo general'}
+        </Button>
+      </div>
+    </section>
   )
 }

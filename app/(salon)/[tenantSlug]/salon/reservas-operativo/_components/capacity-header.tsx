@@ -1,6 +1,6 @@
 'use client'
 
-import { SegmentChip } from '@/components/legacy/reservations/segment-meter'
+import { SegmentChip } from '@/components/reservations/segment-meter'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
 import { type DaySegments, SEGMENT_KEYS, type SegmentKey } from '@/lib/salon/segments'
 import type { DayCapacityBucket } from '@/lib/salon/types'

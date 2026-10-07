@@ -1,121 +1,94 @@
-import { Armchair, Cake, HandCoins, type LucideIcon, Palette, Star, UsersRound } from 'lucide-react'
-import { SectionNav, type SectionNavItem } from '@/components/ui/section-nav'
+'use client'
 
-/*
- * Las secciones de Configuración, en un solo lugar: de acá salen la
- * subnavegación del layout (`SectionNav`) y las tarjetas de la portada. Antes
- * eran dos listas a mano y se desfasaron: la portada no mostraba Comisiones ni
- * Reseñas, y como el menú lateral de la sección era `lg:block`, en el celular
- * esas dos pantallas solo se alcanzaban por link profundo.
- *
- * Server-safe (sin hooks): los íconos son componentes y los dibuja el server
- * (`SectionNav` los manda ya dibujados a su parte cliente).
- */
+import { Armchair, type LucideIcon, Palette, Star, UsersRound } from 'lucide-react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { cn } from '@/lib/utils'
 
-export const SETTINGS_GROUPS = ['Equipo', 'Salón', 'Marca'] as const
-export type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
-
-export type SettingsSection = {
-  /** Segmento debajo de `/configuracion`. */
-  path: string
-  group: SettingsGroup
-  /**
-   * Lo que se lee en la subnavegación. En el celular la fila no muestra los
-   * grupos, así que cada etiqueta tiene que entenderse sola.
-   */
-  navLabel: string
-  /** Título de la tarjeta de la portada (el mismo `h1` de la pantalla). */
-  title: string
-  description: string
-  /** Qué se toca ahí, en una línea de apoyo de la tarjeta. */
-  topics: ReadonlyArray<string>
-  icon: LucideIcon
+type SubItem = {
+  label: string
+  href: (slug: string) => string
 }
 
-export const SETTINGS_SECTIONS: ReadonlyArray<SettingsSection> = [
+type Group = {
+  label: string
+  icon: LucideIcon
+  items: SubItem[]
+}
+
+// Reseñas y Comisiones existían pero no estaban linkeadas en ningún lado: el
+// único acceso era el botón "Configurar" de /reviews. El dueño nunca encontró
+// la pantalla donde se carga el enlace de Google (por eso las 5★ no derivaban).
+const GROUPS: Group[] = [
   {
-    path: 'equipo',
-    group: 'Equipo',
-    navLabel: 'Miembros',
-    title: 'Equipo',
-    description: 'Quién entra al panel y con qué rol: dueños, cajeros, mozos, cocina y más.',
-    topics: ['Miembros', 'Roles', 'Contraseñas'],
+    label: 'Equipo',
     icon: UsersRound,
+    items: [
+      { label: 'Miembros', href: (s) => `/${s}/configuracion/equipo` },
+      { label: 'Comisiones', href: (s) => `/${s}/configuracion/comisiones` },
+    ],
   },
   {
-    path: 'comisiones',
-    group: 'Equipo',
-    navLabel: 'Comisiones',
-    title: 'Comisiones',
-    description:
-      'Cuánto cobra cada gestor por persona reservada y el extra cuando un evento se llena.',
-    topics: ['Tarifas', 'Evento lleno', 'Gestores'],
-    icon: HandCoins,
-  },
-  {
-    path: 'salon',
-    group: 'Salón',
-    navLabel: 'Capacidad',
-    title: 'Capacidad del salón',
-    description: 'Cuántas personas entran en cada servicio y los cupos especiales de un día.',
-    topics: ['Cupos por servicio', 'Cupos por fecha', 'Capacidad total'],
+    // Capacidad del salón existía desde el arranque pero nadie la linkeó: la
+    // única forma de llegar era escribir la URL. Ahora vive con Tortas, que es
+    // lo otro que define cómo se toma una reserva.
+    label: 'Salón',
     icon: Armchair,
+    items: [
+      { label: 'Capacidad', href: (s) => `/${s}/configuracion/salon` },
+      { label: 'Tortas de cumpleaños', href: (s) => `/${s}/configuracion/tortas` },
+    ],
   },
   {
-    path: 'tortas',
-    group: 'Salón',
-    navLabel: 'Tortas de cumpleaños',
-    title: 'Tortas de cumpleaños',
-    description: 'El menú de tortas que hace el bar. Es lo que se elige al cargar una reserva.',
-    topics: ['Bizcochuelos', 'Rellenos'],
-    icon: Cake,
-  },
-  {
-    path: 'apariencia',
-    group: 'Marca',
-    navLabel: 'Apariencia',
-    title: 'Apariencia',
-    description:
-      'El logo y el color del bar: se ven en el panel, la carta, la wallet y los emails.',
-    topics: ['Logo', 'Color del bar'],
-    icon: Palette,
-  },
-  {
-    path: 'resenas',
-    group: 'Marca',
-    navLabel: 'Reseñas',
-    title: 'Reseñas',
-    description:
-      'A dónde mandamos a quien opina (tu ficha de Google o tu WhatsApp) y cuántos puntos le das.',
-    topics: ['Google Maps', 'WhatsApp', 'Puntos por opinar'],
+    label: 'Reseñas',
     icon: Star,
+    items: [{ label: 'Google y WhatsApp', href: (s) => `/${s}/configuracion/resenas` }],
+  },
+  {
+    label: 'Apariencia',
+    icon: Palette,
+    items: [{ label: 'General', href: (s) => `/${s}/configuracion/apariencia` }],
   },
 ]
 
-export function settingsHref(tenantSlug: string, path?: string): string {
-  return path ? `/${tenantSlug}/configuracion/${path}` : `/${tenantSlug}/configuracion`
-}
+export function SettingsNav({ tenantSlug }: { tenantSlug: string }) {
+  const pathname = usePathname()
 
-export function settingsNavItems(tenantSlug: string): SectionNavItem[] {
-  return SETTINGS_SECTIONS.map((section) => ({
-    href: settingsHref(tenantSlug, section.path),
-    label: section.navLabel,
-    icon: section.icon,
-    group: section.group,
-  }))
-}
-
-/**
- * La subnavegación de la sección: columna de 224 px desde `lg` y fila
- * subrayada con scroll debajo (así Comisiones y Reseñas también se alcanzan
- * desde el celular).
- */
-export function SettingsNav({ tenantSlug, className }: { tenantSlug: string; className?: string }) {
   return (
-    <SectionNav
-      aria-label="Secciones de Configuración"
-      items={settingsNavItems(tenantSlug)}
-      className={className}
-    />
+    <nav className="space-y-5">
+      {GROUPS.map((group) => {
+        const Icon = group.icon
+        return (
+          <div key={group.label} className="space-y-1.5">
+            <div className="flex items-center gap-2 px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/80">
+              <Icon className="size-3" aria-hidden />
+              {group.label}
+            </div>
+            <ul className="space-y-0.5">
+              {group.items.map((item) => {
+                const href = item.href(tenantSlug)
+                const active = pathname === href || pathname.startsWith(`${href}/`)
+                return (
+                  <li key={item.label}>
+                    <Link
+                      href={href}
+                      aria-current={active ? 'page' : undefined}
+                      className={cn(
+                        'flex h-8 items-center rounded-md px-2.5 text-sm transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)]',
+                        active
+                          ? 'bg-secondary font-medium text-foreground'
+                          : 'text-muted-foreground hover:bg-(--cream-tint) hover:text-foreground',
+                      )}
+                    >
+                      {item.label}
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )
+      })}
+    </nav>
   )
 }

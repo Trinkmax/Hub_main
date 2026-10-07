@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
-import { ReloadLink } from '@/components/ui/reload-link'
 import { getAppUrl } from '@/lib/app-url'
 import { getPublicLinkPage, listPublicLinks } from '@/lib/public-links/queries'
 import {
@@ -44,26 +43,30 @@ export default async function EnlacesPage({ params }: { params: Promise<{ tenant
   return (
     <PageShell>
       <PageHeader
+        eyebrow="Marketing"
         title="Link de Instagram"
-        description="Un solo link para la bio, con todos tus destinos adentro y la identidad del bar. Lo que cambies acá se ve al instante."
-        meta={
-          <>
-            Pegá este link en la bio de Instagram:{' '}
-            <span className="break-all font-mono text-foreground">{publicUrl}</span>
-          </>
-        }
+        description="Un solo link para la bio, con todos tus destinos adentro y la identidad del bar. Editalo acá y se actualiza al instante."
         actions={
           <>
-            <Button asChild variant="secondary">
-              <ReloadLink href={`/l/${tenantSlug}`} newTab>
+            <CopyButton value={publicUrl} label="Copiar link" copiedLabel="¡Copiado!" />
+            <Button asChild variant="outline">
+              <a href={`/l/${tenantSlug}`} target="_blank" rel="noopener noreferrer">
                 Ver página
-                <ArrowUpRight aria-hidden />
-              </ReloadLink>
+                <ArrowUpRight className="size-4" aria-hidden />
+              </a>
             </Button>
-            <CopyButton value={publicUrl} size="md" label="Copiar link" copiedLabel="¡Copiado!" />
           </>
         }
       />
+
+      <div className="card-hairline flex flex-wrap items-center gap-2 rounded-xl border bg-cream-tint px-4 py-3">
+        <span className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+          Pegá esto en Instagram
+        </span>
+        <code className="min-w-0 flex-1 truncate rounded-md bg-card px-2 py-1 font-mono text-[13px]">
+          {publicUrl}
+        </code>
+      </div>
 
       <LinksManager
         tenantSlug={tenantSlug}

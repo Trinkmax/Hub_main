@@ -1,19 +1,14 @@
 'use client'
 
-import { Search, SearchX } from 'lucide-react'
+import { Download, Loader2, Search } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { dayLabelInline } from '@/components/reservations/day-labels'
 import { StatusPill } from '@/components/reservations/status-pill'
 import { Button } from '@/components/ui/button'
-import { ExportButton } from '@/components/ui/data-table'
-import { EmptyState } from '@/components/ui/empty-state'
-import { ErrorState } from '@/components/ui/error-state'
-import { SearchField } from '@/components/ui/input'
+import { Input } from '@/components/ui/input'
 import {
   Sheet,
-  SheetBody,
   SheetContent,
   SheetDescription,
   SheetFooter,
@@ -21,9 +16,8 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
-import { Spinner } from '@/components/ui/spinner'
-import { monthName } from '@/lib/dates/format'
 import { calendarHref, editReservationHref } from '@/lib/salon/calendar-links'
+import { formatDayLabel } from '@/lib/salon/date-presets'
 import { searchReservations } from '@/lib/salon/segment-actions'
 import type { ReservationSearchResult } from '@/lib/salon/segment-rows'
 import { SEGMENT_LABELS } from '@/lib/salon/segments-copy'
@@ -37,6 +31,21 @@ const SEARCH_ERROR = 'No pudimos buscar. Probá de nuevo.'
 type SearchState =
   | { q: string; status: 'ready'; items: ReservationSearchResult[] }
   | { q: string; status: 'error'; message: string }
+
+/** 'jue 10/09'. */
+function dayLabel(iso: string): string {
+  const label = formatDayLabel(iso)
+  return label.charAt(0).toLowerCase() + label.slice(1)
+}
+
+/** 'septiembre'. */
+function monthName(ym: string): string {
+  const [y, m] = ym.split('-').map(Number)
+  if (!y || !m) return 'el mes'
+  return new Intl.DateTimeFormat('es-AR', { month: 'long', timeZone: 'UTC' }).format(
+    new Date(Date.UTC(y, m - 1, 1)),
+  )
+}
 
 /** Descarga del mes visible: la misma ruta GET que usaba la lista (deja registro en audit). */
 function exportHref(slug: string, ym: string): string {
@@ -82,13 +91,13 @@ export function CalendarSearch({
   const [open, setOpen] = useState(Boolean(initialQuery))
   const [query, setQuery] = useState(initialQuery ?? '')
   const [result, setResult] = useState<SearchState | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
   const requestRef = useRef(0)
-  // Al elegir un resultado se abre la vista del día: la hoja no tiene que
+  // Al elegir un resultado se abre la vista del día: el Sheet no tiene que
   // devolverle el foco al botón "Buscar" y robárselo al diálogo nuevo.
   const navigatingRef = useRef(false)
 
   const term = query.trim()
-  const month = monthName(Number(ym.slice(5, 7))) || 'el mes'
 
   // Solo el último pedido escribe; además cada resultado lleva el texto que
   // lo pidió, así una respuesta atrasada de "lo" no se muestra con "lop".
@@ -154,20 +163,17 @@ export function CalendarSearch({
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetTrigger asChild>
-        <Button type="button" variant="secondary" data-tour="eventos-buscar">
-          <Search aria-hidden />
+        <Button type="button" variant="outline" className="gap-2" data-tour="eventos-buscar">
+          <Search className="size-4" aria-hidden />
           Buscar
         </Button>
       </SheetTrigger>
       <SheetContent
         side="right"
-        size="md"
+        className="w-full gap-0 sm:max-w-md"
         onOpenAutoFocus={(e) => {
-          // El foco va directo al buscador (no a la X de la hoja).
           e.preventDefault()
-          ;(e.currentTarget as HTMLElement | null)
-            ?.querySelector<HTMLInputElement>('[data-slot="search-field"] input')
-            ?.focus()
+          inputRef.current?.focus()
         }}
         onCloseAutoFocus={(e) => {
           if (navigatingRef.current) {
@@ -176,71 +182,82 @@ export function CalendarSearch({
           }
         }}
       >
-        <SheetHeader className="gap-3">
-          <div className="grid gap-1">
-            <SheetTitle>Buscar reservas</SheetTitle>
-            <SheetDescription>
-              Por nombre o teléfono, en cualquier fecha. Tocá una para verla en su día.
-            </SheetDescription>
+        <SheetHeader className="border-b pr-12">
+          <SheetTitle className="font-serif text-lg">Buscar reservas</SheetTitle>
+          <SheetDescription>
+            Por nombre o teléfono, en cualquier fecha. Tocá una para verla en su día.
+          </SheetDescription>
+          <div className="relative mt-2">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              ref={inputRef}
+              type="search"
+              inputMode="search"
+              enterKeyHint="search"
+              autoComplete="off"
+              value={query}
+              maxLength={MAX_CHARS}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Nombre o teléfono"
+              aria-label="Buscar reserva por nombre o teléfono"
+              className="pl-9"
+            />
           </div>
-          <SearchField
-            name="buscar"
-            inputMode="search"
-            enterKeyHint="search"
-            value={query}
-            maxLength={MAX_CHARS}
-            onChange={(e) => setQuery(e.target.value)}
-            onClear={() => setQuery('')}
-            placeholder="Nombre o teléfono"
-            aria-label="Buscar reserva por nombre o teléfono"
-          />
         </SheetHeader>
 
         <p className="sr-only" aria-live="polite">
           {liveText}
         </p>
-        <SheetBody aria-busy={searching || undefined}>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4" aria-busy={searching}>
           {term.length < MIN_CHARS ? (
-            <p className="text-pretty type-small text-muted-foreground">
+            <p className="text-sm text-muted-foreground text-pretty">
               Escribí al menos 2 letras del nombre, o 4 números del teléfono.
             </p>
           ) : searching ? (
-            <p className="flex items-center gap-2 type-small text-muted-foreground">
-              <Spinner aria-hidden size={16} />
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" aria-hidden />
               Buscando…
             </p>
           ) : shown?.status === 'error' ? (
-            <ErrorState
-              size="sm"
-              title="No pudimos buscar"
-              description={shown.message}
-              onRetry={() => {
-                setResult(null)
-                void runSearch(term)
-              }}
-            />
+            <div className="space-y-2">
+              <p className="text-sm text-destructive">{shown.message}</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setResult(null)
+                  void runSearch(term)
+                }}
+              >
+                Reintentar
+              </Button>
+            </div>
           ) : shown?.status === 'ready' && shown.items.length === 0 ? (
-            <EmptyState
-              size="sm"
-              icon={SearchX}
-              title="No encontramos reservas"
-              description={`Nada con «${term}». Probá con el apellido o con otro pedazo del teléfono.`}
-            />
+            <p className="text-sm text-muted-foreground text-pretty">
+              No encontramos reservas con “{term}”
+            </p>
           ) : shown?.status === 'ready' ? (
-            <ul className="divide-y divide-border overflow-clip rounded-xl border border-border bg-card">
+            <ul className="space-y-2">
               {shown.items.map((r) => (
-                <li key={r.id} className="flex items-start gap-1">
+                <li
+                  key={r.id}
+                  className="flex items-start gap-1 rounded-lg border border-border/70 bg-card/60"
+                >
                   <button
                     type="button"
                     onClick={() => openResult(r)}
-                    className="grid min-w-0 flex-1 gap-1 px-3 py-2.5 text-left outline-(--ring) -outline-offset-2 hover:bg-hover focus-visible:outline-2 active:bg-active"
+                    className="min-w-0 flex-1 space-y-1 rounded-lg p-2.5 text-left outline-none transition-colors hover:bg-secondary/60 focus-visible:ring-2 focus-visible:ring-ring/50"
                   >
-                    <span className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="truncate type-body font-medium">{r.guest_name}</span>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-sm font-medium">{r.guest_name}</span>
                       <StatusPill status={r.status} className="shrink-0" />
                     </span>
-                    <span className="block type-caption tabular-nums text-muted-foreground">
-                      {dayLabelInline(r.reservation_date)} · {r.reservation_time_local} ·{' '}
+                    <span className="block text-xs text-muted-foreground tabular-nums">
+                      {dayLabel(r.reservation_date)} · {r.reservation_time_local} ·{' '}
                       {r.guests === 1 ? '1 persona' : `${r.guests} personas`} ·{' '}
                       {SEGMENT_LABELS[r.segment]}
                       {r.eventName ? ` · ${r.eventName}` : ''}
@@ -258,11 +275,16 @@ export function CalendarSearch({
               ))}
             </ul>
           ) : null}
-        </SheetBody>
+        </div>
 
-        <SheetFooter className="items-stretch">
-          <ExportButton href={exportHref(tenantSlug, ym)} label={`Exportar ${month}`} />
-          <p className="text-center type-caption text-muted-foreground">
+        <SheetFooter className="border-t">
+          <Button asChild variant="outline" className="gap-2">
+            <a href={exportHref(tenantSlug, ym)} download>
+              <Download className="size-4" aria-hidden />
+              Exportar {monthName(ym)}
+            </a>
+          </Button>
+          <p className="text-center text-xs text-muted-foreground">
             Todas las reservas del mes en una planilla (CSV).
           </p>
         </SheetFooter>

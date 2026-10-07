@@ -1,28 +1,21 @@
 'use client'
 
-import { Plus, Tag, UtensilsCrossed, X } from 'lucide-react'
-import { useActionState, useEffect, useId, useState, useTransition } from 'react'
+import { Plus, Trash2 } from 'lucide-react'
+import { useActionState, useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Callout } from '@/components/ui/callout'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { DataTable } from '@/components/ui/data-table'
 import {
   Dialog,
-  DialogBody,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { EmptyState } from '@/components/ui/empty-state'
-import { Field, FormError } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Section } from '@/components/ui/section'
-import { SubmitButton } from '@/components/ui/submit-button'
+import { Label } from '@/components/ui/label'
 import {
   createItemTag,
   deleteItemTag,
@@ -30,50 +23,8 @@ import {
   toggleTagOnMenuItem,
 } from '@/lib/item-tags/actions'
 import type { ItemTagRow, ItemWithTags } from '@/lib/item-tags/queries'
-import { cn } from '@/lib/utils'
-import { TagDot } from '../../_components/menu-ui'
 
 const initial: TagActionState = { ok: false, message: '' }
-
-/**
- * Un tag como chip con su casilla: tocar el chip entero la marca. El id es
- * propio de cada instancia (la tabla dibuja la celda dos veces: tabla y
- * tarjeta del celular), así la etiqueta nunca apunta a la casilla escondida.
- */
-function TagToggle({
-  name,
-  color,
-  checked,
-  disabled,
-  onCheckedChange,
-}: {
-  name: string
-  color: string
-  checked: boolean
-  disabled: boolean
-  onCheckedChange: (checked: boolean) => void
-}) {
-  const id = useId()
-  return (
-    <label
-      htmlFor={id}
-      className={cn(
-        'inline-flex min-h-8 cursor-pointer items-center gap-2 rounded-full border px-2.5 type-caption font-medium',
-        checked
-          ? 'border-primary bg-card text-foreground'
-          : 'border-border-strong text-muted-foreground hover:bg-hover',
-      )}
-    >
-      <Checkbox
-        id={id}
-        checked={checked}
-        disabled={disabled}
-        onCheckedChange={(v) => onCheckedChange(v === true)}
-      />
-      <TagDot color={color} />#{name}
-    </label>
-  )
-}
 
 export function TagsManager({
   tenantSlug,
@@ -87,9 +38,7 @@ export function TagsManager({
   const [showCreate, setShowCreate] = useState(false)
   const [items, setItems] = useState(initialItems)
   const [pending, startTransition] = useTransition()
-  const [toDelete, setToDelete] = useState<ItemTagRow | null>(null)
-  const [deleteOpen, setDeleteOpen] = useState(false)
-  const [state, action] = useActionState(
+  const [state, action, formPending] = useActionState(
     (prev: TagActionState, fd: FormData) => createItemTag(tenantSlug, prev, fd),
     initial,
   )
@@ -116,167 +65,141 @@ export function TagsManager({
     })
   }
 
-  return (
-    <>
-      <Callout tone="info">
-        Estos tags se usan en las punch cards que se sellan «Al consumir una etiqueta». En la carta
-        se administran desde «Gestionar etiquetas».
-      </Callout>
+  const handleDelete = (id: string, name: string) => {
+    startTransition(async () => {
+      const r = await deleteItemTag(tenantSlug, id)
+      if (r.ok) toast.success(`Tag "${name}" eliminado`)
+      else toast.error(r.message)
+    })
+  }
 
-      <Section
-        title="Tags disponibles"
-        actions={
+  return (
+    <div className="space-y-6">
+      <div>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-serif text-lg font-semibold tracking-tight">Tags disponibles</h2>
           <Dialog open={showCreate} onOpenChange={setShowCreate}>
             <DialogTrigger asChild>
-              <Button>
-                <Plus aria-hidden="true" />
+              <Button size="sm">
+                <Plus className="mr-1.5 size-4" />
                 Nuevo tag
               </Button>
             </DialogTrigger>
-            <DialogContent size="sm">
+            <DialogContent>
               <DialogHeader>
                 <DialogTitle>Nuevo tag</DialogTitle>
-                <DialogDescription>Un nombre corto y un color para reconocerlo.</DialogDescription>
               </DialogHeader>
-              <form action={action} className="flex min-h-0 flex-1 flex-col gap-4">
-                <DialogBody className="grid gap-4">
-                  <FormError message={!state.ok && state.message ? state.message : null} />
-                  <Field label="Nombre" name="name" required>
-                    <Input autoFocus maxLength={40} placeholder="cafe, vegano, sin-tacc…" />
-                  </Field>
-                  <Field label="Color">
-                    {(control) => (
-                      <input
-                        id={control.id}
-                        name="color"
-                        type="color"
-                        defaultValue="#94a3b8"
-                        className="h-(--control-md) w-16 cursor-pointer rounded-md border border-input bg-card p-0.5 outline-offset-2 outline-(--ring) focus-visible:outline-2"
-                      />
-                    )}
-                  </Field>
-                </DialogBody>
+              <form action={action} className="space-y-3">
+                <div>
+                  <Label htmlFor="name">Nombre</Label>
+                  <Input
+                    id="name"
+                    name="name"
+                    autoFocus
+                    required
+                    maxLength={40}
+                    placeholder="cafe, vegano, sin-tacc..."
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="color">Color</Label>
+                  <Input id="color" name="color" type="color" defaultValue="#94a3b8" />
+                </div>
+                {!state.ok && state.message && (
+                  <p className="text-sm text-destructive">{state.message}</p>
+                )}
                 <DialogFooter>
-                  <Button type="button" variant="secondary" onClick={() => setShowCreate(false)}>
+                  <Button type="button" variant="ghost" onClick={() => setShowCreate(false)}>
                     Cancelar
                   </Button>
-                  <SubmitButton pendingText="Creando…">Crear tag</SubmitButton>
+                  <Button type="submit" disabled={formPending}>
+                    {formPending ? 'Creando…' : 'Crear'}
+                  </Button>
                 </DialogFooter>
               </form>
             </DialogContent>
           </Dialog>
-        }
-      >
-        {initialTags.length === 0 ? (
-          <EmptyState
-            size="sm"
-            icon={Tag}
-            title="Todavía no hay tags"
-            description="Creá el primero con «Nuevo tag»: después lo asignás a los ítems acá abajo."
-          />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {initialTags.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No hay tags todavía.</p>
+          ) : (
+            initialTags.map((t) => (
+              <span
+                key={t.id}
+                className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs"
+                style={{ borderColor: t.color, color: t.color }}
+              >
+                #{t.name}
+                <button
+                  type="button"
+                  className="opacity-60 hover:opacity-100"
+                  onClick={() => handleDelete(t.id, t.name)}
+                  disabled={pending}
+                >
+                  <Trash2 className="size-3" />
+                </button>
+              </span>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div>
+        <h2 className="mb-3 font-serif text-lg font-semibold tracking-tight">
+          Asignar tags a ítems
+        </h2>
+        {items.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Sin ítems en la carta todavía.</p>
         ) : (
-          <ul className="flex flex-wrap gap-2" aria-label="Tags disponibles">
-            {initialTags.map((t) => (
-              <li key={t.id}>
-                <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border-strong bg-card ps-3 pe-0.5 type-label text-foreground">
-                  <TagDot color={t.color} />#{t.name}
-                  <Button
-                    type="button"
-                    size="icon-sm"
-                    variant="ghost"
-                    className="size-7 rounded-full"
-                    disabled={pending}
-                    onClick={() => {
-                      setToDelete(t)
-                      setDeleteOpen(true)
-                    }}
-                    aria-label={`Borrar el tag #${t.name}`}
-                  >
-                    <X aria-hidden="true" />
-                  </Button>
-                </span>
-              </li>
+          <div className="space-y-2">
+            {items.map((it) => (
+              <div key={it.id} className="rounded-lg border bg-card p-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">{it.name}</p>
+                    {it.category_name && (
+                      <p className="text-xs text-muted-foreground">{it.category_name}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {initialTags.map((tag) => {
+                    const enabled = it.tag_ids.includes(tag.id)
+                    const cbId = `tag-${it.id}-${tag.id}`
+                    return (
+                      <span
+                        key={tag.id}
+                        className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs"
+                        style={{ borderColor: tag.color }}
+                      >
+                        <Checkbox
+                          id={cbId}
+                          checked={enabled}
+                          disabled={pending}
+                          onCheckedChange={(v) => handleToggle(it.id, tag.id, Boolean(v))}
+                          className="size-3"
+                        />
+                        <Label
+                          htmlFor={cbId}
+                          className="cursor-pointer"
+                          style={{ color: tag.color }}
+                        >
+                          #{tag.name}
+                        </Label>
+                      </span>
+                    )
+                  })}
+                </div>
+              </div>
             ))}
-          </ul>
+          </div>
         )}
-      </Section>
+      </div>
 
-      <Section
-        title="Asignar tags a ítems"
-        description="Marcá los tags de cada ítem: se guardan al toque."
-      >
-        <DataTable
-          caption="Ítems de la carta y sus tags"
-          rows={items}
-          getRowId={(it) => it.id}
-          empty={
-            <EmptyState
-              size="sm"
-              icon={UtensilsCrossed}
-              title="Sin ítems en la carta todavía"
-              description="Cargá la carta primero y volvé a etiquetarla."
-            />
-          }
-          columns={[
-            {
-              id: 'item',
-              header: 'Ítem',
-              width: '16rem',
-              cell: (it) => (
-                <span className="flex flex-col">
-                  <span className="type-body font-medium">{it.name}</span>
-                  {it.category_name ? (
-                    <span className="type-caption text-muted-foreground">{it.category_name}</span>
-                  ) : null}
-                </span>
-              ),
-            },
-            {
-              id: 'tags',
-              header: 'Tags',
-              mobile: 'meta',
-              cell: (it) =>
-                initialTags.length === 0 ? (
-                  <span className="type-small text-muted-foreground">—</span>
-                ) : (
-                  <ul className="flex flex-wrap gap-2 py-1" aria-label={`Tags de ${it.name}`}>
-                    {initialTags.map((tag) => {
-                      const enabled = it.tag_ids.includes(tag.id)
-                      return (
-                        <li key={tag.id}>
-                          <TagToggle
-                            name={tag.name}
-                            color={tag.color}
-                            checked={enabled}
-                            disabled={pending}
-                            onCheckedChange={(v) => handleToggle(it.id, tag.id, v)}
-                          />
-                        </li>
-                      )
-                    })}
-                  </ul>
-                ),
-            },
-          ]}
-        />
-      </Section>
-
-      <ConfirmDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        tone="danger"
-        title={`¿Borrar el tag «#${toDelete?.name ?? ''}»?`}
-        description="Se quita de todos los ítems que lo tienen. No se puede deshacer."
-        confirmLabel="Borrar tag"
-        pendingLabel="Borrando…"
-        onConfirm={async () => {
-          if (!toDelete) return
-          const target = toDelete
-          const r = await deleteItemTag(tenantSlug, target.id)
-          if (!r.ok) return r
-          toast.success(`Tag «#${target.name}» borrado.`)
-        }}
-      />
-    </>
+      <Badge variant="outline">
+        Tip: estos tags se usan al crear punch cards con trigger_type="tag".
+      </Badge>
+    </div>
   )
 }

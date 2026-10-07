@@ -64,7 +64,7 @@ export function ClosingScreen({
       {/* Glows decorativos sutiles */}
       <div
         aria-hidden
-        className="pointer-events-none absolute -right-20 top-32 -z-10 size-72 rounded-full blur-3xl"
+        className="pointer-events-none absolute -right-20 top-32 -z-10 size-72 rounded-full bg-[--forest-glow] blur-3xl"
       />
       <div
         aria-hidden

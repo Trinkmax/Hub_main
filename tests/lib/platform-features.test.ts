@@ -60,31 +60,3 @@ describe('featuresByGroup', () => {
     expect(groups.Fidelización?.some((d) => d.key === 'reviews')).toBe(true)
   })
 })
-
-describe('accounting — el flag de Administración', () => {
-  it('existe, va en el grupo Administración y arranca apagado', () => {
-    expect(FEATURE_KEYS).toContain('accounting')
-    const def = FEATURE_REGISTRY.accounting
-    expect(def.key).toBe('accounting')
-    expect(def.label).toBe('Administración')
-    expect(def.group).toBe('Administración')
-    expect(def.defaultEnabled).toBe(false)
-    expect(def.description).toBe(
-      'Contabilidad de la SAS: compras, pagos, ventas, cajas, IVA y libros.',
-    )
-  })
-
-  it('apagado para cualquier bar que no lo tenga guardado; prendido solo con override', () => {
-    expect(getTenantFeatures({ feature_flags: {} }).accounting).toBe(false)
-    expect(isFeatureEnabled({ feature_flags: { accounting: true } }, 'accounting')).toBe(true)
-    // Un valor raro no lo prende.
-    expect(
-      getTenantFeatures({ feature_flags: { accounting: 'true' as unknown as boolean } }).accounting,
-    ).toBe(false)
-  })
-
-  it('la grilla del /admin lo muestra en su propio grupo', () => {
-    const groups = featuresByGroup()
-    expect(groups.Administración?.map((d) => d.key)).toEqual(['accounting'])
-  })
-})

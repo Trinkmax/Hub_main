@@ -2,9 +2,10 @@
 
 import { useActionState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
-import { Field, FormActions } from '@/components/ui/field'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { SubmitButton } from '@/components/ui/submit-button'
+import { Label } from '@/components/ui/label'
 import {
   type SavePlatformMetaConfigResult,
   savePlatformMetaConfig,
@@ -15,7 +16,7 @@ const init: SavePlatformMetaConfigResult = { ok: true }
 
 export function MetaConfigForm({ initial }: { initial: Initial }) {
   const submitted = useRef(false)
-  const [state, action] = useActionState(
+  const [state, action, pending] = useActionState(
     async (_prev: SavePlatformMetaConfigResult, formData: FormData) => {
       submitted.current = true
       return savePlatformMetaConfig({
@@ -34,36 +35,40 @@ export function MetaConfigForm({ initial }: { initial: Initial }) {
   }, [state])
 
   return (
-    <form action={action} className="flex max-w-xl flex-col gap-4">
-      <Field label="App ID" name="appId" required>
-        <Input defaultValue={initial.appId} autoComplete="off" spellCheck={false} />
-      </Field>
-      <Field
-        label="App Secret"
-        name="appSecret"
-        hint={
-          initial.hasSecret
-            ? 'Ya hay uno guardado: dejalo vacío para conservarlo.'
-            : 'Todavía no hay uno guardado.'
-        }
-      >
-        <Input
-          type="password"
-          autoComplete="off"
-          placeholder={initial.hasSecret ? '••••••••' : undefined}
-        />
-      </Field>
-      <Field
-        label="Webhook Verify Token"
-        name="webhookVerifyToken"
-        hint="Si lo cambiás, actualizalo también en el dashboard de Meta."
-        required
-      >
-        <Input defaultValue={initial.webhookVerifyToken} autoComplete="off" spellCheck={false} />
-      </Field>
-      <FormActions>
-        <SubmitButton pendingText="Guardando…">Guardar credenciales</SubmitButton>
-      </FormActions>
-    </form>
+    <Card className="p-6">
+      <form action={action} className="space-y-4">
+        <div className="grid gap-1.5">
+          <Label htmlFor="appId">App ID</Label>
+          <Input id="appId" name="appId" defaultValue={initial.appId} required />
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="appSecret">App Secret</Label>
+          <Input
+            id="appSecret"
+            name="appSecret"
+            type="password"
+            autoComplete="off"
+            placeholder={
+              initial.hasSecret ? '•••• configurado (vacío = conservar)' : 'Sin configurar'
+            }
+          />
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="webhookVerifyToken">Webhook Verify Token</Label>
+          <Input
+            id="webhookVerifyToken"
+            name="webhookVerifyToken"
+            defaultValue={initial.webhookVerifyToken}
+            required
+          />
+          <p className="text-xs text-muted-foreground">
+            Si lo cambiás, actualizalo también en el dashboard de Meta.
+          </p>
+        </div>
+        <Button type="submit" disabled={pending}>
+          {pending ? 'Guardando…' : 'Guardar'}
+        </Button>
+      </form>
+    </Card>
   )
 }

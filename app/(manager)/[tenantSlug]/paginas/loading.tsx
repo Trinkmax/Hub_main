@@ -1,13 +1,22 @@
+import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
-import { SkeletonPageHeader, SkeletonStatus, SkeletonTable } from '@/components/ui/skeleton'
+import { Skeleton } from '@/components/ui/skeleton'
 
-/** Mismo armado que la página: encabezado con «Nueva página» y la tabla de páginas. */
 export default function Loading() {
   return (
-    <PageShell width="comfortable" aria-busy="true">
-      <SkeletonStatus />
-      <SkeletonPageHeader actions={1} />
-      <SkeletonTable rows={4} columns={5} />
+    <PageShell width="comfortable">
+      <PageHeader
+        eyebrow="Marketing"
+        title="Páginas"
+        description={<Skeleton className="h-4 w-[32rem] max-w-full" />}
+        actions={<Skeleton className="h-9 w-36 rounded-md" />}
+      />
+      {/* Mismas tarjetas que PagesList. */}
+      <div className="grid gap-3">
+        {[0, 1, 2].map((n) => (
+          <Skeleton key={n} className="h-[5.5rem] w-full rounded-xl" />
+        ))}
+      </div>
     </PageShell>
   )
 }

@@ -1,18 +1,15 @@
 'use client'
 
-import { ArrowRightLeft, Users } from 'lucide-react'
+import { ArrowRightLeft, Loader2, Users } from 'lucide-react'
 import { useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { EmptyState } from '@/components/ui/empty-state'
 import {
   Sheet,
-  SheetBody,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { Spinner } from '@/components/ui/spinner'
 import type { MoveTarget } from '@/lib/floor-plan/queries'
 import { loadMoveTargetsAction, moveSessionAction } from '@/lib/sessions-waiter/actions'
 import { cn } from '@/lib/utils'
@@ -32,8 +29,7 @@ export type MoveTableSheetProps = {
 /**
  * Selector de "cambio de mesa": lista las mesas libres de TODAS las áreas
  * (cross-área) agrupadas por área; tocar una mueve la sesión ahí (move_session).
- * Es el original del panel (vista En vivo del dueño); el salón usa su copia
- * congelada en `components/legacy/floor-plan`.
+ * Compartido por el detalle de sesión (salón) y la vista En vivo (dueño).
  */
 export function MoveTableSheet({
   slug,
@@ -99,77 +95,66 @@ export function MoveTableSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      {/* Abajo en el celular; en escritorio, centrada y con un ancho que se lee. */}
-      <SheetContent side="bottom" className="sm:mx-auto sm:max-w-2xl">
+      <SheetContent side="bottom" className="gap-0">
         <SheetHeader>
-          <SheetTitle className="flex items-center gap-2">
-            <ArrowRightLeft className="size-5 shrink-0 text-muted-foreground" aria-hidden />
+          <SheetTitle className="flex items-center gap-2 font-serif">
+            <ArrowRightLeft className="size-4" aria-hidden />
             Cambiar de mesa
           </SheetTitle>
           <SheetDescription>
-            {currentLabel ? `Pasá el grupo de la mesa ${currentLabel} ` : 'Pasá el grupo '}a otra
-            mesa libre. Podés cambiar de área (por ejemplo, de Planta baja a Planta alta).
+            {currentLabel ? `Mover el grupo de la mesa ${currentLabel} ` : 'Mover el grupo '}a otra
+            mesa libre. Podés cambiar de área (ej. Planta Baja → Planta Alta).
           </SheetDescription>
         </SheetHeader>
 
-        <SheetBody className="max-h-[60vh]" aria-busy={loading || undefined}>
+        <div className="max-h-[60vh] space-y-4 overflow-y-auto px-6 py-5">
           {loading ? (
-            <div className="flex items-center justify-center gap-2 py-8 type-body text-muted-foreground">
-              <Spinner aria-hidden />
+            <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground text-sm">
+              <Loader2 className="size-4 animate-spin" aria-hidden />
               Buscando mesas libres…
             </div>
           ) : groups.length === 0 ? (
-            <EmptyState
-              size="sm"
-              title="No hay otras mesas libres"
-              description="Cuando se libere una, va a aparecer acá. También podés liberar una desde el salón."
-            />
+            <p className="py-8 text-center text-muted-foreground text-sm">
+              No hay otras mesas libres en este momento.
+            </p>
           ) : (
-            <div className="flex flex-col gap-6">
-              {groups.map((g) => (
-                <div key={g.area} className="flex flex-col gap-2">
-                  <h3 className="type-label text-muted-foreground">{g.area}</h3>
-                  <div className="grid grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-2">
-                    {g.tables.map((t) => {
-                      const moving = movingId === t.table_id
-                      return (
-                        <button
-                          key={t.table_id}
-                          type="button"
-                          disabled={pending}
-                          aria-busy={moving || undefined}
-                          aria-label={`Mesa ${t.label}${
-                            t.capacity != null ? `, ${t.capacity} personas` : ''
-                          }`}
-                          onClick={() => handleMove(t)}
-                          className={cn(
-                            'press flex min-h-20 flex-col items-center justify-center gap-1 rounded-lg border border-border-strong bg-card p-2 text-center',
-                            'hover:bg-hover',
-                            'outline-offset-2 outline-(--ring) focus-visible:outline-2',
-                            'disabled:cursor-not-allowed disabled:opacity-50',
-                            moving && 'border-primary bg-selected',
-                          )}
-                        >
-                          {moving ? (
-                            <Spinner aria-hidden className="text-primary" />
-                          ) : (
-                            <span className="type-subtitle type-amount">{t.label}</span>
-                          )}
-                          {t.capacity != null ? (
-                            <span className="flex items-center gap-1 type-caption text-muted-foreground tabular-nums">
-                              <Users className="size-3.5" aria-hidden />
-                              {t.capacity}
-                            </span>
-                          ) : null}
-                        </button>
-                      )
-                    })}
-                  </div>
+            groups.map((g) => (
+              <div key={g.area} className="space-y-2">
+                <h3 className="font-semibold text-muted-foreground text-xs uppercase tracking-wide">
+                  {g.area}
+                </h3>
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                  {g.tables.map((t) => (
+                    <button
+                      key={t.table_id}
+                      type="button"
+                      disabled={pending}
+                      onClick={() => handleMove(t)}
+                      className={cn(
+                        'flex aspect-square flex-col items-center justify-center gap-0.5 rounded-xl border border-border/70 bg-card p-2 text-center shadow-sm transition-colors hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50',
+                        movingId === t.table_id && 'border-primary bg-primary/10',
+                      )}
+                    >
+                      {movingId === t.table_id ? (
+                        <Loader2 className="size-4 animate-spin text-primary" aria-hidden />
+                      ) : (
+                        <span className="font-semibold font-serif text-sm tabular-nums">
+                          {t.label}
+                        </span>
+                      )}
+                      {t.capacity != null ? (
+                        <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground tabular-nums">
+                          <Users className="size-2.5" aria-hidden />
+                          {t.capacity}
+                        </span>
+                      ) : null}
+                    </button>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            ))
           )}
-        </SheetBody>
+        </div>
       </SheetContent>
     </Sheet>
   )
