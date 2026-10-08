@@ -691,6 +691,19 @@ export const ACC_ERRORS = {
     code: 'conflict',
     message: 'El ejercicio siguiente ya está cerrado: no se puede reabrir este.',
   },
+  fiscal_year_not_found: {
+    code: 'conflict',
+    message: 'Ese ejercicio ya no existe. Recargá la página.',
+  },
+  previous_fiscal_year_open: {
+    code: 'conflict',
+    message: 'Primero cerrá el ejercicio anterior (el que termina el {fecha}).',
+    fallback: 'Primero cerrá el ejercicio anterior.',
+  },
+  fiscal_year_not_closed: {
+    code: 'conflict',
+    message: 'Ese ejercicio está abierto: no hay nada para reabrir. Recargá la página.',
+  },
 
   // ─── Reportes y exportes ──────────────────────────────────────────────────
   sas_cuit_required: {
@@ -727,6 +740,9 @@ export const ACC_ERRORS = {
     code: 'invalid',
     message: 'El texto de confirmación no coincide: no se borró nada.',
   },
+  // Solo la levanta la guarda de la migración #15 (la matriz de roles aplicada
+  // no es la base del archivo); nunca llega desde la app.
+  acc_line_rule_rebase_required: { code: 'error', message: BUG_MESSAGE, bug: true },
 
   // ─── Por SQLSTATE (sin clave propia en la RPC) ────────────────────────────
   in_use: {
