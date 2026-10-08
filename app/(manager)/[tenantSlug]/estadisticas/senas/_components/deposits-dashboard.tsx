@@ -108,8 +108,9 @@ export function DepositsDashboard({
               >
                 <ChevronLeft className="size-4" />
               </Button>
-              <h2 className="min-w-44 text-center font-serif text-lg font-semibold capitalize">
-                {formatYM(currentYM)}
+              {/* «Octubre de 2026», no «Octubre De 2026» (lo que hacía el `capitalize` de CSS). */}
+              <h2 className="min-w-44 text-center font-serif text-lg font-semibold">
+                {upperFirst(formatYM(currentYM))}
               </h2>
               <Button
                 variant="outline"
@@ -320,4 +321,8 @@ export function DepositsDashboard({
       )}
     </div>
   )
+}
+
+function upperFirst(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
 }

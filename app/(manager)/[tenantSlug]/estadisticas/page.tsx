@@ -1,12 +1,4 @@
-import {
-  ArrowDownToLine,
-  Banknote,
-  Coins,
-  PartyPopper,
-  Receipt,
-  Sparkles,
-  Users,
-} from 'lucide-react'
+import { ArrowDownToLine, Banknote, Receipt, Sparkles, Users } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
@@ -94,36 +86,15 @@ export default async function EstadisticasPage({
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      {/* Cómo nos fue, Señas y Comisiones son pestañas de la sección, arriba del título. */}
       <PageHeader
         eyebrow="Insights"
         title="Estadísticas"
         description="Vista profunda de tu bar: clientes, visitas, eventos y comunicaciones."
-        actions={
-          <>
-            <Button asChild variant="outline" size="sm" className="gap-2">
-              <Link href={`/${tenantSlug}/estadisticas/como-nos-fue`}>
-                <PartyPopper className="size-3.5" />
-                Cómo nos fue
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="sm" className="gap-2">
-              <Link href={`/${tenantSlug}/estadisticas/senas`}>
-                <Banknote className="size-3.5" />
-                Señas
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="sm" className="gap-2">
-              <Link href={`/${tenantSlug}/estadisticas/comisiones`}>
-                <Coins className="size-3.5" />
-                Comisiones
-              </Link>
-            </Button>
-          </>
-        }
       />
 
       <Tabs defaultValue={activeTab} className="space-y-6">
-        <TabsList className="bg-secondary/40">
+        <TabsList className="max-w-full justify-start overflow-x-auto bg-secondary/40">
           <TabsTrigger value="overview" className={TAB_CLASS}>
             Visión general
           </TabsTrigger>

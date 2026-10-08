@@ -1,4 +1,12 @@
-import { Armchair, ArrowRight, Cake, type LucideIcon, Palette, UsersRound } from 'lucide-react'
+import {
+  Armchair,
+  ArrowRight,
+  BookOpen,
+  Cake,
+  type LucideIcon,
+  Palette,
+  UsersRound,
+} from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Card } from '@/components/ui/card'
@@ -51,6 +59,15 @@ const CARDS: SettingsCard[] = [
     description: 'Logo del bar, idioma y zona horaria. El acento de tenant llega pronto.',
     topics: ['Logo', 'Idioma · TZ'],
     href: (s) => `/${s}/configuracion/apariencia`,
+  },
+  {
+    // Como Tortas: en el celular el nav lateral no está y esta card es la forma de llegar a la
+    // guía, que ya no tiene entrada propia en el menú principal.
+    icon: BookOpen,
+    title: 'Documentación',
+    description: 'La guía de todo el sistema, para cuando tengas una duda.',
+    topics: ['Guías', 'Preguntas frecuentes'],
+    href: (s) => `/${s}/docs`,
   },
 ]
 

@@ -93,11 +93,11 @@ Templates típicos que conviene crear (con colores que después se ven en el cal
 
 Las reservas se cargan **desde los dos lados**, y al guardar volvés a donde estabas:
 
-- **Desde la lista**: `Agenda → Reservas` → **Nueva reserva**. Al guardar volvés a la
+- **Desde la lista**: `Reservas` → **Nueva reserva**. Al guardar volvés a la
   lista parada en el día de la reserva, con la reserva recién cargada resaltada.
   Arriba de la lista ves cómo viene cada servicio del día («Alm 19/70 · Mer 33/120 ·
   Cena 119/120»), con los mismos colores que el calendario.
-- **Desde el calendario**: `Agenda → Calendario`, tocá el día (o directamente el
+- **Desde el calendario**: `Calendario`, tocá el día (o directamente el
   servicio: Alm / Mer / Cena) y apretá **Nueva reserva en la cena** (o en el servicio
   que corresponda). Así ves cómo viene el día antes de cargar, y al guardar volvés a
   ese día del calendario.
@@ -198,7 +198,7 @@ calendario; desde la lista, el operativo o cualquier otro lado, a la lista.
 
 ### Acceder al panel operativo
 
-**Desde sidebar:** `Hoy → Operativo` (abre en nueva pestaña, idealmente en tablet horizontal).
+**Desde el panel:** `Reservas` → **Panel operativo** (abre en nueva pestaña, idealmente en tablet horizontal).
 
 URL directa: `https://hubbar.vercel.app/hub/salon/reservas-operativo`
 
@@ -292,7 +292,7 @@ Tap el chip del día en el calendario → entrás al detalle. Ahí podés:
 
 ### Paso 1 — Abrir liquidación
 
-Sidebar: `Insights → Comisiones`. Default = mes actual.
+Sidebar: `Estadísticas` → pestaña `Comisiones`. Default = mes actual.
 
 ### Paso 2 — Vista general
 
@@ -338,8 +338,8 @@ Entries con `paid_at != null` son intocables: el snapshot del rate aplicado qued
 | ¿Cómo abro la terraza un día puntual? | Dueño: en el día del calendario, **Cupo del día** (o **Subir a 120 hoy** cuando salta el aviso del almuerzo). |
 | ¿Puedo borrar una reserva ya cerrada? | Sí, pero las comisiones pagadas no se reversan. |
 | ¿Qué pasa si me equivoco al cerrar una mesa? | "Revertir estado" → vuelve a "Sentada". La comisión se recalcula. |
-| ¿Cómo veo todas las reservas del mes? | `Agenda → Reservas` → **Este mes** (o **Rango**), con filtros por estado, zona, gestor y servicio, **Pasar lista** y **Exportar**. En `Agenda → Calendario` cada día muestra almuerzo, merienda y cena; **Buscar** encuentra una reserva por nombre o teléfono. |
-| ¿Cómo veo cuánta gente tengo arriba o abajo? | `Agenda → Calendario` → **Ver por planta**: **Planta alta**, **Planta baja** o **Sin ubicar** (reservas de evento sin planta). Cada servicio muestra la gente de esa planta contra el cupo de la planta («Cena 46/60»); al abrir el día ves solo las reservas de esa planta. **Todo** vuelve a la vista completa. |
+| ¿Cómo veo todas las reservas del mes? | `Reservas` → **Este mes** (o **Rango**), con filtros por estado, zona, gestor y servicio, **Pasar lista** y **Exportar**. En `Calendario` cada día muestra almuerzo, merienda y cena; **Buscar** encuentra una reserva por nombre o teléfono. |
+| ¿Cómo veo cuánta gente tengo arriba o abajo? | `Calendario` → **Ver por planta**: **Planta alta**, **Planta baja** o **Sin ubicar** (reservas de evento sin planta). Cada servicio muestra la gente de esa planta contra el cupo de la planta («Cena 46/60»); al abrir el día ves solo las reservas de esa planta. **Todo** vuelve a la vista completa. |
 | ¿El cliente se entera de su reserva por WhatsApp? | NO en MVP. La mensajería está desactivada. Solo email/WhatsApp manual desde el bar. |
 | ¿Puedo cambiar el gestor de una reserva después de creada? | Sí, desde el detalle (`/reservas/[id]`). Recalcula automáticamente. |
 | ¿Cómo agrego un gestor nuevo? | `Ajustes → Configuración → Comisiones → Gestores → + Nuevo`. Marcalo como `commission_eligible` si va a cobrar. |

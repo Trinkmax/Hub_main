@@ -14,8 +14,8 @@
 | `/[slug]/paginas/[pageId]` | `owner` | El editor: código, previa en vivo, imágenes, historial. |
 | `/p/[pageSlug]` | **cualquiera, sin sesión** | La landing publicada, servida tal cual. |
 
-Entra por el grupo **Marketing** del sidebar (`Páginas`) y por el ⌘K
-(`Páginas`, `Nueva página HTML`).
+Entra por **Marketing** en el sidebar (pestaña `Páginas` arriba de la página; el editor
+de cada página va sin esas pestañas) y por el ⌘K (`Páginas`, `Nueva página HTML`).
 
 ---
 

@@ -3,6 +3,7 @@
 import { Mail, Search, Star, Users, X } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useTransition } from 'react'
+import { CLIENTES_ORIGENES } from '@/components/shell/section-tabs-config'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -68,16 +69,19 @@ export function CustomersFilters({
   const q = searchParams.get('q') ?? ''
   const tag = searchParams.get('tag') ?? ''
   const since = searchParams.get('since') ?? ''
+  const segmentRaw = searchParams.get('segment')
+  const segment = segmentRaw === 'reserva' || segmentRaw === 'walkin' ? segmentRaw : 'todos'
   const programaRaw = searchParams.get('programa') ?? 'all'
   const programa: Programa =
     programaRaw === 'with_points' || programaRaw === 'contact_only' ? programaRaw : 'all'
-  const hasFilters = q.length > 0 || tag.length > 0 || since.length > 0 || programa !== 'all'
+  const hasFilters =
+    q.length > 0 || tag.length > 0 || since.length > 0 || programa !== 'all' || segment !== 'todos'
 
   return (
     <div className="space-y-2" aria-busy={pending}>
       <div
         role="tablist"
-        aria-label="Segmento de clientes"
+        aria-label="Programa de puntos"
         className="card-hairline flex w-full overflow-x-auto rounded-xl border bg-card/60 p-1"
       >
         {PROGRAMA_TABS.map((tab) => {
@@ -155,6 +159,22 @@ export function CustomersFilters({
             <SelectItem value="30d">Últimos 30 días</SelectItem>
             <SelectItem value="90d">Últimos 90 días</SelectItem>
             <SelectItem value="never">Nunca volvió</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={segment}
+          onValueChange={(v) => setParam('segment', v === 'todos' ? null : v)}
+        >
+          <SelectTrigger className="h-9 sm:w-[180px]" aria-label="Origen">
+            <SelectValue placeholder="Origen" />
+          </SelectTrigger>
+          <SelectContent>
+            {CLIENTES_ORIGENES.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
 

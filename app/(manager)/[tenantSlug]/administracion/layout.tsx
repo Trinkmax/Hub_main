@@ -2,6 +2,9 @@ import { notFound, redirect } from 'next/navigation'
 import type { ReactNode } from 'react'
 import { AccountingProvider } from '@/components/administracion/accounting-provider'
 import { ReadOnlyBanner } from '@/components/administracion/read-only'
+import { SectionTabsBar } from '@/components/shell/section-tabs-bar'
+import { resolveSection } from '@/components/shell/section-tabs-config'
+import { loadSectionViewer } from '@/components/shell/section-tabs-server'
 import { type AccountingState, getAccountingState } from '@/lib/accounting/access'
 import { todayInCordoba } from '@/lib/dates'
 import { TenantNotFoundError, UnauthenticatedError } from '@/lib/tenant'
@@ -29,6 +32,9 @@ export const metadata = { title: 'Administración' }
  * | Sin configurar                         | contadora      | «Todavía no está lista»    |
  * | Configurada, sin acceso                | dueño          | «Administración es privada»|
  * | Configurada, con acceso                | dueño/contadora| la sección (+ hojas rápidas)|
+ *
+ * Las pestañas de la sección (Resumen, Compras, Ventas, Cajas, Libros, Plan de cuentas) van
+ * arriba de todo SOLO en la última fila: nunca en las pantallas de la puerta ni en el asistente.
  */
 export default async function AdministracionLayout({
   children,
@@ -76,12 +82,16 @@ export default async function AdministracionLayout({
 
   if (!state.read) return <AdministracionSinAcceso adminNames={state.adminNames} />
 
+  // La misma resolución cacheada que ya usó `getAccountingState`: sin otro viaje a la base.
+  const section = resolveSection('administracion', tenantSlug, await loadSectionViewer(tenantSlug))
+
   return (
     <AccountingProvider
       tenantSlug={tenantSlug}
       today={todayInCordoba()}
       access={{ read: state.read, write: state.write, admin: state.admin }}
     >
+      <SectionTabsBar {...section} />
       {state.isAccountant ? (
         <div className="mx-auto w-full max-w-7xl px-4 pt-4 sm:px-6 lg:px-8">
           <ReadOnlyBanner />

@@ -228,9 +228,9 @@ const RESERVAS_TOUR: TourDefinition = (() => {
         title: 'Mirá lo que vas ganando',
         body: (
           <>
-            En <strong>Mis números</strong> (en el menú lateral, sección Negocio) ves tus comisiones
-            mes a mes: cuánto te corresponde por cada reserva, los bonus por eventos llenos y qué ya
-            te pagaron.
+            En <strong>Mis números</strong> (en el menú lateral) ves tus comisiones mes a mes:
+            cuánto te corresponde por cada reserva, los bonus por eventos llenos y qué ya te
+            pagaron.
           </>
         ),
       },

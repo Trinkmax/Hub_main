@@ -26,7 +26,7 @@ export async function AppShell({
   memberships: MembershipWithTenant[]
   isPlatformAdmin: boolean
   email: string
-  /** Administración para esta persona: el grupo del menú y las entradas de ⌘K. */
+  /** Administración para esta persona: la entrada del menú y las de ⌘K. */
   accounting?: AccountingAccess
   children: React.ReactNode
 }) {

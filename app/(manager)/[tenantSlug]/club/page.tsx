@@ -25,7 +25,7 @@ import { ClubEditor, type ClubTab } from './_components/club-editor'
 
 export const metadata = { title: 'Club de beneficios' }
 
-// Tabs válidos (deep-link desde el sidebar y las viejas rutas /club/* que redirigen acá).
+// Tabs válidos (deep-link desde el ⌘K y las viejas rutas /club/* que redirigen acá).
 const CLUB_TABS = new Set<ClubTab>(['programa', 'aliados', 'bienvenida', 'punch'])
 
 export default async function ClubPage({

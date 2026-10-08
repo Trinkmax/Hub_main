@@ -178,8 +178,8 @@ export function ClubEditor(props: ClubEditorProps): React.JSX.Element {
   } = props
 
   // La URL (?tab=) es la ÚNICA fuente de verdad del tab activo. No hay estado
-  // local: así el resaltado del sidebar (que lee la URL) y el contenido nunca se
-  // desincronizan, y los deep-links del sidebar funcionan sin remontar la página.
+  // local: así la URL y el contenido nunca se desincronizan, y los deep-links
+  // (⌘K, las viejas rutas /club/*) funcionan sin remontar la página.
   const pathname = usePathname()
   const rawTab = useSearchParams().get('tab')
   const clubTab: ClubTab =

@@ -8,9 +8,9 @@ export type NavItem = {
   icon: NavIconKey
   /** Si está, sólo se muestra a estos roles. Si no, a todos. */
   roles?: TenantRole[]
-  /** Match exacto (true) o prefijo (false, default). */
+  /** Match exacto (true) o prefijo (false, default). Vale también para `activePaths`. */
   exact?: boolean
-  /** Abre en nueva pestaña (p. ej. "Salón en vivo" desde el manager). */
+  /** Abre en nueva pestaña (p. ej. "Salón en vivo" desde el manager). Nunca queda resaltado. */
   newTab?: boolean
   /** Si está, sólo se muestra cuando la feature está ON (o quien mira es superadmin). */
   feature?: FeatureKey
@@ -18,30 +18,27 @@ export type NavItem = {
    * Administración (H.0): además del rol y del flag, el acceso por persona.
    * `read` = la ve quien tiene acceso de lectura (contadora o dueño
    * habilitado); `read_or_setup` = también el dueño que puede hacer la puesta
-   * en marcha (solo «Resumen», que lo lleva al asistente). El superadmin no
-   * saltea esto: el acceso lo decide la base.
+   * en marcha (la entrada lo lleva al asistente). El superadmin no saltea
+   * esto: el acceso lo decide la base.
    */
   accounting?: 'read' | 'read_or_setup'
   /**
-   * El padre NO navega: al clickearlo sólo expande/colapsa sus hijos. Para
-   * categorías-madre que son puro agrupador (ej. "Personas") y cuya "vista
-   * todo" ya es uno de los hijos.
+   * Otras rutas de la MISMA sección que también resaltan la entrada. Las
+   * partes de una sección viven en pestañas arriba de la página, no en el
+   * menú (p. ej. Clientes → /acreditar y /local/captura). Matchean igual que
+   * el href: por prefijo con borde de segmento.
    */
-  expanderOnly?: boolean
-  /** Sub-items anidados (1 nivel). El padre además navega a su propio href. */
-  children?: NavItem[]
+  activePaths?: (slug: string) => string[]
 }
 
 export type NavGroup = {
+  /**
+   * Nombre del bloque. NO se muestra (los bloques se separan sólo por aire,
+   * sin títulos ni desplegables): queda como nombre accesible de su lista.
+   */
   label: string
   items: NavItem[]
-  /**
-   * El header del grupo colapsa/expande sus items (accordion). El grupo con la
-   * ruta activa se auto-expande; el estado elegido persiste en localStorage.
-   * "Hoy" no colapsa: es el cockpit diario, siempre a mano.
-   */
-  collapsible?: boolean
-  /** Se ancla al fondo del sidebar, sin header de grupo (ej. Configuración). */
+  /** Se ancla al fondo del sidebar (Configuración). */
   pinned?: boolean
 }
 
@@ -52,29 +49,36 @@ export type ResolvedNavItem = {
   iconKey: NavIconKey
   exact?: boolean
   newTab?: boolean
-  expanderOnly?: boolean
-  children?: ResolvedNavItem[]
+  activePaths?: string[]
 }
 
 export type ResolvedNavGroup = {
   label: string
   items: ResolvedNavItem[]
-  collapsible?: boolean
   pinned?: boolean
 }
 
 /**
- * Information architecture del Manager Workspace para el producto loyalty-first.
- * Orden por el FLUJO del dueño: primero el hoy (resumen, operativo del día,
- * mensajería), después la agenda (reservas + calendario: se reserva desde los
- * dos), el CRM (personas + acreditar puntos), el crecimiento (carta, club de
- * beneficios), el negocio (estadísticas) y, anclada abajo, la configuración.
- * Lo de servicio de mesa (Salón) queda OCULTO detrás de feature-flags de
- * superadmin.
+ * Information architecture del Manager Workspace (loyalty-first).
+ *
+ * UNA entrada por sección: sin desplegables, sin flechitas, sin sub-ítems.
+ * Pedido del dueño (07/10/2026): «se presta mucho a confusión los
+ * desplegables, no se nota cuándo está plegado… la idea siempre es que haya
+ * la menor cantidad posible». Las partes de cada sección son pestañas arriba
+ * de la página (Clientes, Marketing, Estadísticas, Administración) o la
+ * navegación interna que ya tenían (Club, Mensajería, Configuración), y
+ * `activePaths` deja la entrada resaltada en todas ellas.
+ *
+ * Orden por el FLUJO del dueño, en bloques separados por aire: el hoy
+ * (resumen, operativo, mensajería), la agenda y los clientes, el negocio
+ * (carta, club, marketing, números, administración) y, anclada abajo, la
+ * configuración. Lo de servicio de mesa (Salón) queda OCULTO detrás de
+ * feature-flags de superadmin.
  *
  * Roles acotados (el proxy además limita sus rutas — lib/tenant/roles.ts):
- *   editor → sólo Carta (+ ver la carta pública)
- *   host   → Operativo, Reservas, Calendario y Mis números
+ *   editor     → sólo Carta («Ver carta» es un botón de la página)
+ *   host       → Operativo, Reservas, Calendario y Mis números
+ *   accountant → sólo Administración
  */
 export const NAV_GROUPS: NavGroup[] = [
   {
@@ -94,8 +98,8 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ['owner', 'host'],
       },
       {
-        // Hub de comunicación con el cliente. Navega a la sección; su navegación
-        // interna (Inbox/Difusiones/Flows/Audiencias/Config) vive en el sub-nav.
+        // Hub de comunicación con el cliente. Su navegación interna
+        // (Inbox/Difusiones/Flows/Audiencias/Config) vive en su propio riel.
         label: 'Mensajería',
         href: (s) => `/${s}/mensajeria`,
         icon: 'MessageCircle',
@@ -104,14 +108,12 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: 'Agenda',
-    collapsible: true,
+    label: 'Agenda y clientes',
     items: [
       {
-        // La lista del día / semana / mes. Volvió al menú después de un día
-        // oculta (22/09/2026): la anfitriona trabaja con la lista, el filtro y
-        // «Pasar lista». El alta y la ficha (/reservas/nuevo, /reservas/[id])
-        // resaltan este item por prefijo, se entre desde donde se entre.
+        // La lista del día / semana / mes: la anfitriona trabaja con la lista,
+        // el filtro y «Pasar lista». El alta y la ficha (/reservas/nuevo,
+        // /reservas/[id]) resaltan esta entrada por prefijo.
         label: 'Reservas',
         href: (s) => `/${s}/reservas`,
         icon: 'CalendarCheck',
@@ -123,217 +125,53 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: 'CalendarDays',
         roles: ['owner', 'host'],
       },
-    ],
-  },
-  {
-    label: 'Clientes',
-    collapsible: true,
-    items: [
       {
-        label: 'Personas',
+        // Personas (con sus segmentos Reservas / Walk-in), Acreditar y el QR del
+        // club: pestañas arriba de la página.
+        label: 'Clientes',
         href: (s) => `/${s}/clientes`,
         icon: 'Users',
         roles: ['owner'],
-        // El padre no navega: expande y te deja elegir Todos / Reservas / Walk-in.
-        expanderOnly: true,
-        children: [
-          { label: 'Todos', href: (s) => `/${s}/clientes`, icon: 'Users', roles: ['owner'] },
-          {
-            label: 'Reservas',
-            href: (s) => `/${s}/clientes?segment=reserva`,
-            icon: 'CalendarCheck',
-            roles: ['owner'],
-          },
-          {
-            label: 'Walk-in',
-            href: (s) => `/${s}/clientes?segment=walkin`,
-            icon: 'Receipt',
-            roles: ['owner'],
-          },
-        ],
-      },
-      { label: 'Acreditar', href: (s) => `/${s}/acreditar`, icon: 'ScanLine', roles: ['owner'] },
-      {
-        label: 'QR del club',
-        href: (s) => `/${s}/local/captura`,
-        icon: 'QrCode',
-        roles: ['owner'],
+        activePaths: (s) => [`/${s}/acreditar`, `/${s}/local/captura`],
       },
     ],
   },
   {
-    // Contabilidad de la SAS (Sprint 1). Solo con el flag `accounting` y el
-    // acceso por persona; la contadora ve SOLO este grupo.
-    label: 'Administración',
-    collapsible: true,
+    label: 'Negocio',
     items: [
       {
-        label: 'Resumen',
-        href: (s) => `/${s}/administracion`,
-        icon: 'Landmark',
-        exact: true,
-        roles: ['owner', 'accountant'],
-        feature: 'accounting',
-        accounting: 'read_or_setup',
-      },
-      {
-        label: 'Compras y proveedores',
-        href: (s) => `/${s}/administracion/compras`,
-        icon: 'Truck',
-        roles: ['owner', 'accountant'],
-        feature: 'accounting',
-        accounting: 'read',
-      },
-      {
-        label: 'Ventas y clientes',
-        href: (s) => `/${s}/administracion/ventas`,
-        icon: 'HandCoins',
-        roles: ['owner', 'accountant'],
-        feature: 'accounting',
-        accounting: 'read',
-      },
-      {
-        label: 'Cajas y bancos',
-        href: (s) => `/${s}/administracion/cajas`,
-        icon: 'Wallet',
-        roles: ['owner', 'accountant'],
-        feature: 'accounting',
-        accounting: 'read',
-      },
-      {
-        label: 'Libros',
-        href: (s) => `/${s}/administracion/libros`,
-        icon: 'BookText',
-        roles: ['owner', 'accountant'],
-        feature: 'accounting',
-        accounting: 'read',
-      },
-      {
-        label: 'Plan de cuentas',
-        href: (s) => `/${s}/administracion/plan-de-cuentas`,
-        icon: 'ListTree',
-        roles: ['owner', 'accountant'],
-        feature: 'accounting',
-        accounting: 'read',
-      },
-    ],
-  },
-  {
-    label: 'Crecimiento',
-    collapsible: true,
-    items: [
-      // Difusiones / Audiencias / Flows se movieron al hub "Mensajería" (grupo Hoy).
-      {
-        // "Carta" edita el menú público (/menu). El Club vive en su propia ruta
-        // (/club) — paths distintos, resaltado naturalmente excluyente.
+        // Edita el menú público. «Ver carta» (como la ve el cliente) es un
+        // botón de la página, para el dueño y para quien edita contenido.
         label: 'Carta',
         href: (s) => `/${s}/menu`,
         icon: 'UtensilsCrossed',
         roles: ['owner', 'editor'],
       },
       {
-        // La carta como la ve el cliente — clave para quien carga fotos/videos.
-        label: 'Ver carta',
-        href: (s) => `/carta/${s}`,
-        icon: 'ArrowUpRight',
-        roles: ['owner', 'editor'],
-        newTab: true,
-      },
-      {
-        // El Club es su propio editor (/club) con tabs internos. Los hijos hacen
-        // deep-link a cada tab (?tab=). El padre, sin query, resalta en cualquier
-        // /club/* y su highlight se suprime cuando un hijo está activo.
-        label: 'Club de beneficios',
+        // Su propio editor (/club) con pestañas internas (?tab=).
+        label: 'Club',
         href: (s) => `/${s}/club`,
         icon: 'Star',
         roles: ['owner'],
-        children: [
-          {
-            label: 'Puntos y niveles',
-            href: (s) => `/${s}/club?tab=programa`,
-            icon: 'Sparkles',
-            roles: ['owner'],
-          },
-          {
-            label: 'Aliados',
-            href: (s) => `/${s}/club?tab=aliados`,
-            icon: 'Handshake',
-            roles: ['owner'],
-          },
-          {
-            label: 'Bienvenida',
-            href: (s) => `/${s}/club?tab=bienvenida`,
-            icon: 'Star',
-            roles: ['owner'],
-          },
-          {
-            label: 'Punch cards',
-            href: (s) => `/${s}/club?tab=punch`,
-            icon: 'Stamp',
-            roles: ['owner'],
-          },
-        ],
       },
-    ],
-  },
-  {
-    // Lo que el bar muestra puertas afuera y cómo se organiza el equipo para
-    // producirlo. Owner-only: es la mesa de los socios.
-    label: 'Marketing',
-    collapsible: true,
-    items: [
       {
-        label: 'Tareas',
+        // Lo que el bar muestra puertas afuera y cómo se organiza el equipo
+        // para producirlo: Tareas, Link de Instagram y Páginas son pestañas.
+        // Owner-only: es la mesa de los socios.
+        label: 'Marketing',
         href: (s) => `/${s}/tareas`,
         icon: 'ListChecks',
         roles: ['owner'],
+        activePaths: (s) => [`/${s}/enlaces`, `/${s}/paginas`],
       },
       {
-        label: 'Link de Instagram',
-        href: (s) => `/${s}/enlaces`,
-        icon: 'Link2',
-        roles: ['owner'],
-      },
-      {
-        // Landings en HTML que arma marketing y se publican en /p/[slug].
-        label: 'Páginas',
-        href: (s) => `/${s}/paginas`,
-        icon: 'FileCode2',
-        roles: ['owner'],
-      },
-    ],
-  },
-  {
-    label: 'Negocio',
-    collapsible: true,
-    items: [
-      {
+        // Resumen, Cómo nos fue, Señas, Comisiones y Reseñas (con su flag) son
+        // pestañas arriba de la página.
         label: 'Estadísticas',
         href: (s) => `/${s}/estadisticas`,
         icon: 'BarChart3',
         roles: ['owner'],
-        children: [
-          {
-            // Cuánta gente entró una noche o un evento, en cuántas reservas.
-            label: 'Cómo nos fue',
-            href: (s) => `/${s}/estadisticas/como-nos-fue`,
-            icon: 'PartyPopper',
-            roles: ['owner'],
-          },
-          {
-            // Plata que entra por señas, día por día.
-            label: 'Señas',
-            href: (s) => `/${s}/estadisticas/senas`,
-            icon: 'Banknote',
-            roles: ['owner'],
-          },
-          {
-            label: 'Comisiones',
-            href: (s) => `/${s}/estadisticas/comisiones`,
-            icon: 'Coins',
-            roles: ['owner'],
-          },
-        ],
+        activePaths: (s) => [`/${s}/reviews`],
       },
       {
         // Lo que va ganando quien gestiona reservas (comisiones propias).
@@ -343,17 +181,21 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ['host'],
       },
       {
-        label: 'Reseñas',
-        href: (s) => `/${s}/reviews`,
-        icon: 'Star',
-        roles: ['owner'],
-        feature: 'reviews',
+        // Contabilidad de la SAS (Sprint 1). Solo con el flag `accounting` y el
+        // acceso por persona; la contadora ve SOLO esta entrada. Compras,
+        // Ventas, Cajas, Libros y Plan de cuentas son pestañas de la sección,
+        // así que resalta en cualquier /administracion/*.
+        label: 'Administración',
+        href: (s) => `/${s}/administracion`,
+        icon: 'Landmark',
+        roles: ['owner', 'accountant'],
+        feature: 'accounting',
+        accounting: 'read_or_setup',
       },
     ],
   },
   {
     label: 'Salón',
-    collapsible: true,
     items: [
       {
         label: 'Salón en vivo',
@@ -388,8 +230,9 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    // Anclado al fondo, sin header: siempre a un click, nunca en el medio.
-    label: 'Sistema',
+    // Anclado al fondo: siempre a un toque, nunca en el medio. La
+    // Documentación es una sección más adentro de Configuración.
+    label: 'Ajustes',
     pinned: true,
     items: [
       {
@@ -397,9 +240,7 @@ export const NAV_GROUPS: NavGroup[] = [
         href: (s) => `/${s}/configuracion`,
         icon: 'Settings2',
         roles: ['owner'],
-        children: [
-          { label: 'Documentación', href: (s) => `/${s}/docs`, icon: 'BookOpen', roles: ['owner'] },
-        ],
+        activePaths: (s) => [`/${s}/docs`],
       },
     ],
   },
@@ -415,31 +256,51 @@ export const NO_ACCOUNTING: AccountingAccess = {
   canSetUp: false,
 }
 
-function accountingOk(item: NavItem, accounting: AccountingAccess): boolean {
-  if (!item.accounting) return true
-  // `read` y `canSetUp` ya traen el flag del bar adentro (parseAccountingAccess),
-  // pero se pide `enabled` igual: fail-closed si alguien arma el objeto a mano.
-  if (!accounting.enabled) return false
-  return item.accounting === 'read' ? accounting.read : accounting.read || accounting.canSetUp
+/**
+ * Las puertas de una entrada del menú o de una pestaña de sección
+ * (section-tabs-config.ts): rol, feature y acceso a Administración. Ver los
+ * campos homónimos de `NavItem`.
+ */
+export type NavGate = {
+  roles?: readonly TenantRole[]
+  feature?: FeatureKey
+  accounting?: 'read' | 'read_or_setup'
 }
 
-function itemVisible(
-  item: NavItem,
-  role: TenantRole,
-  features: TenantFeatures,
-  isPlatformAdmin: boolean,
-  accounting: AccountingAccess,
-): boolean {
-  const roleOk = !item.roles || item.roles.includes(role)
-  // El flag de Administración no se saltea por ser superadmin (lo decide la base).
-  const featureOk =
-    !item.feature || (item.feature !== 'accounting' && isPlatformAdmin) || features[item.feature]
-  return roleOk && featureOk && accountingOk(item, accounting)
+/** Quién mira, tal como sale de `requireTenantAccess`. */
+export type NavViewer = {
+  role: TenantRole
+  features: TenantFeatures
+  isPlatformAdmin: boolean
+  accounting: AccountingAccess
 }
 
 /**
- * Filtra los grupos por rol + feature-flag (+ superadmin bypass), recursando en
- * los children. Un padre se mantiene si él pasa o si le sobrevive algún hijo.
+ * ¿Ve esta entrada (o pestaña)? UNA sola regla para el menú y para las
+ * pestañas de sección, así no se separan con el tiempo. Sólo decide qué se
+ * muestra: la página y la base vuelven a decidir todo.
+ */
+export function gateAllows(gate: NavGate, viewer: NavViewer): boolean {
+  const roleOk = !gate.roles || gate.roles.includes(viewer.role)
+  // El flag de Administración no se saltea por ser superadmin (lo decide la base).
+  const featureOk =
+    !gate.feature ||
+    (gate.feature !== 'accounting' && viewer.isPlatformAdmin) ||
+    viewer.features[gate.feature]
+  return roleOk && featureOk && accountingOk(gate, viewer.accounting)
+}
+
+function accountingOk(gate: NavGate, accounting: AccountingAccess): boolean {
+  if (!gate.accounting) return true
+  // `read` y `canSetUp` ya traen el flag del bar adentro (parseAccountingAccess),
+  // pero se pide `enabled` igual: fail-closed si alguien arma el objeto a mano.
+  if (!accounting.enabled) return false
+  return gate.accounting === 'read' ? accounting.read : accounting.read || accounting.canSetUp
+}
+
+/**
+ * Filtra los grupos por rol + feature-flag (+ superadmin bypass) + acceso a
+ * Administración. Un grupo sin entradas visibles desaparece.
  */
 export function visibleGroups(
   role: TenantRole,
@@ -447,31 +308,18 @@ export function visibleGroups(
   isPlatformAdmin: boolean,
   accounting: AccountingAccess = NO_ACCOUNTING,
 ): NavGroup[] {
+  const viewer: NavViewer = { role, features, isPlatformAdmin, accounting }
   return NAV_GROUPS.map((group) => ({
     ...group,
-    items: group.items
-      .map((item) => {
-        const children = item.children?.filter((child) =>
-          itemVisible(child, role, features, isPlatformAdmin, accounting),
-        )
-        return { item, children }
-      })
-      .filter(
-        ({ item, children }) =>
-          itemVisible(item, role, features, isPlatformAdmin, accounting) ||
-          (children?.length ?? 0) > 0,
-      )
-      .map(({ item, children }) => ({ ...item, children })),
+    items: group.items.filter((item) => gateAllows(item, viewer)),
   })).filter((group) => group.items.length > 0)
 }
 
 /**
- * Resuelve los grupos a estructuras serializables (href ejecutado, icon como key).
- * Llamar con (role, slug, features, isPlatformAdmin, accounting); features,
- * isPlatformAdmin y accounting vienen de `requireTenantAccess` (un round-trip).
- *
- * Si al rol le quedan pocos items (editor/host/contadora), los grupos dejan de
- * colapsar: no tiene sentido esconder 3 entradas detrás de accordions.
+ * Resuelve los grupos a estructuras serializables (href y `activePaths`
+ * ejecutados con el slug, icon como key). Llamar con (role, slug, features,
+ * isPlatformAdmin, accounting); features, isPlatformAdmin y accounting vienen
+ * de `requireTenantAccess` (un round-trip).
  */
 export function resolveNavGroups(
   role: TenantRole,
@@ -480,13 +328,8 @@ export function resolveNavGroups(
   isPlatformAdmin: boolean,
   accounting: AccountingAccess = NO_ACCOUNTING,
 ): ResolvedNavGroup[] {
-  const groups = visibleGroups(role, features, isPlatformAdmin, accounting)
-  const totalItems = groups.reduce((n, g) => n + g.items.length, 0)
-  const fewItems = totalItems <= 8
-
-  return groups.map((group) => ({
+  return visibleGroups(role, features, isPlatformAdmin, accounting).map((group) => ({
     label: group.label,
-    collapsible: fewItems ? false : group.collapsible,
     pinned: group.pinned,
     items: group.items.map((item) => ({
       label: item.label,
@@ -494,14 +337,7 @@ export function resolveNavGroups(
       iconKey: item.icon,
       exact: item.exact,
       newTab: item.newTab,
-      expanderOnly: item.expanderOnly,
-      children: item.children?.map((child) => ({
-        label: child.label,
-        href: child.href(slug),
-        iconKey: child.icon,
-        exact: child.exact,
-        newTab: child.newTab,
-      })),
+      activePaths: item.activePaths?.(slug),
     })),
   }))
 }

@@ -47,7 +47,7 @@ export default async function CapturaConfigPage({
         description="Dos QRs, nada más. La carta para las mesas, y el del club que el mozo muestra al cerrar la cuenta para invitar a sumarse."
       />
 
-      <div className="grid gap-5 sm:grid-cols-2">
+      <div className="grid gap-5 *:min-w-0 sm:grid-cols-2">
         <QrCard
           title="Carta"
           description="Pegalo en las mesas. Tus clientes ven la carta completa, sin descargar nada ni loguearse."

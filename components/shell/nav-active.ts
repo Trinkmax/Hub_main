@@ -12,70 +12,82 @@ export function matchesPath(pathname: string, href: string, exact?: boolean): bo
   return pathname.startsWith(`${path}/`)
 }
 
-function flatten(groups: ResolvedNavGroup[]): ResolvedNavItem[] {
-  const out: ResolvedNavItem[] = []
-  for (const g of groups) {
-    for (const item of g.items) {
-      out.push(item)
-      if (item.children) out.push(...item.children)
-    }
-  }
-  return out
+/** Los params que pide un href (`?segment=walkin` → 1 param; sin query → ninguno). */
+function requiredParams(href: string): URLSearchParams {
+  const qIndex = href.indexOf('?')
+  return new URLSearchParams(qIndex === -1 ? '' : href.slice(qIndex + 1))
 }
 
 /**
  * ¿La query del href está contenida en la query actual? Un href sin query pasa
  * siempre (su requisito es vacío). Un href con `?segment=walkin` sólo pasa si
- * TODOS sus params están presentes con igual valor en `search`.
+ * TODOS sus params están presentes con igual valor en `current`.
  */
 function queryMatches(href: string, current: URLSearchParams): boolean {
-  const qIndex = href.indexOf('?')
-  if (qIndex === -1) return true
-  const required = new URLSearchParams(href.slice(qIndex + 1))
-  for (const [key, value] of required) {
+  for (const [key, value] of requiredParams(href)) {
     if (current.get(key) !== value) return false
   }
   return true
 }
 
+type Match = { length: number; params: number }
+
+/** ¿`a` es más específico que `b`? Path más largo; a igual path, más params pedidos. */
+function moreSpecific(a: Match, b: Match): boolean {
+  return a.length > b.length || (a.length === b.length && a.params > b.params)
+}
+
 /**
- * Set de hrefs activos para el sidebar. Reglas:
- *  1. Gana el match de pathname más específico (longest-prefix), aplanando
- *     padres + hijos para cruzar niveles de anidación.
- *  2. Entre los que empatan en ese pathname, sólo quedan activos los que además
- *     satisfacen su query (subset de la query actual). El padre, sin query, pasa
- *     siempre — pero `SidebarParent` suprime su highlight cuando un hijo está
- *     activo (`selfActive && !childActive`).
+ * El mejor match de una entrada para la URL actual, mirando su href y sus
+ * `activePaths` (las otras rutas de su sección); `null` si ninguno matchea.
+ */
+function bestMatch(
+  pathname: string,
+  current: URLSearchParams,
+  item: ResolvedNavItem,
+): Match | null {
+  let best: Match | null = null
+  for (const target of [item.href, ...(item.activePaths ?? [])]) {
+    if (!matchesPath(pathname, target, item.exact) || !queryMatches(target, current)) continue
+    const match = { length: stripQuery(target).length, params: [...requiredParams(target)].length }
+    if (!best || moreSpecific(match, best)) best = match
+  }
+  return best
+}
+
+/**
+ * La entrada del sidebar que corresponde a la página abierta, como Set de
+ * hrefs: vacío o con UNO solo — nunca quedan dos resaltadas. Reglas:
+ *  1. Cada entrada matchea por su href o por cualquiera de sus `activePaths`,
+ *     por prefijo con borde de segmento (`/x/reservas` no matchea
+ *     `/x/reservas-viejas`); las `exact`, sólo por igualdad.
+ *  2. Gana el match más largo (el más específico): `/x/local/captura` es de
+ *     Clientes y `/x/local/mesas` es del plano, aunque compartan `/x/local`.
+ *  3. Un target con query (`?segment=…`) sólo matchea si la query actual la
+ *     contiene, y a igual path le gana al que no pide nada. Si empatan del
+ *     todo, gana la primera en el orden del menú.
+ *  4. Las que abren en otra pestaña (`newTab`) nunca quedan resaltadas.
  *
- * Así `/x/clientes?segment=walkin` activa SÓLO Walk-in (no Reservas a la vez), y
- * `/x/clientes` pelado activa SÓLO el padre Personas. Pura y testeable: recibe
- * `search` como string (no usa hooks) para poder mockearse en Vitest.
+ * Pura y testeable: recibe `search` como string (no usa hooks) para poder
+ * mockearse en Vitest.
  */
 export function computeActiveHrefs(
   pathname: string,
   search: string,
   groups: ResolvedNavGroup[],
 ): Set<string> {
-  const all = flatten(groups)
   const current = new URLSearchParams(search)
+  let winner: { href: string; match: Match } | null = null
 
-  let maxLen = 0
-  for (const item of all) {
-    if (item.newTab) continue
-    if (matchesPath(pathname, item.href, item.exact)) {
-      const len = stripQuery(item.href).length
-      if (len > maxLen) maxLen = len
+  for (const group of groups) {
+    for (const item of group.items) {
+      if (item.newTab) continue
+      const match = bestMatch(pathname, current, item)
+      if (match && (!winner || moreSpecific(match, winner.match))) {
+        winner = { href: item.href, match }
+      }
     }
   }
 
-  const active = new Set<string>()
-  if (maxLen === 0) return active
-
-  for (const item of all) {
-    if (item.newTab) continue
-    if (!matchesPath(pathname, item.href, item.exact)) continue
-    if (stripQuery(item.href).length !== maxLen) continue
-    if (queryMatches(item.href, current)) active.add(item.href)
-  }
-  return active
+  return new Set(winner ? [winner.href] : [])
 }

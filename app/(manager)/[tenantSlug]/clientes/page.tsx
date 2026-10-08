@@ -70,25 +70,18 @@ export default async function ClientesPage({
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      {/* «QR del club» ya no va acá: es una pestaña de la sección, justo arriba. */}
       <PageHeader
         eyebrow="Personas"
         title="Clientes"
         description={headerDescription}
         actions={
-          <>
-            <Button asChild variant="outline" className="gap-2">
-              <Link href={`/${tenantSlug}/local/captura`}>
-                <QrCode className="size-4" />
-                QR del club
-              </Link>
-            </Button>
-            <Button asChild className="gap-2">
-              <Link href={`/${tenantSlug}/clientes/nuevo`}>
-                <UserPlus className="size-4" />
-                Nuevo cliente
-              </Link>
-            </Button>
-          </>
+          <Button asChild className="gap-2">
+            <Link href={`/${tenantSlug}/clientes/nuevo`}>
+              <UserPlus className="size-4" />
+              Nuevo cliente
+            </Link>
+          </Button>
         }
       />
 

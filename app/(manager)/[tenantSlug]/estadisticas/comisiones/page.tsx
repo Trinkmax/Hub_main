@@ -1,5 +1,3 @@
-import { ArrowLeft } from 'lucide-react'
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { resolveCommissionPeriod } from '@/lib/commissions/period'
@@ -56,16 +54,9 @@ export default async function ComisionesStatsPage({
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      {/* Sin «← Estadísticas»: la pestaña Resumen de arriba ya vuelve ahí. */}
       <PageHeader
-        eyebrow={
-          <Link
-            href={`/${tenantSlug}/estadisticas`}
-            className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="size-3.5" />
-            Estadísticas
-          </Link>
-        }
+        eyebrow="Estadísticas"
         title="Comisiones"
         description={`Liquidación de ${period.label}`}
       />

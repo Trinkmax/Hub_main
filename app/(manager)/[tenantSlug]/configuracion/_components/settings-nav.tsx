@@ -1,6 +1,6 @@
 'use client'
 
-import { Armchair, type LucideIcon, Palette, Star, UsersRound } from 'lucide-react'
+import { Armchair, BookOpen, type LucideIcon, Palette, Star, UsersRound } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -49,13 +49,20 @@ const GROUPS: Group[] = [
     icon: Palette,
     items: [{ label: 'General', href: (s) => `/${s}/configuracion/apariencia` }],
   },
+  {
+    // La guía del sistema vivía en el menú principal, colgada de Configuración. El menú quedó
+    // con una entrada por sección (07/10/2026) y la guía pasó acá.
+    label: 'Ayuda',
+    icon: BookOpen,
+    items: [{ label: 'Documentación', href: (s) => `/${s}/docs` }],
+  },
 ]
 
 export function SettingsNav({ tenantSlug }: { tenantSlug: string }) {
   const pathname = usePathname()
 
   return (
-    <nav className="space-y-5">
+    <nav aria-label="Secciones de Configuración" className="space-y-5">
       {GROUPS.map((group) => {
         const Icon = group.icon
         return (

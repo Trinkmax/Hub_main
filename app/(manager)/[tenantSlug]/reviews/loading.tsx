@@ -1,9 +1,10 @@
 import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
 import { Skeleton } from '@/components/ui/skeleton'
 
 export default function Loading() {
   return (
-    <div className="space-y-8 py-6">
+    <PageShell className="space-y-8">
       <PageHeader
         eyebrow="Fidelización"
         title="Reseñas"
@@ -20,6 +21,6 @@ export default function Loading() {
         <Skeleton className="h-14 w-full rounded-xl" />
         <Skeleton className="h-72 w-full rounded-xl" />
       </div>
-    </div>
+    </PageShell>
   )
 }

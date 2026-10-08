@@ -1,5 +1,3 @@
-import { ArrowLeft } from 'lucide-react'
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
@@ -110,16 +108,9 @@ export default async function ComoNosFuePage({
 
   return (
     <PageShell width="comfortable">
+      {/* Sin «← Estadísticas»: la pestaña Resumen de arriba ya vuelve ahí. */}
       <PageHeader
-        eyebrow={
-          <Link
-            href={`/${tenantSlug}/estadisticas`}
-            className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="size-3.5" />
-            Estadísticas
-          </Link>
-        }
+        eyebrow="Estadísticas"
         title="Cómo nos fue"
         description={
           <span className="hidden sm:inline">

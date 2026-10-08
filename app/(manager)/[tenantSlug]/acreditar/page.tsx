@@ -36,7 +36,9 @@ export default async function AcreditarPage({
   const earnRate = resolveEarnRate(await listRules({ tenantId }))
 
   return (
-    <div className="mx-auto w-full max-w-xl space-y-6 px-4 py-8 sm:px-6">
+    // lg:px-8 como el resto del panel: con la barra de Clientes arriba, el título arranca justo
+    // debajo de la primera pestaña (components/shell/section-tabs-bar.tsx).
+    <div className="mx-auto w-full max-w-xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <PageHeader
         eyebrow="Cajero"
         title="Acreditar puntos"

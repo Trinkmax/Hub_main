@@ -35,7 +35,6 @@ import {
 } from '@/lib/tenant'
 import { RetryButton } from '../_resumen/retry-button'
 import { AccessPanel } from './_components/access-panel'
-import { ActiveTabIntoView } from './_components/active-tab-into-view'
 import { Callout } from './_components/form-bits'
 import { IntegrityPanel } from './_components/integrity-panel'
 import { MethodsPanel } from './_components/methods-panel'
@@ -338,8 +337,8 @@ export default async function AjustesPage({
         }
         description="Los datos de la SAS, quién entra y cómo se ordenan las cajas y los cobros."
       />
+      {/* En el celular la barra centra sola la pestaña activa (SectionTabs). */}
       <SectionNav items={items} active={tab} label={NAV_LABEL} />
-      <ActiveTabIntoView navLabel={NAV_LABEL} active={tab} />
       <div className="max-w-4xl">{content}</div>
     </PageShell>
   )

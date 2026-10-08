@@ -346,8 +346,8 @@ function DoneStep({
           comandas, cobrar.
         </Bullet>
         <Bullet>
-          <strong>Consultar la documentación:</strong> en el menú lateral &rarr; Documentación,
-          tenés la guía completa.
+          <strong>Consultar la documentación:</strong> en Configuración &rarr; Documentación, tenés
+          la guía completa.
         </Bullet>
       </ul>
       <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:justify-center">

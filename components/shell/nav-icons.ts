@@ -1,94 +1,65 @@
 import {
   ArrowUpRight,
-  Banknote,
   BarChart3,
-  BookOpen,
-  BookText,
   CalendarCheck,
   CalendarDays,
   ChefHat,
   ClipboardList,
   Coins,
-  FileCode2,
-  Gift,
-  HandCoins,
-  Handshake,
   Inbox,
   Landmark,
   LayoutDashboard,
   LayoutGrid,
-  Link2,
   ListChecks,
-  ListTree,
   type LucideIcon,
   Megaphone,
   MessageCircle,
   MessageSquareText,
   MonitorSmartphone,
-  PartyPopper,
-  QrCode,
-  Receipt,
-  ScanLine,
   Settings2,
-  Sparkles,
-  Stamp,
   Star,
   Tag,
-  Truck,
   Users,
   UsersRound,
   UtensilsCrossed,
-  Wallet,
   Workflow,
   Zap,
 } from 'lucide-react'
 
 /**
- * Map keys → componentes Lucide para el sidebar y el command palette.
- * Mantenemos las KEYS como literales serializables (string) para poder
- * pasarlos de Server Components a Client Components sin romper la
- * frontera RSC. El mapping vive solo en el cliente que renderiza.
+ * Map keys → componentes Lucide para el sidebar (nav-config.ts) y la nav de
+ * Mensajería (messaging-nav.ts). Mantenemos las KEYS como literales
+ * serializables (string) para poder pasarlos de Server Components a Client
+ * Components sin romper la frontera RSC. El mapping vive solo en el cliente
+ * que renderiza.
+ *
+ * Sólo los íconos que esas dos configs usan: el objeto entero viaja al bundle
+ * del cliente, así que cada key de más es peso muerto. El ⌘K importa sus
+ * íconos directo de lucide-react.
  */
 export const NAV_ICONS = {
   ArrowUpRight,
-  Banknote,
   BarChart3,
-  BookOpen,
-  BookText,
   CalendarCheck,
   CalendarDays,
   ChefHat,
   ClipboardList,
   Coins,
-  FileCode2,
-  Gift,
-  HandCoins,
-  Handshake,
   Inbox,
   Landmark,
   LayoutDashboard,
   LayoutGrid,
-  Link2,
   ListChecks,
-  ListTree,
   Megaphone,
   MessageCircle,
   MessageSquareText,
   MonitorSmartphone,
-  PartyPopper,
-  QrCode,
-  Receipt,
-  ScanLine,
   Settings2,
-  Sparkles,
-  Stamp,
   Star,
   Tag,
-  Truck,
   Users,
   UsersRound,
   UtensilsCrossed,
-  Wallet,
   Workflow,
   Zap,
 } satisfies Record<string, LucideIcon>

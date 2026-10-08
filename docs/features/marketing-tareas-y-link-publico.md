@@ -13,7 +13,9 @@
 | `/[slug]/enlaces` | `owner` | Editor del link de la bio, con vista previa en vivo. |
 | `/l/[slug]` | **cualquiera, sin sesión** | La página pública que va en Instagram. |
 
-Ambas entran por el grupo **Marketing** del sidebar y por el ⌘K
+Ambas entran por **Marketing** en el sidebar (una sola entrada desde el 07/10/2026:
+Tareas, Link de Instagram y Páginas son pestañas arriba de la página, definidas en
+`components/shell/section-tabs-config.ts`) y por el ⌘K
 (`Tareas de marketing`, `Link de Instagram`, `Nueva tarea de marketing`).
 
 ---

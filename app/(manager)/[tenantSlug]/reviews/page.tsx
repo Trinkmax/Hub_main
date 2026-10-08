@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
+import { PageShell } from '@/components/ui/page-shell'
 import { requireFeature } from '@/lib/platform/guards'
 import { getReviewInsights, listReviews } from '@/lib/reviews/queries'
 import { parseRatingFilter } from '@/lib/reviews/schemas'
@@ -52,7 +53,9 @@ export default async function ReviewsPage({
   const filterLabel = rating ? `${rating} ${rating === 1 ? 'estrella' : 'estrellas'}` : null
 
   return (
-    <main className="space-y-8 py-6">
+    // PageShell (no <main>): el panel ya tiene su <main>, y sin el contenedor la página quedaba
+    // pegada a los bordes, corrida de la barra de pestañas de Estadísticas.
+    <PageShell className="space-y-8">
       <PageHeader
         eyebrow="Fidelización"
         title="Reseñas"
@@ -112,6 +115,6 @@ export default async function ReviewsPage({
           </section>
         </>
       )}
-    </main>
+    </PageShell>
   )
 }

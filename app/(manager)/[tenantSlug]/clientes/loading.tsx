@@ -12,6 +12,12 @@ export default function ClientesLoading() {
         </div>
         <Skeleton className="h-10 w-32" />
       </div>
+      {/* Pestañas de segmento: Todos / Reservas / Walk-in. */}
+      <div className="flex gap-4 border-b border-border/60 pb-3">
+        {['a', 'b', 'c'].map((k) => (
+          <Skeleton key={k} className="h-5 w-20" />
+        ))}
+      </div>
       <Skeleton className="h-12 w-full rounded-xl" />
       <ListSkeleton rows={8} />
     </div>

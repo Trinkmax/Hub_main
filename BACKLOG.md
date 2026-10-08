@@ -592,6 +592,7 @@ Hallazgos y deudas que quedaron fuera del alcance de esa tanda:
   0 como valor legítimo, vuelve el mismo bug silencioso. Barrido mecánico: mover
   `z.literal('')`, `z.null()` y `z.undefined()` delante del schema numérico.
 
+
 ## Optimización de performance (auditoría 27/08/2026)
 
 Contexto y cambios aplicados en `docs/optimizacion-2026-08.md`. Lo que quedó
@@ -1187,11 +1188,6 @@ check de CI queda en rojo aunque el job de lint/typecheck/tests esté verde.
   `TenantNotFoundError` o `UnauthenticatedError` en el log. Es ruido que tapa
   errores reales. Hay que agregar el ícono o sacar `favicon.ico` de la ruta del
   tenant.
-- **`SectionNav` no lleva la pestaña activa a la vista.** Esconde la barra de
-  scroll y, si una sección tiene más pestañas de las que entran (en el celular),
-  la activa puede quedar afuera. En Ajustes se resolvió con un helper propio
-  (`ajustes/_components/active-tab-into-view.tsx`); lo correcto es hacerlo en
-  `components/administracion/section-nav.tsx` para todas.
 - **⌘K de la contadora.** Su Resumen tiene el botón «Ajustes», pero la entrada
   «Ajustes de Administración» del ⌘K es solo para dueños con permiso de
   escritura, así que ella no la encuentra. Decidir si la ve en solo lectura.
@@ -1202,3 +1198,27 @@ check de CI queda en rojo aunque el job de lint/typecheck/tests esté verde.
   «Software y suscripciones» (seed de la #16 y su espejo en
   `lib/accounting/chart.ts`). Para otros bares conviene un ejemplo genérico;
   cambiarlo pide una migración del seed.
+
+## Pestañas de sección — lo que quedó afuera (07/10/2026)
+
+- **Configuración en el celular no llega a Comisiones ni a Reseñas.** El nav
+  lateral de Configuración es `lg:block`; en el teléfono la única forma de
+  moverse son las cards del índice, y no hay card para «Comisiones» ni para
+  «Reseñas › Google y WhatsApp» (Documentación ya tiene la suya). A Reseñas se
+  llega por el botón «Configurar» de /reviews y a Comisiones solo de rebote
+  (un aviso del alta de reserva o de «Mis números»), no desde Configuración.
+- **`docs/guia-uso.pdf` desactualizado.** Se corrigió en `guia-uso.md` el camino
+  a la liquidación de comisiones (Estadísticas → pestaña Comisiones), los
+  caminos `Agenda → Reservas` / `Agenda → Calendario` (el menú ya no muestra
+  títulos de grupo) y el del panel operativo de los mozos (`Reservas` → «Panel
+  operativo»); falta regenerar el PDF.
+- **`components/shell/messaging-nav.ts` no lo usa nadie.** `MESSAGING_NAV` y
+  `visibleMessagingNav` solo los importa su test desde que Mensajería pasó a su
+  propio riel. Borrarlo (con su test) libera 6 íconos de `NAV_ICONS` (Inbox,
+  Megaphone, Workflow, UsersRound, MessageSquareText, Tag).
+- **La Documentación del panel nombra grupos que no existen.**
+  `docs/_components/docs-content.tsx` dice «Local → Plano» y «Local →
+  Auto-aceptación» (el bloque se llama Salón y no tiene título visible).
+- **Comentario viejo en `lib/platform/features.ts`.** `table_qr` dice cubrir
+  `/local/captura`, pero esa página (QR del club) no mira el flag: es del dueño
+  siempre.

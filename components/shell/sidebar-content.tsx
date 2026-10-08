@@ -18,13 +18,11 @@ export function SidebarContent({
   role: TenantRole
   features: TenantFeatures
   isPlatformAdmin: boolean
-  /** Administración para esta persona (`access.accounting`): suma o saca su grupo. */
+  /** Administración para esta persona (`access.accounting`): suma o saca su entrada. */
   accounting?: AccountingAccess
   onNavigate?: () => void
 }) {
   const groups = resolveNavGroups(role, tenant.slug, features, isPlatformAdmin, accounting)
-  const mainGroups = groups.filter((g) => !g.pinned)
-  const pinnedGroups = groups.filter((g) => g.pinned)
 
   return (
     <>
@@ -33,7 +31,7 @@ export function SidebarContent({
         <Link
           href={homePathForRole(role, tenant.slug)}
           onClick={onNavigate}
-          className="flex items-center justify-center rounded-md outline-none transition-opacity hover:opacity-85 focus-visible:opacity-85"
+          className="flex items-center justify-center rounded-md outline-none transition-opacity hover:opacity-85 focus-visible:opacity-85 focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={`Ir al inicio de ${tenant.name}`}
         >
           {tenant.logo_url ? (
@@ -54,19 +52,11 @@ export function SidebarContent({
 
       <div className="mx-3 h-px bg-border/60" />
 
-      <div className="flex-1 overflow-y-auto">
-        <Suspense fallback={null}>
-          <SidebarNav groups={mainGroups} onNavigate={onNavigate} />
-        </Suspense>
-      </div>
-
-      {pinnedGroups.length > 0 ? (
-        <div className="border-t border-border/60">
-          <Suspense fallback={null}>
-            <SidebarNav groups={pinnedGroups} onNavigate={onNavigate} className="py-2" />
-          </Suspense>
-        </div>
-      ) : null}
+      {/* Un solo menú: la lista y, anclada al fondo, Configuración. El fallback
+          ocupa el mismo lugar para que el pie no salte. */}
+      <Suspense fallback={<div className="flex-1" />}>
+        <SidebarNav groups={groups} onNavigate={onNavigate} />
+      </Suspense>
 
       <div className="border-t border-border/60 px-4 py-3">
         <p className="text-[11px] font-medium text-muted-foreground/90">{tenant.name}</p>

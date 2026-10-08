@@ -342,7 +342,7 @@ function SectionMenu({ slug }: { slug: string }) {
           <a href={`/${slug}/menu`} className="text-primary underline">
             Carta
           </a>{' '}
-          (grupo Crecimiento del menú lateral).
+          (en el menú lateral).
         </li>
         <li>Creá categorías primero (ej: "Tragos clásicos").</li>
         <li>
