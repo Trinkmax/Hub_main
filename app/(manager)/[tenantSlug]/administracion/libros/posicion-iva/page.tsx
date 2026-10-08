@@ -328,11 +328,17 @@ function Cascade({ position: p, monthNoun }: { position: IvaPosition; monthNoun:
 function ResultRow({ label, cents, hint }: { label: string; cents: number; hint?: string }) {
   return (
     <tr>
-      <td aria-hidden className="w-8 py-4 pl-5 text-center text-muted-foreground">
+      {/* Arriba y con el alto de línea del título: el «=» va con «A favor», no entre las dos líneas. */}
+      <td
+        aria-hidden
+        className="w-8 py-4 pl-5 text-center align-top leading-7 text-muted-foreground"
+      >
         =
       </td>
-      <td className="py-4 pr-3">
-        <span className="block font-serif text-xl font-semibold tracking-tight">{label}</span>
+      <td className="py-4 pr-3 align-top">
+        <span className="block font-serif text-xl font-semibold leading-7 tracking-tight">
+          {label}
+        </span>
         {hint ? <span className="block text-xs text-muted-foreground">{hint}</span> : null}
       </td>
       <td className="py-4 pr-5 text-right align-top">

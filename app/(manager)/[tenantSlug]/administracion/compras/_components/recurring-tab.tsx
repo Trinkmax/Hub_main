@@ -190,7 +190,8 @@ export async function RecurringTab({
                     !row.active && 'text-muted-foreground',
                   )}
                 >
-                  <DataTableCell>
+                  {/* min-w: el nombre no se parte en dos renglones por los importes y botones de al lado. */}
+                  <DataTableCell className="min-w-40">
                     {canWrite ? (
                       <Link
                         href={recurringHref(tenantSlug, row.id)}

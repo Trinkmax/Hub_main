@@ -82,7 +82,7 @@ export default async function CierreDelDiaPage({
           Cierre del día <ReadOnlyBadge />
         </>
       }
-      description="Copiá los números del cierre de caja de Thinkeon. Si un medio no tuvo ventas, dejalo vacío."
+      description="Copiá los números del cierre de caja de tu sistema de ventas. Si un medio no tuvo ventas, dejalo vacío."
     />
   )
 

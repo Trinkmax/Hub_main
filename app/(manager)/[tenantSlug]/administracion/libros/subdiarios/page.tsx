@@ -165,7 +165,7 @@ export default async function SubdiariosPage({
         lines.length === 0 && page.rows.length === 0 ? (
           <EmptyState
             icon={Layers}
-            title={`No hay movimientos en ${shown.label}`}
+            title={`No hay movimientos en ${shown.label.toLowerCase()}`}
             description={tab.empty}
           />
         ) : (
@@ -242,7 +242,12 @@ function SubledgerTable({
               {columns.map((c) => (
                 <DataTableHeader
                   key={c.header}
-                  className={cn('whitespace-nowrap', c.align === 'end' && 'text-right')}
+                  className={cn(
+                    // Los títulos largos («No gravado, exento y sin crédito») van en dos
+                    // líneas: si no, la columna queda el doble de ancha que sus importes.
+                    c.header.length > 16 ? 'min-w-44' : 'whitespace-nowrap',
+                    c.align === 'end' && 'text-right',
+                  )}
                 >
                   {c.header}
                 </DataTableHeader>
@@ -303,8 +308,10 @@ function SubledgerTable({
                       <DataTableCell
                         key={column.header}
                         className={cn(
-                          column.type === 'date' &&
-                            'whitespace-nowrap tabular-nums text-muted-foreground',
+                          // Una fila, una línea: el subdiario es ancho y se desliza de costado;
+                          // partir «Factura A 0003-00001290» en tres renglones no lo hace entrar.
+                          column.type !== 'list' && 'whitespace-nowrap',
+                          column.type === 'date' && 'tabular-nums text-muted-foreground',
                           column.type === 'list' && 'min-w-48 text-xs',
                           column.align === 'end' && 'text-right tabular-nums',
                         )}

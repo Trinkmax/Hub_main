@@ -30,6 +30,7 @@ import {
   todayInCordoba,
 } from '@/lib/dates'
 import { formatCentsShort } from '@/lib/money'
+import { cn } from '@/lib/utils'
 import { CajasHeaderActions } from './_components/cajas-header-actions'
 import { CashFlow, CashProjection } from './_components/cash-flow'
 import { type TreasuryBalanceItem, TreasuryBalances } from './_components/treasury-balances'
@@ -145,11 +146,20 @@ async function SaldosTab({
       t.active &&
       (t.lastCheckedOn === null || daysBetween(t.lastCheckedOn, today) > CHECK_STALE_DAYS),
   ).length
+  // Si ninguna se contó nunca, «hace más de 7 días» no es cierto: se dice como en cada fila.
+  const neverChecked = items.filter((t) => t.active && t.lastCheckedOn === null).length
   const untouched = balances.data.every((t) => t.lastMovementDate === null)
 
   return (
     <div className="space-y-6">
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Resumen de cajas">
+      {/* Tres tarjetas (sin tarjetas de crédito) ocupan el ancho entero, como la tabla de abajo. */}
+      <section
+        className={cn(
+          'grid gap-4 sm:grid-cols-2',
+          cards.length > 0 ? 'xl:grid-cols-4' : 'lg:grid-cols-3',
+        )}
+        aria-label="Resumen de cajas"
+      >
         <StatCard
           icon={Banknote}
           iconClassName="text-success"
@@ -179,9 +189,13 @@ async function SaldosTab({
           label="Sin ajustar"
           value={String(unchecked)}
           hint={
-            unchecked > 0
-              ? `Hace más de ${CHECK_STALE_DAYS} días que no se cuentan`
-              : 'Todas contadas esta semana'
+            unchecked === 0
+              ? 'Todas contadas esta semana'
+              : neverChecked === unchecked
+                ? unchecked === 1
+                  ? 'Nunca se ajustó'
+                  : 'Nunca se ajustaron'
+                : `Hace más de ${CHECK_STALE_DAYS} días que no se cuentan`
           }
         />
       </section>

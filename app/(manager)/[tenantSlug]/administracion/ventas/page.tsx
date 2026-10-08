@@ -268,7 +268,7 @@ async function CierresTab({ tenantId, tenantSlug, base, today, sp, canWrite }: T
             <p className="font-medium">Todavía no hay cierres cargados.</p>
             <p className="text-muted-foreground">
               {canWrite
-                ? 'El cierre del día es copiar los números del cierre de caja de Thinkeon: por medio de cobro y lo facturado. Lleva menos de un minuto y con eso se arman las ventas, el IVA y lo que te deben las tarjetas y plataformas.'
+                ? 'El cierre del día es copiar los números del cierre de caja de tu sistema de ventas: por medio de cobro y lo facturado. Lleva menos de un minuto y con eso se arman las ventas, el IVA y lo que te deben las tarjetas y plataformas.'
                 : 'Cuando los dueños carguen los cierres del día, vas a ver acá lo vendido de cada día.'}
             </p>
           </div>
@@ -442,6 +442,9 @@ async function ClientesTab({ tenantId, tenantSlug, base, today, sp, canWrite }: 
           iconClassName="text-info"
           label="Se acredita en 7 días"
           value={formatCentsShort(totals.dueSoonCents)}
+          hint={
+            totals.dueSoonCents > 0 ? 'Lo que entra esta semana' : 'Nada por acreditar esta semana'
+          }
         />
         <StatCard
           icon={Undo2}

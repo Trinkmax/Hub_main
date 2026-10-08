@@ -210,7 +210,9 @@ function TrialView({
       <EmptyState
         icon={Scale}
         title={
-          nothingLoaded ? 'Todavía no hay nada cargado' : `Sin saldos ni movimientos en ${label}`
+          nothingLoaded
+            ? 'Todavía no hay nada cargado'
+            : `Sin saldos ni movimientos en ${label.toLowerCase()}`
         }
         description={
           allZero

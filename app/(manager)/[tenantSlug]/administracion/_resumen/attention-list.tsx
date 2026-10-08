@@ -4,6 +4,7 @@ import { CircleCheck } from 'lucide-react'
 import Link from 'next/link'
 import { useAccounting } from '@/components/administracion/accounting-provider'
 import { Amount } from '@/components/administracion/amount'
+import { VoucherText } from '@/components/administracion/voucher-text'
 import { Button } from '@/components/ui/button'
 import { skipRecurringDue } from '@/lib/accounting/actions/master'
 import type { SummaryAttentionItem } from '@/lib/accounting/queries/summary'
@@ -92,17 +93,22 @@ export function AttentionList({
       {views.map((view) => (
         <li
           key={view.key}
-          className="flex flex-col gap-2.5 px-5 py-3.5 sm:flex-row sm:items-center sm:gap-4"
+          // Desde sm, en una fila; si el texto quedaría angosto (menos de 16rem),
+          // los botones bajan a una segunda línea, alineados a la derecha.
+          className="flex flex-col gap-2.5 px-5 py-3.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2"
         >
-          <div className="flex min-w-0 flex-1 items-start gap-2.5">
+          <div className="flex min-w-0 flex-1 items-start gap-2.5 sm:basis-64">
             <span
               aria-hidden="true"
               className={cn('mt-1.5 size-2 shrink-0 rounded-full', DOT[view.tone])}
             />
-            <p className="min-w-0 text-sm text-foreground text-pretty">{view.text}</p>
+            <p className="min-w-0 text-sm text-foreground text-pretty">
+              {/* Espacio duro antes de cada «·»: un renglón nunca empieza con el punto. */}
+              <VoucherText text={view.text.replace(/ · /g, ' · ')} />
+            </p>
           </div>
           {view.amountCents !== null ? (
-            <span className="pl-[18px] text-sm font-medium sm:pl-0 sm:text-right">
+            <span className="whitespace-nowrap pl-[18px] text-sm font-medium sm:pl-0 sm:text-right">
               {view.amountPrefix ? (
                 <span className="mr-1 text-xs font-normal text-muted-foreground">
                   {view.amountPrefix}
@@ -112,7 +118,7 @@ export function AttentionList({
             </span>
           ) : null}
           {!readOnly && view.actions.length > 0 ? (
-            <div className="flex flex-wrap gap-2 pl-[18px] sm:shrink-0 sm:pl-0">
+            <div className="flex flex-wrap gap-2 pl-[18px] sm:ml-auto sm:shrink-0 sm:pl-0">
               {view.actions.map((action, index) => control(action, `${view.key}:${index}`))}
             </div>
           ) : null}

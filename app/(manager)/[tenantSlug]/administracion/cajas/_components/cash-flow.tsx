@@ -16,6 +16,7 @@ import {
   type CashProjectionRow,
 } from '@/lib/accounting/queries/treasury'
 import { formatDayMonth, formatMonthLabel } from '@/lib/dates'
+import { formatCents } from '@/lib/money'
 import { cn } from '@/lib/utils'
 
 type MonthGroup = {
@@ -70,6 +71,20 @@ function NetBar({ cents, max }: { cents: number; max: number }) {
   )
 }
 
+/** «Entró $ X · Salió $ Y» (sin la parte que es cero), para la lista del celular. */
+function flowDetail(
+  inCents: number,
+  outCents: number,
+  verbs = { in: 'Entró', out: 'Salió' },
+): string {
+  return [
+    inCents > 0 ? `${verbs.in} ${formatCents(inCents)}` : null,
+    outCents > 0 ? `${verbs.out} ${formatCents(outCents)}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
 /**
  * Flujo de caja (H.11, F.9): lo que entró y salió de las cajas por mes y por
  * categoría, con una barra chica para el neto. Los movimientos entre cajas no
@@ -119,89 +134,156 @@ export function CashFlow({
           No entró ni salió plata de las cajas en este período.
         </p>
       ) : (
-        <DataTableScroll>
-          <DataTableRoot>
-            <caption className="sr-only">Flujo de caja por mes y categoría, {label}</caption>
-            <DataTableHead>
-              <tr>
-                <DataTableHeader>Categoría</DataTableHeader>
-                <DataTableHeader className="text-right">Entró</DataTableHeader>
-                <DataTableHeader className="text-right">Salió</DataTableHeader>
-                <DataTableHeader className="text-right">Neto</DataTableHeader>
-                <DataTableHeader className="hidden w-32 sm:table-cell">
-                  <span className="sr-only">Proporción</span>
-                </DataTableHeader>
-              </tr>
-            </DataTableHead>
-            <DataTableBody>
-              {groups.map((g) => (
-                <Fragment key={g.month}>
-                  <tr className="bg-secondary/20">
-                    <th
-                      scope="colgroup"
-                      colSpan={5}
-                      className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground"
-                    >
-                      {formatMonthLabel(g.month)}
-                    </th>
+        <>
+          {/* Compu y tablet: la tabla por mes y categoría. */}
+          <div className="hidden sm:block">
+            <DataTableScroll>
+              <DataTableRoot>
+                <caption className="sr-only">Flujo de caja por mes y categoría, {label}</caption>
+                <DataTableHead>
+                  <tr>
+                    <DataTableHeader>Categoría</DataTableHeader>
+                    <DataTableHeader className="text-right">Entró</DataTableHeader>
+                    <DataTableHeader className="text-right">Salió</DataTableHeader>
+                    <DataTableHeader className="text-right">Neto</DataTableHeader>
+                    <DataTableHeader className="hidden w-32 sm:table-cell">
+                      <span className="sr-only">Proporción</span>
+                    </DataTableHeader>
                   </tr>
-                  {g.rows.map((r) => (
-                    <tr
-                      key={`${g.month}-${r.category}`}
-                      className="transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-cream-tint"
-                    >
-                      <DataTableCell>{r.categoryLabel}</DataTableCell>
-                      <DataTableCell className="text-right">
-                        {r.inflowCents > 0 ? <Amount cents={r.inflowCents} /> : null}
-                      </DataTableCell>
-                      <DataTableCell className="text-right">
-                        {r.outflowCents > 0 ? <Amount cents={r.outflowCents} /> : null}
-                      </DataTableCell>
-                      <DataTableCell className="text-right">
-                        <Amount cents={r.netCents} sign="always" tone="auto" />
-                      </DataTableCell>
-                      <DataTableCell className="hidden sm:table-cell">
-                        <NetBar cents={r.netCents} max={max} />
-                      </DataTableCell>
-                    </tr>
+                </DataTableHead>
+                <DataTableBody>
+                  {groups.map((g) => (
+                    <Fragment key={g.month}>
+                      <tr className="bg-secondary/20">
+                        <th
+                          scope="colgroup"
+                          colSpan={5}
+                          className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+                        >
+                          {formatMonthLabel(g.month)}
+                        </th>
+                      </tr>
+                      {g.rows.map((r) => (
+                        <tr
+                          key={`${g.month}-${r.category}`}
+                          className="transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-cream-tint"
+                        >
+                          <DataTableCell>{r.categoryLabel}</DataTableCell>
+                          <DataTableCell className="text-right">
+                            {r.inflowCents > 0 ? <Amount cents={r.inflowCents} /> : null}
+                          </DataTableCell>
+                          <DataTableCell className="text-right">
+                            {r.outflowCents > 0 ? <Amount cents={r.outflowCents} /> : null}
+                          </DataTableCell>
+                          <DataTableCell className="text-right">
+                            <Amount cents={r.netCents} sign="always" tone="auto" />
+                          </DataTableCell>
+                          <DataTableCell className="hidden sm:table-cell">
+                            <NetBar cents={r.netCents} max={max} />
+                          </DataTableCell>
+                        </tr>
+                      ))}
+                      <tr className="font-medium">
+                        <DataTableCell className="text-xs">
+                          Total {formatMonthLabel(g.month).toLowerCase()}
+                        </DataTableCell>
+                        <DataTableCell className="text-right">
+                          <Amount cents={g.inflowCents} />
+                        </DataTableCell>
+                        <DataTableCell className="text-right">
+                          <Amount cents={g.outflowCents} />
+                        </DataTableCell>
+                        <DataTableCell className="text-right">
+                          <Amount cents={g.netCents} sign="always" />
+                        </DataTableCell>
+                        <DataTableCell className="hidden sm:table-cell">{null}</DataTableCell>
+                      </tr>
+                    </Fragment>
                   ))}
-                  <tr className="font-medium">
-                    <DataTableCell className="text-xs">
-                      Total {formatMonthLabel(g.month).toLowerCase()}
-                    </DataTableCell>
-                    <DataTableCell className="text-right">
-                      <Amount cents={g.inflowCents} />
-                    </DataTableCell>
-                    <DataTableCell className="text-right">
-                      <Amount cents={g.outflowCents} />
-                    </DataTableCell>
-                    <DataTableCell className="text-right">
-                      <Amount cents={g.netCents} sign="always" />
-                    </DataTableCell>
-                    <DataTableCell className="hidden sm:table-cell">{null}</DataTableCell>
-                  </tr>
-                </Fragment>
-              ))}
-            </DataTableBody>
+                </DataTableBody>
+                {groups.length > 1 ? (
+                  <tfoot className="bg-secondary/30 font-semibold">
+                    <tr className="border-t border-border">
+                      <DataTableCell className="text-xs">Total del período</DataTableCell>
+                      <DataTableCell className="text-right">
+                        <Amount cents={total.inflowCents} />
+                      </DataTableCell>
+                      <DataTableCell className="text-right">
+                        <Amount cents={total.outflowCents} />
+                      </DataTableCell>
+                      <DataTableCell className="text-right">
+                        <Amount cents={total.inflowCents - total.outflowCents} sign="always" />
+                      </DataTableCell>
+                      <DataTableCell className="hidden sm:table-cell">{null}</DataTableCell>
+                    </tr>
+                  </tfoot>
+                ) : null}
+              </DataTableRoot>
+            </DataTableScroll>
+          </div>
+
+          {/* Celular: cada categoría con su neto; lo que entró y salió, debajo (la tabla no entra). */}
+          <div className="sm:hidden">
+            {groups.map((g) => (
+              <section key={g.month} aria-label={formatMonthLabel(g.month)}>
+                <h3 className="border-b border-border/60 bg-secondary/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  {formatMonthLabel(g.month)}
+                </h3>
+                <ul className="divide-y divide-border/60">
+                  {g.rows.map((r) => (
+                    <li
+                      key={`${g.month}-${r.category}`}
+                      className="flex items-start justify-between gap-3 px-4 py-3"
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-sm">{r.categoryLabel}</span>
+                        <span className="block text-xs tabular-nums text-muted-foreground">
+                          {flowDetail(r.inflowCents, r.outflowCents)}
+                        </span>
+                      </span>
+                      <Amount
+                        cents={r.netCents}
+                        sign="always"
+                        tone="auto"
+                        className="shrink-0 text-sm font-medium"
+                      />
+                    </li>
+                  ))}
+                  <li className="flex items-start justify-between gap-3 bg-secondary/30 px-4 py-3">
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold">
+                        Total {formatMonthLabel(g.month).toLowerCase()}
+                      </span>
+                      <span className="block text-xs tabular-nums text-muted-foreground">
+                        Entró {formatCents(g.inflowCents)} · Salió {formatCents(g.outflowCents)}
+                      </span>
+                    </span>
+                    <Amount
+                      cents={g.netCents}
+                      sign="always"
+                      className="shrink-0 text-sm font-semibold"
+                    />
+                  </li>
+                </ul>
+              </section>
+            ))}
             {groups.length > 1 ? (
-              <tfoot className="bg-secondary/30 font-semibold">
-                <tr className="border-t border-border">
-                  <DataTableCell className="text-xs">Total del período</DataTableCell>
-                  <DataTableCell className="text-right">
-                    <Amount cents={total.inflowCents} />
-                  </DataTableCell>
-                  <DataTableCell className="text-right">
-                    <Amount cents={total.outflowCents} />
-                  </DataTableCell>
-                  <DataTableCell className="text-right">
-                    <Amount cents={total.inflowCents - total.outflowCents} sign="always" />
-                  </DataTableCell>
-                  <DataTableCell className="hidden sm:table-cell">{null}</DataTableCell>
-                </tr>
-              </tfoot>
+              <div className="flex items-start justify-between gap-3 border-t border-border bg-secondary/30 px-4 py-3">
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold">Total del período</span>
+                  <span className="block text-xs tabular-nums text-muted-foreground">
+                    Entró {formatCents(total.inflowCents)} · Salió {formatCents(total.outflowCents)}
+                  </span>
+                </span>
+                <Amount
+                  cents={total.inflowCents - total.outflowCents}
+                  sign="always"
+                  className="shrink-0 text-sm font-semibold"
+                />
+              </div>
             ) : null}
-          </DataTableRoot>
-        </DataTableScroll>
+          </div>
+        </>
       )}
     </DataTableShell>
   )
@@ -217,37 +299,66 @@ export function CashProjection({ rows }: { rows: readonly CashProjectionRow[] })
           Estimado: lo que te deben y lo que debés según sus vencimientos, más los gastos fijos.
         </p>
       </header>
-      <DataTableScroll>
-        <DataTableRoot>
-          <caption className="sr-only">Proyección de las próximas semanas</caption>
-          <DataTableHead>
-            <tr>
-              <DataTableHeader>Semana</DataTableHeader>
-              <DataTableHeader className="text-right">Entra</DataTableHeader>
-              <DataTableHeader className="text-right">Sale</DataTableHeader>
-              <DataTableHeader className="text-right">Saldo proyectado</DataTableHeader>
-            </tr>
-          </DataTableHead>
-          <DataTableBody>
-            {rows.map((r) => (
-              <tr key={r.weekStart}>
-                <DataTableCell className="whitespace-nowrap tabular-nums text-muted-foreground">
-                  Desde el {formatDayMonth(r.weekStart)}
-                </DataTableCell>
-                <DataTableCell className="text-right">
-                  <Amount cents={r.inCents} />
-                </DataTableCell>
-                <DataTableCell className="text-right">
-                  <Amount cents={r.outCents} />
-                </DataTableCell>
-                <DataTableCell className="text-right">
-                  <Amount cents={r.projectedBalanceCents} balance="treasury" tone="auto" />
-                </DataTableCell>
+      <div className="hidden sm:block">
+        <DataTableScroll>
+          <DataTableRoot>
+            <caption className="sr-only">Proyección de las próximas semanas</caption>
+            <DataTableHead>
+              <tr>
+                <DataTableHeader>Semana</DataTableHeader>
+                <DataTableHeader className="text-right">Entra</DataTableHeader>
+                <DataTableHeader className="text-right">Sale</DataTableHeader>
+                <DataTableHeader className="text-right">Saldo proyectado</DataTableHeader>
               </tr>
-            ))}
-          </DataTableBody>
-        </DataTableRoot>
-      </DataTableScroll>
+            </DataTableHead>
+            <DataTableBody>
+              {rows.map((r) => (
+                <tr key={r.weekStart}>
+                  <DataTableCell className="whitespace-nowrap tabular-nums text-muted-foreground">
+                    Desde el {formatDayMonth(r.weekStart)}
+                  </DataTableCell>
+                  <DataTableCell className="text-right">
+                    <Amount cents={r.inCents} />
+                  </DataTableCell>
+                  <DataTableCell className="text-right">
+                    <Amount cents={r.outCents} />
+                  </DataTableCell>
+                  <DataTableCell className="text-right">
+                    <Amount cents={r.projectedBalanceCents} balance="treasury" tone="auto" />
+                  </DataTableCell>
+                </tr>
+              ))}
+            </DataTableBody>
+          </DataTableRoot>
+        </DataTableScroll>
+      </div>
+
+      {/* Celular: cada semana con su saldo proyectado; lo que entra y sale, debajo. */}
+      <ul
+        aria-label="Proyección de las próximas semanas"
+        className="divide-y divide-border/60 sm:hidden"
+      >
+        {rows.map((r) => (
+          <li key={r.weekStart} className="flex items-start justify-between gap-3 px-4 py-3">
+            <span className="min-w-0">
+              <span className="block text-sm">Desde el {formatDayMonth(r.weekStart)}</span>
+              <span className="block text-xs tabular-nums text-muted-foreground">
+                {flowDetail(r.inCents, r.outCents, { in: 'Entra', out: 'Sale' }) ||
+                  'Sin movimientos previstos'}
+              </span>
+            </span>
+            <span className="shrink-0 text-right">
+              <Amount
+                cents={r.projectedBalanceCents}
+                balance="treasury"
+                tone="auto"
+                className="block text-sm font-medium"
+              />
+              <span className="block text-[11px] text-muted-foreground">Saldo proyectado</span>
+            </span>
+          </li>
+        ))}
+      </ul>
     </DataTableShell>
   )
 }

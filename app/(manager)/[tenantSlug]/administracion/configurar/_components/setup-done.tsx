@@ -1,11 +1,14 @@
-import { ArrowUpRight, CheckCircle2 } from 'lucide-react'
+import { ArrowUpRight, CheckCircle2, Settings2 } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { WizardProgress } from './wizard-progress'
 
 /**
  * Paso 4 · Listo (H.3): qué hacer ahora. Lo dibuja la página cuando la
- * puesta en marcha ya terminó (con o sin saldos iniciales). Server-safe.
+ * puesta en marcha ya terminó (con o sin saldos iniciales), también si se
+ * vuelve a entrar a `/configurar` más adelante: por eso dice que ya está
+ * configurada y manda a Ajustes, que es donde se cambia lo que se cargó acá.
+ * Server-safe.
  */
 export function SetupDone({ tenantSlug }: { tenantSlug: string }) {
   const base = `/${tenantSlug}/administracion`
@@ -40,10 +43,11 @@ export function SetupDone({ tenantSlug }: { tenantSlug: string }) {
           <CheckCircle2 className="mt-0.5 size-6 shrink-0 text-success" aria-hidden />
           <div className="space-y-1">
             <h2 className="font-serif text-xl font-semibold tracking-tight">
-              Administración está lista.
+              Administración ya está configurada.
             </h2>
-            <p className="text-sm text-muted-foreground">
-              Desde ahora, todo lo que cargues suma en las cajas, las cuentas y los libros.
+            <p className="text-sm text-muted-foreground text-pretty">
+              Desde ahora, todo lo que cargues suma en las cajas, las cuentas y los libros. Los
+              datos de la SAS, las cajas y los medios de cobro se cambian en Ajustes.
             </p>
           </div>
         </div>
@@ -69,7 +73,13 @@ export function SetupDone({ tenantSlug }: { tenantSlug: string }) {
             </li>
           ))}
         </ol>
-        <div className="flex justify-end">
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button asChild variant="outline" className="h-11 gap-2 md:h-9">
+            <Link href={`${base}/ajustes`}>
+              <Settings2 className="size-4" aria-hidden />
+              Ir a Ajustes
+            </Link>
+          </Button>
           <Button asChild className="h-11 min-w-[160px] md:h-9">
             <Link href={base}>Ir al Resumen</Link>
           </Button>

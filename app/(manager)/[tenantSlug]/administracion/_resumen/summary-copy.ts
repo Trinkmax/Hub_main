@@ -54,10 +54,14 @@ export function treasuryShortLine(t: SummaryTreasury): string {
   return `${t.name} ${balance}${pending}`
 }
 
-/** El desglose debajo de «Plata disponible» (hasta 3 cajas; el resto, «y N más»). */
-export function availableBreakdown(
+/**
+ * Los tramos del desglose debajo de «Plata disponible» (hasta 3 cajas; el
+ * resto, «y N más»). Cada tramo se muestra entero: la línea corta entre cajas,
+ * nunca entre el nombre y su saldo.
+ */
+export function availableBreakdownParts(
   summary: Pick<AccSummary, 'treasuries' | 'cardDebtCents'>,
-): string {
+): string[] {
   const assets = summary.treasuries.filter((t) => t.kind !== 'credit_card')
   const shown = assets.slice(0, 3).map(treasuryShortLine)
   const rest = assets.length - shown.length
@@ -66,7 +70,14 @@ export function availableBreakdown(
   if (summary.cardDebtCents > 0) {
     parts.push(`Tarjeta de la empresa: deuda ${formatCentsShort(summary.cardDebtCents)}`)
   }
-  return parts.join(' · ')
+  return parts
+}
+
+/** El desglose debajo de «Plata disponible», en una línea de texto. */
+export function availableBreakdown(
+  summary: Pick<AccSummary, 'treasuries' | 'cardDebtCents'>,
+): string {
+  return availableBreakdownParts(summary).join(' · ')
 }
 
 /**

@@ -457,8 +457,8 @@ export function PeriodSettingsForm({
         </Field>
       </div>
       <p className="-mt-2 text-xs text-muted-foreground text-pretty">
-        Confirmalo con la contadora: 33 % por defecto; 100 % si la SAS es micro o pequeña MiPyME
-        (Ley 25.413).
+        Confirmalo con la contadora: 33&nbsp;% por defecto; 100&nbsp;% si la SAS es micro o pequeña
+        MiPyME (Ley&nbsp;25.413).
       </p>
 
       <div className="grid gap-1.5">
@@ -475,7 +475,7 @@ export function PeriodSettingsForm({
       </div>
 
       <div className="grid gap-1.5">
-        <Label id="aj-void-label">Anulaciones de meses cerrados en el Libro IVA</Label>
+        <Label id="aj-void-label">Anulaciones de meses cerrados en el Libro&nbsp;IVA</Label>
         <ChoiceChips
           options={VOID_OPTIONS}
           value={voidMode}

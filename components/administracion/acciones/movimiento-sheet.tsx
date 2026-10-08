@@ -315,7 +315,8 @@ function MovimientoForm({
           <div className="grid gap-2">
             <GroupLabel id={`${id}-dir`}>
               ¿Entró o salió plata?
-              <span aria-hidden="true" className="ml-0.5 text-destructive">
+              {/* El mismo espacio que el asterisco de un <Label> (gap-2 + ml-0.5). */}
+              <span aria-hidden="true" className="ml-2.5 text-destructive">
                 *
               </span>
             </GroupLabel>

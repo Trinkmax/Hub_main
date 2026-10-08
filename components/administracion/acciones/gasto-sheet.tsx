@@ -581,7 +581,8 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
           <div className="grid gap-1.5" ref={targetRef}>
             <span id={ids.targetLabel} className="text-sm font-medium leading-none">
               ¿En qué?
-              <span aria-hidden="true" className="ml-0.5 text-destructive">
+              {/* ml-2.5: el mismo aire que el «*» de un <Label> (gap-2 + ml-0.5). */}
+              <span aria-hidden="true" className="ml-2.5 text-destructive">
                 *
               </span>
             </span>
@@ -629,7 +630,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
           <div className="grid gap-1.5">
             <span id={ids.treasuryLabel} className="text-sm font-medium leading-none">
               ¿Con qué pagaste?
-              <span aria-hidden="true" className="ml-0.5 text-destructive">
+              <span aria-hidden="true" className="ml-2.5 text-destructive">
                 *
               </span>
             </span>

@@ -67,7 +67,7 @@ export function SystemAccounts() {
           <input
             type="search"
             value={query}
-            placeholder="Un uso o una cuenta («IVA», «proveedores», «1.1.03»)"
+            placeholder="Uso o cuenta («IVA», «1.1.03»)"
             onChange={(e) => setQuery(e.target.value)}
             className="h-11 w-full rounded-lg border border-transparent bg-background/40 pl-9 pr-3 text-base shadow-none outline-none placeholder:text-muted-foreground/70 focus:border-ring focus:ring-2 focus:ring-ring/40 md:h-9 md:text-sm"
           />
@@ -113,7 +113,7 @@ export function SystemAccounts() {
                         <button
                           type="button"
                           onClick={() => openAccount(account.id)}
-                          className="max-w-full rounded-md text-left text-sm underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring sm:max-w-xs sm:text-right"
+                          className="max-w-full rounded-md text-left text-sm text-balance underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring sm:max-w-xs sm:text-right xl:max-w-md"
                           aria-label={`Ver la cuenta ${account.code} ${account.name}`}
                         >
                           <span className="font-mono text-xs text-muted-foreground">

@@ -131,6 +131,9 @@ export function AgingBar({
                   {TRAMO_LABEL[r.tramo]}
                 </span>
               )
+              // En el celular la cantidad va debajo del tramo: como tercera columna
+              // dejaba «Vencida hace más de 60 días» en tres renglones.
+              const countText = r.count > 0 ? plural(r.count, 'comprobante', 'comprobantes') : null
               return (
                 <tr key={r.tramo} className={cn(r.cents === 0 && 'text-muted-foreground')}>
                   <th scope="row" className="py-2 pr-3 text-left font-normal">
@@ -144,12 +147,17 @@ export function AgingBar({
                     ) : (
                       label
                     )}
+                    {countText ? (
+                      <span className="block pl-4 text-xs text-muted-foreground sm:hidden">
+                        {countText}
+                      </span>
+                    ) : null}
                   </th>
                   <td className="py-2 text-right">
                     <Amount cents={r.cents} className={cn(r.cents > 0 && 'font-medium')} />
                   </td>
-                  <td className="w-28 py-2 pl-3 text-right text-xs text-muted-foreground">
-                    {r.count > 0 ? plural(r.count, 'comprobante', 'comprobantes') : '—'}
+                  <td className="hidden w-28 py-2 pl-3 text-right text-xs text-muted-foreground sm:table-cell">
+                    {countText ?? '—'}
                   </td>
                 </tr>
               )

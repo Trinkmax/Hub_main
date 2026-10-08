@@ -11,7 +11,6 @@ import { Button } from '@/components/ui/button'
 import {
   DataTableBody,
   DataTableCell,
-  DataTableFooter,
   DataTableHead,
   DataTableHeader,
   DataTableRoot,
@@ -160,14 +159,20 @@ export function TreasuryBalances({
                 </tr>
               ))}
             </DataTableBody>
+            {/* El total va debajo de la columna «Saldo», no contra el borde. */}
+            <tfoot className="border-t border-border/60 bg-secondary/30">
+              <tr>
+                <DataTableCell colSpan={2} className="py-2.5 text-xs text-muted-foreground">
+                  Plata disponible (cajas, bancos y billeteras)
+                </DataTableCell>
+                <DataTableCell className="py-2.5 text-right font-semibold">
+                  <TreasuryBalance kind="cash" balanceCents={availableCents} />
+                </DataTableCell>
+                <DataTableCell className="py-2.5">{null}</DataTableCell>
+              </tr>
+            </tfoot>
           </DataTableRoot>
         </DataTableScroll>
-        <DataTableFooter>
-          <span>Plata disponible (cajas, bancos y billeteras)</span>
-          <strong className="tabular-nums text-foreground">
-            <TreasuryBalance kind="cash" balanceCents={availableCents} />
-          </strong>
-        </DataTableFooter>
       </DataTableShell>
 
       {/* Celular: tarjetas */}

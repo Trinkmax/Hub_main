@@ -288,7 +288,7 @@ function MoverForm({
                 value={reference}
                 maxLength={60}
                 autoComplete="off"
-                placeholder="Nº de transferencia o depósito"
+                placeholder="Nº de operación"
                 className="h-11 text-base md:h-10 md:text-sm"
                 aria-invalid={errorOf('reference') ? true : undefined}
                 aria-describedby={describedBy(`${id}-ref`, { error: errorOf('reference') })}

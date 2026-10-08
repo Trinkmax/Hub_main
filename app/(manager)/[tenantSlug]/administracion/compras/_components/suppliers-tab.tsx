@@ -178,8 +178,10 @@ export async function SuppliersTab({
         )
       ) : (
         <>
-          {/* Compu y tablet */}
-          <DataTableShell className="hidden sm:block">
+          {/* Compu y tablet. Las columnas se muestran según el ancho de la tabla
+              (@container), no de la ventana: con la barra lateral abierta en
+              1280 px «Última compra» no entra y apretaba el estado. */}
+          <DataTableShell className="@container hidden sm:block">
             <DataTableScroll>
               <DataTableRoot>
                 <caption className="sr-only">Proveedores con su saldo</caption>
@@ -189,11 +191,11 @@ export async function SuppliersTab({
                     <DataTableHeader>Estado</DataTableHeader>
                     <DataTableHeader className="text-right">Le debés</DataTableHeader>
                     <DataTableHeader className="text-right">Vencido</DataTableHeader>
-                    <DataTableHeader className="hidden lg:table-cell">
+                    <DataTableHeader className="hidden @[59rem]:table-cell">
                       Próximo vencimiento
                     </DataTableHeader>
                     <DataTableHeader className="text-right">A favor</DataTableHeader>
-                    <DataTableHeader className="hidden xl:table-cell">
+                    <DataTableHeader className="hidden @[68rem]:table-cell">
                       Última compra
                     </DataTableHeader>
                   </tr>
@@ -206,9 +208,10 @@ export async function SuppliersTab({
                         key={row.partyId}
                         className="group transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-cream-tint"
                       >
-                        <DataTableCell>
+                        <DataTableCell className="max-w-[17rem]">
                           <Link
                             href={supplierHref(tenantSlug, row.partyId)}
+                            title={displayName(row)}
                             className="block min-w-0 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
                             <span className="block truncate font-medium group-hover:text-primary">
@@ -221,7 +224,7 @@ export async function SuppliersTab({
                             ) : null}
                           </Link>
                         </DataTableCell>
-                        <DataTableCell>
+                        <DataTableCell className="min-w-44">
                           <PartyStatus light={row.trafficLight} text={row.trafficText} />
                         </DataTableCell>
                         <DataTableCell className="text-right">
@@ -238,7 +241,7 @@ export async function SuppliersTab({
                             <Dash />
                           )}
                         </DataTableCell>
-                        <DataTableCell className="hidden whitespace-nowrap tabular-nums text-muted-foreground lg:table-cell">
+                        <DataTableCell className="hidden whitespace-nowrap tabular-nums text-muted-foreground @[59rem]:table-cell">
                           {row.nextDueDate ? formatIsoDay(row.nextDueDate) : <Dash />}
                         </DataTableCell>
                         <DataTableCell className="text-right">
@@ -248,7 +251,7 @@ export async function SuppliersTab({
                             <Dash />
                           )}
                         </DataTableCell>
-                        <DataTableCell className="hidden whitespace-nowrap tabular-nums text-muted-foreground xl:table-cell">
+                        <DataTableCell className="hidden whitespace-nowrap tabular-nums text-muted-foreground @[68rem]:table-cell">
                           {row.lastIncreaseDate ? formatIsoDay(row.lastIncreaseDate) : <Dash />}
                         </DataTableCell>
                       </tr>
@@ -269,11 +272,11 @@ export async function SuppliersTab({
                         className={cn(foot.overdueCents > 0 && 'text-destructive')}
                       />
                     </DataTableCell>
-                    <DataTableCell className="hidden lg:table-cell">{null}</DataTableCell>
+                    <DataTableCell className="hidden @[59rem]:table-cell">{null}</DataTableCell>
                     <DataTableCell className="text-right">
                       <Amount cents={foot.creditCents} />
                     </DataTableCell>
-                    <DataTableCell className="hidden xl:table-cell">{null}</DataTableCell>
+                    <DataTableCell className="hidden @[68rem]:table-cell">{null}</DataTableCell>
                   </tr>
                 </tfoot>
               </DataTableRoot>
@@ -288,7 +291,9 @@ export async function SuppliersTab({
             </DataTableFooter>
           </DataTableShell>
 
-          {/* Celular: tarjetas */}
+          {/* Celular: tarjetas, con los mismos números que la tabla y la franja de
+              arriba: «Le debés» son las facturas sin pagar y lo «A favor» va
+              aparte (no se resta). Sin deuda ni saldo a favor, lo dice el estado. */}
           <div className="card-hairline overflow-hidden rounded-xl border border-border/70 bg-card sm:hidden">
             <ul aria-label="Proveedores con su saldo" className="divide-y divide-border/60">
               {rows.map((row) => {
@@ -300,7 +305,7 @@ export async function SuppliersTab({
                       className="flex min-h-11 items-start justify-between gap-3 px-4 py-3 outline-none focus-visible:bg-cream-tint active:bg-cream-tint"
                     >
                       <span className="min-w-0 space-y-1">
-                        <span className="block truncate text-sm font-medium">
+                        <span className="block text-sm font-medium text-pretty">
                           {displayName(row)}
                         </span>
                         {sub ? (
@@ -310,22 +315,36 @@ export async function SuppliersTab({
                         ) : null}
                         <PartyStatus light={row.trafficLight} text={row.trafficText} />
                       </span>
-                      <span className="shrink-0 text-right text-sm">
-                        <Amount cents={row.netCents} balance="payable" />
-                        {row.overdueCents > 0 ? (
-                          <span className="mt-0.5 block text-[11px] text-destructive">
-                            Vencido <Amount cents={row.overdueCents} />
-                          </span>
-                        ) : null}
-                      </span>
+                      {row.debtCents > 0 ? (
+                        <span className="shrink-0 text-right text-sm">
+                          <Amount cents={row.debtCents} balance="payable" />
+                          {row.overdueCents > 0 ? (
+                            <span className="mt-0.5 block text-[11px] text-destructive">
+                              Vencido <Amount cents={row.overdueCents} />
+                            </span>
+                          ) : null}
+                          {row.creditCents > 0 ? (
+                            <span className="mt-0.5 block text-[11px] text-success">
+                              A favor <Amount cents={row.creditCents} />
+                            </span>
+                          ) : null}
+                        </span>
+                      ) : null}
                     </Link>
                   </li>
                 )
               })}
             </ul>
-            <div className="flex items-center justify-between gap-3 border-t border-border/60 bg-secondary/30 px-4 py-3 text-sm font-semibold">
+            <div className="flex items-start justify-between gap-3 border-t border-border/60 bg-secondary/30 px-4 py-3 text-sm font-semibold">
               <span>Total</span>
-              <Amount cents={foot.debtCents - foot.creditCents} balance="payable" />
+              <span className="text-right">
+                <Amount cents={foot.debtCents} balance="payable" />
+                {foot.creditCents > 0 ? (
+                  <span className="mt-0.5 block text-[11px] font-normal text-success">
+                    A favor <Amount cents={foot.creditCents} />
+                  </span>
+                ) : null}
+              </span>
             </div>
           </div>
         </>

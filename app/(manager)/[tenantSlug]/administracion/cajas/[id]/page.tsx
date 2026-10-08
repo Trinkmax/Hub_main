@@ -31,6 +31,16 @@ import { formatCentsShort } from '@/lib/money'
 
 export const metadata = { title: 'Movimientos de una caja' }
 
+/**
+ * El detalle sin repetir el comprobante: con «Gasto», la descripción
+ * «Gasto · Hielo» queda en «Hielo» (y si es igual al comprobante, no va).
+ */
+function detailText(description: string | null, label: string): string | null {
+  if (!description || description === label) return null
+  const prefix = `${label} · `
+  return description.startsWith(prefix) ? description.slice(prefix.length) || null : description
+}
+
 export default async function CajaPage({
   params,
   searchParams,
@@ -69,9 +79,7 @@ export default async function CajaPage({
     .filter((r) => r.rowKind === 'line')
     .map((r, index) => {
       const label = r.documentLabel ?? r.description ?? 'Movimiento'
-      const detail = [r.description !== label ? r.description : null, r.counterpart]
-        .filter(Boolean)
-        .join(' · ')
+      const detail = [detailText(r.description, label), r.counterpart].filter(Boolean).join(' · ')
       return {
         id: `${r.entryId ?? 'linea'}-${index}`,
         date: r.entryDate ?? (range.ok ? range.from : today),
@@ -84,6 +92,19 @@ export default async function CajaPage({
       }
     })
   const firstPage = after === null
+  // El mes en curso termina después de hoy: si no hay nada cargado con fecha
+  // posterior (las filas vienen en orden y esta es la última página), el saldo
+  // del cierre es el de hoy. «Saldo al 31/10» un 7 de octubre parece una proyección.
+  const lastDate = rows.at(-1)?.date ?? null
+  const closingDay = !range.ok
+    ? today
+    : range.to > today &&
+        range.from <= today &&
+        data !== null &&
+        !data.nextCursor &&
+        (lastDate === null || lastDate <= today)
+      ? today
+      : range.to
   const detail = [treasury.bankName, treasury.alias ? `Alias ${treasury.alias}` : null]
     .filter(Boolean)
     .join(' · ')
@@ -148,13 +169,13 @@ export default async function CajaPage({
         <div className="grid gap-4 sm:grid-cols-3">
           <StatCard
             icon={Wallet}
-            label={range.ok && range.to === today ? 'Saldo hoy' : 'Saldo al cierre'}
+            label={range.ok && closingDay === today ? 'Saldo hoy' : 'Saldo al cierre'}
             value={
               isCard
                 ? cardBalanceText(data.closingCents)
                 : balanceText(data.closingCents, 'treasury', { decimals: 0 })
             }
-            hint={range.ok ? `Al ${formatIsoDay(range.to)}` : undefined}
+            hint={range.ok ? `Al ${formatIsoDay(closingDay)}` : undefined}
           />
           <StatCard
             icon={ArrowDownLeft}
@@ -223,7 +244,7 @@ export default async function CajaPage({
             closing={
               !data.nextCursor
                 ? {
-                    label: `Saldo al ${formatIsoDay(range.to)}`,
+                    label: `Saldo al ${formatIsoDay(closingDay)}`,
                     balanceCents: sign * data.closingCents,
                   }
                 : null

@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 import { Amount } from './amount'
 import { DueStatus } from './due-status'
 import { type BalanceKind, describeBalance, describeSideBalance, signedMovement } from './format'
+import { VoucherText } from './voucher-text'
 
 export type StatementRow = {
   id: string
@@ -174,12 +175,14 @@ export function StatementTable({
                     {withDue && today ? (
                       <DataTableCell>
                         {row.dueDate ? (
-                          <DueStatus
-                            dueDate={row.dueDate}
-                            today={today}
-                            settled={row.settled}
-                            showDate
-                          />
+                          // La fecha abajo del semáforo: en una línea, la columna se comía el
+                          // ancho del comprobante («Nota de crédito / A / 0003-…» en tres renglones).
+                          <>
+                            <DueStatus dueDate={row.dueDate} today={today} settled={row.settled} />
+                            <span className="block pl-3 text-[11px] tabular-nums text-muted-foreground">
+                              {formatIsoDay(row.dueDate)}
+                            </span>
+                          </>
                         ) : (
                           <span className="text-xs text-muted-foreground/60">—</span>
                         )}
@@ -251,7 +254,7 @@ export function StatementTable({
                       <p className="text-xs tabular-nums text-muted-foreground">
                         {formatIsoDay(row.date)}
                       </p>
-                      <p className="truncate text-sm font-medium">
+                      <p className="text-sm font-medium text-pretty">
                         <Voucher row={row} />
                       </p>
                       {row.detail ? (
@@ -304,7 +307,8 @@ export function StatementTable({
 function Voucher({ row }: { row: StatementRow }) {
   const label = (
     <>
-      {row.voucher}
+      {/* «Factura A 0003-00001234»: si no entra, baja el número entero (no se corta en el guion). */}
+      <VoucherText text={row.voucher} />
       {row.voided ? (
         <span className="ml-2 rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
           Anulado

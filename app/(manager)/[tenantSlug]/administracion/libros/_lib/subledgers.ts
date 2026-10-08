@@ -1,6 +1,7 @@
 import type { SubledgerColumn, SubledgerKindKey } from '@/lib/accounting/queries/columns'
 import type { ExportBook } from '@/lib/accounting/queries/labels'
 import { formatIsoDay } from '@/lib/dates'
+import { formatCuit } from '@/lib/fiscal'
 import { formatCents } from '@/lib/money'
 
 /**
@@ -81,6 +82,11 @@ export function isRefColumn(column: SubledgerColumn): boolean {
   return column.header === 'Ref. interna'
 }
 
+/** El CUIT del proveedor o cliente: se lee con guiones, como en el Libro IVA. */
+export function isCuitColumn(column: SubledgerColumn): boolean {
+  return column.header === 'CUIT'
+}
+
 /** El saldo acumulado (no se suma en los totales: va el último). */
 export function isRunningBalanceColumn(column: SubledgerColumn): boolean {
   return column.header === 'Saldo'
@@ -88,7 +94,7 @@ export function isRunningBalanceColumn(column: SubledgerColumn): boolean {
 
 /**
  * Una celda que no es plata, como texto: fechas `dd/MM/yyyy`, la referencia
- * como `#125`, las listas («Caja: $ 1.000,00 · Banco: $ 500,00»), sí/no.
+ * como `#125`, el CUIT con guiones, las listas («Caja: $ 1.000,00 · Banco: $ 500,00»), sí/no.
  * Vacío si no hay dato (la tabla muestra la celda en blanco).
  */
 export function subledgerCellText(cell: Cell, column: SubledgerColumn): string {
@@ -109,6 +115,7 @@ export function subledgerCellText(cell: Cell, column: SubledgerColumn): string {
     const text = String(cell).trim()
     return text ? `#${text}` : ''
   }
+  if (isCuitColumn(column) && typeof cell === 'string') return formatCuit(cell)
   return String(cell)
 }
 

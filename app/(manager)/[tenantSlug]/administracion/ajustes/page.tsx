@@ -35,6 +35,7 @@ import {
 } from '@/lib/tenant'
 import { RetryButton } from '../_resumen/retry-button'
 import { AccessPanel } from './_components/access-panel'
+import { ActiveTabIntoView } from './_components/active-tab-into-view'
 import { Callout } from './_components/form-bits'
 import { IntegrityPanel } from './_components/integrity-panel'
 import { MethodsPanel } from './_components/methods-panel'
@@ -46,17 +47,21 @@ import { TreasuriesPanel } from './_components/treasuries-panel'
 
 export const metadata = { title: 'Ajustes · Administración' }
 
+// Las ocho tienen que entrar enteras en la compu (1280 px con el menú abierto): con «Ejercicio y
+// meses» y «Plataformas y organismos» la barra se pasaba y «Integridad» quedaba escondida.
 const TABS = [
   { value: 'sas', label: 'Datos de la SAS', shortLabel: 'SAS' },
-  { value: 'ejercicio', label: 'Ejercicio y meses', shortLabel: 'Ejercicio' },
+  { value: 'ejercicio', label: 'Ejercicio' },
   { value: 'accesos', label: 'Accesos' },
   { value: 'medios', label: 'Medios de cobro', shortLabel: 'Medios' },
   { value: 'cajas', label: 'Cajas y cuentas', shortLabel: 'Cajas' },
-  { value: 'participes', label: 'Plataformas y organismos', shortLabel: 'Plataformas' },
+  { value: 'participes', label: 'Plataformas' },
   { value: 'puntos-de-venta', label: 'Puntos de venta' },
   { value: 'integridad', label: 'Integridad' },
 ] as const
 type Tab = (typeof TABS)[number]['value']
+
+const NAV_LABEL = 'Secciones de Ajustes'
 
 function readTab(value: string | string[] | undefined): Tab {
   const v = Array.isArray(value) ? value[0] : value
@@ -333,7 +338,8 @@ export default async function AjustesPage({
         }
         description="Los datos de la SAS, quién entra y cómo se ordenan las cajas y los cobros."
       />
-      <SectionNav items={items} active={tab} label="Secciones de Ajustes" />
+      <SectionNav items={items} active={tab} label={NAV_LABEL} />
+      <ActiveTabIntoView navLabel={NAV_LABEL} active={tab} />
       <div className="max-w-4xl">{content}</div>
     </PageShell>
   )

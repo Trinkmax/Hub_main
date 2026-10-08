@@ -21,7 +21,7 @@ import type { TreasuryKind } from '@/lib/accounting/types'
 import { formatDayMonth, monthName } from '@/lib/dates'
 import { formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
-import { availableBreakdown, monthWord, treasuryNormalBalance } from './summary-copy'
+import { availableBreakdownParts, monthWord, treasuryNormalBalance } from './summary-copy'
 
 /**
  * Los bloques del Resumen (H.4) con las piezas del panel: fila de
@@ -68,6 +68,33 @@ function Status({ dot, children }: { dot: string; children: ReactNode }) {
   )
 }
 
+/**
+ * Tramos separados por « · » que cortan línea entre ellos («Caja $ 643.000 ·
+ * Banco Nación $ 1.802.750»: nunca «Banco» arriba y «Nación $ …» abajo). Cada
+ * tramo es inline-block: entero si entra en el renglón; si solo él ya no entra
+ * («Tarjetas de crédito (Posnet) $ 2.536.151» en una tarjeta angosta), se parte
+ * adentro en vez de salirse de la tarjeta, con el importe pegado a su nombre.
+ */
+function Joined({ parts }: { parts: readonly string[] }) {
+  const seen = new Map<string, number>()
+  return parts.map((part, index) => {
+    const n = (seen.get(part) ?? 0) + 1
+    seen.set(part, n)
+    const last = index === parts.length - 1
+    return (
+      <span key={`${part}#${n}`}>
+        {/* El «·» cierra el tramo (pegado con espacio duro) y el corte va después:
+            ningún renglón empieza con el punto. */}
+        <span className="inline-block">
+          {part.replace(/ (?=\$)/g, ' ')}
+          {last ? null : ' ·'}
+        </span>
+        {last ? null : ' '}
+      </span>
+    )
+  })
+}
+
 /** Los cuatro números (H.4): plata, le debés, te deben, IVA del mes. Sin animación. */
 export function SummaryKpis({
   summary,
@@ -100,16 +127,17 @@ export function SummaryKpis({
 
   let receiveHint: ReactNode = 'Todavía no está disponible.'
   if (receivables) {
-    const top = receivables.top
-      .slice(0, 2)
-      .map((r) => `${r.name} ${formatCentsShort(r.openCents)}`)
-      .join(' · ')
+    const top = receivables.top.slice(0, 2).map((r) => `${r.name} ${formatCentsShort(r.openCents)}`)
     receiveHint =
       receivables.totalCents === 0 ? (
         'Nadie te debe nada.'
       ) : (
         <span className="block space-y-0.5">
-          {top ? <span className="block">{top}</span> : null}
+          {top.length > 0 ? (
+            <span className="block">
+              <Joined parts={top} />
+            </span>
+          ) : null}
           {receivables.overdueCents > 0 ? (
             <Status dot="bg-warning">
               <span className="text-warning-text">
@@ -148,7 +176,13 @@ export function SummaryKpis({
         iconClassName="text-success"
         label="Plata disponible"
         value={formatCentsShort(summary.availableCents)}
-        hint={summary.treasuries.length > 0 ? availableBreakdown(summary) : 'Sin cajas cargadas.'}
+        hint={
+          summary.treasuries.length > 0 ? (
+            <Joined parts={availableBreakdownParts(summary)} />
+          ) : (
+            'Sin cajas cargadas.'
+          )
+        }
       />
       <StatCard
         icon={Truck}
@@ -191,20 +225,24 @@ export function ThisMonthCard({
   const month = monthName(Number(today.slice(5, 7)))
   return (
     <SummaryCard title="Este mes" description={`Del 1 al ${day} de ${month}`}>
-      <dl className="grid grid-cols-2 gap-4 px-5 py-4">
-        <div className="min-w-0 space-y-1">
-          <dt className="text-xs text-muted-foreground">Vendiste</dt>
-          <dd className="font-serif text-2xl font-semibold tracking-tight tabular-nums">
-            {formatCentsShort(summary.monthToDate.soldCents)}
-          </dd>
-        </div>
-        <div className="min-w-0 space-y-1">
-          <dt className="text-xs text-muted-foreground">Compras y gastos</dt>
-          <dd className="font-serif text-2xl font-semibold tracking-tight tabular-nums">
-            {formatCentsShort(summary.monthToDate.purchasesAndExpensesCents)}
-          </dd>
-        </div>
-      </dl>
+      {/* Al lado de «Necesita atención» la tarjeta queda angosta: ahí los dos importes
+          van uno abajo del otro (en dos columnas se pisaban, «$ 8.008.970 $ 1.001.700»). */}
+      <div className="@container">
+        <dl className="grid grid-cols-1 gap-4 px-5 py-4 @[22rem]:grid-cols-2">
+          <div className="min-w-0 space-y-1">
+            <dt className="text-xs text-muted-foreground">Vendiste</dt>
+            <dd className="font-serif text-2xl font-semibold tracking-tight tabular-nums">
+              {formatCentsShort(summary.monthToDate.soldCents)}
+            </dd>
+          </div>
+          <div className="min-w-0 space-y-1">
+            <dt className="text-xs text-muted-foreground">Compras y gastos</dt>
+            <dd className="font-serif text-2xl font-semibold tracking-tight tabular-nums">
+              {formatCentsShort(summary.monthToDate.purchasesAndExpensesCents)}
+            </dd>
+          </div>
+        </dl>
+      </div>
       <p className="border-t border-border/60 px-5 py-3 text-xs text-muted-foreground text-pretty">
         Lo vendido sale de los cierres del día: no es ganancia.{' '}
         <Link
@@ -234,13 +272,18 @@ const KIND_LABEL: Readonly<Record<TreasuryKind, string>> = {
   other: 'Otra',
 }
 
-/** El saldo de una caja como se lee: «$ X», «Descubierto $ X» o, en la tarjeta, «Deuda $ X». */
+/**
+ * El saldo de una caja como se lee: «$ X», «Descubierto $ X» o, en la tarjeta,
+ * «Deuda $ X». Sin centavos, como el resto de los números del Resumen.
+ */
 export function TreasuryBalance({ treasury }: { treasury: SummaryTreasury }) {
   if (treasury.kind === 'credit_card') {
     const debt = treasuryNormalBalance(treasury)
     return (
       <span className="whitespace-nowrap text-sm font-medium tabular-nums">
-        {debt > 0 ? `Deuda ${balanceText(debt, 'treasury')}` : balanceText(-debt, 'treasury')}
+        {debt > 0
+          ? `Deuda ${balanceText(debt, 'treasury', { decimals: 0 })}`
+          : balanceText(-debt, 'treasury', { decimals: 0 })}
       </span>
     )
   }
@@ -248,6 +291,7 @@ export function TreasuryBalance({ treasury }: { treasury: SummaryTreasury }) {
     <Amount
       cents={treasury.balanceCents}
       balance="treasury"
+      decimals={0}
       tone="auto"
       className="text-sm font-medium"
     />
@@ -287,9 +331,7 @@ export function TreasuriesCard({
                 ? `Último movimiento ${formatDayMonth(t.lastMovementDate)}`
                 : 'Sin movimientos',
               t.lastCheckedOn ? `Ajustada el ${formatDayMonth(t.lastCheckedOn)}` : null,
-            ]
-              .filter(Boolean)
-              .join(' · ')
+            ].filter((part): part is string => Boolean(part))
             return (
               <li key={t.id}>
                 <Link
@@ -303,8 +345,8 @@ export function TreasuriesCard({
                     <span className="block truncate text-sm font-medium text-foreground">
                       {t.name}
                     </span>
-                    <span className="block text-xs text-muted-foreground text-pretty">
-                      {details}
+                    <span className="block text-xs text-muted-foreground">
+                      <Joined parts={details} />
                     </span>
                   </span>
                   <span className="shrink-0 text-right">

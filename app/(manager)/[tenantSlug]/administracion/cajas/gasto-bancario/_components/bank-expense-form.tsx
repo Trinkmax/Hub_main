@@ -310,13 +310,13 @@ export function BankExpenseForm({
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="grid content-start gap-2">
                 {money(
-                  'Comisiones y mantenimiento (sin IVA)',
+                  'Comisiones con IVA',
                   feesNet,
                   setFeesNet,
                   'feesNetCents',
                   feesNet !== null && feesNet > 0
                     ? `IVA ${vatRateLabel(rate)}: ${formatCents(vat)}`
-                    : 'Lo que cobra el banco, antes del IVA.',
+                    : 'Comisiones y mantenimiento, antes del IVA: el IVA se suma solo.',
                 )}
                 <div className="grid gap-1.5">
                   <Label
@@ -347,25 +347,31 @@ export function BankExpenseForm({
                 </div>
               </div>
               {money('Percepción de IVA', vatPerception, setVatPerception, 'vatPerceptionCents')}
-              {money('Comisiones sin IVA', feesNoVat, setFeesNoVat, 'feesNoVatCents')}
+              {money(
+                'Comisiones sin IVA',
+                feesNoVat,
+                setFeesNoVat,
+                'feesNoVatCents',
+                'Las que el resumen no grava con IVA.',
+              )}
               {money('SIRCREB (Ingresos Brutos)', sircreb, setSircreb, 'sircrebCents')}
               {money(
-                'Impuesto a los créditos (Ley 25.413)',
+                'Impuesto a los créditos',
                 leyCredit,
                 setLeyCredit,
                 'ley25413CreditCents',
                 leyCredit !== null && leyCredit > 0
                   ? `${vatRateLabel(settings.bankTaxCreditComputableBp)} computable en Ganancias: ${formatCents(leyCreditSplit.computable)}`
-                  : undefined,
+                  : 'Ley 25.413, sobre lo que entró.',
               )}
               {money(
-                'Impuesto a los débitos (Ley 25.413)',
+                'Impuesto a los débitos',
                 leyDebit,
                 setLeyDebit,
                 'ley25413DebitCents',
                 leyDebit !== null && leyDebit > 0
                   ? `${vatRateLabel(settings.bankTaxDebitComputableBp)} computable en Ganancias: ${formatCents(leyDebitSplit.computable)}`
-                  : undefined,
+                  : 'Ley 25.413, sobre lo que salió.',
               )}
               {money('Intereses', interest, setInterest, 'interestCents')}
             </div>
@@ -579,6 +585,10 @@ export function BankExpenseForm({
             </Field>
           </div>
 
+          {/* En el celular, el asiento va debajo de los importes (antes de guardar). */}
+          <div className="lg:hidden">
+            <EntryPreview entries={shown} />
+          </div>
           <FormBanner banner={posting.banner} />
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button asChild variant="outline" className="h-11 md:h-9">
@@ -598,7 +608,7 @@ export function BankExpenseForm({
           </div>
         </div>
 
-        <aside className="lg:sticky lg:top-20">
+        <aside className="hidden lg:sticky lg:top-20 lg:block">
           <EntryPreview entries={shown} />
         </aside>
       </form>

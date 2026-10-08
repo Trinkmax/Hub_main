@@ -310,7 +310,7 @@ function ClosePanel({
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 py-4">
         <div className="space-y-0.5">
           <h2 id="cerrar-titulo" className="font-serif text-lg font-semibold tracking-tight">
-            Cerrar {formatMonthLabel(period.month)}
+            Cerrar {formatMonthLabel(period.month).toLowerCase()}
           </h2>
           <p className="text-xs text-muted-foreground">
             {checklist.canClose

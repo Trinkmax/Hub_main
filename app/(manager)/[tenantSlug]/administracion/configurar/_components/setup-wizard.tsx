@@ -982,8 +982,8 @@ export function SetupWizard({
           <header className="space-y-1">
             <h3 className="font-serif text-lg font-semibold tracking-tight">¿Cómo te pagan?</h3>
             <p className="text-xs text-muted-foreground">
-              Los medios del cierre del día, en el orden de Thinkeon. El orden y los días los
-              cambiás después en Ajustes › Medios de cobro.
+              Los medios del cierre del día, en el orden de tu cierre de caja. El orden y los días
+              los cambiás después en Ajustes › Medios de cobro.
             </p>
           </header>
           <ul className="divide-y divide-border/60 rounded-lg border border-border/60">

@@ -6,6 +6,7 @@ import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { newClientRef } from '@/components/administracion/cajas-ventas/client-ref'
 import { DateField } from '@/components/administracion/date-input'
+import { VoucherText } from '@/components/administracion/voucher-text'
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -20,6 +21,11 @@ import { reverseDocument, voidDocument } from '@/lib/accounting/actions/document
 import { formatIsoDay, formatMonthLabel, monthName } from '@/lib/dates'
 import { formatCents } from '@/lib/money'
 import { ReasonField, reasonError } from '../../../libros/_components/reason-field'
+
+/** «Factura A 0003-00001100» se nombra; un comprobante sin número («Pago») se pregunta en genérico. */
+function hasNumber(title: string): boolean {
+  return /\d/.test(title)
+}
 
 const OFFLINE = 'Sin conexión: no se anuló. Probá de nuevo.'
 
@@ -127,7 +133,16 @@ export function VoidDocumentButton({
       </Button>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>¿Anulás {title}?</AlertDialogTitle>
+          {/* El número del comprobante no se corta en el guion («0003-» / «00001100»). */}
+          <AlertDialogTitle>
+            {hasNumber(title) ? (
+              <>
+                ¿Anulás <VoucherText text={title} />?
+              </>
+            ) : (
+              '¿Anulás este comprobante?'
+            )}
+          </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-2 text-sm text-muted-foreground">
               <p className="text-pretty">
@@ -299,7 +314,15 @@ export function ReverseDocumentButton({
       </Button>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>¿Anulás {title} con fecha de hoy?</AlertDialogTitle>
+          <AlertDialogTitle>
+            {hasNumber(title) ? (
+              <>
+                ¿Anulás <VoucherText text={title} /> con fecha de hoy?
+              </>
+            ) : (
+              '¿Anulás este comprobante con fecha de hoy?'
+            )}
+          </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-2 text-sm text-muted-foreground">
               <p className="text-pretty">

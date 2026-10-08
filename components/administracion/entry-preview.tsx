@@ -153,19 +153,22 @@ function EntryTable({ entry, multiple }: { entry: EntryPreviewData; multiple: bo
   return (
     <div className={cn(multiple && 'border-b border-border/60 last:border-b-0')}>
       {multiple && caption ? (
-        <p className="px-4 pt-3 text-xs font-medium text-muted-foreground">{caption}</p>
+        <p className="px-3 pt-3 text-xs font-medium text-muted-foreground sm:px-4">{caption}</p>
       ) : null}
       <table className="w-full text-sm">
         <caption className="sr-only">{caption || 'Asiento'}</caption>
         <thead className="text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
           <tr>
-            <th scope="col" className="px-4 pt-3 pb-1.5 font-semibold">
+            <th scope="col" className="px-3 pt-3 pb-1.5 font-semibold sm:px-4">
               Cuenta
             </th>
             <th scope="col" className="w-24 px-2 pt-3 pb-1.5 text-right font-semibold sm:w-32">
               Debe
             </th>
-            <th scope="col" className="w-24 px-4 pt-3 pb-1.5 text-right font-semibold sm:w-32">
+            <th
+              scope="col"
+              className="w-24 pt-3 pr-3 pb-1.5 pl-2 text-right font-semibold sm:w-32 sm:px-4"
+            >
               Haber
             </th>
           </tr>
@@ -175,7 +178,7 @@ function EntryTable({ entry, multiple }: { entry: EntryPreviewData; multiple: bo
             const isCredit = (line.debitCents ?? 0) === 0
             return (
               <tr key={line.id} className="align-top">
-                <td className={cn('px-4 py-1.5', isCredit && 'pl-8')}>
+                <td className={cn('px-3 py-1.5 sm:px-4', isCredit && 'pl-6 sm:pl-8')}>
                   <span className="flex flex-wrap items-baseline gap-x-1.5">
                     {isCredit ? <span className="text-muted-foreground">a</span> : null}
                     <span className="font-mono text-[11px] text-muted-foreground">
@@ -193,7 +196,7 @@ function EntryTable({ entry, multiple }: { entry: EntryPreviewData; multiple: bo
                   {isCredit ? '' : formatCents(line.debitCents, NUMBER)}
                   {isCredit ? null : <span className="sr-only"> en el Debe</span>}
                 </td>
-                <td className="px-4 py-1.5 text-right tabular-nums whitespace-nowrap">
+                <td className="py-1.5 pr-3 pl-2 text-right tabular-nums whitespace-nowrap sm:px-4">
                   {isCredit ? formatCents(line.creditCents, NUMBER) : ''}
                   {isCredit ? <span className="sr-only"> en el Haber</span> : null}
                 </td>
@@ -203,13 +206,13 @@ function EntryTable({ entry, multiple }: { entry: EntryPreviewData; multiple: bo
         </tbody>
         <tfoot className="font-semibold">
           <tr className="border-t border-border/80">
-            <td className="px-4 py-2 text-xs text-muted-foreground">
+            <td className="px-3 py-2 text-xs text-muted-foreground sm:px-4">
               {sums.diff === 0n ? 'Debe = Haber' : 'Totales'}
             </td>
             <td className="px-2 py-2 text-right tabular-nums whitespace-nowrap">
               {formatCents(sums.debit, NUMBER)}
             </td>
-            <td className="px-4 py-2 text-right tabular-nums whitespace-nowrap">
+            <td className="py-2 pr-3 pl-2 text-right tabular-nums whitespace-nowrap sm:px-4">
               {formatCents(sums.credit, NUMBER)}
             </td>
           </tr>

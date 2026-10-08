@@ -1,5 +1,6 @@
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
+import type { ReactNode } from 'react'
 import { ReadOnlyNotice } from '@/components/administracion/read-only'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
@@ -14,10 +15,16 @@ import { PurchaseForm, type RecurringOption, type RelatedOption } from './_compo
 
 export const metadata = { title: 'Nueva factura de proveedor' }
 
-const TITLES: Readonly<Record<PurchaseFamily, { title: string; description: string }>> = {
+const TITLES: Readonly<Record<PurchaseFamily, { title: string; description: ReactNode }>> = {
   factura: {
     title: 'Nueva factura de proveedor',
-    description: 'Cargá la factura como viene en el papel: el asiento se arma solo a la derecha.',
+    // El asiento está a la derecha recién desde lg; antes va abajo, en «Ver asiento».
+    description: (
+      <>
+        Cargá la factura como viene en el papel: el asiento se arma solo
+        <span className="hidden lg:inline"> a la derecha</span>.
+      </>
+    ),
   },
   nc: {
     title: 'Nueva nota de crédito',

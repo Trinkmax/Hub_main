@@ -69,7 +69,9 @@ export function ReceivablesFilters({
               aria-selected={selected}
               onClick={() => setParam('filtro', tab.value === 'todos' ? null : tab.value)}
               className={cn(
-                'flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors sm:min-h-0 sm:text-sm',
+                // Cada filtro en una línea: en el celular el segmentado se desliza
+                // de costado en vez de partir «Te deben» en dos renglones.
+                'flex min-h-11 flex-1 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium transition-colors sm:min-h-0 sm:text-sm',
                 selected
                   ? 'bg-card text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground',

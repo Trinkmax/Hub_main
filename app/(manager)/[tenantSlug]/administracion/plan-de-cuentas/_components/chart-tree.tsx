@@ -71,7 +71,15 @@ function rowDomId(id: string): string {
 function RowBalance({ row, available }: { row: ChartVisibleRow; available: boolean }) {
   if (!available || row.balanceCents === null) return <Amount cents={null} />
   if (row.balanceCents === 0)
-    return <span className="text-muted-foreground tabular-nums">0,00</span>
+    return (
+      <span className="whitespace-nowrap text-muted-foreground tabular-nums">
+        0,00
+        {/* El lugar de la «D»/«A»: los centavos quedan en la misma columna que los demás saldos. */}
+        <span aria-hidden="true" className="invisible ml-1">
+          D
+        </span>
+      </span>
+    )
   return <Amount cents={row.balanceCents} side />
 }
 
@@ -190,7 +198,7 @@ export function ChartTree() {
           <input
             type="search"
             value={query}
-            placeholder="Código o nombre («1.1.01», «110101», «proveedores»)"
+            placeholder="Código («1.1.01») o nombre"
             onChange={(e) => setQuery(e.target.value)}
             className="h-11 w-full rounded-lg border border-transparent bg-background/40 pl-9 pr-3 text-base shadow-none outline-none placeholder:text-muted-foreground/70 focus:border-ring focus:ring-2 focus:ring-ring/40 md:h-9 md:text-sm"
           />
@@ -332,7 +340,7 @@ export function ChartTree() {
                               }
                               className="flex min-h-11 min-w-0 flex-1 flex-col items-start gap-1 rounded-md px-1 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-9"
                             >
-                              <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                              <span className="flex flex-col items-start gap-0.5 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-2">
                                 <span className="font-mono text-xs text-muted-foreground tabular-nums">
                                   {row.code}
                                 </span>
@@ -356,12 +364,16 @@ export function ChartTree() {
                                   {row.description}
                                 </span>
                               ) : null}
-                              <span className="flex flex-wrap gap-x-2 text-xs text-muted-foreground sm:hidden">
-                                <span>{ACCOUNT_TYPE_NAMES[row.type]}</span>
-                                {row.postable && balancesAvailable ? (
-                                  <span>
-                                    · Saldo <RowBalance row={row} available={balancesAvailable} />
-                                  </span>
+                              <span className="text-xs text-muted-foreground sm:hidden">
+                                {ACCOUNT_TYPE_NAMES[row.type]}
+                                {balancesAvailable ? (
+                                  <>
+                                    {/* El punto queda pegado al tipo: si no entra, baja el saldo entero. */}
+                                    {' · '}
+                                    <span className="whitespace-nowrap">
+                                      Saldo <RowBalance row={row} available={balancesAvailable} />
+                                    </span>
+                                  </>
                                 ) : null}
                               </span>
                             </button>

@@ -117,8 +117,9 @@ function rowPayload(m: SalesMethodRow, patch: Record<string, unknown> = {}) {
 }
 
 function destinationText(m: SalesMethodRow): string {
-  const parts = [m.treasuryName, m.partyName].filter(Boolean)
-  return parts.join(' · ')
+  // La billetera y quien acredita suelen llamarse igual («Mercado Pago · Mercado Pago»): una vez.
+  const parts = [m.treasuryName, m.partyName].filter((p): p is string => Boolean(p))
+  return parts.filter((p, i) => parts.indexOf(p) === i).join(' · ')
 }
 
 /**

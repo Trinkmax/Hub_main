@@ -14,8 +14,10 @@ import { Button } from '@/components/ui/button'
 export function VentasHeaderActions({ base }: { base: string }) {
   const { readOnly } = useAccounting()
   if (readOnly) return null
+  // Desde 1280 px los tres botones van en una fila (la descripción se acomoda);
+  // más angosto, se reparten en dos.
   return (
-    <>
+    <div className="flex flex-wrap items-center gap-2 xl:flex-nowrap">
       <Button asChild className="hidden gap-2 lg:inline-flex">
         <Link href={`${base}/ventas/cierre`}>
           <CalendarCheck className="size-4" aria-hidden />
@@ -32,6 +34,6 @@ export function VentasHeaderActions({ base }: { base: string }) {
           Factura de venta
         </Link>
       </Button>
-    </>
+    </div>
   )
 }

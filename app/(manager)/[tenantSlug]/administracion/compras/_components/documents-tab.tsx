@@ -4,6 +4,7 @@ import { Amount } from '@/components/administracion/amount'
 import { DueStatus } from '@/components/administracion/due-status'
 import { plural } from '@/components/administracion/format'
 import { ActionButton } from '@/components/administracion/quick-actions'
+import { VoucherText } from '@/components/administracion/voucher-text'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -322,8 +323,12 @@ export async function DocumentsTab({
     <div className="space-y-6">
       {toolbar}
 
-      {/* Compu y tablet */}
-      <DataTableShell className="hidden sm:block">
+      {/* Compu y tablet. Las columnas se muestran según el ancho de la tabla
+          (@container), no de la ventana: con la barra lateral abierta en 1280 px
+          «Pendiente», «Vence» y «Estado» quedaban afuera, detrás de un scroll
+          que no se ve. Sin lugar para «Proveedor», el proveedor va debajo del
+          comprobante. */}
+      <DataTableShell className="@container hidden sm:block">
         <DataTableScroll>
           <DataTableRoot>
             <caption className="sr-only">
@@ -333,20 +338,29 @@ export async function DocumentsTab({
               <tr>
                 <DataTableHeader className="w-28">Fecha</DataTableHeader>
                 <DataTableHeader>{mode === 'pagos' ? 'Pago' : 'Comprobante'}</DataTableHeader>
-                <DataTableHeader>{mode === 'pagos' ? 'Pagado a' : 'Proveedor'}</DataTableHeader>
                 {mode === 'comprobantes' ? (
-                  <DataTableHeader className="hidden xl:table-cell">Imputación</DataTableHeader>
+                  <>
+                    <DataTableHeader className="hidden @[68rem]:table-cell">
+                      Proveedor
+                    </DataTableHeader>
+                    <DataTableHeader className="hidden @[82rem]:table-cell">
+                      Imputación
+                    </DataTableHeader>
+                  </>
                 ) : (
                   <>
-                    <DataTableHeader className="hidden lg:table-cell">Medios</DataTableHeader>
-                    <DataTableHeader className="hidden xl:table-cell">Aplicado a</DataTableHeader>
+                    <DataTableHeader>Pagado a</DataTableHeader>
+                    <DataTableHeader className="hidden @[52rem]:table-cell">Medios</DataTableHeader>
+                    <DataTableHeader className="hidden @[68rem]:table-cell">
+                      Aplicado a
+                    </DataTableHeader>
                   </>
                 )}
                 <DataTableHeader className="text-right">Total</DataTableHeader>
                 {mode === 'comprobantes' ? (
                   <>
                     <DataTableHeader className="text-right">Pendiente</DataTableHeader>
-                    <DataTableHeader className="hidden lg:table-cell">Vence</DataTableHeader>
+                    <DataTableHeader className="hidden @[48rem]:table-cell">Vence</DataTableHeader>
                   </>
                 ) : null}
                 <DataTableHeader>Estado</DataTableHeader>
@@ -374,33 +388,44 @@ export async function DocumentsTab({
                       >
                         <span
                           className={cn(
-                            'block truncate font-medium group-hover:text-primary',
+                            'block font-medium group-hover:text-primary',
                             voided && 'line-through',
                           )}
                         >
-                          {mode === 'pagos' ? 'Pago' : row.title}
+                          {mode === 'pagos' ? 'Pago' : <VoucherText text={row.title} />}
                         </span>
                         <span className="block text-[11px] tabular-nums text-muted-foreground">
                           #{row.seq}
                           {row.issueDate !== row.accountingDate
                             ? ` · emitido el ${formatIsoDay(row.issueDate)}`
                             : ''}
+                          {mode === 'comprobantes' && row.partyName ? (
+                            <span className="@[68rem]:hidden">
+                              {' · '}
+                              {row.partyName}
+                            </span>
+                          ) : null}
                         </span>
                       </Link>
                     </DataTableCell>
-                    <DataTableCell className="max-w-[220px]">
-                      <span className="block truncate">{row.partyName ?? '—'}</span>
-                    </DataTableCell>
                     {mode === 'comprobantes' ? (
-                      <DataTableCell className="hidden max-w-[220px] text-muted-foreground xl:table-cell">
-                        <span className="block truncate">{row.imputation ?? '—'}</span>
-                      </DataTableCell>
+                      <>
+                        <DataTableCell className="hidden max-w-[220px] @[68rem]:table-cell">
+                          <span className="block truncate">{row.partyName ?? '—'}</span>
+                        </DataTableCell>
+                        <DataTableCell className="hidden max-w-[220px] text-muted-foreground @[82rem]:table-cell">
+                          <span className="block truncate">{row.imputation ?? '—'}</span>
+                        </DataTableCell>
+                      </>
                     ) : (
                       <>
-                        <DataTableCell className="hidden min-w-[180px] max-w-[260px] text-muted-foreground lg:table-cell">
+                        <DataTableCell className="max-w-[220px]">
+                          <span className="block truncate">{row.partyName ?? '—'}</span>
+                        </DataTableCell>
+                        <DataTableCell className="hidden min-w-[180px] max-w-[260px] text-muted-foreground @[52rem]:table-cell">
                           <AmountItems items={voided ? null : row.means} />
                         </DataTableCell>
-                        <DataTableCell className="hidden min-w-[200px] max-w-[280px] text-muted-foreground xl:table-cell">
+                        <DataTableCell className="hidden min-w-[200px] max-w-[280px] text-muted-foreground @[68rem]:table-cell">
                           <AmountItems items={voided ? null : row.appliedTo} empty="A cuenta" />
                         </DataTableCell>
                       </>
@@ -416,14 +441,18 @@ export async function DocumentsTab({
                         <DataTableCell className="text-right">
                           {pending !== null && pending > 0 ? <Amount cents={pending} /> : <Dash />}
                         </DataTableCell>
-                        <DataTableCell className="hidden lg:table-cell">
-                          {hasDue(row) ? (
-                            <DueStatus
-                              dueDate={row.dueDate}
-                              today={today}
-                              settled={row.paymentStatus === 'paid'}
-                              showDate
-                            />
+                        <DataTableCell className="hidden @[48rem]:table-cell">
+                          {hasDue(row) && row.dueDate ? (
+                            <>
+                              <DueStatus
+                                dueDate={row.dueDate}
+                                today={today}
+                                settled={row.paymentStatus === 'paid'}
+                              />
+                              <span className="block pl-3 text-[11px] tabular-nums text-muted-foreground">
+                                {formatIsoDay(row.dueDate)}
+                              </span>
+                            </>
                           ) : (
                             <Dash />
                           )}
@@ -473,12 +502,19 @@ export async function DocumentsTab({
                       {formatIsoDay(row.accountingDate)} · #{row.seq}
                     </span>
                     <span
-                      className={cn('block truncate text-sm font-medium', voided && 'line-through')}
+                      className={cn(
+                        'block text-sm font-medium text-pretty',
+                        voided && 'line-through',
+                      )}
                     >
-                      {mode === 'pagos' ? `Pago a ${row.partyName ?? 'proveedor'}` : row.title}
+                      {mode === 'pagos' ? (
+                        `Pago a ${row.partyName ?? 'proveedor'}`
+                      ) : (
+                        <VoucherText text={row.title} />
+                      )}
                     </span>
                     {mode === 'comprobantes' && row.partyName ? (
-                      <span className="block truncate text-xs text-muted-foreground">
+                      <span className="block text-xs text-muted-foreground text-pretty">
                         {row.partyName}
                       </span>
                     ) : null}

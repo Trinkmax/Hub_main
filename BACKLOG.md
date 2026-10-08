@@ -1179,3 +1179,26 @@ Hay que ver si son fallas reales contra el stack local (deriva entre lo aplicado
 al remoto por MCP y lo que reconstruyen las migraciones) o interferencia entre
 archivos al correr los 30 en paralelo contra la misma base. Hasta resolverlo, el
 check de CI queda en rojo aunque el job de lint/typecheck/tests esté verde.
+
+## Administración — lo que quedó fuera del Sprint 1 (07/10/2026)
+
+- **`/favicon.ico` cae en la ruta `/[tenantSlug]`.** La app no tiene favicon, así
+  que cada pedido del ícono que hace el navegador termina en
+  `TenantNotFoundError` o `UnauthenticatedError` en el log. Es ruido que tapa
+  errores reales. Hay que agregar el ícono o sacar `favicon.ico` de la ruta del
+  tenant.
+- **`SectionNav` no lleva la pestaña activa a la vista.** Esconde la barra de
+  scroll y, si una sección tiene más pestañas de las que entran (en el celular),
+  la activa puede quedar afuera. En Ajustes se resolvió con un helper propio
+  (`ajustes/_components/active-tab-into-view.tsx`); lo correcto es hacerlo en
+  `components/administracion/section-nav.tsx` para todas.
+- **⌘K de la contadora.** Su Resumen tiene el botón «Ajustes», pero la entrada
+  «Ajustes de Administración» del ⌘K es solo para dueños con permiso de
+  escritura, así que ella no la encuentra. Decidir si la ve en solo lectura.
+- **«Sumar a la contadora» no preselecciona el rol.** Accesos lleva a
+  `/configuracion/equipo?rol=accountant`, pero esa página no lee `rol`: hay que
+  elegir «Contabilidad» a mano (la tarjeta ya lo dice).
+- **El plan de cuentas estándar nombra a HUB y a Thinkeon** en la descripción de
+  «Software y suscripciones» (seed de la #16 y su espejo en
+  `lib/accounting/chart.ts`). Para otros bares conviene un ejemplo genérico;
+  cambiarlo pide una migración del seed.

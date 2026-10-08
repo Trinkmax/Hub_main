@@ -116,7 +116,8 @@ export default async function ComprobantePage({
           aria-hidden
           className="pointer-events-none absolute -right-20 -top-20 size-64 rounded-full bg-primary/10 blur-3xl"
         />
-        <div className="relative flex flex-wrap items-start justify-between gap-4">
+        {/* En el celular, el importe y los botones van debajo (al lado se pisaban con el título). */}
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1 space-y-2">
             <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
               {kindLabel} · #{doc.seq}
@@ -631,12 +632,15 @@ function EntrySection({ doc, base }: { doc: DocumentDetail; base: string }) {
       note: l.memo,
     })),
   }
+  // El mismo número que el diario y la página del asiento (provisorio mientras el mes está abierto).
   const number =
     entry.number !== null
       ? `Asiento N° ${entry.number}`
       : entry.status === 'voided'
         ? 'Asiento anulado'
-        : 'Asiento sin número todavía: se numera al cerrar el mes'
+        : entry.provisionalNumber !== null
+          ? `Asiento N° ${entry.provisionalNumber}, provisorio: queda fijo al cerrar el mes`
+          : 'Asiento sin número todavía: se numera al cerrar el mes'
   return (
     <section aria-labelledby="asiento-titulo" className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">

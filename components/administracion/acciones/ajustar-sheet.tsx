@@ -481,7 +481,9 @@ function AjustarForm({
       <ActionSheetHeader title={TITLE} description={DESCRIPTION} />
       <form ref={formRef} noValidate onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
         <ActionSheetBody>
-          <div className="grid gap-5 sm:grid-cols-2">
+          {/* La caja va sola en su fila (como en Mover plata): con el saldo al lado
+              no entra en media hoja y se montaba sobre la fecha. */}
+          <div className="grid gap-5">
             <Field id={`${id}-caja`} label="Caja o cuenta" required error={treasuryError}>
               <TreasurySelect
                 id={`${id}-caja`}

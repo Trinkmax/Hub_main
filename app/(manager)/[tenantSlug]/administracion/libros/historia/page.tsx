@@ -135,7 +135,7 @@ export default async function HistoriaPage({
         page.rows.length === 0 ? (
           <EmptyState
             icon={History}
-            title={filtered ? 'Sin resultados' : `No pasó nada en ${shown.label}`}
+            title={filtered ? 'Sin resultados' : `No pasó nada en ${shown.label.toLowerCase()}`}
             description={
               filtered
                 ? 'Probá con otra persona, otro tipo o un período más largo.'

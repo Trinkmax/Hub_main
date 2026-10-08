@@ -161,7 +161,8 @@ export function SalesDocumentsList({
                     <span className="block text-xs tabular-nums text-muted-foreground">
                       {formatIsoDay(row.accountingDate)}
                     </span>
-                    <span className="block truncate text-sm font-medium">
+                    {/* Dos líneas: «Liquidación de tarjeta o plataforma 0001-00031009» no entra en una. */}
+                    <span className="line-clamp-2 text-sm font-medium text-pretty">
                       {row.title}
                       {voided ? <Voided /> : null}
                     </span>

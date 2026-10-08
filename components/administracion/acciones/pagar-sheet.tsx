@@ -75,6 +75,7 @@ import { balanceText } from '../format'
 import { MoneyField, MoneyInput } from '../money-input'
 import { PartyCombobox, type PartyOption } from '../party-combobox'
 import { TreasurySelect } from '../treasury-select'
+import { VoucherText } from '../voucher-text'
 import { ACTION_TITLES, type ActionSheetProps } from './types'
 
 const TITLE = ACTION_TITLES.pagar
@@ -778,7 +779,9 @@ function PaymentForm({
                           className="flex min-h-9 min-w-0 flex-1 cursor-pointer items-start justify-between gap-3"
                         >
                           <span className="min-w-0 space-y-0.5">
-                            <span className="block truncate text-sm font-medium">{d.label}</span>
+                            <span className="block text-sm font-medium text-pretty">
+                              <VoucherText text={d.label} />
+                            </span>
                             <DueStatus dueDate={d.dueDate} today={today} showDate />
                           </span>
                           <Amount cents={d.openCents} className="shrink-0 text-sm font-medium" />
@@ -876,7 +879,10 @@ function PaymentForm({
                         className="flex min-h-9 min-w-0 flex-1 cursor-pointer items-start justify-between gap-3"
                       >
                         <span className="min-w-0">
-                          <span className="block truncate text-sm font-medium">{c.label}</span>
+                          {/* El número entero: truncado, «Nota de crédito A 0003-000…» no se distingue de otra. */}
+                          <span className="block text-sm font-medium text-pretty">
+                            <VoucherText text={c.label} />
+                          </span>
                           <span className="block text-xs tabular-nums text-muted-foreground">
                             {formatIsoDay(c.entryDate)}
                           </span>
@@ -988,10 +994,12 @@ function PaymentForm({
           ) : null}
 
           {/* Con qué */}
-          <fieldset className="m-0 grid min-w-0 gap-2 border-0 p-0">
+          {/* Sin m-0: pisaba el space-y-5 del cuerpo y «Fecha del pago» quedaba pegada a «Otro medio» (el preflight ya saca el margen del fieldset). */}
+          <fieldset className="grid min-w-0 gap-2 border-0 p-0">
             <legend className="mb-1.5 text-sm font-medium">
               ¿Con qué pagás?
-              <span aria-hidden="true" className="ml-0.5 text-destructive">
+              {/* ml-2.5: el mismo aire que el «*» de un <Label> (gap-2 + ml-0.5). */}
+              <span aria-hidden="true" className="ml-2.5 text-destructive">
                 *
               </span>
             </legend>

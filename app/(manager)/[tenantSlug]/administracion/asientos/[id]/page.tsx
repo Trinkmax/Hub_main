@@ -82,7 +82,8 @@ export default async function AsientoPage({
           aria-hidden
           className="pointer-events-none absolute -right-20 -top-20 size-64 rounded-full bg-primary/10 blur-3xl"
         />
-        <div className="relative flex flex-wrap items-start justify-between gap-4">
+        {/* En el celular, el importe y los botones van debajo (al lado se pisaban con el título). */}
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1 space-y-2">
             <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
               Asiento · {entryKindLabel(entry.kind)}

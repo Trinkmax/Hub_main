@@ -37,7 +37,8 @@ type Tab = 'plan' | 'sistema'
 
 const DESCRIPTIONS: Readonly<Record<Tab, string>> = {
   plan: 'Las cuentas de la SAS en árbol: agregá, renombrá, recodificá, mové o desactivá cualquiera.',
-  sistema: 'Con qué cuenta arma el sistema cada asiento: el IVA, los proveedores, las ventas…',
+  // Corto a propósito: más largo empuja «Exportar» a un segundo renglón en la compu.
+  sistema: 'Con qué cuenta arma el sistema cada asiento: IVA, proveedores, ventas…',
 }
 
 function first(value: string | string[] | undefined): string | undefined {
@@ -155,7 +156,6 @@ export default async function PlanDeCuentasPage({
               <ExportButton
                 href={exportHref(tenantSlug, 'plan-de-cuentas')}
                 fileName="plan-de-cuentas.csv"
-                label="Exportar plan de cuentas"
                 className="h-11 md:h-9"
               />
             </>

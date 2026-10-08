@@ -283,6 +283,15 @@ describe('subdiarios', () => {
     expect(subledgerCellText(true, methods)).toBe('Sí')
     expect(subledgerCellText(null, methods)).toBe('')
   })
+
+  it('el CUIT se lee con guiones, como en el Libro IVA', () => {
+    const cuit = SUBLEDGER_COLUMNS.purchases.find((c) => c.header === 'CUIT')
+    if (!cuit) throw new Error('falta la columna del CUIT')
+    expect(subledgerCellText('30701112225', cuit)).toBe('30-70111222-5')
+    // Lo que no es un CUIT de 11 números queda como vino.
+    expect(subledgerCellText('12345', cuit)).toBe('12345')
+    expect(subledgerCellText(null, cuit)).toBe('')
+  })
 })
 
 describe('asiento manual', () => {

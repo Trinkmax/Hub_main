@@ -156,7 +156,9 @@ export function SalesPointsPanel({
                     </span>{' '}
                     {p.label}
                   </p>
-                  <p className="text-xs text-muted-foreground">{CHANNEL_LABEL[p.defaultChannel]}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Canal: {CHANNEL_LABEL[p.defaultChannel]}
+                  </p>
                 </div>
                 {readOnly ? (
                   <Badge variant={p.active ? 'outline' : 'muted'}>

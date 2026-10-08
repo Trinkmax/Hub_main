@@ -132,7 +132,8 @@ export default async function SupplierPage({
           aria-hidden
           className="pointer-events-none absolute -right-20 -top-20 size-64 rounded-full bg-primary/10 blur-3xl"
         />
-        <div className="relative flex flex-wrap items-start justify-between gap-4">
+        {/* En el celular las acciones van abajo: al lado dejaban el nombre y el CUIT en una columna de 60 px. */}
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1 space-y-2">
             <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
               Administración · Proveedor
@@ -147,7 +148,18 @@ export default async function SupplierPage({
               {!party.active ? <Badge variant="muted">Desactivado</Badge> : null}
               <ReadOnlyBadge className="ml-0" />
             </div>
-            <p className="text-sm text-muted-foreground">{meta.join(' · ')}</p>
+            <p className="text-sm text-muted-foreground">
+              {meta.map((part, index) => (
+                <span key={part}>
+                  {/* Corta solo entre datos (nunca «CUIT 30-» arriba y «70111222-5» abajo) y el «·» cierra el dato. */}
+                  <span className="inline-block">
+                    {part}
+                    {index < meta.length - 1 ? ' ·' : null}
+                  </span>
+                  {index < meta.length - 1 ? ' ' : null}
+                </span>
+              ))}
+            </p>
             {position ? (
               <PartyStatus light={position.traffic.light} text={position.traffic.text} />
             ) : null}

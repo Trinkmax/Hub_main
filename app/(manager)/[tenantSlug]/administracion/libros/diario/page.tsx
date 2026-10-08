@@ -125,7 +125,10 @@ export default async function DiarioPage({
                 al cerrar el mes.
               </p>
             ) : null}
-            <WideBookHint />
+            <WideBookHint>
+              En el celular ves cada asiento con su total: tocalo para ver sus cuentas. El libro
+              completo se lee mejor en la compu.
+            </WideBookHint>
             <JournalTable
               rows={page.rows}
               base={base}
@@ -163,7 +166,9 @@ function EmptyJournal({
   return (
     <EmptyState
       icon={BookText}
-      title={nothingLoaded ? 'Todavía no hay nada cargado' : `No hay asientos en ${label}`}
+      title={
+        nothingLoaded ? 'Todavía no hay nada cargado' : `No hay asientos en ${label.toLowerCase()}`
+      }
       description={
         canWrite
           ? 'El diario se arma solo: cada gasto, pago o cierre del día que cargues suma su asiento acá.'
@@ -361,11 +366,12 @@ function JournalTable({
             </li>
           ))}
           <li className="flex items-center justify-between gap-3 bg-secondary/30 px-4 py-3 text-sm font-semibold">
-            <span className="flex items-center gap-2">
+            {/* El sello va debajo: al lado del total no entra en una línea. */}
+            <span className="flex flex-col items-start gap-1">
               {totalsLabel}
               <BalanceSeal balanced={balanced} />
             </span>
-            <Amount cents={debit} />
+            <Amount cents={debit} className="shrink-0" />
           </li>
         </ul>
       </div>

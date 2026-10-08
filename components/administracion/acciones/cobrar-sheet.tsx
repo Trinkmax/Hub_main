@@ -563,7 +563,8 @@ function CobrarForm({
           <div className="grid gap-2">
             <GroupLabel id={`${id}-who`}>
               ¿Quién te pagó?
-              <span aria-hidden="true" className="ml-0.5 text-destructive">
+              {/* El mismo espacio que el asterisco de un <Label> (gap-2 + ml-0.5). */}
+              <span aria-hidden="true" className="ml-2.5 text-destructive">
                 *
               </span>
             </GroupLabel>
@@ -783,7 +784,9 @@ function CobrarForm({
                 error={errorOf('grossCents')}
               />
 
-              <div className="grid gap-5 sm:grid-cols-2">
+              {/* Uno abajo del otro: la caja con su saldo no entra en media hoja y
+                  empujaba «¿Cuánto entró?» fuera del borde. */}
+              <div className="grid gap-5">
                 <Field
                   id={`${id}-caja`}
                   label="Entró a"
@@ -869,7 +872,7 @@ function CobrarForm({
                       : ''}
                   </p>
                   {voucherMode === 'included' ? (
-                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_6rem_8rem]">
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_7rem_8rem]">
                       <Field
                         id={`${id}-vtype`}
                         label="Comprobante"

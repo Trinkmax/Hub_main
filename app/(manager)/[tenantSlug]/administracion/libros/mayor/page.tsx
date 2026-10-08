@@ -222,13 +222,30 @@ export default async function MayorPage({
   )
 }
 
+/**
+ * El detalle de un movimiento sin repetir lo que ya se lee: el comprobante
+ * («Pago · Carnicería» con el comprobante «Pago» queda «Carnicería») ni el
+ * proveedor si la descripción ya lo nombra.
+ */
 function rowDetail(row: LedgerRow, isGroup: boolean): string | null {
-  const parts = [
-    isGroup && row.accountCode ? `${row.accountCode} ${row.accountName ?? ''}`.trim() : null,
-    row.description,
+  const label = row.documentLabel?.trim()
+  const description =
+    label && row.description?.startsWith(`${label} · `)
+      ? row.description.slice(label.length + 3)
+      : row.description
+  const parts: string[] = []
+  for (const raw of [
+    // En un grupo, de qué cuenta es: el nombre alcanza («Caja», «Banco Nación»);
+    // con el código adelante el detalle no entraba en dos líneas.
+    isGroup ? (row.accountName ?? row.accountCode) : null,
+    description,
     row.partyName,
     row.memo,
-  ].filter((p): p is string => Boolean(p?.trim()))
+  ]) {
+    const part = raw?.trim()
+    if (!part || parts.some((p) => p.includes(part))) continue
+    parts.push(part)
+  }
   return parts.length > 0 ? parts.join(' · ') : null
 }
 

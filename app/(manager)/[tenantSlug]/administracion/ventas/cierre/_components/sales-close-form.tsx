@@ -723,8 +723,8 @@ export function SalesCloseForm({
                   Lo vendido
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  Un importe por medio, como en Thinkeon. Si pegás la columna entera en el primero,
-                  se reparte sola hacia abajo.
+                  Un importe por medio, como en tu cierre de caja. Si pegás la columna entera en el
+                  primero, se reparte sola hacia abajo.
                 </p>
               </div>
 
@@ -892,7 +892,7 @@ export function SalesCloseForm({
 
               <div className="grid gap-5 sm:grid-cols-2">
                 <MoneyField
-                  label="Total según Thinkeon"
+                  label="Total del cierre de caja"
                   optional
                   value={control}
                   onValueChange={(cents) => {
@@ -986,11 +986,14 @@ export function SalesCloseForm({
                           ) : null}
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                        {/* Dos por fila: al lado del asiento, cuatro no entran («0004 · Delivery»).
+                            En el celular los dos combos van uno abajo del otro. */}
+                        <div className="grid grid-cols-2 gap-4">
                           <Field
                             id={`${rid}-type`}
                             label="Comprobante"
                             error={rowError(row, 'voucherType')}
+                            className="col-span-2 sm:col-span-1"
                           >
                             <Select
                               value={row.voucherType}
@@ -1000,7 +1003,7 @@ export function SalesCloseForm({
                             >
                               <SelectTrigger
                                 id={`${rid}-type`}
-                                className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
+                                className="w-full min-w-0 data-[size=default]:h-11 md:data-[size=default]:h-10"
                               >
                                 <SelectValue />
                               </SelectTrigger>
@@ -1017,6 +1020,7 @@ export function SalesCloseForm({
                             id={`${rid}-pos`}
                             label="Punto de venta"
                             error={rowError(row, 'pointOfSale')}
+                            className="col-span-2 sm:col-span-1"
                           >
                             <Select
                               value={row.pointOfSale === null ? '' : String(row.pointOfSale)}
@@ -1027,7 +1031,7 @@ export function SalesCloseForm({
                             >
                               <SelectTrigger
                                 id={`${rid}-pos`}
-                                className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
+                                className="w-full min-w-0 data-[size=default]:h-11 md:data-[size=default]:h-10"
                                 aria-invalid={rowError(row, 'pointOfSale') ? true : undefined}
                               >
                                 <SelectValue placeholder="Elegí" />
@@ -1082,7 +1086,8 @@ export function SalesCloseForm({
                               inputMode="numeric"
                               autoComplete="off"
                               maxLength={40}
-                              placeholder="00014662"
+                              // Con el «desde» puesto, un ejemplo más chico que ese número confunde.
+                              placeholder={row.from ? undefined : '00014662'}
                               className="h-11 text-base tabular-nums md:h-10 md:text-sm"
                               aria-invalid={rowError(row, 'numberTo') ? true : undefined}
                               aria-describedby={describedBy(`${rid}-to`, {
@@ -1289,7 +1294,8 @@ export function SalesCloseForm({
                   </Button>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Según Thinkeon: <span className="tabular-nums">{formatCents(cashSold)}</span>
+                  Según el cierre de caja:{' '}
+                  <span className="tabular-nums">{formatCents(cashSold)}</span>
                 </p>
                 {cashOpen ? (
                   <div className="grid gap-5 sm:grid-cols-2">
@@ -1316,6 +1322,10 @@ export function SalesCloseForm({
               </section>
             ) : null}
 
+            {/* En el celular, el asiento va debajo de los importes (antes de guardar). */}
+            <div className="lg:hidden">
+              <EntryPreview entries={shown} />
+            </div>
             <FormBanner banner={posting.banner} />
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button asChild variant="outline" className="h-11 md:h-9">
@@ -1336,7 +1346,7 @@ export function SalesCloseForm({
             ) : null}
           </div>
 
-          <aside className="lg:sticky lg:top-20">
+          <aside className="hidden lg:sticky lg:top-20 lg:block">
             <EntryPreview entries={shown} />
           </aside>
         </form>

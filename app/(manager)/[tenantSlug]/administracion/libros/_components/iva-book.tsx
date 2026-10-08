@@ -1,5 +1,6 @@
 import { Banknote, CalendarRange, Percent, Receipt, ReceiptText, TriangleAlert } from 'lucide-react'
 import Link from 'next/link'
+import { Fragment } from 'react'
 import { Amount } from '@/components/administracion/amount'
 import { plural } from '@/components/administracion/format'
 import { Badge } from '@/components/ui/badge'
@@ -30,7 +31,8 @@ import { decodePageToken } from '@/lib/accounting/queries/shared'
 import type { FiscalAmountKey, FiscalBook } from '@/lib/accounting/types'
 import { formatIsoDay, todayInCordoba } from '@/lib/dates'
 import { formatCuit, formatVoucherNumber, formatVoucherRange } from '@/lib/fiscal'
-import { formatCents } from '@/lib/money'
+import { formatCents, formatCentsShort } from '@/lib/money'
+import { cn } from '@/lib/utils'
 import { loadBookContext } from '../_lib/book-context'
 import { type IvaColumn, ivaSummary, visibleIvaColumns } from '../_lib/iva'
 import { keysetPageInfo } from '../_lib/keyset'
@@ -190,7 +192,10 @@ export async function IvaBookScreen({
         ) : (
           <>
             <IvaSummaryCards book={book} amounts={totals.data.amounts} />
-            <WideBookHint />
+            <WideBookHint>
+              En el celular ves cada comprobante con su total: tocalo para ver el detalle. El libro
+              completo se lee mejor en la compu.
+            </WideBookHint>
             <IvaTable
               book={book}
               base={base}
@@ -279,7 +284,7 @@ function EmptyIvaBook({
     return (
       <EmptyState
         icon={Receipt}
-        title={`No hay comprobantes con IVA en ${label}`}
+        title={`No hay comprobantes con IVA en ${label.toLowerCase()}`}
         description="Acá entran las facturas, notas de crédito y débito y los tiques de proveedores con CUIT. Los gastos sin comprobante no van al Libro IVA."
         action={
           canWrite ? (
@@ -294,7 +299,7 @@ function EmptyIvaBook({
   return (
     <EmptyState
       icon={ReceiptText}
-      title={`No hay ventas facturadas en ${label}`}
+      title={`No hay ventas facturadas en ${label.toLowerCase()}`}
       description="Acá entran las facturas de cada cierre del día y las facturas sueltas."
       action={
         canWrite ? (
@@ -317,22 +322,26 @@ function IvaSummaryCards({
   const s = ivaSummary(amounts)
   return (
     <section aria-label="Totales del mes" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <StatCard icon={Banknote} label="Neto gravado" value={formatCents(s.netCents)} />
+      <StatCard icon={Banknote} label="Neto gravado" value={formatCentsShort(s.netCents)} />
       <StatCard
         icon={Percent}
         label={COPY[book].vat}
-        value={formatCents(s.vatCents)}
+        value={formatCentsShort(s.vatCents)}
         hint={
           book === 'purchases' && s.computableCents !== s.vatCents
             ? `Computable: ${formatCents(s.computableCents)}`
             : undefined
         }
       />
-      <StatCard icon={ReceiptText} label="Percepciones" value={formatCents(s.perceptionsCents)} />
+      <StatCard
+        icon={ReceiptText}
+        label="Percepciones"
+        value={formatCentsShort(s.perceptionsCents)}
+      />
       <StatCard
         icon={Receipt}
         label="Total"
-        value={formatCents(s.totalCents)}
+        value={formatCentsShort(s.totalCents)}
         hint={
           s.otherCents !== 0
             ? `No gravado, exento y otros: ${formatCents(s.otherCents)}`
@@ -348,6 +357,25 @@ function voucherNumberOf(row: IvaBookRow): string {
     return formatVoucherRange(row.pointOfSale, row.numberFrom, row.numberTo)
   }
   return formatVoucherNumber(row.pointOfSale, row.numberFrom)
+}
+
+/**
+ * Un número o un rango («0003-00018345 a 0003-00018522») que, si no entra,
+ * baja por los espacios y nunca se corta en el guion de un número.
+ */
+function WrappingVoucherNumber({ text }: { text: string }) {
+  let offset = 0
+  const parts = text.split(' ').map((part) => {
+    const start = offset
+    offset += part.length + 1
+    return { part, start }
+  })
+  return parts.map(({ part, start }) => (
+    <Fragment key={start}>
+      {start > 0 ? ' ' : null}
+      <span className="whitespace-nowrap">{part}</span>
+    </Fragment>
+  ))
 }
 
 function docOf(row: IvaBookRow): string {
@@ -384,11 +412,11 @@ function IvaTable({
             <DataTableHead>
               <tr>
                 <DataTableHeader className="w-28">Fecha</DataTableHeader>
-                <DataTableHeader className="min-w-52">Comprobante</DataTableHeader>
-                <DataTableHeader className="min-w-48">{counterparty}</DataTableHeader>
+                <DataTableHeader>Comprobante</DataTableHeader>
+                <DataTableHeader>{counterparty}</DataTableHeader>
                 {book === 'sales' ? <DataTableHeader>Canal</DataTableHeader> : null}
                 {columns.map((c) => (
-                  <DataTableHeader key={c.key} className="whitespace-nowrap text-right">
+                  <DataTableHeader key={c.key} className="whitespace-nowrap px-3 text-right">
                     <abbr title={c.label} className="no-underline">
                       {c.short}
                     </abbr>
@@ -408,7 +436,7 @@ function IvaTable({
                   <DataTableCell>
                     <Link
                       href={`${base}/comprobantes/${row.documentId}`}
-                      className="rounded-sm font-medium underline-offset-4 outline-none hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                      className="whitespace-nowrap rounded-sm font-medium underline-offset-4 outline-none hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {row.voucherLabel}
                     </Link>
@@ -420,8 +448,12 @@ function IvaTable({
                     ) : null}
                   </DataTableCell>
                   <DataTableCell>
-                    <span className="block">{row.counterpartyName || '—'}</span>
-                    <span className="block text-xs text-muted-foreground">{docOf(row)}</span>
+                    <span className="block">{row.counterpartyName || docOf(row)}</span>
+                    {row.counterpartyName && row.counterpartyName !== docOf(row) ? (
+                      <span className="block whitespace-nowrap text-xs text-muted-foreground">
+                        {docOf(row)}
+                      </span>
+                    ) : null}
                   </DataTableCell>
                   {book === 'sales' ? (
                     <DataTableCell className="text-muted-foreground">
@@ -431,7 +463,7 @@ function IvaTable({
                   {columns.map((c) => (
                     <DataTableCell
                       key={c.key}
-                      className={c.key === 'total_cents' ? 'text-right font-medium' : 'text-right'}
+                      className={cn('px-3 text-right', c.key === 'total_cents' && 'font-medium')}
                     >
                       {row.amounts[c.key] ? (
                         <Amount cents={row.amounts[c.key]} currency={false} />
@@ -447,7 +479,7 @@ function IvaTable({
                   Totales del mes
                 </DataTableCell>
                 {columns.map((c) => (
-                  <DataTableCell key={c.key} className="text-right">
+                  <DataTableCell key={c.key} className="px-3 text-right">
                     <Amount cents={totals[c.key]} currency={false} />
                   </DataTableCell>
                 ))}
@@ -470,8 +502,11 @@ function IvaTable({
                   <span className="block text-xs tabular-nums text-muted-foreground">
                     {formatIsoDay(row.voucherDate)}
                   </span>
-                  <span className="block truncate text-sm font-medium">
-                    {row.voucherLabel} {voucherNumberOf(row)}
+                  <span className="block truncate text-sm font-medium">{row.voucherLabel}</span>
+                  {/* El rango «0003-00018225 a 0003-00018344» no entra al lado del tipo:
+                      va abajo y, si tampoco entra ahí, sigue en otra línea (no se corta). */}
+                  <span className="block font-mono text-xs text-muted-foreground">
+                    <WrappingVoucherNumber text={voucherNumberOf(row)} />
                   </span>
                   <span className="block truncate text-xs text-muted-foreground">
                     {row.counterpartyName || docOf(row)}

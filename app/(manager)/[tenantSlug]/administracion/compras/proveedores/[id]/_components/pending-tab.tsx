@@ -5,6 +5,7 @@ import { Amount } from '@/components/administracion/amount'
 import { DueStatus } from '@/components/administracion/due-status'
 import { plural } from '@/components/administracion/format'
 import { ActionButton } from '@/components/administracion/quick-actions'
+import { VoucherText } from '@/components/administracion/voucher-text'
 import {
   DataTableBody,
   DataTableCell,
@@ -26,7 +27,7 @@ function ItemLink({ tenantSlug, item }: { tenantSlug: string; item: OpenItemRow 
       href={documentHref(tenantSlug, item.documentId)}
       className="rounded-sm font-medium underline-offset-4 outline-none hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring"
     >
-      {item.documentLabel}
+      <VoucherText text={item.documentLabel} />
     </Link>
   )
 }
@@ -81,8 +82,9 @@ export function PendingTab({
     <div className="space-y-6">
       {debts.length > 0 ? (
         <div className="card-hairline rounded-xl border bg-card">
-          <header className="flex items-center justify-between gap-3 border-b border-border/60 px-5 py-4">
-            <div>
+          {/* flex-wrap: en el celular el total baja abajo del título en vez de partirlo. */}
+          <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-border/60 px-5 py-4">
+            <div className="min-w-0">
               <h2 className="font-serif text-lg font-semibold tracking-tight">
                 Antigüedad de la deuda
               </h2>
@@ -176,7 +178,7 @@ export function PendingTab({
                 <li key={item.lineId} className="space-y-2 px-4 py-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 space-y-0.5">
-                      <p className="truncate text-sm">
+                      <p className="text-sm text-pretty">
                         <ItemLink tenantSlug={tenantSlug} item={item} />
                       </p>
                       <p className="text-xs tabular-nums text-muted-foreground">
@@ -210,7 +212,7 @@ export function PendingTab({
 
       {credits.length > 0 ? (
         <section aria-labelledby="pendientes-a-favor" className="space-y-3">
-          <div className="flex items-end justify-between gap-3">
+          <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-1">
             <h2
               id="pendientes-a-favor"
               className="font-display text-base font-semibold tracking-tight"
@@ -224,7 +226,7 @@ export function PendingTab({
               {credits.map((item) => (
                 <li key={item.lineId} className="flex items-start justify-between gap-3 px-4 py-3">
                   <div className="min-w-0 space-y-0.5">
-                    <p className="truncate text-sm">
+                    <p className="text-sm text-pretty">
                       <ItemLink tenantSlug={tenantSlug} item={item} />
                     </p>
                     <p className="text-xs tabular-nums text-muted-foreground">
