@@ -5,7 +5,13 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { BATCH_STATUSES, NEED_KEYS, NEED_TEXT, PROPOSAL_STATUSES } from '@/lib/imports/server/types'
+import {
+  BATCH_STATUSES,
+  NEED_KEYS,
+  NEED_TEXT,
+  PROPOSAL_STATUSES,
+  signedTotalCents,
+} from '@/lib/imports/server/types'
 import {
   filterCounts,
   NEED_SHORT_TEXT,
@@ -17,6 +23,7 @@ import {
 } from '@/lib/imports/ui/filters'
 import {
   BATCH_STATUS_COPY,
+  formatFxRate,
   IMPORT_SOURCE_COPY,
   importBatchHref,
   importHref,
@@ -139,5 +146,22 @@ describe('rutas (C4)', () => {
     )
     expect(isUiImportSource('arca_emitidos')).toBe(false)
     expect(isUiImportSource('mp_release')).toBe(true)
+  })
+})
+
+describe('importes de la revisión', () => {
+  it('una nota de crédito resta al sumar; lo demás suma', () => {
+    expect(signedTotalCents({ kind: 'purchase', total_cents: 64_480_000 })).toBe(64_480_000)
+    expect(signedTotalCents({ kind: 'credit_note', total_cents: 4_840_000 })).toBe(-4_840_000)
+    expect(signedTotalCents({ kind: 'bank_expense', total_cents: 8_676_000 })).toBe(8_676_000)
+  })
+
+  it('el tipo de cambio se lee en pesos, sin redondear', () => {
+    expect(formatFxRate('1465.5')).toBe('1.465,50')
+    expect(formatFxRate('1475.006')).toBe('1.475,006')
+    expect(formatFxRate('1451')).toBe('1.451,00')
+    expect(formatFxRate('0.98')).toBe('0,98')
+    expect(formatFxRate('1')).toBe('1,00')
+    expect(formatFxRate('raro')).toBe('raro')
   })
 })

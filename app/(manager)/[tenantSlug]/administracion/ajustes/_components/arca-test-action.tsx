@@ -4,7 +4,11 @@ import { ArrowRight, Loader2, PartyPopper, PlugZap } from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { guideStepById } from '@/components/administracion/guias/arca-guide-model'
+import {
+  guideStepById,
+  homologacionStepAnchor,
+  homologacionStepFor,
+} from '@/components/administracion/guias/arca-guide-model'
 import { useGuideNav } from '@/components/administracion/guias/guide-nav'
 import { Button } from '@/components/ui/button'
 import type { AccFailureState } from '@/lib/accounting/action-state'
@@ -86,7 +90,10 @@ export function ArcaTestAction({
   }
 
   const problem = test && test.status === 'error' ? test.firstProblem : null
-  const problemStep = problem?.step ? guideStepById(problem.step) : null
+  // En las pruebas, «Cómo se arregla» va al paso de esa misma lista (WSASS), no a la guía.
+  const homologacion = environment === 'homologacion'
+  const problemStep = problem?.step && !homologacion ? guideStepById(problem.step) : null
+  const problemTestStep = homologacion ? homologacionStepFor(problem?.step) : null
 
   return (
     <div className={cn('space-y-4', className)}>
@@ -166,6 +173,13 @@ export function ArcaTestAction({
                       <ArrowRight className="size-4" aria-hidden />
                     </GuideLink>
                   </Button>
+                ) : problemTestStep !== null ? (
+                  <Button asChild variant="outline" className="h-11 gap-2 md:h-9">
+                    <a href={`#${homologacionStepAnchor(problemTestStep)}`}>
+                      Cómo se arregla
+                      <ArrowRight className="size-4" aria-hidden />
+                    </a>
+                  </Button>
                 ) : null
               }
             >
@@ -212,7 +226,12 @@ export function ArcaTestAction({
         </div>
       ) : null}
 
-      <ArcaFailureNotice failure={failure} slug={slug} guideHref={guideHref} />
+      <ArcaFailureNotice
+        failure={failure}
+        slug={slug}
+        guideHref={guideHref}
+        environment={environment}
+      />
     </div>
   )
 }

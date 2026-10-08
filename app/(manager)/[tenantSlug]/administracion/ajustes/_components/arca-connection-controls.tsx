@@ -180,7 +180,7 @@ export function ArcaDisconnectButton({
         <Unplug className="size-4" aria-hidden />
         Desconectar
       </Button>
-      <ArcaFailureNotice failure={failure} slug={slug} className="mt-2" />
+      <ArcaFailureNotice failure={failure} slug={slug} environment={environment} className="mt-2" />
       <AlertDialog
         open={open}
         onOpenChange={(next) => {

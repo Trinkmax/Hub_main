@@ -155,6 +155,9 @@ function Step({
   // Con la CUIT de la SAS sin cargar, «Ya lo arreglé» no arregla nada (el paso queda listo solo
   // cuando se carga la CUIT): el aviso de arriba ya trae «Ir a Datos de la SAS».
   const markLabel = state.reason === 'sas_cuit_missing' ? undefined : MARK_LABELS[id]
+  // Un paso hecho dice «Hecho el 08/10 por Ana» (o «Hecho: lo vimos solo») en lugar del estado:
+  // juntos se leía «Hecho · Hecho el 08/10 por Ana».
+  const done = doneNote(state)
   return (
     <GuideStep
       id={id}
@@ -162,8 +165,7 @@ function Step({
       n={step.n}
       title={step.title}
       status={state.status}
-      statusText={guideStatusText(state.status, step.optional)}
-      note={doneNote(state)}
+      statusText={done ?? guideStatusText(state.status, step.optional)}
       chips={chipsFor(id)}
       problem={problemFor(state, data)}
       footerHow={step.howVerified}

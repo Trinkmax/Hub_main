@@ -29,6 +29,7 @@ import {
   type OtherTaxesAs,
 } from '@/lib/imports/server/types'
 import {
+  formatFxRate,
   IVA_CONDITION_TEXT,
   MP_CHANNEL_TEXT,
   OTHER_TAXES_TEXT,
@@ -129,7 +130,7 @@ export function NeedBlock({ p, need }: { p: ProposalView; need: ImportNeed }) {
         <Confirmable
           p={p}
           need="foreign_currency"
-          text={`Está en ${need.currency}: ${formatCents(need.original_total_cents, { currency: false })} ${need.currency} × ${need.fx_rate.replace('.', ',')} = ${formatCents(p.summary.total_cents)}. Lo cargamos en pesos con el tipo de cambio de la factura.`}
+          text={`Está en ${need.currency}: ${formatCents(need.original_total_cents, { currency: false })} ${need.currency} × ${formatFxRate(need.fx_rate)} = ${formatCents(p.summary.total_cents)}. Lo cargamos en pesos con el tipo de cambio de la factura.`}
           confirmLabel="La conversión está bien"
         />
       )

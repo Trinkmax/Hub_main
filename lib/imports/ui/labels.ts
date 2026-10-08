@@ -134,9 +134,10 @@ export const BATCH_STATUS_COPY: Readonly<
     hint: 'Ya está armado: revisalo y cargalo.',
   },
   posting: {
-    label: 'Cargando',
+    // No «Cargando»: queda así también cuando ya se cargó una parte y el resto espera la revisión.
+    label: 'A medio cargar',
     tone: 'info',
-    hint: 'Se está cargando (o se cortó a la mitad): entrá y tocá «Cargar» para seguir.',
+    hint: 'Ya se cargó una parte: entrá para revisar y cargar lo que falta.',
   },
   done: { label: 'Terminada', tone: 'success', hint: 'Se cargó todo lo que había para cargar.' },
   cancelled: {
@@ -238,13 +239,15 @@ export const SUMMARY_KIND_TEXT: Readonly<Record<SummaryKind, string>> = {
   mp_yield: 'Rendimientos',
   mp_transfer: 'Retiro a tu cuenta',
   mp_payment: 'Pago',
-  mp_review: 'Para revisar',
+  // Lo que es, no su estado (el estado ya lo dice la etiqueta de al lado): una regla o una
+  // decisión lo deja «Lista para cargar» y seguía diciendo «Para revisar».
+  mp_review: 'Otro movimiento',
   mp_reserve: 'Dinero retenido',
   bank_expense: 'Gastos del banco',
   bank_transfer: 'Transferencia entre tus cuentas',
   bank_payment: 'Pago',
   bank_collection: 'Cobro',
-  bank_review: 'Para revisar',
+  bank_review: 'Otro movimiento',
 }
 
 /** Los números del detalle de una propuesta que vale la pena mostrar (plata en centavos). */
@@ -330,4 +333,17 @@ export const BANK_COLUMN_TEXT: Readonly<Record<BankColumn, string>> = {
 export function unitOf(source: UiImportSource, n: number): string {
   const [one, many] = IMPORT_SOURCE_COPY[source].unit
   return n === 1 ? one : many
+}
+
+/**
+ * Un tipo de cambio de ARCA (`'1465.5'`, `'1475.006'`) como se lee en pesos:
+ * `'1.465,50'`, `'1.475,006'` (miles con punto, al menos dos decimales, sin
+ * redondear). Si no es un número, va tal cual.
+ */
+export function formatFxRate(rate: string): string {
+  const m = /^(\d+)(?:\.(\d+))?$/.exec(rate.trim())
+  if (!m) return rate
+  const int = (m[1] ?? '').replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  const frac = (m[2] ?? '').replace(/0+$/, '').padEnd(2, '0')
+  return `${int},${frac}`
 }

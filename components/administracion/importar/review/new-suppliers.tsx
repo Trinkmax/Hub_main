@@ -424,10 +424,9 @@ export function NewSuppliers({
                     ) : null}
                   </div>
                   <div className="grid content-start gap-1.5">
-                    <Label htmlFor={`${base}-term`}>
-                      Plazo (días){' '}
-                      <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
-                    </Label>
+                    {/* Sin «(opcional)»: en la columna de 7rem partía el rótulo en tres pedazos.
+                        Lo obligatorio lleva «*»; esto no. */}
+                    <Label htmlFor={`${base}-term`}>Plazo (días)</Label>
                     <Input
                       id={`${base}-term`}
                       value={row.term}
@@ -467,7 +466,11 @@ export function NewSuppliers({
             onClick={create}
           >
             <UserPlus className="size-4" aria-hidden />
-            {creating ? 'Creando…' : `Crear ${count(ready.length, 'proveedor', 'proveedores')}`}
+            {creating
+              ? 'Creando…'
+              : ready.length > 0
+                ? `Crear ${count(ready.length, 'proveedor', 'proveedores')}`
+                : 'Crear los proveedores'}
           </Button>
         </footer>
       ) : null}

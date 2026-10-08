@@ -1261,6 +1261,35 @@ check de CI queda en rojo aunque el job de lint/typecheck/tests esté verde.
   `META_TOKEN_KEY`**, y que la clave tiene que ser la misma en local, en las
   previews y en producción. CLAUDE.md pide el OK del dueño.
 
+**Lo que encontró la pasada con datos reales en el bar demo (08/10/2026).**
+
+- **En modo oscuro, una casilla tildada se ve sin tildar** (`components/ui/checkbox.tsx`).
+  `dark:bg-input/30` le gana a `data-[state=checked]:bg-primary`. Shadcn v4 lo arregla
+  con `dark:data-[state=checked]:bg-primary`. Afecta a toda la app. Regenerar el
+  componente con la CLI de shadcn: no se edita a mano.
+- **Mercado Pago: lo cargado a mano se reconoce por día.** Un «Ajuste de saldo»
+  semanal cargado a mano bloquea solo su fecha. Un reporte que abarque los otros días
+  de esa semana crea cobros sin partidas y duplica la plata de la billetera. Hay dos
+  salidas: una fecha de corte al pasar de la carga a mano a la importación, o
+  reconocer rangos (`lib/imports/server/stage.ts`, `loadManualMpDays`).
+- **Banco: solo se reconocen como ya cargados las transferencias (±3 días) y los
+  gastos bancarios del mismo día.** Pagos a proveedores, cobros y acreditaciones de
+  tarjeta cargados a mano se vuelven a proponer, y la única salida es «No es
+  nuestro». Sumar esas coincidencias en `lib/imports/server/proposals/bank.ts`.
+- **`/favicon.ico` se rutea como si fuera un bar.** Cada carga de página deja
+  `TenantNotFoundError: Bar no encontrado` en el log y tarda entre 0,6 y 1,4 s. Hay
+  que revisar el `proxy` o la ruta raíz.
+- **El servidor de desarrollo de Next 16 loguea los argumentos de las server
+  actions,** entre ellos la CUIT personal del pedido de ARCA y el certificado subido.
+  Pasa solo en desarrollo, pero es PII en texto plano (CLAUDE.md §9).
+- **La hoja «Nuevo gasto» no tiene descripción** (`components/administracion/acciones`).
+  Radix avisa `Missing Description or aria-describedby`.
+- **`components/ui/copy-button.tsx`:** el aviso de error dice «Copialo a mano desde la
+  barra» aunque lo que se copia sea el alias o el pedido.
+- **La conexión de pruebas (homologación) del bar demo tiene un certificado
+  descartable** (de una AC local, no de ARCA) y una espera manual del WSAA. Antes del
+  smoke con un certificado real de WSASS: «Desconectar» en Pruebas.
+
 ## Pestañas de sección — lo que quedó afuera (07/10/2026)
 
 - **Configuración en el celular no llega a Comisiones ni a Reseñas.** El nav

@@ -96,11 +96,16 @@ export function ImportHistory({
                 <DataTableHeader>Origen</DataTableHeader>
                 <DataTableHeader>Período</DataTableHeader>
                 <DataTableHeader className="text-right">Filas</DataTableHeader>
-                <DataTableHeader className="text-right">Ya estaban</DataTableHeader>
+                {/* «Repetidas» y «Quién», solo con lugar: a 1280 con el menú abierto la tabla se salía
+                    por la derecha y «Estado» quedaba escondido. «Repetidas» (filas que ya estaban
+                    en otra importación) no es «Ya estaban cargados» de la revisión. */}
+                <DataTableHeader className="hidden text-right 2xl:table-cell">
+                  Repetidas
+                </DataTableHeader>
                 <DataTableHeader className="text-right">Cargados</DataTableHeader>
                 <DataTableHeader className="text-right">Pendientes</DataTableHeader>
                 <DataTableHeader>Estado</DataTableHeader>
-                <DataTableHeader>Quién</DataTableHeader>
+                <DataTableHeader className="hidden 2xl:table-cell">Quién</DataTableHeader>
               </tr>
             </DataTableHead>
             <DataTableBody>
@@ -115,7 +120,7 @@ export function ImportHistory({
                     </Link>
                     {r.fileName ? (
                       <span
-                        className="block max-w-56 truncate text-xs text-muted-foreground"
+                        className="block max-w-44 truncate text-xs text-muted-foreground"
                         title={r.fileName}
                       >
                         {r.fileName}
@@ -134,7 +139,7 @@ export function ImportHistory({
                   <DataTableCell className="text-right tabular-nums">
                     {n(r.counts?.items)}
                   </DataTableCell>
-                  <DataTableCell className="text-right tabular-nums text-muted-foreground">
+                  <DataTableCell className="hidden text-right tabular-nums text-muted-foreground 2xl:table-cell">
                     {n(r.counts?.duplicate)}
                   </DataTableCell>
                   <DataTableCell className="text-right tabular-nums">
@@ -151,7 +156,7 @@ export function ImportHistory({
                   <DataTableCell>
                     <BatchStatusBadge status={r.status} />
                   </DataTableCell>
-                  <DataTableCell className="max-w-40 truncate text-muted-foreground">
+                  <DataTableCell className="hidden max-w-40 truncate text-muted-foreground 2xl:table-cell">
                     {r.createdByName || '—'}
                   </DataTableCell>
                 </DataTableRow>

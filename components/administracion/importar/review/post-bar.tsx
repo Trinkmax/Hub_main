@@ -17,7 +17,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
 import type { WarningKey } from '@/lib/accounting/types'
-import { formatMonthLabel } from '@/lib/dates'
+import { formatMonthYear } from '@/lib/dates'
 import { postImportProposals } from '@/lib/imports/actions'
 import { fetchPostQueue } from '@/lib/imports/review-actions'
 import type { PostQueueItem } from '@/lib/imports/server/review'
@@ -42,6 +42,33 @@ type Phase =
   | { kind: 'paused'; done: number; total: number; message: string | null }
   | { kind: 'done'; tally: PostTally }
 
+/** «Cargar 1 compra» / «Cargar 18 compras». */
+function loadLabel(n: number, unit: readonly [string, string]): string {
+  return `Cargar ${n === 1 ? `1 ${unit[0]}` : `${n} ${unit[1]}`}`
+}
+
+/** Título y bajada del diálogo en cada momento (mientras carga ya no dice «Antes de cargar»). */
+const HEADER: Readonly<
+  Record<
+    Phase['kind'],
+    { title: (n: number, unit: readonly [string, string]) => string; description: string }
+  >
+> = {
+  summary: {
+    title: () => 'Antes de cargar',
+    description: 'Revisá el resumen. Cada uno se puede anular después desde su comprobante.',
+  },
+  running: {
+    title: loadLabel,
+    description: 'Dejá esta pestaña abierta hasta que termine.',
+  },
+  paused: {
+    title: loadLabel,
+    description: 'Lo que ya se cargó quedó en los libros. Seguí cuando quieras.',
+  },
+  done: { title: () => 'Listo', description: 'Esto es lo que pasó con cada uno.' },
+}
+
 /**
  * «Cargar N comprobantes» (diseño §4.0 «Confirmar en tandas»): la barra de
  * abajo con lo que está listo y, al tocarla, el resumen previo (cuántos, cuánta
@@ -65,7 +92,6 @@ export function PostBar({
   unit: readonly [string, string]
 }) {
   const { slug, batchId, editable } = useReview()
-  const titleId = useId()
   const ackId = useId()
   const [open, setOpen] = useState(false)
   const [phase, setPhase] = useState<Phase>({ kind: 'summary' })
@@ -189,7 +215,7 @@ export function PostBar({
             onClick={() => setOpen(true)}
           >
             <Upload className="size-4" aria-hidden />
-            Cargar {readyCount === 1 ? `1 ${unit[0]}` : `${readyCount} ${many}`}
+            {loadLabel(readyCount, unit)}
           </Button>
         </div>
       </div>
@@ -200,17 +226,17 @@ export function PostBar({
           showCloseButton={!running}
           onEscapeKeyDown={(e) => running && e.preventDefault()}
           onInteractOutside={(e) => running && e.preventDefault()}
-          aria-labelledby={titleId}
         >
+          {/* Sin `id` propio: Radix une el título con el diálogo (con uno propio avisaba en la
+              consola que faltaba el título). */}
           <DialogHeader>
-            <DialogTitle id={titleId}>
-              {phase.kind === 'done' ? 'Listo' : 'Antes de cargar'}
+            <DialogTitle>
+              {HEADER[phase.kind].title(
+                phase.kind === 'running' || phase.kind === 'paused' ? phase.total : readyCount,
+                unit,
+              )}
             </DialogTitle>
-            <DialogDescription>
-              {phase.kind === 'done'
-                ? 'Esto es lo que pasó con cada uno.'
-                : 'Revisá el resumen. Cada uno se puede anular después desde su comprobante.'}
-            </DialogDescription>
+            <DialogDescription>{HEADER[phase.kind].description}</DialogDescription>
           </DialogHeader>
 
           {phase.kind === 'summary' ? (
@@ -223,7 +249,7 @@ export function PostBar({
                 <ul className="space-y-1 rounded-lg border border-border/70 p-3">
                   {months.map((m) => (
                     <li key={m.month} className="flex items-baseline justify-between gap-3">
-                      <span>Libro de {formatMonthLabel(m.month)}</span>
+                      <span>Libro de {formatMonthYear(m.month)}</span>
                       <span className="tabular-nums text-muted-foreground">
                         {m.count} · {formatCents(m.totalCents, { decimals: 0 })}
                       </span>
@@ -311,7 +337,7 @@ export function PostBar({
                   onClick={() => void run(false)}
                 >
                   <Upload className="size-4" aria-hidden />
-                  Cargar {readyCount === 1 ? `1 ${unit[0]}` : `${readyCount} ${many}`}
+                  {loadLabel(readyCount, unit)}
                 </Button>
               </>
             ) : null}

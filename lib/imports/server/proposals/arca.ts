@@ -423,13 +423,15 @@ function arcaDraft(s: StagedItem<McItem>, input: ArcaDraftInput): ProposalDraft 
   // ── Lo cargado a mano ──
   const match = input.matches.get(s.key)
   if (match?.match === 'number') {
+    // Con el nombre que tiene en tus proveedores (como las demás filas), no el de ARCA en mayúsculas.
+    const known = partyByCuit(input.catalog, it.issuerCuit)
     return {
       key: s.key,
       form: formOf,
       values: null,
       itemIds: [s.id],
       needs: [],
-      summary: summaryBase(it.issuerName || null),
+      summary: summaryBase(known ? partyLabel(known) : it.issuerName || null),
       skip: {
         reason: 'already_loaded',
         document_id: match.documentId,

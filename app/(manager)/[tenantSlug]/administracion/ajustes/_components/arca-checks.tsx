@@ -1,7 +1,11 @@
 'use client'
 
 import { Circle, CircleCheck, CircleX, TriangleAlert } from 'lucide-react'
-import { guideStepById } from '@/components/administracion/guias/arca-guide-model'
+import {
+  guideStepById,
+  homologacionStepAnchor,
+  homologacionStepFor,
+} from '@/components/administracion/guias/arca-guide-model'
 import { useGuideNav } from '@/components/administracion/guias/guide-nav'
 import type { ArcaCheckTone, ArcaTestView } from '@/lib/arca/views'
 import { cn } from '@/lib/utils'
@@ -19,7 +23,8 @@ const TONE: Readonly<
  * Los 7 chequeos de «Probar conexión» (diseño §2.6) con ✓, aviso o ✗, el texto en palabras
  * simples de cada uno y, si algo falló, el link al paso de la guía que lo arregla. Los que no se
  * llegaron a correr (la prueba se corta en el primero grave) quedan en gris. El estado va
- * también en texto para lectores.
+ * también en texto para lectores. En homologación el link va al paso de las pruebas (en la
+ * misma tarjeta), no a la guía de producción.
  */
 export function ArcaChecksList({
   test,
@@ -32,12 +37,16 @@ export function ArcaChecksList({
   className?: string
 }) {
   const nav = useGuideNav()
+  const homologacion = test.environment === 'homologacion'
+  const linkClass =
+    'inline-flex min-h-11 items-center text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring md:min-h-7'
   return (
     <ul className={cn('divide-y divide-border/60 rounded-lg border border-border/80', className)}>
       {test.checks.map((check) => {
         const tone = TONE[check.tone]
         const Icon = tone.icon
-        const step = check.step ? guideStepById(check.step) : null
+        const step = check.step && !homologacion ? guideStepById(check.step) : null
+        const testStep = homologacion ? homologacionStepFor(check.step) : null
         return (
           <li key={check.key} className="flex items-start gap-3 px-3 py-3 text-sm">
             <Icon className={cn('mt-0.5 size-4 shrink-0', tone.className)} aria-hidden />
@@ -60,10 +69,15 @@ export function ArcaChecksList({
                     event.preventDefault()
                     nav.reveal(step.id)
                   }}
-                  className="inline-flex min-h-11 items-center text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring md:min-h-7"
+                  className={linkClass}
                 >
                   Cómo se arregla: paso {step.n}
                 </GuideLink>
+              ) : null}
+              {testStep !== null && !check.ok ? (
+                <a href={`#${homologacionStepAnchor(testStep)}`} className={linkClass}>
+                  Cómo se arregla: paso {testStep} de las pruebas
+                </a>
               ) : null}
               {check.code && !check.ok ? (
                 <p className="text-xs text-muted-foreground">

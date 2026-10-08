@@ -903,7 +903,8 @@ function evaluate(
             ? null
             : d.recurringActive === 0
               ? 'Todavía no hay gastos fijos.'
-              : `Hay ${d.recurringActive} cargado${d.recurringActive === 1 ? '' : 's'}.`,
+              : // Solo «Hay 2 cargados.» con el ícono de aviso no decía qué faltaba.
+                `Hay ${d.recurringActive} cargado${d.recurringActive === 1 ? '' : 's'}: sumá los que falten.`,
       }
     case 'mp_connect':
       return {

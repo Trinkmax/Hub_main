@@ -48,6 +48,11 @@ function warningText(w: WarningKey): string {
   return isBatchAcceptable(w) ? BATCH_WARNING_TEXT[w] : WARNING_COPY[w].fallback
 }
 
+/** «0002-00000061» no se parte en el guion (con un separador de palabras invisible a cada lado). */
+function unbreakableNumbers(label: string): string {
+  return label.replace(/(\d)-(\d)/g, '$1\u2060-\u2060$2')
+}
+
 /** Los números del detalle que vale la pena mostrar (comisión, neto, cierre del día…). */
 function detailRows(p: ProposalView): Array<{ label: string; cents: number }> {
   const detail = p.summary.detail ?? {}
@@ -93,18 +98,23 @@ export function ProposalRow({ p }: { p: ProposalView }) {
 
   return (
     <li aria-labelledby={titleId} className="space-y-3 px-4 py-4 sm:px-5">
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
+      {/* El importe va en el renglón del estado: al lado del título le quitaba el ancho en el
+          teléfono y «Factura A 0002-00000061» y el proveedor se partían en varias líneas. */}
+      <div className="space-y-1">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             <ProposalStatusBadge status={p.status} />
             <span className="text-xs text-muted-foreground">{SUMMARY_KIND_TEXT[s.kind]}</span>
           </div>
-          <p id={titleId} className="font-medium break-words">
-            {s.label}
-          </p>
-          {meta ? <p className="text-sm text-muted-foreground text-pretty">{meta}</p> : null}
+          {/* Un salteo sin plata (un día cargado a mano, las reservas) no muestra «$ 0,00». */}
+          {p.status === 'skipped' && s.total_cents === 0 ? null : (
+            <Amount cents={s.total_cents} className="shrink-0 text-base font-semibold" />
+          )}
         </div>
-        <Amount cents={s.total_cents} className="text-base font-semibold" />
+        <p id={titleId} className="font-medium break-words">
+          {unbreakableNumbers(s.label)}
+        </p>
+        {meta ? <p className="text-sm text-muted-foreground text-pretty">{meta}</p> : null}
       </div>
 
       {details.length > 0 ? (

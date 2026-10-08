@@ -209,12 +209,18 @@ export function ArcaPointOfSaleForm({
       </form>
 
       {saved ? (
+        // La frase va en un solo `span`: suelta, cada pedazo era un hijo del flex y el `gap`
+        // separaba el número del punto final («es el 0001 .»).
         <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <Badge variant="outline" className="border-success/30 bg-success/10 text-success">
             Guardado
           </Badge>
-          El punto de venta de la plataforma es el{' '}
-          <span className="font-medium tabular-nums text-foreground">{padPv(saved, 4)}</span>.
+          <span>
+            {environment === 'produccion'
+              ? 'El punto de venta de la plataforma es el '
+              : 'Las pruebas usan el punto de venta '}
+            <span className="font-medium tabular-nums text-foreground">{padPv(saved, 4)}</span>.
+          </span>
         </p>
       ) : null}
 
@@ -277,7 +283,12 @@ export function ArcaPointOfSaleForm({
           </div>
         ) : null}
       </div>
-      <ArcaFailureNotice failure={failure} slug={slug} guideHref={guideHref} />
+      <ArcaFailureNotice
+        failure={failure}
+        slug={slug}
+        guideHref={guideHref}
+        environment={environment}
+      />
     </div>
   )
 }
@@ -364,7 +375,7 @@ export function ArcaClassesSelect({
           </SelectContent>
         </Select>
       </Field>
-      <ArcaFailureNotice failure={failure} slug={slug} />
+      <ArcaFailureNotice failure={failure} slug={slug} environment={environment} />
     </div>
   )
 }

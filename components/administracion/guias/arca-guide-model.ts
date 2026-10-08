@@ -73,6 +73,35 @@ export function stepAnchor(n: number): string {
   return `paso-${n}`
 }
 
+/**
+ * En homologación, el paso de «Pruebas (homologación)» (Ajustes › ARCA, del 1 al 5) que arregla
+ * lo que en producción arregla un paso de la guía. El pedido es el 1; el certificado y sus
+ * autorizaciones, que en las pruebas se hacen en WSASS, el 2; el punto de venta, el 3; probar,
+ * el 4. Lo que no existe en las pruebas (los datos de la SAS, la Factura A, Mis Comprobantes)
+ * no lleva link: `null`. Sin esto, «Cómo se arregla» mandaba a la guía de producción.
+ */
+export function homologacionStepFor(step: string | null | undefined): number | null {
+  switch (step) {
+    case 's5_pedido':
+      return 1
+    case 's6_certificado':
+    case 's7_wsfe':
+    case 's8_padron':
+      return 2
+    case 's2_punto_venta':
+      return 3
+    case 's9_probar':
+      return 4
+    default:
+      return null
+  }
+}
+
+/** `homologacion-paso-2`: el `id` de un paso de las pruebas (y el `#` de sus links). */
+export function homologacionStepAnchor(n: number): string {
+  return `homologacion-paso-${n}`
+}
+
 /** El paso de un `#paso-N` (o `paso-N`); `null` si no es un paso de la guía. */
 export function stepIdForHash(hash: string | null | undefined): ArcaGuideStepId | null {
   const match = /^#?paso-(\d{1,2})$/.exec((hash ?? '').trim())

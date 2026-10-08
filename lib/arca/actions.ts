@@ -260,10 +260,14 @@ export async function startArcaCertificate(
         status: isArcaConnectionStatus(status) ? status : null,
         updatedAt: textOf(saved?.updated_at),
       },
+      // La pantalla ya lo bajó sola. En homologación el certificado sale de WSASS (el «paso 6» es
+      // de la guía de producción).
       message:
         mode === 'renew'
           ? 'Listo: generamos el pedido para renovar. Subilo a ARCA con «Agregar certificado» sobre el mismo alias; mientras tanto, la conexión sigue andando.'
-          : 'Listo: generamos el pedido. Bajalo y subilo a ARCA en el paso 6.',
+          : environment === 'homologacion'
+            ? 'Listo: generamos el pedido. Pegá su texto en WSASS, en «Nuevo Certificado», con el mismo alias.'
+            : 'Listo: generamos el pedido. Subilo a ARCA en el paso 6.',
     }
   } catch (e) {
     return failureState(op, e)
@@ -370,9 +374,12 @@ export async function uploadArcaCertificate(
     const current = info.publicKeySha256 === conn.publicKeySha256
     const renewal = !current && info.publicKeySha256 === conn.pendingPublicKeySha256
     if (!current && !renewal) {
+      // El caso típico: «Empezar de cero» dejó viejo el pedido con el que se hizo este certificado.
       return fieldFailure(
         'fileBase64',
-        `Este certificado es de otro pedido. Volvé a ARCA y subí el .csr de este paso (alias «${conn.alias}»).`,
+        environment === 'homologacion'
+          ? `Este certificado es de otro pedido. En WSASS, creá el certificado con el último pedido (alias «${conn.alias}») y subí ese.`
+          : `Este certificado es de otro pedido. Volvé a ARCA y subí el .csr de este paso (alias «${conn.alias}»).`,
       )
     }
     if (info.subjectCuit !== conn.certCuit) {

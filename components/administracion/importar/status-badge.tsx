@@ -1,4 +1,4 @@
-import { Ban, CheckCircle2, CircleAlert, CircleDashed, Clock, Loader2, XCircle } from 'lucide-react'
+import { Ban, CheckCircle2, CircleAlert, CircleDashed, Clock, XCircle } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Badge } from '@/components/ui/badge'
 import type { ImportBatchStatus, ProposalStatus } from '@/lib/imports/server/types'
@@ -50,7 +50,7 @@ export function BatchStatusBadge({
   return (
     <ToneBadge
       tone={copy.tone}
-      icon={status === 'posting' ? Loader2 : status === 'staging' ? CircleDashed : undefined}
+      icon={status === 'staging' ? CircleDashed : undefined}
       className={className}
     >
       {copy.label}

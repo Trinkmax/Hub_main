@@ -53,6 +53,13 @@ function cellText(c: Cell | undefined): string {
   return String(c).replace(/\s+/g, ' ').trim()
 }
 
+/** Lo que se muestra de una celda: la fecha de una celda de Excel (`2026-10-01`) va como `01/10/2026`. */
+function previewText(c: Cell | undefined): string {
+  const text = cellText(c)
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text)
+  return iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : text
+}
+
 /** Las filas que se pueden elegir como «la de los títulos» (con al menos dos celdas). */
 export function headerRowOptions(
   rows: readonly (readonly Cell[])[],
@@ -60,7 +67,7 @@ export function headerRowOptions(
 ): Array<{ index: number; preview: string }> {
   const out: Array<{ index: number; preview: string }> = []
   for (let i = 0; i < Math.min(rows.length, maxScan); i++) {
-    const cells = (rows[i] ?? []).map(cellText).filter((c) => c !== '')
+    const cells = (rows[i] ?? []).map(previewText).filter((c) => c !== '')
     if (cells.length < 2) continue
     const preview = cells.slice(0, 4).join(' · ')
     out.push({ index: i, preview: preview.length > 80 ? `${preview.slice(0, 79)}…` : preview })
@@ -84,7 +91,7 @@ export function mappingPreview(
   const header = rows[headerRow] ?? []
   const body: string[][] = []
   for (let i = headerRow + 1; i < rows.length && body.length < max; i++) {
-    const cells = (rows[i] ?? []).map(cellText)
+    const cells = (rows[i] ?? []).map(previewText)
     if (cells.every((c) => c === '')) continue
     body.push(cells)
   }

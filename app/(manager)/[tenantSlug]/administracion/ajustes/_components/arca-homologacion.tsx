@@ -1,9 +1,12 @@
 import { ChevronDown, FlaskConical } from 'lucide-react'
 import { ArcaTestVoucherButton } from '@/components/administracion/arca/test-voucher-button'
-import { suggestArcaAlias } from '@/components/administracion/guias/arca-guide-model'
+import {
+  homologacionStepAnchor,
+  suggestArcaAlias,
+} from '@/components/administracion/guias/arca-guide-model'
 import { Badge } from '@/components/ui/badge'
 import type { ArcaConnectionView } from '@/lib/arca/views'
-import { formatCuit } from '@/lib/fiscal'
+import { formatCuit, padPv } from '@/lib/fiscal'
 import { cn } from '@/lib/utils'
 import { ArcaCertUpload, ArcaCsrAction } from './arca-certificate-actions'
 import { ArcaDisconnectButton } from './arca-connection-controls'
@@ -11,10 +14,16 @@ import { HashDetails } from './arca-shared'
 import { ArcaPointOfSaleForm } from './arca-step-actions'
 import { ArcaTestAction } from './arca-test-action'
 
-/** Un renglón numerado de las pruebas. */
+/**
+ * Un renglón numerado de las pruebas. Tiene `id` (`#homologacion-paso-N`): ahí lleva «Cómo se
+ * arregla» cuando la prueba de homologación falla.
+ */
 function TestStep({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
-    <li className="grid gap-3 sm:grid-cols-[2rem_minmax(0,1fr)]">
+    <li
+      id={homologacionStepAnchor(n)}
+      className="grid scroll-mt-20 gap-3 sm:grid-cols-[2rem_minmax(0,1fr)]"
+    >
       <span
         aria-hidden="true"
         className="hidden size-7 items-center justify-center rounded-full border border-border bg-secondary/40 text-xs font-semibold tabular-nums text-muted-foreground sm:flex"
@@ -114,7 +123,9 @@ export function ArcaHomologacion({
             </div>
             <div className="grid content-start gap-0.5">
               <dt className="text-xs text-muted-foreground">Punto de venta</dt>
-              <dd className="tabular-nums">{active.pointOfSale ?? 'Sin cargar'}</dd>
+              <dd className="tabular-nums">
+                {active.pointOfSale ? padPv(active.pointOfSale, 4) : 'Sin cargar'}
+              </dd>
             </div>
           </dl>
         ) : null}
@@ -185,8 +196,13 @@ export function ArcaHomologacion({
         )}
 
         {canWrite && hasKey ? (
-          <div className="flex justify-end border-t border-border/60 pt-4">
-            <ArcaDisconnectButton slug={slug} environment="homologacion" />
+          // En el celular, a todo el ancho (como en la tarjeta de producción).
+          <div className="border-t border-border/60 pt-4 sm:flex sm:justify-end">
+            <ArcaDisconnectButton
+              slug={slug}
+              environment="homologacion"
+              className="w-full sm:w-auto"
+            />
           </div>
         ) : null}
       </div>

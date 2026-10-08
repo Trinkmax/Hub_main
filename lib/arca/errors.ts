@@ -249,6 +249,52 @@ const PADRON_OVERRIDES: Partial<Record<ArcaErrorKey, Partial<ArcaErrorInfo>>> = 
 }
 
 /**
+ * Lo que cambia en homologación (las pruebas de quien programa): el certificado sale de
+ * WSASS y se autoriza ahí («Crear autorización a servicio», con la SAS como representada),
+ * no en el portal de la SAS. El caso real: un certificado que no dio WSASS vuelve con
+ * `cms.cert.untrusted`, y el texto de producción («es de pruebas y lo estás usando en
+ * producción, o al revés») decía lo contrario de lo que pasaba. El paso de la guía no cambia:
+ * la pantalla lo lleva al paso de «Pruebas (homologación)» que corresponde.
+ */
+const HOMOLOGACION_OVERRIDES: Partial<Record<ArcaErrorKey, Partial<ArcaErrorInfo>>> = {
+  arca_wrong_environment: {
+    title: 'ARCA de pruebas no reconoce el certificado',
+    body: 'El ARCA de pruebas solo acepta certificados de WSASS (el de producción no sirve acá). Creá el certificado en WSASS con este pedido y subilo.',
+  },
+  arca_not_authorized: {
+    title: 'Falta autorizar el certificado en WSASS',
+    body: 'WSASS todavía no autorizó este certificado para wsfe. En WSASS, «Crear autorización a servicio» para wsfe, con el alias «{alias}» y la CUIT de la SAS como representada.',
+    fallback:
+      'WSASS todavía no autorizó este certificado para wsfe. En WSASS, «Crear autorización a servicio» para wsfe, con el alias del pedido y la CUIT de la SAS como representada.',
+  },
+  arca_cuit_not_in_token: {
+    body: 'La autorización de WSASS no tiene a la SAS como representada. En «Crear autorización a servicio», poné la CUIT de la SAS como representada.',
+  },
+  arca_cert_expired: {
+    title: 'El certificado de pruebas venció',
+    body: 'Generá otro pedido y creá un certificado nuevo en WSASS.',
+  },
+  arca_key_mismatch: {
+    body: 'El certificado no corresponde a la clave de este pedido. Generá otro pedido y creá el certificado en WSASS con ese.',
+  },
+  arca_already_authenticated: {
+    body: 'El ARCA de pruebas le dio un permiso a este certificado hace poco: esperá {minutos} minutos y volvé a probar.',
+    fallback:
+      'El ARCA de pruebas le dio un permiso a este certificado hace poco: esperá unos minutos y volvé a probar.',
+  },
+}
+
+/** Homologación y padrón: la autorización que falta en WSASS es la de la constancia. */
+const HOMOLOGACION_PADRON_OVERRIDES: Partial<Record<ArcaErrorKey, Partial<ArcaErrorInfo>>> = {
+  arca_not_authorized: {
+    title: 'Falta autorizar la consulta del padrón en WSASS',
+    body: 'WSASS todavía no autorizó este certificado para ws_sr_constancia_inscripcion. En WSASS, «Crear autorización a servicio» para ese servicio, con el alias «{alias}» y la CUIT de la SAS como representada.',
+    fallback:
+      'WSASS todavía no autorizó este certificado para ws_sr_constancia_inscripcion. En WSASS, «Crear autorización a servicio» para ese servicio, con el alias del pedido y la CUIT de la SAS como representada.',
+  },
+}
+
+/**
  * Submensajes del error 10000 (validaciones del emisor; `arca-pasos.md` §2.4). El
  * 04 y el 09 (Factura A) van a `arca_class_a_not_enabled`.
  */
@@ -450,14 +496,23 @@ function isPadron(ctx: ArcaErrorContext): boolean {
   return ctx.service === 'padron' || ctx.wsn === 'ws_sr_constancia_inscripcion'
 }
 
-/** Texto, título y paso de una clave, con los datos del contexto. */
+/**
+ * Texto, título y paso de una clave, con los datos del contexto. En homologación, el texto de
+ * las pruebas (WSASS) donde el de producción no aplica; el paso es el mismo.
+ */
 export function describeArcaErrorKey(
   key: ArcaErrorKey,
   ctx: ArcaErrorContext = {},
   extra: { code?: string | null; issuerReasons?: readonly string[] } = {},
 ): ArcaErrorView {
-  const base = ARCA_ERRORS[key]
-  const info: ArcaErrorInfo = isPadron(ctx) ? { ...base, ...PADRON_OVERRIDES[key] } : base
+  const padron = isPadron(ctx)
+  const homologacion = ctx.environment === 'homologacion'
+  const info: ArcaErrorInfo = {
+    ...ARCA_ERRORS[key],
+    ...(padron ? PADRON_OVERRIDES[key] : undefined),
+    ...(homologacion ? HOMOLOGACION_OVERRIDES[key] : undefined),
+    ...(homologacion && padron ? HOMOLOGACION_PADRON_OVERRIDES[key] : undefined),
+  }
   const values: Record<string, string | null> = {
     alias: ctx.alias?.trim() || null,
     pv:

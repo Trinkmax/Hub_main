@@ -66,6 +66,7 @@ export function BankColumnMapper({
   const [dateOrder, setDateOrder] = useState<'dmy' | 'mdy'>('dmy')
 
   const sample = useMemo(() => mappingPreview(rows, headerRow, 3), [rows, headerRow])
+  const headerPreview = options.find((o) => o.index === headerRow)?.preview ?? ''
   const problems = useMemo(() => mappingProblems(assignment), [assignment])
   const layout = useMemo(
     () => (problems.length === 0 ? layoutFromAssignment(headerRow, assignment, dateOrder) : null),
@@ -84,7 +85,7 @@ export function BankColumnMapper({
   return (
     <section
       aria-labelledby={titleId}
-      className="card-hairline space-y-5 rounded-xl border bg-card p-5 sm:p-6"
+      className="card-hairline @container space-y-5 rounded-xl border bg-card p-5 sm:p-6"
     >
       <header className="flex items-start gap-3">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-cream-tint text-primary shadow-2xs">
@@ -102,11 +103,18 @@ export function BankColumnMapper({
       </header>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="grid gap-1.5">
+        {/* `min-w-0`, una columna `minmax(0, 1fr)` y el valor con «…»: la fila de títulos es larga
+            y, entera, empujaba la grilla por encima de «Las fechas vienen como» y se salía de la
+            tarjeta. */}
+        <div className="grid min-w-0 grid-cols-1 gap-1.5">
           <Label htmlFor={headerId}>¿En qué fila están los títulos?</Label>
           <Select value={String(headerRow)} onValueChange={changeHeader}>
             <SelectTrigger id={headerId} className={SELECT_CLASS}>
-              <SelectValue />
+              <SelectValue>
+                <span className="truncate">
+                  Fila {headerRow + 1}: {headerPreview}
+                </span>
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {options.map((o) => (
@@ -136,12 +144,18 @@ export function BankColumnMapper({
         </div>
       </div>
 
-      <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Por el ancho de la tarjeta (al lado de «¿Cómo lo bajo?» mide ~590 px): con tres columnas
+          ahí, «Débito (plata que sale)» y «Número de comprobante» se cortaban. */}
+      <ul className="grid gap-3 @sm:grid-cols-2 @3xl:grid-cols-3">
         {sample.columns.map((column) => {
           const selectId = `${titleId}-col-${column.index}`
           const values = sample.sample.map((r) => r[column.index] ?? '').filter((v) => v !== '')
+          const assigned = assignment[column.index] ?? null
           return (
-            <li key={column.index} className="grid gap-2 rounded-lg border border-border/70 p-3">
+            <li
+              key={column.index}
+              className="grid min-w-0 grid-cols-1 gap-2 rounded-lg border border-border/70 p-3"
+            >
               <div className="min-w-0">
                 <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
                   Columna {column.index + 1}
@@ -162,7 +176,7 @@ export function BankColumnMapper({
                 Qué es la columna {column.index + 1} ({column.title})
               </Label>
               <Select
-                value={assignment[column.index] ?? NONE}
+                value={assigned ?? NONE}
                 onValueChange={(value) =>
                   setAssignment((prev) => ({
                     ...prev,
@@ -171,7 +185,11 @@ export function BankColumnMapper({
                 }
               >
                 <SelectTrigger id={selectId} className={SELECT_CLASS}>
-                  <SelectValue />
+                  <SelectValue>
+                    <span className="truncate">
+                      {assigned ? BANK_COLUMN_TEXT[assigned] : 'No la uses'}
+                    </span>
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NONE}>No la uses</SelectItem>
@@ -210,7 +228,9 @@ export function BankColumnMapper({
                   key={`${it.date}-${i.toString()}`}
                   className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1.5"
                 >
-                  <span className="min-w-0 flex-1 truncate">
+                  {/* En el teléfono la descripción baja de renglón (cortada no se leía); con lugar,
+                      una sola línea. */}
+                  <span className="min-w-0 flex-1 break-words sm:truncate">
                     <span className="tabular-nums text-muted-foreground">
                       {formatIsoDay(it.date)}
                     </span>{' '}

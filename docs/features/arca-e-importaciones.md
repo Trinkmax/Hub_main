@@ -105,3 +105,16 @@ Variables opcionales:
   con el smoke de homologación.
 
 Lo que quedó pendiente está en la sección «Administración» de `BACKLOG.md`.
+
+## Documentos de trabajo
+
+Están en `docs/features/arca-e-importaciones/`:
+
+- `diseno.md`: el diseño completo (conexión, guías, emisión, importadores, base y plan por fases).
+- `fase1-estado.md`, `fase2-estado.md` y `fase3-estado.md`: qué se hizo en cada fase, los contratos con la base
+  y lo que se verificó.
+- `fase3-datos.md`: la pasada de punta a punta con datos en el bar demo y qué datos quedaron ahí.
+- `investigacion/`: los pasos en ARCA (textos exactos de cada pantalla), el detalle técnico de WSAA, WSFE y
+  padrón, Mis Comprobantes, Mercado Pago y Banco Nación.
+
+Las rutas a `scratchpad/` que aparecen adentro son de la sesión de trabajo y ya no existen.

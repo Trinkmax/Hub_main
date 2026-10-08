@@ -35,7 +35,7 @@ import {
 import { isUuid, settleQuery } from '@/lib/accounting/queries/shared'
 import { listTreasuryBalances } from '@/lib/accounting/queries/treasury'
 import { getArcaLookupStatus } from '@/lib/arca/queries'
-import { formatDateTime, formatIsoDay, formatMonthLabel, formatRange } from '@/lib/dates'
+import { formatDateTime, formatIsoDay, formatMonthYear, formatRange } from '@/lib/dates'
 import {
   getImportReview,
   getMpImportSettings,
@@ -304,8 +304,13 @@ export default async function ImportBatchPage({
           eyebrow="Administración"
           title={
             <>
-              {copy.title}
-              {treasuryName ? ` · ${treasuryName}` : ''} <ReadOnlyBadge />
+              {/* «Banco · Banco Nación» repetía: si la cuenta ya lo dice, va sola. */}
+              {treasuryName
+                ? treasuryName.toLowerCase().startsWith(copy.title.toLowerCase())
+                  ? treasuryName
+                  : `${copy.title} · ${treasuryName}`
+                : copy.title}{' '}
+              <ReadOnlyBadge />
             </>
           }
           description={description}
@@ -476,7 +481,7 @@ export default async function ImportBatchPage({
             {r.months
               .map(
                 (m) =>
-                  `${formatMonthLabel(m.month)} (${m.count} · ${formatCentsShort(m.totalCents)})`,
+                  `${formatMonthYear(m.month)} (${m.count} · ${formatCentsShort(m.totalCents)})`,
               )
               .join(', ')}
             .

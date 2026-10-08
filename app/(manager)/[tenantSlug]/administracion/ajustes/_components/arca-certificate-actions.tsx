@@ -246,6 +246,8 @@ export function ArcaCsrAction({
             />
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
+            {/* «Descargar de nuevo» también recién generado: ya se bajó solo, y con el nombre
+                del archivo («Descargar arca-….csr») el texto no entraba en el botón del celular. */}
             <Button
               type="button"
               className="h-11 gap-2 md:h-9"
@@ -253,7 +255,7 @@ export function ArcaCsrAction({
               disabled={pending}
             >
               <Download className="size-4" aria-hidden />
-              {fresh ? `Descargar ${fileName}` : 'Descargar de nuevo'}
+              Descargar de nuevo
             </Button>
             {showPem && pem === null ? (
               <Button
@@ -319,16 +321,27 @@ export function ArcaCsrAction({
         </form>
       )}
 
-      <ArcaFailureNotice failure={failure} slug={slug} guideHref={guideHref} />
+      <ArcaFailureNotice
+        failure={failure}
+        slug={slug}
+        guideHref={guideHref}
+        environment={environment}
+      />
 
       <AlertDialog open={restartOpen} onOpenChange={setRestartOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>¿Empezar de cero con otro pedido?</AlertDialogTitle>
             <AlertDialogDescription>
-              {hasCertificate
-                ? 'El certificado que subiste deja de servir y la emisión de facturas se apaga. Vas a tener que repetir los pasos 6 a 9 con el pedido nuevo.'
-                : 'El pedido que bajaste antes deja de servir. Si ya lo subiste a ARCA, hacé el paso 6 de nuevo con el pedido nuevo.'}
+              {/* Los números de paso son los de la guía en producción y los de la lista de las
+                  pruebas en homologación (donde el certificado sale de WSASS). */}
+              {homo
+                ? hasCertificate
+                  ? 'El certificado de pruebas que subiste deja de servir. Vas a tener que crear otro en WSASS con el pedido nuevo, subirlo y volver a probar (pasos 2 a 4).'
+                  : 'El pedido que bajaste antes deja de servir. Si ya lo usaste en WSASS, creá el certificado de nuevo con el pedido nuevo (paso 2).'
+                : hasCertificate
+                  ? 'El certificado que subiste deja de servir y la emisión de facturas se apaga. Vas a tener que repetir los pasos 6 a 9 con el pedido nuevo.'
+                  : 'El pedido que bajaste antes deja de servir. Si ya lo subiste a ARCA, hacé el paso 6 de nuevo con el pedido nuevo.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {fields}
@@ -357,8 +370,9 @@ export function ArcaCsrAction({
           <AlertDialogHeader>
             <AlertDialogTitle>Ya hay un certificado cargado</AlertDialogTitle>
             <AlertDialogDescription>
-              Si generás otro pedido, el certificado actual deja de servir y la emisión de facturas
-              se apaga hasta que subas el nuevo y vuelvas a probar.
+              {homo
+                ? 'Si generás otro pedido, el certificado de pruebas deja de servir hasta que subas el nuevo de WSASS y vuelvas a probar.'
+                : 'Si generás otro pedido, el certificado actual deja de servir y la emisión de facturas se apaga hasta que subas el nuevo y vuelvas a probar.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -622,7 +636,12 @@ export function ArcaCertUpload({
           </div>
         ) : null}
       </div>
-      <ArcaFailureNotice failure={failure} slug={slug} guideHref={guideHref} />
+      <ArcaFailureNotice
+        failure={failure}
+        slug={slug}
+        guideHref={guideHref}
+        environment={environment}
+      />
     </div>
   )
 }
@@ -713,7 +732,12 @@ export function ArcaRenewAction({
           {pending ? 'Generando…' : 'Generar el pedido para renovar'}
         </Button>
       )}
-      <ArcaFailureNotice failure={failure} slug={slug} guideHref={guideHref} />
+      <ArcaFailureNotice
+        failure={failure}
+        slug={slug}
+        guideHref={guideHref}
+        environment={connection.environment}
+      />
     </div>
   )
 }

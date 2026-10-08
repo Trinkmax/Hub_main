@@ -4,12 +4,14 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { type ReactNode, useCallback, useEffect, useRef, useTransition } from 'react'
 import { toast } from 'sonner'
+import { homologacionStepAnchor } from '@/components/administracion/guias/arca-guide-model'
 import { Button } from '@/components/ui/button'
 import {
   ACC_UNREACHABLE,
   type AccFailureState,
   type AccSimpleState,
 } from '@/lib/accounting/action-state'
+import type { ArcaEnvironment } from '@/lib/arca/endpoints'
 import { Callout } from './form-bits'
 
 /**
@@ -109,6 +111,23 @@ export function failureText(failure: AccFailureState): string {
 }
 
 /**
+ * En homologación, el pedido y el certificado son los pasos 1 y 2 de las pruebas (en la misma
+ * tarjeta): el texto del servidor («Generá un pedido nuevo (paso 5)…») y «Ir al paso 5»
+ * mandaban a la guía de producción.
+ */
+const HOMOLOGACION_FIXES: Readonly<Record<string, { readonly body: string; readonly n: number }>> =
+  {
+    arca_key_missing: {
+      body: 'Primero generá el pedido (paso 1); después subí el certificado que te dé WSASS.',
+      n: 1,
+    },
+    arca_not_ready: {
+      body: 'Primero subí el certificado de WSASS (paso 2); después vas a poder probar la conexión.',
+      n: 2,
+    },
+  }
+
+/**
  * El error de una acción de ARCA, en el lugar de la acción, con el arreglo cuando lo hay. Los
  * textos ya vienen en palabras simples del servidor; acá se suma el título y el botón.
  */
@@ -116,20 +135,31 @@ export function ArcaFailureNotice({
   failure,
   slug,
   guideHref,
+  environment = 'produccion',
   className,
 }: {
   failure: AccFailureState | null
   slug: string
   /** Dónde está la guía (`''` si ya estamos en ella), para «Ir al paso N». */
   guideHref?: string
+  /** En homologación, «Ir al paso N» va a los pasos de las pruebas. */
+  environment?: ArcaEnvironment
   className?: string
 }) {
   if (!failure) return null
   const key = failureKey(failure)
   const base = `/${slug}/administracion`
   const guide = guideHref ?? `${base}/ajustes/arca`
+  const homologacionFix =
+    environment === 'homologacion' && key ? HOMOLOGACION_FIXES[key] : undefined
   let action: ReactNode = null
-  if (key === 'sas_cuit_missing') {
+  if (homologacionFix) {
+    action = (
+      <Button asChild variant="outline" className="h-11 md:h-9">
+        <a href={`#${homologacionStepAnchor(homologacionFix.n)}`}>Ir al paso {homologacionFix.n}</a>
+      </Button>
+    )
+  } else if (key === 'sas_cuit_missing') {
     action = (
       <Button asChild variant="outline" className="h-11 md:h-9">
         <Link href={`${base}/ajustes?tab=sas`}>Ir a Datos de la SAS</Link>
@@ -155,7 +185,7 @@ export function ArcaFailureNotice({
       action={action}
       className={className}
     >
-      {failureText(failure)}
+      {homologacionFix?.body ?? failureText(failure)}
     </Callout>
   )
 }

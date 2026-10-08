@@ -53,6 +53,7 @@ import {
   type ProposalSummary,
   type SavedImportRule,
   SUMMARY_KINDS,
+  signedTotalCents,
 } from './types'
 
 // ─── Lotes ───────────────────────────────────────────────────────────────────
@@ -295,7 +296,12 @@ export async function listImportProposals(
     // jsonb: la cadena va tal cual al operador `cs` (un arreglo JSON, no uno de Postgres).
     q = q.contains('needs', JSON.stringify([{ key: opts.need }]))
   }
-  const { data, error, count } = await q.order('key').range(offset, offset + limit - 1)
+  // Por fecha (como lo lista ARCA o el banco) y, en el mismo día, por clave. Solo por clave, las
+  // compras salían ordenadas por la CUIT del proveedor: un orden que nadie reconoce.
+  const { data, error, count } = await q
+    .order('summary->>date')
+    .order('key')
+    .range(offset, offset + limit - 1)
   if (error) throw queryError('acc_import_proposals', error)
   const rows = asRecords(data).map(parseProposal)
   return { rows, total: count ?? rows.length }
@@ -386,6 +392,16 @@ export type ImportReviewSummary = {
 }
 
 /**
+ * Salteadas porque ya están en los libros («Ya estaban cargados»): lo encontramos cargado, ese día
+ * de Mercado Pago se cargó a mano o ya entró por otra importación.
+ */
+const ALREADY_LOADED_REASONS: ReadonlySet<string> = new Set([
+  'already_loaded',
+  'manual_overlap',
+  'posted_in_other_batch',
+])
+
+/**
  * Todo lo que la pantalla de revisión muestra arriba (los `StatCard`, los
  * proveedores nuevos y el resumen antes de «Cargar»). Lee todas las propuestas
  * del lote (solo estado, resumen, lo que falta y el error).
@@ -429,24 +445,28 @@ export async function getImportReview(
     byStatus[status]++
     const summary = parseSummary(r.summary)
     const list = parseNeeds(r.needs)
-    if (status === 'skipped' && asRecord(r.error).reason === 'already_loaded') alreadyLoaded++
+    // Una nota de crédito resta (como «Total en pesos» al subir el archivo).
+    const cents = signedTotalCents(summary)
+    if (status === 'skipped' && ALREADY_LOADED_REASONS.has(String(asRecord(r.error).reason))) {
+      alreadyLoaded++
+    }
     if (status === 'ready') {
-      readyCents += summary.total_cents
+      readyCents += cents
       for (const w of summary.warnings ?? []) warnings[w] = (warnings[w] ?? 0) + 1
       if (summary.month) {
         const m = months.get(summary.month) ?? { count: 0, totalCents: 0 }
         m.count++
-        m.totalCents += summary.total_cents
+        m.totalCents += cents
         months.set(summary.month, m)
         if (summary.date && summary.date.slice(0, 7) < summary.month) movedToOpenMonth++
       }
     }
     if (status === 'needs_input' || status === 'stale' || status === 'error') {
-      pendingCents += summary.total_cents
+      pendingCents += cents
       for (const n of list) needs[n.key] = (needs[n.key] ?? 0) + 1
     }
     if (list.some((n) => n.key === 'new_supplier')) {
-      supplierInput.push({ needs: list, totalCents: summary.total_cents })
+      supplierInput.push({ needs: list, totalCents: cents })
     }
   }
   let newSuppliers: NewSupplierRow[] = []

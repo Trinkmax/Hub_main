@@ -326,6 +326,15 @@ export type ProposalSummary = {
 }
 
 /**
+ * El importe de una propuesta para sumarla con otras: una nota de crédito RESTA
+ * (como en el resumen de la subida, «Total en pesos»). Sin esto, «Listos para
+ * cargar», los meses del libro y el total de un proveedor nuevo sumaban la NC.
+ */
+export function signedTotalCents(summary: Pick<ProposalSummary, 'kind' | 'total_cents'>): number {
+  return summary.kind === 'credit_note' ? -summary.total_cents : summary.total_cents
+}
+
+/**
  * Avisos que se aceptan con la confirmación del lote («Cargar 142 compras»):
  * se explican en el resumen previo y la persona los acepta todos juntos. Un
  * posible duplicado nunca: se resuelve propuesta por propuesta.
