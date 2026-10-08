@@ -90,8 +90,9 @@ export const SECTION_TABS: Readonly<Record<SectionKey, SectionDef>> = {
       { value: 'resenas', label: 'Reseñas', path: 'reviews', roles: ['owner'], feature: 'reviews' },
     ],
   },
-  // Las mismas puertas que tenían los seis ítems del sidebar. Las fichas (comprobantes/[id],
-  // asientos/[id]), Ajustes y Configurar no son de ninguna pestaña: la barra queda sin marca.
+  // Las mismas puertas que tenían los seis ítems del sidebar, más «Importar». Las fichas
+  // (comprobantes/[id], asientos/[id]), Ajustes y Configurar no son de ninguna pestaña: la barra
+  // queda sin marca.
   administracion: {
     label: 'Secciones de Administración',
     showWhenNoneActive: true,
@@ -125,6 +126,16 @@ export const SECTION_TABS: Readonly<Record<SectionKey, SectionDef>> = {
         value: 'cajas',
         label: 'Cajas',
         path: 'administracion/cajas',
+        roles: ACCOUNTING_ROLES,
+        feature: 'accounting',
+        accounting: 'read',
+      },
+      // Subir lo de ARCA, Mercado Pago y el banco (08/10/2026). La contadora ve el historial y
+      // cada importación en solo lectura; la revisión de un lote (/importar/[id]) queda acá.
+      {
+        value: 'importar',
+        label: 'Importar',
+        path: 'administracion/importar',
         roles: ACCOUNTING_ROLES,
         feature: 'accounting',
         accounting: 'read',

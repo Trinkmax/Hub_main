@@ -168,7 +168,8 @@ describe('SectionTabsBar: la barra de cada sección según la URL', () => {
       createElement(SectionTabsBar, resolveSection('administracion', 'hub', owner)),
     )
     expect(html).toContain('aria-label="Secciones de Administración"')
-    expect(anchors(html)).toHaveLength(6)
+    // Resumen, Compras, Ventas, Cajas, Importar, Libros y Plan de cuentas.
+    expect(anchors(html)).toHaveLength(7)
     expect(html).not.toContain('aria-current')
   })
 

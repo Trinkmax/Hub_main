@@ -5,6 +5,11 @@ import { useRouter } from 'next/navigation'
 import { type FormEvent, type ReactNode, useId, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { AccountCombobox, type AccountOption } from '@/components/administracion/account-combobox'
+import {
+  ArcaLookupPanel,
+  ArcaLookupTrigger,
+  useArcaLookup,
+} from '@/components/administracion/arca-lookup'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -27,6 +32,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ACC_UNREACHABLE } from '@/lib/accounting/action-state'
 import { saveParty } from '@/lib/accounting/actions/master'
 import type { IvaCondition, PartyKind, TaxIdType } from '@/lib/accounting/types'
+import type { ArcaLookupStatus } from '@/lib/arca/views'
 import { formatCuit } from '@/lib/fiscal'
 
 export type SupplierFormValues = {
@@ -113,18 +119,25 @@ function Field({
  * de fantasía, documento, condición frente al IVA, plazo, cuenta y
  * comprobante habituales, contacto y notas. Guarda con `saveParty`
  * (concurrencia optimista: si alguien lo cambió recién, pide recargar).
+ *
+ * Con CUIT o CUIL, «Completar con ARCA» trae la razón social, la condición y la
+ * dirección; lo que ya estaba cargado y ARCA dice distinto se pregunta antes
+ * (diseño §3.1).
  */
 export function SupplierDataForm({
   tenantSlug,
   values,
   accounts,
   voucherOptions,
+  arcaLookup,
 }: {
   tenantSlug: string
   values: SupplierFormValues
   /** Las cuentas que se pueden elegir como imputación habitual (ya filtradas). */
   accounts: readonly AccountOption[]
   voucherOptions: ReadonlyArray<{ value: string; label: string }>
+  /** Si hay ARCA para «Completar con ARCA» (`null`: no se pudo saber; no se muestra). */
+  arcaLookup: ArcaLookupStatus | null
 }) {
   const router = useRouter()
   const uid = useId()
@@ -145,10 +158,41 @@ export function SupplierDataForm({
     }
   }
 
+  const cuitLike = form.taxIdType === 'cuit' || form.taxIdType === 'cuil'
+  const arca = useArcaLookup({
+    tenantSlug,
+    purpose: 'supplier',
+    cuit: cuitLike ? (form.taxId ?? '') : '',
+    values: { name: form.name, ivaCondition: form.ivaCondition, address: form.address },
+    // Lo guardado es de la persona: si ARCA dice otra cosa, se pregunta antes (una
+    // condición «Sin datos» no es una elección: esa se completa).
+    spec: {
+      chosen:
+        form.ivaCondition !== 'sin_datos'
+          ? ['name', 'address', 'ivaCondition']
+          : ['name', 'address'],
+    },
+    onApply: (patch) => {
+      setForm((prev) => ({
+        ...prev,
+        ...(patch.name !== undefined ? { name: patch.name } : null),
+        ...(patch.ivaCondition !== undefined ? { ivaCondition: patch.ivaCondition } : null),
+        ...(patch.address !== undefined ? { address: patch.address } : null),
+      }))
+      setErrors((prev) => {
+        const { name: _name, ivaCondition: _iva, address: _address, ...rest } = prev
+        return rest
+      })
+    },
+    status: arcaLookup,
+    enabled: open && cuitLike,
+  })
+
   const reset = () => {
     setForm(values)
     setErrors({})
     setBanner(null)
+    arca.reset()
   }
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -293,26 +337,29 @@ export function SupplierDataForm({
                 label={form.taxIdType === 'dni' ? 'Número de DNI' : 'Número'}
                 error={errors.taxId}
               >
-                <Input
-                  id={id('taxId')}
-                  value={form.taxIdType === 'none' ? '' : (form.taxId ?? '')}
-                  disabled={form.taxIdType === 'none'}
-                  inputMode="numeric"
-                  autoComplete="off"
-                  placeholder={form.taxIdType === 'dni' ? '30123456' : '30-71876543-5'}
-                  aria-invalid={errors.taxId ? true : undefined}
-                  aria-describedby={described('taxId')}
-                  onChange={(e) => set('taxId', e.target.value || null)}
-                  onBlur={(e) => {
-                    if (form.taxIdType === 'cuit' || form.taxIdType === 'cuil') {
-                      const digits = e.target.value.replace(/\D/g, '')
-                      if (digits.length === 11) set('taxId', formatCuit(digits))
-                    }
-                  }}
-                  className="h-11 text-base tabular-nums md:h-10 md:text-sm"
-                />
+                <ArcaLookupTrigger lookup={arca}>
+                  <Input
+                    id={id('taxId')}
+                    value={form.taxIdType === 'none' ? '' : (form.taxId ?? '')}
+                    disabled={form.taxIdType === 'none'}
+                    inputMode="numeric"
+                    autoComplete="off"
+                    placeholder={form.taxIdType === 'dni' ? '30123456' : '30-71876543-5'}
+                    aria-invalid={errors.taxId ? true : undefined}
+                    aria-describedby={described('taxId')}
+                    onChange={(e) => set('taxId', e.target.value || null)}
+                    onBlur={(e) => {
+                      if (form.taxIdType === 'cuit' || form.taxIdType === 'cuil') {
+                        const digits = e.target.value.replace(/\D/g, '')
+                        if (digits.length === 11) set('taxId', formatCuit(digits))
+                      }
+                    }}
+                    className="h-11 text-base tabular-nums md:h-10 md:text-sm"
+                  />
+                </ArcaLookupTrigger>
               </Field>
             </div>
+            <ArcaLookupPanel lookup={arca} />
             <div className="grid gap-3 sm:grid-cols-2">
               <Field
                 id={id('ivaCondition')}

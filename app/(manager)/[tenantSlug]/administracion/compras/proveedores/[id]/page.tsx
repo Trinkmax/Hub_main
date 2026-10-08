@@ -14,8 +14,9 @@ import {
   settleQuery,
 } from '@/lib/accounting/queries'
 import { ivaConditionLabel } from '@/lib/accounting/queries/csv'
+import { getPadronVerification } from '@/lib/arca/queries'
 import { daysBetween, formatIsoDay, todayInCordoba } from '@/lib/dates'
-import { formatCuit } from '@/lib/fiscal'
+import { formatCuit, normalizeCuit } from '@/lib/fiscal'
 import { formatCents, formatCentsShort } from '@/lib/money'
 import { BlockError } from '../../_components/block-error'
 import { PartyStatus } from '../../_components/party-status'
@@ -29,6 +30,7 @@ import {
 import { requireComprasAccess } from '../../_lib/page-access'
 import { creditPairs } from '../../_lib/payment-plan'
 import { ApplyCreditButton } from './_components/apply-credit-button'
+import { ArcaVerification } from './_components/arca-verification'
 import { DataTab } from './_components/data-tab'
 import { PendingTab } from './_components/pending-tab'
 import { StatementTab } from './_components/statement-tab'
@@ -70,10 +72,18 @@ export default async function SupplierPage({
   if (party.group === 'receivables') redirect(`/${tenantSlug}/administracion/ventas/clientes/${id}`)
 
   const today = todayInCordoba()
-  const positionOutcome = await settleQuery(
-    getPartyPosition(tenantId, { partyId: id, group: 'payables' }),
-  )
+  // «Verificado en ARCA el …» (la última consulta guardada de su CUIT). Si no se
+  // puede leer (p. ej. la base todavía no tiene la tabla), no se muestra.
+  const cuit =
+    (party.taxIdType === 'cuit' || party.taxIdType === 'cuil') && party.taxId
+      ? normalizeCuit(party.taxId)
+      : null
+  const [positionOutcome, verificationOutcome] = await Promise.all([
+    settleQuery(getPartyPosition(tenantId, { partyId: id, group: 'payables' })),
+    cuit && cuit.length === 11 ? settleQuery(getPadronVerification(tenantId, cuit)) : null,
+  ])
   const position = positionOutcome.ok ? positionOutcome.data : null
+  const verification = verificationOutcome?.ok ? verificationOutcome.data : null
 
   const displayName =
     party.tradeName && party.tradeName !== party.name
@@ -160,6 +170,7 @@ export default async function SupplierPage({
                 </span>
               ))}
             </p>
+            <ArcaVerification verification={verification} />
             {position ? (
               <PartyStatus light={position.traffic.light} text={position.traffic.text} />
             ) : null}

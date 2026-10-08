@@ -26,6 +26,7 @@ import {
   settleQuery,
   verifyClosedPeriods,
 } from '@/lib/accounting/queries'
+import { getArcaOverview } from '@/lib/arca/queries'
 import { todayInCordoba } from '@/lib/dates'
 import {
   RoleRequiredError,
@@ -35,6 +36,7 @@ import {
 } from '@/lib/tenant'
 import { RetryButton } from '../_resumen/retry-button'
 import { AccessPanel } from './_components/access-panel'
+import { ArcaPanel } from './_components/arca-panel'
 import { Callout } from './_components/form-bits'
 import { IntegrityPanel } from './_components/integrity-panel'
 import { MethodsPanel } from './_components/methods-panel'
@@ -46,13 +48,17 @@ import { TreasuriesPanel } from './_components/treasuries-panel'
 
 export const metadata = { title: 'Ajustes · Administración' }
 
-// Las ocho tienen que entrar enteras en la compu (1280 px con el menú abierto): con «Ejercicio y
-// meses» y «Plataformas y organismos» la barra se pasaba y «Integridad» quedaba escondida.
+// Las nueve tienen que entrar enteras en la compu (1280 px con el menú abierto, ~940 px útiles):
+// con «Ejercicio y meses» y «Plataformas y organismos» la barra se pasaba y «Integridad» quedaba
+// escondida. Al sumar «ARCA» (va después de los datos de la SAS: es dato fiscal) «Medios de
+// cobro» pasó a «Medios» también en la compu (el plan B del diseño, §2.2): medido con Inter 14 px,
+// la barra queda en ~921 px.
 const TABS = [
   { value: 'sas', label: 'Datos de la SAS', shortLabel: 'SAS' },
+  { value: 'arca', label: 'ARCA' },
   { value: 'ejercicio', label: 'Ejercicio' },
   { value: 'accesos', label: 'Accesos' },
-  { value: 'medios', label: 'Medios de cobro', shortLabel: 'Medios' },
+  { value: 'medios', label: 'Medios' },
   { value: 'cajas', label: 'Cajas y cuentas', shortLabel: 'Cajas' },
   { value: 'participes', label: 'Plataformas' },
   { value: 'puntos-de-venta', label: 'Puntos de venta' },
@@ -89,9 +95,9 @@ const PARTY_ORDER: Readonly<Record<string, number>> = {
 }
 
 /**
- * Ajustes de Administración (H.17): datos de la SAS, ejercicio y meses,
- * accesos, medios de cobro, cajas, plataformas y organismos, puntos de venta e
- * integridad. Cada pestaña carga solo lo suyo. La contadora ve todo en modo
+ * Ajustes de Administración (H.17): datos de la SAS, la conexión con ARCA,
+ * ejercicio y meses, accesos, medios de cobro, cajas, plataformas y organismos,
+ * puntos de venta e integridad. Cada pestaña carga solo lo suyo. La contadora ve todo en modo
  * lectura: sin campos ni botones.
  */
 export default async function AjustesPage({
@@ -149,6 +155,17 @@ export default async function AjustesPage({
         ) : (
           <SasSettingsView settings={result.data} />
         )
+      break
+    }
+    case 'arca': {
+      // Mientras las migraciones de ARCA no estén aplicadas, la lectura falla y se ve «No pudimos
+      // cargar esto» con «Reintentar», como cualquier pestaña.
+      const result = await settleQuery(getArcaOverview(tenantId))
+      content = result.ok ? (
+        <ArcaPanel slug={tenantSlug} overview={result.data} canWrite={canWrite} />
+      ) : (
+        <TabError message={result.message} />
+      )
       break
     }
     case 'ejercicio': {
@@ -335,7 +352,7 @@ export default async function AjustesPage({
             <ReadOnlyBadge />
           </>
         }
-        description="Los datos de la SAS, quién entra y cómo se ordenan las cajas y los cobros."
+        description="Los datos de la SAS, la conexión con ARCA, quién entra y cómo se ordenan las cajas y los cobros."
       />
       {/* En el celular la barra centra sola la pestaña activa (SectionTabs). */}
       <SectionNav items={items} active={tab} label={NAV_LABEL} />

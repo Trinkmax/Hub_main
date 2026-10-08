@@ -1,11 +1,19 @@
 import 'server-only'
 
-import type { ArcaEnvironment } from './endpoints'
+import { ARCA_SERVICE, type ArcaEnvironment, type ArcaWsn } from './endpoints'
 import { type ArcaErrorKey, classifyArcaError } from './errors'
 import { type ArcaCheckKey, type ArcaTestCheck, arcaTestStatus } from './guide'
 import { condicionFromPersona, type PadronLookup } from './padron'
 import { isArcaSecretsKeyError } from './secrets'
-import { type ArcaSession, isArcaCooldownError } from './session'
+import {
+  type ArcaDeadline,
+  type ArcaSession,
+  arcaDeadline,
+  deadlineTimeout,
+  isArcaCooldownError,
+  isDeadlineFault,
+  isTicketRejection,
+} from './session'
 import { isArcaFault } from './soap'
 import { isArcaStoreError } from './store'
 import { decodeTokenRelations } from './wsaa'
@@ -33,8 +41,18 @@ import { type PtoVenta, pointOfSaleStatus } from './wsfe'
  *
  * Lo que es de la base o de la configuración (`ArcaStoreError`, falta la clave del
  * servidor) corta la prueba con ese error: no es un resultado de ARCA y no se
- * guarda. Hay un tope de tiempo para toda la prueba: lo que no entra queda como
- * «ARCA tardó demasiado» (`arca_unavailable` con `detail.timeout`).
+ * guarda.
+ *
+ * **Plazo duro** (`ArcaDeadline`, el mismo que usa la sesión): 50 s desde que empezó
+ * la acción. Cada llamada a ARCA tiene de tope lo que queda menos 3 s, y un login al
+ * WSAA solo se empieza con 20 s o más por delante. El chequeo al que no le llegó el
+ * tiempo queda «no se llegó a probar» (`arca_unavailable` con
+ * `detail: { timeout: true, not_started: true }`) y los siguientes no se corren (van
+ * a `notRun` en la vista), salvo el 7, que es local.
+ *
+ * **Ticket rechazado:** si WSFE o el padrón rechazan el ticket (600/601, o la SAS no
+ * está en `relations`), se descarta ese ticket (`session.dropTicket`) para que la
+ * próxima prueba pida otro, y el chequeo lo anota con `detail.ticket_dropped`.
  *
  * Los `detail` no llevan datos personales: estados, números, la razón social de la
  * SAS y códigos técnicos (nunca las CUIT del token ni el ticket).
@@ -52,8 +70,12 @@ export type ConnectionTestInput = {
   /** `acc_settings.legal_name`, para avisar si ARCA dice otra cosa. */
   readonly sasLegalName: string | null
   readonly now?: () => Date
-  /** Tope de toda la prueba (por defecto, 45 s). */
-  readonly budgetMs?: number
+  /**
+   * El plazo duro de toda la prueba: el MISMO que recibió la sesión (así la sesión
+   * recorta cada llamada y los chequeos saben cuándo frenar). Por defecto, 50 s desde
+   * que empieza la prueba.
+   */
+  readonly deadline?: ArcaDeadline
 }
 
 export type ConnectionTestRun = {
@@ -61,7 +83,10 @@ export type ConnectionTestRun = {
   readonly status: 'connected' | 'error'
 }
 
-export const CONNECTION_TEST_BUDGET_MS = 45_000
+/** Plazo duro de «Probar conexión», desde que empieza la acción (la función tiene 60 s). */
+export const CONNECTION_TEST_DEADLINE_MS = 50_000
+/** @deprecated Era un presupuesto blando de 45 s; ahora es el plazo duro `CONNECTION_TEST_DEADLINE_MS`. */
+export const CONNECTION_TEST_BUDGET_MS = CONNECTION_TEST_DEADLINE_MS
 /** Con menos de 30 días para el vencimiento, aviso de renovar (§2.2 y §2.6). */
 export const CERT_RENEW_DAYS = 30
 
@@ -73,6 +98,20 @@ type Check = { key: ArcaCheckKey; ok: boolean; detail?: Detail | null; error?: A
 /** Lo que no es de ARCA corta la prueba entera (lo traduce la acción). */
 function rethrowLocal(e: unknown): void {
   if (isArcaStoreError(e) || isArcaSecretsKeyError(e)) throw e
+}
+
+/**
+ * «No se llegó a probar»: se acababa el plazo y este chequeo no se empezó (o no se
+ * empezó el login que necesitaba). `timeout` lo entiende la vista de hoy («ARCA tardó
+ * demasiado»); `not_started` distingue que no se llegó a preguntar.
+ */
+function notStarted(key: ArcaCheckKey, extra: Detail = {}): Check {
+  return {
+    key,
+    ok: false,
+    error: 'arca_unavailable',
+    detail: { ...extra, timeout: true, not_started: true },
+  }
 }
 
 /** El código técnico de una falla de ARCA (para soporte), sin datos de nadie. */
@@ -98,10 +137,6 @@ function failed(key: ArcaCheckKey, e: unknown, extra: Detail = {}): Check {
     error: classifyArcaError(e),
     detail: Object.keys(detail).length > 0 ? detail : null,
   }
-}
-
-function timedOut(key: ArcaCheckKey): Check {
-  return { key, ok: false, error: 'arca_unavailable', detail: { timeout: true } }
 }
 
 function clip(text: string | null | undefined, max: number): string | null {
@@ -223,9 +258,9 @@ function certificateCheck(notAfter: Date, now: Date): Check {
 /** Corre la prueba. Tira solo lo que no es de ARCA (`ArcaStoreError`, clave del servidor). */
 export async function runConnectionTest(input: ConnectionTestInput): Promise<ConnectionTestRun> {
   const now = input.now ?? (() => new Date())
-  const startedAt = now().getTime()
-  const budget = input.budgetMs ?? CONNECTION_TEST_BUDGET_MS
-  const overBudget = () => now().getTime() - startedAt > budget
+  const deadline = input.deadline ?? arcaDeadline(CONNECTION_TEST_DEADLINE_MS, now)
+  /** ¿Queda tiempo para empezar otra llamada a ARCA (con su margen)? */
+  const canCall = () => deadlineTimeout(deadline, Number.POSITIVE_INFINITY) !== null
   const { session } = input
   const checks: Check[] = []
   const done = (): ConnectionTestRun => {
@@ -237,8 +272,17 @@ export async function runConnectionTest(input: ConnectionTestInput): Promise<Con
     }))
     return { checks: result, status: arcaTestStatus(result) }
   }
+  /** Si ARCA rechazó el ticket de `service`, se descarta y queda anotado en el chequeo. */
+  const dropIfRejected = async (service: ArcaWsn, e: unknown): Promise<Detail> =>
+    isTicketRejection(e) && (await session.dropTicket(service)) === 'dropped'
+      ? { ticket_dropped: true }
+      : {}
 
   // 1. ARCA responde (FEDummy, sin ticket).
+  if (!canCall()) {
+    checks.push(notStarted('service'))
+    return done()
+  }
   try {
     const status = await session.wsfe.dummy()
     const detail = { app: status.appServer, db: status.dbServer, auth: status.authServer }
@@ -249,13 +293,14 @@ export async function runConnectionTest(input: ConnectionTestInput): Promise<Con
     checks.push({ key: 'service', ok: true, detail })
   } catch (e) {
     rethrowLocal(e)
-    checks.push(failed('service', e))
+    checks.push(isDeadlineFault(e) ? notStarted('service') : failed('service', e))
     return done()
   }
 
-  // 2. El ticket de Facturación Electrónica (de la base o con login).
-  if (overBudget()) {
-    checks.push(timedOut('wsfe_ticket'))
+  // 2. El ticket de Facturación Electrónica (de la base o con login; el login solo con 20 s
+  //    o más por delante: si no, la sesión no lo empieza y tira `deadlineFault`).
+  if (!canCall()) {
+    checks.push(notStarted('wsfe_ticket'))
     return done()
   }
   let token: string
@@ -269,7 +314,7 @@ export async function runConnectionTest(input: ConnectionTestInput): Promise<Con
     })
   } catch (e) {
     rethrowLocal(e)
-    checks.push(failed('wsfe_ticket', e))
+    checks.push(isDeadlineFault(e) ? notStarted('wsfe_ticket') : failed('wsfe_ticket', e))
     return done()
   }
 
@@ -278,19 +323,23 @@ export async function runConnectionTest(input: ConnectionTestInput): Promise<Con
   const listed =
     relations !== null && relations.length > 0 ? relations.includes(input.representedCuit) : null
   if (listed === false) {
+    // Ese ticket nunca va a servir para la SAS: se descarta, así después de arreglar el paso 7
+    // la próxima prueba pide otro en vez de reusar este hasta 12 h.
+    const dropped = (await session.dropTicket(ARCA_SERVICE.wsfe)) === 'dropped'
     checks.push({
       key: 'relations',
       ok: false,
       error: 'arca_cuit_not_in_token',
-      detail: { listed: false },
+      detail: { listed: false, ...(dropped ? { ticket_dropped: true } : {}) },
     })
     return done()
   }
   if (listed === true) checks.push({ key: 'relations', ok: true, detail: { listed: true } })
 
   // 4. El punto de venta (y, si el token no se pudo leer, la representación).
-  if (overBudget()) {
-    checks.push(timedOut(listed === null ? 'relations' : 'point_of_sale'))
+  const posKey: ArcaCheckKey = listed === null ? 'relations' : 'point_of_sale'
+  if (!canCall()) {
+    checks.push(notStarted(posKey))
     return done()
   }
   let items: PtoVenta[]
@@ -298,9 +347,16 @@ export async function runConnectionTest(input: ConnectionTestInput): Promise<Con
     items = await session.wsfe.ptosVenta()
   } catch (e) {
     rethrowLocal(e)
+    if (isDeadlineFault(e)) {
+      checks.push(notStarted(posKey))
+      return done()
+    }
     // Con el token ilegible, WSFE decide si la SAS está en el permiso (600/601).
+    const dropped = await dropIfRejected(ARCA_SERVICE.wsfe, e)
     checks.push(
-      listed === null ? failed('relations', e, { listed: null }) : failed('point_of_sale', e),
+      listed === null
+        ? failed('relations', e, { listed: null, ...dropped })
+        : failed('point_of_sale', e, dropped),
     )
     return done()
   }
@@ -313,30 +369,37 @@ export async function runConnectionTest(input: ConnectionTestInput): Promise<Con
   const pointOfSale = input.pointOfSale
 
   // 5. Numeración: el último comprobante autorizado (Factura B; y A si está habilitada).
-  if (overBudget()) {
-    checks.push(timedOut('numbering'))
+  if (!canCall()) {
+    checks.push(notStarted('numbering'))
   } else {
     const tipos = input.allowedClasses.includes('A') ? [6, 1] : [6]
     const detail: Detail = {}
     let firstError: unknown = null
+    let dropped: Detail = {}
     for (const tipo of tipos) {
       try {
         detail[String(tipo)] = await session.wsfe.ultimoAutorizado(pointOfSale, tipo)
       } catch (e) {
         rethrowLocal(e)
         firstError ??= e
+        // Con el ticket rechazado o sin tiempo, la otra letra no tiene sentido.
+        if (isDeadlineFault(e)) break
+        dropped = await dropIfRejected(ARCA_SERVICE.wsfe, e)
+        if (isTicketRejection(e)) break
       }
     }
     checks.push(
       firstError === null
         ? { key: 'numbering', ok: true, detail }
-        : failed('numbering', firstError, detail),
+        : isDeadlineFault(firstError)
+          ? notStarted('numbering', detail)
+          : failed('numbering', firstError, { ...detail, ...dropped }),
     )
   }
 
-  // 6. Padrón: servidores y la constancia de la SAS.
-  if (overBudget()) {
-    checks.push(timedOut('padron'))
+  // 6. Padrón: servidores y la constancia de la SAS (con su propio ticket).
+  if (!canCall()) {
+    checks.push(notStarted('padron'))
   } else {
     try {
       const dummy = await session.padron.dummy()
@@ -352,7 +415,11 @@ export async function runConnectionTest(input: ConnectionTestInput): Promise<Con
       }
     } catch (e) {
       rethrowLocal(e)
-      checks.push(failed('padron', e))
+      checks.push(
+        isDeadlineFault(e)
+          ? notStarted('padron')
+          : failed('padron', e, await dropIfRejected(ARCA_SERVICE.padron, e)),
+      )
     }
   }
 

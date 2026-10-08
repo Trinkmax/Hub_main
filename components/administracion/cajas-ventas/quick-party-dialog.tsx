@@ -22,7 +22,9 @@ import {
 import { ACC_UNREACHABLE } from '@/lib/accounting/action-state'
 import { type SavedParty, saveParty } from '@/lib/accounting/actions/master'
 import type { IvaCondition } from '@/lib/accounting/types'
+import { ivaOptionsWith } from '@/lib/arca/lookup-fill'
 import { parseCuit } from '@/lib/fiscal'
+import { ArcaLookupPanel, ArcaLookupTrigger, useArcaLookup } from '../arca-lookup'
 import { describedBy, Field } from './field'
 
 const CONDITIONS: ReadonlyArray<{ value: IvaCondition; label: string }> = [
@@ -36,6 +38,9 @@ const CONDITIONS: ReadonlyArray<{ value: IvaCondition; label: string }> = [
  * Alta rápida de un socio o un cliente sin salir del formulario (H.0: la fila
  * «Crear «…»» del combo). Guarda con `saveParty` y devuelve el nuevo para
  * elegirlo. Lo demás (mail, cuentas, tasas) se completa en Ajustes.
+ *
+ * Cliente: «Completar con ARCA» al lado de la CUIT trae el nombre y la condición
+ * frente al IVA (diseño §3.1).
  */
 export function QuickPartyDialog({
   tenantSlug,
@@ -65,6 +70,32 @@ export function QuickPartyDialog({
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [message, setMessage] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
+  /** La persona eligió la condición a mano: ARCA pregunta antes de cambiarla. */
+  const [conditionTouched, setConditionTouched] = useState(false)
+
+  const isCustomer = kind === 'customer'
+  const arca = useArcaLookup({
+    tenantSlug,
+    purpose: 'customer',
+    cuit,
+    values: { name, ivaCondition: condition },
+    spec: {
+      ivaOptions: CONDITIONS.map((c) => c.value),
+      chosen: conditionTouched ? ['ivaCondition'] : [],
+      labels: { name: 'Nombre' },
+    },
+    onApply: (patch) => {
+      if (patch.name !== undefined) setName(patch.name)
+      if (patch.ivaCondition !== undefined) setCondition(patch.ivaCondition)
+      setErrors((prev) => {
+        const { name: _name, ivaCondition: _iva, ...rest } = prev
+        return rest
+      })
+    },
+    // Los socios no llevan CUIT acá.
+    enabled: isCustomer,
+  })
+  const resetArca = arca.reset
 
   // Cada vez que se abre, arranca con el nombre que se escribió en el combo.
   useEffect(() => {
@@ -72,12 +103,13 @@ export function QuickPartyDialog({
     setName(initialName)
     setCuit('')
     setCondition(requireCuit ? 'responsable_inscripto' : 'consumidor_final')
+    setConditionTouched(false)
     setTermDays('')
     setErrors({})
     setMessage(null)
-  }, [open, initialName, requireCuit])
+    resetArca()
+  }, [open, initialName, requireCuit, resetArca])
 
-  const isCustomer = kind === 'customer'
   const title = isCustomer ? 'Nuevo cliente' : 'Nuevo socio'
 
   function onSubmit(event: FormEvent) {
@@ -129,7 +161,8 @@ export function QuickPartyDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      {/* Con la tarjeta de ARCA puede pasar el alto del celular: que scrollee. */}
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
@@ -165,22 +198,31 @@ export function QuickPartyDialog({
                 optional={!requireCuit}
                 error={errors.taxId}
               >
-                <Input
-                  id={`${id}-cuit`}
-                  value={cuit}
-                  inputMode="numeric"
-                  autoComplete="off"
-                  placeholder="30-71234567-8"
-                  maxLength={13}
-                  className="h-11 text-base tabular-nums md:h-10 md:text-sm"
-                  aria-invalid={errors.taxId ? true : undefined}
-                  aria-describedby={describedBy(`${id}-cuit`, { error: errors.taxId })}
-                  onChange={(e) => setCuit(e.target.value)}
-                />
+                <ArcaLookupTrigger lookup={arca}>
+                  <Input
+                    id={`${id}-cuit`}
+                    value={cuit}
+                    inputMode="numeric"
+                    autoComplete="off"
+                    placeholder="30-71234567-8"
+                    maxLength={13}
+                    className="h-11 text-base tabular-nums md:h-10 md:text-sm"
+                    aria-invalid={errors.taxId ? true : undefined}
+                    aria-describedby={describedBy(`${id}-cuit`, { error: errors.taxId })}
+                    onChange={(e) => setCuit(e.target.value)}
+                  />
+                </ArcaLookupTrigger>
               </Field>
+              <ArcaLookupPanel lookup={arca} />
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field id={`${id}-iva`} label="Condición frente al IVA" error={errors.ivaCondition}>
-                  <Select value={condition} onValueChange={(v) => setCondition(v as IvaCondition)}>
+                  <Select
+                    value={condition}
+                    onValueChange={(v) => {
+                      setCondition(v as IvaCondition)
+                      setConditionTouched(true)
+                    }}
+                  >
                     <SelectTrigger
                       id={`${id}-iva`}
                       className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
@@ -188,7 +230,7 @@ export function QuickPartyDialog({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {CONDITIONS.map((c) => (
+                      {ivaOptionsWith(CONDITIONS, condition).map((c) => (
                         <SelectItem key={c.value} value={c.value} className="min-h-11 md:min-h-8">
                           {c.label}
                         </SelectItem>

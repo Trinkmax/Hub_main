@@ -27,19 +27,23 @@ import {
   ArcaCooldownError,
   acquireTicket,
   createArcaSession,
+  deadlineFault,
+  isTicketRejection,
   TICKET_BUSY_WAIT_MS,
   TICKET_MAX_ATTEMPTS,
   type TicketDeps,
+  ticketRejectedBy,
 } from '@/lib/arca/session'
 import { ArcaFault } from '@/lib/arca/soap'
 import { ArcaStoreError, callArcaRpc } from '@/lib/arca/store'
 import { decodeTokenRelations } from '@/lib/arca/wsaa'
+import { parseCaeResponse } from '@/lib/arca/wsfe'
 import {
   ARCA_CRYPTO_FILES as CRYPTO,
   fixtureText,
   ISSUED_CRT,
 } from '@/tests/fixtures/arca/crypto-fixtures'
-import { ARCA_XML } from '@/tests/fixtures/arca/xml/fixtures'
+import { ARCA_XML, arcaXml } from '@/tests/fixtures/arca/xml/fixtures'
 import {
   arcaTransport,
   FakeTicketDb,
@@ -510,3 +514,151 @@ describe('la sesión (createArcaSession)', () => {
     expect(createPublicKey(KEY).asymmetricKeyType).toBe('rsa')
   })
 })
+
+// ─── Ticket rechazado (acc_arca_ticket_drop) ─────────────────────────────────
+
+describe('ticket rechazado (dropTicket)', () => {
+  /** `acc_arca_ticket_drop` como la migración 20261008120400: borra el TA, nada más. */
+  function installDrop() {
+    db.others.set('acc_arca_ticket_drop', (args) => {
+      const row = db.row(String(args.p_environment), String(args.p_service))
+      const had = row.token !== null
+      Object.assign(row, { token: null, sign: null, expiresAt: null })
+      return { data: had, error: null }
+    })
+  }
+
+  it('borra el TA de ese servicio en la base y en esta sesión no lo usa ni pide otro', async () => {
+    installDrop()
+    db.storeValid('produccion', 'wsfe', FIXTURE_TOKEN, new Date(clock + 6 * HOUR))
+    db.storeValid(
+      'produccion',
+      'ws_sr_constancia_inscripcion',
+      FIXTURE_TOKEN,
+      new Date(clock + 6 * HOUR),
+    )
+    const s = session()
+    await s.auth('wsfe')
+    // Dos rechazos a la vez (dos llamadas con el mismo TA): un solo descarte.
+    const [a, b] = await Promise.all([s.dropTicket('wsfe'), s.dropTicket('wsfe')])
+    expect([a, b]).toEqual(['dropped', 'dropped'])
+    expect(db.callsTo('acc_arca_ticket_drop')).toEqual([
+      { p_tenant_id: TENANT, p_environment: 'produccion', p_service: 'wsfe' },
+    ])
+    expect(db.tickets.get('produccion:wsfe')?.token).toBeNull()
+    // Solo el de ese servicio: el del padrón sigue.
+    expect(db.tickets.get('produccion:ws_sr_constancia_inscripcion')?.token).toBe(FIXTURE_TOKEN)
+
+    // En esta sesión, wsfe ya no pregunta a la base ni hace login (chocaría con «ya posee un TA válido»).
+    const asked = db.callsTo('acc_arca_ticket_get').length
+    const e = await rejection(s.auth('wsfe'))
+    expect(e).toBeInstanceOf(ArcaCooldownError)
+    expect(classifyArcaError(e)).toBe('arca_token_rejected')
+    expect(db.callsTo('acc_arca_ticket_get')).toHaveLength(asked)
+    expect(logins()).toHaveLength(0)
+    expect((await s.auth('ws_sr_constancia_inscripcion')).token).toBe(FIXTURE_TOKEN)
+
+    // La próxima acción (otra sesión) pide un TA nuevo en vez de reusar el rechazado.
+    expect((await session().ticket('wsfe')).source).toBe('login')
+    expect(logins().map((c) => c.wsn)).toEqual(['wsfe'])
+  })
+
+  it('no toca el cooldown: si el WSAA todavía no da otro, queda la espera de siempre', async () => {
+    installDrop()
+    db.storeValid('produccion', 'wsfe', FIXTURE_TOKEN, new Date(clock + 6 * HOUR))
+    expect(await session().dropTicket('wsfe')).toBe('dropped')
+    transport.routes.wsaa = () => wsaaFault('alreadyAuthenticated')
+    const e = await rejection(session().ticket('wsfe'))
+    expect(classifyArcaError(e)).toBe('arca_already_authenticated')
+    expect(db.callsTo('acc_arca_ticket_put').map((a) => a.p_result)).toEqual([
+      { ok: false, key: 'arca_already_authenticated', cooldown: 120 },
+    ])
+  })
+
+  it('sin la RPC (migración sin aplicar): unavailable, sin log, y la sesión sigue como hoy', async () => {
+    db.others.set('acc_arca_ticket_drop', () => ({
+      data: null,
+      error: {
+        message: 'Could not find the function public.acc_arca_ticket_drop',
+        code: 'PGRST202',
+      },
+    }))
+    db.storeValid('produccion', 'wsfe', FIXTURE_TOKEN, new Date(clock + 6 * HOUR))
+    const s = session()
+    await s.auth('wsfe')
+    expect(await s.dropTicket('wsfe')).toBe('unavailable')
+    expect((await s.ticket('wsfe')).token).toBe(FIXTURE_TOKEN)
+    expect(db.tickets.get('produccion:wsfe')?.token).toBe(FIXTURE_TOKEN)
+    expect(logs).toEqual([])
+  })
+
+  it('si la base no deja, failed: queda en el log solo la operación y la clave', async () => {
+    db.others.set('acc_arca_ticket_drop', () => ({
+      data: null,
+      error: { message: 'forbidden', code: '42501' },
+    }))
+    expect(await session().dropTicket('ws_sr_constancia_inscripcion')).toBe('failed')
+    expect(logs).toEqual(['[arca.ticket] drop forbidden'])
+  })
+})
+
+describe('qué es un ticket rechazado (isTicketRejection / ticketRejectedBy)', () => {
+  const service = (code: number, msg: string) =>
+    new ArcaFault('service', String(code), {
+      service: 'wsfe',
+      wsn: 'wsfe',
+      method: 'FEParamGetPtosVenta',
+      messages: [{ code, msg }],
+      detail: msg,
+    })
+  const fault = (svc: 'padron' | 'wsfe' | 'wsaa', detail: string, code = 'Server') =>
+    new ArcaFault('fault', code, { service: svc, detail })
+
+  it('WSFE 600/601 y el padrón por el token o la relación', () => {
+    expect(isTicketRejection(service(600, 'ValidacionDeToken: No valido token.'))).toBe(true)
+    expect(
+      isTicketRejection(service(600, 'ValidacionDeToken: No aparecio CUIT en lista de relaciones')),
+    ).toBe(true)
+    expect(isTicketRejection(service(601, 'CUIT representada no incluida en Token'))).toBe(true)
+    expect(isTicketRejection(fault('padron', 'Token malformado'))).toBe(true)
+    expect(isTicketRejection(fault('padron', 'La CUIT no figura en la lista de relaciones'))).toBe(
+      true,
+    )
+  })
+
+  it('no lo es: el WSAA (no se usó ningún TA), otros errores, la red ni el plazo', () => {
+    expect(isTicketRejection(fault('wsaa', 'Firma inválida o algoritmo no soportado'))).toBe(false)
+    expect(isTicketRejection(wsaaFaultError())).toBe(false)
+    expect(isTicketRejection(service(10016, 'El numero o fecha no corresponde'))).toBe(false)
+    expect(isTicketRejection(service(602, 'Sin Resultados'))).toBe(false)
+    expect(isTicketRejection(fault('padron', 'No existe persona con ese Id'))).toBe(false)
+    expect(isTicketRejection(new ArcaFault('network', 'ECONNRESET', { service: 'wsfe' }))).toBe(
+      false,
+    )
+    expect(isTicketRejection(new ArcaFault('timeout', 'timeout', { service: 'padron' }))).toBe(
+      false,
+    )
+    expect(isTicketRejection(deadlineFault({ service: 'wsfe' }))).toBe(false)
+    expect(isTicketRejection(new ArcaCooldownError('arca_token_rejected', null, false))).toBe(false)
+    expect(isTicketRejection(new Error('token'))).toBe(false)
+  })
+
+  it('el rechazo de FECAESolicitar viene en los Errors, sin tirar', () => {
+    expect(
+      ticketRejectedBy(parseCaeResponse(arcaXml(ARCA_XML.wsfeCaeErr600Relaciones)).errors),
+    ).toBe(true)
+    expect(ticketRejectedBy(parseCaeResponse(arcaXml(ARCA_XML.wsfeCaeRechazado10016)).errors)).toBe(
+      false,
+    )
+  })
+})
+
+/** Un Fault real del WSAA («ya posee un TA válido»), como lo arma `soapCall`. */
+function wsaaFaultError(): ArcaFault {
+  return new ArcaFault('fault', 'coe.alreadyAuthenticated', {
+    service: 'wsaa',
+    wsn: 'wsfe',
+    method: 'loginCms',
+    detail: 'El CEE ya posee un TA valido para el acceso al WSN solicitado',
+  })
+}

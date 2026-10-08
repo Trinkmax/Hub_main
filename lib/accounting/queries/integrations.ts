@@ -77,7 +77,7 @@ export type IntegrationsStatus = {
   arca: {
     produccion: ArcaEnvironmentStatus | null
     homologacion: ArcaEnvironmentStatus | null
-    /** Facturas emitidas en `needs_reconcile` o autorizadas sin asiento. */
+    /** Facturas de producción emitidas en `needs_reconcile` o autorizadas sin asiento. */
     vouchersAttention: number
   }
   mercadoPago: ImportSourceStatus & {
@@ -136,6 +136,9 @@ export async function getIntegrationsStatus(tenantId: string): Promise<Integrati
       .from('acc_arca_vouchers')
       .select('id', { count: 'exact', head: true })
       .eq('tenant_id', tenantId)
+      // Solo producción: las de prueba (homologación) quedan «authorized» para siempre porque
+      // nunca van a los libros (aavo_homo_no_books); no son algo para atender.
+      .eq('environment', 'produccion')
       .in('status', ['needs_reconcile', 'authorized']),
     supabase
       .from('acc_mp_connections')
@@ -274,7 +277,7 @@ export function integrationAttention(status: IntegrationsStatus): IntegrationAtt
         label: when
           ? `El certificado de ARCA venció el ${when}.`
           : 'El certificado de ARCA venció.',
-        href: '/ajustes/arca',
+        href: '/ajustes/arca#renovar',
         actionLabel: 'Renovar',
         count: null,
         date: day,
@@ -286,7 +289,7 @@ export function integrationAttention(status: IntegrationsStatus): IntegrationAtt
         label: when
           ? `El certificado de ARCA vence el ${when}.`
           : 'El certificado de ARCA vence pronto.',
-        href: '/ajustes/arca',
+        href: '/ajustes/arca#renovar',
         actionLabel: 'Renovar',
         count: null,
         date: day,
@@ -302,7 +305,8 @@ export function integrationAttention(status: IntegrationsStatus): IntegrationAtt
         n === 1
           ? 'Hay 1 factura de ARCA para verificar o cargar en los libros.'
           : `Hay ${n} facturas de ARCA para verificar o cargar en los libros.`,
-      href: '/ventas',
+      // La verificación automática y «Cargarla ahora» viven en Ventas › Factura de venta.
+      href: '/ventas/nueva-factura',
       actionLabel: 'Ver',
       count: n,
       date: null,

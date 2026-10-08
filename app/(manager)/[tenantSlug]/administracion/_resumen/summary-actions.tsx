@@ -1,6 +1,6 @@
 'use client'
 
-import { BookText, ChevronDown, Plus, Settings2 } from 'lucide-react'
+import { BookOpen, BookText, ChevronDown, Plus, Settings2 } from 'lucide-react'
 import Link from 'next/link'
 import { useAccounting } from '@/components/administracion/accounting-provider'
 import { ActionButton } from '@/components/administracion/quick-actions'
@@ -16,7 +16,8 @@ import {
 /**
  * Acciones del encabezado del Resumen (H.4). Dueño: [Más ▾] [Cierre del día]
  * [Nuevo gasto] en la compu (en el celular las acciones van en la barra de
- * abajo y acá queda solo Ajustes). Contadora: [Ajustes] [Libros del mes].
+ * abajo y acá quedan Guías y Ajustes). Contadora: [Ajustes] [Libros del mes].
+ * «Guías» lleva a «Cómo arrancar» y «Conectar ARCA» (diseño §5.2).
  */
 export function SummaryActions({ base }: { base: string }) {
   const { readOnly, openAction } = useAccounting()
@@ -42,6 +43,12 @@ export function SummaryActions({ base }: { base: string }) {
 
   return (
     <>
+      <Button asChild variant="outline" className="h-11 gap-2 lg:hidden">
+        <Link href={`${base}/guias`}>
+          <BookOpen className="size-4" aria-hidden />
+          Guías
+        </Link>
+      </Button>
       <Button asChild variant="outline" className="h-11 gap-2 lg:hidden">
         <Link href={`${base}/ajustes`}>
           <Settings2 className="size-4" aria-hidden />
@@ -75,6 +82,9 @@ export function SummaryActions({ base }: { base: string }) {
               <Link href={`${base}/libros/asiento-manual`}>Asiento manual</Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link href={`${base}/guias`}>Guías y cómo arrancar</Link>
+            </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link href={`${base}/ajustes`}>Ajustes</Link>
             </DropdownMenuItem>

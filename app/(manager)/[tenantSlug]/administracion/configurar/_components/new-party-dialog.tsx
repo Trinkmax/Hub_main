@@ -1,6 +1,11 @@
 'use client'
 
 import { type FormEvent, useEffect, useState, useTransition } from 'react'
+import {
+  ArcaLookupPanel,
+  ArcaLookupTrigger,
+  useArcaLookup,
+} from '@/components/administracion/arca-lookup'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -21,6 +26,7 @@ import {
 import { ACC_UNREACHABLE } from '@/lib/accounting/action-state'
 import { type SavedParty, saveParty } from '@/lib/accounting/actions/master'
 import type { IvaCondition } from '@/lib/accounting/types'
+import { ivaOptionsWith } from '@/lib/arca/lookup-fill'
 import { normalizeCuit } from '@/lib/fiscal'
 import { Callout, describedBy, Field } from '../../ajustes/_components/form-bits'
 import { CuitInput, cuitIssue, INPUT_CLASS } from '../../ajustes/_components/inputs'
@@ -47,7 +53,8 @@ const CONDITIONS: Readonly<
 /**
  * Alta rápida de un proveedor o cliente desde un combo (H.3 paso 3): nombre,
  * condición frente al IVA y CUIT opcional. Al guardarlo queda elegido en la
- * fila que lo pidió.
+ * fila que lo pidió. Con ARCA conectado, «Completar con ARCA» trae el nombre y
+ * la condición desde la CUIT (diseño §3.1).
  */
 export function NewPartyDialog({
   tenantSlug,
@@ -72,16 +79,41 @@ export function NewPartyDialog({
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [message, setMessage] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
+  /** La persona eligió la condición a mano: ARCA pregunta antes de cambiarla. */
+  const [conditionTouched, setConditionTouched] = useState(false)
+
+  const arca = useArcaLookup({
+    tenantSlug,
+    purpose: kind === 'supplier' ? 'supplier' : 'customer',
+    cuit,
+    values: { name, ivaCondition: condition },
+    spec: {
+      ivaOptions: CONDITIONS[kind].map((c) => c.value),
+      chosen: conditionTouched ? ['ivaCondition'] : [],
+      labels: { name: 'Nombre' },
+    },
+    onApply: (patch) => {
+      if (patch.name !== undefined) setName(patch.name)
+      if (patch.ivaCondition !== undefined) setCondition(patch.ivaCondition)
+      setErrors((prev) => {
+        const { name: _name, ...rest } = prev
+        return rest
+      })
+    },
+  })
+  const resetArca = arca.reset
 
   // Cada vez que se abre, arranca con lo que se tipeó en el combo.
   useEffect(() => {
     if (!open) return
     setName(initialName)
     setCondition(CONDITIONS[kind][0]?.value ?? 'sin_datos')
+    setConditionTouched(false)
     setCuit('')
     setErrors({})
     setMessage(null)
-  }, [open, initialName, kind])
+    resetArca()
+  }, [open, initialName, kind, resetArca])
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -149,7 +181,13 @@ export function NewPartyDialog({
             />
           </Field>
           <Field id="np-condition" label="Condición frente al IVA">
-            <Select value={condition} onValueChange={(v) => setCondition(v as IvaCondition)}>
+            <Select
+              value={condition}
+              onValueChange={(v) => {
+                setCondition(v as IvaCondition)
+                setConditionTouched(true)
+              }}
+            >
               <SelectTrigger
                 id="np-condition"
                 className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
@@ -157,7 +195,7 @@ export function NewPartyDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {CONDITIONS[kind].map((c) => (
+                {ivaOptionsWith(CONDITIONS[kind], condition).map((c) => (
                   <SelectItem key={c.value} value={c.value}>
                     {c.label}
                   </SelectItem>
@@ -166,20 +204,23 @@ export function NewPartyDialog({
             </Select>
           </Field>
           <Field id="np-cuit" label="CUIT" optional error={errors.taxId ?? null}>
-            <CuitInput
-              id="np-cuit"
-              value={cuit}
-              invalid={Boolean(errors.taxId)}
-              describedBy={describedBy('np-cuit', null, errors.taxId)}
-              onChange={setCuit}
-              onBlurCheck={(issue) =>
-                setErrors((prev) => {
-                  const { taxId: _taxId, ...rest } = prev
-                  return issue ? { ...rest, taxId: issue } : rest
-                })
-              }
-            />
+            <ArcaLookupTrigger lookup={arca}>
+              <CuitInput
+                id="np-cuit"
+                value={cuit}
+                invalid={Boolean(errors.taxId)}
+                describedBy={describedBy('np-cuit', null, errors.taxId)}
+                onChange={setCuit}
+                onBlurCheck={(issue) =>
+                  setErrors((prev) => {
+                    const { taxId: _taxId, ...rest } = prev
+                    return issue ? { ...rest, taxId: issue } : rest
+                  })
+                }
+              />
+            </ArcaLookupTrigger>
           </Field>
+          <ArcaLookupPanel lookup={arca} />
           {message ? <Callout tone="error">{message}</Callout> : null}
           <DialogFooter>
             <Button

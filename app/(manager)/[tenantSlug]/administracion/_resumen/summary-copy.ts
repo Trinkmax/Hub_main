@@ -7,6 +7,7 @@
  */
 
 import type { AccountingAction, ActionParams } from '@/components/administracion/acciones/types'
+import type { IntegrationAttentionItem } from '@/lib/accounting/queries/integrations'
 import type {
   AccSummary,
   SummaryAttentionItem,
@@ -94,6 +95,8 @@ export type AttentionAction =
   | { type: 'sheet'; label: string; action: AccountingAction; params: ActionParams }
   | { type: 'link'; label: string; href: string }
   | { type: 'skip'; label: string; recurringId: string; dueDate: string }
+  /** Vuelve a pedir la página (un bloque que no cargó). */
+  | { type: 'retry'; label: string }
 
 export type AttentionTone = 'danger' | 'warning' | 'info'
 
@@ -275,6 +278,70 @@ export function attentionView(
     default:
       return view(item.label.trim() || 'Hay algo para revisar.', 'info', [])
   }
+}
+
+// ─── Integraciones: la segunda fuente de «Necesita atención» ─────────────────
+
+const TONE_RANK: Readonly<Record<AttentionTone, number>> = { danger: 0, warning: 1, info: 2 }
+
+/**
+ * Un aviso de ARCA, Mercado Pago, el banco o Mis Comprobantes
+ * (`getIntegrationAttention`, diseño §5.2.4) como fila de «Necesita
+ * atención», con su botón a la pantalla que lo resuelve. `href` viene
+ * relativo a `/<bar>/administracion`.
+ */
+export function integrationAttentionView(
+  item: IntegrationAttentionItem,
+  base: string,
+  index: number,
+): AttentionView {
+  return {
+    key: `integracion:${item.kind}:${index}`,
+    text: item.label,
+    amountCents: null,
+    amountPrefix: null,
+    tone: item.tone,
+    actions: [{ type: 'link', label: item.actionLabel, href: `${base}${item.href}` }],
+  }
+}
+
+/** La fila de cuando no se pudo revisar ARCA ni los importadores: no se calla, se reintenta. */
+export function integrationFailedView(): AttentionView {
+  return {
+    key: 'integracion:error',
+    text: 'No pudimos revisar ARCA ni los importadores.',
+    amountCents: null,
+    amountPrefix: null,
+    tone: 'info',
+    actions: [{ type: 'retry', label: 'Reintentar' }],
+  }
+}
+
+/**
+ * Suma los avisos de las integraciones a los del Resumen sin tocar el orden
+ * que trae la base (`acc_report_summary` ya los ordena por urgencia): cada
+ * aviso nuevo entra antes de la primera fila menos urgente que él (rojo,
+ * después amarillo, después azul) y, a igual urgencia, después de las del
+ * Resumen. Los avisos nuevos mantienen su orden entre sí.
+ */
+export function mergeAttentionViews(
+  summary: readonly AttentionView[],
+  extra: readonly AttentionView[],
+): AttentionView[] {
+  // `sort` es estable: a igual urgencia queda el orden en que llegaron.
+  const queue = [...extra].sort((a, b) => TONE_RANK[a.tone] - TONE_RANK[b.tone])
+  const out: AttentionView[] = []
+  let next = 0
+  for (const view of summary) {
+    for (let pending = queue[next]; pending; pending = queue[next]) {
+      if (TONE_RANK[pending.tone] >= TONE_RANK[view.tone]) break
+      out.push(pending)
+      next++
+    }
+    out.push(view)
+  }
+  out.push(...queue.slice(next))
+  return out
 }
 
 // ─── Estado de los libros (contadora) ────────────────────────────────────────

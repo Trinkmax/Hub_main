@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowUpRight, CheckCircle2, Circle } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, CheckCircle2, Circle } from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
 import { useAccounting } from '@/components/administracion/accounting-provider'
@@ -19,7 +19,9 @@ type Step = {
 /**
  * «Primeros pasos» de Administración (H.4), con la forma de «Empezá por acá»
  * del inicio del panel. Se va sola cuando están todos hechos; «Ocultar» la
- * guarda en una cookie (el servidor ya no la dibuja: nada que parpadee).
+ * guarda en una cookie (el servidor ya no la dibuja: nada que parpadee). Al
+ * pie, «Ver la guía completa» lleva a «Cómo arrancar» (diseño §5.2.4): todo lo
+ * que hay que cargar, dónde y cómo.
  */
 export function FirstSteps({ base, steps }: { base: string; steps: AccSummary['firstSteps'] }) {
   const { tenantSlug, openAction, readOnly } = useAccounting()
@@ -155,6 +157,16 @@ export function FirstSteps({ base, steps }: { base: string; steps: AccSummary['f
             )
           })}
         </ul>
+
+        <div className="mt-4 border-t border-border/40 pt-3">
+          <Link
+            href={`${base}/guias/como-arrancar`}
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-md text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"
+          >
+            Ver la guía completa: qué cargar, dónde y cómo
+            <ArrowRight className="size-4" aria-hidden />
+          </Link>
+        </div>
       </div>
     </section>
   )

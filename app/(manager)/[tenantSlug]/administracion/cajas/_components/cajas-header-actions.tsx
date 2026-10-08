@@ -15,8 +15,10 @@ import {
 
 /**
  * Acciones de «Cajas y bancos» (H.11): [Mover plata] (principal) · [Ajustar
- * saldo] · [Más ▾]. En el celular, Mover y Ajustar viven en la barra de abajo;
- * acá queda «Gasto bancario», que no está en la barra. La contadora no ve nada.
+ * saldo] · [Más ▾] (con «Importar Mercado Pago» y «Importar movimientos del
+ * banco», diseño §4.0). En el celular, Mover y Ajustar viven en la barra de
+ * abajo; acá queda «Gasto bancario», que no está en la barra (importar se
+ * abre desde la pestaña «Importar»). La contadora no ve nada.
  */
 export function CajasHeaderActions({ base }: { base: string }) {
   const { readOnly, openAction } = useAccounting()
@@ -50,6 +52,13 @@ export function CajasHeaderActions({ base }: { base: string }) {
           </DropdownMenuItem>
           <DropdownMenuItem className="min-h-9" onSelect={() => openAction('movimiento')}>
             Otro ingreso o egreso
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild className="min-h-9">
+            <Link href={`${base}/importar/mercado-pago`}>Importar Mercado Pago</Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild className="min-h-9">
+            <Link href={`${base}/importar/banco`}>Importar movimientos del banco</Link>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem asChild className="min-h-9">

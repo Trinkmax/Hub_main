@@ -1199,6 +1199,68 @@ check de CI queda en rojo aunque el job de lint/typecheck/tests esté verde.
   `lib/accounting/chart.ts`). Para otros bares conviene un ejemplo genérico;
   cambiarlo pide una migración del seed.
 
+### ARCA e importadores — lo que quedó de la fase 3 (08/10/2026)
+
+**Base de datos.** Cada uno de estos pide una migración nueva con el OK del dueño.
+
+- **Anular una factura que ya está en ARCA solo está bloqueado en la pantalla.**
+  `comprobantes/[id]` esconde «Anular», «Anular con fecha de hoy» y el asiento de
+  ajuste; desde el 08/10 también esconde «Anular» en el cobro del mismo envío, que
+  anulaba la factura con `withBundle`. Falta el freno en
+  `acc_void_document`/`acc_reverse_document` para las de producción `authorized`
+  o `posted`.
+- **`acc_guide_mark` usa `on conflict do nothing`.** Volver a marcar un paso no
+  actualiza `done_at`. La pantalla lo esquiva desmarcando y marcando. Cambiarlo a
+  `do update`.
+- **Alias por defecto `hubplataforma`/`hubpruebas`.** Lo pone
+  `private.acc_arca_conn_new` (migración `20261008120100`) para todos los bares.
+  Si no se cambia antes de aplicarla, pasarlo a `plataforma`/`pruebas`.
+- **`acc_report_onboarding.arca_vouchers_attention` cuenta las de homologación.**
+  Esas quedan `authorized` para siempre. Hoy no se muestra en ninguna pantalla;
+  el Resumen ya filtra producción en `integrations.ts`. Sumar
+  `environment = 'produccion'`.
+
+**Pantallas.**
+
+- **Ventas no verifica sola las facturas de ARCA pendientes.** Solo lo hace Ventas ›
+  Factura de venta, que es a donde llevan hoy los avisos. Montar
+  `ArcaVoucherAttention` también en `/ventas`.
+- **La ficha del cliente no dice «Verificado en ARCA el …».** La del proveedor
+  sí. Mover `compras/proveedores/[id]/_components/arca-verification.tsx` a
+  `components/administracion` y usarlo en `ventas/clientes/[id]`.
+- **«Cargarla a mano» desde la revisión precarga solo el proveedor.** El
+  formulario de compra no lee tipo, número, fecha ni importes por la URL. Sumar
+  `?pv=&numero=&fecha=&total=`.
+- **Nueva compra no tiene «Es la factura mensual de comisiones de Mercado Pago».**
+  Siempre manda `settlesCommissions: false`. Esa rutina de «Cómo arrancar» solo se
+  cumple importando de ARCA.
+- **Importar de Mercado Pago queda bloqueado sin el partícipe de sistema «Mercado
+  Pago».** La pantalla no deja elegir otro.
+- **Re-subir un extracto del banco eligiendo otra cuenta retoma el lote viejo.**
+  El servidor lo rechaza con «no coincide con su clave», un texto que no explica
+  qué pasó.
+- **Cada tanda de 15 que se carga revalida toda la revisión.** Con miles de
+  comprobantes se va a poner lenta.
+- **`components/ui/progress.tsx` no le pasa `value` a Radix.** Todos los Progress
+  de la app salen indeterminados, sin `aria-valuenow`. Las pantallas nuevas ponen
+  el número en `aria-label`.
+- **`IIBB_REGIME_LABELS` dice «Local (Córdoba)» para todos los bares**
+  (`ajustes/_lib/labels.ts`).
+- **«Factura M» en el aviso `voucher_m`.** Aparece en `lib/accounting/errors.ts` y
+  en `purchase-form.tsx`, pero el código 51 ahora se llama «Factura A sujeta a
+  retención».
+- **Las server actions van de a una por pestaña.** Mientras ARCA contesta (hasta
+  50 s), las otras acciones de esa pestaña esperan.
+
+**Tests y documentación.**
+
+- **Los topes por minuto de ARCA viven en memoria de cada instancia.**
+- **`tests/rls` no cubre las RPC de emisión** (`acc_arca_voucher_*`) **ni el
+  camino anular → volver a cargar → cargar** de una importación.
+- **`.env.example` y CLAUDE.md §15 tienen que decir que ARCA reusa
+  `META_TOKEN_KEY`**, y que la clave tiene que ser la misma en local, en las
+  previews y en producción. CLAUDE.md pide el OK del dueño.
+
 ## Pestañas de sección — lo que quedó afuera (07/10/2026)
 
 - **Configuración en el celular no llega a Comisiones ni a Reseñas.** El nav

@@ -44,7 +44,7 @@ const RAW = {
   mp_invoice_this_month: false,
   treasuries_unchecked: 2,
   prev_month_closed: false,
-  manual: ['suppliers_message', 42],
+  manual: ['suppliers_message', 'platforms', 'chart_review', 42],
 }
 
 function data(patch: Record<string, unknown> = {}): OnboardingData {
@@ -85,7 +85,7 @@ describe('lo que devuelve la base', () => {
         bank_statement: { lastBatchAt: '2026-10-01T13:00:00Z', postedBatches: 1, pendingReview: 1 },
       },
       treasuriesUnchecked: 2,
-      manual: ['suppliers_message'],
+      manual: ['suppliers_message', 'platforms', 'chart_review'],
     })
     expect(d.imports.arca_emitidos).toBeUndefined()
   })
@@ -101,12 +101,12 @@ describe('el estado de la guía', () => {
   it('cuenta lo listo (sin los informativos ni los opcionales) y elige lo próximo', () => {
     const s = onboardingState(data())
     expect({ done: s.done, total: s.total, next: s.next }).toEqual({
-      done: 13,
-      total: 17,
+      done: 15,
+      total: 19,
       next: 'bank_weekly',
     })
     expect(s.sections).toEqual({
-      day1: { done: 10, total: 10 },
+      day1: { done: 12, total: 12 },
       daily: { done: 1, total: 1 },
       weekly: { done: 1, total: 2 },
       monthly: { done: 1, total: 4 },
@@ -122,6 +122,14 @@ describe('el estado de la guía', () => {
     expect(by.get('small_expenses')?.status).toBe('info')
     expect(by.get('suppliers_message')).toMatchObject({ status: 'done', manualDone: true })
     expect(by.get('mp_connect')).toMatchObject({ status: 'done', optional: true })
+    // Sin la marca «Ya lo hice», lo que solo pasa afuera queda pendiente (y es lo próximo).
+    const unmarked = onboardingState(data(), ['suppliers_message'])
+    expect(unmarked.next).toBe('platforms')
+    expect(unmarked.items.find((i) => i.id === 'chart_review')).toMatchObject({
+      status: 'todo',
+      manualDone: false,
+      pending: null,
+    })
   })
 
   it('un bar recién empezado: todo pendiente, con el porqué en palabras simples', () => {
@@ -159,6 +167,23 @@ describe('el estado de la guía', () => {
       status: 'done',
       manualDone: false,
     })
+  })
+
+  it('con los libros arrancados este mes, todavía no hay un mes para cerrar', () => {
+    const monthClose = (patch: Record<string, unknown>) =>
+      onboardingState(data(patch)).items.find((i) => i.id === 'month_close')
+    // Hoy es 15/10: los libros arrancan en octubre → septiembre no está en los libros.
+    expect(monthClose({ books_start_date: '2026-10-01' })).toMatchObject({
+      status: 'done',
+      pending: null,
+    })
+    expect(monthClose({ books_start_date: '2026-09-30' })).toMatchObject({
+      status: 'todo',
+      pending: 'El mes pasado sigue abierto.',
+    })
+    // Sin el dato (el reporte no lo trae; lo suma `getOnboarding`), como siempre.
+    expect(monthClose({})?.status).toBe('todo')
+    expect(data({ books_start_date: '2026-02-30' }).booksStartDate).toBeNull()
   })
 
   it('el mensaje para los proveedores, con y sin la CUIT', () => {
@@ -233,6 +258,8 @@ describe('«Para atender» de las integraciones', () => {
         kind: 'arca_cert_expiring',
         tone: 'warning',
         label: 'El certificado de ARCA vence el 04/11/2026.',
+        // Directo a «Renovar el certificado» de la guía.
+        href: '/ajustes/arca#renovar',
         date: '2026-11-04',
       }),
     ])
@@ -246,6 +273,7 @@ describe('«Para atender» de las integraciones', () => {
       kind: 'arca_cert_expired',
       tone: 'danger',
       label: 'El certificado de ARCA venció el 13/10/2026.',
+      href: '/ajustes/arca#renovar',
     })
     expect(
       integrationAttention(
@@ -336,5 +364,7 @@ describe('«Para atender» de las integraciones', () => {
       'mc_prev_month',
     ])
     expect(out[1]?.label).toBe('Hay 3 facturas de ARCA para verificar o cargar en los libros.')
+    // Donde corre la verificación automática y está «Cargarla ahora».
+    expect(out[1]?.href).toBe('/ventas/nueva-factura')
   })
 })

@@ -21,6 +21,7 @@ import {
   settleQuery,
 } from '@/lib/accounting/queries'
 import { loadFirstOpenDate } from '@/lib/accounting/server/document-context'
+import { getArcaVoucherCard } from '@/lib/arca/emit-queries'
 import {
   formatDateTime,
   formatIsoDay,
@@ -40,6 +41,7 @@ import {
   creditNoteHref,
   documentActions,
 } from '../_lib/document-view'
+import { ArcaAuthorizationCard } from './_components/arca-card'
 import { ReverseDocumentButton, VoidDocumentButton } from './_components/document-actions'
 
 export const metadata = { title: 'Comprobante' }
@@ -47,8 +49,33 @@ export const metadata = { title: 'Comprobante' }
 /** Los que se leen como «Sin cobrar · Cobrada» en vez de «Impaga · Pagada». */
 const RECEIVABLE_KINDS = new Set(['sales_invoice', 'sales_debit_note', 'sales_close'])
 
+/** Los que pueden haberse emitido con ARCA desde la plataforma (diseño §3.2). */
+const ARCA_KINDS = new Set(['sales_invoice', 'sales_debit_note', 'sales_credit_note'])
+
 function linkText(doc: DocumentLink): string {
   return `${doc.title} #${doc.seq}`
+}
+
+/**
+ * La factura del mismo envío que ya está en ARCA (producción, con CAE), si hay. Si no se
+ * puede leer, se sigue como siempre (igual que con la factura misma).
+ */
+async function arcaEmittedSibling(
+  tenantId: string,
+  siblings: readonly DocumentLink[],
+): Promise<DocumentLink | null> {
+  for (const sibling of siblings) {
+    if (sibling.status !== 'posted' || !ARCA_KINDS.has(sibling.kind)) continue
+    const card = await settleQuery(getArcaVoucherCard(tenantId, sibling.id))
+    if (
+      card.ok &&
+      card.data?.environment === 'produccion' &&
+      (card.data.status === 'posted' || card.data.status === 'authorized')
+    ) {
+      return sibling
+    }
+  }
+  return null
 }
 
 function periodText(period: DocumentDetail['period']): string | null {
@@ -89,7 +116,35 @@ export default async function ComprobantePage({
   }
 
   const doc = result.data
-  const actions = documentActions(doc, canWrite)
+  // ¿Se emitió con ARCA desde la plataforma? Una factura que ya está en ARCA (producción)
+  // no se anula desde los libros: se corrige con una nota de crédito emitida con ARCA.
+  const arcaOutcome = ARCA_KINDS.has(doc.kind)
+    ? await settleQuery(getArcaVoucherCard(tenantId, doc.id))
+    : null
+  const arcaCard = arcaOutcome?.ok ? arcaOutcome.data : null
+  const arcaEmitted =
+    arcaCard !== null &&
+    arcaCard.environment === 'produccion' &&
+    (arcaCard.status === 'posted' || arcaCard.status === 'authorized')
+  const baseActions = documentActions(doc, canWrite)
+  // Un cobro cargado en el mismo envío que una factura emitida con ARCA: «Anular» anula todo
+  // el envío (`withBundle`) y con él esa factura, que ya está en ARCA. Tampoco se ofrece.
+  const arcaSibling =
+    !arcaEmitted && baseActions.void && !ARCA_KINDS.has(doc.kind)
+      ? await arcaEmittedSibling(tenantId, doc.bundleSiblings)
+      : null
+  const actions = arcaEmitted
+    ? { ...baseActions, void: false, reverse: false, creditNote: null, adjustment: false }
+    : arcaSibling
+      ? { ...baseActions, void: false }
+      : baseActions
+  const arcaCreditNoteHref =
+    arcaEmitted &&
+    canWrite &&
+    doc.status === 'posted' &&
+    (doc.kind === 'sales_invoice' || doc.kind === 'sales_debit_note')
+      ? creditNoteHref('sales', base, doc)
+      : null
   const [settings, firstOpenDate] = actions.reverse
     ? await Promise.all([settleQuery(getAccountingSettings(tenantId)), loadFirstOpenDate(tenantId)])
     : [null, null]
@@ -212,6 +267,35 @@ export default async function ComprobantePage({
       </div>
 
       <StatusNotes doc={doc} base={base} />
+
+      {canWrite && arcaSibling ? (
+        <div className="flex items-start gap-3 rounded-xl border border-info/30 bg-info/10 p-4 text-sm">
+          <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden />
+          <p className="min-w-0 flex-1 text-pretty">
+            <span className="font-medium">Se cargó junto con una factura emitida con ARCA.</span>{' '}
+            <span className="text-muted-foreground">
+              Anularlo anularía también esa factura, que ya está en ARCA. Si hubo un error, corregí
+              la factura con una nota de crédito desde{' '}
+              <Link
+                href={`${base}/comprobantes/${arcaSibling.id}`}
+                className="font-medium text-foreground underline underline-offset-2"
+              >
+                {linkText(arcaSibling)}
+              </Link>
+              .
+            </span>
+          </p>
+        </div>
+      ) : null}
+
+      {arcaOutcome ? (
+        <ArcaAuthorizationCard
+          slug={tenantSlug}
+          outcome={arcaOutcome}
+          canWrite={canWrite}
+          creditNoteHref={arcaCreditNoteHref}
+        />
+      ) : null}
 
       {actions.reverse || actions.creditNote || actions.adjustment ? (
         <div className="flex items-start gap-3 rounded-xl border border-info/30 bg-info/10 p-4 text-sm">

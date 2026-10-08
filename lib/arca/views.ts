@@ -369,6 +369,15 @@ function okMessage(
 }
 
 function failureOverride(key: ArcaCheckKey, detail: Rec, ctx: ArcaViewContext): Override | null {
+  // Se acababa el plazo de la prueba y este chequeo ni se empezó (no es que ARCA haya fallado).
+  if (detail.timeout === true && detail.not_started === true) {
+    return {
+      title: 'No se llegó a probar',
+      message:
+        'ARCA venía lento y cortamos la prueba antes de este chequeo para no trabar la conexión. Volvé a tocar «Probar conexión».',
+      step: null,
+    }
+  }
   if (detail.timeout === true) {
     return {
       title: 'ARCA tardó demasiado',
@@ -482,12 +491,17 @@ function checkView(key: ArcaCheckKey, check: ArcaTestCheck, ctx: ArcaViewContext
     { code },
   )
   const override = failureOverride(key, detail, ctx)
+  const message = override?.message ?? described.body
   return {
     ...base,
     ok: false,
     tone: def.required || errorKey === 'arca_cert_expired' ? 'error' : 'warning',
     title: override?.title ?? described.title,
-    message: override?.message ?? described.body,
+    // ARCA rechazó el ticket guardado y la prueba ya lo descartó (`acc_arca_ticket_drop`).
+    message:
+      detail.ticket_dropped === true
+        ? `${message} ARCA rechazó el permiso guardado y ya lo descartamos: esperá unos minutos y volvé a probar.`
+        : message,
     errorKey,
     step:
       override && override.step !== undefined ? override.step : stepForFailedCheck(key, errorKey),

@@ -50,6 +50,7 @@ import type {
   IsoDate,
   MessageDetail,
   PostingContext,
+  PostingResult,
   PostingWarning,
 } from '@/lib/accounting/types'
 import { createClient } from '@/lib/supabase/server'
@@ -299,29 +300,53 @@ export async function runPostDocument(
       }
     }
 
-    const supabase = await createClient()
-    const args = {
-      p_tenant_id: auth.tenantId,
-      p_client_ref: input.clientRef,
-      p_bundle: toRpcPayload(built.bundle, built.hash),
-    }
-    let result = await supabase.rpc('acc_post_bundle', args)
-    // Dos envíos iguales al mismo tiempo: el reintento devuelve lo que guardó el primero.
-    if (result.error && isClientRefRace(result.error)) {
-      result = await supabase.rpc('acc_post_bundle', args)
-    }
-    if (result.error) return postFailure(op, result.error, ctx)
-
-    // Ya está guardado (la base confirmó): nada de acá en adelante puede volverlo un error.
-    afterCommit(op, () => revalidateAdministracion(slug))
-    return {
-      ok: true,
-      result: parsePostBundleResult(result.data),
-      message: afterCommit(op, () => savedMessage(form, built.bundle, ctx)) ?? SAVED_FALLBACK,
-    }
+    return await postBuiltBundle(op, slug, auth.tenantId, input.clientRef, built, ctx, form)
   } catch (error) {
     console.error(`[accounting.documents.${op}] inesperado`, errorName(error))
     return GENERIC
+  }
+}
+
+/**
+ * Pasos 6 a 8 de G.3 con un bundle ya armado (y ya comparado con la vista previa
+ * que vio la persona): `acc_post_bundle` con SU bundle y `clientRef` (un reintento
+ * con la misma referencia devuelve lo ya guardado), los avisos que solo ve la base
+ * → `needs_confirmation`, la revalidación de la sección y el texto del toast.
+ *
+ * Lo usa también la emisión con ARCA (`lib/arca/emit.ts`): contabiliza la factura
+ * autorizada con el `client_ref` de su fila de `acc_arca_vouchers`, así «Cargarla
+ * ahora» nunca la guarda dos veces. Puede tirar si falla la red hacia la base:
+ * quien llama lo envuelve (como `runPostDocument`).
+ */
+export async function postBuiltBundle(
+  op: string,
+  slug: string,
+  tenantId: string,
+  clientRef: string,
+  built: Extract<PostingResult, { ok: true }>,
+  ctx: PostingContext,
+  form?: DocumentForm,
+): Promise<AccActionState> {
+  const supabase = await createClient()
+  const args = {
+    p_tenant_id: tenantId,
+    p_client_ref: clientRef,
+    p_bundle: toRpcPayload(built.bundle, built.hash),
+  }
+  let result = await supabase.rpc('acc_post_bundle', args)
+  // Dos envíos iguales al mismo tiempo: el reintento devuelve lo que guardó el primero.
+  if (result.error && isClientRefRace(result.error)) {
+    result = await supabase.rpc('acc_post_bundle', args)
+  }
+  if (result.error) return postFailure(op, result.error, ctx)
+
+  // Ya está guardado (la base confirmó): nada de acá en adelante puede volverlo un error.
+  afterCommit(op, () => revalidateAdministracion(slug))
+  const message = form ? afterCommit(op, () => savedMessage(form, built.bundle, ctx)) : null
+  return {
+    ok: true,
+    result: parsePostBundleResult(result.data),
+    message: message ?? SAVED_FALLBACK,
   }
 }
 

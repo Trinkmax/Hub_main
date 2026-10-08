@@ -195,7 +195,9 @@ export const VOUCHER_CATALOG: Readonly<Record<VoucherType, VoucherInfo>> = {
     sales: false,
     purchaseVat: 'no',
   }),
-  factura_m: v('factura_m', 51, 'Factura M', 'FM', {
+  // Desde el 01/12/2025 la «M» es «Factura A con leyenda “Operación sujeta a retención”»
+  // (RG 5762/2025): cambia solo el nombre; la clave `factura_m`, el código y la letra siguen.
+  factura_m: v('factura_m', 51, 'Factura A sujeta a retención', 'FA-SR', {
     ...base,
     letter: 'M',
     family: 'factura',
@@ -203,7 +205,7 @@ export const VOUCHER_CATALOG: Readonly<Record<VoucherType, VoucherInfo>> = {
     sales: false,
     purchaseVat: 'yes',
   }),
-  nota_debito_m: v('nota_debito_m', 52, 'Nota de débito M', 'NDM', {
+  nota_debito_m: v('nota_debito_m', 52, 'Nota de débito A sujeta a retención', 'NDA-SR', {
     ...base,
     isDebitNote: true,
     letter: 'M',
@@ -212,7 +214,7 @@ export const VOUCHER_CATALOG: Readonly<Record<VoucherType, VoucherInfo>> = {
     sales: false,
     purchaseVat: 'yes',
   }),
-  nota_credito_m: v('nota_credito_m', 53, 'Nota de crédito M', 'NCM', {
+  nota_credito_m: v('nota_credito_m', 53, 'Nota de crédito A sujeta a retención', 'NCA-SR', {
     ...base,
     isCreditNote: true,
     letter: 'M',

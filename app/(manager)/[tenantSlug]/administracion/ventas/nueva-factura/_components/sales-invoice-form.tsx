@@ -1,6 +1,6 @@
 'use client'
 
-import { Info, Plus, X } from 'lucide-react'
+import { BookPlus, Info, Plus, Printer, RefreshCw, X } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -11,7 +11,29 @@ import {
   useMemo,
   useRef,
   useState,
+  useTransition,
 } from 'react'
+import { toast } from 'sonner'
+import { Callout } from '@/app/(manager)/[tenantSlug]/administracion/ajustes/_components/form-bits'
+import { ArcaProblem } from '@/components/administracion/arca/arca-problem'
+import {
+  ArcaConceptoField,
+  ArcaConditionField,
+  ArcaDetailField,
+  ArcaNumberRow,
+  ArcaRelatedField,
+} from '@/components/administracion/arca/emission-fields'
+import {
+  EmitConfirmDialog,
+  type EmitSummary,
+} from '@/components/administracion/arca/emit-confirm-dialog'
+import { PostVoucherDialog } from '@/components/administracion/arca/post-voucher-dialog'
+import { type ArcaLock, useArcaEmission } from '@/components/administracion/arca/use-arca-emission'
+import {
+  type ArcaNextNumberState,
+  useArcaNextNumber,
+} from '@/components/administracion/arca/use-arca-next-number'
+import { ArcaVoucherAttention } from '@/components/administracion/arca/voucher-attention'
 import { type ChoiceChip, ChoiceChips } from '@/components/administracion/cajas-ventas/choice-chips'
 import { FormBanner, WarningsDialog } from '@/components/administracion/cajas-ventas/feedback'
 import { describedBy, Field, GroupLabel } from '@/components/administracion/cajas-ventas/field'
@@ -37,14 +59,38 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { ACC_UNREACHABLE, issuePath } from '@/lib/accounting/action-state'
 import { postSalesInvoice } from '@/lib/accounting/actions/documents'
 import { netFromGross, vatFromNet } from '@/lib/accounting/iva'
+import { letterFor } from '@/lib/accounting/letter'
 import { CHANNEL_LABELS, vatRateLabel } from '@/lib/accounting/queries/labels'
 import { fetchOpenItems } from '@/lib/accounting/queries/read-actions'
 import type { SalesInvoiceValues } from '@/lib/accounting/server/document-types'
-import type { Channel, IvaCondition, PostingContext, VatRateBp } from '@/lib/accounting/types'
+import type {
+  Channel,
+  IvaCondition,
+  PostingContext,
+  TaxIdType,
+  VatRateBp,
+} from '@/lib/accounting/types'
+import { voucherLabel } from '@/lib/accounting/voucher-types'
+import { ensureArcaFinalConsumer, reconcileArcaVoucher } from '@/lib/arca/emit-actions'
+import {
+  type ArcaConcepto,
+  type ArcaEmissionSetup,
+  type ArcaEmitValues,
+  arcaCbteFor,
+  arcaDateHint,
+  arcaDateWindow,
+  arcaEmitSchema,
+  arcaLetterFor,
+  arcaPrintHref,
+  arcaReceiverIssue,
+  arcaVoucherTypeFor,
+} from '@/lib/arca/emit-form'
+import { condicionFromIvaCondition } from '@/lib/arca/vouchers'
 import { addDays, formatDayMonth, formatIsoDay } from '@/lib/dates'
-import { parseVoucherNumber } from '@/lib/fiscal'
+import { formatVoucherNumber, parseVoucherNumber } from '@/lib/fiscal'
 import { formatCents } from '@/lib/money'
 
 export type InvoiceCustomer = {
@@ -52,6 +98,7 @@ export type InvoiceCustomer = {
   name: string
   tradeName: string | null
   taxId: string | null
+  taxIdType: TaxIdType
   ivaCondition: IvaCondition
   paymentTermDays: number
   active: boolean
@@ -59,11 +106,23 @@ export type InvoiceCustomer = {
 
 export type InvoiceSalesPoint = { number: number; label: string; defaultChannel: Channel }
 
+/** Lo que la factura necesita saber de ARCA (lo carga la página). */
+export type InvoiceArca = {
+  setup: ArcaEmissionSetup
+  /** El cliente de sistema «Consumidor final», si ya existe. */
+  finalConsumerId: string | null
+  /** Cómo se llama el punto de venta de la plataforma en Ajustes › Puntos de venta. */
+  pointOfSaleLabel: string | null
+  /** No se pudo leer el estado de ARCA (la factura se carga como siempre). */
+  loadError: string | null
+}
+
 type DocKind = 'sales_invoice' | 'sales_credit_note' | 'sales_debit_note'
 type VoucherType = SalesInvoiceValues['voucherType']
 type AmountMode = 'total' | 'detail'
 type AliquotRow = { key: number; rate: VatRateBp; net: number | null }
 type RelatedOption = { documentId: string; label: string; entryDate: string; openCents: number }
+type HowMode = 'arca' | 'manual'
 
 const VOUCHERS: Readonly<Record<DocKind, ReadonlyArray<{ value: VoucherType; label: string }>>> = {
   sales_invoice: [
@@ -104,10 +163,17 @@ const KNOWN_FIELDS = new Set([
   'notes',
 ])
 
-/** La letra que corresponde al cliente: A a un responsable inscripto, B al resto. */
-function letterFor(condition: IvaCondition | undefined): 'a' | 'b' {
-  return condition === 'responsable_inscripto' ? 'a' : 'b'
-}
+const HOW_OPTIONS: ChoiceChip<HowMode>[] = [
+  { value: 'arca', label: 'La emito ahora con ARCA' },
+  { value: 'manual', label: 'Ya la emití en otro sistema' },
+]
+
+/** El valor de la fila «Consumidor final» mientras el cliente de sistema todavía no existe. */
+const FINAL_CONSUMER_PICK = 'consumidor-final'
+const FINAL_CONSUMER_LABEL = 'Consumidor final (sin identificar)'
+/** Para validar con el esquema de la acción antes de tener referencia y hash. */
+const PLACEHOLDER_REF = '00000000-0000-4000-8000-000000000000'
+const PLACEHOLDER_HASH = '0'.repeat(64)
 
 function voucherFor(kind: DocKind, letter: 'a' | 'b'): VoucherType {
   const list = VOUCHERS[kind]
@@ -118,10 +184,28 @@ function displayName(p: Pick<InvoiceCustomer, 'name' | 'tradeName'>): string {
   return p.tradeName && p.tradeName !== p.name ? p.tradeName : p.name
 }
 
+/** El cliente de sistema de la Factura B sin identificar (no está en la lista de clientes). */
+function finalConsumerCustomer(id: string): InvoiceCustomer {
+  return {
+    id,
+    name: FINAL_CONSUMER_LABEL,
+    tradeName: null,
+    taxId: null,
+    taxIdType: 'none',
+    ivaCondition: 'consumidor_final',
+    paymentTermDays: 0,
+    active: true,
+  }
+}
+
 /**
  * Factura, nota de crédito o de débito de venta suelta (E.5.9): lo que no pasa
  * por el cierre del día (eventos facturados aparte, catering, sponsoreo). Con
  * «Ya la cobraste» se guarda junto con el cobro.
+ *
+ * Con la emisión con ARCA prendida (diseño §3.2.2) pregunta primero «¿Cómo la
+ * facturás?»: «La emito ahora con ARCA» pide el CAE y la deja cargada; «Ya la
+ * emití en otro sistema» es el formulario de siempre, con el número a mano.
  */
 export function SalesInvoiceForm({
   tenantSlug,
@@ -133,6 +217,7 @@ export function SalesInvoiceForm({
   salesPoints,
   treasuries,
   prefill,
+  arca,
 }: {
   tenantSlug: string
   ctx: PostingContext
@@ -143,6 +228,7 @@ export function SalesInvoiceForm({
   salesPoints: InvoiceSalesPoint[]
   treasuries: TreasuryOption[]
   prefill: { docKind: DocKind; partyId: string | null; relatedDocumentId: string | null }
+  arca: InvoiceArca
 }) {
   const router = useRouter()
   const formRef = useRef<HTMLFormElement>(null)
@@ -151,6 +237,16 @@ export function SalesInvoiceForm({
   const byId = useMemo(() => new Map(customers.map((c) => [c.id, c])), [customers])
   const defaultPoint =
     salesPoints.find((p) => p.defaultChannel === 'events') ?? salesPoints[0] ?? null
+
+  // ── ¿Cómo la facturás? ──
+  const arcaOn = arca.setup.state === 'on'
+  const prefillVoucher = prefill.relatedDocumentId
+    ? (arca.setup.platformVouchers.find((v) => v.documentId === prefill.relatedDocumentId) ?? null)
+    : null
+  const [how, setHow] = useState<HowMode>(
+    arcaOn && (prefill.relatedDocumentId === null || prefillVoucher !== null) ? 'arca' : 'manual',
+  )
+  const arcaMode = arcaOn && how === 'arca'
 
   const [docKind, setDocKind] = useState<DocKind>(prefill.docKind)
   const [partyId, setPartyId] = useState<string | null>(prefill.partyId)
@@ -183,9 +279,66 @@ export function SalesInvoiceForm({
   const [attempted, setAttempted] = useState(false)
   const nextKey = useRef(1)
 
-  const party = partyId ? byId.get(partyId) : undefined
+  // ── Lo de ARCA ──
+  const [condicionId, setCondicionId] = useState<number | null>(() => {
+    const customer = prefill.partyId ? byId.get(prefill.partyId) : undefined
+    return customer ? condicionFromIvaCondition(customer.ivaCondition) : null
+  })
+  const [concepto, setConcepto] = useState<ArcaConcepto>(arca.setup.defaultConcepto)
+  const [serviceFrom, setServiceFrom] = useState<string | null>(null)
+  const [serviceTo, setServiceTo] = useState<string | null>(null)
+  const [notePaymentDue, setNotePaymentDue] = useState<string | null>(null)
+  const [detail, setDetail] = useState('')
+  const [relatedVoucherId, setRelatedVoucherId] = useState<string | null>(
+    prefillVoucher?.id ?? null,
+  )
+  const [createdFinalId, setCreatedFinalId] = useState<string | null>(null)
+  const [preparingFinal, startFinal] = useTransition()
+  const [verifying, startVerify] = useTransition()
+  const [postingOpen, setPostingOpen] = useState(false)
+
+  const finalConsumerId = arca.finalConsumerId ?? createdFinalId
+  const isFinalConsumer = arcaMode && partyId !== null && partyId === finalConsumerId
+  const party: InvoiceCustomer | undefined = partyId
+    ? (byId.get(partyId) ?? (isFinalConsumer ? finalConsumerCustomer(partyId) : undefined))
+    : undefined
   const isCredit = docKind === 'sales_credit_note'
+  const isNote = docKind !== 'sales_invoice'
   const isLetterA = voucherType.endsWith('_a')
+
+  const effectiveCondicion = isFinalConsumer ? 5 : condicionId
+  const letterChoice = useMemo(
+    () => arcaLetterFor(effectiveCondicion, arca.setup.allowedClasses),
+    [effectiveCondicion, arca.setup.allowedClasses],
+  )
+  const arcaLetter = letterChoice.ok ? letterChoice.letter : null
+  const arcaVoucherType = arcaVoucherTypeFor(docKind, arcaLetter ?? 'B')
+  const cbteTipo = arcaMode && arcaLetter ? arcaCbteFor(docKind, arcaLetter) : null
+  const nextNumber = useArcaNextNumber(tenantSlug, cbteTipo, arcaMode)
+  // Lo que había del tipo anterior no vale para este (hasta que llegue el suyo).
+  const next: ArcaNextNumberState =
+    nextNumber.status === 'ready' && nextNumber.data.cbteTipo !== cbteTipo
+      ? { status: 'loading', data: null, error: null }
+      : nextNumber
+  const arcaNumber = next.status === 'ready' ? next.data.nextNumber : null
+  const relatedVoucher =
+    arcaMode && isNote && relatedVoucherId
+      ? (arca.setup.platformVouchers.find((v) => v.id === relatedVoucherId) ?? null)
+      : null
+
+  const emission = useArcaEmission({
+    tenantSlug,
+    onRefresh: () => router.refresh(),
+    onNumberChanged: nextNumber.override,
+    onEmitted: (data, message) => {
+      toast.success(message)
+      const note = data.observations[0]
+      if (note) toast.info(`ARCA dejó un aviso: ${note}`)
+      router.push(
+        data.documentId ? `${base}/comprobantes/${data.documentId}` : `${base}/ventas?tab=facturas`,
+      )
+    },
+  })
 
   // Las facturas pendientes del cliente: para que la NC o la ND digan cuál corrigen.
   useEffect(() => {
@@ -247,16 +400,21 @@ export function SalesInvoiceForm({
     return {
       docKind,
       partyId: partyId ?? '',
-      voucherType,
-      pointOfSale,
-      number: parsedNumber,
+      voucherType: arcaMode ? arcaVoucherType : voucherType,
+      pointOfSale: arcaMode ? arca.setup.pointOfSale : pointOfSale,
+      number: arcaMode ? arcaNumber : parsedNumber,
       issueDate: issueDate ?? '',
       dueDate: isCredit ? null : dueDate,
       channel,
       aliquots,
       nonTaxedCents: mode === 'detail' ? (nonTaxed ?? 0) : 0,
       exemptCents: mode === 'detail' ? (exempt ?? 0) : 0,
-      relatedDocumentId: isCredit || docKind === 'sales_debit_note' ? relatedId : null,
+      relatedDocumentId:
+        isCredit || docKind === 'sales_debit_note'
+          ? arcaMode
+            ? (relatedVoucher?.documentId ?? null)
+            : relatedId
+          : null,
       collectNow:
         collectNow && !isCredit
           ? {
@@ -271,8 +429,12 @@ export function SalesInvoiceForm({
   }, [
     docKind,
     partyId,
+    arcaMode,
+    arcaVoucherType,
     voucherType,
+    arca.setup.pointOfSale,
     pointOfSale,
+    arcaNumber,
     number,
     issueDate,
     isCredit,
@@ -282,13 +444,114 @@ export function SalesInvoiceForm({
     mode,
     nonTaxed,
     exempt,
+    relatedVoucher,
     relatedId,
     collectNow,
     collectTreasury,
     collectAmount,
     notes,
   ])
-  const preview = useDocumentPreview('sales_invoice', values, ctx, firstOpenDate)
+  // Mientras ARCA no dio el número, el asiento se ve igual (el número no cambia los importes).
+  const previewValues = useMemo(
+    () => (arcaMode && values.number === null ? { ...values, number: 1 } : values),
+    [arcaMode, values],
+  )
+  const preview = useDocumentPreview('sales_invoice', previewValues, ctx, firstOpenDate)
+
+  const arcaBlock = useMemo(
+    () => ({
+      predictedNumber: arcaNumber,
+      condicionIvaReceptorId: effectiveCondicion,
+      concepto,
+      serviceFrom: concepto === 1 ? null : serviceFrom,
+      serviceTo: concepto === 1 ? null : serviceTo,
+      paymentDue: concepto !== 1 && isCredit ? notePaymentDue : null,
+      detail: detail.trim(),
+      relatedVoucherId: isNote ? relatedVoucherId : null,
+    }),
+    [
+      arcaNumber,
+      effectiveCondicion,
+      concepto,
+      serviceFrom,
+      serviceTo,
+      isCredit,
+      notePaymentDue,
+      detail,
+      isNote,
+      relatedVoucherId,
+    ],
+  )
+
+  const dateWindow = arcaDateWindow({
+    today,
+    concepto,
+    lastIssueDate: next.status === 'ready' ? next.data.lastIssueDate : null,
+    firstOpenDate: minDate,
+  })
+
+  // Lo que ARCA pide del cliente (CUIT para la A, tope de la B sin identificar).
+  const receiverIssue = useMemo(
+    () =>
+      arcaMode && party && arcaLetter
+        ? arcaReceiverIssue({
+            letter: arcaLetter,
+            receiver: { taxIdType: party.taxIdType, taxId: party.taxId },
+            totalCents: computedTotal,
+          })
+        : null,
+    [arcaMode, party, arcaLetter, computedTotal],
+  )
+
+  // Lo que pide ARCA, con los mismos textos que la acción (se ve al intentar emitir).
+  const arcaIssues = useMemo((): Record<string, string> => {
+    if (!arcaMode) return {}
+    const out: Record<string, string> = {}
+    const parsed = arcaEmitSchema.safeParse({
+      ...values,
+      number: values.number ?? 1,
+      arca: { ...arcaBlock, predictedNumber: values.number ?? 1 },
+      clientRef: PLACEHOLDER_REF,
+      previewHash: PLACEHOLDER_HASH,
+      warningsAck: [],
+    })
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        const key = issuePath(issue.path)
+        if (!(key in out)) out[key] = issue.message
+      }
+    }
+    if (!letterChoice.ok) {
+      out['arca.condicionIvaReceptorId'] =
+        letterChoice.reason === 'condition_missing'
+          ? 'Elegí la condición frente al IVA del cliente.'
+          : 'A este cliente le corresponde Factura A y todavía no está habilitada: mirá el aviso.'
+    }
+    if (receiverIssue && !out.partyId) out.partyId = receiverIssue.message
+    if (next.status !== 'ready') {
+      out.number =
+        next.status === 'error'
+          ? 'No pudimos consultar el número en ARCA: tocá «Reintentar».'
+          : 'Esperá el número de ARCA.'
+    }
+    if (issueDate && (issueDate < dateWindow.min || issueDate > dateWindow.max)) {
+      out.issueDate =
+        dateWindow.min === dateWindow.max
+          ? 'Con ARCA, esta factura va con la fecha de hoy.'
+          : `Con ARCA, la fecha tiene que estar entre el ${formatIsoDay(dateWindow.min)} y hoy.`
+    }
+    return out
+  }, [
+    arcaMode,
+    values,
+    arcaBlock,
+    letterChoice,
+    receiverIssue,
+    next.status,
+    issueDate,
+    dateWindow.min,
+    dateWindow.max,
+  ])
 
   const undoToast = useUndoToast(tenantSlug)
   const posting = usePosting<SalesInvoiceValues>({
@@ -303,8 +566,13 @@ export function SalesInvoiceForm({
   })
 
   const localErrors = attempted && !preview.state.ok ? (preview.state.fieldErrors ?? {}) : {}
+  const arcaLocal = attempted ? arcaIssues : {}
   const errorOf = (key: string): string | null =>
-    posting.fieldErrors[key] ?? localErrors[key] ?? null
+    (arcaMode ? emission.fieldErrors[key] : undefined) ??
+    posting.fieldErrors[key] ??
+    localErrors[key] ??
+    arcaLocal[key] ??
+    null
   const amountsError =
     errorOf('aliquots') ??
     Object.entries({ ...localErrors, ...posting.fieldErrors }).find(([k]) =>
@@ -312,21 +580,82 @@ export function SalesInvoiceForm({
     )?.[1] ??
     null
 
-  const shown = posting.overrideFor(preview.key) ?? (preview.state.ok ? preview.state.preview : [])
+  const shown =
+    (arcaMode ? emission.overrideFor(preview.key) : posting.overrideFor(preview.key)) ??
+    (preview.state.ok ? preview.state.preview : [])
 
-  function chooseKind(next: DocKind) {
-    setDocKind(next)
-    setVoucherType(voucherFor(next, isLetterA ? 'a' : 'b'))
-    if (next === 'sales_credit_note') setCollectNow(false)
-    posting.clearFieldError('voucherType')
+  function clearError(key: string) {
+    posting.clearFieldError(key)
+    emission.clearFieldError(key)
   }
 
-  function chooseParty(next: string | null) {
-    setPartyId(next)
+  function chooseHow(nextHow: HowMode) {
+    if (emission.lock || emission.pending) return
+    setHow(nextHow)
+    // El consumidor final sin identificar es solo de la emisión con ARCA.
+    if (nextHow === 'manual' && partyId !== null && partyId === finalConsumerId) setPartyId(null)
+    emission.setBanner(null)
+    posting.setBanner(null)
+  }
+
+  function chooseKind(nextKind: DocKind) {
+    setDocKind(nextKind)
+    setVoucherType(voucherFor(nextKind, isLetterA ? 'a' : 'b'))
+    if (nextKind === 'sales_credit_note') setCollectNow(false)
+    if (nextKind === 'sales_invoice') setRelatedVoucherId(null)
+    clearError('voucherType')
+  }
+
+  function chooseParty(nextId: string | null) {
+    if (arcaMode && nextId === FINAL_CONSUMER_PICK) {
+      pickFinalConsumer()
+      return
+    }
+    setPartyId(nextId)
     setRelatedId(null)
-    posting.clearFieldError('partyId')
-    const customer = next ? byId.get(next) : undefined
-    if (customer) setVoucherType(voucherFor(docKind, letterFor(customer.ivaCondition)))
+    setRelatedVoucherId(null)
+    clearError('partyId')
+    const customer = nextId ? byId.get(nextId) : undefined
+    if (customer) {
+      setVoucherType(voucherFor(docKind, letterFor(customer.ivaCondition)))
+      setCondicionId(condicionFromIvaCondition(customer.ivaCondition))
+    } else if (nextId !== null && nextId === finalConsumerId) {
+      setCondicionId(5)
+    }
+  }
+
+  // «Consumidor final (sin identificar)»: el cliente de sistema se crea la primera vez.
+  function pickFinalConsumer() {
+    if (finalConsumerId) {
+      chooseParty(finalConsumerId)
+      return
+    }
+    startFinal(async () => {
+      try {
+        const res = await ensureArcaFinalConsumer(tenantSlug)
+        if (!res.ok) {
+          toast.error(res.message)
+          return
+        }
+        setCreatedFinalId(res.data.partyId)
+        setPartyId(res.data.partyId)
+        setCondicionId(5)
+        setRelatedVoucherId(null)
+        clearError('partyId')
+        // El cliente nuevo tiene que estar en el contexto de la vista previa.
+        router.refresh()
+      } catch {
+        toast.error(ACC_UNREACHABLE.offline)
+      }
+    })
+  }
+
+  function chooseConcepto(nextConcepto: ArcaConcepto) {
+    setConcepto(nextConcepto)
+    // Con servicios ARCA pide cuándo vence el pago: arranca con el plazo del cliente.
+    if (nextConcepto !== 1 && !isCredit && dueDate === null && engineDue) setDueDate(engineDue)
+    if (nextConcepto !== 1 && serviceFrom === null && issueDate) setServiceFrom(issueDate)
+    if (nextConcepto !== 1 && serviceTo === null && issueDate) setServiceTo(issueDate)
   }
 
   // Pegar «0003-00000088» en el número separa el punto de venta.
@@ -341,6 +670,10 @@ export function SalesInvoiceForm({
   function onSubmit(event: FormEvent) {
     event.preventDefault()
     setAttempted(true)
+    if (arcaMode) {
+      submitArca()
+      return
+    }
     if (!preview.state.ok) {
       posting.setBanner({ tone: 'error', message: 'Revisá lo marcado en rojo.' })
       requestAnimationFrame(() => {
@@ -351,16 +684,99 @@ export function SalesInvoiceForm({
     posting.submit(values, preview.state, preview.key)
   }
 
-  const customerOptions = useMemo(
-    (): PartyOption[] =>
-      customers.map((c) => ({
-        id: c.id,
-        name: c.name,
-        tradeName: c.tradeName,
-        taxId: c.taxId,
-        active: c.active,
-      })),
-    [customers],
+  function submitArca() {
+    if (emission.lock || emission.pending) return
+    if (!preview.state.ok || Object.keys(arcaIssues).length > 0) {
+      emission.setBanner({
+        tone: 'error',
+        state: { ok: false, code: 'invalid', message: 'Revisá lo marcado en rojo.' },
+      })
+      requestAnimationFrame(() => {
+        formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
+      })
+      return
+    }
+    // Con el número listo, la vista previa es exactamente la de estos valores.
+    emission.request(
+      { ...values, arca: arcaBlock } as unknown as Omit<
+        ArcaEmitValues,
+        'clientRef' | 'previewHash' | 'warningsAck'
+      >,
+      { key: preview.key, hash: preview.state.hash, warnings: preview.state.warnings },
+    )
+  }
+
+  function verifyLocked(voucherId: string) {
+    startVerify(async () => {
+      try {
+        const res = await reconcileArcaVoucher(tenantSlug, { voucherId })
+        if (!res.ok) {
+          toast.error(res.message)
+          return
+        }
+        switch (res.data.status) {
+          case 'posted':
+            toast.success(res.message)
+            router.push(
+              res.data.documentId
+                ? `${base}/comprobantes/${res.data.documentId}`
+                : `${base}/ventas?tab=facturas`,
+            )
+            return
+          case 'authorized':
+            emission.setLock({
+              kind: 'not_posted',
+              voucherId,
+              label: res.data.label,
+              cae: res.data.cae,
+              message: res.message,
+            })
+            return
+          case 'failed':
+            emission.setLock(null)
+            emission.setBanner({
+              tone: 'info',
+              state: { ok: false, code: 'error', message: res.message },
+            })
+            return
+          default:
+            toast.info(res.message)
+        }
+      } catch {
+        toast.error(ACC_UNREACHABLE.offline)
+      }
+    })
+  }
+
+  const customerOptions = useMemo((): PartyOption[] => {
+    const list: PartyOption[] = customers.map((c) => ({
+      id: c.id,
+      name: c.name,
+      tradeName: c.tradeName,
+      taxId: c.taxId,
+      active: c.active,
+    }))
+    if (!arcaMode) return list
+    return [
+      {
+        id: finalConsumerId ?? FINAL_CONSUMER_PICK,
+        name: FINAL_CONSUMER_LABEL,
+        description: 'Factura B sin los datos de quien compra',
+        active: true,
+      },
+      ...list,
+    ]
+  }, [customers, arcaMode, finalConsumerId])
+  const relatedOptions = useMemo(
+    () =>
+      arcaMode && isNote && partyId
+        ? arca.setup.platformVouchers.filter(
+            (v) =>
+              v.partyId === partyId &&
+              (arcaLetter === null || v.cbteTipo <= 3 === (arcaLetter === 'A')),
+          )
+        : [],
+    [arcaMode, isNote, partyId, arca.setup.platformVouchers, arcaLetter],
   )
   const kindOptions: ChoiceChip<DocKind>[] = [
     { value: 'sales_invoice', label: 'Factura' },
@@ -378,6 +794,22 @@ export function SalesInvoiceForm({
     : collectNow && !isCredit
       ? `Guardar y cobrar${computedTotal > 0 ? ` · ${moneyLabel(computedTotal)}` : ''}`
       : `Guardar ${noun}${computedTotal > 0 ? ` · ${moneyLabel(computedTotal)}` : ''}`
+  const arcaVoucherText = arcaLetter ? voucherLabel(arcaVoucherType) : null
+  const arcaSubmitLabel = emission.pending
+    ? 'Emitiendo…'
+    : `Emitir ${arcaVoucherText ?? noun}${computedTotal > 0 ? ` · ${moneyLabel(computedTotal)}` : ''}`
+  const emitSummary: EmitSummary | null =
+    arcaMode && arcaVoucherText && arcaNumber !== null && arca.setup.pointOfSale !== null
+      ? {
+          voucherLabel: arcaVoucherText,
+          numberText: formatVoucherNumber(arca.setup.pointOfSale, arcaNumber),
+          customer: party ? displayName(party) : '—',
+          totalCents: computedTotal,
+          issueDate: issueDate ?? today,
+        }
+      : null
+  const lock = emission.lock
+  const arcaBanner = emission.banner
 
   return (
     <>
@@ -397,7 +829,56 @@ export function SalesInvoiceForm({
             </p>
           </div>
 
+          {arca.setup.attention.length > 0 ? (
+            <ArcaVoucherAttention
+              slug={tenantSlug}
+              items={arca.setup.attention}
+              canWrite
+              // Las acciones van de a una: primero el número de ARCA, después la verificación.
+              autoVerify={!arcaMode || next.status !== 'loading'}
+            />
+          ) : null}
+          {arca.loadError ? (
+            <Callout
+              tone="warning"
+              action={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-11 md:h-8"
+                  onClick={() => router.refresh()}
+                >
+                  Reintentar
+                </Button>
+              }
+            >
+              No pudimos ver si la emisión con ARCA está prendida. Mientras tanto, la factura se
+              carga como siempre.
+            </Callout>
+          ) : null}
+
           <div className="card-hairline grid gap-5 rounded-xl border bg-card p-6">
+            {arcaOn ? (
+              <div className="grid gap-2">
+                <GroupLabel id={`${id}-how`}>¿Cómo la facturás?</GroupLabel>
+                <ChoiceChips<HowMode>
+                  labelledBy={`${id}-how`}
+                  value={how}
+                  onChange={chooseHow}
+                  options={HOW_OPTIONS.map((o) => ({
+                    ...o,
+                    disabled: lock !== null || emission.pending,
+                  }))}
+                />
+                <p className="text-xs text-muted-foreground text-pretty">
+                  {how === 'arca'
+                    ? 'La plataforma le pide a ARCA la autorización (el CAE), te deja la factura lista para imprimir y la carga en los libros.'
+                    : 'Para una factura que ya hiciste en el sistema que usás hoy: la cargás con su número.'}
+                </p>
+              </div>
+            ) : null}
+
             <div className="grid gap-2">
               <GroupLabel id={`${id}-kind`}>¿Qué vas a cargar?</GroupLabel>
               <ChoiceChips<DocKind>
@@ -408,121 +889,180 @@ export function SalesInvoiceForm({
               />
             </div>
 
-            <Field id={`${id}-party`} label="Cliente" required error={errorOf('partyId')}>
+            <Field
+              id={`${id}-party`}
+              label="Cliente"
+              required
+              error={errorOf('partyId')}
+              hint={
+                arcaMode && !party
+                  ? 'Si no te pide factura con sus datos, elegí «Consumidor final (sin identificar)».'
+                  : undefined
+              }
+            >
               <PartyCombobox
                 id={`${id}-party`}
                 value={partyId}
-                onValueChange={(next) => chooseParty(next)}
+                onValueChange={(nextId) => chooseParty(nextId)}
                 parties={customerOptions}
                 placeholder="Elegí el cliente"
                 onCreate={(name) => setCreating(name)}
+                disabled={preparingFinal}
                 invalid={Boolean(errorOf('partyId'))}
-                aria-describedby={describedBy(`${id}-party`, { error: errorOf('partyId') })}
+                aria-describedby={describedBy(`${id}-party`, {
+                  hint: arcaMode && !party,
+                  error: errorOf('partyId'),
+                })}
               />
             </Field>
-            {party && isLetterA && !party.taxId ? (
+            {preparingFinal ? (
+              <p role="status" className="-mt-3 text-xs text-muted-foreground">
+                Preparando «Consumidor final»…
+              </p>
+            ) : null}
+            {arcaMode && receiverIssue && !errorOf('partyId') ? (
+              <p role="status" className="-mt-3 text-xs text-warning-text text-pretty">
+                {receiverIssue.message}
+              </p>
+            ) : null}
+            {!arcaMode && party && isLetterA && !party.taxId ? (
               <p role="status" className="-mt-3 text-xs text-warning-text">
                 {displayName(party)} no tiene CUIT cargado: una {noun} A lo necesita. Completalo en
                 Ajustes › Partícipes o elegí la letra B.
               </p>
             ) : null}
 
-            <div className="grid gap-5 sm:grid-cols-3">
-              <Field id={`${id}-type`} label="Comprobante" required error={errorOf('voucherType')}>
-                <Select value={voucherType} onValueChange={(v) => setVoucherType(v as VoucherType)}>
-                  <SelectTrigger
-                    id={`${id}-type`}
-                    className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {VOUCHERS[docKind].map((v) => (
-                      <SelectItem key={v.value} value={v.value} className="min-h-11 md:min-h-8">
-                        {v.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field
-                id={`${id}-pos`}
-                label="Punto de venta"
-                required
-                error={errorOf('pointOfSale')}
-                hint={
-                  salesPoints.length === 0 ? 'Cargá los puntos de venta en Ajustes.' : undefined
-                }
-              >
-                <Select
-                  value={pointOfSale === null ? '' : String(pointOfSale)}
-                  onValueChange={(v) => {
-                    setPointOfSale(Number(v))
-                    posting.clearFieldError('pointOfSale')
+            {arcaMode ? (
+              <>
+                <ArcaConditionField
+                  slug={tenantSlug}
+                  value={effectiveCondicion}
+                  onChange={(nextCond) => {
+                    setCondicionId(nextCond)
+                    setRelatedVoucherId(null)
+                    clearError('arca.condicionIvaReceptorId')
                   }}
-                >
-                  <SelectTrigger
-                    id={`${id}-pos`}
-                    className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
-                    aria-invalid={errorOf('pointOfSale') ? true : undefined}
-                  >
-                    <SelectValue placeholder="Elegí" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {salesPoints.map((p) => (
-                      <SelectItem
-                        key={p.number}
-                        value={String(p.number)}
-                        className="min-h-11 md:min-h-8"
-                      >
-                        {String(p.number).padStart(4, '0')} · {p.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field id={`${id}-number`} label="Número" required error={errorOf('number')}>
-                <Input
-                  id={`${id}-number`}
-                  value={number}
-                  inputMode="numeric"
-                  autoComplete="off"
-                  maxLength={13}
-                  placeholder="00000088"
-                  className="h-11 text-base tabular-nums md:h-10 md:text-sm"
-                  aria-invalid={errorOf('number') ? true : undefined}
-                  aria-describedby={describedBy(`${id}-number`, { error: errorOf('number') })}
-                  onPaste={onNumberPaste}
-                  onChange={(e) => {
-                    setNumber(e.target.value.replace(/\D/g, '').slice(0, 8))
-                    posting.clearFieldError('number')
-                  }}
+                  letterChoice={letterChoice}
+                  locked={isFinalConsumer}
+                  error={errorOf('arca.condicionIvaReceptorId')}
                 />
-              </Field>
-            </div>
+                <ArcaNumberRow
+                  voucherLabel={arcaVoucherText}
+                  pointOfSale={arca.setup.pointOfSale}
+                  pointOfSaleLabel={arca.pointOfSaleLabel}
+                  next={next}
+                  onRetry={nextNumber.retry}
+                  error={next.status === 'error' ? null : errorOf('number')}
+                />
+              </>
+            ) : (
+              <div className="grid gap-5 sm:grid-cols-3">
+                <Field
+                  id={`${id}-type`}
+                  label="Comprobante"
+                  required
+                  error={errorOf('voucherType')}
+                >
+                  <Select
+                    value={voucherType}
+                    onValueChange={(v) => setVoucherType(v as VoucherType)}
+                  >
+                    <SelectTrigger
+                      id={`${id}-type`}
+                      className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {VOUCHERS[docKind].map((v) => (
+                        <SelectItem key={v.value} value={v.value} className="min-h-11 md:min-h-8">
+                          {v.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field
+                  id={`${id}-pos`}
+                  label="Punto de venta"
+                  required
+                  error={errorOf('pointOfSale')}
+                  hint={
+                    salesPoints.length === 0 ? 'Cargá los puntos de venta en Ajustes.' : undefined
+                  }
+                >
+                  <Select
+                    value={pointOfSale === null ? '' : String(pointOfSale)}
+                    onValueChange={(v) => {
+                      setPointOfSale(Number(v))
+                      posting.clearFieldError('pointOfSale')
+                    }}
+                  >
+                    <SelectTrigger
+                      id={`${id}-pos`}
+                      className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
+                      aria-invalid={errorOf('pointOfSale') ? true : undefined}
+                    >
+                      <SelectValue placeholder="Elegí" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {salesPoints.map((p) => (
+                        <SelectItem
+                          key={p.number}
+                          value={String(p.number)}
+                          className="min-h-11 md:min-h-8"
+                        >
+                          {String(p.number).padStart(4, '0')} · {p.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field id={`${id}-number`} label="Número" required error={errorOf('number')}>
+                  <Input
+                    id={`${id}-number`}
+                    value={number}
+                    inputMode="numeric"
+                    autoComplete="off"
+                    maxLength={13}
+                    placeholder="00000088"
+                    className="h-11 text-base tabular-nums md:h-10 md:text-sm"
+                    aria-invalid={errorOf('number') ? true : undefined}
+                    aria-describedby={describedBy(`${id}-number`, { error: errorOf('number') })}
+                    onPaste={onNumberPaste}
+                    onChange={(e) => {
+                      setNumber(e.target.value.replace(/\D/g, '').slice(0, 8))
+                      posting.clearFieldError('number')
+                    }}
+                  />
+                </Field>
+              </div>
+            )}
 
             <div className="grid gap-5 sm:grid-cols-3">
               <DateField
                 label="Fecha"
                 required
                 value={issueDate}
-                onValueChange={(next) => {
-                  setIssueDate(next)
-                  posting.clearFieldError('issueDate')
+                onValueChange={(nextDate) => {
+                  setIssueDate(nextDate)
+                  clearError('issueDate')
                 }}
-                min={minDate}
+                min={arcaMode ? dateWindow.min : minDate}
                 max={today}
                 today={today}
+                hint={arcaMode ? arcaDateHint(dateWindow) : undefined}
                 error={errorOf('issueDate')}
               />
               {isCredit ? null : (
                 <DateField
-                  label="Vence"
-                  optional
+                  label={arcaMode && concepto !== 1 ? 'Vence el pago' : 'Vence'}
+                  optional={!(arcaMode && concepto !== 1)}
+                  required={arcaMode && concepto !== 1}
                   value={dueDate}
-                  onValueChange={(next) => {
-                    setDueDate(next)
-                    posting.clearFieldError('dueDate')
+                  onValueChange={(nextDate) => {
+                    setDueDate(nextDate)
+                    clearError('dueDate')
                   }}
                   min={issueDate ?? undefined}
                   shortcuts={false}
@@ -553,7 +1093,56 @@ export function SalesInvoiceForm({
               </Field>
             </div>
 
-            {(isCredit || docKind === 'sales_debit_note') && related.length > 0 ? (
+            {arcaMode ? (
+              <ArcaConceptoField
+                value={concepto}
+                onChange={chooseConcepto}
+                serviceFrom={serviceFrom}
+                serviceTo={serviceTo}
+                onServiceFrom={(v) => {
+                  setServiceFrom(v)
+                  clearError('arca.serviceFrom')
+                }}
+                onServiceTo={(v) => {
+                  setServiceTo(v)
+                  clearError('arca.serviceTo')
+                }}
+                today={today}
+                fromError={errorOf('arca.serviceFrom')}
+                toError={errorOf('arca.serviceTo')}
+              >
+                {isCredit ? (
+                  <DateField
+                    label="Vence el pago"
+                    required
+                    value={notePaymentDue}
+                    onValueChange={(v) => {
+                      setNotePaymentDue(v)
+                      clearError('dueDate')
+                    }}
+                    min={issueDate ?? undefined}
+                    today={today}
+                    shortcuts={false}
+                    error={errorOf('dueDate')}
+                  />
+                ) : null}
+              </ArcaConceptoField>
+            ) : null}
+
+            {arcaMode && isNote ? (
+              <ArcaRelatedField
+                isCredit={isCredit}
+                options={relatedOptions}
+                value={relatedVoucherId}
+                onChange={(v) => {
+                  setRelatedVoucherId(v)
+                  clearError('arca.relatedVoucherId')
+                }}
+                error={errorOf('arca.relatedVoucherId')}
+              />
+            ) : null}
+
+            {!arcaMode && (isCredit || docKind === 'sales_debit_note') && related.length > 0 ? (
               <Field
                 id={`${id}-related`}
                 label={isCredit ? '¿Qué factura corrige?' : '¿Sobre qué factura?'}
@@ -606,6 +1195,17 @@ export function SalesInvoiceForm({
               </Button>
             </div>
 
+            {arcaMode ? (
+              <ArcaDetailField
+                value={detail}
+                onChange={(v) => {
+                  setDetail(v)
+                  clearError('arca.detail')
+                }}
+                error={errorOf('arca.detail')}
+              />
+            ) : null}
+
             {mode === 'total' ? (
               <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_10rem]">
                 <MoneyField
@@ -614,7 +1214,7 @@ export function SalesInvoiceForm({
                   value={total}
                   onValueChange={(cents) => {
                     setTotal(cents)
-                    posting.clearFieldError('aliquots')
+                    clearError('aliquots')
                   }}
                   error={amountsError}
                   hint={
@@ -684,7 +1284,7 @@ export function SalesInvoiceForm({
                             setRows((prev) =>
                               prev.map((r) => (r.key === row.key ? { ...r, net: cents } : r)),
                             )
-                            posting.clearFieldError('aliquots')
+                            clearError('aliquots')
                           }}
                           align="end"
                           aria-label={`Neto gravado de la fila ${index + 1}`}
@@ -787,7 +1387,7 @@ export function SalesInvoiceForm({
                     <TreasurySelect
                       id={`${id}-ctreasury`}
                       value={collectTreasury}
-                      onValueChange={(next) => setCollectTreasury(next)}
+                      onValueChange={(nextTreasury) => setCollectTreasury(nextTreasury)}
                       treasuries={treasuries}
                       excludeCards
                       invalid={Boolean(errorOf('collectNow.treasuryAccountId'))}
@@ -824,15 +1424,63 @@ export function SalesInvoiceForm({
             </Field>
           </div>
 
-          <FormBanner banner={posting.banner} />
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button asChild variant="outline" className="h-11 md:h-9">
-              <Link href={`${base}/ventas?tab=facturas`}>Cancelar</Link>
-            </Button>
-            <Button type="submit" className="h-11 min-w-[200px] md:h-9" disabled={posting.pending}>
-              {submitLabel}
-            </Button>
-          </div>
+          {arcaMode && lock ? (
+            <ArcaLockNotice
+              slug={tenantSlug}
+              base={base}
+              lock={lock}
+              verifying={verifying}
+              onVerify={verifyLocked}
+              onPost={() => setPostingOpen(true)}
+            />
+          ) : (
+            <>
+              {arcaMode ? (
+                arcaBanner ? (
+                  arcaBanner.tone === 'error' &&
+                  arcaBanner.state.code !== 'invalid' &&
+                  arcaBanner.state.detail?.key !== 'offline' ? (
+                    <ArcaProblem slug={tenantSlug} state={arcaBanner.state} />
+                  ) : (
+                    <FormBanner
+                      banner={{
+                        tone: arcaBanner.tone,
+                        message: arcaBanner.state.message,
+                        action:
+                          arcaBanner.state.detail?.key === 'offline'
+                            ? { label: ACC_UNREACHABLE.retryLabel, run: emission.retry }
+                            : undefined,
+                      }}
+                    />
+                  )
+                ) : null
+              ) : (
+                <FormBanner banner={posting.banner} />
+              )}
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button asChild variant="outline" className="h-11 md:h-9">
+                  <Link href={`${base}/ventas?tab=facturas`}>Cancelar</Link>
+                </Button>
+                {arcaMode ? (
+                  <Button
+                    type="submit"
+                    className="h-11 min-w-[200px] md:h-9"
+                    disabled={emission.pending || preparingFinal}
+                  >
+                    {arcaSubmitLabel}
+                  </Button>
+                ) : (
+                  <Button
+                    type="submit"
+                    className="h-11 min-w-[200px] md:h-9"
+                    disabled={posting.pending}
+                  >
+                    {submitLabel}
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         <aside className="lg:sticky lg:top-20">
@@ -841,11 +1489,34 @@ export function SalesInvoiceForm({
       </form>
 
       <WarningsDialog
-        warnings={posting.warnings}
-        pending={posting.pending}
-        onCancel={posting.dismissWarnings}
-        onConfirm={() => posting.confirmWarnings()}
+        warnings={arcaMode ? emission.warnings : posting.warnings}
+        pending={arcaMode ? emission.pending : posting.pending}
+        onCancel={arcaMode ? emission.dismissWarnings : posting.dismissWarnings}
+        onConfirm={() => (arcaMode ? emission.confirmWarnings() : posting.confirmWarnings())}
       />
+      {arcaMode ? (
+        <EmitConfirmDialog
+          open={emission.confirming}
+          onOpenChange={emission.setConfirming}
+          summary={emitSummary}
+          pending={emission.pending}
+          onConfirm={emission.emit}
+        />
+      ) : null}
+      {arcaMode && lock?.kind === 'not_posted' ? (
+        <PostVoucherDialog
+          slug={tenantSlug}
+          voucherId={lock.voucherId}
+          label={lock.label}
+          open={postingOpen}
+          onOpenChange={setPostingOpen}
+          onPosted={(documentId) => {
+            router.push(
+              documentId ? `${base}/comprobantes/${documentId}` : `${base}/ventas?tab=facturas`,
+            )
+          }}
+        />
+      ) : null}
       <QuickPartyDialog
         tenantSlug={tenantSlug}
         open={creating !== null}
@@ -854,15 +1525,92 @@ export function SalesInvoiceForm({
         }}
         kind="customer"
         initialName={creating ?? ''}
-        requireCuit={isLetterA}
+        requireCuit={arcaMode ? arcaLetter === 'A' : isLetterA}
         onCreated={(created) => {
           setPartyId(created.id)
           setVoucherType(voucherFor(docKind, letterFor(created.ivaCondition)))
-          posting.clearFieldError('partyId')
+          setCondicionId(condicionFromIvaCondition(created.ivaCondition))
+          setRelatedVoucherId(null)
+          clearError('partyId')
           // El cliente nuevo tiene que estar en el contexto de la vista previa.
           router.refresh()
         }}
       />
     </>
+  )
+}
+
+/**
+ * Después de un corte o de una emisión sin asiento: el formulario ya no emite
+ * (podría salir dos veces) y ofrece lo que corresponde.
+ */
+function ArcaLockNotice({
+  slug,
+  base,
+  lock,
+  verifying,
+  onVerify,
+  onPost,
+}: {
+  slug: string
+  base: string
+  lock: ArcaLock
+  verifying: boolean
+  onVerify: (voucherId: string) => void
+  onPost: () => void
+}) {
+  if (lock.kind === 'not_posted') {
+    return (
+      <Callout
+        tone="error"
+        title={`${lock.label} está emitida en ARCA, pero falta en los libros`}
+        action={
+          <>
+            <Button asChild variant="outline" size="sm" className="h-11 gap-1.5 md:h-8">
+              <Link href={arcaPrintHref(slug, lock.voucherId)} target="_blank" rel="noopener">
+                <Printer className="size-4" aria-hidden />
+                Imprimir
+              </Link>
+            </Button>
+            <Button type="button" size="sm" className="h-11 gap-1.5 md:h-8" onClick={onPost}>
+              <BookPlus className="size-4" aria-hidden />
+              Cargarla ahora
+            </Button>
+          </>
+        }
+      >
+        {lock.message} No la vuelvas a emitir: ya existe en ARCA.
+      </Callout>
+    )
+  }
+  return (
+    <Callout
+      tone="warning"
+      title="No sabemos si ARCA la emitió"
+      action={
+        <>
+          <Button asChild variant="outline" size="sm" className="h-11 md:h-8">
+            <Link href={`${base}/ventas?tab=facturas`}>Ver facturas</Link>
+          </Button>
+          {lock.voucherId ? (
+            <Button
+              type="button"
+              size="sm"
+              className="h-11 gap-1.5 md:h-8"
+              disabled={verifying}
+              onClick={() => lock.voucherId && onVerify(lock.voucherId)}
+            >
+              <RefreshCw
+                className={verifying ? 'size-4 animate-spin motion-reduce:animate-none' : 'size-4'}
+                aria-hidden
+              />
+              {verifying ? 'Verificando…' : 'Verificar con ARCA'}
+            </Button>
+          ) : null}
+        </>
+      }
+    >
+      {lock.message}
+    </Callout>
   )
 }

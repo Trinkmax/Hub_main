@@ -130,11 +130,11 @@ describe('pestañas de sección: qué ve cada uno', () => {
     })
   })
 
-  describe('Administración: las puertas de los seis ítems que tenía el menú', () => {
-    const ALL = ['Resumen', 'Compras', 'Ventas', 'Cajas', 'Libros', 'Plan de cuentas']
+  describe('Administración: las puertas de los seis ítems que tenía el menú, más «Importar»', () => {
+    const ALL = ['Resumen', 'Compras', 'Ventas', 'Cajas', 'Importar', 'Libros', 'Plan de cuentas']
     const accountingOn: TenantFeatures = { ...allOff, accounting: true }
 
-    it('dueño con acceso: las seis, con sus rutas; Resumen exacta', () => {
+    it('dueño con acceso: las siete, con sus rutas; Resumen exacta', () => {
       const section = resolveSection(
         'administracion',
         SLUG,
@@ -147,6 +147,7 @@ describe('pestañas de sección: qué ve cada uno', () => {
         '/hub/administracion/compras',
         '/hub/administracion/ventas',
         '/hub/administracion/cajas',
+        '/hub/administracion/importar',
         '/hub/administracion/libros',
         '/hub/administracion/plan-de-cuentas',
       ])
@@ -155,7 +156,7 @@ describe('pestañas de sección: qué ve cada uno', () => {
       expect(section.showWhenNoneActive).toBe(true)
     })
 
-    it('la contadora ve las mismas seis', () => {
+    it('la contadora ve las mismas siete (Importar, en solo lectura)', () => {
       const section = resolveSection(
         'administracion',
         SLUG,
@@ -242,6 +243,9 @@ describe('pestaña activa según la URL', () => {
     expect(active('administracion', '/hub/administracion/ventas/clientes/c1')).toBe('ventas')
     expect(active('administracion', '/hub/administracion/ventas/cierre')).toBe('ventas')
     expect(active('administracion', '/hub/administracion/cajas/gasto-bancario')).toBe('cajas')
+    expect(active('administracion', '/hub/administracion/importar')).toBe('importar')
+    expect(active('administracion', '/hub/administracion/importar/arca')).toBe('importar')
+    expect(active('administracion', '/hub/administracion/importar/b1')).toBe('importar')
     expect(active('administracion', '/hub/administracion/libros/subdiarios')).toBe('libros')
     expect(active('administracion', '/hub/administracion/plan-de-cuentas/importar')).toBe(
       'plan-de-cuentas',

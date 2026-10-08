@@ -8,6 +8,7 @@ import {
 } from '@/lib/accounting/queries'
 import { ivaConditionLabel } from '@/lib/accounting/queries/csv'
 import { voucherLabel } from '@/lib/accounting/voucher-types'
+import { getArcaLookupStatus } from '@/lib/arca/queries'
 import { formatCuit } from '@/lib/fiscal'
 import { cn } from '@/lib/utils'
 import { isPurchaseImputation } from '../../../_lib/accounts'
@@ -51,7 +52,14 @@ export async function DataTab({
   canWrite: boolean
   hasBalance: boolean
 }) {
-  const accounts = canWrite ? await settleQuery(listAccounts(tenantId)) : null
+  // «Completar con ARCA» en «Editar datos»: si ARCA no se pudo leer (p. ej. la base
+  // todavía no tiene sus tablas), el formulario queda como siempre.
+  const [accounts, arcaLookup] = canWrite
+    ? await Promise.all([
+        settleQuery(listAccounts(tenantId)),
+        settleQuery(getArcaLookupStatus(tenantId)),
+      ])
+    : [null, null]
   const options: AccountRow[] = accounts?.ok ? accounts.data : []
   const imputable = new Set(options.filter(isPurchaseImputation).map((a) => a.id))
 
@@ -111,6 +119,7 @@ export async function DataTab({
                   description: a.description,
                 }))}
               voucherOptions={PURCHASE_VOUCHER_OPTIONS}
+              arcaLookup={arcaLookup?.ok ? arcaLookup.data : null}
             />
           </div>
         ) : null}

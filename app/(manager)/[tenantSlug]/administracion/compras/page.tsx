@@ -1,4 +1,4 @@
-import { FilePlus2, HandCoins, Plus } from 'lucide-react'
+import { FileDown, FilePlus2, HandCoins, Plus } from 'lucide-react'
 import Link from 'next/link'
 import { ActionButton, QuickActionsBar } from '@/components/administracion/quick-actions'
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
 import { todayInCordoba } from '@/lib/dates'
+import { importSourceHref } from '@/lib/imports/ui/labels'
 import { DocumentsTab } from './_components/documents-tab'
 import { RecurringTab } from './_components/recurring-tab'
 import { SuppliersTab } from './_components/suppliers-tab'
@@ -69,6 +70,12 @@ export default async function ComprasPage({
         actions={
           canWrite ? (
             <div className="hidden flex-wrap items-center gap-2 lg:flex">
+              <Button asChild variant="outline" className="gap-2">
+                <Link href={importSourceHref(tenantSlug, 'arca_recibidos')}>
+                  <FileDown className="size-4" aria-hidden />
+                  Importar de ARCA
+                </Link>
+              </Button>
               <Button asChild variant="outline" className="gap-2">
                 <Link href={newPurchaseHref(tenantSlug)}>
                   <FilePlus2 className="size-4" aria-hidden />

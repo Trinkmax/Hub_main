@@ -163,7 +163,7 @@ export const ARCA_GUIDE_STEPS: readonly ArcaGuideStep[] = [
     minutes: 3,
     verification: 'test',
     optional: false,
-    howVerified: 'Lo confirmamos al probar la conexión. Antes podés marcar «Ya lo hice».',
+    howVerified: 'Lo confirmamos al probar la conexión. Antes se puede marcar «Ya lo hice».',
   },
   {
     id: 's8_padron',
@@ -174,7 +174,7 @@ export const ARCA_GUIDE_STEPS: readonly ArcaGuideStep[] = [
     minutes: 2,
     verification: 'test',
     optional: false,
-    howVerified: 'Lo confirmamos al probar la conexión. Antes podés marcar «Ya lo hice».',
+    howVerified: 'Lo confirmamos al probar la conexión. Antes se puede marcar «Ya lo hice».',
   },
   {
     id: 's9_probar',

@@ -14,6 +14,7 @@ import {
   requireAccountingAccess,
 } from '@/lib/accounting/access'
 import { getAccountingSettings, getSummary, settleQuery } from '@/lib/accounting/queries'
+import { getIntegrationAttention } from '@/lib/accounting/queries/integrations'
 import { formatIsoDay, todayInCordoba } from '@/lib/dates'
 import {
   RoleRequiredError,
@@ -41,6 +42,11 @@ import { Callout } from './ajustes/_components/form-bits'
  * con una sola lectura (`acc_report_summary`). El dueño ve las acciones y
  * «Necesita atención»; la contadora, los mismos números sin acciones y el
  * estado de los libros.
+ *
+ * «Necesita atención» suma una segunda fuente para el dueño (diseño §5.2.4):
+ * los avisos de ARCA, Mercado Pago, el banco y Mis Comprobantes
+ * (`getIntegrationAttention`), sin tocar `acc_report_summary`. Mientras esas
+ * tablas no estén, no trae nada; si falla, la lista lo dice con «Reintentar».
  */
 export default async function AdministracionResumenPage({
   params,
@@ -72,13 +78,16 @@ export default async function AdministracionResumenPage({
   const canWrite = access.accounting.write
   const today = todayInCordoba()
 
-  const [summaryResult, settingsResult, cookieStore] = await Promise.all([
+  const [summaryResult, settingsResult, cookieStore, integrationResult] = await Promise.all([
     settleQuery(getSummary(tenantId, { asOf: today })),
     settleQuery(getAccountingSettings(tenantId)),
     cookies(),
+    canWrite ? settleQuery(getIntegrationAttention(tenantId)) : Promise.resolve(null),
   ])
   const settings = settingsResult.ok ? settingsResult.data : null
   const summary = summaryResult.ok ? summaryResult.data : null
+  const integration = integrationResult?.ok ? integrationResult.data : []
+  const integrationFailed = integrationResult !== null && !integrationResult.ok
   const stepsHidden = cookieStore.get(firstStepsCookieName(tenantSlug))?.value === '1'
 
   const openingPending = settings?.openingStatus === 'pending'
@@ -183,6 +192,19 @@ export default async function AdministracionResumenPage({
 
           {canWrite && !stepsHidden ? <FirstSteps base={base} steps={summary.firstSteps} /> : null}
 
+          {/* Recién configurada no hay «Necesita atención»: salvo que ARCA o un importador avisen algo. */}
+          {isNew && canWrite && (integration.length > 0 || integrationFailed) ? (
+            <SummaryCard title="Necesita atención" description="Lo más urgente primero.">
+              <AttentionList
+                items={[]}
+                today={today}
+                base={base}
+                integration={integration}
+                integrationFailed={integrationFailed}
+              />
+            </SummaryCard>
+          ) : null}
+
           {isNew ? null : (
             <div className={canWrite ? 'grid gap-6 lg:grid-cols-3' : 'grid gap-6 lg:grid-cols-2'}>
               {canWrite ? (
@@ -197,6 +219,8 @@ export default async function AdministracionResumenPage({
                     )}
                     today={today}
                     base={base}
+                    integration={integration}
+                    integrationFailed={integrationFailed}
                   />
                 </SummaryCard>
               ) : (

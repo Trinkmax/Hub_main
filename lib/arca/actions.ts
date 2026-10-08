@@ -39,11 +39,20 @@ import { formatCuit } from '@/lib/fiscal'
 import { RateLimitedError, rateLimit } from '@/lib/rate-limit'
 import { createClient } from '@/lib/supabase/server'
 import { type CertificateInfo, parseCertificate } from './cert'
-import { CONNECTION_TEST_BUDGET_MS, runConnectionTest } from './connection-test'
+import { CONNECTION_TEST_DEADLINE_MS, runConnectionTest } from './connection-test'
 import { generateKeyAndCsr, type KeyAndCsr } from './csr'
 import { ArcaCryptoError } from './der'
 import type { ArcaEnvironment } from './endpoints'
-import { lookupPadron, PADRON_MESSAGES } from './lookup'
+import type { ArcaTestCheck } from './guide'
+import {
+  type PadronBatchResult as LookupBatchResult,
+  lookupCuitsSchema,
+  lookupPadron,
+  lookupPadronBatch,
+  normalizeCuitBatch,
+  PADRON_LOOKUP_DEADLINE_MS,
+  PADRON_MESSAGES,
+} from './lookup'
 import { classifyUpload } from './pem'
 import {
   connectionView,
@@ -71,7 +80,7 @@ import {
   uploadCertificateSchema,
 } from './schemas'
 import { isArcaSecretsKeyError, secretsKey } from './secrets'
-import { openArcaSession } from './session'
+import { arcaDeadline, openArcaSession } from './session'
 import { asRec, dateOf, isArcaStoreError, textOf } from './store'
 import {
   ARCA_ENVIRONMENT_LABELS,
@@ -87,6 +96,12 @@ import {
   csrFileName,
   type PadronLookupResult,
 } from './views'
+
+/**
+ * Lo que devuelve `lookupCuits` (contrato C2): un resultado por CUIT o una falla de
+ * todo el lote. Es solo un tipo (los archivos `'use server'` exportan solo funciones).
+ */
+export type PadronBatchResult = LookupBatchResult
 
 // ─── Piezas comunes ──────────────────────────────────────────────────────────
 
@@ -503,7 +518,7 @@ export async function saveArcaPointOfSale(
         salesPoint.label !== PLATFORM_SALES_POINT_LABEL
       ) {
         warnings.push(
-          `El ${pointOfSale} ya está en Ajustes › Puntos de venta como «${salesPoint.label}». Si es el de Thinkeon, elegí otro: la plataforma necesita uno propio para no chocar la numeración.`,
+          `El ${pointOfSale} ya está en Ajustes › Puntos de venta como «${salesPoint.label}». Si es el que usa el sistema de caja que tenés hoy, elegí otro: la plataforma necesita uno propio para no chocar la numeración.`,
         )
       }
     }
@@ -593,16 +608,34 @@ const TEST_LOGIN_TIMEOUT_MS = 15_000
 /** Estados con certificado: los únicos que se pueden probar (igual que la base). */
 const TESTABLE = new Set(['cert_ready', 'connected', 'error'])
 
-function testMessage(view: ArcaTestView): string {
+/** El primer problema es un chequeo al que no le llegó el tiempo. */
+const TEST_NOT_STARTED_MESSAGE =
+  'No se llegó a probar todo: ARCA venía lento y cortamos la prueba a tiempo para no trabar la conexión. Volvé a tocar «Probar conexión».'
+/** Algún chequeo posterior al primer problema no se llegó a probar. */
+const TEST_PARTIAL_MESSAGE = 'Algunos chequeos no se llegaron a probar.'
+/** ARCA rechazó el ticket guardado y quedó descartado (`acc_arca_ticket_drop`). */
+const TEST_TICKET_DROPPED_MESSAGE =
+  'ARCA rechazó el permiso guardado y ya lo descartamos. Esperá unos minutos y volvé a probar.'
+
+function testMessage(view: ArcaTestView, checks: readonly ArcaTestCheck[]): string {
   if (view.status === 'connected') {
     return view.checks.some((c) => c.tone === 'warning')
       ? '¡Listo! ARCA quedó conectado. Revisá los avisos.'
       : '¡Listo! ARCA quedó conectado.'
   }
   const problem = view.firstProblem
-  return problem?.title
-    ? `La prueba encontró un problema: ${problem.title}.`
-    : 'La prueba encontró un problema: revisá los chequeos.'
+  const notStarted = checks.filter((c) => c.detail?.not_started === true)
+  const stoppedFirst = problem !== null && notStarted.some((c) => c.key === problem.key)
+  const parts = [
+    stoppedFirst
+      ? TEST_NOT_STARTED_MESSAGE
+      : problem?.title
+        ? `La prueba encontró un problema: ${problem.title}.`
+        : 'La prueba encontró un problema: revisá los chequeos.',
+  ]
+  if (checks.some((c) => c.detail?.ticket_dropped === true)) parts.push(TEST_TICKET_DROPPED_MESSAGE)
+  if (!stoppedFirst && notStarted.length > 0) parts.push(TEST_PARTIAL_MESSAGE)
+  return parts.join(' ')
 }
 
 /**
@@ -611,6 +644,12 @@ function testMessage(view: ArcaTestView): string {
  * padrón y vencimiento del certificado), cortando en el primero fatal. Borra el
  * cooldown manual del ticket (es la acción explícita después de arreglar algo).
  * Guarda el resultado con `acc_arca_record_test`, que decide `connected` o `error`.
+ *
+ * **Plazo duro de 50 s** desde que empieza (`CONNECTION_TEST_DEADLINE_MS`; la función
+ * tiene 60): cada llamada a ARCA tiene de tope lo que queda menos 3 s y un login al
+ * WSAA solo se empieza con 20 s o más por delante. Lo que no entra queda «no se llegó
+ * a probar». Si ARCA rechaza el ticket guardado, se descarta (la próxima prueba pide
+ * otro) y el mensaje lo dice.
  *
  * Entrada: `{ environment }`. Devuelve la prueba en palabras simples
  * (`ArcaTestView`): `ok: true` quiere decir que la prueba corrió, aunque haya dado
@@ -621,6 +660,8 @@ export async function testArcaConnection(
   raw: unknown,
 ): Promise<AccSimpleState<ArcaTestView>> {
   const op = 'testConnection'
+  // El reloj corre desde que llega el pedido (la sesión y la base también cuentan).
+  const deadline = arcaDeadline(CONNECTION_TEST_DEADLINE_MS)
   try {
     const bad = badSlug(slug)
     if (bad) return bad
@@ -651,6 +692,7 @@ export async function testArcaConnection(
       clearManualCooldown: true,
       timeoutMs: TEST_CALL_TIMEOUT_MS,
       loginTimeoutMs: TEST_LOGIN_TIMEOUT_MS,
+      deadline,
     })
     const run = await runConnectionTest({
       session,
@@ -660,7 +702,7 @@ export async function testArcaConnection(
       allowedClasses: conn.allowedClasses,
       certNotAfter: dateOf(conn.certNotAfter),
       sasLegalName: sas?.legalName ?? null,
-      budgetMs: CONNECTION_TEST_BUDGET_MS,
+      deadline,
     })
 
     const supabase = await createClient()
@@ -685,7 +727,7 @@ export async function testArcaConnection(
       sasName: sas?.legalName ?? null,
       environment,
     })
-    return { ok: true, data: view, message: testMessage(view) }
+    return { ok: true, data: view, message: testMessage(view, run.checks) }
   } catch (e) {
     return failureState(op, e)
   }
@@ -778,15 +820,37 @@ export async function markGuideStep(
 
 // ─── «Completar con ARCA» ────────────────────────────────────────────────────
 
+const PADRON_RATE_LIMITED = {
+  ok: false,
+  code: 'rate_limited',
+  message: 'Hiciste muchas consultas seguidas. Esperá un minuto y probá de nuevo.',
+  step: null,
+} as const satisfies PadronLookupResult
+
+/**
+ * Tope compartido de «Completar con ARCA»: 30 consultas por minuto por bar. Un lote
+ * cuenta como UNA consulta (es una sola llamada al padrón). `false` si se pasó.
+ */
+function padronRateOk(tenantId: string): boolean {
+  try {
+    rateLimit({ key: `arca-padron:${tenantId}`, limit: 30, windowMs: 60_000 })
+    return true
+  } catch (e) {
+    if (e instanceof RateLimitedError) return false
+    throw e
+  }
+}
+
 /**
  * La constancia de inscripción de una CUIT para completar el alta de un proveedor
  * o un cliente (§3.1): caché del bar (30 días) o ARCA. Hasta 30 consultas por
- * minuto por bar.
+ * minuto por bar. Plazo duro de 40 s (`PADRON_LOOKUP_DEADLINE_MS`).
  *
  * Entrada (`lookupCuitSchema`): `{ cuit, purpose: 'supplier' | 'customer', refresh? }`.
  * Nunca tira: `{ ok: true, data }` o `{ ok: false, code, message, step }`.
  */
 export async function lookupCuit(slug: string, raw: unknown): Promise<PadronLookupResult> {
+  const deadline = arcaDeadline(PADRON_LOOKUP_DEADLINE_MS)
   try {
     if (badSlug(slug)) {
       return { ok: false, code: 'forbidden', message: accFailure('forbidden').message, step: null }
@@ -803,27 +867,86 @@ export async function lookupCuit(slug: string, raw: unknown): Promise<PadronLook
         step: null,
       }
     }
-    try {
-      rateLimit({ key: `arca-padron:${auth.tenantId}`, limit: 30, windowMs: 60_000 })
-    } catch (e) {
-      if (e instanceof RateLimitedError) {
-        return {
-          ok: false,
-          code: 'rate_limited',
-          message: 'Hiciste muchas consultas seguidas. Esperá un minuto y probá de nuevo.',
-          step: null,
-        }
-      }
-      throw e
-    }
+    if (!padronRateOk(auth.tenantId)) return PADRON_RATE_LIMITED
     return await lookupPadron({
       tenantId: auth.tenantId,
       cuit: parsed.data.cuit,
       purpose: parsed.data.purpose,
       refresh: parsed.data.refresh,
+      deadline,
     })
   } catch (e) {
     console.error('[arca.lookupCuit] inesperado', e instanceof Error ? e.name : 'unknown')
+    return { ok: false, code: 'error', message: PADRON_MESSAGES.unexpected, step: null }
+  }
+}
+
+/**
+ * «Completar con ARCA» en lote (contrato C2): las constancias de hasta 250 CUIT, para
+ * el paso «Proveedores nuevos» del importador. Primero la caché del bar (30 días) y las
+ * que faltan en UNA consulta al padrón (`getPersonaList_v2`), que también quedan en la
+ * caché. Cuenta como una sola consulta del tope de 30 por minuto. Plazo duro de 40 s.
+ *
+ * Entrada (objeto): `{ cuits: string[] (1 a 250, con o sin guiones), purpose?: 'supplier' | 'customer' }`.
+ * Las CUIT se normalizan y se sacan las repetidas; las que no son válidas vuelven con
+ * `invalid_cuit` sin consultar nada.
+ *
+ * Nunca tira: `{ ok: true, data: { results: [{ cuit, result }] } }` (un resultado por
+ * CUIT, en el orden en que vinieron; `result` es el mismo `PadronLookupResult` de
+ * `lookupCuit`) o `{ ok: false, code, message, step }` si falla todo el lote (sin
+ * permiso, ARCA sin conectar o sin contestar, el tope por minuto). Solo para quien
+ * puede cargar (la contadora recibe `forbidden`).
+ */
+export async function lookupCuits(slug: string, raw: unknown): Promise<PadronBatchResult> {
+  const deadline = arcaDeadline(PADRON_LOOKUP_DEADLINE_MS)
+  try {
+    if (badSlug(slug)) {
+      return { ok: false, code: 'forbidden', message: accFailure('forbidden').message, step: null }
+    }
+    const auth = await authorizeAccounting(slug, 'write')
+    if (!auth.ok) return { ok: false, code: 'forbidden', message: auth.state.message, step: null }
+    const parsed = lookupCuitsSchema.safeParse(formInput(raw))
+    if (!parsed.success) {
+      return {
+        ok: false,
+        code: 'error',
+        message: parsed.error.issues[0]?.message ?? 'Revisá las CUIT.',
+        step: null,
+      }
+    }
+    const entries = normalizeCuitBatch(parsed.data.cuits)
+    const valid = entries.flatMap((e) => (e.valid ? [e.cuit] : []))
+    const results: Array<{ cuit: string; result: PadronLookupResult }> = []
+    if (valid.length > 0) {
+      if (!padronRateOk(auth.tenantId)) return PADRON_RATE_LIMITED
+      const batch = await lookupPadronBatch({
+        tenantId: auth.tenantId,
+        cuits: valid,
+        purpose: parsed.data.purpose,
+        deadline,
+      })
+      if (!batch.ok) return batch
+      results.push(...batch.data.results)
+    }
+    const byCuit = new Map(results.map((r) => [r.cuit, r.result]))
+    return {
+      ok: true,
+      data: {
+        results: entries.map((e) => ({
+          cuit: e.cuit,
+          result: e.valid
+            ? (byCuit.get(e.cuit) ?? {
+                ok: false,
+                code: 'error',
+                message: PADRON_MESSAGES.unexpected,
+                step: null,
+              })
+            : e.result,
+        })),
+      },
+    }
+  } catch (e) {
+    console.error('[arca.lookupCuits] inesperado', e instanceof Error ? e.name : 'unknown')
     return { ok: false, code: 'error', message: PADRON_MESSAGES.unexpected, step: null }
   }
 }

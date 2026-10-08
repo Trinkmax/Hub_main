@@ -6,8 +6,12 @@ import { ReadOnlyBadge, ReadOnlyNotice } from '@/components/administracion/read-
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
 import { loadPostingCatalog, loadPostingContext } from '@/lib/accounting/context'
+import { settleQuery } from '@/lib/accounting/queries/shared'
 import { loadFirstOpenDate } from '@/lib/accounting/server/document-context'
+import type { ArcaEmissionSetup } from '@/lib/arca/emit-form'
+import { getArcaEmissionSetup } from '@/lib/arca/emit-queries'
 import {
+  type InvoiceArca,
   type InvoiceCustomer,
   type InvoiceSalesPoint,
   SalesInvoiceForm,
@@ -74,10 +78,12 @@ export default async function NuevaFacturaPage({
   }
 
   const tenantId = access.tenant.id
-  const [catalog, ctx, firstOpenDate] = await Promise.all([
+  const [catalog, ctx, firstOpenDate, arcaSetup] = await Promise.all([
     loadPostingCatalog(tenantId),
     loadPostingContext(tenantId),
     loadFirstOpenDate(tenantId),
+    // La emisión con ARCA: si falla la lectura, la factura se carga como siempre (manual).
+    settleQuery(getArcaEmissionSetup(tenantId, { vatRegistered: true })),
   ])
 
   const customers: InvoiceCustomer[] = catalog.parties
@@ -87,6 +93,7 @@ export default async function NuevaFacturaPage({
       name: p.name,
       tradeName: p.tradeName,
       taxId: p.taxId,
+      taxIdType: p.taxIdType,
       ivaCondition: p.ivaCondition,
       paymentTermDays: p.paymentTermDays,
       active: p.active,
@@ -106,12 +113,43 @@ export default async function NuevaFacturaPage({
       active: t.active,
     }))
 
+  const finalConsumerId =
+    catalog.parties.find((p) => p.systemKey === 'consumidor_final')?.id ?? null
+  const vatRegistered = catalog.settings.ivaCondition === 'responsable_inscripto'
+  const setup: ArcaEmissionSetup = arcaSetup.ok
+    ? vatRegistered || arcaSetup.data.state !== 'on'
+      ? arcaSetup.data
+      : { ...arcaSetup.data, state: 'off', offReason: 'not_vat_registered' }
+    : {
+        state: 'unavailable',
+        offReason: null,
+        pointOfSale: null,
+        allowedClasses: ['B'],
+        defaultConcepto: 1,
+        platformVouchers: [],
+        attention: [],
+      }
+  const arca: InvoiceArca = {
+    setup,
+    finalConsumerId,
+    pointOfSaleLabel:
+      setup.pointOfSale === null
+        ? null
+        : (catalog.salesPoints.find((p) => p.number === setup.pointOfSale)?.label ?? null),
+    loadError: arcaSetup.ok ? null : arcaSetup.message,
+  }
+
   const cliente = firstParam(sp.cliente)
   const relacionada = firstParam(sp.relacionada)
   const prefill = {
     docKind: docKindOf(firstParam(sp.tipo)),
     partyId:
-      cliente && UUID_RE.test(cliente) && customers.some((c) => c.id === cliente) ? cliente : null,
+      cliente &&
+      UUID_RE.test(cliente) &&
+      (customers.some((c) => c.id === cliente) ||
+        (cliente === finalConsumerId && setup.state === 'on'))
+        ? cliente
+        : null,
     relatedDocumentId: relacionada && UUID_RE.test(relacionada) ? relacionada : null,
   }
 
@@ -132,6 +170,7 @@ export default async function NuevaFacturaPage({
         salesPoints={salesPoints}
         treasuries={treasuries}
         prefill={prefill}
+        arca={arca}
       />
     </PageShell>
   )

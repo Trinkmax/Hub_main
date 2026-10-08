@@ -268,12 +268,18 @@ const PROPOSAL_READ_COLUMNS =
 
 /**
  * Las propuestas de un lote, por estado (todas si no se pide uno), en orden de
- * clave. `offset`/`limit` para paginar (hasta 500 por página).
+ * clave. `offset`/`limit` para paginar (hasta 500 por página). Con `need`, solo
+ * las que necesitan eso (los chips de «Para revisar»: `needs @> [{key}]`).
  */
 export async function listImportProposals(
   tenantId: string,
   batchId: string,
-  opts: { statuses?: readonly ProposalStatus[]; limit?: number; offset?: number } = {},
+  opts: {
+    statuses?: readonly ProposalStatus[]
+    need?: NeedKey | null
+    limit?: number
+    offset?: number
+  } = {},
 ): Promise<{ rows: ImportProposalRow[]; total: number }> {
   if (!isUuid(batchId)) return { rows: [], total: 0 }
   const supabase = await readerClient()
@@ -285,6 +291,10 @@ export async function listImportProposals(
     .eq('tenant_id', tenantId)
     .eq('batch_id', batchId)
   if (opts.statuses && opts.statuses.length > 0) q = q.in('status', [...opts.statuses])
+  if (opts.need && (NEED_KEYS as readonly string[]).includes(opts.need)) {
+    // jsonb: la cadena va tal cual al operador `cs` (un arreglo JSON, no uno de Postgres).
+    q = q.contains('needs', JSON.stringify([{ key: opts.need }]))
+  }
   const { data, error, count } = await q.order('key').range(offset, offset + limit - 1)
   if (error) throw queryError('acc_import_proposals', error)
   const rows = asRecords(data).map(parseProposal)

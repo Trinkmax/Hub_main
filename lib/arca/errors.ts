@@ -112,9 +112,9 @@ export const ARCA_ERRORS: Readonly<Record<ArcaErrorKey, ArcaErrorInfo>> = {
   },
   arca_already_authenticated: {
     title: 'ARCA ya le dio un permiso a este certificado',
-    body: '¿Estás usando este mismo certificado en otro sistema, como Thinkeon? La plataforma necesita su propio alias. Si recién lo probaste, esperá {minutos} minutos y volvé a probar.',
+    body: '¿Estás usando este mismo certificado en otro sistema, como el sistema de caja que usás hoy? La plataforma necesita su propio alias. Si recién lo probaste, esperá {minutos} minutos y volvé a probar.',
     fallback:
-      '¿Estás usando este mismo certificado en otro sistema, como Thinkeon? La plataforma necesita su propio alias. Si recién lo probaste, esperá entre 2 y 10 minutos y volvé a probar.',
+      '¿Estás usando este mismo certificado en otro sistema, como el sistema de caja que usás hoy? La plataforma necesita su propio alias. Si recién lo probaste, esperá entre 2 y 10 minutos y volvé a probar.',
     step: 's6_certificado',
     retry: 'later',
   },

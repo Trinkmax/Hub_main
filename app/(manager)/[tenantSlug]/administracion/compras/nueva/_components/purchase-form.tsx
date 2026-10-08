@@ -15,6 +15,11 @@ import {
   useState,
 } from 'react'
 import { AccountCombobox } from '@/components/administracion/account-combobox'
+import {
+  ArcaLookupPanel,
+  ArcaLookupTrigger,
+  useArcaLookup,
+} from '@/components/administracion/arca-lookup'
 import { DateField } from '@/components/administracion/date-input'
 import { EntryPreview } from '@/components/administracion/entry-preview'
 import { MoneyField } from '@/components/administracion/money-input'
@@ -39,6 +44,7 @@ import { vatRateLabel } from '@/lib/accounting/queries/labels'
 import { previewDocumentForm } from '@/lib/accounting/server/document-forms'
 import type { IvaCondition, VatRateBp, VoucherType } from '@/lib/accounting/types'
 import { VOUCHER_CATALOG, voucherConditionCheck } from '@/lib/accounting/voucher-types'
+import { ivaOptionsWith } from '@/lib/arca/lookup-fill'
 import { formatIsoDay, formatMonthYear } from '@/lib/dates'
 import { formatCuit } from '@/lib/fiscal'
 import { formatCents, formatCentsShort } from '@/lib/money'
@@ -324,6 +330,36 @@ export function PurchaseForm({
   )
   const touched = useRef({ voucher: false, account: false, due: false })
   const defaultsSeq = useRef(0)
+  /** La persona eligió a mano la condición del proveedor nuevo (ARCA pregunta antes de cambiarla). */
+  const [newPartyIvaTouched, setNewPartyIvaTouched] = useState(false)
+
+  // «Completar con ARCA» del proveedor nuevo (diseño §3.1).
+  const newParty = party?.kind === 'new' ? party : null
+  const arca = useArcaLookup({
+    tenantSlug,
+    purpose: 'supplier',
+    cuit: newParty?.taxId ?? '',
+    values: { name: newParty?.name ?? '', ivaCondition: newParty?.ivaCondition ?? null },
+    spec: {
+      ivaOptions: NEW_PARTY_CONDITIONS.map((c) => c.value),
+      chosen: newPartyIvaTouched ? ['ivaCondition'] : [],
+    },
+    onApply: (patch) => {
+      if (patch.ivaCondition !== undefined) {
+        touched.current.voucher = false
+        setVoucherType(null)
+      }
+      setParty((prev) =>
+        prev?.kind === 'new'
+          ? {
+              ...prev,
+              ...(patch.name !== undefined ? { name: patch.name } : null),
+              ...(patch.ivaCondition !== undefined ? { ivaCondition: patch.ivaCondition } : null),
+            }
+          : prev,
+      )
+    },
+  })
 
   // ── Derivados del proveedor y del tipo ──
   const existing = party?.kind === 'existing' ? (partyById.get(party.id) ?? null) : null
@@ -760,6 +796,7 @@ export function PurchaseForm({
                     onValueChange={(v) => {
                       touched.current.voucher = false
                       setVoucherType(null)
+                      setNewPartyIvaTouched(true)
                       setParty({ ...party, ivaCondition: v as IvaCondition })
                     }}
                   >
@@ -770,7 +807,7 @@ export function PurchaseForm({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {NEW_PARTY_CONDITIONS.map((c) => (
+                      {ivaOptionsWith(NEW_PARTY_CONDITIONS, party.ivaCondition).map((c) => (
                         <SelectItem key={c.value} value={c.value} className="min-h-11 md:min-h-8">
                           {c.label}
                         </SelectItem>
@@ -824,6 +861,8 @@ export function PurchaseForm({
                   </div>
                 </Field>
               </div>
+              <ArcaLookupTrigger lookup={arca} />
+              <ArcaLookupPanel lookup={arca} />
             </div>
           ) : (
             <Field
@@ -853,6 +892,8 @@ export function PurchaseForm({
                   setVoucherType(null)
                   defaultsSeq.current += 1
                   setDefaults(null)
+                  setNewPartyIvaTouched(false)
+                  arca.reset()
                   setParty({
                     kind: 'new',
                     name,

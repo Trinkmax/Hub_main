@@ -36,10 +36,11 @@ import {
 } from '@/lib/arca/actions'
 import { parseCertificate } from '@/lib/arca/cert'
 import { runConnectionTest, sameLegalName } from '@/lib/arca/connection-test'
+import { ARCA_ERRORS } from '@/lib/arca/errors'
 import { padronCacheRow, parsePersona } from '@/lib/arca/padron'
 import { CERT_UPLOAD_MAX_BYTES, fromPem } from '@/lib/arca/pem'
 import { CERT_FILE_MAX_BYTES, decodeUploadedFile } from '@/lib/arca/schemas'
-import { createArcaSession } from '@/lib/arca/session'
+import { arcaDeadline, createArcaSession } from '@/lib/arca/session'
 import { getTransport } from '@/lib/arca/transport'
 import type { ArcaTestView } from '@/lib/arca/views'
 import { formatDate } from '@/lib/dates'
@@ -263,6 +264,13 @@ function installHandlers() {
   })
   db.others.set('acc_arca_disconnect', () => ok(null))
   db.others.set('acc_guide_mark', () => ok(null))
+  // Migración 20261008120400: borra el TA guardado del servicio (sin tocar lease ni cooldown).
+  db.others.set('acc_arca_ticket_drop', (args) => {
+    const row = db.row(String(args.p_environment), String(args.p_service))
+    const had = row.token !== null
+    Object.assign(row, { token: null, sign: null, expiresAt: null })
+    return ok(had)
+  })
   db.others.set('acc_arca_padron_cache_put', (args) => {
     const rows = args.p_rows as Row[]
     for (const r of rows) {
@@ -757,7 +765,7 @@ describe('saveArcaPointOfSale y saveArcaSettings', () => {
     expect(state.message).toBe('Listo: punto de venta guardado. Volvé a probar la conexión.')
   })
 
-  it('si el número ya está cargado con otro nombre, avisa (puede ser el de Thinkeon)', async () => {
+  it('si el número ya está cargado con otro nombre, avisa (puede ser el del sistema de caja actual)', async () => {
     setConnections(connRow({ status: 'cert_ready' }))
     tables.acc_sales_points = [{ id: randomUUID(), tenant_id: TENANT, number: 3, label: 'Salón' }]
     const fd = new FormData()
@@ -769,6 +777,9 @@ describe('saveArcaPointOfSale y saveArcaSettings', () => {
     expect(db.callsTo('acc_save_sales_point')).toHaveLength(0)
     expect(state.data.salesPoint).toEqual({ status: 'existing', number: 3, label: 'Salón' })
     expect(state.data.warnings[0]).toContain('«Salón»')
+    // Multi-bar: sin nombres de sistemas ni de bares en el texto.
+    expect(state.data.warnings[0]).toContain('el sistema de caja que tenés hoy')
+    expect(state.data.warnings[0]).not.toMatch(/thinkeon|hub/i)
   })
 
   it('homologación no toca Ajustes › Puntos de venta', async () => {
@@ -980,6 +991,79 @@ describe('testArcaConnection («Probar conexión»)', () => {
     // No se guarda la lista de CUIT del token (pueden ser de personas).
     const saved = db.callsTo('acc_arca_record_test')[0]?.p_result as { checks: CheckArg[] }
     expect(JSON.stringify(saved)).not.toContain(PERSON_CUIT)
+    // Ese ticket nunca va a servir para la SAS: se descarta (solo el de wsfe).
+    expect(db.callsTo('acc_arca_ticket_drop')).toEqual([
+      { p_tenant_id: TENANT, p_environment: 'produccion', p_service: 'wsfe' },
+    ])
+    expect(saved.checks.find((c) => c.key === 'relations')?.detail).toEqual({
+      listed: false,
+      ticket_dropped: true,
+    })
+    expect(state.message).toBe(
+      'La prueba encontró un problema: La SAS no está en el permiso. ARCA rechazó el permiso guardado y ya lo descartamos. Esperá unos minutos y volvé a probar.',
+    )
+  })
+
+  it('autorizado a nombre de la persona: después de arreglarlo en ARCA, la prueba pide otro ticket', async () => {
+    // El caso real del paso 7: el permiso salió sin la SAS. Primera prueba: falla y descarta.
+    setConnections(connRow({ status: 'cert_ready' }))
+    transport.routes.wsaa = () => loginResponse(new Date(), { token: ssoToken([PERSON_CUIT]) })
+    const first = await testArcaConnection(SLUG, { environment: 'produccion' })
+    expect(first.ok && first.data.firstProblem?.errorKey).toBe('arca_cuit_not_in_token')
+    expect(db.tickets.get('produccion:wsfe')?.token).toBeNull()
+
+    // La persona lo arregla en ARCA y vuelve a probar: login nuevo, ahora con la SAS.
+    transport.routes.wsaa = () => loginResponse(new Date(), { token: ssoToken([SAS_CUIT]) })
+    const second = await testArcaConnection(SLUG, { environment: 'produccion' })
+    expect(second.ok && second.data.status).toBe('connected')
+    expect(
+      transport.calls.filter((c) => c.service === 'wsaa' && c.wsn === 'wsfe').map((c) => c.method),
+    ).toEqual(['loginCms', 'loginCms'])
+    expect(second.ok && second.data.checks.find((c) => c.key === 'wsfe_ticket')?.ok).toBe(true)
+  })
+
+  it('sin la RPC de descarte (migración sin aplicar) todo sigue como antes y el texto no promete nada', async () => {
+    db.others.set('acc_arca_ticket_drop', () => ({
+      data: null,
+      error: {
+        message: 'Could not find the function public.acc_arca_ticket_drop',
+        code: 'PGRST202',
+      },
+    }))
+    setConnections(connRow({ status: 'cert_ready' }))
+    transport.routes.wsaa = () => loginResponse(new Date(), { token: ssoToken([PERSON_CUIT]) })
+    const first = await testArcaConnection(SLUG, { environment: 'produccion' })
+    expect(first.ok).toBe(true)
+    if (!first.ok) return
+    expect(first.message).toBe('La prueba encontró un problema: La SAS no está en el permiso.')
+    const saved = db.callsTo('acc_arca_record_test')[0]?.p_result as { checks: CheckArg[] }
+    expect(saved.checks.find((c) => c.key === 'relations')?.detail).toEqual({ listed: false })
+    // El ticket quedó (como hoy): la segunda prueba lo reusa, sin login.
+    _resetRateLimit()
+    await testArcaConnection(SLUG, { environment: 'produccion' })
+    expect(transport.calls.filter((c) => c.service === 'wsaa')).toHaveLength(1)
+    // `function_unavailable` es esperable hasta aplicar la migración: no ensucia el log.
+    expect(logs.filter((l) => l.includes('drop'))).toEqual([])
+  })
+
+  it('numeración con Err 600 (token): descarta el ticket de wsfe y no pide la otra letra', async () => {
+    setConnections(connRow({ status: 'cert_ready', allowed_classes: ['A', 'B'] }))
+    transport.routes['wsfe:FECompUltimoAutorizado'] = fixtureResponse(ARCA_XML.wsfeUltimoErr600)
+    const state = await testArcaConnection(SLUG, { environment: 'produccion' })
+    expect(state.ok).toBe(true)
+    if (!state.ok) return
+    expect(state.data.status).toBe('connected')
+    const numbering = state.data.checks.find((c) => c.key === 'numbering')
+    expect(numbering).toMatchObject({ ok: false, errorKey: 'arca_token_rejected', code: '600' })
+    expect(ultimoTipos(transport)).toEqual([6])
+    expect(db.callsTo('acc_arca_ticket_drop').map((a) => a.p_service)).toEqual(['wsfe'])
+    // El padrón tiene su propio ticket: no se toca.
+    expect(db.tickets.get('produccion:ws_sr_constancia_inscripcion')?.token).toBe(FIXTURE_TOKEN)
+    const saved = db.callsTo('acc_arca_record_test')[0]?.p_result as { checks: CheckArg[] }
+    expect(saved.checks.find((c) => c.key === 'numbering')?.detail).toMatchObject({
+      code: '600',
+      ticket_dropped: true,
+    })
   })
 
   it('si el token no se puede leer, decide WSFE (600: la SAS no está en la lista)', async () => {
@@ -1015,6 +1099,16 @@ describe('testArcaConnection («Probar conexión»)', () => {
       errorKey: 'arca_cuit_not_in_token',
       code: '600',
     })
+    // WSFE rechazó el ticket guardado: se descarta (la próxima prueba pide otro) y se avisa.
+    expect(db.callsTo('acc_arca_ticket_drop').map((a) => a.p_service)).toEqual(['wsfe'])
+    expect(db.tickets.get('produccion:wsfe')?.token).toBeNull()
+    const savedFail = db.callsTo('acc_arca_record_test')[0]?.p_result as { checks: CheckArg[] }
+    expect(savedFail.checks.find((c) => c.key === 'relations')?.detail).toEqual({
+      listed: null,
+      code: '600',
+      ticket_dropped: true,
+    })
+    expect(failed.message).toContain('ARCA rechazó el permiso guardado y ya lo descartamos.')
   })
 
   it('falta autorizar el padrón: el chequeo 6 lleva al paso 8 y no queda conectado', async () => {
@@ -1092,6 +1186,43 @@ describe('testArcaConnection («Probar conexión»)', () => {
     expect(connection('produccion')?.status).toBe('connected')
   })
 
+  it('ARCA lento: el plazo de 50 s corre desde el pedido y el login del padrón no se empieza sin tiempo', async () => {
+    setConnections(connRow({ status: 'cert_ready' }))
+    // Cada llamada a ARCA tarda 9 s del reloj (falso) del sistema.
+    vi.mocked(getTransport).mockImplementation(() => async (req) => {
+      vi.setSystemTime(new Date(Date.now() + 9_000))
+      return transport(req)
+    })
+    const state = await testArcaConnection(SLUG, { environment: 'produccion' })
+    expect(state.ok).toBe(true)
+    if (!state.ok) return
+    // 9 (dummy) + 9 (login wsfe) + 9 (puntos de venta) + 9 (numeración) + 9 (dummy del padrón)
+    // = 45 s: quedan 5 s y el login del padrón no se empieza.
+    expect(Date.now() - START.getTime()).toBe(45_000)
+    expect(state.data.status).toBe('error')
+    expect(state.data.firstProblem).toMatchObject({ key: 'padron', errorKey: 'arca_unavailable' })
+    expect(state.message).toBe(
+      'No se llegó a probar todo: ARCA venía lento y cortamos la prueba a tiempo para no trabar la conexión. Volvé a tocar «Probar conexión».',
+    )
+    expect(transport.calls.filter((c) => c.service === 'wsaa').map((c) => c.wsn)).toEqual(['wsfe'])
+    const saved = db.callsTo('acc_arca_record_test')[0]?.p_result as { checks: CheckArg[] }
+    expect(saved.checks.find((c) => c.key === 'padron')).toEqual({
+      key: 'padron',
+      ok: false,
+      error: 'arca_unavailable',
+      detail: { timeout: true, not_started: true },
+    })
+    // Sin cooldown: la próxima prueba (con un ARCA normal) hace el login del padrón enseguida.
+    expect(db.callsTo('acc_arca_ticket_put').at(-1)?.p_result).toEqual({
+      ok: false,
+      key: 'arca_unavailable',
+      cooldown: null,
+    })
+    vi.mocked(getTransport).mockImplementation(() => transport)
+    const again = await testArcaConnection(SLUG, { environment: 'produccion' })
+    expect(again.ok && again.data.status).toBe('connected')
+  })
+
   it('no deja probar más de 10 veces por minuto', async () => {
     setConnections(connRow({ status: 'key_ready', cert_not_after: null }))
     for (let i = 0; i < 10; i++) {
@@ -1126,15 +1257,15 @@ describe('runConnectionTest (casos de borde)', () => {
     })
   }
 
-  it('si se pasa del tope de tiempo, lo que falta queda como «ARCA tardó demasiado»', async () => {
+  it('con el plazo vencido, lo que falta queda «no se llegó a probar» y no se corre', async () => {
+    // El reloj de la prueba avanza 20 s cada vez que se lo mira: el plazo (50 s) se acaba
+    // después del ticket (se mira al armarlo y antes de cada chequeo que va a ARCA).
     let t = START.getTime()
-    const run = await base({
-      now: () => {
-        t += 30_000
-        return new Date(t)
-      },
-      budgetMs: 45_000,
-    })
+    const clock = () => {
+      t += 20_000
+      return new Date(t)
+    }
+    const run = await base({ now: clock, deadline: arcaDeadline(50_000, clock) })
     expect(run.status).toBe('error')
     expect(run.checks.map((c) => [c.key, c.ok, c.error ?? null])).toEqual([
       ['service', true, null],
@@ -1142,7 +1273,9 @@ describe('runConnectionTest (casos de borde)', () => {
       ['relations', true, null],
       ['point_of_sale', false, 'arca_unavailable'],
     ])
-    expect(run.checks.at(-1)?.detail).toEqual({ timeout: true })
+    expect(run.checks.at(-1)?.detail).toEqual({ timeout: true, not_started: true })
+    // No se llegó a preguntar los puntos de venta.
+    expect(transport.calls.map((c) => c.method)).not.toContain('FEParamGetPtosVenta')
   })
 
   it('una SAS inactiva en el padrón no deja conectar en producción', async () => {
@@ -1335,6 +1468,55 @@ describe('lookupCuit («Completar con ARCA»)', () => {
     const result = await lookupCuit(SLUG, { cuit: MONO, purpose: 'supplier' })
     expect(result).toMatchObject({ ok: false, code: 'arca_not_authorized', step: 's8_padron' })
     expect(result.ok ? '' : result.message).toContain('paso 8')
+    // Un login que el WSAA rechaza no es un ticket rechazado: no hay nada que descartar.
+    expect(db.callsTo('acc_arca_ticket_drop')).toEqual([])
+  })
+
+  it('el padrón rechaza el ticket guardado: se descarta (solo el del padrón) y pide esperar', async () => {
+    setConnections(connRow())
+    db.storeValid('produccion', 'wsfe', FIXTURE_TOKEN, new Date(START.getTime() + 6 * 3_600_000))
+    db.storeValid(
+      'produccion',
+      'ws_sr_constancia_inscripcion',
+      FIXTURE_TOKEN,
+      new Date(START.getTime() + 6 * 3_600_000),
+    )
+    transport.routes['padron:getPersona_v2'] = fixtureResponse(ARCA_XML.padronFaultToken, 500)
+    const result = await lookupCuit(SLUG, { cuit: MONO, purpose: 'supplier' })
+    expect(result).toEqual({
+      ok: false,
+      code: 'arca_unavailable',
+      message: 'ARCA rechazó el permiso guardado. Esperá unos minutos y volvé a probar.',
+      step: null,
+    })
+    expect(db.callsTo('acc_arca_ticket_drop')).toEqual([
+      {
+        p_tenant_id: TENANT,
+        p_environment: 'produccion',
+        p_service: 'ws_sr_constancia_inscripcion',
+      },
+    ])
+    expect(db.tickets.get('produccion:ws_sr_constancia_inscripcion')?.token).toBeNull()
+    expect(db.tickets.get('produccion:wsfe')?.token).toBe(FIXTURE_TOKEN)
+
+    // La próxima consulta pide un ticket nuevo (login) en vez de reusar el rechazado.
+    transport.routes['padron:getPersona_v2'] = fixtureResponse(ARCA_XML.padronPersonaMonotributo)
+    expect(await lookupCuit(SLUG, { cuit: MONO, purpose: 'supplier' })).toMatchObject({ ok: true })
+    expect(transport.calls.filter((c) => c.service === 'wsaa').map((c) => c.wsn)).toEqual([
+      'ws_sr_constancia_inscripcion',
+    ])
+  })
+
+  it('sin la RPC de descarte, el padrón con el ticket rechazado da el texto de siempre', async () => {
+    db.others.set('acc_arca_ticket_drop', () => ({
+      data: null,
+      error: { message: 'Could not find the function', code: 'PGRST202' },
+    }))
+    setConnections(connRow())
+    transport.routes['padron:getPersona_v2'] = fixtureResponse(ARCA_XML.padronFaultToken, 500)
+    const result = await lookupCuit(SLUG, { cuit: MONO, purpose: 'supplier' })
+    expect(result).toMatchObject({ ok: false, code: 'error', step: 's9_probar' })
+    expect(result.ok ? '' : result.message).toBe(ARCA_ERRORS.arca_token_rejected.body)
   })
 
   it('CUIT inválida y tope de 30 consultas por minuto', async () => {
@@ -1488,6 +1670,7 @@ describe('contrato con las RPC de las migraciones', () => {
       'acc_arca_padron_cache_put',
       'acc_guide_mark',
       'acc_save_sales_point',
+      'acc_arca_ticket_drop',
     ]) {
       expect(SIGNATURES.has(fn), fn).toBe(true)
     }
@@ -1496,6 +1679,12 @@ describe('contrato con las RPC de las migraciones', () => {
       'p_environment',
       'p_service',
       'p_secret_key',
+    ])
+    // El descarte no recibe la clave del servidor: no descifra nada.
+    expect([...(SIGNATURES.get('acc_arca_ticket_drop')?.all ?? [])]).toEqual([
+      'p_tenant_id',
+      'p_environment',
+      'p_service',
     ])
   })
 })

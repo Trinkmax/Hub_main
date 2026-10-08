@@ -18,6 +18,14 @@ import { SetupGate } from './_components/setup-gate'
 export const metadata = { title: 'Administración' }
 
 /**
+ * Las acciones de ARCA corren dentro de la función de la página que las llama: «Probar
+ * conexión» y «Completar con ARCA» pueden tardar cerca de un minuto con sus topes (fase 2,
+ * §6.1). Vale para todas las páginas de Administración (las server actions usan el límite de su
+ * página); cada llamada a ARCA se corta antes, en ~50 s.
+ */
+export const maxDuration = 60
+
+/**
  * La puerta de Administración (G.1 · H.18). Decide qué ve cada uno; la base
  * vuelve a decidir todo en cada RLS y RPC, y cada `page.tsx` vuelve a llamar a
  * `requireAccountingAccess` (ninguna página confía solo en este layout).

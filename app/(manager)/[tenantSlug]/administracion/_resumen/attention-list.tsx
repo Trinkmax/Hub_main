@@ -2,15 +2,25 @@
 
 import { CircleCheck } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useTransition } from 'react'
 import { useAccounting } from '@/components/administracion/accounting-provider'
 import { Amount } from '@/components/administracion/amount'
 import { VoucherText } from '@/components/administracion/voucher-text'
 import { Button } from '@/components/ui/button'
 import { skipRecurringDue } from '@/lib/accounting/actions/master'
+import type { IntegrationAttentionItem } from '@/lib/accounting/queries/integrations'
 import type { SummaryAttentionItem } from '@/lib/accounting/queries/summary'
 import { cn } from '@/lib/utils'
 import { useMasterAction } from '../ajustes/_components/use-master-action'
-import { type AttentionAction, type AttentionTone, attentionView } from './summary-copy'
+import {
+  type AttentionAction,
+  type AttentionTone,
+  attentionView,
+  integrationAttentionView,
+  integrationFailedView,
+  mergeAttentionViews,
+} from './summary-copy'
 
 const DOT: Readonly<Record<AttentionTone, string>> = {
   danger: 'bg-destructive',
@@ -22,19 +32,36 @@ const DOT: Readonly<Record<AttentionTone, string>> = {
  * «Necesita atención» (H.4): hasta 8 filas por urgencia, cada una con su
  * acción a un toque. Las hojas se abren sobre el Resumen; lo que es una
  * pantalla (cierre del día, factura del gasto fijo) va por link.
+ *
+ * Segunda fuente (diseño §5.2.4): los avisos de ARCA, Mercado Pago, el banco y
+ * Mis Comprobantes (`getIntegrationAttention`) entran en su lugar por
+ * urgencia, sin cambiar el orden de los del Resumen. Si no se pudieron
+ * revisar, una fila lo dice con «Reintentar».
  */
 export function AttentionList({
   items,
   today,
   base,
+  integration = [],
+  integrationFailed = false,
 }: {
   items: readonly SummaryAttentionItem[]
   today: string
   base: string
+  integration?: readonly IntegrationAttentionItem[]
+  integrationFailed?: boolean
 }) {
   const { openAction, tenantSlug, readOnly } = useAccounting()
   const { pending, run } = useMasterAction()
-  const views = items.map((item, index) => attentionView(item, today, base, index))
+  const router = useRouter()
+  const [refreshing, startRefresh] = useTransition()
+  const views = mergeAttentionViews(
+    items.map((item, index) => attentionView(item, today, base, index)),
+    [
+      ...integration.map((item, index) => integrationAttentionView(item, base, index)),
+      ...(integrationFailed ? [integrationFailedView()] : []),
+    ],
+  )
 
   if (views.length === 0) {
     return (
@@ -65,6 +92,20 @@ export function AttentionList({
         return (
           <Button key={key} asChild variant="outline" size="sm" className={size}>
             <Link href={action.href}>{action.label}</Link>
+          </Button>
+        )
+      case 'retry':
+        return (
+          <Button
+            key={key}
+            type="button"
+            variant="outline"
+            size="sm"
+            className={size}
+            disabled={refreshing}
+            onClick={() => startRefresh(() => router.refresh())}
+          >
+            {refreshing ? 'Cargando…' : action.label}
           </Button>
         )
       case 'skip':
