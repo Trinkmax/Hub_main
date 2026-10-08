@@ -129,10 +129,9 @@ export function OnboardingGuide({
         )}
       >
         {canWrite ? (
-          <HaveAtHand
-            items={ONBOARDING_HAVE_AT_HAND}
-            className="lg:sticky lg:top-20 lg:col-start-2 lg:row-start-1"
-          />
+          // Sin `sticky`: `.card-hairline` (position: relative) le ganaba y `top-20` la
+          // corría 80 px para abajo; además es «para el Día 1», va al lado de esa sección.
+          <HaveAtHand items={ONBOARDING_HAVE_AT_HAND} className="lg:col-start-2 lg:row-start-1" />
         ) : null}
         <div className="min-w-0 space-y-6 lg:col-start-1 lg:row-start-1">
           {ONBOARDING_SECTIONS.map((section) => (
@@ -316,7 +315,14 @@ function ProgressCard({
               <p className="text-sm text-pretty">
                 <span className="font-medium">Dónde: </span>
                 <WhereText row={nextRow} base={base} />
-                {minutes ? <span className="text-muted-foreground"> · {minutes}</span> : null}
+                {minutes ? (
+                  <span className="text-muted-foreground">
+                    {/* El punto queda pegado a lo anterior (nbsp) y los minutos enteros: si no
+                        entra, «≈ 5 min» baja solo y ningún renglón empieza con «·». */}
+                    {'\u00a0· '}
+                    <span className="whitespace-nowrap">{minutes}</span>
+                  </span>
+                ) : null}
               </p>
               {nextRow.pending ? (
                 <p className="flex items-start gap-1.5 text-sm text-warning-text text-pretty">

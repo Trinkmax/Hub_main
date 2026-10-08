@@ -191,13 +191,15 @@ function InProgress({
         <ol className="grid gap-1 sm:grid-cols-2">
           {steps.map((s) => (
             <li key={s.id}>
+              {/* El título entero, en dos renglones si hace falta (como en el riel de la guía):
+                  cortado con «…» se perdía justo el final («…para la SAS»). */}
               <Link
                 href={`${guideHref}#paso-${s.n}`}
-                className="flex min-h-11 items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm outline-none transition-colors hover:bg-cream-tint focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex min-h-11 items-start gap-2.5 rounded-lg px-2 py-2 text-sm outline-none transition-colors hover:bg-cream-tint focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <GuideStatusDot status={s.status} n={s.n} size="sm" />
-                <span className="min-w-0 flex-1 truncate">{s.title}</span>
-                <span className={cn('shrink-0 text-xs', GUIDE_STATUS_TEXT_CLASS[s.status])}>
+                <GuideStatusDot status={s.status} n={s.n} size="sm" className="mt-px" />
+                <span className="min-w-0 flex-1 leading-snug text-pretty">{s.title}</span>
+                <span className={cn('shrink-0 pt-0.5 text-xs', GUIDE_STATUS_TEXT_CLASS[s.status])}>
                   {guideStatusText(s.status, s.optional)}
                 </span>
               </Link>
@@ -289,13 +291,13 @@ function Connected({
       ) : null}
 
       <dl className="grid gap-4 px-5 py-5 sm:grid-cols-2">
-        <div className="grid gap-0.5">
+        <div className="grid content-start gap-0.5">
           <dt className="text-xs text-muted-foreground">CUIT de la SAS</dt>
           <dd className="text-sm tabular-nums">
             {connection.representedCuit ? formatCuit(connection.representedCuit) : '—'}
           </dd>
         </div>
-        <div className="grid gap-0.5">
+        <div className="grid content-start gap-0.5">
           <dt className="text-xs text-muted-foreground">Punto de venta de la plataforma</dt>
           <dd className="text-sm tabular-nums">
             {connection.pointOfSale ? (
@@ -310,7 +312,7 @@ function Connected({
             )}
           </dd>
         </div>
-        <div className="grid gap-0.5">
+        <div className="grid content-start gap-0.5">
           <dt className="text-xs text-muted-foreground">Certificado</dt>
           <dd
             className={cn(
@@ -327,7 +329,7 @@ function Connected({
             ) : null}
           </dd>
         </div>
-        <div className="grid gap-0.5">
+        <div className="grid content-start gap-0.5">
           <dt className="text-xs text-muted-foreground">Última prueba</dt>
           <dd className="text-sm">
             {connection.lastTestAt ? formatDateTime(connection.lastTestAt) : 'Todavía no'}
@@ -363,6 +365,7 @@ function Connected({
             environment="produccion"
             connection={connection}
             guideHref={guideHref}
+            showProblem={ok || !problem}
           />
         ) : connection.lastTest ? (
           <ArcaChecksList test={connection.lastTest} guideHref={guideHref} />

@@ -355,7 +355,8 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
       'Mirá una factura del sistema que usás hoy y cargá cada número con su canal: salón, delivery o eventos.',
       'El de la plataforma lo crea solo «Conectar ARCA»: no lo cargues a mano.',
     ],
-    example: 'Ejemplo: en la factura 0003-00014501 el punto de venta es el 3.',
+    // \u2060 (unión de palabras): que «0003-00014501» no se corte en el guion.
+    example: 'Ejemplo: en la factura 0003-\u206000014501 el punto de venta es el 3.',
     auto: null,
     minutes: 3,
     actionLabel: 'Ir a Puntos de venta',
@@ -757,7 +758,7 @@ export const ONBOARDING_GLOSSARY: ReadonlyArray<{ term: string; meaning: string 
   },
   {
     term: 'Punto de venta',
-    meaning: 'El número que va antes del guion en cada factura: en 0003-00014501 es el 3.',
+    meaning: 'El número que va antes del guion en cada factura: en 0003-\u206000014501 es el 3.',
   },
   {
     term: 'Mis Comprobantes',

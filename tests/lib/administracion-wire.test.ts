@@ -17,6 +17,7 @@ import {
 } from '@/lib/accounting/actions/payloads'
 import { ACC_ERRORS } from '@/lib/accounting/errors'
 import {
+  PART_UNAVAILABLE_MESSAGE,
   QUERY_FAILED_MESSAGE,
   queryError,
   REPORT_UNAVAILABLE_MESSAGE,
@@ -43,6 +44,17 @@ describe('queryError: «todavía no está disponible» solo si la función no ex
       const e = queryError('acc_report_summary', { code, message: 'no existe' })
       expect([e.message, e.key, e.code]).toEqual([
         REPORT_UNAVAILABLE_MESSAGE,
+        'function_unavailable',
+        'error',
+      ])
+    }
+  })
+
+  it('PGRST205 y 42P01: la tabla todavía no está (importadores sin su migración)', () => {
+    for (const code of ['PGRST205', '42P01']) {
+      const e = queryError('acc_import_batches', { code, message: 'no existe' })
+      expect([e.message, e.key, e.code]).toEqual([
+        PART_UNAVAILABLE_MESSAGE,
         'function_unavailable',
         'error',
       ])

@@ -1,6 +1,8 @@
 import { Clock, Landmark, Monitor } from 'lucide-react'
 import Link from 'next/link'
-import type { ReactNode } from 'react'
+// `Fragment` con `key` en las listas de «Chequeá que…»: un arreglo de elementos sin clave que
+// viaja del servidor al cliente deja el aviso de React en la consola.
+import { Fragment, type ReactNode } from 'react'
 import {
   doneNote,
   guideStatusText,
@@ -35,6 +37,7 @@ import {
 } from '@/components/administracion/guias/guide-step'
 import { HowToMisComprobantes } from '@/components/administracion/guias/how-to'
 import { StepScreens } from '@/components/administracion/guias/step-screens'
+import { Button } from '@/components/ui/button'
 import { type ArcaGuideStepId, guideStep } from '@/lib/arca/guide'
 import type { ArcaConnectionView, ArcaGuideStepView } from '@/lib/arca/views'
 import { formatCuit } from '@/lib/fiscal'
@@ -105,11 +108,24 @@ function WhoWhere({ id }: { id: ArcaGuideStepId }) {
   )
 }
 
-/** El aviso de «Revisar» o «No anduvo» de un paso. */
-function problemFor(state: ArcaGuideStepView): ReactNode {
+/**
+ * El aviso de «Revisar» o «No anduvo» de un paso. Si lo que falta es la CUIT de la SAS, trae el
+ * botón para cargarla (la contadora no lo ve: no puede cambiarla).
+ */
+function problemFor(state: ArcaGuideStepView, data: GuideStepsData): ReactNode {
   if (!state.problem || (state.status !== 'check' && state.status !== 'failed')) return null
+  const action =
+    state.problem.key === 'sas_cuit_missing' && data.canWrite ? (
+      <Button asChild variant="outline" className="h-11 md:h-9">
+        <Link href={`${data.base}/ajustes?tab=sas`}>Ir a Datos de la SAS</Link>
+      </Button>
+    ) : null
   return (
-    <Callout tone={state.status === 'failed' ? 'error' : 'warning'} title={state.problem.title}>
+    <Callout
+      tone={state.status === 'failed' ? 'error' : 'warning'}
+      title={state.problem.title}
+      action={action}
+    >
       {state.problem.body}
     </Callout>
   )
@@ -136,7 +152,9 @@ function Step({
   const step = guideStep(id)
   const state = data.states[id]
   const next = nextGuideStep(id)
-  const markLabel = MARK_LABELS[id]
+  // Con la CUIT de la SAS sin cargar, «Ya lo arreglé» no arregla nada (el paso queda listo solo
+  // cuando se carga la CUIT): el aviso de arriba ya trae «Ir a Datos de la SAS».
+  const markLabel = state.reason === 'sas_cuit_missing' ? undefined : MARK_LABELS[id]
   return (
     <GuideStep
       id={id}
@@ -147,7 +165,7 @@ function Step({
       statusText={guideStatusText(state.status, step.optional)}
       note={doneNote(state)}
       chips={chipsFor(id)}
-      problem={problemFor(state)}
+      problem={problemFor(state, data)}
       footerHow={step.howVerified}
       footerAction={
         data.canWrite && markLabel ? (
@@ -170,6 +188,11 @@ function Step({
       {children}
     </GuideStep>
   )
+}
+
+/** Una CUIT con guiones que no se corta en dos renglones (en el celular se partía en el guion). */
+function Cuit({ value }: { value: string }) {
+  return <span className="whitespace-nowrap tabular-nums">{formatCuit(value)}</span>
 }
 
 /** Lo que ve la contadora en lugar de una acción de la plataforma. */
@@ -223,7 +246,7 @@ function Step0({ data }: { data: GuideStepsData }) {
             <b>La CUIT de la SAS está cargada.</b>{' '}
             {data.sasCuit ? (
               <span className="text-success">
-                Sí: {formatCuit(data.sasCuit)} (la tomamos de Datos de la SAS).
+                Sí: <Cuit value={data.sasCuit} /> (la tomamos de Datos de la SAS).
               </span>
             ) : (
               <>
@@ -250,7 +273,9 @@ function Step0({ data }: { data: GuideStepsData }) {
           </li>
           <li>
             <b>Anotá los puntos de venta que ya usás.</b> Son el número antes del guion en cualquier
-            factura del sistema de caja que usás hoy (en 0003-00001234, el punto de venta es el 3).{' '}
+            factura del sistema de caja que usás hoy (en{' '}
+            <span className="whitespace-nowrap tabular-nums">0003-00001234</span>, el punto de venta
+            es el 3).{' '}
             {others.length > 0 ? (
               <span>
                 En Ajustes › Puntos de venta tenés:{' '}
@@ -385,10 +410,16 @@ function Step1({ data }: { data: GuideStepsData }) {
       />
       <GuideChecklist
         items={[
-          <>
+          <Fragment key="acting">
             Arriba dice «Actuando en representación de {sas}
-            {data.sasCuit ? ` [${formatCuit(data.sasCuit)}]` : ''}».
-          </>,
+            {data.sasCuit ? (
+              <>
+                {' '}
+                [<Cuit value={data.sasCuit} />]
+              </>
+            ) : null}
+            ».
+          </Fragment>,
         ]}
       />
       <GuideTroubles
@@ -416,10 +447,11 @@ function Step2({ data }: { data: GuideStepsData }) {
     <Step id="s2_punto_venta" data={data}>
       <GuideBlock label="Para qué">
         <p>
-          El punto de venta es el número que va adelante en cada factura (en 0005-00000001, el 5).
-          La plataforma necesita uno propio, de tipo «RECE para aplicativo y web services» (el que
-          deja facturar por internet, sin entrar al portal), para no chocar con la numeración del
-          sistema de caja que usás hoy.
+          El punto de venta es el número que va adelante en cada factura (en{' '}
+          <span className="whitespace-nowrap tabular-nums">0005-00000001</span>, el 5). La
+          plataforma necesita uno propio, de tipo «RECE para aplicativo y web services» (el que deja
+          facturar por internet, sin entrar al portal), para no chocar con la numeración del sistema
+          de caja que usás hoy.
         </p>
       </GuideBlock>
       <StepScreens
@@ -495,7 +527,11 @@ function Step2({ data }: { data: GuideStepsData }) {
         ]}
       />
       <GuideBlock label="Qué te traés">
-        <p>El número del punto de venta que creaste. Guardalo acá:</p>
+        <p>
+          {data.canWrite
+            ? 'El número del punto de venta que creaste. Guardalo acá:'
+            : 'El número del punto de venta que se creó para la plataforma.'}
+        </p>
         {data.canWrite ? (
           <ArcaPointOfSaleForm
             slug={data.slug}
@@ -514,11 +550,11 @@ function Step2({ data }: { data: GuideStepsData }) {
       </GuideBlock>
       <GuideChecklist
         items={[
-          <>
+          <Fragment key="sistema">
             El sistema dice <b>«RECE para aplicativo y web services»</b>.
-          </>,
-          <>Es un número nuevo, que no usa ningún otro sistema.</>,
-          <>Guardaste el número acá arriba.</>,
+          </Fragment>,
+          <Fragment key="nuevo">Es un número nuevo, que no usa ningún otro sistema.</Fragment>,
+          <Fragment key="guardado">Guardaste el número acá arriba.</Fragment>,
         ]}
       />
       <GuideTroubles
@@ -761,11 +797,11 @@ function Step4({ data }: { data: GuideStepsData }) {
       />
       <GuideChecklist
         items={[
-          <>«Autorizante (Dador)» dice la SAS, no tu nombre.</>,
-          <>
+          <Fragment key="dador">«Autorizante (Dador)» dice la SAS, no tu nombre.</Fragment>,
+          <Fragment key="servicio">
             Después de volver a entrar, en el buscador aparece «Administración de Certificados
             Digitales».
-          </>,
+          </Fragment>,
         ]}
       />
       <GuideTroubles
@@ -819,10 +855,10 @@ function Step5({ data }: { data: GuideStepsData }) {
       </GuideBlock>
       <GuideChecklist
         items={[
-          <>
+          <Fragment key="csr">
             Se bajó el archivo que termina en <b>.csr</b> (está en Descargas).
-          </>,
-          <>Copiaste o anotaste el alias: lo vas a escribir en ARCA.</>,
+          </Fragment>,
+          <Fragment key="alias">Copiaste o anotaste el alias: lo vas a escribir en ARCA.</Fragment>,
         ]}
       />
       <GuideTroubles
@@ -975,13 +1011,19 @@ function Step6({ data }: { data: GuideStepsData }) {
       </GuideBlock>
       <GuideChecklist
         items={[
-          <>
+          <Fragment key="cuit">
             La CUIT de la pantalla de ARCA es la de la SAS
-            {data.sasCuit ? ` (${formatCuit(data.sasCuit)})` : ''}, no la tuya.
-          </>,
-          <>
+            {data.sasCuit ? (
+              <>
+                {' '}
+                (<Cuit value={data.sasCuit} />)
+              </>
+            ) : null}
+            , no la tuya.
+          </Fragment>,
+          <Fragment key="valido">
             El estado del certificado dice <b>VALIDO</b>.
-          </>,
+          </Fragment>,
         ]}
       />
       <GuideTroubles
@@ -1143,14 +1185,14 @@ function AuthorizeStep({
       />
       <GuideChecklist
         items={[
-          <>Arriba dice «Actuando en representación de {sas}».</>,
-          <>
+          <Fragment key="acting">Arriba dice «Actuando en representación de {sas}».</Fragment>,
+          <Fragment key="servicio">
             El servicio es «{service.name}»
             {wrong ? <> (no «{wrong.name}» ni «Comprobantes en línea»)</> : null}.
-          </>,
-          <>
+          </Fragment>,
+          <Fragment key="computador">
             El Computador Fiscal es <b>{alias}</b>.
-          </>,
+          </Fragment>,
         ]}
       />
       <GuideTroubles
@@ -1202,9 +1244,9 @@ function Step9({ data }: { data: GuideStepsData }) {
       </GuideBlock>
       <GuideChecklist
         items={[
-          <>
+          <Fragment key="todos">
             Todos los chequeos tienen ✓. Los avisos en amarillo no frenan, pero conviene leerlos.
-          </>,
+          </Fragment>,
         ]}
       />
     </Step>

@@ -150,23 +150,30 @@ export function SummaryKpis({
   }
 
   let ivaValue = '—'
-  let ivaDelta: string | undefined
-  let ivaTone: 'default' | 'positive' = 'default'
   let ivaHint: ReactNode = vatRegistered
     ? 'Todavía no está disponible.'
     : 'La SAS no liquida IVA (no es responsable inscripta).'
   if (ivaMonth) {
+    // «A pagar» / «A favor» van como primer renglón y no como pastilla: con el menú
+    // abierto a 1280 px la tarjeta queda angosta y la pastilla se salía del borde.
+    let side: ReactNode = null
     if (ivaMonth.toPayCents > 0) {
       ivaValue = formatCentsShort(ivaMonth.toPayCents)
-      ivaDelta = 'A pagar'
+      side = <span className="block font-medium text-foreground">A pagar</span>
     } else if (ivaMonth.inFavorCents > 0) {
       ivaValue = formatCentsShort(ivaMonth.inFavorCents)
-      ivaDelta = 'A favor'
-      ivaTone = 'positive'
+      side = <span className="block font-medium text-success">A favor</span>
     } else {
       ivaValue = formatCentsShort(0)
     }
-    ivaHint = ivaMonth.provisional ? 'Estimado: lo confirma la contadora.' : 'Mes cerrado.'
+    ivaHint = (
+      <span className="block space-y-0.5">
+        {side}
+        <span className="block">
+          {ivaMonth.provisional ? 'Estimado: lo confirma la contadora.' : 'Mes cerrado.'}
+        </span>
+      </span>
+    )
   }
 
   return (
@@ -203,8 +210,6 @@ export function SummaryKpis({
         iconClassName="text-primary"
         label={ivaMonthName ? `IVA de ${ivaMonthName}` : 'IVA del mes'}
         value={ivaValue}
-        delta={ivaDelta}
-        deltaTone={ivaTone}
         hint={ivaHint}
       />
     </section>

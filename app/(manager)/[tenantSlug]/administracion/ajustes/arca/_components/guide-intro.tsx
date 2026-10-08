@@ -21,7 +21,7 @@ export function GuideBefore({ base, sasCuit }: { base: string; sasCuit: string |
         <li>
           La CUIT de la SAS:{' '}
           {sasCuit ? (
-            <b className="tabular-nums text-foreground">{formatCuit(sasCuit)}</b>
+            <b className="whitespace-nowrap tabular-nums text-foreground">{formatCuit(sasCuit)}</b>
           ) : (
             <Link
               href={`${base}/ajustes?tab=sas`}
@@ -66,7 +66,8 @@ function Rule({
           <p className="text-muted-foreground">{children}</p>
         </div>
       </div>
-      <div className="min-w-0 pl-10 lg:pl-0">{visual}</div>
+      {/* En el celular la mini maqueta usa todo el ancho (con la sangría quedaba ilegible). */}
+      <div className="min-w-0 sm:pl-10 lg:pl-0">{visual}</div>
     </li>
   )
 }
@@ -161,7 +162,7 @@ export function GoldenRules({ sasName }: { sasName: string }) {
   )
 }
 
-const GLOSSARY: ReadonlyArray<{ term: string; meaning: string }> = [
+const GLOSSARY: ReadonlyArray<{ term: string; meaning: React.ReactNode }> = [
   { term: 'ARCA', meaning: 'La agencia de impuestos: la ex AFIP.' },
   {
     term: 'Clave fiscal',
@@ -184,8 +185,13 @@ const GLOSSARY: ReadonlyArray<{ term: string; meaning: string }> = [
   },
   {
     term: 'Punto de venta',
-    meaning:
-      'El número que va adelante en cada factura: en 0005-00000123, el punto de venta es el 5. Cada sistema que factura usa el suyo.',
+    meaning: (
+      <>
+        El número que va adelante en cada factura: en{' '}
+        <span className="whitespace-nowrap tabular-nums">0005-00000123</span>, el punto de venta es
+        el 5. Cada sistema que factura usa el suyo.
+      </>
+    ),
   },
   {
     term: 'Web service',

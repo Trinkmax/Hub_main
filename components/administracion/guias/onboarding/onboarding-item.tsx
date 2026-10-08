@@ -156,7 +156,14 @@ export function OnboardingItemRow({
               <dt className="inline font-medium text-foreground">Dónde: </dt>
               <dd className="inline">
                 <WhereText row={row} base={base} />
-                {minutes ? <span className="text-muted-foreground"> · {minutes}</span> : null}
+                {minutes ? (
+                  <span className="text-muted-foreground">
+                    {/* El punto queda pegado a lo anterior (nbsp) y los minutos enteros: si no
+                        entra, «≈ 5 min» baja solo y ningún renglón empieza con «·». */}
+                    {'\u00a0· '}
+                    <span className="whitespace-nowrap">{minutes}</span>
+                  </span>
+                ) : null}
               </dd>
             </div>
           </dl>

@@ -67,7 +67,7 @@ export function useArcaRun() {
         }
         if (result.code === 'stale') router.refresh()
         if (opts.onFailure) opts.onFailure(result)
-        else toast.error(result.message)
+        else toast.error(failureText(result))
       })
     },
     [router],
@@ -87,6 +87,25 @@ const TITLES: Readonly<Record<string, string>> = {
   arca_key_missing: 'Falta el pedido',
   arca_voucher_in_flight: 'Hay una factura saliendo',
   forbidden: 'Sin permiso',
+}
+
+/**
+ * Los textos del servidor que acá se dicen mejor (también sirven solos, en un aviso): el genérico
+ * de `sas_cuit_missing` («Falta el CUIT de la SAS (Ajustes › Datos de la SAS)») repetía el título
+ * con otro género, y el de `function_unavailable` («Esta función todavía no está disponible…»)
+ * repetía el título y pedía actualizar la página, cuando alcanza con volver a probar.
+ */
+const BODIES: Readonly<Record<string, string>> = {
+  sas_cuit_missing:
+    'La conexión con ARCA va a nombre de la SAS: cargá su CUIT en Datos de la SAS y volvé a este paso.',
+  function_unavailable:
+    'Estamos terminando de activar la conexión con ARCA. Probá de nuevo en unos minutos.',
+}
+
+/** El texto de un error para la persona: el del servidor o, si lo hay, el de `BODIES`. */
+export function failureText(failure: AccFailureState): string {
+  const key = failureKey(failure)
+  return (key && BODIES[key]) ?? failure.message
 }
 
 /**
@@ -136,7 +155,7 @@ export function ArcaFailureNotice({
       action={action}
       className={className}
     >
-      {failure.message}
+      {failureText(failure)}
     </Callout>
   )
 }

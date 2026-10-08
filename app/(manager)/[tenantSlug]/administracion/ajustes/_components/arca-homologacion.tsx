@@ -4,6 +4,7 @@ import { suggestArcaAlias } from '@/components/administracion/guias/arca-guide-m
 import { Badge } from '@/components/ui/badge'
 import type { ArcaConnectionView } from '@/lib/arca/views'
 import { formatCuit } from '@/lib/fiscal'
+import { cn } from '@/lib/utils'
 import { ArcaCertUpload, ArcaCsrAction } from './arca-certificate-actions'
 import { ArcaDisconnectButton } from './arca-connection-controls'
 import { HashDetails } from './arca-shared'
@@ -49,6 +50,21 @@ export function ArcaHomologacion({
   const guideHref = `/${slug}/administracion/ajustes/arca`
   const active = connection && connection.status !== 'disconnected' ? connection : null
   const hasKey = Boolean(active?.hasCsr || active?.certificate)
+  const statusBadge = (className: string) => (
+    <Badge
+      variant="outline"
+      className={cn(
+        active?.status === 'connected'
+          ? 'border-success/30 bg-success/10 text-success'
+          : active?.status === 'error'
+            ? 'border-destructive/30 bg-destructive/10 text-destructive'
+            : 'text-muted-foreground',
+        className,
+      )}
+    >
+      {active ? active.statusLabel : 'Sin empezar'}
+    </Badge>
+  )
 
   return (
     <HashDetails
@@ -66,19 +82,10 @@ export function ArcaHomologacion({
           <span className="block text-xs text-muted-foreground text-pretty">
             Para quien programa la plataforma. Los dueños no tienen que hacer nada acá.
           </span>
+          {/* En el celular el estado va abajo del texto: al costado lo dejaba en un hilo. */}
+          {statusBadge('mt-1.5 sm:hidden')}
         </span>
-        <Badge
-          variant="outline"
-          className={
-            active?.status === 'connected'
-              ? 'border-success/30 bg-success/10 text-success'
-              : active?.status === 'error'
-                ? 'border-destructive/30 bg-destructive/10 text-destructive'
-                : 'text-muted-foreground'
-          }
-        >
-          {active ? active.statusLabel : 'Sin empezar'}
-        </Badge>
+        {statusBadge('hidden shrink-0 sm:inline-flex')}
         <ChevronDown
           className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180 motion-reduce:transition-none"
           aria-hidden
@@ -93,19 +100,19 @@ export function ArcaHomologacion({
 
         {active ? (
           <dl className="grid gap-4 sm:grid-cols-3">
-            <div className="grid gap-0.5">
+            <div className="grid content-start gap-0.5">
               <dt className="text-xs text-muted-foreground">Certificado a nombre de</dt>
               <dd className="tabular-nums">
                 {active.certCuit ? formatCuit(active.certCuit) : '—'}
               </dd>
             </div>
-            <div className="grid gap-0.5">
+            <div className="grid content-start gap-0.5">
               <dt className="text-xs text-muted-foreground">Representa a la SAS</dt>
               <dd className="tabular-nums">
                 {active.representedCuit ? formatCuit(active.representedCuit) : '—'}
               </dd>
             </div>
-            <div className="grid gap-0.5">
+            <div className="grid content-start gap-0.5">
               <dt className="text-xs text-muted-foreground">Punto de venta</dt>
               <dd className="tabular-nums">{active.pointOfSale ?? 'Sin cargar'}</dd>
             </div>

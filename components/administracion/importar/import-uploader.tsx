@@ -380,9 +380,16 @@ export function ImportUploader({
   const busy = reading || running || job.kind === 'done'
 
   return (
-    <div className="space-y-5">
-      <Stepper steps={STEPS} current={step} />
-      <p className="-mt-2 text-sm font-medium sm:hidden">
+    // `@container`: al lado de «¿Cómo lo bajo?» la columna mide ~590 px y los cuatro pasos con
+    // nombre no entran (se cortaban en «Elegí el…» y el 4 se salía). Ahí van solo los números
+    // y el paso actual abajo, como en el teléfono; con lugar, el paso a paso completo.
+    <div className="@container space-y-5">
+      <Stepper
+        steps={STEPS}
+        current={step}
+        className="@max-[52rem]:[&_li>div]:hidden @max-[52rem]:[&_li>div+span]:hidden"
+      />
+      <p className="-mt-2 text-sm font-medium @min-[52rem]:hidden">
         Paso {step + 1} de {STEPS.length}: {STEPS[step]?.label}
       </p>
       <p id={live} aria-live="polite" className="sr-only">

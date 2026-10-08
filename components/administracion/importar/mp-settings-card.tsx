@@ -202,10 +202,11 @@ export function MpSettingsCard({
         )}
 
         <fieldset className="grid gap-3">
-          <legend className="text-sm font-medium">
+          {/* El `legend` no es parte de la grilla: el aire hasta la ayuda va en su margen. */}
+          <legend className="mb-1.5 text-sm font-medium">
             ¿Cómo se llama cada cobro en tu cierre del día?
           </legend>
-          <p className="-mt-1 text-xs text-muted-foreground text-pretty">
+          <p className="text-xs text-muted-foreground text-pretty">
             Así juntamos lo que te depositó Mercado Pago con lo que anotaste en el cierre. Si un
             canal no lo usás, dejalo en «No lo uso».
           </p>
@@ -214,7 +215,9 @@ export function MpSettingsCard({
               const id = `${titleId}-${channel}`
               const inferred = settings.effective?.inferred.includes(channel) ?? false
               return (
-                <div key={channel} className="grid gap-1.5">
+                // `content-start`: la celda vecina con «Lo dedujimos…» es más alta y, estirada,
+                // esta repartía el sobrante entre sus filas y bajaba el campo 10 px.
+                <div key={channel} className="grid content-start gap-1.5">
                   <Label htmlFor={id}>{MP_CHANNEL_TEXT[channel]}</Label>
                   <Select
                     value={methods[channel] ?? NONE}

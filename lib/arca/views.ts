@@ -301,16 +301,24 @@ function okMessage(
   detail: Rec,
   ctx: ArcaViewContext,
 ): { message: string; tone: ArcaCheckTone } {
+  // Lo que suma cada uno a su título (que ya dice qué se chequeó): repetirlo no decía nada.
   switch (key) {
     case 'service':
-      return { message: 'ARCA responde.', tone: 'ok' }
+      return { message: 'Los servidores de ARCA contestaron bien.', tone: 'ok' }
     case 'wsfe_ticket':
       return {
-        message: 'El certificado es válido y ARCA lo autorizó para Facturación Electrónica.',
+        message: 'ARCA aceptó el certificado: la plataforma ya puede pedir el CAE de las facturas.',
         tone: 'ok',
       }
-    case 'relations':
-      return { message: 'La SAS está dentro del permiso del certificado.', tone: 'ok' }
+    case 'relations': {
+      const sas = ctx.sasName?.trim()
+      return {
+        message: sas
+          ? `El permiso es para facturar a nombre de ${sas.toLocaleUpperCase('es-AR')}.`
+          : 'El permiso es para facturar a nombre de la SAS.',
+        tone: 'ok',
+      }
+    }
     case 'point_of_sale':
       return detail.listed === false
         ? {

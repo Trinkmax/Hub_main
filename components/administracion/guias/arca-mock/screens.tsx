@@ -3,6 +3,7 @@
 import { Folder, Lock, Save, X } from 'lucide-react'
 import { Fragment, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { DEFAULT_MOCK_DATA } from '../arca-guide-model'
 import { BrowserFrame } from './browser-frame'
 import { LegacyPanel, LegacyRow, LegacyScreen, LegacySidebar, WelcomeBox } from './legacy-screen'
 import { MisComprobantesScreen } from './mis-comprobantes-screen'
@@ -29,13 +30,27 @@ import { Spotlight, WrongMark } from './spotlight'
 
 type ScreenProps = { caption?: ReactNode }
 
+/** El globito de abajo, alineado al borde derecho del control (los botones de la derecha). */
+const BUBBLE_RIGHT = { left: 'auto', right: 0, transform: 'none' } as const
+
+/**
+ * El alto de «Incorporar nueva Relación» según lo que se resalta: con el globito abajo del
+ * «BUSCAR» hace falta lugar debajo de la fila, y el representante de un web service ocupa
+ * tres renglones (el «CONFIRMAR» no puede quedar cortado).
+ */
+const NUEVA_RELACION_HEIGHT = {
+  buscarServicio: 336,
+  buscarRepresentante: 392,
+  confirmar: 384,
+} as const
+
 // ─── Portal nuevo ────────────────────────────────────────────────────────────
 
 /** P-02 · «Ingresar con Clave Fiscal». */
 export function ScreenLogin({ caption }: ScreenProps) {
   return (
     <ScaledMock
-      height={388}
+      height={406}
       label="Pantalla de ARCA «Ingresar con Clave Fiscal»: campo CUIT/CUIL y botón Siguiente. Escribí tu CUIT personal."
       caption={caption}
     >
@@ -108,7 +123,7 @@ export function ScreenPortalSearch({
 }: ScreenProps & { query: string; title: string; description: string }) {
   return (
     <ScaledMock
-      height={336}
+      height={362}
       label={`Portal de ARCA: en el buscador está escrito «${query}» y aparece la tarjeta «${title}», resaltada.`}
       caption={caption}
     >
@@ -149,7 +164,7 @@ export function ScreenAutoridad({
                 open
                 options={['-- Seleccione --', `${data.personName} [${data.personCuit}]`, sasOption]}
                 selected={sasOption}
-                className="w-[270px]"
+                className="w-[320px]"
               />
             </Spotlight>
           </div>
@@ -208,7 +223,9 @@ export function ScreenMenuRelaciones({
         <LegacyScreen
           title="Administrador de Relaciones"
           highlightActing={
-            highlight === 'acting' ? { label: 'Tiene que decir la SAS', side: 'bottom' } : undefined
+            // A la izquierda, sobre la barra negra: abajo tapaba el título de la tabla y el
+            // primer botón.
+            highlight === 'acting' ? { label: 'Tiene que decir la SAS', side: 'left' } : undefined
           }
         >
           <LegacyPanel title="Servicio Administrador de Relaciones" className="text-[9.5px]">
@@ -217,12 +234,9 @@ export function ScreenMenuRelaciones({
                 <div className="flex-1 bg-[#f1f9fe] px-2 py-[5px] leading-snug">{row.text}</div>
                 <div className="flex w-[104px] shrink-0 items-center justify-center bg-[#f1f9fe]">
                   {highlight === 'nueva' && row.button === 'Nueva Relación' ? (
-                    <Spotlight
-                      label="Tocá «Nueva Relación»"
-                      side="bottom"
-                      inset={3}
-                      bubbleStyle={{ left: 'auto', right: 0, transform: 'none' }}
-                    >
+                    // A la izquierda, sobre el texto de su renglón: abajo la flecha tapaba
+                    // «CONSULTAR», que es el botón equivocado.
+                    <Spotlight label="Tocá «Nueva Relación»" side="left" inset={3}>
                       <MockButton>{row.button}</MockButton>
                     </Spotlight>
                   ) : (
@@ -252,9 +266,10 @@ export function ScreenNuevaRelacion({
   highlight: 'buscarServicio' | 'buscarRepresentante' | 'confirmar'
 }) {
   const data = useMockData()
+  // El globito va abajo, alineado al botón: a la izquierda tapaba «Presione Buscar…».
   const buscar = (target: 'buscarServicio' | 'buscarRepresentante') =>
     highlight === target ? (
-      <Spotlight label="Tocá «BUSCAR»" side="left" inset={3}>
+      <Spotlight label="Tocá «BUSCAR»" side="bottom" inset={3} bubbleStyle={BUBBLE_RIGHT}>
         <MockButton>BUSCAR</MockButton>
       </Spotlight>
     ) : (
@@ -267,7 +282,7 @@ export function ScreenNuevaRelacion({
         ? `Pantalla «Incorporar nueva Relación» con el servicio ${service ?? ''} elegido: el botón BUSCAR de la fila Representante está resaltado.`
         : 'Pantalla «Incorporar nueva Relación» completa: el botón CONFIRMAR está resaltado.'
   return (
-    <ScaledMock height={highlight === 'confirmar' ? 356 : 318} label={label} caption={caption}>
+    <ScaledMock height={NUEVA_RELACION_HEIGHT[highlight]} label={label} caption={caption}>
       <BrowserFrame>
         <LegacyScreen title="Administrador de Relaciones">
           <LegacyPanel title="Incorporar nueva Relación">
@@ -358,16 +373,18 @@ export function ScreenArbolServicios({
         </span>
       </span>
     )
+    // `self-start`: el anillo abraza el servicio (no todo el ancho del árbol) y el «✕ Este no»
+    // entra en el dibujo.
     if (mark === 'target') {
       return (
-        <Spotlight key={s.name} label="Elegí este" side="left" inset={4}>
+        <Spotlight key={s.name} label="Elegí este" side="left" inset={4} className="self-start">
           {body}
         </Spotlight>
       )
     }
     if (mark === 'wrong') {
       return (
-        <WrongMark key={s.name} label="Este no">
+        <WrongMark key={s.name} label="Este no" className="self-start">
           {body}
         </WrongMark>
       )
@@ -445,7 +462,8 @@ export function ScreenRepresentantePersona({
                 CUIT/CUIL/CDI Usuario
               </div>
               <div className="flex flex-1 flex-col gap-1.5 bg-[#f1f9fe] px-2 py-[7px]">
-                <Spotlight n={1} label="Tu CUIT" side="right" inset={3}>
+                {/* Arriba, sobre el texto largo de ARCA: a la derecha chocaba con «BUSCAR». */}
+                <Spotlight n={1} label="Tu CUIT" side="top" inset={3} className="self-start">
                   <MockInput placeholder="" size="sm" className="w-[120px]" />
                 </Spotlight>
                 <span className="flex items-center gap-1">
@@ -476,7 +494,7 @@ export function ScreenComputadorFiscal({ caption, service }: ScreenProps & { ser
   const data = useMockData()
   return (
     <ScaledMock
-      height={412}
+      height={436}
       label={`Pantalla «Selección del Representante a autorizar» para ${service}: el desplegable «Computador Fiscal» con el alias ${data.alias} elegido y el botón CONFIRMAR resaltados.`}
       caption={caption}
     >
@@ -499,8 +517,16 @@ export function ScreenComputadorFiscal({ caption, service }: ScreenProps & { ser
                 Computador Fiscal
               </div>
               <div className="flex flex-1 items-center justify-center bg-[#f1f9fe] px-2 py-[7px]">
-                <Spotlight n={1} label={`Elegí «${data.alias}»`} side="left" inset={3}>
-                  <MockSelect value={data.alias} size="sm" className="w-[140px]" />
+                {/* Abajo, sobre el texto de delegar a un tercero (que no se usa): a la izquierda
+                    tapaba «Computador Fiscal» y a la derecha se salía del dibujo. */}
+                <Spotlight
+                  n={1}
+                  label="Elegí tu alias"
+                  side="bottom"
+                  inset={3}
+                  bubbleStyle={{ transform: 'translateX(-60%)' }}
+                >
+                  <MockSelect value={data.alias} size="sm" className="w-[200px]" />
                 </Spotlight>
               </div>
             </div>
@@ -520,7 +546,8 @@ export function ScreenComputadorFiscal({ caption, service }: ScreenProps & { ser
               </div>
             </div>
             <div className="flex justify-center bg-[#f1f9fe] py-2">
-              <Spotlight n={2} label="Después, «CONFIRMAR»" side="right" inset={3}>
+              {/* A la izquierda: a la derecha el globito se salía del dibujo. */}
+              <Spotlight n={2} label="Después, «CONFIRMAR»" side="left" inset={3}>
                 <MockButton>CONFIRMAR</MockButton>
               </Spotlight>
             </div>
@@ -551,8 +578,9 @@ export function ScreenPvMenu({ caption }: ScreenProps) {
             </div>
             <div className="mt-3 flex items-center gap-2 rounded-[3px] bg-white px-3 py-2 text-[12px] text-black shadow-[0_1px_2px_rgba(0,0,0,0.15)]">
               <span className="text-[#555]">Contribuyente:</span>
-              <Spotlight n={1} label="La SAS" side="right" inset={3}>
-                <b>
+              {/* Los márgenes dejan el número del anillo fuera del texto y de «Contribuyente:». */}
+              <Spotlight n={1} label="La SAS" side="right" inset={3} className="ml-2">
+                <b className="pl-2.5">
                   {data.sasName} [{data.sasCuit}]
                 </b>
               </Spotlight>
@@ -577,6 +605,22 @@ const PV_ROWS = [
 ] as const
 
 function PvListado({ dim = false }: { dim?: boolean }) {
+  const table = (
+    <div className="grid w-full grid-cols-[70px_150px_minmax(0,1fr)] gap-px bg-[#b8b8b8] text-[11px]">
+      {['Número', 'Nombre Fantasía', 'Sistema'].map((h) => (
+        <span key={h} className="bg-[#cfcfcf] px-2 py-1 font-bold text-black">
+          {h}
+        </span>
+      ))}
+      {PV_ROWS.map((row) => (
+        <Fragment key={row.n}>
+          <span className="bg-[#e8f0f6] px-2 py-1 text-right">{row.n}</span>
+          <span className="bg-[#e8f0f6] px-2 py-1">{row.name}</span>
+          <span className="bg-[#e8f0f6] px-2 py-1">{row.system}</span>
+        </Fragment>
+      ))}
+    </div>
+  )
   return (
     <div className={cn('px-6 pt-4', dim && 'opacity-60')}>
       <div className="rounded-[3px] bg-[#6f97bf] px-3 py-1.5 text-[13px] text-white">
@@ -603,27 +647,16 @@ function PvListado({ dim = false }: { dim?: boolean }) {
       <div className="mt-2.5 rounded-[2px] bg-white/70 px-2 py-1 text-[11px] text-black">
         Página: 1 de 1
       </div>
-      <div className="mt-2 grid grid-cols-[70px_150px_minmax(0,1fr)] gap-px bg-[#b8b8b8] text-[11px]">
-        {['Número', 'Nombre Fantasía', 'Sistema'].map((h) => (
-          <span key={h} className="bg-[#cfcfcf] px-2 py-1 font-bold text-black">
-            {h}
-          </span>
-        ))}
-        {PV_ROWS.map((row) => (
-          <Fragment key={row.n}>
-            <span className="bg-[#e8f0f6] px-2 py-1 text-right">
-              {!dim && row.n === '1' ? (
-                <Spotlight n={1} label="Anotá los que ya hay" side="right" inset={2}>
-                  <span>{row.n}</span>
-                </Spotlight>
-              ) : (
-                row.n
-              )}
-            </span>
-            <span className="bg-[#e8f0f6] px-2 py-1">{row.name}</span>
-            <span className="bg-[#e8f0f6] px-2 py-1">{row.system}</span>
-          </Fragment>
-        ))}
+      <div className="mt-2">
+        {dim ? (
+          table
+        ) : (
+          // El anillo abraza toda la lista y el globito va abajo: sobre el «1» de la primera
+          // fila, el número del anillo y la flecha tapaban justo lo que hay que anotar.
+          <Spotlight n={1} label="Anotá los que ya hay" side="bottom" inset={3} className="w-full">
+            {table}
+          </Spotlight>
+        )}
       </div>
     </div>
   )
@@ -633,7 +666,7 @@ function PvListado({ dim = false }: { dim?: boolean }) {
 export function ScreenPvListado({ caption }: ScreenProps) {
   return (
     <ScaledMock
-      height={270}
+      height={320}
       approximate
       label="Listado de Puntos de Venta de ARCA: los números que ya existen y el botón «Agregar», resaltados."
       caption={caption}
@@ -647,7 +680,11 @@ export function ScreenPvListado({ caption }: ScreenProps) {
   )
 }
 
-/** PV-05 · «Alta de Punto de Venta / Emisión» con «RECE para aplicativo y web services». */
+/**
+ * PV-05 · «Alta de Punto de Venta / Emisión» con «RECE para aplicativo y web services». La
+ * captura es de feb-2025: desde la RG 5824 (01/07/2026) el alta puede pedir también la
+ * actividad (A CONFIRMAR en `arca-pasos.md`), por eso lleva el sello.
+ */
 export function ScreenPvAlta({ caption }: ScreenProps) {
   const data = useMockData()
   const field = (label: string, control: ReactNode) => (
@@ -661,6 +698,7 @@ export function ScreenPvAlta({ caption }: ScreenProps) {
   return (
     <ScaledMock
       height={412}
+      approximate
       label="Ventana «Alta de Punto de Venta / Emisión» de ARCA: el campo Sistema con «RECE para aplicativo y web services» resaltado, y Nuevo domicilio con el local."
       caption={caption}
     >
@@ -804,7 +842,7 @@ export function ScreenCertAgregar({ caption }: ScreenProps) {
   const data = useMockData()
   return (
     <ScaledMock
-      height={332}
+      height={370}
       label={`Pantalla de ARCA para pedir un certificado: la CUIT de la SAS (${data.sasCuit}), el alias ${data.alias}, el archivo ${data.csrFileName} y el botón «Agregar alias», resaltados en orden.`}
       caption={caption}
     >
@@ -820,7 +858,7 @@ export function ScreenCertAgregar({ caption }: ScreenProps) {
             <span className="flex items-center gap-2">
               <span className="w-[46px] bg-[#dcf0fb] py-1.5 text-center font-bold">CUIT</span>
               <Spotlight n={1} label="La de la SAS" side="right" inset={2}>
-                <b>{data.sasCuit}</b>
+                <b className="pl-2.5 pr-1">{data.sasCuit}</b>
               </Spotlight>
             </span>
             <span className="flex items-center gap-2">
@@ -858,7 +896,9 @@ export function ScreenCertDetalle({
   approximate = false,
 }: ScreenProps & { highlight?: 'descargar' | 'agregarCertificado'; approximate?: boolean }) {
   const data = useMockData()
-  const right = { left: 'auto', right: 0, transform: 'none' } as const
+  // Sin la CUIT cargada, «SERIALNUMBER=CUIT CUIT DE LA SAS» parecía un error de tipeo.
+  const dnCuit =
+    data.sasCuitDigits === DEFAULT_MOCK_DATA.sasCuitDigits ? 'DE LA SAS' : data.sasCuitDigits
   return (
     <ScaledMock
       height={300}
@@ -873,14 +913,14 @@ export function ScreenCertDetalle({
       <BrowserFrame>
         <LegacyScreen title="Administración de Certificados Digitales">
           <div className="flex flex-col items-center gap-3 text-[11px] text-black">
-            <span className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-1.5 gap-y-[2px] self-start pl-10">
+            <span className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-1.5 gap-y-[2px] self-start pl-6">
               <span className="bg-[#dcf0fb] px-1.5 font-bold">CUIT</span>
               <span>{data.sasCuitDigits}</span>
               <span className="bg-[#dcf0fb] px-1.5 font-bold">Alias</span>
               <span>{data.alias}</span>
               <span className="bg-[#dcf0fb] px-1.5 font-bold">DN</span>
               <span className="truncate">
-                SERIALNUMBER=CUIT {data.sasCuitDigits}, CN={data.alias}
+                SERIALNUMBER=CUIT {dnCuit}, CN={data.alias}
               </span>
             </span>
             <span className="grid grid-cols-[auto_auto_auto_auto_auto] gap-x-[3px] gap-y-[2px] text-[10.5px]">
@@ -901,7 +941,7 @@ export function ScreenCertDetalle({
                     label="Bajá el certificado"
                     side="bottom"
                     inset={3}
-                    bubbleStyle={right}
+                    bubbleStyle={BUBBLE_RIGHT}
                   >
                     <MockDownloadIcon />
                   </Spotlight>
@@ -946,7 +986,7 @@ export function ScreenMisComprobantes({
 }: ScreenProps & { step: 'inicio' | 'consulta' | 'resultados'; approximate?: boolean }) {
   return (
     <ScaledMock
-      height={step === 'inicio' ? 360 : step === 'consulta' ? 404 : 352}
+      height={step === 'inicio' ? 392 : step === 'consulta' ? 436 : 352}
       label={MIS_COMPROBANTES_LABELS[step]}
       caption={caption}
       approximate={approximate ?? step !== 'inicio'}
@@ -1043,21 +1083,22 @@ export function ScreenWsass({ caption }: ScreenProps) {
 
 // ─── Mini maquetas de «Las 3 reglas de oro» ──────────────────────────────────
 
+// Las dos mini maquetas son angostas (380 px) y llevan el globito abajo: así entran casi en
+// tamaño real en la columna de la compu y se leen también en el celular.
+
 /** Regla 1: arriba tiene que decir «Actuando en representación de» la SAS. */
 export function MiniActing() {
   return (
     <ScaledMock
-      width={470}
-      height={96}
+      width={380}
+      height={150}
       label="Cabecera de ARCA: «Actuando en representación de» y el nombre de la SAS, resaltado."
     >
       <div
         className="h-full bg-white px-4 pt-4"
         style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}
       >
-        <div className="w-[330px]">
-          <WelcomeBox acting="sas" highlight={{ label: 'La SAS', side: 'right' }} />
-        </div>
+        <WelcomeBox acting="sas" highlight={{ label: 'La SAS', side: 'bottom' }} />
       </div>
     </ScaledMock>
   )
@@ -1067,16 +1108,18 @@ export function MiniActing() {
 export function MiniSistema() {
   return (
     <ScaledMock
-      width={470}
-      height={80}
+      width={380}
+      height={124}
       label="Campo Sistema del alta de punto de venta: «RECE para aplicativo y web services», resaltado."
     >
       <div
-        className="flex h-full items-center gap-3 bg-[#f4f4f4] px-5"
+        className="flex h-full items-start gap-3 bg-[#f4f4f4] px-4 pt-5"
         style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}
       >
-        <span className="text-[13px] font-bold text-[#222]">Sistema:</span>
-        <Spotlight label="Este" side="right" inset={3}>
+        <span className="flex h-[24px] items-center text-[13px] font-bold text-[#222]">
+          Sistema:
+        </span>
+        <Spotlight label="Este" side="bottom" inset={3}>
           <MockSelect value="RECE para aplicativo y web services" className="w-[270px]" />
         </Spotlight>
       </div>

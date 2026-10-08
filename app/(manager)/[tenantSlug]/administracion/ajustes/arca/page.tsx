@@ -9,6 +9,7 @@ import {
   stepAnchor,
   suggestArcaAlias,
 } from '@/components/administracion/guias/arca-guide-model'
+import { MockDataProvider } from '@/components/administracion/guias/arca-mock/mock-data'
 import type { GuideRailItem } from '@/components/administracion/guias/guide-rail'
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
 import { Button } from '@/components/ui/button'
@@ -213,7 +214,10 @@ export default async function ConectarArcaPage({
       ) : null}
 
       <GuideBefore base={base} sasCuit={sas.cuit} />
-      <GoldenRules sasName={mockData.sasName} />
+      {/* Las mini maquetas de las reglas también muestran la razón social y la CUIT del bar. */}
+      <MockDataProvider value={mockData}>
+        <GoldenRules sasName={mockData.sasName} />
+      </MockDataProvider>
       <Glossary />
 
       <ArcaGuideShell

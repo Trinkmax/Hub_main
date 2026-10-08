@@ -198,6 +198,7 @@ export function ArcaCsrAction({
         <Field id={cuitId} label="Tu CUIT personal" hint={HOMO_CUIT_HINT} error={errors.certCuit}>
           <CuitInput
             id={cuitId}
+            placeholder="20-12345678-9"
             value={certCuit}
             onChange={(text) => {
               setCertCuit(text)
@@ -530,8 +531,11 @@ export function ArcaCertUpload({
         </span>
         <p className="text-sm font-medium">{busy ? 'Revisando el certificado…' : title}</p>
         <p className="mt-1 max-w-sm text-xs text-muted-foreground text-pretty">
-          Arrastralo acá o elegilo de tu compu. Es el archivo que bajaste con el ícono «Descargar»
-          (termina en .crt).
+          {/* Sirve en la compu y en el celular («de tu compu» no aplicaba en el teléfono). */}
+          Arrastralo acá o tocá «Elegir el archivo».{' '}
+          {environment === 'homologacion'
+            ? 'Es el que guardaste de WSASS (termina en .crt).'
+            : 'Es el que bajaste de ARCA con el ícono «Descargar» (termina en .crt).'}
         </p>
         <label className="mt-4">
           <input
@@ -586,7 +590,7 @@ export function ArcaCertUpload({
           <Button
             type="button"
             variant="outline"
-            className="h-11 md:h-9"
+            className="h-11 w-full sm:w-auto md:h-9"
             disabled={busy || paste.trim() === ''}
             onClick={submitPaste}
           >

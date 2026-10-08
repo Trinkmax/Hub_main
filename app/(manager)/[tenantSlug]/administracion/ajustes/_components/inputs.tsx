@@ -86,6 +86,7 @@ export function CuitInput({
   invalid,
   describedBy,
   disabled,
+  placeholder = '30-12345678-9',
 }: {
   id: string
   value: string
@@ -95,6 +96,8 @@ export function CuitInput({
   invalid?: boolean
   describedBy?: string
   disabled?: boolean
+  /** El ejemplo gris: el de una sociedad (30-…) salvo que se pida la CUIT de una persona. */
+  placeholder?: string
 }) {
   return (
     <Input
@@ -104,7 +107,7 @@ export function CuitInput({
       autoComplete="off"
       spellCheck={false}
       maxLength={16}
-      placeholder="30-12345678-9"
+      placeholder={placeholder}
       value={value}
       disabled={disabled}
       aria-invalid={invalid ? true : undefined}

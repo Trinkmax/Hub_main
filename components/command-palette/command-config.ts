@@ -567,7 +567,9 @@ export const commandEntries: CommandEntry[] = [
     group: 'Acciones rápidas',
     type: 'navigate-new',
     href: (s) => `/${s}/paginas`,
-    keywords: ['landing', 'html', 'promo', 'evento', 'pagina', 'publicar'],
+    // «promo» al final: antes de «evento» armaba un falso parecido con «importar» y esta
+    // acción quedaba primera (y elegida) al buscar los importadores de Administración.
+    keywords: ['landing', 'html', 'evento', 'pagina', 'publicar', 'promo'],
   },
   {
     id: 'close-table-legacy',

@@ -55,7 +55,9 @@ export function BankImport({
 
   return (
     <div className="space-y-5">
-      <div className="card-hairline grid gap-1.5 rounded-xl border bg-card p-5 sm:max-w-xl">
+      {/* La tarjeta va a lo ancho de la columna (con `max-w-xl` quedaba 15 px más corta que
+          el paso a paso de abajo); lo que se angosta es el campo, como en Mercado Pago. */}
+      <div className="card-hairline grid gap-1.5 rounded-xl border bg-card p-5">
         <Label htmlFor={id}>
           ¿De qué cuenta es el extracto?
           <span aria-hidden className="ml-0.5 text-destructive">
@@ -64,6 +66,7 @@ export function BankImport({
         </Label>
         <TreasurySelect
           id={id}
+          className="sm:max-w-md"
           value={treasuryId}
           treasuries={banks}
           placeholder="Elegí la cuenta del banco"

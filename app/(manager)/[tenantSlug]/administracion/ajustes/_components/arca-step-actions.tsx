@@ -170,8 +170,10 @@ export function ArcaPointOfSaleForm({
 
   return (
     <div className="space-y-3">
+      {/* El botón se alinea con el campo (alto de la etiqueta: 14 px + 6 de separación), no con
+          el pie: la ayuda ocupa dos renglones y con `items-end` el botón quedaba más abajo. */}
       <form
-        className="flex flex-col gap-3 sm:flex-row sm:items-end"
+        className="flex flex-col gap-3 sm:flex-row sm:items-start"
         onSubmit={(event) => {
           event.preventDefault()
           save()
@@ -200,7 +202,7 @@ export function ArcaPointOfSaleForm({
             className={cn(INPUT_CLASS, 'tabular-nums')}
           />
         </Field>
-        <Button type="submit" className="h-11 gap-2 sm:mb-[1.375rem] md:h-10" disabled={pending}>
+        <Button type="submit" className="h-11 gap-2 sm:mt-5 md:h-10" disabled={pending}>
           <Save className="size-4" aria-hidden />
           {pending ? 'Guardando…' : saved ? 'Guardar el cambio' : 'Guardar'}
         </Button>
@@ -311,7 +313,11 @@ export function ArcaClassesSelect({
     return (
       <div className="grid gap-0.5">
         <p className="text-xs text-muted-foreground">Factura A autorizada por ARCA</p>
-        <p className="text-sm">{chosen?.label}</p>
+        {/* «Todavía no tengo Factura A» habla en primera persona: sirve para quien elige, no
+            para la contadora que lo lee. */}
+        <p className="text-sm">
+          {value === 'none' ? 'Ninguna todavía: solo Factura B.' : chosen?.label}
+        </p>
       </div>
     )
   }

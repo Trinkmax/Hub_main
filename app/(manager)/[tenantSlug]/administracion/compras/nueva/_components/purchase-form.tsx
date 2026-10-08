@@ -43,7 +43,11 @@ import { pickTreasury, suggestDueDate } from '@/lib/accounting/defaults'
 import { vatRateLabel } from '@/lib/accounting/queries/labels'
 import { previewDocumentForm } from '@/lib/accounting/server/document-forms'
 import type { IvaCondition, VatRateBp, VoucherType } from '@/lib/accounting/types'
-import { VOUCHER_CATALOG, voucherConditionCheck } from '@/lib/accounting/voucher-types'
+import {
+  isVoucherType,
+  VOUCHER_CATALOG,
+  voucherConditionCheck,
+} from '@/lib/accounting/voucher-types'
 import { ivaOptionsWith } from '@/lib/arca/lookup-fill'
 import { formatIsoDay, formatMonthYear } from '@/lib/dates'
 import { formatCuit } from '@/lib/fiscal'
@@ -764,9 +768,12 @@ export function PurchaseForm({
             Proveedor y comprobante
           </h2>
           {party?.kind === 'new' ? (
-            <div className="grid gap-3 rounded-xl border border-border/70 bg-background/40 p-4">
+            // `@container`: el bloque mide ~490 px a 1280 con el menú abierto y ~290 en el
+            // teléfono; las columnas y el rótulo del botón siguen a ese ancho, no a la ventana
+            // (en tres columnas «Responsable inscripto» se metía debajo de la CUIT).
+            <div className="@container grid gap-3 rounded-xl border border-border/70 bg-background/40 p-4">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-medium">Proveedor nuevo</p>
+                <p className="text-sm font-medium whitespace-nowrap">Proveedor nuevo</p>
                 <Button
                   type="button"
                   variant="ghost"
@@ -775,7 +782,8 @@ export function PurchaseForm({
                   onClick={() => setParty(null)}
                 >
                   <X className="size-3.5" aria-hidden />
-                  Elegir uno existente
+                  <span className="@sm:hidden">Elegir otro</span>
+                  <span className="hidden @sm:inline">Elegir uno existente</span>
                 </Button>
               </div>
               <Field id={ids('np-name')} label="Razón social" required error={errors.newPartyName}>
@@ -789,7 +797,7 @@ export function PurchaseForm({
                   className="h-11 text-base md:h-10 md:text-sm"
                 />
               </Field>
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 @sm:grid-cols-2 @2xl:grid-cols-3">
                 <Field id={ids('np-cond')} label="Condición frente al IVA">
                   <Select
                     value={party.ivaCondition}
@@ -935,11 +943,15 @@ export function PurchaseForm({
               error={errors.voucherType}
               hint={voucherHint ?? undefined}
             >
+              {/* Siempre controlado (`''` = sin elegir): con `undefined` el `<select>` oculto de
+                  Radix dispara `onValueChange('')` al volver a «sin tipo» (proveedor nuevo,
+                  otra familia) y el render se rompía con un tipo que no existe. */}
               <Select
-                value={voucherType ?? undefined}
+                value={voucherType ?? ''}
                 onValueChange={(v) => {
+                  if (!isVoucherType(v)) return
                   touched.current.voucher = true
-                  setVoucherType(v as VoucherType)
+                  setVoucherType(v)
                   setVatAdjust(0)
                   posting.clearFieldErrors()
                 }}

@@ -89,7 +89,8 @@ export function Spotlight({
   const arrow = ARROWS[side]
   const ringInset = { inset: -inset }
   return (
-    <span className={cn('relative z-10 inline-flex', className)}>
+    // `data-spotlight`: «Ampliar» centra la vista ampliada en lo resaltado (scaled-mock).
+    <span data-spotlight="" className={cn('relative z-10 inline-flex', className)}>
       {children}
       <span
         className={cn('pointer-events-none absolute border-[3px]', rounded)}
@@ -134,6 +135,7 @@ export function Spotlight({
             />
           </svg>
           <span
+            data-spotlight-label=""
             className="pointer-events-none absolute z-20 whitespace-nowrap rounded-[8px] px-2.5 py-[5px] text-[15px] font-bold leading-tight text-white shadow-[0_4px_12px_rgba(0,0,0,0.28)]"
             style={{
               backgroundColor: RED,

@@ -180,6 +180,9 @@ const READ_BUG_KEYS: ReadonlySet<string> = new Set(['invalid_report_param'])
  *   disponibilidades con la #11, compras y pagos con la 12c, ventas y cobranzas
  *   con la #13); `p_kind` se valida acá antes de llamar, así que ese rechazo
  *   solo puede ser una fase que falta.
+ * - Lo mismo si falta la TABLA (`PGRST205` / `42P01`): los importadores leen
+ *   tablas que llegan con su migración, y sin ella la pantalla tiene que decir
+ *   que esa parte todavía no está, no «si sigue, avisanos».
  * - Cualquier otro error muestra el texto del catálogo (`invalid_report_param`
  *   es un bug de parámetro: «No pudimos armar el reporte…»); los pensados para
  *   guardar («no se guardó») se cambian por los de lectura.
@@ -187,7 +190,9 @@ const READ_BUG_KEYS: ReadonlySet<string> = new Set(['invalid_report_param'])
 export function queryError(source: string, error: PgLikeError): AccQueryError {
   const state = mapAccError(error)
   const mapped = typeof state.detail?.key === 'string' ? state.detail.key : null
+  const missingTable = error.code === 'PGRST205' || error.code === '42P01'
   const unavailable =
+    missingTable ||
     mapped === 'function_unavailable' ||
     (mapped === 'invalid_report_param' && state.detail?.param === 'p_kind')
   const key = unavailable ? 'function_unavailable' : mapped
@@ -195,6 +200,8 @@ export function queryError(source: string, error: PgLikeError): AccQueryError {
   let message = state.message
   if (key === 'offline') {
     message = OFFLINE_READ_MESSAGE
+  } else if (missingTable) {
+    message = PART_UNAVAILABLE_MESSAGE
   } else if (unavailable) {
     message = REPORT_UNAVAILABLE_MESSAGE
   } else if (
@@ -209,6 +216,9 @@ export function queryError(source: string, error: PgLikeError): AccQueryError {
 export const OFFLINE_READ_MESSAGE = 'Sin conexión: no pudimos cargar esto. Probá de nuevo.'
 export const REPORT_UNAVAILABLE_MESSAGE =
   'Este reporte todavía no está disponible. Actualizá la página en unos minutos.'
+/** Una tabla que todavía no está en la base (llega con su migración). */
+export const PART_UNAVAILABLE_MESSAGE =
+  'Esta parte todavía no está disponible. Actualizá la página en unos minutos.'
 
 /** Llama una RPC de lectura y devuelve `data` crudo (`unknown`) o tira `AccQueryError`. */
 export async function callRpc(name: string, params: RpcParams): Promise<unknown> {

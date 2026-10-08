@@ -88,10 +88,10 @@ function ProgressLine({ done, total, unit }: { done: number; total: number; unit
   const percent = total > 0 ? Math.round((done / total) * 100) : 0
   return (
     <>
-      <p className="flex items-baseline gap-1.5 text-sm">
+      <p className="text-sm">
         <span className="font-semibold tabular-nums text-foreground">
           {done} de {total}
-        </span>
+        </span>{' '}
         <span className="text-muted-foreground">{unit}</span>
       </p>
       <Progress value={percent} aria-label={`${done} de ${total} ${unit}`} />

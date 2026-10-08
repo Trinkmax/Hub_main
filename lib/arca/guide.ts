@@ -359,9 +359,13 @@ export type GuideProgressRow = {
 export type ArcaStepStatus = 'done' | 'todo' | 'pending' | 'check' | 'failed'
 
 /** Motivos propios de la guía (los demás son claves de `ARCA_ERRORS`). */
+// El texto va debajo de un título que ya dice qué falta («Falta la CUIT de la SAS»): acá, qué
+// hacer y por qué.
 export const ARCA_GUIDE_REASONS = {
-  sas_cuit_missing: 'Falta la CUIT de la SAS en Ajustes › Datos de la SAS.',
-  cert_expired: 'El certificado venció: renovalo (paso 6).',
+  sas_cuit_missing:
+    'Todo lo de ARCA va a nombre de la SAS: cargá su CUIT en Ajustes › Datos de la SAS y este paso queda listo.',
+  cert_expired:
+    'Sin un certificado vigente la plataforma no puede hablar con ARCA: renovalo (paso 6).',
 } as const
 export type ArcaGuideReason = keyof typeof ARCA_GUIDE_REASONS
 

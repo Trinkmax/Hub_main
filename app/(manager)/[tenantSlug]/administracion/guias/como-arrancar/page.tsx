@@ -99,6 +99,7 @@ export default async function ComoArrancarPage({
             ivaCondition: sas.ivaCondition,
           }),
           why: supplierRequestWhy(sas.ivaCondition),
+          missingCuit: !sas.cuit,
         }
       : { status: 'missing' }
 

@@ -37,6 +37,7 @@ export function ArcaTestAction({
   connection,
   guideHref = '',
   showNextSteps = false,
+  showProblem = true,
   className,
 }: {
   slug: string
@@ -46,6 +47,11 @@ export function ArcaTestAction({
   guideHref?: string
   /** Los próximos pasos cuando queda conectado (en la guía). */
   showNextSteps?: boolean
+  /**
+   * El aviso rojo del primer problema, arriba de los chequeos. La pestaña lo apaga cuando ya
+   * muestra el mismo problema arriba de todo (si no, el mismo texto salía tres veces).
+   */
+  showProblem?: boolean
   className?: string
 }) {
   const nav = useGuideNav()
@@ -86,7 +92,10 @@ export function ArcaTestAction({
     <div className={cn('space-y-4', className)}>
       {!ready ? (
         <Callout tone="info" title="Primero, el certificado">
-          Cuando subas el certificado (paso 6) vas a poder probar la conexión acá.
+          {/* En las pruebas el certificado es el paso 2 de esa lista, no el 6 de la guía. */}
+          {environment === 'homologacion'
+            ? 'Cuando subas el certificado de WSASS (paso 2) vas a poder probar la conexión de pruebas.'
+            : 'Cuando subas el certificado (paso 6) vas a poder probar la conexión acá.'}
         </Callout>
       ) : null}
 
@@ -138,7 +147,7 @@ export function ArcaTestAction({
                 </p>
               </div>
             </div>
-          ) : problem ? (
+          ) : problem && showProblem ? (
             <Callout
               tone="error"
               title={problem.title ?? 'La prueba encontró un problema'}

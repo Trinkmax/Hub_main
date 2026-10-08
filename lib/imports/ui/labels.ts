@@ -77,7 +77,7 @@ export const IMPORT_SOURCE_COPY: Readonly<Record<UiImportSource, ImportSourceCop
     description:
       'Exportás los movimientos de tu cuenta desde el home banking y los subís: reconocemos comisiones, impuestos y transferencias.',
     segment: 'banco',
-    cta: 'Importar banco',
+    cta: 'Importar del banco',
     unit: ['movimiento', 'movimientos'],
   },
 }
@@ -199,7 +199,8 @@ export const OTHER_TAXES_TEXT: Readonly<Record<OtherTaxesAs, { label: string; hi
 
 export const MP_CHANNEL_TEXT: Readonly<Record<MpCobroChannel, string>> = {
   qr: 'Cobros con QR',
-  point: 'Cobros con Point (el posnet de Mercado Pago)',
+  // Corto: en dos columnas el rótulo largo ocupaba dos renglones y descolocaba su campo.
+  point: 'Cobros con el posnet Point',
   link: 'Cobros con link de pago',
   transfer_in: 'Transferencias que te mandaron',
 }

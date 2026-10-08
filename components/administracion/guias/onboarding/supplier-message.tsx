@@ -5,7 +5,13 @@ import { CopyButton } from '@/components/ui/copy-button'
 
 /** El mensaje para los proveedores, armado con los datos de la SAS del bar. */
 export type SupplierMessageData =
-  | { status: 'ready'; message: string; why: string | null }
+  | {
+      status: 'ready'
+      message: string
+      why: string | null
+      /** La SAS todavía no tiene CUIT: el mensaje sale sin ella y lo avisamos. */
+      missingCuit?: boolean
+    }
   /** Faltan la razón social de la SAS (Ajustes › Datos de la SAS). */
   | { status: 'missing' }
   /** No pudimos leer los datos de la SAS. */
@@ -59,6 +65,18 @@ export function SupplierMessage({
       </blockquote>
       {data.why ? (
         <p className="mt-2 text-xs text-muted-foreground text-pretty">{data.why}</p>
+      ) : null}
+      {data.missingCuit ? (
+        <p className="mt-2 text-xs text-muted-foreground text-pretty">
+          Va sin la CUIT porque todavía no está cargada. {canWrite ? 'Sumala en ' : 'Falta en '}
+          <Link
+            href={`${base}/ajustes?tab=sas`}
+            className="font-medium text-foreground underline underline-offset-4"
+          >
+            Ajustes › Datos de la SAS
+          </Link>
+          {canWrite ? ' y se agrega sola.' : '.'}
+        </p>
       ) : null}
       {canWrite ? (
         <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
