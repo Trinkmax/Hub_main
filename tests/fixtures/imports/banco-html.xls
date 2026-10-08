@@ -1,0 +1,17 @@
+<html><head><meta charset="utf-8"><title>Movimientos</title><style>td{mso-number-format:"\@"}</style></head><body>
+<table border="0">
+<tr><td colspan="2"><b>Banco de la Naci&oacute;n Argentina</b></td></tr>
+<tr><td>CBU</td><td>0110123830001234567892</td></tr>
+</table>
+<table border="1">
+<tr><th>Fecha</th><th>Concepto</th><th>D&eacute;bitos</th><th>Cr&eacute;ditos</th><th>Saldo</th></tr>
+<tr><td>06/10/2026</td><td>COMISION PAQUETES</td><td>69.000,00</td><td>&nbsp;</td><td>1.016.635,00</td></tr>
+<tr><td>06/10/2026</td><td>I.V.A. BASE</td><td>14.490,00</td><td>&nbsp;</td><td>1.002.145,00</td></tr>
+<tr><td>06/10/2026</td><td>RETEN. I.V.A. RG.2408</td><td>2.070,00</td><td>&nbsp;</td><td>1.000.075,00</td></tr>
+<tr><td>06/10/2026</td><td>CR-DEPEF</td><td>&nbsp;</td><td>30.000,00</td><td>1.030.075,00</td></tr>
+<tr><td>07/10/2026</td><td>PAGO HABERES</td><td>250.000,00</td><td>&nbsp;</td><td>780.075,00</td></tr>
+<tr><td>07/10/2026</td><td>DEBAUT SERVICIO LUZ</td><td>18.300,00</td><td>&nbsp;</td><td>761.775,00</td></tr>
+<tr><td>07/10/2026</td><td>INTERESES S/SALDO DEUDOR</td><td>1.000,00</td><td>&nbsp;</td><td>760.775,00</td></tr>
+<tr><td>07/10/2026</td><td>I.V.A. BASE</td><td>105,00</td><td>&nbsp;</td><td>760.670,00</td></tr>
+<tr><td>07/10/2026</td><td>48HS. CANJE ZONAL</td><td>&nbsp;</td><td>12.000,00</td><td>772.670,00</td></tr>
+</table></body></html>

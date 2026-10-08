@@ -1,0 +1,2 @@
+"Fecha","Tipo","Punto de Venta","Número Desde","Número Hasta","Cód. Autorización","Tipo Doc. Emisor","Nro. Doc. Emisor","Denominación Emisor","Tipo Cambio","Moneda","Imp. Neto Gravado","Imp. Neto No Gravado","Imp. Op. Exentas","IVA","Imp. Total"
+"15/03/2022","1 - Factura A","00002","00000123","00000123","72111111111111","CUIT","30612345674","PROVEEDOR, UNO SA","1","$","100.00","","","21.00","121.00"

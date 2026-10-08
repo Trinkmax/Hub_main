@@ -740,9 +740,159 @@ export const ACC_ERRORS = {
     code: 'invalid',
     message: 'El texto de confirmación no coincide: no se borró nada.',
   },
+  // También solo de `private.acc_reset_tenant`: facturas de producción que ya
+  // llegaron a ARCA (con CAE o sin confirmar). Son registros fiscales.
+  reset_arca_vouchers: {
+    code: 'conflict',
+    message:
+      'No se puede reiniciar Administración: hay facturas emitidas con ARCA en producción. Son comprobantes fiscales: se corrigen con notas de crédito.',
+  },
   // Solo la levanta la guarda de la migración #15 (la matriz de roles aplicada
   // no es la base del archivo); nunca llega desde la app.
   acc_line_rule_rebase_required: { code: 'error', message: BUG_MESSAGE, bug: true },
+
+  // ─── ARCA, importadores y Mercado Pago (RPC acc_arca_*, acc_import_*, acc_mp_*) ─
+  // Los textos de lo que contesta ARCA (web services) viven en `lib/arca/errors.ts`;
+  // acá van solo las claves que levanta la base.
+  // Mismo texto que el aviso de cierre `sas_cuit_missing` (CLOSE_WARNING_COPY).
+  sas_cuit_missing: {
+    code: 'conflict',
+    message: 'Falta el CUIT de la SAS (Ajustes › Datos de la SAS).',
+  },
+  arca_not_ready: {
+    code: 'conflict',
+    message:
+      'Todavía no terminaste de conectar ARCA en este ambiente: seguí la guía «Conectar ARCA» hasta subir el certificado.',
+  },
+  arca_not_connected: {
+    code: 'conflict',
+    message:
+      'ARCA no está conectado en este ambiente. Tocá «Probar conexión» en Ajustes › ARCA y volvé a intentar.',
+  },
+  arca_alias_locked: {
+    code: 'conflict',
+    message:
+      'El alias ya quedó en el certificado (o en su pedido): no se puede cambiar. Para usar otro, generá un pedido nuevo con «Reemplazar».',
+  },
+  arca_cuit_mismatch: {
+    code: 'invalid',
+    message:
+      'La CUIT del certificado no es la que corresponde: en producción tiene que ser la de la SAS y, al renovar, la misma del certificado actual.',
+  },
+  arca_key_missing: {
+    code: 'conflict',
+    message:
+      'No encontramos la clave de la plataforma para este certificado. Generá un pedido nuevo (paso 5) y repetí el paso 6.',
+  },
+  arca_key_replace_requires_confirm: {
+    code: 'conflict',
+    message:
+      'Ya hay un certificado cargado. Para generar otra clave confirmá «Reemplazar»: el certificado actual deja de servir.',
+  },
+  arca_certificate_key_mismatch: {
+    code: 'invalid',
+    message:
+      'El certificado no corresponde a la clave de la plataforma. Subí el que descargaste para este pedido o generá uno nuevo (paso 5).',
+  },
+  arca_certificate_cuit_mismatch: {
+    code: 'invalid',
+    message: 'El certificado es de otra CUIT: subí el que generaste con la CUIT de este pedido.',
+  },
+  arca_certificate_expired: {
+    code: 'invalid',
+    message:
+      'El certificado no está vigente: venció o todavía no empezó a valer. Si venció, renovalo (paso 6, «Agregar certificado» sobre el mismo alias).',
+  },
+  arca_emission_requires_connection: {
+    code: 'conflict',
+    message:
+      'Para emitir hace falta ARCA conectado en producción y un punto de venta elegido. Probá la conexión primero.',
+  },
+  arca_emission_disabled: {
+    code: 'conflict',
+    message: 'La emisión con ARCA está apagada. Prendela en Ajustes › ARCA.',
+  },
+  arca_point_of_sale_mismatch: {
+    code: 'conflict',
+    message: 'Ese no es el punto de venta configurado para emitir. Recargá la página.',
+  },
+  arca_voucher_in_flight: {
+    code: 'conflict',
+    message:
+      'Hay una factura emitiéndose en este momento. Esperá unos segundos y volvé a intentar.',
+  },
+  arca_voucher_transition: {
+    code: 'conflict',
+    message: 'La emisión cambió mientras la procesábamos. Recargá la página para ver cómo quedó.',
+  },
+  // El comprobante que se quiere vincular no es el de esa emisión: la saga lo
+  // arma sola, así que si llega acá es un desfase del código.
+  arca_voucher_document_mismatch: {
+    code: 'error',
+    message:
+      'No pudimos vincular la factura con su asiento. Recargá la página; si sigue, avisanos.',
+    bug: true,
+  },
+  // Otra consulta tomó el turno del ticket de ARCA; el código lo reintenta solo.
+  arca_lease_lost: {
+    code: 'error',
+    message: 'ARCA tardó más de lo esperado y otra consulta tomó el turno. Probá de nuevo.',
+  },
+  confirmation_required: {
+    code: 'invalid',
+    message: 'Para confirmar, escribí DESCONECTAR tal cual.',
+  },
+  guide_step_invalid: {
+    code: 'error',
+    message: 'No pudimos marcar ese paso. Recargá la página y probá de nuevo; si sigue, avisanos.',
+    bug: true,
+  },
+  import_file_already: {
+    code: 'conflict',
+    message: 'Ese archivo ya se importó el {fecha} (lo subió {nombre}). Abrí ese lote para seguir.',
+    fallback: 'Ese archivo ya se importó. Abrí ese lote para seguir.',
+  },
+  import_batch_closed: {
+    code: 'conflict',
+    message: 'Ese lote ya está cerrado (terminado o cancelado). Recargá la página.',
+  },
+  // El código manda tandas de hasta 1000 filas o 500 propuestas.
+  import_too_many_items: {
+    code: 'error',
+    message:
+      'No pudimos cargar el archivo de una vez. Recargá la página y probá de nuevo; si sigue, avisanos.',
+    bug: true,
+  },
+  import_proposal_posted: {
+    code: 'conflict',
+    message:
+      'Eso ya quedó contabilizado: no se puede cambiar desde la importación. Recargá la página.',
+  },
+  import_document_mismatch: {
+    code: 'error',
+    message:
+      'No pudimos vincular el comprobante con la importación. Recargá la página; si sigue, avisanos.',
+    bug: true,
+  },
+  // Deshacer una anulación (o una «Anulación con fecha de hoy») de algo que ya
+  // se volvió a cargar desde la importación: quedaría dos veces.
+  import_reposted: {
+    code: 'conflict',
+    message:
+      'Ese comprobante ya se volvió a cargar desde la importación: si deshacés la anulación quedaría dos veces. Anulá primero el que se cargó de nuevo.',
+  },
+  mp_not_connected: {
+    code: 'conflict',
+    message:
+      'Mercado Pago no está conectado. Conectalo en Ajustes › Mercado Pago o importá el reporte a mano.',
+  },
+  // La clave del servidor no abre lo guardado (cambió o se rotó mal): lo arregla soporte.
+  secret_unreadable: {
+    code: 'error',
+    message:
+      'No pudimos leer las credenciales guardadas. Avisanos: puede que haya que volver a conectar.',
+    bug: true,
+  },
 
   // ─── Por SQLSTATE (sin clave propia en la RPC) ────────────────────────────
   in_use: {
