@@ -24,7 +24,7 @@ const describeIfRls = RLS_TESTS_ENABLED ? describe : describe.skip
 /** Claves de prueba (no son la del servidor): las RPC las reciben como argumento. */
 const SECRET = 'clave-de-prueba-rls-0123456789'
 const OTHER_SECRET = 'otra-clave-de-prueba-rls-98765'
-const MP_TOKEN = 'APP_USR-fake-token-for-rls-tests-not-a-real-credential'
+const MP_TOKEN = 'APP_USR-fake-token-for-rls-tests-0000006789'
 const FILE_NAME = 'mis-comprobantes-recibidos-prueba.zip'
 const KEY_1 = 'mc:R:30860913905:1:3:1001'
 const KEY_2 = 'mc:R:30860913905:1:3:1002'
