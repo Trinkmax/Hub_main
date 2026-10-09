@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
+import { toRpcPayload } from '@/lib/accounting/posting/common'
 import {
   buildQuickExpense,
   invoiceLetterFor,
   quickExpensePath,
 } from '@/lib/accounting/posting/quick-expense'
+import { quickExpenseSchema } from '@/lib/accounting/schemas'
 import { assertGolden, E4_QUICK, E5, prepare, quickExpenseInput } from './accounting-fixtures'
+
+const RECURRING_ID = '00000000-0000-4000-8000-0000000000f1'
 
 describe('«Nuevo gasto» (H.5, E.5.3 y E.5.4)', () => {
   it('E4 · sin comprobante → un solo `expense`', () => {
@@ -191,5 +195,68 @@ describe('«Nuevo gasto» (H.5, E.5.3 y E.5.4)', () => {
       ['purchase', '2026-10-03', '2026-10-04'],
       ['payment', '2026-10-04', '2026-10-04'],
     ])
+  })
+
+  describe('gasto fijo elegido en «¿En qué?»', () => {
+    it('sin gasto fijo, el esquema deja `recurringExpenseId` en null (y no acepta cualquier cosa)', () => {
+      const { r } = prepare(E4_QUICK)
+      expect(E4_QUICK.input(r).recurringExpenseId).toBeNull()
+      const base = {
+        clientRef: '00000000-0000-4000-8000-000000777777',
+        previewHash: '0'.repeat(64),
+        amountCents: 450_000,
+        target: { type: 'account', accountId: r.account('purchases_soft_drinks') },
+        treasuryAccountId: r.treasury('caja'),
+        voucher: 'none',
+        date: '2026-10-03',
+      }
+      expect(
+        quickExpenseSchema.safeParse({ ...base, recurringExpenseId: 'alquiler' }).success,
+      ).toBe(false)
+      const parsed = quickExpenseSchema.safeParse({ ...base, recurringExpenseId: RECURRING_ID })
+      expect(parsed.success && parsed.data.recurringExpenseId).toBe(RECURRING_ID)
+    })
+
+    it('sin comprobante → el `expense` lleva el gasto fijo (lo marca «Cargado» al guardar)', () => {
+      const { r, ctx, meta } = prepare(E4_QUICK)
+      const result = buildQuickExpense(
+        { ...E4_QUICK.input(r), recurringExpenseId: RECURRING_ID },
+        ctx,
+        meta,
+      )
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.bundle.documents.map((d) => [d.kind, d.recurringExpenseId])).toEqual([
+        ['expense', RECURRING_ID],
+      ])
+      expect(toRpcPayload(result.bundle, result.hash).documents[0]?.recurring_expense_id).toBe(
+        RECURRING_ID,
+      )
+    })
+
+    it('con factura → lo lleva la compra, no el pago', () => {
+      const { r, ctx, meta } = prepare(E5)
+      const result = buildQuickExpense(
+        { ...E5.input(r), recurringExpenseId: RECURRING_ID },
+        ctx,
+        meta,
+      )
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.bundle.documents.map((d) => [d.kind, d.recurringExpenseId])).toEqual([
+        ['purchase', RECURRING_ID],
+        ['payment', null],
+      ])
+    })
+
+    it('sin gasto fijo, ningún documento lleva uno (los dos caminos)', () => {
+      for (const fixture of [E4_QUICK, E5]) {
+        const { r, ctx, meta } = prepare(fixture)
+        const result = buildQuickExpense(fixture.input(r), ctx, meta)
+        expect(result.ok).toBe(true)
+        if (!result.ok) continue
+        expect(result.bundle.documents.every((d) => d.recurringExpenseId === null)).toBe(true)
+      }
+    })
   })
 })

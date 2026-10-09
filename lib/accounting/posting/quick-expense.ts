@@ -14,6 +14,9 @@
  * Un tique con proveedor pero sin punto de venta y número no puede ir al libro
  * IVA (la fila exige número): se guarda como gasto con ese proveedor.
  *
+ * Si se eligió un gasto fijo, su id va en el `expense` o en la compra (nunca en
+ * el pago): la base lo marca «Cargado» y avanza su próximo vencimiento.
+ *
  * E5 · limpieza con Factura A, $ 12.100 con Mercado Pago: neto 1.000.000, IVA
  * 210.000; pago imputado 1.210.000 contra la partida de la compra.
  */
@@ -90,6 +93,7 @@ export function buildQuickExpense(
         lines: [{ accountId, amountCents: input.amountCents }],
         notes: input.detail,
         warningsAck: input.warningsAck,
+        recurringExpenseId: input.recurringExpenseId,
       },
       ctx,
       meta,
@@ -125,7 +129,8 @@ export function buildQuickExpense(
     controlAccountId: null,
     relatedDocumentId: null,
     settlesCommissions: false,
-    recurringExpenseId: null,
+    // El gasto fijo va en la compra (no en el pago): queda «Cargado» y avanza su vencimiento.
+    recurringExpenseId: input.recurringExpenseId,
     payNow: {
       treasuryAccountId: input.treasuryAccountId,
       amountCents: null,

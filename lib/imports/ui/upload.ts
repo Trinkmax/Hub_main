@@ -13,9 +13,11 @@
  */
 
 import { formatRange } from '@/lib/dates'
+import { formatCuit } from '@/lib/fiscal/cuit'
 import {
   CREDIT_NOTE_CODES,
   type McParseResult,
+  mcOtherCuit,
   parseMisComprobantes,
 } from '@/lib/imports/arca/mis-comprobantes'
 import {
@@ -152,7 +154,13 @@ export type UploadPlan = {
 
 export type PlanResult =
   | { ok: true; plan: UploadPlan }
-  | { ok: false; message: string; goTo?: UiImportSource | null }
+  | {
+      ok: false
+      message: string
+      goTo?: UiImportSource | null
+      /** Lo que se arregla en Ajustes (la pantalla ofrece el link): `sas_cuit` = Datos de la SAS. */
+      fix?: 'sas_cuit'
+    }
   | { ok: false; needsMapping: true; candidateHeaderRow: number | null }
 
 type FileInfo = { fileName: string; fileSize: number }
@@ -205,6 +213,27 @@ const MC_FORMAT_TEXT: Readonly<Record<string, string>> = {
   mc_xlsx: 'planilla de Excel',
 }
 
+/**
+ * El archivo es de otra CUIT: se muestran las dos (la del archivo y la cargada
+ * en Ajustes) y, por si la del bar está mal, el camino a Datos de la SAS. Si no
+ * se sabe de quién es el archivo, el texto de siempre.
+ */
+function otherCuitPlan(parsed: McParseResult, sasCuit: string | null): PlanResult {
+  const fileCuit = mcOtherCuit(parsed, sasCuit)
+  if (fileCuit === null || !sasCuit) {
+    return {
+      ok: false,
+      message:
+        'Este archivo es de otra CUIT: no son las compras de tu SAS. Bajá el de tu SAS (en ARCA, arriba tiene que decir que actuás en su representación).',
+    }
+  }
+  return {
+    ok: false,
+    message: `Este archivo es de otra CUIT: es de la ${formatCuit(fileCuit)} y la de tu SAS cargada acá es la ${formatCuit(sasCuit)}. Bajá el de tu SAS (en ARCA, arriba tiene que decir que actuás en su representación). Si la CUIT cargada acá está mal, corregila en Ajustes › Datos de la SAS.`,
+    fix: 'sas_cuit',
+  }
+}
+
 export function planMisComprobantes(
   table: OpenedTable,
   file: FileInfo,
@@ -228,11 +257,8 @@ export function planMisComprobantes(
   }
   const blocking = firstError(parsed.fileIssues)
   if (blocking) {
-    const message =
-      blocking.code === 'mc_other_cuit'
-        ? 'Este archivo es de otra CUIT: no son las compras de tu SAS. Bajá el de tu SAS (en ARCA, arriba tiene que decir que actuás en su representación).'
-        : issueText(blocking)
-    return { ok: false, message }
+    if (blocking.code === 'mc_other_cuit') return otherCuitPlan(parsed, ctx.sasCuit)
+    return { ok: false, message: issueText(blocking) }
   }
   if (parsed.items.length === 0) {
     return {

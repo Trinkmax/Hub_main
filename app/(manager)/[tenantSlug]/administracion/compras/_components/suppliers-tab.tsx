@@ -35,6 +35,7 @@ import {
   supplierTotals,
 } from '../_lib/suppliers'
 import { BlockError } from './block-error'
+import { BulkSuppliersDialog } from './bulk-suppliers-dialog'
 import { ExportButton } from './export-button'
 import { SearchFilter, SegmentFilter } from './list-filters'
 import { PartyStatus } from './party-status'
@@ -92,6 +93,7 @@ export async function SuppliersTab({
   const foot = supplierTotals(rows)
   const hasQuery = q !== '' || filterValue !== 'todos'
   const exportLink = exportHref(tenantSlug, 'saldos-proveedores', { hasta: today })
+  const existingNames = outcome.data.rows.map((row) => row.partyName)
 
   return (
     <div className="space-y-6">
@@ -138,12 +140,17 @@ export async function SuppliersTab({
             defaultValue="todos"
             label="Qué proveedores ver"
           />
-          <ExportButton
-            href={exportLink}
-            fileName={`saldos-proveedores-${today}.csv`}
-            label="Exportar saldos"
-            className="h-11 self-start md:h-9 lg:self-auto"
-          />
+          <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+            {canWrite ? (
+              <BulkSuppliersDialog tenantSlug={tenantSlug} existingNames={existingNames} />
+            ) : null}
+            <ExportButton
+              href={exportLink}
+              fileName={`saldos-proveedores-${today}.csv`}
+              label="Exportar saldos"
+              className="h-11 md:h-9"
+            />
+          </div>
         </div>
         <SearchFilter placeholder="Proveedor o CUIT" />
       </div>
@@ -163,7 +170,7 @@ export async function SuppliersTab({
           <EmptyState
             icon={Truck}
             title="Todavía no hay proveedores"
-            description="Se crean solos cuando cargás una factura o un gasto: elegís «Crear proveedor» y listo."
+            description="Se crean solos cuando cargás una factura o un gasto, o cargalos todos de una con «Cargar una lista»."
             action={
               canWrite ? (
                 <div className="flex flex-wrap justify-center gap-2">
@@ -171,6 +178,7 @@ export async function SuppliersTab({
                     <Link href={newPurchaseHref(tenantSlug)}>Cargar factura</Link>
                   </Button>
                   <ActionButton action="gasto" variant="outline" className="h-11 md:h-9" />
+                  <BulkSuppliersDialog tenantSlug={tenantSlug} existingNames={existingNames} />
                 </div>
               ) : null
             }

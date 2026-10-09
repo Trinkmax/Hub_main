@@ -119,6 +119,8 @@ export default async function GastoFijoPage({
         treasuryAccountId: row.treasuryAccountId,
         active: row.active,
         notes: row.notes ?? '',
+        endsOn: row.endsOn,
+        breakdown: row.breakdown,
       }
     : {
         id: null,
@@ -136,6 +138,8 @@ export default async function GastoFijoPage({
         treasuryAccountId: null,
         active: true,
         notes: '',
+        endsOn: null,
+        breakdown: [],
       }
 
   return (

@@ -21,6 +21,7 @@ import {
   loadOpenItems,
   loadPostingCatalog,
 } from '@/lib/accounting/context'
+import { listRecurringExpenses } from '@/lib/accounting/queries/documents'
 import {
   findPossibleDuplicate,
   getFormDefaults,
@@ -35,6 +36,7 @@ import type {
   SheetDuplicate,
   SheetPartyDefaults,
   SheetPartyItems,
+  SheetRecurring,
   SheetResult,
 } from './sheet-types'
 
@@ -65,24 +67,25 @@ async function optional<T>(promise: Promise<T>, fallback: T): Promise<T> {
 /**
  * Todo lo que necesita una hoja de carga al abrirse: el contexto del motor
  * (cuentas, cajas con saldo, partícipes) armado DESDE LA BASE, el primer día
- * abierto, las listas para los combos y, si se piden, los chips de «¿En qué?»
- * y los saldos de los proveedores.
+ * abierto, las listas para los combos y, si se piden, los chips de «¿En qué?»,
+ * los gastos fijos activos y los saldos de los proveedores.
  */
 export async function loadSheetData(
   slug: string,
-  opts: { suggestions?: boolean; balances?: boolean } = {},
+  opts: { suggestions?: boolean; recurring?: boolean; balances?: boolean } = {},
 ): Promise<SheetResult<SheetData>> {
   try {
     const auth = await authorizeAccounting(slug, 'write')
     if (!auth.ok) return { ok: false, message: auth.state.message }
     const tenantId = auth.tenantId
 
-    const [catalog, firstOpenDate, rawSuggestions, balances] = await Promise.all([
+    const [catalog, firstOpenDate, rawSuggestions, rawRecurring, balances] = await Promise.all([
       loadPostingCatalog(tenantId),
       loadFirstOpenDate(tenantId),
       opts.suggestions === true
         ? optional(getQuickExpenseSuggestions(tenantId), [])
         : Promise.resolve([]),
+      opts.recurring === true ? optional(listRecurringExpenses(tenantId), []) : Promise.resolve([]),
       opts.balances === true
         ? optional(listPartyBalances(tenantId, { group: 'payables' }), null)
         : Promise.resolve(null),
@@ -110,6 +113,27 @@ export async function loadSheetData(
       } else {
         suggestions.push({ type: 'account', partyId: null, ...base })
       }
+    }
+
+    // Gastos fijos activos; el proveedor y la caja, solo si siguen activos (la hoja decide si la
+    // cuenta sirve: sin cuenta imputable, con proveedor se elige otra; sin proveedor, no se ofrece).
+    const recurring: SheetRecurring[] = []
+    for (const r of rawRecurring) {
+      if (!r.active) continue
+      const party = r.partyId ? partiesById.get(r.partyId) : undefined
+      const treasury = r.treasuryAccountId ? treasuriesById.get(r.treasuryAccountId) : undefined
+      recurring.push({
+        id: r.id,
+        name: r.name,
+        partyId: party?.active ? party.id : null,
+        accountId: r.accountId,
+        voucherType: r.voucherType,
+        vatRateBp: r.vatRateBp,
+        amountCents: r.amountCents,
+        treasuryAccountId: treasury?.active ? treasury.id : null,
+        nextDueDate: r.nextDueDate,
+        pending: r.monthStatus === 'pending',
+      })
     }
 
     return {
@@ -159,6 +183,7 @@ export async function loadSheetData(
           description: a.description,
         })),
         suggestions,
+        recurring,
         balances,
         iibbJurisdictionCode: catalog.settings.iibbJurisdictionCode,
       },

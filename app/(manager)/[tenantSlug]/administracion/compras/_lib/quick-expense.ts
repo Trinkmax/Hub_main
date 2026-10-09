@@ -1,13 +1,15 @@
 /**
  * «Nuevo gasto» (H.5), lo puro del formulario: qué comprobante proponer, qué
- * alícuota, cómo se reparte el total en neto e IVA y qué se guarda. Lo prueba
- * `administracion-compras.test.ts`.
+ * alícuota, cómo se reparte el total en neto e IVA, qué precarga un gasto fijo
+ * y qué se guarda. Lo prueba `administracion-gasto-rapido.test.ts`.
  */
 
 import { splitGross } from '@/lib/accounting/iva'
 import type { QuickExpenseValues } from '@/lib/accounting/server/document-types'
 import type { IvaCondition, VatRateBp } from '@/lib/accounting/types'
 import { isVoucherType, VOUCHER_CATALOG } from '@/lib/accounting/voucher-types'
+import { formatDayMonth } from '@/lib/dates'
+import type { SheetRecurring } from './sheet-types'
 
 /** Los comprobantes que ofrece «Nuevo gasto» (el esquema `quickExpenseSchema.voucher`). */
 export const QUICK_VOUCHERS = ['none', 'ticket', 'a', 'bc'] as const
@@ -125,6 +127,8 @@ export type QuickExpenseFormState = {
   number: number | null
   date: string | null
   detail: string
+  /** El gasto fijo elegido en «¿En qué?» (`null` si no es uno). */
+  recurringExpenseId: string | null
 }
 
 /** Lo que manda el formulario sin lo que agrega el envío (`clientRef`, `previewHash`, avisos). */
@@ -194,6 +198,121 @@ export function buildQuickExpenseValues(state: QuickExpenseFormState): {
     number: numbered ? state.number : null,
     date: state.date,
     detail: state.detail.trim() === '' ? null : state.detail.trim(),
+    recurringExpenseId: state.recurringExpenseId,
   }
   return { values, missing: {} }
+}
+
+// ─── Gastos fijos en «¿En qué?» ──────────────────────────────────────────────
+
+/**
+ * El comprobante habitual de un gasto fijo en el selector de «Nuevo gasto».
+ * `null`: no es uno de los cuatro (nota de crédito, recibo…) y no se toca.
+ */
+export function quickVoucherFromType(voucherType: string | null | undefined): QuickVoucher | null {
+  switch (voucherType) {
+    case 'sin_comprobante':
+      return 'none'
+    case 'tique':
+      return 'ticket'
+    case 'factura_a':
+      return 'a'
+    case 'factura_b':
+    case 'factura_c':
+      return 'bc'
+    default:
+      return null
+  }
+}
+
+/**
+ * Los gastos fijos de «¿En qué?»: primero los pendientes de este mes; dentro
+ * de cada grupo, el próximo a vencer primero y después por nombre.
+ */
+export function sortRecurringForSheet<
+  T extends Pick<SheetRecurring, 'name' | 'nextDueDate' | 'pending'>,
+>(rows: readonly T[]): T[] {
+  return [...rows].sort(
+    (a, b) =>
+      Number(b.pending) - Number(a.pending) ||
+      (a.nextDueDate < b.nextDueDate ? -1 : a.nextDueDate > b.nextDueDate ? 1 : 0) ||
+      a.name.localeCompare(b.name, 'es'),
+  )
+}
+
+/** «vence hoy», «vence el 10/10» o «venció el 05/10». */
+export function recurringDueText(nextDueDate: string, today: string): string {
+  if (nextDueDate === today) return 'vence hoy'
+  return nextDueDate < today
+    ? `venció el ${formatDayMonth(nextDueDate)}`
+    : `vence el ${formatDayMonth(nextDueDate)}`
+}
+
+/** La marca chica de un gasto fijo: «Gasto fijo · vence el 10/10» si está pendiente; si no, «Gasto fijo». */
+export function recurringNote(
+  r: Pick<SheetRecurring, 'pending' | 'nextDueDate'>,
+  today: string,
+): string {
+  return r.pending ? `Gasto fijo · ${recurringDueText(r.nextDueDate, today)}` : 'Gasto fijo'
+}
+
+/** Lo que precarga un gasto fijo en «Nuevo gasto» (todo se puede cambiar después). */
+export type RecurringPrefill = {
+  target: Extract<ExpenseTarget, { kind: 'party' | 'account' }>
+  /** `null` = monto variable. */
+  amountCents: number | null
+  /** `null` = el comprobante no se toca. */
+  voucher: QuickVoucher | null
+  /** `null` = la alícuota no se toca. */
+  vatRateBp: QuickVatRate | null
+  /** `null` = la caja no se toca. */
+  treasuryAccountId: string | null
+}
+
+/**
+ * Qué precarga elegir un gasto fijo: su proveedor (si se le puede cargar un
+ * gasto) con su cuenta (si es imputable), o la cuenta sola; el comprobante
+ * habitual (una factura, solo con proveedor), la alícuota, el monto y la caja
+ * si sigue activa. `null` si no queda ni proveedor ni cuenta que sirvan.
+ */
+export function recurringPrefill(
+  r: SheetRecurring,
+  usable: {
+    payablePartyIds: ReadonlySet<string>
+    imputableAccountIds: ReadonlySet<string>
+    activeTreasuryIds: ReadonlySet<string>
+  },
+): RecurringPrefill | null {
+  const accountId = usable.imputableAccountIds.has(r.accountId) ? r.accountId : null
+  const partyId = r.partyId && usable.payablePartyIds.has(r.partyId) ? r.partyId : null
+  let target: RecurringPrefill['target']
+  if (partyId) target = { kind: 'party', partyId, accountId }
+  else if (accountId) target = { kind: 'account', accountId }
+  else return null
+  const voucher = quickVoucherFromType(r.voucherType)
+  return {
+    target,
+    amountCents: r.amountCents,
+    voucher: voucher !== null && isInvoiceVoucher(voucher) && partyId === null ? null : voucher,
+    vatRateBp: isQuickVatRate(r.vatRateBp) ? r.vatRateBp : null,
+    treasuryAccountId:
+      r.treasuryAccountId && usable.activeTreasuryIds.has(r.treasuryAccountId)
+        ? r.treasuryAccountId
+        : null,
+  }
+}
+
+/**
+ * El monto al elegir un gasto fijo: el suyo si el campo está vacío o todavía
+ * tiene el que puso otro gasto fijo (con monto variable, queda vacío). Lo que
+ * tipeó la persona no se pisa.
+ */
+export function amountAfterRecurring(input: {
+  current: number | null
+  prefilled: number | null
+  recurring: number | null
+}): number | null {
+  const untouched =
+    input.current === null || (input.prefilled !== null && input.current === input.prefilled)
+  return untouched ? input.recurring : input.current
 }

@@ -31,9 +31,11 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { ACC_UNREACHABLE } from '@/lib/accounting/action-state'
 import { saveParty } from '@/lib/accounting/actions/master'
+import type { PartyContact } from '@/lib/accounting/party-profile'
 import type { IvaCondition, PartyKind, TaxIdType } from '@/lib/accounting/types'
 import type { ArcaLookupStatus } from '@/lib/arca/views'
 import { formatCuit } from '@/lib/fiscal'
+import { ContactsEditor, contactsToSave, DeliveryDaysPicker } from './supplier-profile-fields'
 
 export type SupplierFormValues = {
   id: string
@@ -51,6 +53,9 @@ export type SupplierFormValues = {
   defaultAccountId: string | null
   defaultVoucherType: string | null
   notes: string | null
+  contacts: PartyContact[]
+  deliveryDays: number[]
+  orderLeadDays: number | null
 }
 
 const TAX_ID_OPTIONS: ReadonlyArray<{ value: TaxIdType; label: string }> = [
@@ -116,8 +121,9 @@ function Field({
 
 /**
  * «Editar datos» de un proveedor (pestaña Datos, H.7): razón social, nombre
- * de fantasía, documento, condición frente al IVA, plazo, cuenta y
- * comprobante habituales, contacto y notas. Guarda con `saveParty`
+ * de fantasía, documento, condición frente al IVA, días de cuenta corriente,
+ * cuenta y comprobante habituales, contactos, días de entrega, anticipación
+ * del pedido y observaciones (la ficha que pidieron los socios el 09/10/2026). Guarda con `saveParty`
  * (concurrencia optimista: si alguien lo cambió recién, pide recargar).
  *
  * Con CUIT o CUIL, «Completar con ARCA» trae la razón social, la condición y la
@@ -216,6 +222,9 @@ export function SupplierDataForm({
           defaultAccountId: form.defaultAccountId,
           defaultVoucherType: form.defaultVoucherType,
           notes: form.notes,
+          contacts: contactsToSave(form.contacts),
+          deliveryDays: form.deliveryDays,
+          orderLeadDays: form.orderLeadDays,
         })
         if (!result.ok) {
           setErrors(result.fieldErrors ?? {})
@@ -387,8 +396,8 @@ export function SupplierDataForm({
               </Field>
               <Field
                 id={id('paymentTermDays')}
-                label="Plazo de pago"
-                hint="Días desde la factura hasta el vencimiento. 0 = de contado."
+                label="Días de cuenta corriente"
+                hint="Para calcular el vencimiento de cada boleta. 0 = de contado."
                 error={errors.paymentTermDays}
               >
                 <div className="relative">
@@ -518,6 +527,73 @@ export function SupplierDataForm({
               </Field>
             </div>
             <Field
+              id={id('contacts')}
+              label={
+                <>
+                  Más contactos <Optional />
+                </>
+              }
+              hint="El vendedor, quien factura, el reparto: cada uno con su teléfono o email."
+              error={errors.contacts}
+            >
+              <ContactsEditor
+                idPrefix={id('contacts')}
+                value={form.contacts}
+                onChange={(next) => set('contacts', next)}
+              />
+            </Field>
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
+              <Field
+                id={id('deliveryDays')}
+                label={
+                  <>
+                    Días de entrega <Optional />
+                  </>
+                }
+                hint="Los días en que te trae la mercadería."
+                error={errors.deliveryDays}
+              >
+                <DeliveryDaysPicker
+                  id={id('deliveryDays')}
+                  value={form.deliveryDays}
+                  onChange={(next) => set('deliveryDays', next)}
+                  describedBy={described('deliveryDays', true)}
+                />
+              </Field>
+              <Field
+                id={id('orderLeadDays')}
+                label={
+                  <>
+                    Anticipación del pedido <Optional />
+                  </>
+                }
+                hint="Cuántos días antes hay que pedirle. 0 = el mismo día."
+                error={errors.orderLeadDays}
+              >
+                <div className="relative">
+                  <Input
+                    id={id('orderLeadDays')}
+                    value={form.orderLeadDays === null ? '' : String(form.orderLeadDays)}
+                    inputMode="numeric"
+                    autoComplete="off"
+                    aria-invalid={errors.orderLeadDays ? true : undefined}
+                    aria-describedby={described('orderLeadDays', true)}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/\D/g, '').slice(0, 2)
+                      set('orderLeadDays', digits === '' ? null : Math.min(30, Number(digits)))
+                    }}
+                    className="h-11 pr-12 text-base tabular-nums md:h-10 md:text-sm"
+                  />
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"
+                  >
+                    días
+                  </span>
+                </div>
+              </Field>
+            </div>
+            <Field
               id={id('address')}
               label={
                 <>
@@ -540,7 +616,7 @@ export function SupplierDataForm({
               id={id('notes')}
               label={
                 <>
-                  Notas <Optional />
+                  Observaciones <Optional />
                 </>
               }
               error={errors.notes}

@@ -1,10 +1,16 @@
 'use client'
 
-import { Search, X } from 'lucide-react'
+import { Repeat, Search, X } from 'lucide-react'
 import { useMemo } from 'react'
 import { AccountCombobox } from '@/components/administracion/account-combobox'
 import { type ComboOption, EntityCombobox } from '@/components/administracion/entity-combobox'
-import { rankAccount, rankAndFilter, rankParty } from '@/components/administracion/search'
+import {
+  normalizeText,
+  rankAccount,
+  rankAndFilter,
+  rankParty,
+  rankText,
+} from '@/components/administracion/search'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,8 +25,11 @@ import type { IvaCondition } from '@/lib/accounting/types'
 import { formatCuit } from '@/lib/fiscal'
 import { cn } from '@/lib/utils'
 import { isPurchaseImputation, isQuickExpenseAccount } from '../_lib/accounts'
-import type { ExpenseTarget } from '../_lib/quick-expense'
-import type { QuickSuggestion, SheetAccount, SheetParty } from '../_lib/sheet-types'
+import { type ExpenseTarget, recurringDueText, recurringNote } from '../_lib/quick-expense'
+import type { QuickSuggestion, SheetAccount, SheetParty, SheetRecurring } from '../_lib/sheet-types'
+
+/** Hasta cuántos gastos fijos pendientes van como chips (el resto, en el buscador). */
+const MAX_RECURRING_CHIPS = 4
 
 const NEW_PARTY_CONDITIONS: ReadonlyArray<{ value: IvaCondition; label: string }> = [
   { value: 'responsable_inscripto', label: 'Responsable inscripto' },
@@ -38,17 +47,22 @@ export function partyLabel(p: Pick<SheetParty, 'name' | 'tradeName'>): string {
 }
 
 /**
- * «¿En qué?» de «Nuevo gasto» (H.5): hasta 6 chips con lo más usado, un
- * buscador agrupado en Proveedores y Gastos con «Crear proveedor «…»», y una
- * vez elegido, la línea «Coca-Cola · Compras: bebidas» con [Cambiar].
+ * «¿En qué?» de «Nuevo gasto» (H.5): chips con los gastos fijos pendientes de
+ * este mes y lo más usado, un buscador agrupado en Gastos fijos, Proveedores y
+ * Gastos con «Crear proveedor «…»», y una vez elegido, la línea «Coca-Cola ·
+ * Compras: bebidas» con [Cambiar].
  */
 export function ExpenseTargetPicker({
   id,
   suggestions,
+  recurring = [],
+  linkedRecurringId = null,
+  today,
   parties,
   accounts,
   value,
   onPick,
+  onPickRecurring,
   onAccountChange,
   onNewPartyChange,
   onClear,
@@ -57,11 +71,19 @@ export function ExpenseTargetPicker({
 }: {
   id: string
   suggestions: readonly QuickSuggestion[]
+  /** Gastos fijos que se pueden elegir, ya ordenados (los pendientes primero). */
+  recurring?: readonly SheetRecurring[]
+  /** El gasto fijo que se paga con este gasto (`null` si no es uno). */
+  linkedRecurringId?: string | null
+  /** Hoy en el bar, para «vence el …». */
+  today: string
   parties: readonly SheetParty[]
   accounts: readonly SheetAccount[]
   value: ExpenseTarget | null
   /** Se eligió algo: un chip, un proveedor o una cuenta del buscador, o «Crear proveedor». */
   onPick: (target: ExpenseTarget, suggestion: QuickSuggestion | null) => void
+  /** Se eligió un gasto fijo (chip o buscador). */
+  onPickRecurring?: (recurring: SheetRecurring) => void
   onAccountChange: (accountId: string | null) => void
   onNewPartyChange: (patch: Partial<Extract<ExpenseTarget, { kind: 'new' }>>) => void
   onClear: () => void
@@ -71,6 +93,12 @@ export function ExpenseTargetPicker({
 }) {
   const suppliers = useMemo(() => payableParties(parties), [parties])
   const partyById = useMemo(() => new Map(parties.map((p) => [p.id, p])), [parties])
+  const recurringById = useMemo(() => new Map(recurring.map((r) => [r.id, r])), [recurring])
+  const recurringChips = useMemo(
+    () => (onPickRecurring ? recurring.filter((r) => r.pending).slice(0, MAX_RECURRING_CHIPS) : []),
+    [recurring, onPickRecurring],
+  )
+  const hasChips = suggestions.length > 0 || recurringChips.length > 0
   const accountById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts])
   const quickAccounts = useMemo(() => accounts.filter(isQuickExpenseAccount), [accounts])
   const imputable = useMemo(
@@ -90,7 +118,24 @@ export function ExpenseTargetPicker({
     [accounts, imputable],
   )
 
+  // Un gasto fijo se busca por su nombre o por el de su proveedor.
+  const rankRecurring = (r: SheetRecurring, query: string): number => {
+    const q = normalizeText(query)
+    if (!q) return 0
+    const party = r.partyId ? partyById.get(r.partyId) : undefined
+    const ranks = [rankText(r.name, q), party ? rankParty(party, query) : -1].filter((x) => x >= 0)
+    return ranks.length > 0 ? Math.min(...ranks) : -1
+  }
+
   const filter = (query: string): ComboOption[] => {
+    const fixed = onPickRecurring
+      ? rankAndFilter(recurring, query, rankRecurring, 6).map((r) => ({
+          value: `r:${r.id}`,
+          label: r.name,
+          description: recurringNote(r, today),
+          group: 'Gastos fijos',
+        }))
+      : []
     const people = rankAndFilter(suppliers, query, rankParty, query ? 8 : 6).map((p) => ({
       value: `p:${p.id}`,
       label: partyLabel(p),
@@ -103,7 +148,7 @@ export function ExpenseTargetPicker({
       description: a.description,
       group: 'Gastos',
     }))
-    return [...people, ...spend]
+    return [...fixed, ...people, ...spend]
   }
 
   const pick = (encoded: string) => {
@@ -118,6 +163,9 @@ export function ExpenseTargetPicker({
       onPick({ kind: 'party', partyId: party.id, accountId: account }, null)
     } else if (kind === 'a:') {
       onPick({ kind: 'account', accountId: entityId }, null)
+    } else if (kind === 'r:') {
+      const r = recurringById.get(entityId)
+      if (r) onPickRecurring?.(r)
     }
   }
 
@@ -133,6 +181,7 @@ export function ExpenseTargetPicker({
         : value.kind === 'new'
           ? `Proveedor nuevo`
           : (account?.name ?? 'Gasto')
+    const linked = linkedRecurringId ? recurringById.get(linkedRecurringId) : undefined
 
     return (
       <div className="space-y-3 rounded-xl border border-border/70 bg-card/50 p-3">
@@ -145,6 +194,15 @@ export function ExpenseTargetPicker({
             {value.kind === 'party' && party?.taxId ? (
               <p className="text-[11px] tabular-nums text-muted-foreground">
                 CUIT {formatCuit(party.taxId)}
+              </p>
+            ) : null}
+            {linked ? (
+              <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                <Repeat className="size-3 shrink-0" aria-hidden />
+                <span className="truncate">
+                  Gasto fijo «{linked.name}»
+                  {linked.pending ? ` · ${recurringDueText(linked.nextDueDate, today)}` : ''}
+                </span>
               </p>
             ) : null}
           </div>
@@ -266,9 +324,28 @@ export function ExpenseTargetPicker({
   // ── Sin elegir: chips + buscador ──
   return (
     <div className="space-y-2.5">
-      {suggestions.length > 0 ? (
+      {hasChips ? (
         <fieldset className="m-0 flex min-w-0 flex-wrap gap-2 border-0 p-0">
-          <legend className="sr-only">Lo más usado</legend>
+          <legend className="sr-only">
+            {recurringChips.length > 0 ? 'Gastos fijos de este mes y lo más usado' : 'Lo más usado'}
+          </legend>
+          {recurringChips.map((r) => (
+            <button
+              key={`r:${r.id}`}
+              type="button"
+              onClick={() => onPickRecurring?.(r)}
+              aria-label={`${r.name}, gasto fijo, ${recurringDueText(r.nextDueDate, today)}`}
+              title={recurringNote(r, today)}
+              className={cn(
+                'inline-flex h-11 max-w-full items-center gap-1.5 rounded-full border px-4 text-sm font-medium transition-colors md:h-9',
+                'outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                'border-border hover:bg-secondary',
+              )}
+            >
+              <Repeat className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              <span className="truncate">{r.name}</span>
+            </button>
+          ))}
           {suggestions.map((s) => (
             <button
               key={`${s.type}:${s.partyId ?? s.accountId}`}
@@ -310,9 +387,7 @@ export function ExpenseTargetPicker({
           )
         }
         createLabel={(q) => `Crear proveedor «${q}»`}
-        placeholder={
-          suggestions.length > 0 ? 'Buscar otro…' : 'Buscar proveedor o en qué gastaste…'
-        }
+        placeholder={hasChips ? 'Buscar otro…' : 'Buscar proveedor o en qué gastaste…'}
         searchPlaceholder="Coca, alquiler, verdulería…"
         emptyText={(q) =>
           q ? `No hay nada con «${q}». Podés crear el proveedor.` : 'Escribí para buscar.'
@@ -320,7 +395,7 @@ export function ExpenseTargetPicker({
         invalid={Boolean(errors.target)}
         aria-describedby={errors.target ? `${id}-error` : undefined}
       />
-      {suggestions.length === 0 ? (
+      {!hasChips ? (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Search className="size-3" aria-hidden />
           Lo que más uses va a aparecer acá como atajo.

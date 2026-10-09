@@ -1,4 +1,5 @@
 import 'server-only'
+import { parseBreakdown, type RecurringBreakdownRow } from '@/lib/accounting/party-profile'
 import {
   DOCUMENT_KINDS,
   type DocumentKind,
@@ -326,6 +327,14 @@ export type RecurringExpenseRow = {
   lastDocumentId: string | null
   lastDocumentDate: string | null
   notes: string | null
+  /** En cuotas: el último vencimiento (`null` = no termina). */
+  endsOn: string | null
+  /** Vencimientos que faltan contando el próximo (`null` = no termina). */
+  remainingDues: number | null
+  /** En cuotas y ya pasó la última: se apagó solo. */
+  ended: boolean
+  /** El detalle (por ejemplo los sueldos); vacío si no tiene. */
+  breakdown: RecurringBreakdownRow[]
   updatedAt: string
   /**
    * «Este mes»: `loaded` Cargado ✓ · `pending` vence este mes o ya venció ·
@@ -1791,7 +1800,7 @@ export async function getDailyCloseCalendar(
 // ─── Gastos fijos ────────────────────────────────────────────────────────────
 
 const RECURRING_COLUMNS =
-  'id, name, party_id, account_id, voucher_type, vat_rate_bp, amount_cents, frequency, due_day, next_due_date, remind_days_before, treasury_account_id, active, last_document_id, notes, updated_at'
+  'id, name, party_id, account_id, voucher_type, vat_rate_bp, amount_cents, frequency, due_day, next_due_date, remind_days_before, treasury_account_id, active, last_document_id, notes, ends_on, breakdown, updated_at'
 
 const FREQUENCY_MONTHS = { monthly: 1, bimonthly: 2, quarterly: 3, yearly: 12 } as const
 type Frequency = keyof typeof FREQUENCY_MONTHS
@@ -1830,6 +1839,23 @@ export function recurringMonthStatus(input: {
   return input.lastDocumentDate !== null && input.lastDocumentDate > beforePrevious
     ? 'loaded'
     : 'skipped'
+}
+
+/**
+ * Cuántos vencimientos faltan, contando el próximo, hasta el último (`endsOn`).
+ * Se cuenta por mes, como la base: 0 si el próximo ya cae después del último.
+ */
+export function remainingDues(
+  nextDueDate: string,
+  endsOn: string | null,
+  frequency: Frequency,
+): number | null {
+  if (endsOn === null) return null
+  const months =
+    (Number(endsOn.slice(0, 4)) - Number(nextDueDate.slice(0, 4))) * 12 +
+    (Number(endsOn.slice(5, 7)) - Number(nextDueDate.slice(5, 7)))
+  if (months < 0) return 0
+  return Math.floor(months / FREQUENCY_MONTHS[frequency]) + 1
 }
 
 async function parseRecurring(
@@ -1890,6 +1916,11 @@ async function parseRecurring(
       lastDocumentId: strOrNull(row.last_document_id),
       lastDocumentDate,
       notes: strOrNull(row.notes),
+      endsOn: dayOrNull(row.ends_on),
+      remainingDues: remainingDues(nextDueDate, dayOrNull(row.ends_on), frequency),
+      ended:
+        !bool(row.active) && remainingDues(nextDueDate, dayOrNull(row.ends_on), frequency) === 0,
+      breakdown: parseBreakdown(row.breakdown),
       updatedAt: str(row.updated_at),
       monthStatus: recurringMonthStatus({
         nextDueDate,
@@ -1914,6 +1945,8 @@ export async function listRecurringExpenses(
     .from('acc_recurring_expenses')
     .select(RECURRING_COLUMNS)
     .eq('tenant_id', tenantId)
+    // Los eliminados con historia quedan archivados para sus comprobantes: no se listan.
+    .is('archived_at', null)
     .order('next_due_date', { ascending: true })
     .order('name', { ascending: true })
     .limit(500)
@@ -1934,6 +1967,7 @@ export async function getRecurringExpense(
     .select(RECURRING_COLUMNS)
     .eq('tenant_id', tenantId)
     .eq('id', id)
+    .is('archived_at', null)
     .maybeSingle()
   if (error) throw queryError('acc_recurring_expenses', error)
   if (!isRecord(data)) return null

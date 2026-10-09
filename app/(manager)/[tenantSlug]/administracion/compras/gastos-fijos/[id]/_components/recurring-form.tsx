@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { type FormEvent, type ReactNode, useId, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { AccountCombobox, type AccountOption } from '@/components/administracion/account-combobox'
+import { Amount } from '@/components/administracion/amount'
 import { DateField } from '@/components/administracion/date-input'
 import { MoneyField } from '@/components/administracion/money-input'
 import { PartyCombobox, type PartyOption } from '@/components/administracion/party-combobox'
@@ -24,13 +25,22 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { ACC_UNREACHABLE } from '@/lib/accounting/action-state'
 import { saveRecurringExpense } from '@/lib/accounting/actions/master'
+import type { RecurringBreakdownRow } from '@/lib/accounting/party-profile'
 import { vatRateLabel } from '@/lib/accounting/queries/labels'
 import { formatIsoDay } from '@/lib/dates'
 import {
+  duesUntil,
   nextDueFrom,
+  nthDue,
   RECURRING_FREQUENCIES,
   type RecurringFrequency,
 } from '../../../_lib/recurring'
+import {
+  type BreakdownDraft,
+  breakdownToSave,
+  newBreakdownDraft,
+  RecurringBreakdown,
+} from './recurring-breakdown'
 
 export type RecurringFormValues = {
   id: string | null
@@ -48,6 +58,9 @@ export type RecurringFormValues = {
   treasuryAccountId: string | null
   active: boolean
   notes: string
+  /** En cuotas: el último vencimiento (`null` = no termina). */
+  endsOn: string | null
+  breakdown: RecurringBreakdownRow[]
 }
 
 const NONE = '__ninguno__'
@@ -131,6 +144,20 @@ export function RecurringForm({
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [banner, setBanner] = useState<string | null>(null)
   const editing = initial.id !== null
+  // Cuotas: cuántas faltan contando la próxima (`null` = no termina; 0 = ya terminó).
+  const initialDues =
+    initial.endsOn === null
+      ? null
+      : duesUntil(initial.nextDueDate, initial.endsOn, initial.frequency)
+  const [dues, setDues] = useState<number | null>(initialDues)
+  const ended = initialDues === 0 && dues === 0
+  const [lines, setLines] = useState<BreakdownDraft[]>(() =>
+    initial.breakdown.map((l) => newBreakdownDraft(l)),
+  )
+  const detailed = lines.length > 0
+  const detailTotal = lines.reduce((sum, l) => sum + (l.amountCents ?? 0), 0)
+  const lastDue =
+    dues !== null && dues > 0 ? nthDue(form.nextDueDate, form.dueDay, form.frequency, dues) : null
 
   const set = <K extends keyof RecurringFormValues>(key: K, value: RecurringFormValues[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -157,6 +184,11 @@ export function RecurringForm({
     const local: Record<string, string> = {}
     if (form.name.trim().length < 2) local.name = 'Escribí el nombre (por ejemplo, «Alquiler»).'
     if (!form.accountId) local.accountId = 'Elegí en qué es el gasto.'
+    const breakdown = breakdownToSave(lines)
+    if (breakdown.some((l) => l.label === '' || l.amountCents < 1)) {
+      local.breakdown = 'Cada renglón del detalle necesita a quién corresponde y un monto.'
+    }
+    if (dues !== null && dues < 1 && !ended) local.endsOn = 'Poné cuántas cuotas faltan (1 o más).'
     if (Object.keys(local).length > 0) {
       setErrors(local)
       requestAnimationFrame(() => {
@@ -173,14 +205,17 @@ export function RecurringForm({
           accountId: form.accountId,
           voucherType: form.voucherType,
           vatRateBp: form.vatRateBp,
-          amountCents: form.amountCents,
+          amountCents: breakdown.length > 0 ? detailTotal : form.amountCents,
           frequency: form.frequency,
           dueDay: form.dueDay,
           nextDueDate: form.nextDueDate,
           remindDaysBefore: form.remindDaysBefore,
           treasuryAccountId: form.treasuryAccountId,
-          active: form.active,
+          // Una que había terminado y vuelve a tener cuotas se prende sola.
+          active: initialDues === 0 && dues !== null && dues > 0 ? true : form.active,
           notes: form.notes,
+          endsOn: dues === null ? null : ended ? initial.endsOn : lastDue,
+          breakdown,
         })
         if (!result.ok) {
           setErrors(result.fieldErrors ?? {})
@@ -312,15 +347,64 @@ export function RecurringForm({
         </Field>
       </div>
 
-      <MoneyField
-        id={id('amountCents')}
-        label="Monto aproximado"
+      {detailed ? (
+        <div className="grid gap-1.5">
+          <span className="text-sm font-medium">Monto</span>
+          <p className="text-sm">
+            <Amount cents={detailTotal} />{' '}
+            <span className="text-xs text-muted-foreground">(la suma del detalle)</span>
+          </p>
+        </div>
+      ) : (
+        <MoneyField
+          id={id('amountCents')}
+          label="Monto aproximado"
+          optional
+          value={form.amountCents}
+          onValueChange={(cents) => set('amountCents', cents)}
+          error={errors.amountCents ?? null}
+          hint="Si cambia todos los meses (la luz), dejalo vacío: queda como «variable»."
+        />
+      )}
+
+      <Field
+        id={id('breakdown')}
+        label="Detalle"
         optional
-        value={form.amountCents}
-        onValueChange={(cents) => set('amountCents', cents)}
-        error={errors.amountCents ?? null}
-        hint="Si cambia todos los meses (la luz), dejalo vacío: queda como «variable»."
-      />
+        hint={
+          detailed
+            ? 'Por ejemplo, un renglón por empleado y por concepto. El monto es la suma.'
+            : undefined
+        }
+      >
+        {detailed ? (
+          <RecurringBreakdown
+            idPrefix={id('breakdown')}
+            lines={lines}
+            onChange={(next) => {
+              setLines(next)
+              if (errors.breakdown) setErrors(({ breakdown: _b, ...rest }) => rest)
+            }}
+            error={errors.breakdown}
+          />
+        ) : (
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-11 md:h-8"
+              onClick={() => setLines([newBreakdownDraft()])}
+            >
+              Detallar el monto
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Para los sueldos: por empleado, con aportes, contribuciones, pago en blanco y en
+              negro.
+            </span>
+          </div>
+        )}
+      </Field>
 
       <div className="grid gap-5 sm:grid-cols-3">
         <Field id={id('frequency')} label="Cada cuánto vence" required error={errors.frequency}>
@@ -402,6 +486,66 @@ export function RecurringForm({
         error={errors.nextDueDate ?? null}
         hint={`Desde acá se cuentan los próximos (${formatIsoDay(form.nextDueDate)}).`}
       />
+
+      <Field
+        id={id('endsOn')}
+        label="¿Termina?"
+        error={errors.endsOn}
+        hint={
+          ended && initial.endsOn
+            ? `Ya terminó: la última cuota venció el ${formatIsoDay(initial.endsOn)}. Para seguir, poné cuántas cuotas faltan.`
+            : lastDue
+              ? `La última vence el ${formatIsoDay(lastDue)}. Después deja de aparecer solo.`
+              : 'Para compras en cuotas: poné cuántas faltan y se saca solo después de la última.'
+        }
+      >
+        <div className="flex flex-wrap items-center gap-3">
+          <Select
+            value={dues === null ? 'no' : 'si'}
+            onValueChange={(v) =>
+              setDues(v === 'no' ? null : initialDues !== null && initialDues > 0 ? initialDues : 1)
+            }
+          >
+            <SelectTrigger
+              id={id('endsOn')}
+              className="w-full data-[size=default]:h-11 sm:w-56 md:data-[size=default]:h-10"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="no" className="min-h-11 md:min-h-8">
+                No, sigue todos los meses
+              </SelectItem>
+              <SelectItem value="si" className="min-h-11 md:min-h-8">
+                Sí, es en cuotas
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          {dues !== null ? (
+            <div className="flex items-center gap-2">
+              <Label htmlFor={id('dues')} className="text-sm font-normal">
+                Faltan
+              </Label>
+              <Input
+                id={id('dues')}
+                value={dues === 0 ? '' : String(dues)}
+                inputMode="numeric"
+                autoComplete="off"
+                aria-invalid={errors.endsOn ? true : undefined}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, '').slice(0, 3)
+                  setDues(digits === '' ? 0 : Math.min(240, Number(digits)))
+                  if (errors.endsOn) setErrors(({ endsOn: _e, ...rest }) => rest)
+                }}
+                className="h-11 w-20 text-base tabular-nums md:h-10 md:text-sm"
+              />
+              <span className="text-sm text-muted-foreground">
+                {dues === 1 ? 'cuota (contando la próxima)' : 'cuotas (contando la próxima)'}
+              </span>
+            </div>
+          ) : null}
+        </div>
+      </Field>
 
       <Field
         id={id('treasuryAccountId')}

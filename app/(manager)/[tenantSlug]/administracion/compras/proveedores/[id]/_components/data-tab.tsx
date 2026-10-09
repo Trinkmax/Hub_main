@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { deliveryDaysText, orderLeadText } from '@/lib/accounting/party-profile'
 import {
   type AccountRow,
   listAccounts,
@@ -15,6 +16,7 @@ import { isPurchaseImputation } from '../../../_lib/accounts'
 import { PURCHASE_VOUCHER_OPTIONS } from '../../../_lib/vouchers'
 import { SupplierActiveToggle } from './supplier-active-toggle'
 import { SupplierDataForm } from './supplier-data-form'
+import { SupplierDeleteButton } from './supplier-delete-button'
 
 function Row({ label, children, muted }: { label: string; children: ReactNode; muted?: boolean }) {
   return (
@@ -74,6 +76,15 @@ export async function DataTab({
         </div>
         {canWrite ? (
           <div className="flex flex-wrap items-center gap-2">
+            {party.systemKey === null ? (
+              <SupplierDeleteButton
+                tenantSlug={tenantSlug}
+                id={party.id}
+                name={party.name}
+                updatedAt={party.updatedAt}
+                hasBalance={hasBalance}
+              />
+            ) : null}
             <SupplierActiveToggle
               tenantSlug={tenantSlug}
               id={party.id}
@@ -105,6 +116,9 @@ export async function DataTab({
                 defaultAccountId: party.defaultAccountId,
                 defaultVoucherType: party.defaultVoucherType,
                 notes: party.notes,
+                contacts: party.contacts,
+                deliveryDays: party.deliveryDays,
+                orderLeadDays: party.orderLeadDays,
               }}
               accounts={options
                 .filter(
@@ -134,10 +148,10 @@ export async function DataTab({
           {documentText(party)}
         </Row>
         <Row label="Condición frente al IVA">{ivaConditionLabel(party.ivaCondition)}</Row>
-        <Row label="Plazo de pago">
+        <Row label="Días de cuenta corriente">
           {party.paymentTermDays === 0
             ? 'De contado'
-            : `${party.paymentTermDays} ${party.paymentTermDays === 1 ? 'día' : 'días'}`}
+            : `${party.paymentTermDays} ${party.paymentTermDays === 1 ? 'día' : 'días'} (vence la boleta)`}
         </Row>
         <Row label="Cuenta habitual" muted={!party.defaultAccountName}>
           {party.defaultAccountName ?? 'Se completa sola con la primera factura'}
@@ -147,14 +161,40 @@ export async function DataTab({
             ? voucherLabel(party.defaultVoucherType)
             : 'El del último que cargaste'}
         </Row>
-        <Row label="Contacto" muted={!party.email && !party.phone}>
-          {[party.email, party.phone].filter(Boolean).join(' · ') || 'Sin datos de contacto'}
+        <Row label="Contactos" muted={!party.email && !party.phone && party.contacts.length === 0}>
+          {!party.email && !party.phone && party.contacts.length === 0 ? (
+            'Sin datos de contacto'
+          ) : (
+            <ul className="space-y-1">
+              {party.email || party.phone ? (
+                <li>{[party.email, party.phone].filter(Boolean).join(' · ')}</li>
+              ) : null}
+              {party.contacts.map((c) => (
+                <li key={[c.name, c.role, c.phone, c.email].join('|')}>
+                  {c.name ? <span className="font-medium">{c.name}</span> : null}
+                  {c.role ? <span className="text-muted-foreground"> ({c.role})</span> : null}
+                  {c.phone || c.email ? (
+                    <span>
+                      {c.name || c.role ? ' · ' : ''}
+                      {[c.phone, c.email].filter(Boolean).join(' · ')}
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Row>
+        <Row label="Días de entrega" muted={party.deliveryDays.length === 0}>
+          {deliveryDaysText(party.deliveryDays) ?? 'Sin cargar'}
+        </Row>
+        <Row label="Anticipación del pedido" muted={party.orderLeadDays === null}>
+          {orderLeadText(party.orderLeadDays) ?? 'Sin cargar'}
         </Row>
         <Row label="Dirección" muted={!party.address}>
           {party.address ?? 'Sin dirección'}
         </Row>
-        <Row label="Notas" muted={!party.notes}>
-          <span className="whitespace-pre-line">{party.notes ?? 'Sin notas'}</span>
+        <Row label="Observaciones" muted={!party.notes}>
+          <span className="whitespace-pre-line">{party.notes ?? 'Sin observaciones'}</span>
         </Row>
         <Row label="Estado">{party.active ? 'Activo' : 'Desactivado'}</Row>
       </dl>

@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 
+import { mcOtherCuit } from '@/lib/imports/arca/mis-comprobantes'
 import { layoutToMapping } from '@/lib/imports/bank/statement'
 import type { OpenedTable } from '@/lib/imports/detect'
 import { checkStagedRow } from '@/lib/imports/server/stage'
@@ -144,6 +145,31 @@ describe('Mis Comprobantes (Recibidos)', () => {
     )
     expect(r.ok).toBe(false)
     expect('message' in r ? r.message : '').toMatch(/otra CUIT/)
+  })
+
+  it('el de otra CUIT muestra las dos CUIT y ofrece corregir la del bar en Ajustes', async () => {
+    const f = await open(IMPORT_FIXTURES.mcG3Dic)
+    const r = planMisComprobantes(
+      f.table,
+      { fileName: f.name, fileSize: f.size },
+      { sasCuit: '20-12345678-6' },
+    )
+    expect(r).toMatchObject({ ok: false, fix: 'sas_cuit' })
+    expect('message' in r ? r.message : '').toBe(
+      'Este archivo es de otra CUIT: es de la 30-71234567-1 y la de tu SAS cargada acá es la 20-12345678-6. Bajá el de tu SAS (en ARCA, arriba tiene que decir que actuás en su representación). Si la CUIT cargada acá está mal, corregila en Ajustes › Datos de la SAS.',
+    )
+  })
+
+  it('de quién es el archivo: el título manda; si no, la receptora más repetida', () => {
+    expect(mcOtherCuit({ titleCuit: '30712345671', receiverCuit: null }, '20123456786')).toBe(
+      '30712345671',
+    )
+    expect(mcOtherCuit({ titleCuit: null, receiverCuit: '30712345671' }, '20-12345678-6')).toBe(
+      '30712345671',
+    )
+    expect(mcOtherCuit({ titleCuit: '20123456786', receiverCuit: null }, '20123456786')).toBeNull()
+    expect(mcOtherCuit({ titleCuit: null, receiverCuit: null }, '20123456786')).toBeNull()
+    expect(mcOtherCuit({ titleCuit: '30712345671', receiverCuit: null }, null)).toBeNull()
   })
 })
 

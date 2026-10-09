@@ -270,6 +270,16 @@ export const ACC_ERRORS = {
     code: 'conflict',
     message: 'Lo usa un medio de cobro o un gasto fijo: cambialo primero.',
   },
+  party_has_balance: {
+    code: 'conflict',
+    message:
+      'Todavía tiene saldo en la cuenta corriente: se puede desactivar o borrar cuando quede en cero.',
+  },
+  party_has_history: {
+    code: 'conflict',
+    message:
+      'Ya tiene comprobantes cargados, así que no se puede borrar: desactivalo y deja de aparecer.',
+  },
   treasury_has_balance: {
     code: 'conflict',
     message: 'La caja tiene saldo: movelo a otra antes de desactivarla.',
@@ -1173,6 +1183,7 @@ const UNIQUE_CONSTRAINT_KEYS: ReadonlyArray<readonly [string, AccErrorKey]> = [
   ['asm_name_uq', 'sales_method_name_taken'],
   ['asp_number_uq', 'sales_point_taken'],
   ['arx_name_uq', 'recurring_name_taken'],
+  ['arx_name_live_uq', 'recurring_name_taken'],
 ]
 
 const NETWORK_RE =

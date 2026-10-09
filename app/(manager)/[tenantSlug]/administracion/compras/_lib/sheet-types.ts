@@ -70,6 +70,25 @@ export type QuickSuggestion = {
   voucherType: string | null
 }
 
+/** Un gasto fijo activo, para elegirlo en «¿En qué?» de «Nuevo gasto». */
+export type SheetRecurring = {
+  id: string
+  name: string
+  /** `null` si no tiene proveedor o si el proveedor está dado de baja. */
+  partyId: string | null
+  accountId: string
+  /** El comprobante habitual (`factura_a`, `tique`…). */
+  voucherType: string | null
+  vatRateBp: number | null
+  /** `null` = monto variable. */
+  amountCents: number | null
+  /** La caja o medio habitual, solo si sigue activa. */
+  treasuryAccountId: string | null
+  nextDueDate: string
+  /** Vence este mes (o ya venció) y todavía no se cargó. */
+  pending: boolean
+}
+
 /** Lo que trae la hoja al abrirse: el contexto del motor (DESDE LA BASE) y las listas. */
 export type SheetData = {
   ctx: PostingContext
@@ -85,6 +104,8 @@ export type SheetData = {
   accounts: SheetAccount[]
   /** Chips de «¿En qué?» (vacío si todavía no hay historia). */
   suggestions: QuickSuggestion[]
+  /** Gastos fijos activos para «¿En qué?» (vacío si no se pidieron o no se pudieron leer). */
+  recurring: SheetRecurring[]
   /** Saldos de proveedores para ordenar «Pagar» (`null` si no se pudieron leer). */
   balances: PartyBalanceRow[] | null
   /** Jurisdicción de IIBB de la SAS (la de las percepciones por defecto). */

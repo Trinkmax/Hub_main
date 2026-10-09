@@ -16,14 +16,17 @@ import {
 } from '@/components/ui/data-table'
 import { EmptyState } from '@/components/ui/empty-state'
 import {
+  listAccounts,
   listRecurringExpenses,
   type RecurringExpenseRow,
   settleQuery,
 } from '@/lib/accounting/queries'
 import { formatDayMonth, formatIsoDay } from '@/lib/dates'
 import { cn } from '@/lib/utils'
+import { isPurchaseImputation } from '../_lib/accounts'
 import { comprasHref, newPurchaseHref, recurringHref } from '../_lib/links'
 import { BlockError } from './block-error'
+import { BulkRecurringDialog } from './bulk-recurring-dialog'
 import { RecurringActions } from './recurring-actions'
 
 const FREQUENCY_LABELS: Readonly<Record<RecurringExpenseRow['frequency'], string>> = {
@@ -35,6 +38,7 @@ const FREQUENCY_LABELS: Readonly<Record<RecurringExpenseRow['frequency'], string
 
 /** «Este mes» de un gasto fijo, siempre con palabras (nunca solo color). */
 function MonthStatus({ row }: { row: RecurringExpenseRow }) {
+  if (row.ended) return <Badge variant="muted">Terminó</Badge>
   if (!row.active) return <Badge variant="muted">Pausado</Badge>
   switch (row.monthStatus) {
     case 'loaded':
@@ -80,6 +84,23 @@ function MonthStatus({ row }: { row: RecurringExpenseRow }) {
   }
 }
 
+/** «Proveedor · Todos los meses · quedan 2 cuotas · 8 renglones de detalle». */
+function subtitle(row: RecurringExpenseRow): string {
+  const dues =
+    row.remainingDues === null || row.ended
+      ? null
+      : row.remainingDues === 1
+        ? 'última cuota'
+        : `quedan ${row.remainingDues} cuotas`
+  const detail =
+    row.breakdown.length === 0
+      ? null
+      : row.breakdown.length === 1
+        ? '1 renglón de detalle'
+        : `${row.breakdown.length} renglones de detalle`
+  return [row.partyName, FREQUENCY_LABELS[row.frequency], dues, detail].filter(Boolean).join(' · ')
+}
+
 function sortRows(rows: readonly RecurringExpenseRow[]): RecurringExpenseRow[] {
   // Activos primero (lo pendiente arriba, por vencimiento); los pausados al final.
   const weight = (r: RecurringExpenseRow) => (!r.active ? 2 : r.monthStatus === 'pending' ? 0 : 1)
@@ -106,10 +127,37 @@ export async function RecurringTab({
   today: string
   canWrite: boolean
 }) {
-  const outcome = await settleQuery(
-    listRecurringExpenses(tenantId, { includeInactive: true, today }),
-  )
+  const [outcome, accountsOutcome] = await Promise.all([
+    settleQuery(listRecurringExpenses(tenantId, { includeInactive: true, today })),
+    canWrite ? settleQuery(listAccounts(tenantId)) : null,
+  ])
   if (!outcome.ok) return <BlockError message={outcome.message} />
+
+  // «Cargar una lista»: las cuentas que sirven para un gasto (y sus grupos, para la ruta).
+  const catalog = accountsOutcome?.ok ? accountsOutcome.data : []
+  const imputable = new Set(catalog.filter(isPurchaseImputation).map((a) => a.id))
+  const bulkAccounts = catalog
+    .filter((a) => imputable.has(a.id) || !a.postable)
+    .map((a) => ({
+      id: a.id,
+      code: a.code,
+      name: a.name,
+      postable: a.postable && imputable.has(a.id),
+      active: a.active,
+      description: a.description,
+    }))
+  const fallbackAccountId =
+    catalog.find((a) => a.systemKey === 'misc_expenses' && imputable.has(a.id))?.id ?? null
+  const bulk =
+    canWrite && accountsOutcome?.ok ? (
+      <BulkRecurringDialog
+        tenantSlug={tenantSlug}
+        today={today}
+        accounts={bulkAccounts}
+        existingNames={outcome.data.map((r) => r.name)}
+        fallbackAccountId={fallbackAccountId}
+      />
+    ) : null
 
   const rows = sortRows(outcome.data)
   const back = comprasHref(tenantSlug, 'gastos-fijos')
@@ -120,18 +168,22 @@ export async function RecurringTab({
   const intro = (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <p className="max-w-xl text-sm text-muted-foreground text-pretty">
-        No es una deuda hasta que cargás la factura: es un recordatorio para que no se te pase.
+        No es una deuda hasta que cargás la factura: es un recordatorio para que no se te pase. Los
+        que son en cuotas se sacan solos después de la última.
         {pendingCount > 0
           ? ` Este mes te ${pendingCount === 1 ? 'falta cargar 1' : `faltan cargar ${pendingCount}`}.`
           : ''}
       </p>
       {canWrite && rows.length > 0 ? (
-        <Button asChild className="h-11 gap-2 self-start sm:self-auto md:h-9">
-          <Link href={recurringHref(tenantSlug, 'nuevo')}>
-            <Plus className="size-4" aria-hidden />
-            Nuevo gasto fijo
-          </Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          {bulk}
+          <Button asChild className="h-11 gap-2 md:h-9">
+            <Link href={recurringHref(tenantSlug, 'nuevo')}>
+              <Plus className="size-4" aria-hidden />
+              Nuevo gasto fijo
+            </Link>
+          </Button>
+        </div>
       ) : null}
     </div>
   )
@@ -141,15 +193,18 @@ export async function RecurringTab({
       <EmptyState
         icon={Repeat}
         title="Todavía no hay gastos fijos"
-        description="Cargá el alquiler, la luz o internet: te avisamos antes de que venzan y los cargás en un toque."
+        description="Cargá el alquiler, la luz o internet: te avisamos antes de que venzan y los cargás en un toque. Si tenés la lista, cargala toda de una."
         action={
           canWrite ? (
-            <Button asChild className="h-11 gap-2 md:h-9">
-              <Link href={recurringHref(tenantSlug, 'nuevo')}>
-                <Plus className="size-4" aria-hidden />
-                Nuevo gasto fijo
-              </Link>
-            </Button>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button asChild className="h-11 gap-2 md:h-9">
+                <Link href={recurringHref(tenantSlug, 'nuevo')}>
+                  <Plus className="size-4" aria-hidden />
+                  Nuevo gasto fijo
+                </Link>
+              </Button>
+              {bulk}
+            </div>
           ) : null
         }
       />
@@ -203,7 +258,7 @@ export async function RecurringTab({
                       <span className="block font-medium">{row.name}</span>
                     )}
                     <span className="block truncate text-[11px] text-muted-foreground">
-                      {[row.partyName, FREQUENCY_LABELS[row.frequency]].filter(Boolean).join(' · ')}
+                      {subtitle(row)}
                     </span>
                   </DataTableCell>
                   <DataTableCell className="hidden max-w-[220px] text-muted-foreground lg:table-cell">
@@ -232,6 +287,7 @@ export async function RecurringTab({
                         id={row.id}
                         name={row.name}
                         nextDueDate={row.nextDueDate}
+                        updatedAt={row.updatedAt}
                         pending={row.active && row.monthStatus === 'pending'}
                         loadHref={row.active ? loadHref(row) : null}
                         editHref={recurringHref(tenantSlug, row.id)}
@@ -264,9 +320,7 @@ export async function RecurringTab({
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 space-y-0.5">
                   <p className="truncate text-sm font-medium">{row.name}</p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {[row.partyName, FREQUENCY_LABELS[row.frequency]].filter(Boolean).join(' · ')}
-                  </p>
+                  <p className="truncate text-xs text-muted-foreground">{subtitle(row)}</p>
                   <MonthStatus row={row} />
                 </div>
                 <div className="shrink-0 text-right text-sm">
@@ -288,6 +342,7 @@ export async function RecurringTab({
                   id={row.id}
                   name={row.name}
                   nextDueDate={row.nextDueDate}
+                  updatedAt={row.updatedAt}
                   pending={row.active && row.monthStatus === 'pending'}
                   loadHref={row.active ? loadHref(row) : null}
                   editHref={recurringHref(tenantSlug, row.id)}

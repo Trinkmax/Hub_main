@@ -36,3 +36,36 @@ export function nextDueFrom(today: string, dueDay: number): string {
     ? thisMonth
     : dueInMonth(addMonthsToYearMonth(monthOf(today), 1), dueDay)
 }
+
+const STEP_MONTHS: Readonly<Record<RecurringFrequency, number>> = {
+  monthly: 1,
+  bimonthly: 2,
+  quarterly: 3,
+  yearly: 12,
+}
+
+/** El vencimiento número `count` contando desde el próximo (1 = el próximo). */
+export function nthDue(
+  nextDueDate: string,
+  dueDay: number,
+  frequency: RecurringFrequency,
+  count: number,
+): string {
+  const steps = Math.max(0, Math.trunc(count) - 1) * STEP_MONTHS[frequency]
+  return dueInMonth(addMonthsToYearMonth(monthOf(nextDueDate), steps), dueDay)
+}
+
+/**
+ * Cuántos vencimientos faltan, contando el próximo, hasta el último
+ * (`endsOn`). Por mes, como la base: 0 si el próximo cae después del último.
+ */
+export function duesUntil(
+  nextDueDate: string,
+  endsOn: string,
+  frequency: RecurringFrequency,
+): number {
+  const months =
+    (Number(endsOn.slice(0, 4)) - Number(nextDueDate.slice(0, 4))) * 12 +
+    (Number(endsOn.slice(5, 7)) - Number(nextDueDate.slice(5, 7)))
+  return months < 0 ? 0 : Math.floor(months / STEP_MONTHS[frequency]) + 1
+}

@@ -19,6 +19,13 @@ import { authorizeAccounting } from '@/lib/accounting/access'
 import { type AccSimpleState, invalidState } from '@/lib/accounting/action-state'
 import { type AccSettingsRow, parseSettingsRow } from '@/lib/accounting/context'
 import {
+  type PartyContact,
+  parseBreakdown,
+  parseDeliveryDays,
+  parsePartyContacts,
+  type RecurringBreakdownRow,
+} from '@/lib/accounting/party-profile'
+import {
   type ChartImportResult,
   parseChartImportResult,
   parseSystemRemapResult,
@@ -27,7 +34,11 @@ import {
 import {
   accountSchema,
   chartImportSchema,
+  deletePartySchema,
+  deleteRecurringSchema,
+  partiesBulkSchema,
   partySchema,
+  recurringBulkSchema,
   recurringSchema,
   salesMethodSchema,
   salesPointSchema,
@@ -122,6 +133,10 @@ export type SavedParty = {
   notes: string | null
   active: boolean
   systemKey: string | null
+  contacts: PartyContact[]
+  /** 1 = lunes … 7 = domingo. */
+  deliveryDays: number[]
+  orderLeadDays: number | null
   updatedAt: string | null
 }
 
@@ -181,8 +196,12 @@ export type SavedRecurringExpense = {
   treasuryAccountId: string | null
   active: boolean
   notes: string | null
+  endsOn: string | null
+  breakdown: RecurringBreakdownRow[]
   updatedAt: string | null
 }
+
+export type BulkResult = { created: number; skipped: string[] }
 
 // ─── Lectura de las filas ────────────────────────────────────────────────────
 
@@ -238,6 +257,9 @@ function partyRow(r: Rec): SavedParty {
     notes: textOf(r.notes),
     active: boolOf(r.active, true),
     systemKey: textOf(r.system_key),
+    contacts: parsePartyContacts(r.contacts),
+    deliveryDays: parseDeliveryDays(r.delivery_days),
+    orderLeadDays: intOf(r.order_lead_days),
     updatedAt: textOf(r.updated_at),
   }
 }
@@ -308,6 +330,8 @@ function recurringRow(r: Rec): SavedRecurringExpense {
     treasuryAccountId: textOf(r.treasury_account_id),
     active: boolOf(r.active, true),
     notes: textOf(r.notes),
+    endsOn: dayOf(r.ends_on),
+    breakdown: parseBreakdown(r.breakdown),
     updatedAt: textOf(r.updated_at),
   }
 }
@@ -614,6 +638,9 @@ const PARTY_FIELDS: FieldMap = [
   ['sircupaBp', 'sircupa_bp'],
   ['notes', 'notes'],
   ['active', 'active'],
+  ['contacts', 'contacts'],
+  ['deliveryDays', 'delivery_days'],
+  ['orderLeadDays', 'order_lead_days'],
 ]
 
 /**
@@ -833,6 +860,8 @@ const RECURRING_FIELDS: FieldMap = [
   ['treasuryAccountId', 'treasury_account_id'],
   ['active', 'active'],
   ['notes', 'notes'],
+  ['endsOn', 'ends_on'],
+  ['breakdown', 'breakdown'],
 ]
 
 /** Alta o edición de un gasto fijo (recordatorio con vencimiento; no devenga). */
@@ -857,6 +886,13 @@ export async function saveRecurringExpense(
     const payload = editing
       ? { id: v.id, ...rpcPayload(v, RECURRING_FIELDS, keepPresent(input)) }
       : rpcPayload(v, RECURRING_FIELDS)
+    if (payload.breakdown !== undefined) {
+      payload.breakdown = v.breakdown.map((line) => ({
+        label: line.label,
+        kind: line.kind,
+        amount_cents: line.amountCents,
+      }))
+    }
 
     return await saveVia(slug, auth.tenantId, 'p_expense', {
       op,
@@ -866,7 +902,9 @@ export async function saveRecurringExpense(
       message: (row) =>
         editing
           ? 'Gasto fijo guardado.'
-          : `«${row.name}» quedó cargado: vence el ${formatIsoDay(row.nextDueDate)}.`,
+          : !row.active && row.endsOn
+            ? `«${row.name}» quedó cargado, pero con esa última cuota ya terminó.`
+            : `«${row.name}» quedó cargado: vence el ${formatIsoDay(row.nextDueDate)}.`,
     })
   } catch (error) {
     return unexpectedFailure(op, error)
@@ -905,6 +943,164 @@ export async function skipRecurringDue(
       data: row,
       message: `Listo: el próximo vencimiento es el ${formatIsoDay(row.nextDueDate)}.`,
     }
+  } catch (error) {
+    return unexpectedFailure(op, error)
+  }
+}
+
+function bulkResultOf(data: unknown): BulkResult | null {
+  const r = asRecord(data)
+  if (!r) return null
+  const skipped = Array.isArray(r.skipped)
+    ? r.skipped.filter((x): x is string => typeof x === 'string')
+    : []
+  return { created: intOf(r.created) ?? 0, skipped }
+}
+
+/** «Listo: se cargaron 12 proveedores. 2 ya estaban.» */
+function bulkMessage(result: BulkResult, one: string, many: string): string {
+  const created =
+    result.created === 0
+      ? `No había ${many} nuevos para cargar.`
+      : result.created === 1
+        ? `Listo: se cargó 1 ${one}.`
+        : `Listo: se cargaron ${result.created} ${many}.`
+  const skipped =
+    result.skipped.length === 0
+      ? ''
+      : result.skipped.length === 1
+        ? ' 1 ya estaba y no se repitió.'
+        : ` ${result.skipped.length} ya estaban y no se repitieron.`
+  return created + skipped
+}
+
+/**
+ * Eliminar un gasto fijo: si nunca se cargó, se borra; si ya tiene
+ * comprobantes, sale de la lista y queda guardado para esos comprobantes.
+ */
+export async function deleteRecurringExpense(
+  slug: string,
+  raw: unknown,
+): Promise<AccSimpleState<{ result: 'deleted' | 'archived' }>> {
+  const op = 'master.deleteRecurringExpense'
+  try {
+    const auth = await authorizeAccounting(slug, 'write')
+    if (!auth.ok) return auth.state
+    const parsed = deleteRecurringSchema.safeParse(formInput(raw))
+    if (!parsed.success) return invalidState(parsed.error)
+
+    const supabase = await createClient()
+    const { data, error } = await supabase.rpc('acc_delete_recurring_expense', {
+      p_tenant_id: auth.tenantId,
+      p_id: parsed.data.id,
+      p_expected_updated_at: parsed.data.expectedUpdatedAt,
+    })
+    if (error) return rpcFailure(op, error)
+    const r = asRecord(data)
+    if (!r) return unexpectedFailure(op, new Error('respuesta vacía'))
+    const result = r.result === 'archived' ? 'archived' : 'deleted'
+    const name = textOf(r.name) ?? 'El gasto fijo'
+
+    revalidateAccounting(slug)
+    return {
+      ok: true,
+      data: { result },
+      message:
+        result === 'archived'
+          ? `Listo: «${name}» salió de la lista. Lo que ya cargaste queda igual.`
+          : `Listo: «${name}» quedó eliminado.`,
+    }
+  } catch (error) {
+    return unexpectedFailure(op, error)
+  }
+}
+
+/** «Cargar una lista» de gastos fijos: cada uno con su cuenta y su vencimiento. */
+export async function createRecurringBulk(
+  slug: string,
+  raw: unknown,
+): Promise<AccSimpleState<BulkResult>> {
+  const op = 'master.createRecurringBulk'
+  try {
+    const auth = await authorizeAccounting(slug, 'write')
+    if (!auth.ok) return auth.state
+    const parsed = recurringBulkSchema.safeParse(formInput(raw))
+    if (!parsed.success) return invalidState(parsed.error)
+
+    const supabase = await createClient()
+    const { data, error } = await supabase.rpc('acc_create_recurring_bulk', {
+      p_tenant_id: auth.tenantId,
+      p_items: parsed.data.items.map((item) => ({
+        name: item.name,
+        account_id: item.accountId,
+        due_day: item.dueDay,
+        next_due_date: item.nextDueDate,
+      })),
+    })
+    if (error) return rpcFailure(op, error)
+    const result = bulkResultOf(data)
+    if (!result) return unexpectedFailure(op, new Error('respuesta vacía'))
+
+    revalidateAccounting(slug)
+    return { ok: true, data: result, message: bulkMessage(result, 'gasto fijo', 'gastos fijos') }
+  } catch (error) {
+    return unexpectedFailure(op, error)
+  }
+}
+
+/** Borra un proveedor o cliente sin saldo y sin movimientos. */
+export async function deleteParty(
+  slug: string,
+  raw: unknown,
+): Promise<AccSimpleState<{ id: string }>> {
+  const op = 'master.deleteParty'
+  try {
+    const auth = await authorizeAccounting(slug, 'write')
+    if (!auth.ok) return auth.state
+    const parsed = deletePartySchema.safeParse(formInput(raw))
+    if (!parsed.success) return invalidState(parsed.error)
+
+    const supabase = await createClient()
+    const { error } = await supabase.rpc('acc_delete_party', {
+      p_tenant_id: auth.tenantId,
+      p_party_id: parsed.data.id,
+      p_expected_updated_at: parsed.data.expectedUpdatedAt,
+    })
+    if (error) return rpcFailure(op, error)
+
+    revalidateAccounting(slug)
+    return { ok: true, data: { id: parsed.data.id }, message: 'Listo: quedó eliminado.' }
+  } catch (error) {
+    return unexpectedFailure(op, error)
+  }
+}
+
+/** «Cargar una lista» de proveedores (o clientes): un nombre por renglón. */
+export async function createPartiesBulk(
+  slug: string,
+  raw: unknown,
+): Promise<AccSimpleState<BulkResult>> {
+  const op = 'master.createPartiesBulk'
+  try {
+    const auth = await authorizeAccounting(slug, 'write')
+    if (!auth.ok) return auth.state
+    const parsed = partiesBulkSchema.safeParse(formInput(raw))
+    if (!parsed.success) return invalidState(parsed.error)
+
+    const supabase = await createClient()
+    const { data, error } = await supabase.rpc('acc_create_parties_bulk', {
+      p_tenant_id: auth.tenantId,
+      p_kind: parsed.data.kind,
+      p_names: parsed.data.names,
+    })
+    if (error) return rpcFailure(op, error)
+    const result = bulkResultOf(data)
+    if (!result) return unexpectedFailure(op, new Error('respuesta vacía'))
+
+    revalidateAccounting(slug)
+    const [one, many] =
+      parsed.data.kind === 'supplier' ? ['proveedor', 'proveedores'] : ['cliente', 'clientes']
+    return { ok: true, data: result, message: bulkMessage(result, one, many) }
   } catch (error) {
     return unexpectedFailure(op, error)
   }

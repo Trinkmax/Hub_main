@@ -58,6 +58,8 @@ export type ExpenseInput = {
   lines: ReadonlyArray<{ accountId: string; amountCents: Cents }>
   notes: string | null
   warningsAck: readonly string[]
+  /** Gasto fijo que se paga con este gasto («Nuevo gasto»): queda cargado y avanza su vencimiento. */
+  recurringExpenseId?: string | null
 }
 
 export type ComposedExpense = {
@@ -128,6 +130,7 @@ export function composeExpense(
     ),
     notes: input.notes,
     totalCents: total,
+    recurringExpenseId: input.recurringExpenseId ?? null,
     warningsAck: ackList(input.warningsAck),
     lines: lines.build().lines,
   })

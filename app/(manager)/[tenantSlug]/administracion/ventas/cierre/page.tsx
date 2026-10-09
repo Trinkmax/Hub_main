@@ -28,7 +28,11 @@ import {
   serviceDayInCordoba,
   weekdayName,
 } from '@/lib/dates'
+import { mpCloseTargets } from '@/lib/imports/mercadopago/daily-close'
+import { getMpImportSettings } from '@/lib/imports/server/queries'
+import { importSourceHref } from '@/lib/imports/ui/labels'
 import { formatCents } from '@/lib/money'
+import type { CloseMercadoPago } from './_components/mp-close-fill'
 import {
   type CloseCustomer,
   type CloseMethod,
@@ -102,7 +106,7 @@ export default async function CierreDelDiaPage({
 
   const tenantId = access.tenant.id
   const serviceDay = serviceDayInCordoba()
-  const [catalog, ctx, firstOpenDate, recent] = await Promise.all([
+  const [catalog, ctx, firstOpenDate, recent, mp] = await Promise.all([
     loadPostingCatalog(tenantId),
     loadPostingContext(tenantId),
     loadFirstOpenDate(tenantId),
@@ -116,6 +120,8 @@ export default async function CierreDelDiaPage({
         limit: 200,
       }),
     ),
+    // Para «Completar con Mercado Pago»: el medio de cada cobro y qué día cuenta.
+    settleQuery(getMpImportSettings(tenantId)),
   ])
   const booksStart = catalog.settings.booksStartDate
 
@@ -301,6 +307,8 @@ export default async function CierreDelDiaPage({
       active: p.active,
     }))
 
+  const mercadoPago = mp.ok ? closeMercadoPago(mp.data, catalog, tenantSlug) : null
+
   // Después de guardar: el próximo día que falta (o la lista de cierres si no falta ninguno).
   const after = missing.find((d) => d !== date) ?? null
 
@@ -339,6 +347,7 @@ export default async function CierreDelDiaPage({
             : hrefWith(`${base}/ventas`, { mes: date.slice(0, 7) })
         }
         afterSaveLabel={after ? `${weekdayName(after)} ${formatDayMonth(after)}` : null}
+        mercadoPago={mercadoPago}
       />
     </PageShell>
   )
@@ -346,6 +355,49 @@ export default async function CierreDelDiaPage({
 
 function maxDay(a: string, b: string): string {
   return a > b ? a : b
+}
+
+/**
+ * Qué medio del cierre es QR y cuál transferencia (lo elegido en Importar ›
+ * Mercado Pago o el medio de fábrica, nunca por el nombre) y el corte del día
+ * que usa el importador, para que ambos cuenten el mismo día.
+ */
+function closeMercadoPago(
+  settings: Awaited<ReturnType<typeof getMpImportSettings>>,
+  catalog: Awaited<ReturnType<typeof loadPostingCatalog>>,
+  tenantSlug: string,
+): CloseMercadoPago {
+  const conn = settings.connection
+  const mpPartyId =
+    conn?.partyId ?? catalog.parties.find((p) => p.systemKey === 'mercado_pago')?.id ?? null
+  const mpTreasuryIds = catalog.treasuries
+    .filter(
+      (t) =>
+        t.id === conn?.treasuryAccountId ||
+        (t.kind === 'wallet' && mpPartyId !== null && t.bankPartyId === mpPartyId),
+    )
+    .map((t) => t.id)
+  const targets = mpCloseTargets({
+    methods: catalog.methods
+      .filter((m) => m.active)
+      .map((m) => ({
+        id: m.id,
+        kind: m.kind,
+        systemKey: m.systemKey,
+        partyId: m.partyId,
+        treasuryAccountId: m.treasuryAccountId,
+      })),
+    configured: conn?.channelMethods ?? {},
+    mpPartyId,
+    mpTreasuryIds,
+  })
+  return {
+    qrMethodId: targets.qr,
+    transferMethodId: targets.transfer_in,
+    cutoffHour: conn?.dayCutoffHour ?? 0,
+    sasCuit: catalog.settings.cuit,
+    settingsHref: importSourceHref(tenantSlug, 'mp_release'),
+  }
 }
 
 function isChannel(value: string | null): value is Channel {

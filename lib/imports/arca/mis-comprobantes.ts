@@ -313,6 +313,23 @@ export function mcNaturalKey(
     : `mc:R:${it.issuerCuit}:${it.code}:${it.pointOfSale}:${it.number}`
 }
 
+/**
+ * De quién es el archivo cuando no es de la SAS (`mc_other_cuit`): la CUIT del
+ * título si no coincide; si no, la receptora más repetida. `null` si no se
+ * puede saber o si no hay diferencia. La del nombre del archivo no sirve: es la
+ * de quien consultó (puede ser la contadora).
+ */
+export function mcOtherCuit(
+  parsed: Pick<McParseResult, 'titleCuit' | 'receiverCuit'>,
+  sasCuit: string | null | undefined,
+): string | null {
+  const sas = sasCuit ? parseCuit(sasCuit) : null
+  if (!sas?.ok) return null
+  if (parsed.titleCuit !== null && parsed.titleCuit !== sas.cuit) return parsed.titleCuit
+  if (parsed.receiverCuit !== null && parsed.receiverCuit !== sas.cuit) return parsed.receiverCuit
+  return null
+}
+
 // ─── El parser ───────────────────────────────────────────────────────────────
 
 function emptyResult(fileIssues: ImportIssue[]): McParseResult {

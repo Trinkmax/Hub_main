@@ -58,6 +58,7 @@ import { CHANNELS } from '@/lib/accounting/types'
 import { voucherLabel } from '@/lib/accounting/voucher-types'
 import { formatCents } from '@/lib/money'
 import { cn } from '@/lib/utils'
+import { type CloseMercadoPago, MpCloseFill } from './mp-close-fill'
 
 // ─── Lo que arma la página ───────────────────────────────────────────────────
 
@@ -196,6 +197,7 @@ export function SalesCloseForm({
   existing,
   afterSaveHref,
   afterSaveLabel,
+  mercadoPago,
 }: {
   tenantSlug: string
   /** El día que se cierra (`yyyy-MM-dd`). */
@@ -214,6 +216,8 @@ export function SalesCloseForm({
   afterSaveHref: string
   /** «domingo 04/10» si después falta otro día. */
   afterSaveLabel: string | null
+  /** «Completar con Mercado Pago» (QR y transferencias). `null`: no se ofrece. */
+  mercadoPago: CloseMercadoPago | null
 }) {
   const router = useRouter()
   const formRef = useRef<HTMLFormElement>(null)
@@ -294,6 +298,8 @@ export function SalesCloseForm({
   const needsShift = existing.length > 0
   const cashMethod = methods.find((m) => m.isCash) ?? null
   const simpleMethods = methods.filter((m) => m.kind !== 'customer_account')
+
+  const methodNames = useMemo(() => new Map(methods.map((m) => [m.id, m.name])), [methods])
 
   const customerOptions = useMemo(
     (): PartyOption[] =>
@@ -439,6 +445,15 @@ export function SalesCloseForm({
   function setAmount(methodId: string, cents: number | null) {
     setAmounts((prev) => ({ ...prev, [methodId]: cents }))
     clear(`methods.${methodIndex.get(methodId) ?? -1}.amountCents`)
+    clear('methods')
+  }
+
+  /** Lo que trajo «Completar con Mercado Pago» (QR y transferencias). */
+  function applyMercadoPago(fills: Readonly<Record<string, number | null>>) {
+    setAmounts((prev) => ({ ...prev, ...fills }))
+    for (const methodId of Object.keys(fills)) {
+      clear(`methods.${methodIndex.get(methodId) ?? -1}.amountCents`)
+    }
     clear('methods')
   }
 
@@ -727,6 +742,17 @@ export function SalesCloseForm({
                   primero, se reparte sola hacia abajo.
                 </p>
               </div>
+
+              {mercadoPago ? (
+                <MpCloseFill
+                  config={mercadoPago}
+                  date={date}
+                  dayLabel={dayLabel}
+                  methodNames={methodNames}
+                  amounts={amounts}
+                  onApply={applyMercadoPago}
+                />
+              ) : null}
 
               <div className="grid gap-4">
                 {methods.map((m) => {

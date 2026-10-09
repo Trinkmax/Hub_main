@@ -14,7 +14,10 @@ import {
   useState,
 } from 'react'
 import { toast } from 'sonner'
-import { ExpenseTargetPicker } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/expense-target-picker'
+import {
+  ExpenseTargetPicker,
+  payableParties,
+} from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/expense-target-picker'
 import {
   FormBanner,
   InlineNotice,
@@ -38,6 +41,7 @@ import {
 import { isPurchaseImputation } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/accounts'
 import { documentHref } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/links'
 import {
+  amountAfterRecurring,
   buildQuickExpenseValues,
   type ExpenseTarget,
   isInvoiceVoucher,
@@ -48,6 +52,8 @@ import {
   type QuickVatRate,
   type QuickVoucher,
   quickExpenseOutcome,
+  recurringPrefill,
+  sortRecurringForSheet,
   splitTotal,
   suggestQuickVatRate,
   suggestQuickVoucher,
@@ -63,6 +69,7 @@ import type {
   SheetData,
   SheetDuplicate,
   SheetPartyDefaults,
+  SheetRecurring,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/sheet-types'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -139,7 +146,10 @@ function rememberTreasury(slug: string, id: string): void {
 /** Hoja «Nuevo gasto» (H.5): lo de todos los días, con o sin factura, pagado en el momento. */
 export function GastoSheet(props: ActionSheetProps) {
   const { tenantSlug } = props
-  const load = useSheetData(() => loadSheetData(tenantSlug, { suggestions: true }), tenantSlug)
+  const load = useSheetData(
+    () => loadSheetData(tenantSlug, { suggestions: true, recurring: true }),
+    tenantSlug,
+  )
   if (!load.data) {
     return (
       <>
@@ -172,6 +182,22 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     () => new Set(data.accounts.filter(isPurchaseImputation).map((a) => a.id)),
     [data.accounts],
   )
+  // Gastos fijos que se pueden elegir (con proveedor o cuenta que sirvan), los pendientes primero.
+  const recurringUsable = useMemo(
+    () => ({
+      payablePartyIds: new Set(payableParties(data.parties).map((p) => p.id)),
+      imputableAccountIds: imputable,
+      activeTreasuryIds: new Set(activeTreasuries.map((t) => t.id)),
+    }),
+    [data.parties, imputable, activeTreasuries],
+  )
+  const recurringOptions = useMemo(
+    () =>
+      sortRecurringForSheet(
+        data.recurring.filter((r) => recurringPrefill(r, recurringUsable) !== null),
+      ),
+    [data.recurring, recurringUsable],
+  )
 
   const defaultTreasury = useCallback(
     (lastWithParty: string | null) =>
@@ -203,6 +229,13 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
   // Lo que la persona tocó a mano no lo pisa lo que el sistema recuerda.
   const touched = useRef({ voucher: false, treasury: false })
   const defaultsSeq = useRef(0)
+  // El gasto fijo elegido en «¿En qué?»: va al guardar (queda «Cargado» y avanza su vencimiento).
+  const [recurringId, setRecurringId] = useState<string | null>(null)
+  // Lo que trajo el gasto fijo tampoco lo pisa lo que el sistema recuerda del proveedor.
+  const fromRecurring = useRef({ voucher: false, treasury: false, vatRate: false })
+  // La cuenta y el monto que puso el gasto fijo (cambiar la cuenta lo desvincula; el monto se reemplaza solo si nadie lo tocó).
+  const recurringAccount = useRef<string | null>(null)
+  const prefilledAmount = useRef<number | null>(null)
 
   const partyId = target?.kind === 'party' ? target.partyId : null
   const party = partyId ? (partyById.get(partyId) ?? null) : null
@@ -221,7 +254,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
       setDuplicate(null)
       setCuitDraft(null)
       // Al toque, con lo que ya está en el catálogo (y el chip).
-      if (!touched.current.voucher) {
+      if (!touched.current.voucher && !fromRecurring.current.voucher) {
         setVoucher(
           suggestQuickVoucher({
             hasParty: true,
@@ -230,7 +263,11 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
           }),
         )
       }
-      if (!touched.current.treasury && suggestion?.treasuryAccountId) {
+      if (
+        !touched.current.treasury &&
+        !fromRecurring.current.treasury &&
+        suggestion?.treasuryAccountId
+      ) {
         setTreasuryId(defaultTreasury(suggestion.treasuryAccountId))
       }
       let result: Awaited<ReturnType<typeof loadPartyDefaults>>
@@ -250,7 +287,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
             }
           : prev,
       )
-      if (!touched.current.voucher) {
+      if (!touched.current.voucher && !fromRecurring.current.voucher) {
         setVoucher(
           suggestQuickVoucher({
             hasParty: true,
@@ -259,20 +296,28 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
           }),
         )
       }
-      setVatRate(suggestQuickVatRate(d.vatRateBp))
+      if (!fromRecurring.current.vatRate) setVatRate(suggestQuickVatRate(d.vatRateBp))
       if (d.pointOfSale !== null) {
         setVoucherNumber((prev) =>
           prev.pos === '' ? { ...prev, pos: padPos(String(d.pointOfSale)) } : prev,
         )
       }
-      if (!touched.current.treasury && d.treasuryAccountId) {
+      if (!touched.current.treasury && !fromRecurring.current.treasury && d.treasuryAccountId) {
         setTreasuryId(defaultTreasury(d.treasuryAccountId))
       }
     },
     [defaultTreasury, imputable, partyById, tenantSlug],
   )
 
+  /** Desvincula el gasto fijo (se eligió otra cosa o se cambió la cuenta). */
+  const unlinkRecurring = () => {
+    setRecurringId(null)
+    recurringAccount.current = null
+    fromRecurring.current = { voucher: false, treasury: false, vatRate: false }
+  }
+
   const pickTarget = (next: ExpenseTarget, suggestion: QuickSuggestion | null) => {
+    unlinkRecurring()
     touched.current.voucher = false
     setVatAdjust(0)
     setVoucherNumber({ pos: '', number: '' })
@@ -296,6 +341,35 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
         setTreasuryId(defaultTreasury(suggestion.treasuryAccountId))
       }
     }
+  }
+
+  // ── Un gasto fijo: su proveedor o su cuenta, y lo habitual (todo se puede cambiar) ──
+  const pickRecurring = (r: SheetRecurring) => {
+    const prefill = recurringPrefill(r, recurringUsable)
+    if (!prefill) return
+    const treasuryFromRecurring =
+      prefill.treasuryAccountId !== null && !touched.current.treasury
+        ? prefill.treasuryAccountId
+        : null
+    // Primero lo de cualquier elección (vacía el número, desvincula el anterior); después, lo suyo.
+    pickTarget(prefill.target, null)
+    setRecurringId(r.id)
+    recurringAccount.current = prefill.target.accountId
+    fromRecurring.current = {
+      voucher: prefill.voucher !== null,
+      treasury: treasuryFromRecurring !== null,
+      vatRate: prefill.vatRateBp !== null,
+    }
+    if (prefill.voucher !== null) setVoucher(prefill.voucher)
+    if (prefill.vatRateBp !== null) setVatRate(prefill.vatRateBp)
+    if (treasuryFromRecurring !== null) setTreasuryId(treasuryFromRecurring)
+    const nextAmount = amountAfterRecurring({
+      current: amount,
+      prefilled: prefilledAmount.current,
+      recurring: prefill.amountCents,
+    })
+    if (nextAmount !== amount) setAmount(nextAmount)
+    prefilledAmount.current = nextAmount === prefill.amountCents ? prefill.amountCents : null
   }
 
   // «Nuevo gasto con este proveedor» (?proveedor=): arranca con el proveedor elegido.
@@ -333,8 +407,21 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
         number,
         date,
         detail,
+        recurringExpenseId: recurringId,
       }),
-    [amount, target, treasuryId, voucher, vatRate, vatAdjust, pointOfSale, number, date, detail],
+    [
+      amount,
+      target,
+      treasuryId,
+      voucher,
+      vatRate,
+      vatAdjust,
+      pointOfSale,
+      number,
+      date,
+      detail,
+      recurringId,
+    ],
   )
   const key = built.values ? JSON.stringify(built.values) : ''
   const preview = useMemo(
@@ -358,6 +445,8 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     // «Cargar otro después»: vacía la hoja y conserva la fecha y la caja.
     defaultsSeq.current += 1
     touched.current.voucher = false
+    unlinkRecurring()
+    prefilledAmount.current = null
     setAmount(null)
     setTarget(null)
     setVoucher('none')
@@ -589,14 +678,22 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
             <ExpenseTargetPicker
               id={ids.target}
               suggestions={data.suggestions}
+              recurring={recurringOptions}
+              linkedRecurringId={recurringId}
+              today={data.today}
               parties={data.parties}
               accounts={data.accounts}
               value={target}
               onPick={pickTarget}
+              onPickRecurring={pickRecurring}
               onAccountChange={(accountId) => {
                 setTarget((prev) =>
                   prev && prev.kind !== 'account' ? { ...prev, accountId } : prev,
                 )
+                // Otra cuenta que la del gasto fijo: ya no es ese gasto fijo.
+                if (recurringAccount.current !== null && accountId !== recurringAccount.current) {
+                  unlinkRecurring()
+                }
                 posting.clearFieldErrors()
               }}
               onNewPartyChange={(patch) => {
@@ -608,6 +705,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
               }}
               onClear={() => {
                 defaultsSeq.current += 1
+                unlinkRecurring()
                 setTarget(null)
                 setDefaults(null)
                 setDuplicate(null)

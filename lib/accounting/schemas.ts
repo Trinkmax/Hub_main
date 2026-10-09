@@ -20,6 +20,7 @@ import { addDays, isRealIsoDay } from '@/lib/dates'
 import { parseCuit } from '@/lib/fiscal'
 import { centsFromForm, formatCents } from '@/lib/money'
 import { VAT_RATES_BP } from './iva'
+import { RECURRING_BREAKDOWN_KINDS } from './party-profile'
 import { PREVIEW_HASH_RE } from './preview'
 import { SYSTEM_ACCOUNT_KEYS } from './system-keys'
 import {
@@ -446,6 +447,8 @@ export const quickExpenseSchema = obj({
   number: voucherNumberField.nullable().default(null),
   date: isoDay,
   detail: optionalText(280).default(null),
+  /** El gasto fijo que se paga con este gasto (queda «Cargado» y avanza su vencimiento). */
+  recurringExpenseId: uuidField().nullable().default(null),
 }).superRefine((v, ctx) => {
   const hasParty = v.target.type === 'party' || v.newParty !== null
   const invoice = v.voucher === 'a' || v.voucher === 'bc'
@@ -1579,6 +1582,23 @@ const optionalUuid = (msg?: string) =>
     uuidField(msg).nullable(),
   )
 
+/** Un contacto del proveedor: alcanza con el nombre, el teléfono o el email. */
+export const partyContactSchema = obj({
+  name: optionalText(60, 'El nombre puede tener hasta 60 caracteres.').default(null),
+  role: optionalText(40, 'Puede tener hasta 40 caracteres.').default(null),
+  phone: optionalText(30, 'El teléfono puede tener hasta 30 caracteres.').default(null),
+  email: z.preprocess(
+    (v) => (v === undefined || v === null || (typeof v === 'string' && v.trim() === '') ? null : v),
+    z
+      .string({ message: 'Revisá el email.' })
+      .trim()
+      .regex(/^[^@\s]+@[^@\s]+\.[^@\s]+$/, 'Revisá el email.')
+      .max(160, 'Revisá el email.')
+      .nullable(),
+  ),
+})
+export type PartyContactInput = z.infer<typeof partyContactSchema>
+
 export const partySchema = obj({
   id: optionalUuid(),
   expectedUpdatedAt: z.preprocess(
@@ -1629,6 +1649,24 @@ export const partySchema = obj({
   sircupaBp: optionalBp,
   notes: optionalText(500).default(null),
   active: formBoolDefault(true),
+  /** Ficha del proveedor (pedido de los socios, 09/10/2026). */
+  contacts: list(partyContactSchema).max(10, 'Hasta 10 contactos.').default([]),
+  deliveryDays: list(
+    z
+      .number({ message: 'Revisá los días de entrega.' })
+      .int()
+      .min(1)
+      .max(7, 'Revisá los días de entrega.'),
+  )
+    .max(7, 'Revisá los días de entrega.')
+    .default([])
+    .transform((days) => [...new Set(days)].sort((a, b) => a - b)),
+  orderLeadDays: formInt({
+    min: 0,
+    max: 30,
+    message: 'La anticipación va de 0 a 30 días.',
+    optional: true,
+  }).default(null),
 })
   .superRefine((v, ctx) => {
     if (v.taxIdType === 'none') {
@@ -1745,6 +1783,24 @@ export const salesPointSchema = obj({
 })
 export type SalesPointInput = z.infer<typeof salesPointSchema>
 
+/** Un renglón del detalle: a quién o qué (por ejemplo el empleado), el concepto y el monto. */
+export const recurringBreakdownLineSchema = obj({
+  label: z
+    .string({ message: 'Escribí a quién corresponde.' })
+    .trim()
+    .min(1, 'Escribí a quién corresponde.')
+    .max(60, 'Puede tener hasta 60 caracteres.'),
+  kind: z.preprocess(
+    (v) => (v === undefined || v === '' ? null : v),
+    z.enum(RECURRING_BREAKDOWN_KINDS, { message: 'Elegí el concepto.' }).nullable(),
+  ),
+  amountCents: z.preprocess(
+    (v) => (v === undefined ? '' : v),
+    centsFromForm({ min: 1, max: MAX_CENTS }),
+  ),
+})
+export type RecurringBreakdownLine = z.infer<typeof recurringBreakdownLineSchema>
+
 export const recurringSchema = obj({
   id: optionalUuid(),
   expectedUpdatedAt: z.preprocess(
@@ -1784,8 +1840,56 @@ export const recurringSchema = obj({
   treasuryAccountId: optionalUuid('Elegí con qué lo pagás.'),
   active: formBoolDefault(true),
   notes: optionalText(280).default(null),
+  /** En cuotas: el último vencimiento. `null` = no termina. */
+  endsOn: z.preprocess(
+    (v) => (v === undefined || v === null || v === '' ? null : v),
+    isoDay.nullable(),
+  ),
+  /** El detalle (por ejemplo los sueldos): el monto pasa a ser la suma. */
+  breakdown: list(recurringBreakdownLineSchema).max(200, 'Hasta 200 renglones.').default([]),
 })
 export type RecurringInput = z.infer<typeof recurringSchema>
+
+export const deleteRecurringSchema = obj({
+  id: uuidField('Falta el gasto fijo.'),
+  expectedUpdatedAt: updatedAtField,
+})
+
+export const deletePartySchema = obj({
+  id: uuidField('Falta el proveedor.'),
+  expectedUpdatedAt: updatedAtField,
+})
+
+/** «Cargar una lista»: un nombre por renglón. */
+export const partiesBulkSchema = obj({
+  kind: z.enum(['supplier', 'customer'], { message: 'Elegí el tipo.' }),
+  names: list(
+    z
+      .string({ message: 'Revisá la lista.' })
+      .trim()
+      .min(2, 'Cada nombre tiene que tener al menos 2 letras.')
+      .max(120, 'Cada nombre puede tener hasta 120 caracteres.'),
+  )
+    .min(1, 'Pegá al menos un nombre.')
+    .max(300, 'Hasta 300 nombres por vez.'),
+})
+
+export const recurringBulkSchema = obj({
+  items: list(
+    obj({
+      name: z
+        .string({ message: 'Escribí el nombre.' })
+        .trim()
+        .min(2, 'Cada nombre tiene que tener al menos 2 letras.')
+        .max(80, 'Cada nombre puede tener hasta 80 caracteres.'),
+      accountId: uuidField('Elegí en qué es cada gasto.'),
+      dueDay: formInt({ min: 1, max: 31, message: 'El día va del 1 al 31.' }),
+      nextDueDate: isoDay,
+    }),
+  )
+    .min(1, 'Pegá al menos un gasto fijo.')
+    .max(100, 'Hasta 100 gastos fijos por vez.'),
+})
 
 export const skipRecurringDueSchema = obj({
   id: uuidField('Falta el gasto fijo.'),

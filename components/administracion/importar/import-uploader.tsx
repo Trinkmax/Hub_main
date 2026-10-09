@@ -447,9 +447,16 @@ export function ImportUploader({
           className="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive sm:flex-row sm:items-center"
         >
           <p className="flex-1 text-pretty">{plan.message}</p>
-          <Button type="button" variant="outline" className="h-11 shrink-0 md:h-9" onClick={reset}>
-            Elegir otro archivo
-          </Button>
+          <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+            {'fix' in plan && plan.fix === 'sas_cuit' ? (
+              <Button asChild variant="outline" className="h-11 md:h-9">
+                <Link href={`/${slug}/administracion/ajustes?tab=sas`}>Ir a Datos de la SAS</Link>
+              </Button>
+            ) : null}
+            <Button type="button" variant="outline" className="h-11 md:h-9" onClick={reset}>
+              Elegir otro archivo
+            </Button>
+          </div>
         </div>
       ) : null}
 

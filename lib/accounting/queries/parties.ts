@@ -11,6 +11,11 @@ import {
   trafficLight,
 } from '@/lib/accounting/aging'
 import {
+  type PartyContact,
+  parseDeliveryDays,
+  parsePartyContacts,
+} from '@/lib/accounting/party-profile'
+import {
   IVA_CONDITIONS,
   type IvaCondition,
   PARTY_KINDS,
@@ -153,6 +158,11 @@ export type PartyDetail = {
   notes: string | null
   active: boolean
   systemKey: string | null
+  contacts: PartyContact[]
+  /** 1 = lunes … 7 = domingo. */
+  deliveryDays: number[]
+  /** Con cuántos días de anticipación hay que pedirle; `null` = no se cargó. */
+  orderLeadDays: number | null
   /** Para la concurrencia optimista de `saveParty` (`p_expected_updated_at`). */
   updatedAt: string
   /** El grupo que se lee primero en su ficha. */
@@ -433,7 +443,7 @@ export async function listParties(
 }
 
 const PARTY_DETAIL_COLUMNS =
-  'id, kind, name, trade_name, tax_id_type, tax_id, iva_condition, email, phone, address, payment_term_days, default_account_id, default_voucher_type, payable_account_id, receivable_account_id, commission_vat_mode, commission_bp, iibb_withholding_bp, vat_withholding_bp, income_tax_withholding_bp, sircupa_bp, notes, active, system_key, updated_at'
+  'id, kind, name, trade_name, tax_id_type, tax_id, iva_condition, email, phone, address, payment_term_days, default_account_id, default_voucher_type, payable_account_id, receivable_account_id, commission_vat_mode, commission_bp, iibb_withholding_bp, vat_withholding_bp, income_tax_withholding_bp, sircupa_bp, notes, active, system_key, contacts, delivery_days, order_lead_days, updated_at'
 
 /** La ficha de un proveedor o cliente (datos, cuentas y tasas). `null` si no existe en este bar. */
 export async function getParty(tenantId: string, partyId: string): Promise<PartyDetail | null> {
@@ -497,6 +507,9 @@ export async function getParty(tenantId: string, partyId: string): Promise<Party
     notes: strOrNull(data.notes),
     active: bool(data.active),
     systemKey: strOrNull(data.system_key),
+    contacts: parsePartyContacts(data.contacts),
+    deliveryDays: parseDeliveryDays(data.delivery_days),
+    orderLeadDays: intOrNull(data.order_lead_days),
     updatedAt: str(data.updated_at),
     group: partyGroupOf(kind),
   }
