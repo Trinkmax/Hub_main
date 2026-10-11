@@ -4,6 +4,7 @@ import { Users } from 'lucide-react'
 import { ContactButton } from '@/components/messaging/contact-button'
 import { CakeChip } from '@/components/reservations/cake-chip'
 import { CelebrationChip } from '@/components/reservations/celebration-chip'
+import { InstagramButton } from '@/components/reservations/instagram-link'
 import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
 import { resolveReservationAlerts } from '@/lib/salon/alerts'
 import { timeRangeLabel } from '@/lib/salon/format'
@@ -74,6 +75,9 @@ export function EventReservationsList({
                   name={r.guest_name}
                   size="icon"
                 />
+              ) : null}
+              {r.guest_instagram ? (
+                <InstagramButton handle={r.guest_instagram} size="icon" />
               ) : null}
             </div>
           </li>

@@ -189,6 +189,7 @@ export default async function ReservaDetailPage({
             guest_name: reservation.guest_name,
             guest_phone: reservation.guest_phone ?? undefined,
             guest_email: reservation.guest_email ?? undefined,
+            guest_instagram: reservation.guest_instagram ?? '',
             kind: reservation.kind,
             meal_type: reservation.meal_type,
             reservation_date: reservation.reservation_date,

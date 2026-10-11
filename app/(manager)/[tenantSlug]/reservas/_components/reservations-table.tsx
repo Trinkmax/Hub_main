@@ -4,6 +4,7 @@ import { Fragment } from 'react'
 import { AttendanceCell } from '@/components/reservations/attendance-cell'
 import { CakeChip } from '@/components/reservations/cake-chip'
 import { ReservationCommentPopover } from '@/components/reservations/comment-popover'
+import { InstagramLink } from '@/components/reservations/instagram-link'
 import { ReservationQuickView } from '@/components/reservations/reservation-quick-view'
 import { alertRowTint, ServiceAlertChips } from '@/components/reservations/service-alert-chips'
 import { ServiceSummary } from '@/components/reservations/service-summary'
@@ -252,6 +253,12 @@ export function ReservationsTable({
                               <span className="text-[11px] text-muted-foreground">
                                 {r.guest_phone}
                               </span>
+                            ) : null}
+                            {r.guest_instagram ? (
+                              <InstagramLink
+                                handle={r.guest_instagram}
+                                className="self-start text-[11px] text-muted-foreground"
+                              />
                             ) : null}
                             <ServiceAlertChips alerts={alerts} className="mt-1" />
                             {/* Antes era un 🎂 sin sabor: decía que hay torta y

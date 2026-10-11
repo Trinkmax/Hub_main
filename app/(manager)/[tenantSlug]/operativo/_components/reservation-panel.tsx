@@ -21,6 +21,7 @@ import { ContactButton } from '@/components/messaging/contact-button'
 import { CakeChip } from '@/components/reservations/cake-chip'
 import { CelebrationChip } from '@/components/reservations/celebration-chip'
 import { GuestCountStepper } from '@/components/reservations/guest-count-stepper'
+import { InstagramLink } from '@/components/reservations/instagram-link'
 import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
 import {
   AlertDialog,
@@ -598,6 +599,11 @@ export function ReservationPanel({
               {phone ? (
                 <Field label="Teléfono">
                   <span className="font-mono text-xs">{phone}</span>
+                </Field>
+              ) : null}
+              {r.guest_instagram ? (
+                <Field label="Instagram">
+                  <InstagramLink handle={r.guest_instagram} />
                 </Field>
               ) : null}
             </dl>

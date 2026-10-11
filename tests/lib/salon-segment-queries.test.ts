@@ -800,13 +800,23 @@ describe('searchReservations', () => {
     ])
   })
 
-  it('sin dígitos busca solo por nombre', async () => {
+  it('sin dígitos y con varias palabras busca solo por nombre', async () => {
     const calls = fakeSupabase(() => OK_EMPTY)
-    await searchReservations('hub', 'lop')
+    await searchReservations('hub', 'Ana López')
     const call = calls[0]
     if (!call) throw new Error('sin query')
-    expect(filterOf(call, 'ilike')).toEqual(['guest_name', '%lop%'])
+    expect(filterOf(call, 'ilike')).toEqual(['guest_name', '%Ana López%'])
     expect(filterOf(call, 'or')).toBeUndefined()
+  })
+
+  it('una sola palabra también puede ser un Instagram: con o sin arroba', async () => {
+    const calls = fakeSupabase(() => OK_EMPTY)
+    await searchReservations('hub', 'lop')
+    await searchReservations('hub', '@Juan.Perez')
+    expect(calls.map((c) => filterOf(c, 'or'))).toEqual([
+      ['guest_name.ilike.%lop%,guest_instagram.ilike.%lop%'],
+      ['guest_name.ilike.%@Juan.Perez%,guest_instagram.ilike.%juan.perez%'],
+    ])
   })
 
   it('si falla, el log no lleva lo buscado', async () => {

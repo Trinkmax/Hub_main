@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { ContactButton } from '@/components/messaging/contact-button'
 import { CakeChip } from '@/components/reservations/cake-chip'
 import { ChampagneChip } from '@/components/reservations/celebration-chip'
+import { InstagramButton } from '@/components/reservations/instagram-link'
 import { ServiceAlertChips } from '@/components/reservations/service-alert-chips'
 import { Button } from '@/components/ui/button'
 import {
@@ -308,6 +309,7 @@ export function ReservationQuickView({
                 name={r.guest_name}
               />
             ) : null}
+            {r.guest_instagram ? <InstagramButton handle={r.guest_instagram} /> : null}
           </div>
           <DialogClose asChild>
             <Button variant="ghost">Cerrar</Button>
@@ -512,6 +514,7 @@ function QuickEditPanel({
       guest_name: r.guest_name,
       guest_phone: r.guest_phone,
       guest_email: r.guest_email,
+      guest_instagram: r.guest_instagram,
       kind: r.kind,
       meal_type: mealRef.current,
       reservation_date: r.reservation_date,

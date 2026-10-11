@@ -3665,6 +3665,7 @@ export type Database = {
           deposit_cents: number
           estimated_guests: number
           guest_email: string | null
+          guest_instagram: string | null
           guest_name: string
           guest_phone: string | null
           highlight_comment: boolean
@@ -3705,6 +3706,7 @@ export type Database = {
           deposit_cents?: number
           estimated_guests: number
           guest_email?: string | null
+          guest_instagram?: string | null
           guest_name: string
           guest_phone?: string | null
           highlight_comment?: boolean
@@ -3745,6 +3747,7 @@ export type Database = {
           deposit_cents?: number
           estimated_guests?: number
           guest_email?: string | null
+          guest_instagram?: string | null
           guest_name?: string
           guest_phone?: string | null
           highlight_comment?: boolean
@@ -5881,6 +5884,7 @@ export type Database = {
           deposit_cents: number
           estimated_guests: number
           guest_email: string | null
+          guest_instagram: string | null
           guest_name: string
           guest_phone: string | null
           highlight_comment: boolean
@@ -5940,6 +5944,7 @@ export type Database = {
           deposit_cents: number
           estimated_guests: number
           guest_email: string | null
+          guest_instagram: string | null
           guest_name: string
           guest_phone: string | null
           highlight_comment: boolean

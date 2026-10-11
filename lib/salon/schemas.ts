@@ -2,6 +2,7 @@ import { isValidPhoneNumber } from 'libphonenumber-js'
 import { z } from 'zod'
 import { tryNormalizePhone } from '@/lib/phone'
 import { SERVICE_ALERTS, type ServiceAlert } from './alerts'
+import { parseInstagramHandle } from './instagram'
 import { TABLE_LABEL_MAX } from './types'
 
 // ──────────────────────────────────────────────────────────
@@ -33,6 +34,27 @@ const optionalEmailField = z
     z.undefined(),
   ])
   .transform((v) => (v && v.length > 0 ? String(v).toLowerCase() : null))
+
+/**
+ * Usuario de Instagram de quien reserva, opcional. Se acepta con arroba o como
+ * el link del perfil y se guarda limpio ("juan.perez"). Mismo tri-estado que
+ * la mesa:
+ *   - `'@Juan.Perez'` → `'juan.perez'`
+ *   - `''` o `null` → `null` (lo borraron a propósito)
+ *   - ausente → `undefined` (la action no toca la columna)
+ */
+export const instagramHandleField = z
+  .union([z.string().max(200), z.null()])
+  .transform((v, ctx) => {
+    if (v === null || v.trim() === '') return null
+    const handle = parseInstagramHandle(v)
+    if (!handle) {
+      ctx.addIssue({ code: 'custom', message: 'Ese usuario de Instagram no es válido' })
+      return z.NEVER
+    }
+    return handle
+  })
+  .optional()
 
 const dateField = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD)')
 
@@ -161,6 +183,7 @@ export const createSalonReservationSchema = z
     guest_name: nameField,
     guest_phone: optionalPhoneField.optional(),
     guest_email: optionalEmailField.optional(),
+    guest_instagram: instagramHandleField,
 
     kind: reservationKindEnum.default('normal'),
     meal_type: mealTypeEnum,
@@ -223,6 +246,7 @@ export const updateSalonReservationSchema = z
     guest_name: nameField,
     guest_phone: optionalPhoneField.optional(),
     guest_email: optionalEmailField.optional(),
+    guest_instagram: instagramHandleField,
 
     kind: reservationKindEnum,
     meal_type: mealTypeEnum,

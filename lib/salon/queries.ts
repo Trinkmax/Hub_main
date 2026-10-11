@@ -28,6 +28,7 @@ import {
   type ReportReservationRow,
   type TemplateReport,
 } from './events-report'
+import { instagramSearchTerm } from './instagram'
 import {
   type PartySizeBucket,
   type PartySizeCountable,
@@ -157,7 +158,7 @@ export type ReservationFilters = {
   managerId?: string
   /** Solo las reservas colgadas de este evento programado. */
   scheduledEventId?: string
-  q?: string // busca en guest_name
+  q?: string // busca en guest_name y en el usuario de Instagram
   page?: number
   pageSize?: number
   /**
@@ -221,7 +222,13 @@ function applyReservationFilters(query: SBAny, opts: ReservationFilters): SBAny 
   if (opts.scheduledEventId) q = q.eq('scheduled_event_id', opts.scheduledEventId)
   if (opts.q && opts.q.trim().length >= 2) {
     const safe = opts.q.trim().replace(/[%,]/g, '')
-    q = q.ilike('guest_name', `%${safe}%`)
+    // "@juan.perez" o "juan.perez": también por el Instagram de la reserva. El
+    // término ya viene limpio (letras, números, punto, guion bajo), así que va
+    // en el or() sin poder romper su sintaxis.
+    const handle = instagramSearchTerm(opts.q)
+    q = handle
+      ? q.or(`guest_name.ilike.%${handle}%,guest_instagram.ilike.%${handle}%`)
+      : q.ilike('guest_name', `%${safe}%`)
   }
   return q
 }

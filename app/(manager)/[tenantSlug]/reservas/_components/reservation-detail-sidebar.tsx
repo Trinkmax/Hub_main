@@ -4,6 +4,7 @@ import { AlertTriangle, Cake, CheckCircle2, Circle, Clock4, Wallet } from 'lucid
 import { ContactButton } from '@/components/messaging/contact-button'
 import { CakeChip } from '@/components/reservations/cake-chip'
 import { ChampagneChip } from '@/components/reservations/celebration-chip'
+import { InstagramButton } from '@/components/reservations/instagram-link'
 import { ReservationStatusControls } from '@/components/reservations/reservation-status-controls'
 import { ARSFormat } from '@/lib/salon/format'
 import type { ReservationWithJoins } from '@/lib/salon/types'
@@ -33,14 +34,19 @@ export function ReservationDetailSidebar({
     <aside className="space-y-4">
       <ReservationStatusControls tenantSlug={tenantSlug} reservation={reservation} />
 
-      {contactPhone ? (
-        <div className="flex justify-end">
-          <ContactButton
-            tenantSlug={tenantSlug}
-            phone={contactPhone}
-            customerId={reservation.customer?.id}
-            name={reservation.guest_name}
-          />
+      {contactPhone || reservation.guest_instagram ? (
+        <div className="flex flex-wrap justify-end gap-2">
+          {reservation.guest_instagram ? (
+            <InstagramButton handle={reservation.guest_instagram} />
+          ) : null}
+          {contactPhone ? (
+            <ContactButton
+              tenantSlug={tenantSlug}
+              phone={contactPhone}
+              customerId={reservation.customer?.id}
+              name={reservation.guest_name}
+            />
+          ) : null}
         </div>
       ) : null}
 

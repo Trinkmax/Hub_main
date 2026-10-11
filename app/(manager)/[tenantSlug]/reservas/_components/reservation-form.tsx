@@ -63,6 +63,7 @@ import {
   placeSelection,
 } from '@/lib/salon/event-floor'
 import { durationLabel, endsNextDay, isImplausibleSpan, tableSpanMinutes } from '@/lib/salon/format'
+import { parseInstagramHandle } from '@/lib/salon/instagram'
 import { groupManagersForSelect, pickDefaultManagerId } from '@/lib/salon/managers'
 import { buildReservationCandidate } from '@/lib/salon/new-reservation-defaults'
 import type { ScheduledEventWithTemplate } from '@/lib/salon/queries'
@@ -319,6 +320,7 @@ export function ReservationForm({
       guest_name: '',
       guest_phone: undefined,
       guest_email: undefined,
+      guest_instagram: '',
       customer_id: undefined,
       kind: 'normal',
       // La cena a su hora sugerida (21:00 en el HUB; antes era un '21:30'
@@ -784,6 +786,7 @@ export function ReservationForm({
         guest_name: 'Cliente / nombre',
         guest_phone: 'Teléfono',
         guest_email: 'Email',
+        guest_instagram: 'Instagram',
         meal_type: 'Servicio',
         reservation_date: 'Fecha',
         reservation_time_local: 'Horario',
@@ -840,12 +843,14 @@ export function ReservationForm({
             guest_name: values.guest_name,
             guest_phone: values.guest_phone ?? null,
             guest_email: values.guest_email ?? null,
+            guest_instagram: values.guest_instagram ?? '',
           }}
           onChange={(v) => {
             form.setValue('customer_id', v.customer_id, { shouldValidate: true })
             form.setValue('guest_name', v.guest_name, { shouldValidate: true })
             form.setValue('guest_phone', v.guest_phone ?? undefined, { shouldValidate: true })
             form.setValue('guest_email', v.guest_email ?? undefined)
+            form.setValue('guest_instagram', v.guest_instagram, { shouldValidate: true })
             // Elegir a Melina tiene que traer "es celíaca" en el acto: si el
             // aviso apareciera recién al guardar, el que carga la reserva no se
             // entera justo cuando está hablando por teléfono con ella.
@@ -858,6 +863,7 @@ export function ReservationForm({
             }
           }}
           error={form.formState.errors.guest_name?.message}
+          instagramError={form.formState.errors.guest_instagram?.message}
         />
       </FieldGroup>
 
@@ -2003,6 +2009,7 @@ function CustomerCombobox({
   value,
   onChange,
   error,
+  instagramError,
 }: {
   tenantSlug: string
   value: {
@@ -2010,16 +2017,20 @@ function CustomerCombobox({
     guest_name: string
     guest_phone: string | null
     guest_email: string | null
+    /** Tal cual lo tipean (con o sin arroba, o el link): se limpia al guardar. */
+    guest_instagram: string
   }
   onChange: (v: {
     customer_id?: string
     guest_name: string
     guest_phone: string | null
     guest_email: string | null
+    guest_instagram: string
     /** Avisos de la ficha del cliente elegido; `undefined` si se escribió a mano. */
     service_alerts?: ServiceAlert[]
   }) => void
   error?: string
+  instagramError?: string
 }) {
   const [results, setResults] = useState<CustomerSearchResult[]>([])
   const [, startSearch] = useTransition()
@@ -2082,6 +2093,8 @@ function CustomerCombobox({
                         guest_name: `${c.first_name} ${c.last_name}`.trim(),
                         guest_phone: c.phone,
                         guest_email: null,
+                        // El Instagram es de la reserva, no de la ficha: no se pisa.
+                        guest_instagram: value.guest_instagram,
                         service_alerts: parseServiceAlerts(c.service_alerts),
                       })
                       setOpen(false)
@@ -2132,6 +2145,55 @@ function CustomerCombobox({
           />
           <p className="text-[11px] text-muted-foreground">
             Tocá la bandera si el cliente es de otro país.
+          </p>
+        </div>
+        <div className="space-y-1.5 sm:col-start-2">
+          <Label
+            htmlFor="guest_instagram"
+            className="text-xs uppercase tracking-wide text-muted-foreground"
+          >
+            Instagram (opcional)
+          </Label>
+          <div className="relative">
+            <span
+              aria-hidden
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-base text-muted-foreground"
+            >
+              @
+            </span>
+            <Input
+              id="guest_instagram"
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              inputMode="text"
+              // Entra el link del perfil pegado, que es más largo que un usuario.
+              maxLength={200}
+              aria-invalid={!!instagramError}
+              aria-describedby="guest_instagram_help"
+              value={value.guest_instagram}
+              onChange={(e) =>
+                onChange({ ...value, guest_instagram: e.target.value.replace(/^@+/, '') })
+              }
+              // Al salir del campo queda limpio: del link pegado, solo el usuario.
+              onBlur={() => {
+                const handle = parseInstagramHandle(value.guest_instagram)
+                if (handle && handle !== value.guest_instagram) {
+                  onChange({ ...value, guest_instagram: handle })
+                }
+              }}
+              placeholder="usuario"
+              className="h-11 pl-8 text-base"
+            />
+          </div>
+          {instagramError ? (
+            <p role="alert" className="text-xs text-destructive">
+              {instagramError}
+            </p>
+          ) : null}
+          <p id="guest_instagram_help" className="text-[11px] text-muted-foreground">
+            Si reservó por Instagram y no pasó el teléfono.
           </p>
         </div>
       </div>

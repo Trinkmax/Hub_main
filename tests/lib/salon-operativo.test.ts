@@ -28,6 +28,7 @@ function reservation(over: Partial<ReservationWithJoins> = {}): ReservationWithJ
     guest_name: 'Adriana Carranza',
     guest_phone: null,
     guest_email: null,
+    guest_instagram: null,
     kind: 'normal',
     meal_type: 'dinner',
     reservation_date: '2026-09-05',

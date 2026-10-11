@@ -22,6 +22,7 @@ export function fullUpdatePayload(
     guest_name: r.guest_name,
     guest_phone: r.guest_phone,
     guest_email: r.guest_email,
+    guest_instagram: r.guest_instagram,
     kind: r.kind,
     meal_type: r.meal_type,
     reservation_date: r.reservation_date,

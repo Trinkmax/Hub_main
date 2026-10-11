@@ -17,6 +17,7 @@ function reservation(over: Partial<ReservationWithJoins> = {}): ReservationWithJ
     guest_name: 'Adriana Carranza',
     guest_phone: '+5493515551234',
     guest_email: null,
+    guest_instagram: null,
     kind: 'normal',
     meal_type: 'dinner',
     reservation_date: '2026-09-05',
@@ -84,6 +85,7 @@ describe('reservationToExportRow', () => {
   it('una fila por columna, con las palabras del bar', () => {
     const row = reservationToExportRow(
       reservation({
+        guest_instagram: 'adri.carranza',
         reservation_end_time_local: '23:30:00',
         actual_guests: 18,
         table_label: '12+13',
@@ -119,6 +121,7 @@ describe('reservationToExportRow', () => {
       '23:30',
       'Adriana Carranza',
       '+5493515551234',
+      '@adri.carranza',
       '20',
       '18',
       'Cena',
@@ -175,7 +178,7 @@ describe('reservationToExportRow', () => {
 
   it('lo que no está queda vacío, no "null"', () => {
     const row = reservationToExportRow(reservation({ guest_phone: null }))
-    expect(row.filter((c) => c === '')).toHaveLength(13)
+    expect(row.filter((c) => c === '')).toHaveLength(14)
     expect(row.join('')).not.toContain('null')
     expect(row.join('')).not.toContain('undefined')
   })
@@ -195,8 +198,8 @@ describe('reservationToExportRow', () => {
         },
       }),
     )
-    expect(row[4]).toBe('+5493519999999')
-    expect(row[19]).toBe('Movilidad reducida')
+    expect(row[EXPORT_HEADERS.indexOf('Teléfono')]).toBe('+5493519999999')
+    expect(row[EXPORT_HEADERS.indexOf('Avisos')]).toBe('Movilidad reducida')
   })
 })
 

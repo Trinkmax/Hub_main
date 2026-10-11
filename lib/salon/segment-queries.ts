@@ -1,5 +1,6 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
+import { instagramSearchTerm } from './instagram'
 import {
   listScheduledEventsForDate,
   listTimelineForDate,
@@ -360,8 +361,9 @@ export async function getSegmentEditorData(opts: {
 // ──────────────────────────────────────────────────────────
 
 /**
- * Reservas por nombre (ilike) y, si el texto trae 4 o más dígitos, también por
- * teléfono. Incluye canceladas: el resultado muestra el estado y abre el día.
+ * Reservas por nombre (ilike); si el texto trae 4 o más dígitos, también por
+ * teléfono, y si puede ser un usuario de Instagram ("@juan.perez"), también por
+ * ese usuario. Incluye canceladas: el resultado muestra el estado y abre el día.
  * Más recientes primero; dentro del mismo día, por hora.
  */
 export async function searchReservationsByGuest(opts: {
@@ -371,6 +373,7 @@ export async function searchReservationsByGuest(opts: {
 }): Promise<ReservationSearchResult[]> {
   const { name, digits } = searchTerms(opts.q)
   if (!name && !digits) return []
+  const handle = instagramSearchTerm(opts.q)
   const limit = Math.min(50, Math.max(1, Math.floor(opts.limit ?? 20)))
 
   const supabase = (await createClient()) as SBAny
@@ -378,10 +381,15 @@ export async function searchReservationsByGuest(opts: {
     .from('salon_reservations')
     .select(SEARCH_RES_SELECT)
     .eq('tenant_id', opts.tenantId)
-  if (digits) {
-    // `searchTerms` ya sacó `,` `(` `)` y `"`: no pueden romper la sintaxis del or().
-    const byPhone = `guest_phone.ilike.%${digits}%`
-    query = query.or(name ? `guest_name.ilike.%${name}%,${byPhone}` : byPhone)
+  if (digits || handle) {
+    // `searchTerms` ya sacó `,` `(` `)` y `"`, y el usuario de Instagram solo
+    // trae letras, números, punto y guion bajo: no pueden romper la sintaxis del or().
+    const filters = [
+      name ? `guest_name.ilike.%${name}%` : null,
+      digits ? `guest_phone.ilike.%${digits}%` : null,
+      handle ? `guest_instagram.ilike.%${handle}%` : null,
+    ].filter((f): f is string => f !== null)
+    query = query.or(filters.join(','))
   } else {
     query = query.ilike('guest_name', `%${name}%`)
   }

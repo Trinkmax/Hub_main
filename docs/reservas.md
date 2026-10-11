@@ -2554,3 +2554,45 @@ decisiones pendientes en el BACKLOG.
     un evento».
 11. **Como cajero o host** → «Cómo nos fue» no se sirve; el host sí ve y cambia
     el tilde en el calendario.
+
+## Addendum 2026-10-11 — Instagram de quien reserva
+
+Con el WhatsApp de reservas bloqueado por Meta, las reservas se cierran por
+Instagram y muchas veces sin teléfono. La reserva guarda el usuario de Instagram
+como contacto. El teléfono ya era opcional: no cambia.
+
+**Qué cambió**
+
+- **Alta y edición** (bloque Cliente): campo «Instagram (opcional)», debajo del
+  teléfono. Acepta `@usuario`, `usuario` o el link del perfil pegado; se guarda
+  limpio (`juan.perez`, sin arroba y en minúsculas).
+- **Dónde se ve**: lista de reservas (debajo del nombre), popup de la reserva y
+  ficha (botón «Instagram» al lado de «Contactar»), reservas de un evento
+  programado (botón con la arroba), tablero operativo (dato «Instagram») y la
+  planilla exportada (columna «Instagram», al lado de «Teléfono»). Siempre abre
+  el perfil en otra pestaña.
+- **Buscar**: el buscador de la lista, el del calendario y el del tablero
+  operativo encuentran por el usuario, con o sin arroba.
+
+**Decisiones**
+
+- Es un dato de la **reserva**, no de la ficha del cliente: una reserva solo con
+  Instagram queda «libre» (la ficha se sigue creando por teléfono).
+- En las ediciones, ausente ≠ vacío: una pantalla que cambia otra cosa (hora,
+  personas, mesa) no borra el Instagram. Se borra solo vaciando el campo.
+
+**Base de datos**: `20261011120000_reservation_guest_instagram.sql` —
+`salon_reservations.guest_instagram text` con check `^[a-z0-9._]{1,30}$`. Sin
+políticas ni GRANTs nuevos (columna en una tabla que ya los tiene).
+
+**Smoke manual**
+
+1. Reservas › Nueva: nombre + Instagram `@Juan.Perez`, sin teléfono → guarda; en
+   la lista aparece `@juan.perez` debajo del nombre y abre el perfil.
+2. Pegar `https://www.instagram.com/juan.perez/?igsh=abc` → al salir del campo
+   queda `juan.perez`.
+3. `juan perez` (con espacio) → no guarda y marca «Instagram».
+4. Buscar `@juan.perez` en la lista → la encuentra.
+5. Cambiar las personas desde el popup → el Instagram sigue ahí.
+6. Editar y vaciar el campo → se borra.
+7. Exportar → columna «Instagram» con `@juan.perez`.

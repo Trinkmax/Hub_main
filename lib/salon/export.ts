@@ -12,6 +12,7 @@
 import { rowsToCsv } from '@/lib/stats/csv'
 import { resolveReservationAlerts, SERVICE_ALERT_META } from './alerts'
 import { floorLabel } from './event-floor'
+import { formatInstagramHandle } from './instagram'
 import { serviceMinutes } from './operativo'
 import {
   describeCake,
@@ -28,6 +29,7 @@ export const EXPORT_HEADERS = [
   'Hasta',
   'Cliente',
   'Teléfono',
+  'Instagram',
   'Personas',
   'Asistieron',
   'Servicio',
@@ -108,6 +110,7 @@ export function reservationToExportRow(r: ReservationWithJoins): string[] {
     fmtTime(r.reservation_end_time_local),
     r.guest_name,
     r.customer?.phone ?? r.guest_phone ?? '',
+    r.guest_instagram ? formatInstagramHandle(r.guest_instagram) : '',
     String(r.estimated_guests),
     r.actual_guests === null ? '' : String(r.actual_guests),
     MEAL_TYPE_LABELS[r.meal_type],

@@ -180,12 +180,13 @@ function digitsOf(s: string | null | undefined): string {
 export type SearchableReservation = Pick<
   ReservationWithJoins,
   'guest_name' | 'guest_phone' | 'table_label' | 'customer' | 'primary_manager'
->
+> &
+  Partial<Pick<ReservationWithJoins, 'guest_instagram'>>
 
 /**
  * Busca en lo que la anfitriona sabe del que tiene adelante: nombre (de la
- * reserva o de la ficha del socio), teléfono (por dígitos: "351" alcanza),
- * mesa asignada ("12") y gestor. Todas las palabras de la consulta tienen que
+ * reserva o de la ficha del socio), Instagram, teléfono (por dígitos: "351"
+ * alcanza), mesa asignada ("12") y gestor. Todas las palabras de la consulta tienen que
  * aparecer, en cualquier orden: "adri carranza" y "carranza adri" son lo mismo.
  */
 export function matchesQuery(r: SearchableReservation, query: string): boolean {
@@ -197,6 +198,8 @@ export function matchesQuery(r: SearchableReservation, query: string): boolean {
       r.guest_name,
       r.customer?.first_name,
       r.customer?.last_name,
+      // Con la arroba adelante: "@juan.perez" y "juan.perez" encuentran lo mismo.
+      r.guest_instagram ? `@${r.guest_instagram}` : null,
       r.table_label ? `mesa ${r.table_label}` : null,
       r.primary_manager?.display_name,
     ]

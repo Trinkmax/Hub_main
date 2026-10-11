@@ -81,6 +81,7 @@ function reservation(over: Partial<ReservationWithJoins>): ReservationWithJoins 
     guest_name: 'Nombre',
     guest_phone: null,
     guest_email: null,
+    guest_instagram: null,
     kind: 'normal',
     meal_type: 'lunch',
     reservation_date: '2026-09-25',

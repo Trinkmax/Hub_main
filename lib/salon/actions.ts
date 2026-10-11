@@ -443,6 +443,7 @@ export async function createSalonReservation(
       guest_name: parsed.data.guest_name,
       guest_phone: parsed.data.guest_phone ?? null,
       guest_email: parsed.data.guest_email ?? null,
+      guest_instagram: parsed.data.guest_instagram ?? null,
       kind: parsed.data.kind,
       meal_type: mealType,
       reservation_date: parsed.data.reservation_date,
@@ -569,6 +570,9 @@ export async function updateSalonReservation(
       guest_name: patch.guest_name,
       guest_phone: patch.guest_phone ?? null,
       guest_email: patch.guest_email ?? null,
+      // Ausente ≠ vacío: una pantalla que edita otra cosa y no manda el
+      // Instagram no tiene por qué borrarlo.
+      ...(patch.guest_instagram !== undefined ? { guest_instagram: patch.guest_instagram } : {}),
       kind: patch.kind,
       meal_type: patch.meal_type,
       reservation_date: patch.reservation_date,

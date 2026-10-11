@@ -131,6 +131,11 @@ export type SalonReservationRow = {
   guest_name: string
   guest_phone: string | null
   guest_email: string | null
+  /**
+   * Usuario de Instagram, sin arroba y en minúsculas. El contacto cuando la
+   * reserva se cerró por Instagram y no pasó el teléfono.
+   */
+  guest_instagram: string | null
   kind: ReservationKind
   meal_type: MealType
   reservation_date: string
