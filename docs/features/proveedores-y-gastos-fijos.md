@@ -68,3 +68,47 @@ Datos de la SAS.
    monto con dos empleados → el monto es la suma.
 5. Nuevo gasto → «¿En qué?» → elegir un gasto fijo pendiente → guardar → en la lista queda «Cargado».
 6. Ventas › Cierre del día → Completar con Mercado Pago con un reporte de Liquidaciones.
+
+## Addendum 12/10/2026 — Puesta en marcha de HUB
+
+Los socios configuraron Administración en HUB y pasaron tres cosas.
+
+**Un Enter cerró la puesta en marcha a medias.** En el paso «Cajas», cargando las comisiones, un Enter
+en un campo envió el formulario: la configuración quedó guardada con lo que había (sin CUIT, sin banco,
+sin puntos de venta) y la pantalla pasó sola a los saldos iniciales. No se perdió nada y todo se
+completa en Ajustes, pero no tenía que pasar.
+
+- En el último paso del asistente y en los saldos iniciales, Enter en un campo ya no guarda: se guarda
+  con el botón (`isImplicitSubmit`, en `configurar/_lib/wizard.ts`). El primer paso sigue igual (Enter
+  pasa al siguiente y no guarda nada).
+
+**Saldos iniciales con todos los proveedores.** En «Deudas con proveedores» hay un «Cargar una lista»:
+se pega desde la planilla el proveedor y lo que se le debía (y, si están, el vencimiento y el
+comprobante) y quedan como renglones del formulario, para revisarlos antes de guardar.
+
+- La primera columna es el proveedor; de las demás, el primer número es el monto, la fecha es el
+  vencimiento y el primer texto es el comprobante. Sin columnas, el monto es lo último del renglón.
+- Se saltean el encabezado, los totales y los saldos en cero. Se avisan los que no tienen un monto que
+  se entienda y los que vienen con saldo a favor.
+- El proveedor se busca por nombre (o nombre de fantasía), sin mirar mayúsculas ni tildes. Los que no
+  están se crean (`ensureSuppliers`, sobre `acc_create_parties_bulk`). El tope sigue siendo 200 deudas.
+- Nada de base de datos nuevo.
+
+**Comisiones y retenciones: qué se carga y sobre qué.** Dos confusiones de los socios, aclaradas en
+Ajustes › Plataformas y organismos y en el asistente:
+
+- Cada porcentaje (comisión, retenciones) se calcula **sobre lo cobrado**. El IVA de la comisión (21 %)
+  lo calcula el sistema y no va en «Retención de IVA». Una percepción de IVA sobre la comisión se carga
+  al registrar cada liquidación («Percepción de IVA de la comisión»), con el monto que diga.
+- El QR de Mercado Pago tiene una comisión distinta según cómo paga el cliente (dinero en cuenta,
+  débito, crédito). El porcentaje de Ajustes es solo un estimado para precargar: la comisión real de
+  cada cobro sale del reporte de Mercado Pago (`MP_FEE_AMOUNT`) o del arqueo de la billetera.
+
+### Smoke manual
+
+1. Configurar › paso «Cajas»: escribir una comisión y apretar Enter → no pasa nada; «Guardar y seguir»
+   guarda.
+2. Saldos iniciales › Cargar una lista: pegar tres renglones (un proveedor cargado, uno nuevo, uno en
+   cero) → «2 deudas por $ …», avisa el que se crea y el que está en cero; al cargar quedan dos
+   renglones con su proveedor y su monto.
+3. En un monto de los saldos, Enter → no guarda.

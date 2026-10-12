@@ -48,6 +48,7 @@ import {
   emptyOtherRow,
   hasAnyOpeningValue,
   initialOpeningState,
+  isBlankItem,
   type OpeningFormState,
   type OpeningItemRow,
   type OpeningOtherRow,
@@ -58,7 +59,10 @@ import {
   openingStateFromDraft,
   openingTotals,
 } from '../_lib/opening'
+import { OPENING_ITEMS_MAX } from '../_lib/opening-import'
+import { isImplicitSubmit } from '../_lib/wizard'
 import { NewPartyDialog, type NewPartyKind } from './new-party-dialog'
+import { type ImportedPayable, OpeningImportDialog } from './opening-import-dialog'
 import { SetupDone } from './setup-done'
 import { WizardProgress } from './wizard-progress'
 
@@ -255,10 +259,11 @@ export function OpeningStep({
   }, [ctx, extraParties])
 
   const allParties = useMemo(() => [...engineCtx.parties.values()], [engineCtx])
-  const payableOptions = useMemo(
-    () => allParties.filter((p) => PAYABLE_KINDS.has(p.kind)).map(partyOption),
+  const payableParties = useMemo(
+    () => allParties.filter((p) => PAYABLE_KINDS.has(p.kind)),
     [allParties],
   )
+  const payableOptions = useMemo(() => payableParties.map(partyOption), [payableParties])
   const receivableOptions = useMemo(
     () => allParties.filter((p) => RECEIVABLE_KINDS.has(p.kind)).map(partyOption),
     [allParties],
@@ -318,6 +323,29 @@ export function OpeningStep({
   }
   const removeRow = (list: 'payables' | 'receivables' | 'others', id: string) =>
     setForm((f) => ({ ...f, [list]: f[list].filter((r) => r.id !== id) }))
+
+  /** «Cargar una lista»: las deudas pegadas quedan como renglones, para revisarlas. */
+  const importPayables = (lines: ImportedPayable[], created: SavedParty[]) => {
+    if (created.length > 0) {
+      const ids = new Set(created.map((p) => p.id))
+      setExtraParties((list) => [...list.filter((p) => !ids.has(p.id)), ...created.map(partyRefOf)])
+      router.refresh()
+    }
+    const rows = lines.map((l) => ({
+      id: nextId('pay'),
+      partyId: l.partyId,
+      amountCents: l.amountCents,
+      dueDate: l.dueDate,
+      reference: l.reference,
+    }))
+    setForm((f) => ({ ...f, payables: [...f.payables.filter((r) => !isBlankItem(r)), ...rows] }))
+    clearError('form', 'treasuries')
+    toast.success(
+      rows.length === 1
+        ? 'Se cargó 1 deuda. Revisala antes de guardar.'
+        : `Se cargaron ${rows.length} deudas. Revisalas antes de guardar.`,
+    )
+  }
 
   // ─── Guardar ───────────────────────────────────────────────────────────────
   const finish = (message: string) => {
@@ -548,7 +576,20 @@ export function OpeningStep({
         </Callout>
       ) : null}
 
-      <form ref={formRef} onSubmit={onSubmit} noValidate className="space-y-6">
+      <form
+        ref={formRef}
+        onSubmit={onSubmit}
+        // Los saldos se guardan con el botón: un Enter suelto en un monto no
+        // puede registrar la apertura a medias.
+        onKeyDown={(event) => {
+          const el = event.target
+          if (el instanceof HTMLInputElement && isImplicitSubmit(event.key, el.tagName, el.type)) {
+            event.preventDefault()
+          }
+        }}
+        noValidate
+        className="space-y-6"
+      >
         <section className="card-hairline space-y-4 rounded-xl border bg-card p-6">
           <header className="space-y-1">
             <h2 className="font-serif text-lg font-semibold tracking-tight">
@@ -581,21 +622,29 @@ export function OpeningStep({
             </h2>
             <p className="text-xs text-muted-foreground text-pretty">
               Facturas que quedaron sin pagar al {startDate}. ¿No está en la lista? Escribí el
-              nombre y elegí «Crear».
+              nombre y elegí «Crear». Si las tenés en una planilla, usá «Cargar una lista».
             </p>
           </header>
           {itemRows('payables')}
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11 gap-2 md:h-9"
-            onClick={() =>
-              setForm((f) => ({ ...f, payables: [...f.payables, emptyItemRow(nextId('pay'))] }))
-            }
-          >
-            <Plus className="size-4" aria-hidden />
-            Agregar otra deuda
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 gap-2 md:h-9"
+              onClick={() =>
+                setForm((f) => ({ ...f, payables: [...f.payables, emptyItemRow(nextId('pay'))] }))
+              }
+            >
+              <Plus className="size-4" aria-hidden />
+              Agregar otra deuda
+            </Button>
+            <OpeningImportDialog
+              tenantSlug={tenantSlug}
+              parties={payableParties}
+              room={OPENING_ITEMS_MAX - form.payables.filter((r) => !isBlankItem(r)).length}
+              onImport={importPayables}
+            />
+          </div>
         </section>
 
         <section className="card-hairline space-y-4 rounded-xl border bg-card p-6">

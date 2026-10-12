@@ -591,3 +591,29 @@ export const SERVER_KEY_FIELDS: Readonly<Record<string, string>> = {
   treasury_name_taken: 'treasuries',
   invalid_method_targets: 'methods',
 }
+
+// ─── Enter no guarda ─────────────────────────────────────────────────────────
+
+/** Los `<input>` donde Enter no escribe nada: ahí el navegador «envía» el formulario. */
+const ENTER_SUBMITS: ReadonlySet<string> = new Set([
+  'text',
+  'search',
+  'tel',
+  'url',
+  'email',
+  'password',
+  'number',
+  'date',
+  'month',
+  'time',
+])
+
+/**
+ * ¿Esta tecla, en este campo, enviaría el formulario sin que nadie toque el
+ * botón? En el último paso no se deja: el 12/10/2026, cargando las comisiones,
+ * un Enter cerró la puesta en marcha de HUB a medias. Los botones, los
+ * interruptores y las áreas de texto siguen andando como siempre.
+ */
+export function isImplicitSubmit(key: string, tagName: string, inputType: string): boolean {
+  return key === 'Enter' && tagName.toLowerCase() === 'input' && ENTER_SUBMITS.has(inputType)
+}

@@ -3,10 +3,10 @@
  * 09/10/2026): lo puro. Lo prueba `administracion-cargar-lista.test.ts`.
  */
 
+import { partyNameKey } from '@/lib/accounting/party-profile'
+
 /** La forma de comparar dos nombres: sin mayúsculas, tildes ni espacios de más. */
-export function nameKey(name: string): string {
-  return name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase()
-}
+export const nameKey = partyNameKey
 
 export type ParsedNameList = {
   /** Los nombres a cargar, en el orden en que vinieron y sin repetir. */

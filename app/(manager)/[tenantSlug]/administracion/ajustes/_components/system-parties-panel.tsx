@@ -309,6 +309,13 @@ export function SystemPartiesPanel({
                       ),
                     )}
                   </div>
+                  <p className="text-xs text-muted-foreground text-pretty">
+                    Cada porcentaje se calcula sobre lo cobrado (la venta), no sobre la comisión. El
+                    IVA de la comisión (21 %) lo calcula el sistema: no va en «Retención de IVA».
+                    {editing.party.kind === 'payment_wallet'
+                      ? ' Si la comisión del QR cambia según cómo te pagan (dinero en cuenta, débito o crédito), poné la más común: la de cada cobro sale del reporte de Mercado Pago.'
+                      : null}
+                  </p>
                   <Field id="sp-vat-mode" label="¿Cómo factura las comisiones?">
                     <Select
                       value={editing.vatMode}

@@ -23,6 +23,7 @@ import {
   parseBreakdown,
   parseDeliveryDays,
   parsePartyContacts,
+  partyNameKey,
   type RecurringBreakdownRow,
 } from '@/lib/accounting/party-profile'
 import {
@@ -972,6 +973,58 @@ function bulkMessage(result: BulkResult, one: string, many: string): string {
         ? ' 1 ya estaba y no se repitió.'
         : ` ${result.skipped.length} ya estaban y no se repitieron.`
   return created + skipped
+}
+
+/**
+ * Los proveedores de una lista de nombres, creando los que faltan. Lo usa
+ * «Cargar una lista» de los saldos iniciales: cada deuda necesita su proveedor.
+ * Devuelve los de la lista (los nuevos y los que ya estaban).
+ */
+export async function ensureSuppliers(
+  slug: string,
+  raw: unknown,
+): Promise<AccSimpleState<SavedParty[]>> {
+  const op = 'master.ensureSuppliers'
+  try {
+    const auth = await authorizeAccounting(slug, 'write')
+    if (!auth.ok) return auth.state
+    const parsed = partiesBulkSchema.safeParse({
+      ...(asRecord(formInput(raw)) ?? {}),
+      kind: 'supplier',
+    })
+    if (!parsed.success) return invalidState(parsed.error)
+
+    const supabase = await createClient()
+    const { data: created, error } = await supabase.rpc('acc_create_parties_bulk', {
+      p_tenant_id: auth.tenantId,
+      p_kind: 'supplier',
+      p_names: parsed.data.names,
+    })
+    if (error) return rpcFailure(op, error)
+    const result = bulkResultOf(created)
+    if (!result) return unexpectedFailure(op, new Error('respuesta vacía'))
+
+    const { data: rows, error: readError } = await supabase
+      .from('acc_parties')
+      .select('*')
+      .eq('tenant_id', auth.tenantId)
+      .eq('kind', 'supplier')
+      // Los recién creados primero: si hubiera más filas que el tope, no se pierden.
+      .order('created_at', { ascending: false })
+      .limit(1000)
+    if (readError) return rpcFailure(op, readError)
+    const wanted = new Set(parsed.data.names.map(partyNameKey))
+    const parties = ((rows ?? []) as unknown[])
+      .map(asRecord)
+      .filter((r): r is Rec => r !== null)
+      .map(partyRow)
+      .filter((p) => wanted.has(partyNameKey(p.name)))
+
+    revalidateAccounting(slug)
+    return { ok: true, data: parties, message: bulkMessage(result, 'proveedor', 'proveedores') }
+  } catch (error) {
+    return unexpectedFailure(op, error)
+  }
 }
 
 /**

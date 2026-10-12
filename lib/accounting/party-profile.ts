@@ -126,3 +126,8 @@ export function breakdownTotals(lines: readonly RecurringBreakdownRow[]): {
     }),
   }
 }
+
+/** La forma de comparar dos nombres: sin mayúsculas, tildes ni espacios de más. */
+export function partyNameKey(name: string): string {
+  return name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase()
+}

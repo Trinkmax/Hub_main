@@ -56,6 +56,7 @@ import {
   effectiveTransferDestination,
   hasWallet,
   initialWizardState,
+  isImplicitSubmit,
   isStepOneField,
   PLATFORMS,
   type PlatformKey,
@@ -760,7 +761,20 @@ export function SetupWizard({
           Recuperamos lo que estabas cargando.
         </Callout>
       ) : null}
-      <form ref={formRef} onSubmit={save} noValidate className="space-y-6">
+      <form
+        ref={formRef}
+        onSubmit={save}
+        // Acá se termina la puesta en marcha: se guarda con el botón, nunca con
+        // un Enter suelto en un campo.
+        onKeyDown={(event) => {
+          const el = event.target
+          if (el instanceof HTMLInputElement && isImplicitSubmit(event.key, el.tagName, el.type)) {
+            event.preventDefault()
+          }
+        }}
+        noValidate
+        className="space-y-6"
+      >
         <h2 ref={headingRef} tabIndex={-1} className="sr-only outline-none">
           Cajas, cuentas y cómo te pagan
         </h2>
@@ -1111,14 +1125,16 @@ export function SetupWizard({
               hidden={!ratesOpen}
               className="space-y-4 border-t border-border/60 p-4"
             >
-              <p className="text-xs text-muted-foreground">
-                Sirven para precargar las acreditaciones. Nunca se registran solos.
+              <p className="text-xs text-muted-foreground text-pretty">
+                Sirven para precargar las acreditaciones. Nunca se registran solos. El IVA de cada
+                comisión lo calcula el sistema.
               </p>
               <div className="grid gap-3 sm:grid-cols-2">
                 {methods.qr_mp ? (
                   <RateField
                     id="wz-r-mpqr"
                     label="Comisión del QR de Mercado Pago"
+                    hint="Si cambia según cómo te pagan (dinero en cuenta, débito o crédito), poné la más común: la de cada cobro sale del reporte de Mercado Pago."
                     value={state.rates.mpQr}
                     error={err('rates.mpQr')}
                     onChange={(text) => {
