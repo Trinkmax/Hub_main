@@ -20,6 +20,10 @@ import { GUIDE_STATUS_TEXT_CLASS, GuideStatusDot } from './guide-status'
  *
  * Accesibilidad: `section` con `aria-labelledby`, el encabezado es un `button` con
  * `aria-expanded`, el estado se dice con texto y todo anda con el teclado.
+ *
+ * Lo usan también las recetas del día a día, que no son pasos numerados ni se marcan: por eso
+ * `kicker` (en lugar de «Paso N»), `lead` (un ícono en lugar del número) y un pie con otro rótulo
+ * (`footerLabel`) o sin texto. Sin esas props se ve igual que siempre.
  */
 export function GuideStep({
   id,
@@ -32,8 +36,11 @@ export function GuideStep({
   chips,
   problem,
   footerHow,
+  footerLabel = 'Cómo se marca:',
   footerAction,
   next,
+  kicker,
+  lead,
   defaultOpen = false,
   children,
 }: {
@@ -50,11 +57,17 @@ export function GuideStep({
   chips?: ReactNode
   /** El aviso de «Revisar» o «No anduvo», arriba del cuerpo. */
   problem?: ReactNode
-  /** «Se marca solo cuando…». */
-  footerHow: string
+  /** «Se marca solo cuando…». Sin texto, el pie lleva solo los botones (si hay). */
+  footerHow?: ReactNode
+  /** El rótulo en negrita del pie. */
+  footerLabel?: string
   /** «Ya lo hice», si el paso se marca a mano. */
   footerAction?: ReactNode
   next?: { readonly id: string; readonly anchor: string; readonly label: string } | null
+  /** La línea chica de arriba del título. Por defecto, «Paso N». */
+  kicker?: ReactNode
+  /** Lo que va a la izquierda en lugar del número con su estado (un ícono, por ejemplo). */
+  lead?: ReactNode
   /** Sin `GuideNavProvider`: si arranca abierto. */
   defaultOpen?: boolean
   children: ReactNode
@@ -86,11 +99,11 @@ export function GuideStep({
           onClick={toggle}
           className="flex w-full items-start gap-3 rounded-xl px-4 py-4 text-left outline-none transition-colors hover:bg-cream-tint/60 focus-visible:ring-2 focus-visible:ring-ring sm:px-5"
         >
-          <GuideStatusDot status={status} n={n} />
+          {lead ?? <GuideStatusDot status={status} n={n} />}
           <span className="min-w-0 flex-1">
             <span className="flex flex-wrap items-baseline gap-x-2">
               <span className="text-xs font-medium tabular-nums text-muted-foreground">
-                Paso {n}
+                {kicker ?? `Paso ${n}`}
               </span>
             </span>
             <span
@@ -128,29 +141,35 @@ export function GuideStep({
           {problem}
           {children}
         </div>
-        <footer className="flex flex-col gap-3 border-t border-border/60 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-          <p className="text-xs text-muted-foreground text-pretty">
-            <span className="font-medium text-foreground">Cómo se marca:</span> {footerHow}
-          </p>
-          <div className="flex flex-col gap-2 sm:shrink-0 sm:flex-row sm:items-center">
-            {footerAction}
-            {next ? (
-              <Button asChild variant="outline" className="h-11 gap-2 md:h-9">
-                <a
-                  href={`#${next.anchor}`}
-                  onClick={(event) => {
-                    if (!nav) return
-                    event.preventDefault()
-                    nav.reveal(next.id)
-                  }}
-                >
-                  {next.label}
-                  <ArrowRight className="size-4" aria-hidden />
-                </a>
-              </Button>
-            ) : null}
-          </div>
-        </footer>
+        {footerHow || footerAction || next ? (
+          <footer className="flex flex-col gap-3 border-t border-border/60 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            {footerHow ? (
+              <p className="text-xs text-muted-foreground text-pretty">
+                <span className="font-medium text-foreground">{footerLabel}</span> {footerHow}
+              </p>
+            ) : (
+              <span aria-hidden="true" />
+            )}
+            <div className="flex flex-col gap-2 sm:shrink-0 sm:flex-row sm:items-center">
+              {footerAction}
+              {next ? (
+                <Button asChild variant="outline" className="h-11 gap-2 md:h-9">
+                  <a
+                    href={`#${next.anchor}`}
+                    onClick={(event) => {
+                      if (!nav) return
+                      event.preventDefault()
+                      nav.reveal(next.id)
+                    }}
+                  >
+                    {next.label}
+                    <ArrowRight className="size-4" aria-hidden />
+                  </a>
+                </Button>
+              ) : null}
+            </div>
+          </footer>
+        ) : null}
       </div>
     </section>
   )

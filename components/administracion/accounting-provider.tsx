@@ -1,5 +1,6 @@
 'use client'
 
+import { X } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
   createContext,
@@ -22,7 +23,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
+import { Sheet, SheetClose, SheetContent } from '@/components/ui/sheet'
+import { cn } from '@/lib/utils'
 import { ACTION_SHEETS } from './acciones/registry'
 import {
   type AccountingAction,
@@ -72,7 +74,9 @@ export function useAccountingOptional(): AccountingContextValue | null {
  * Lo monta el layout de `/administracion` alrededor de cada pantalla: da hoy,
  * los permisos de la persona y las hojas de acciones rápidas, que se abren con
  * `?accion=gasto|pagar|cobrar|mover|ajustar|movimiento` desde cualquier
- * pantalla de la sección (botones, ⌘K, filas de «Necesita atención»).
+ * pantalla de la sección (botones, ⌘K, el lanzador, las tarjetas de «Hoy te
+ * toca»). Lo que precarga cada hoja viaja al lado: `&proveedor=`, `&cliente=`,
+ * `&caja=`, `&partida=` y `&gasto-fijo=` (un UUID cada uno).
  */
 export function AccountingProvider({
   tenantSlug,
@@ -202,7 +206,16 @@ function ActionSheetHost({
       >
         <SheetContent
           side="right"
-          className="w-full gap-0 p-0 sm:max-w-lg"
+          // La X la dibuja la hoja (abajo): la del primitivo mide 32 px y en el celular no llega a 44.
+          showClose={false}
+          className={cn(
+            // En el celular ocupa la pantalla; desde `sm`, una hoja de 560 px con el borde
+            // izquierdo redondeado, como las demás superficies de la sección.
+            'w-full gap-0 overflow-hidden p-0 sm:max-w-[35rem] sm:rounded-l-3xl',
+            // Es la carga de todos los días: entra rápido (frena al llegar) y sale más rápido.
+            'ease-(--ease-out) data-[state=closed]:duration-200 data-[state=open]:duration-300',
+            'motion-reduce:data-[state=closed]:animate-none motion-reduce:data-[state=open]:animate-none',
+          )}
           onPointerDownOutside={keepOpenOnToast}
           onInteractOutside={keepOpenOnToast}
         >
@@ -219,6 +232,13 @@ function ActionSheetHost({
               setDirty={setDirty}
             />
           ) : null}
+          {/* Después del cuerpo en el DOM (como la X del primitivo): al abrir, el foco cae en el
+              primer campo de la hoja y no en «Cerrar». Pasa por `onOpenChange`, así que si hay
+              algo cargado pregunta antes de descartarlo. */}
+          <SheetClose className="absolute top-2.5 right-2.5 flex size-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:top-5 sm:right-5 sm:size-10">
+            <X className="size-5 sm:size-4" aria-hidden="true" />
+            <span className="sr-only">Cerrar</span>
+          </SheetClose>
         </SheetContent>
       </Sheet>
 

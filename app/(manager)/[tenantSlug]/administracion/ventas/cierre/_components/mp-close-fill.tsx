@@ -58,11 +58,12 @@ type Pending = {
 const READ_FAILED = 'No pudimos leer el archivo. Probá de nuevo o bajalo otra vez.'
 
 /**
- * «Completar con Mercado Pago» (Lo vendido del cierre del día): lee EN EL
- * NAVEGADOR el reporte que bajó la persona (nada se sube ni se guarda), suma lo
- * cobrado con QR y por transferencia ese día y completa esos dos medios. Si ya
- * tenían otro importe, pregunta antes de pisarlo. Queda un resumen chico para
- * revisar antes de guardar.
+ * «Completar con el reporte de Mercado Pago» (va dentro del grupo de Mercado
+ * Pago, en el paso 1 del cierre del día): lee EN EL NAVEGADOR el reporte que
+ * bajó la persona (nada se sube ni se guarda), suma lo cobrado con QR y por
+ * transferencia ese día y completa esos dos medios. Si ya tenían otro importe,
+ * pregunta antes de pisarlo. Queda un resumen chico para revisar antes de
+ * guardar.
  */
 export function MpCloseFill({
   config,
@@ -93,7 +94,10 @@ export function MpCloseFill({
       <p className="text-xs text-muted-foreground text-pretty">
         Para completar QR y transferencias con el reporte de Mercado Pago, elegí cuál es cada medio
         en{' '}
-        <Link href={config.settingsHref} className="font-medium underline underline-offset-2">
+        <Link
+          href={config.settingsHref}
+          className="rounded-sm font-medium underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
           Importar › Mercado Pago
         </Link>
         .
@@ -163,25 +167,40 @@ export function MpCloseFill({
   }
 
   return (
-    <div className="grid gap-3">
+    <div className="grid min-w-0 gap-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <Button
           type="button"
           variant="outline"
           size="sm"
-          className="h-11 gap-1.5 md:h-8"
+          className="h-11 w-full gap-1.5 rounded-full @min-[26rem]:w-auto md:h-9"
           disabled={reading}
           onClick={() => inputRef.current?.click()}
         >
           <FileUp className="size-4" aria-hidden />
-          {reading ? 'Leyendo el archivo…' : 'Completar con Mercado Pago'}
+          {reading ? (
+            'Leyendo el archivo…'
+          ) : (
+            // Con el grupo angosto (el celular, o la compu con el ticket al lado) el nombre
+            // entero no entra en un renglón: ahí alcanza con lo que ya dice el grupo.
+            <span>
+              Completar con el reporte
+              <span className="hidden @min-[26rem]:inline"> de Mercado Pago</span>
+            </span>
+          )}
         </Button>
         <p className="min-w-0 flex-1 basis-60 text-xs text-muted-foreground text-pretty">
-          Con el reporte que bajás de Mercado Pago completamos QR y transferencias del {dayLabel}.
-          Se lee en tu compu: no se sube nada.
+          Elegí el reporte que bajaste de Mercado Pago y completamos QR y transferencias del{' '}
+          {dayLabel}. Se lee en tu compu: no se sube nada.
           {config.cutoffHour > 0
             ? ` Lo cobrado hasta las ${config.cutoffHour} a. m. del día siguiente cuenta para este cierre.`
-            : ''}
+            : ''}{' '}
+          <Link
+            href={config.settingsHref}
+            className="rounded-sm font-medium text-foreground underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            ¿De dónde lo bajo?
+          </Link>
         </p>
         <input
           ref={inputRef}
@@ -195,9 +214,10 @@ export function MpCloseFill({
       </div>
 
       {error ? (
+        // Va adentro del grupo teñido: fondo de tarjeta para que no sea un tinte sobre otro.
         <div
           role="alert"
-          className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"
+          className="rounded-lg border border-destructive/30 bg-card p-3 text-sm text-destructive"
         >
           <p className="text-pretty">{error}</p>
         </div>
@@ -206,7 +226,7 @@ export function MpCloseFill({
       {summary ? (
         <div
           role="status"
-          className="flex items-start gap-3 rounded-xl border border-info/30 bg-info/10 p-4 text-sm"
+          className="flex items-start gap-3 rounded-lg border border-info/30 bg-card p-3 text-sm"
         >
           <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden />
           <div className="min-w-0 space-y-2">
@@ -228,7 +248,7 @@ export function MpCloseFill({
             {summary.missing.length > 0 ? (
               <Link
                 href={config.settingsHref}
-                className="inline-block text-xs font-medium underline underline-offset-2"
+                className="inline-block rounded-sm text-xs font-medium underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 Elegir el medio en Importar › Mercado Pago
               </Link>

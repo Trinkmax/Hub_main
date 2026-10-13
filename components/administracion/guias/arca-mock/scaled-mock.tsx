@@ -97,7 +97,10 @@ function revealSpotlights(container: HTMLElement) {
  * - Con la escala chica (el celular) aparece «Ampliar»: abre el dibujo en tamaño real, con
  *   scroll, para mirarlo de cerca, y arranca centrado en lo resaltado.
  * - `approximate`: el sello «Puede verse distinto» (lo que la investigación no pudo confirmar).
- * - La maqueta conserva la paleta clara de ARCA en los dos temas, con borde visible.
+ * - La maqueta conserva la paleta clara de ARCA en los dos temas, con borde visible. Las pantallas
+ *   PROPIAS de la plataforma (la guía del día a día) pasan `surfaceClassName="bg-background"`: el
+ *   dibujo sigue el tema, como la app. Para el celular conviene además un lienzo angosto
+ *   (`width={340}`): entra casi a tamaño real y no hace falta «Ampliar».
  */
 export function ScaledMock({
   width = 720,
@@ -106,6 +109,7 @@ export function ScaledMock({
   caption,
   approximate = false,
   frameLabel = 'Así se ve en ARCA',
+  surfaceClassName = 'bg-white',
   className,
   children,
 }: {
@@ -117,6 +121,8 @@ export function ScaledMock({
   caption?: ReactNode
   approximate?: boolean
   frameLabel?: string
+  /** El fondo del lienzo (y de la vista ampliada). Blanco, como ARCA, si no se dice otra cosa. */
+  surfaceClassName?: string
   className?: string
   children: ReactNode
 }) {
@@ -180,7 +186,7 @@ export function ScaledMock({
           ref={boxRef}
           role="img"
           aria-label={label}
-          className="relative w-full overflow-hidden bg-white"
+          className={cn('relative w-full overflow-hidden', surfaceClassName)}
           style={{ aspectRatio: `${width} / ${height}` }}
         >
           <div
@@ -223,7 +229,10 @@ export function ScaledMock({
             aria-label={`Imagen ampliada: ${label}`}
             // biome-ignore lint/a11y/noNoninteractiveTabindex: zona con scroll, tiene que poder recorrerse con el teclado
             tabIndex={0}
-            className="relative max-h-[78dvh] overflow-auto rounded-md border border-border bg-white outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className={cn(
+              'relative max-h-[78dvh] overflow-auto rounded-md border border-border outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              surfaceClassName,
+            )}
           >
             <div aria-hidden="true" style={{ width, height }}>
               {children}

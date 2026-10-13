@@ -98,7 +98,9 @@ export function EntryPreview({
                 !open && '-rotate-90',
               )}
             />
-            {open ? 'Ocultar asiento' : label}
+            {/* Abierto dice lo mismo que plegado, con «Ocultar»: quien tocó «Ver cómo queda en
+                los libros» no tiene por qué saber que eso se llama asiento. */}
+            {open ? (label.startsWith('Ver ') ? `Ocultar ${label.slice(4)}` : 'Ocultar') : label}
           </button>
         )}
         <span

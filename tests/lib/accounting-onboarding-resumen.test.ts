@@ -1,7 +1,8 @@
 /**
- * La segunda fuente de «Necesita atención» del Resumen (diseño §5.2.4, WP11):
- * los avisos de ARCA, Mercado Pago, el banco y Mis Comprobantes entran en su
- * lugar por urgencia sin cambiar el orden que trae `acc_report_summary`.
+ * La segunda fuente de «Avisos» del Resumen (antes «Necesita atención»; diseño
+ * §5.2.4, WP11): los avisos de ARCA, Mercado Pago, el banco y Mis Comprobantes
+ * entran en su lugar por urgencia sin cambiar el orden que trae
+ * `acc_report_summary`.
  */
 
 import { describe, expect, it } from 'vitest'

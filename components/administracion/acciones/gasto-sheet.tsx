@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import {
   type FormEvent,
   type KeyboardEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useId,
@@ -47,22 +48,19 @@ import {
   buildQuickExpenseValues,
   detailRoom,
   type ExpenseTarget,
-  INVOICED_QUICK_VOUCHERS,
   isInvoiceVoucher,
+  isQuickVatRate,
   QUICK_DETAIL_MAX,
   QUICK_VAT_RATES,
-  QUICK_VOUCHER_LABELS,
   type QuickExpenseFormValues,
   type QuickVatRate,
   type QuickVoucher,
   quickExpenseOutcome,
-  quickVoucherHelp,
   quickVoucherInvoiced,
   REMITO_MAX,
   recurringPrefill,
   sortRecurringForSheet,
   splitTotal,
-  suggestInvoicedVoucher,
   suggestQuickVatRate,
   suggestQuickVoucher,
   VAT_ADJUST_LIMIT,
@@ -89,13 +87,6 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { ACC_UNREACHABLE } from '@/lib/accounting/action-state'
 import { postQuickExpense } from '@/lib/accounting/actions/documents'
@@ -105,9 +96,9 @@ import { invoiceLetterFor } from '@/lib/accounting/posting/quick-expense'
 import { vatRateLabel } from '@/lib/accounting/queries/labels'
 import { previewDocumentForm } from '@/lib/accounting/server/document-forms'
 import type { IvaCondition } from '@/lib/accounting/types'
-import { formatIsoDay, formatMonthYear } from '@/lib/dates'
+import { formatDayLabel, formatIsoDay, formatMonthYear } from '@/lib/dates'
 import { formatCuit } from '@/lib/fiscal'
-import { formatCents, formatCentsShort } from '@/lib/money'
+import { EMPTY_VALUE, formatCents, formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { ActionSheetBody, ActionSheetFooter, ActionSheetHeader } from '../action-sheet'
 import { AttachmentPicker } from '../adjuntos/attachment-picker'
@@ -115,12 +106,63 @@ import { attachPendingFiles } from '../adjuntos/upload'
 import { DateField } from '../date-input'
 import { EntryPreview } from '../entry-preview'
 import { MoneyField } from '../money-input'
-import { TreasurySelect, treasuryBalanceText } from '../treasury-select'
+import { TreasurySelect } from '../treasury-select'
+import {
+  missingForSummary,
+  paperConsequence,
+  paperOutcomeNote,
+  paperStamp,
+  recoveredVatFromPreview,
+  recoversVat,
+  ticketTotalLabel,
+  treasuryMoneyText,
+} from './gasto-papel'
+import {
+  GastoTicket,
+  type GastoTicketRow,
+  PaperChoices,
+  SavedNote,
+  TreasuryAfterHint,
+  TreasuryAfterLine,
+} from './gasto-piezas'
 import { ACTION_TITLES, type ActionSheetProps } from './types'
 
 const TITLE = ACTION_TITLES.gasto
 const DESCRIPTION = 'Lo que pagaste en el momento, con o sin factura.'
 const LAST_TREASURY_KEY = 'hub_acc_gasto_caja:'
+
+/** Las cuatro decisiones de la hoja se leen como preguntas (Fraunces); lo demás, como campos. */
+const QUESTION = 'font-serif text-lg leading-snug font-semibold tracking-tight'
+
+/** Un link de texto dentro del formulario. 44 px de alto en el celular y foco a la vista. */
+const TEXT_LINK =
+  'inline-flex min-h-11 items-center rounded-sm text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring md:min-h-0'
+
+/** «＋ Agregar …»: abre un campo opcional que casi nunca hace falta. */
+const ADD_LINK =
+  'inline-flex min-h-11 items-center gap-1.5 justify-self-start rounded-sm text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:min-h-0'
+
+/** Una de las preguntas de la hoja. El `id` es el que usa su grupo como etiqueta. */
+function Question({
+  id,
+  required = false,
+  children,
+}: {
+  id: string
+  required?: boolean
+  children: ReactNode
+}) {
+  return (
+    <span id={id} className={QUESTION}>
+      {children}
+      {required ? (
+        <span aria-hidden="true" className="ml-1.5 font-sans text-sm text-destructive">
+          *
+        </span>
+      ) : null}
+    </span>
+  )
+}
 
 /** Hasta cuántas cajas se muestran como chips (más: un desplegable). */
 const MAX_TREASURY_CHIPS = 4
@@ -195,6 +237,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
 
   const activeTreasuries = useMemo(() => data.treasuries.filter((t) => t.active), [data.treasuries])
   const partyById = useMemo(() => new Map(data.parties.map((p) => [p.id, p])), [data.parties])
+  const accountById = useMemo(() => new Map(data.accounts.map((a) => [a.id, a])), [data.accounts])
   const imputable = useMemo(
     () => new Set(data.accounts.filter(isPurchaseImputation).map((a) => a.id)),
     [data.accounts],
@@ -253,6 +296,15 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
   const mounted = useRef(true)
   const [loadAnother, setLoadAnother] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  // Sube cada vez que la persona elige un papel: el sello del ticket entra de nuevo.
+  const [stampNonce, setStampNonce] = useState(0)
+  // El ajuste de ±1¢ del IVA queda plegado hasta que haga falta.
+  const [showVatAdjust, setShowVatAdjust] = useState(false)
+  // Con «Cargar otro después»: lo último que se cargó y cuántos van, para no perder el hilo.
+  const [lastSaved, setLastSaved] = useState<{ text: string; count: number } | null>(null)
+  // `?gasto-fijo=` trajo uno que ya no se puede cargar desde acá (se dio de baja o quedó sin
+  // proveedor ni categoría que sirvan).
+  const [recurringMissing, setRecurringMissing] = useState(false)
   const [defaults, setDefaults] = useState<SheetPartyDefaults | null>(null)
   const [duplicate, setDuplicate] = useState<SheetDuplicate | null>(null)
   const [cuitDraft, setCuitDraft] = useState<string | null>(null)
@@ -275,6 +327,21 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
   const hasParty = target?.kind === 'party' || target?.kind === 'new'
   const pointOfSale = voucherPart(voucherNumber.pos)
   const number = voucherPart(voucherNumber.number)
+  // Cómo se nombra lo elegido en el ticket y en «recién cargado»: el proveedor (como se lo
+  // conoce) y, aparte, su categoría; sin proveedor, la categoría sola.
+  const targetAccount = target?.accountId ? accountById.get(target.accountId) : undefined
+  const targetName =
+    target === null
+      ? null
+      : target.kind === 'party'
+        ? party
+          ? (party.tradeName ?? party.name)
+          : null
+        : target.kind === 'new'
+          ? target.name.trim() || 'Proveedor nuevo'
+          : (targetAccount?.name ?? null)
+  const categoryName =
+    target !== null && target.kind !== 'account' ? targetAccount?.name : undefined
 
   // ── Lo que el sistema recuerda de un proveedor (H.5) ──
   const applyPartyDefaults = useCallback(
@@ -415,10 +482,21 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     prefilledAmount.current = nextAmount === prefill.amountCents ? prefill.amountCents : null
   }
 
-  // «Nuevo gasto con este proveedor» (?proveedor=): arranca con el proveedor elegido.
+  // «Pagar» de un gasto fijo (?gasto-fijo=): arranca con ese gasto fijo elegido, igual que si se
+  // lo hubiera tocado en «¿En qué se gastó?». «Nuevo gasto con este proveedor» (?proveedor=):
+  // arranca con el proveedor elegido. Si vienen los dos, manda el gasto fijo (trae su proveedor).
+  const initialRecurring = params['gasto-fijo']
   const initialParty = params.proveedor
   // biome-ignore lint/correctness/useExhaustiveDependencies: solo al abrir la hoja
   useEffect(() => {
+    if (initialRecurring) {
+      const found = recurringOptions.find((r) => r.id === initialRecurring)
+      if (found) {
+        pickRecurring(found)
+        return
+      }
+      setRecurringMissing(true)
+    }
     if (!initialParty) return
     const known = partyById.get(initialParty)
     if (!known?.active) return
@@ -532,7 +610,15 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
       })
       return
     }
-    // «Cargar otro después»: vacía la hoja y conserva la fecha y la caja.
+    // «Cargar otro después»: vacía la hoja y conserva la fecha y la caja. Arriba queda lo que se
+    // acaba de cargar (el toast con «Deshacer» sale igual).
+    const savedText = [amount !== null ? formatCentsShort(amount) : null, targetName]
+      .filter((part) => part !== null)
+      .join(' · ')
+    setLastSaved((prev) => ({ text: savedText, count: (prev?.count ?? 0) + 1 }))
+    setRecurringMissing(false)
+    setStampNonce(0)
+    setShowVatAdjust(false)
     defaultsSeq.current += 1
     touched.current.voucher = false
     unlinkRecurring()
@@ -558,7 +644,11 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
       if (mounted.current) setAttaching(null)
       reload()
     })
-    requestAnimationFrame(() => amountRef.current?.focus())
+    requestAnimationFrame(() => {
+      // Arriba de todo: ahí queda «Cargado: …» y el monto del que sigue.
+      formRef.current?.querySelector('[data-slot="action-sheet-body"]')?.scrollTo({ top: 0 })
+      amountRef.current?.focus()
+    })
   }
 
   const posting = useDocumentPosting<QuickExpenseFormValues>({
@@ -685,34 +775,27 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
 
   // ── Textos que acompañan ──
   const split = voucher === 'a' ? splitTotal(amount, vatRate, vatAdjust) : null
-  // «¿Se factura?»: «No» es `none` (se guarda como remito u otro comprobante).
+  // «Remito o nada» es `none`: se guarda sin factura y sin número (el del remito va en el detalle).
   const invoiced = quickVoucherInvoiced(voucher)
-  const voucherHelp = quickVoucherHelp({
+  const outcome = quickExpenseOutcome({
     voucher,
-    outcome: quickExpenseOutcome({
-      voucher,
-      hasParty,
-      hasNumber: pointOfSale !== null && number !== null,
-    }),
-    condition,
+    hasParty,
+    hasNumber: pointOfSale !== null && number !== null,
   })
-  const chooseInvoiced = (next: 'si' | 'no') => {
+  /**
+   * La persona eligió un papel. Escribe lo mismo que escribían «¿Se factura?»
+   * y los chips de comprobante: el valor de la tarjeta y el ajuste de IVA en
+   * cero; desde acá, lo que el sistema recuerde del proveedor ya no lo pisa.
+   * Tocar la que ya estaba elegida solo confirma.
+   */
+  const choosePaper = (next: QuickVoucher) => {
     touched.current.voucher = true
+    if (next === voucher) return
+    setVoucher(next)
     setVatAdjust(0)
+    setShowVatAdjust(false)
     posting.clearFieldErrors()
-    if (next === 'no') {
-      setVoucher('none')
-      return
-    }
-    if (invoiced) return
-    setVoucher(
-      suggestInvoicedVoucher({
-        hasParty,
-        habitualVoucherType: party?.defaultVoucherType ?? null,
-        lastVoucherType: defaults?.voucherType ?? null,
-        condition,
-      }),
-    )
+    setStampNonce((n) => n + 1)
   }
   const closedMonth =
     date && data.firstOpenDate && date < data.firstOpenDate
@@ -730,6 +813,44 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
       : null
   const entries = posting.overrideFor(key) ?? (preview?.ok ? preview.preview : [])
   const treasury = treasuryId ? data.treasuries.find((t) => t.id === treasuryId) : undefined
+
+  // ── El IVA de una Factura A: ¿se recupera?, ¿cuánto? ──
+  const recovers = recoversVat({ condition, sasCondition: data.ctx.settings.ivaCondition })
+  const previewVat = preview?.ok
+    ? recoveredVatFromPreview(preview.preview, data.ctx.sys.vat_credit.id)
+    : 0
+  // Lo que da la vista previa; si todavía falta algo para armarla (el número de la factura), la
+  // misma cuenta que hace el motor con el total y la alícuota.
+  const recoveredVat =
+    voucher === 'a' && recovers ? (previewVat > 0 ? previewVat : (split?.vatCents ?? null)) : null
+
+  // ── El ticket: lo que va a pasar, en palabras ──
+  const stamp = paperStamp({ voucher, hasParty, condition })
+  const missing = missingForSummary({
+    amount: amount === null || amount <= 0,
+    target: target === null,
+    treasury: treasury === undefined,
+  })
+  const linkedRecurring = recurringId ? data.recurring.find((r) => r.id === recurringId) : undefined
+  const ticketRows: GastoTicketRow[] = split
+    ? [
+        { key: 'neto', label: 'Neto', value: formatCents(split.netCents) },
+        {
+          key: 'iva',
+          label: `IVA ${vatRateLabel(vatRate)}`,
+          hint: recovers ? 'Lo recuperás' : 'Va al costo',
+          value: formatCents(split.vatCents),
+        },
+      ]
+    : []
+  const ticketNote =
+    missing ??
+    [
+      paperOutcomeNote({ voucher, outcome, recovers }),
+      linkedRecurring ? `El gasto fijo «${linkedRecurring.name}» queda cargado.` : null,
+    ]
+      .filter((part) => part !== null)
+      .join(' ')
 
   const saveCuit = async () => {
     if (!party || cuitDraft === null) return
@@ -764,10 +885,11 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     targetLabel: `${uid}-en-que-label`,
     treasury: `${uid}-caja`,
     treasuryLabel: `${uid}-caja-label`,
-    invoicedLabel: `${uid}-se-factura-label`,
-    voucherLabel: `${uid}-comprobante-label`,
+    paper: `${uid}-papel`,
+    paperLabel: `${uid}-papel-label`,
     remito: `${uid}-remito`,
-    vat: `${uid}-iva`,
+    vatLabel: `${uid}-iva-label`,
+    vatAdjust: `${uid}-iva-ajuste`,
     number: `${uid}-numero`,
     date: `${uid}-fecha`,
     detail: `${uid}-detalle`,
@@ -801,7 +923,20 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
         className="flex min-h-0 flex-1 flex-col"
       >
         <ActionSheetBody>
-          {/* Monto: grande y con foco al abrir */}
+          {lastSaved ? (
+            // Con `key`, el tilde se vuelve a dibujar con cada gasto que se carga.
+            <SavedNote key={lastSaved.count}>
+              Cargado{lastSaved.text ? `: ${lastSaved.text}` : ''}.
+              {lastSaved.count > 1 ? ` Llevás ${lastSaved.count} gastos cargados.` : null}
+            </SavedNote>
+          ) : null}
+          {recurringMissing && target === null ? (
+            <InlineNotice tone="info">
+              Ese gasto fijo ya no se puede cargar desde acá. Elegí en qué se gastó y seguí.
+            </InlineNotice>
+          ) : null}
+
+          {/* ¿Cuánto?: el número grande de la hoja, con foco al abrir */}
           <MoneyField
             id={ids.amount}
             inputRef={amountRef}
@@ -820,7 +955,9 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                 targetRef.current?.querySelector<HTMLElement>('button')?.focus()
               }
             }}
-            className="[&>span]:text-xl [&_input]:h-14 [&_input]:pl-9 [&_input]:text-2xl [&_input]:font-semibold md:[&_input]:h-12 md:[&_input]:text-xl"
+            // La etiqueta va como las otras preguntas (Fraunces) y su asterisco, chico como el de ellas.
+            fieldClassName="gap-2 [&>label]:gap-1 [&>label]:font-serif [&>label]:text-lg [&>label]:leading-snug [&>label]:font-semibold [&>label]:tracking-tight [&>label>span[aria-hidden]]:font-sans [&>label>span[aria-hidden]]:text-sm"
+            className="[&_input]:h-16 [&_input]:rounded-2xl [&_input]:bg-card [&_input]:pl-11 [&_input]:font-serif [&_input]:text-[2rem] [&_input]:font-semibold [&_input]:tracking-tight [&>span]:left-4 [&>span]:font-serif [&>span]:text-2xl"
           />
           {looksOff && party && defaults?.medianTotalCents ? (
             <InlineNotice>
@@ -829,15 +966,11 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
             </InlineNotice>
           ) : null}
 
-          {/* ¿En qué? */}
-          <div className="grid gap-1.5" ref={targetRef}>
-            <span id={ids.targetLabel} className="text-sm font-medium leading-none">
-              ¿En qué?
-              {/* ml-2.5: el mismo aire que el «*» de un <Label> (gap-2 + ml-0.5). */}
-              <span aria-hidden="true" className="ml-2.5 text-destructive">
-                *
-              </span>
-            </span>
+          {/* ¿En qué se gastó?: un proveedor, un gasto fijo o una categoría */}
+          <div className="grid gap-2.5" ref={targetRef}>
+            <Question id={ids.targetLabel} required>
+              ¿En qué se gastó?
+            </Question>
             <ExpenseTargetPicker
               id={ids.target}
               suggestions={data.suggestions}
@@ -889,14 +1022,11 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
             />
           </div>
 
-          {/* ¿Con qué pagaste? */}
-          <div className="grid gap-1.5">
-            <span id={ids.treasuryLabel} className="text-sm font-medium leading-none">
+          {/* ¿Con qué pagaste?: la caja y cómo queda después de este gasto */}
+          <div className="grid gap-2.5">
+            <Question id={ids.treasuryLabel} required>
               ¿Con qué pagaste?
-              <span aria-hidden="true" className="ml-2.5 text-destructive">
-                *
-              </span>
-            </span>
+            </Question>
             {treasuryChips ? (
               <RadioChips
                 labelledBy={ids.treasuryLabel}
@@ -909,7 +1039,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                 }}
                 options={activeTreasuries.map((t) => ({
                   value: t.id,
-                  ariaLabel: `${t.name}, ${treasuryBalanceText(t)}`,
+                  ariaLabel: `${t.name}, ${treasuryMoneyText(t.kind, t.balanceCents)}`,
                   label: (
                     <>
                       <span className="truncate">{t.name}</span>
@@ -921,7 +1051,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                             'text-destructive opacity-100',
                         )}
                       >
-                        {treasuryBalanceText(t)}
+                        {treasuryMoneyText(t.kind, t.balanceCents)}
                       </span>
                     </>
                   ),
@@ -946,44 +1076,27 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                 {errors.treasuryAccountId}
               </p>
             ) : null}
+            {treasury ? <TreasuryAfterLine treasury={treasury} amountCents={amount} /> : null}
           </div>
 
-          {/* ¿Se factura? Primero sí o no; con «Sí», qué comprobante. */}
-          <div className="grid gap-2">
-            <span id={ids.invoicedLabel} className="text-sm font-medium leading-none">
-              ¿Se factura?
-            </span>
-            <RadioChips
-              labelledBy={ids.invoicedLabel}
-              value={invoiced ? 'si' : 'no'}
-              onChange={chooseInvoiced}
-              options={[
-                { value: 'si', label: 'Sí' },
-                { value: 'no', label: 'No', ariaLabel: `No: ${QUICK_VOUCHER_LABELS.none}` },
-              ]}
+          {/* ¿Qué papel te dieron?: cuatro papeles; debajo, lo que pide el elegido */}
+          <div className="grid gap-2.5">
+            <Question id={ids.paperLabel}>¿Qué papel te dieron?</Question>
+            <PaperChoices
+              name={ids.paper}
+              labelledBy={ids.paperLabel}
+              value={voucher}
+              onPick={choosePaper}
+              consequenceFor={(option) =>
+                paperConsequence(option, {
+                  selected: voucher,
+                  recovers,
+                  recoveredVatCents: recoveredVat,
+                })
+              }
             />
 
-            {invoiced ? (
-              <>
-                <span id={ids.voucherLabel} className="mt-1 text-sm font-medium leading-none">
-                  Comprobante
-                </span>
-                <RadioChips
-                  labelledBy={ids.voucherLabel}
-                  value={voucher}
-                  onChange={(next) => {
-                    touched.current.voucher = true
-                    setVoucher(next)
-                    setVatAdjust(0)
-                    posting.clearFieldErrors()
-                  }}
-                  options={INVOICED_QUICK_VOUCHERS.map((v) => ({
-                    value: v,
-                    label: QUICK_VOUCHER_LABELS[v],
-                  }))}
-                />
-              </>
-            ) : showRemito || remito ? (
+            {invoiced ? null : showRemito || remito ? (
               <div className="grid gap-1.5">
                 <Label htmlFor={ids.remito}>
                   N.º de remito{' '}
@@ -1014,7 +1127,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                   // El botón desaparece: el foco sigue en el campo que lo reemplaza.
                   requestAnimationFrame(() => document.getElementById(ids.remito)?.focus())
                 }}
-                className="inline-flex min-h-11 items-center gap-1.5 justify-self-start text-sm font-medium text-muted-foreground hover:text-foreground md:min-h-0"
+                className={ADD_LINK}
               >
                 <Plus className="size-3.5" aria-hidden />
                 Agregar n.º de remito
@@ -1022,50 +1135,43 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
             )}
 
             {voucher === 'a' ? (
-              <div className="grid gap-2 rounded-xl border border-border/70 bg-card/50 p-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  <Label htmlFor={ids.vat} className="text-xs text-muted-foreground">
-                    IVA
-                  </Label>
-                  <Select
+              <div className="grid gap-2.5 rounded-xl bg-secondary/50 p-3.5">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <span id={ids.vatLabel} className="text-sm font-medium">
+                    IVA de la factura
+                  </span>
+                  <RadioChips
+                    labelledBy={ids.vatLabel}
                     value={String(vatRate)}
-                    onValueChange={(next) => {
-                      setVatRate(Number(next) as QuickVatRate)
+                    onChange={(next) => {
+                      const rate = Number(next)
+                      if (!isQuickVatRate(rate)) return
+                      setVatRate(rate)
                       setVatAdjust(0)
                     }}
-                  >
-                    <SelectTrigger
-                      id={ids.vat}
-                      className="w-28 data-[size=default]:h-11 md:data-[size=default]:h-9"
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {QUICK_VAT_RATES.map((r) => (
-                        <SelectItem key={r} value={String(r)} className="min-h-11 md:min-h-8">
-                          {vatRateLabel(r)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {split ? (
-                    <p className="text-xs tabular-nums text-muted-foreground">
-                      Neto {formatCents(split.netCents)} · IVA {formatCents(split.vatCents)}
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">Neto e IVA salen del total.</p>
-                  )}
+                    options={QUICK_VAT_RATES.map((r) => ({
+                      value: String(r),
+                      label: vatRateLabel(r),
+                    }))}
+                  />
                 </div>
                 {split ? (
-                  <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-xs tabular-nums text-muted-foreground">
+                    Neto {formatCents(split.netCents)} · IVA {formatCents(split.vatCents)}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Neto e IVA salen del total.</p>
+                )}
+                {split && (showVatAdjust || vatAdjust !== 0) ? (
+                  <div id={ids.vatAdjust} className="flex flex-wrap items-center gap-2">
                     <span className="text-xs text-muted-foreground">
-                      ¿El IVA de la factura difiere en un centavo?
+                      Sumale o restale centavos al IVA hasta que coincida:
                     </span>
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="h-9 px-2.5 tabular-nums md:h-7"
+                      className="h-11 px-3 tabular-nums md:h-8"
                       disabled={vatAdjust <= -VAT_ADJUST_LIMIT}
                       aria-label="Restar un centavo al IVA"
                       onClick={() => setVatAdjust((v) => Math.max(-VAT_ADJUST_LIMIT, v - 1))}
@@ -1076,7 +1182,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="h-9 px-2.5 tabular-nums md:h-7"
+                      className="h-11 px-3 tabular-nums md:h-8"
                       disabled={vatAdjust >= VAT_ADJUST_LIMIT}
                       aria-label="Sumar un centavo al IVA"
                       onClick={() => setVatAdjust((v) => Math.min(VAT_ADJUST_LIMIT, v + 1))}
@@ -1086,13 +1192,30 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                     {vatAdjust !== 0 ? (
                       <button
                         type="button"
-                        className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                        className={cn(TEXT_LINK, 'text-xs')}
                         onClick={() => setVatAdjust(0)}
                       >
                         Volver al calculado
                       </button>
                     ) : null}
                   </div>
+                ) : split ? (
+                  <button
+                    type="button"
+                    className={cn(TEXT_LINK, 'justify-self-start text-xs')}
+                    onClick={() => {
+                      setShowVatAdjust(true)
+                      // El link desaparece: el foco sigue en los botones que lo reemplazan.
+                      requestAnimationFrame(() =>
+                        document
+                          .getElementById(ids.vatAdjust)
+                          ?.querySelector<HTMLElement>('button')
+                          ?.focus(),
+                      )
+                    }}
+                  >
+                    ¿El IVA de la factura no coincide por centavos?
+                  </button>
                 ) : null}
               </div>
             ) : null}
@@ -1119,10 +1242,13 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                   invalid={Boolean(errors.number ?? errors.pointOfSale)}
                   describedBy={`${ids.number}-hint`}
                 />
-                <p id={`${ids.number}-hint`} className="text-xs text-muted-foreground">
+                <p id={`${ids.number}-hint`} className="text-xs text-muted-foreground text-pretty">
                   {lastVoucher
                     ? `La última fue ${lastVoucher}. Podés pegar «0003-00001290».`
                     : 'Punto de venta y número. Podés pegar «0003-00001290».'}
+                  {voucher === 'ticket'
+                    ? ' Con proveedor y número, el tique entra al Libro IVA.'
+                    : null}
                 </p>
                 {(errors.number ?? errors.pointOfSale) ? (
                   <p role="alert" className="text-xs text-destructive">
@@ -1132,8 +1258,6 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
               </div>
             ) : null}
 
-            <p className="text-xs text-muted-foreground text-pretty">{voucherHelp}</p>
-
             {cuitMissing && party ? (
               <InlineNotice
                 action={
@@ -1142,7 +1266,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="h-9 md:h-7"
+                      className="h-11 md:h-8"
                       onClick={() => setCuitDraft('')}
                     >
                       Agregar CUIT
@@ -1159,12 +1283,12 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                           const digits = e.target.value.replace(/\D/g, '')
                           if (digits.length === 11) setCuitDraft(formatCuit(digits))
                         }}
-                        className="h-9 w-40 rounded-md border border-input bg-background px-2 text-base tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring md:h-7 md:text-xs"
+                        className="h-11 w-40 rounded-md border border-input bg-background px-2 text-base tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring md:h-8 md:text-xs"
                       />
                       <Button
                         type="button"
                         size="sm"
-                        className="h-9 md:h-7"
+                        className="h-11 md:h-8"
                         disabled={cuitSaving || cuitDraft.replace(/\D/g, '').length !== 11}
                         onClick={() => void saveCuit()}
                       >
@@ -1183,7 +1307,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
                 action={
                   <Link
                     href={documentHref(tenantSlug, duplicate.documentId)}
-                    className="font-medium text-foreground underline underline-offset-4"
+                    className="rounded-sm font-medium text-foreground underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     Ver el que ya está
                   </Link>
@@ -1196,67 +1320,94 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
             ) : null}
           </div>
 
-          {/* Foto del comprobante: se sube después de guardar */}
-          <AttachmentPicker
-            value={files}
-            onChange={setFiles}
-            disabled={posting.pending || attaching !== null}
-          />
+          {/* Lo demás: la foto, la fecha y el detalle. Una raya lo separa de las cuatro preguntas. */}
+          <div className="space-y-5 border-t border-border/60 pt-6">
+            {/* Foto del comprobante: se sube después de guardar */}
+            <AttachmentPicker
+              value={files}
+              onChange={setFiles}
+              disabled={posting.pending || attaching !== null}
+            />
 
-          {/* Fecha */}
-          <DateField
-            id={ids.date}
-            label="Fecha"
-            value={date}
-            onValueChange={(next) => {
-              setDate(next)
-              posting.clearFieldErrors()
-            }}
-            min={data.booksStartDate}
-            max={data.today}
-            today={data.today}
-            required
-            error={errors.date ?? null}
-            hint={closedMonth ?? undefined}
-          />
+            <DateField
+              id={ids.date}
+              label="Fecha"
+              value={date}
+              onValueChange={(next) => {
+                setDate(next)
+                posting.clearFieldErrors()
+              }}
+              min={data.booksStartDate}
+              max={data.today}
+              today={data.today}
+              required
+              error={errors.date ?? null}
+              hint={closedMonth ?? undefined}
+            />
 
-          {/* Detalle */}
-          {showDetail || detail ? (
-            <div className="grid gap-1.5">
-              <Label htmlFor={ids.detail}>
-                Detalle{' '}
-                <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
-              </Label>
-              <Textarea
-                id={ids.detail}
-                value={detail}
-                maxLength={detailRoom(invoiced ? '' : remito, QUICK_DETAIL_MAX)}
-                rows={2}
-                placeholder="Por ejemplo: hielo para el evento del sábado."
-                onChange={(e) => setDetail(e.target.value)}
-                className="text-base md:text-sm"
-              />
-              {errors.detail ? (
-                <p role="alert" className="text-xs text-destructive">
-                  {errors.detail}
-                </p>
-              ) : null}
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setShowDetail(true)}
-              className="inline-flex min-h-11 items-center gap-1.5 justify-self-start text-sm font-medium text-muted-foreground hover:text-foreground md:min-h-0"
-            >
-              <Plus className="size-3.5" aria-hidden />
-              Agregar detalle
-            </button>
-          )}
+            {showDetail || detail ? (
+              <div className="grid gap-1.5">
+                <Label htmlFor={ids.detail}>
+                  Detalle{' '}
+                  <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
+                </Label>
+                <Textarea
+                  id={ids.detail}
+                  value={detail}
+                  maxLength={detailRoom(invoiced ? '' : remito, QUICK_DETAIL_MAX)}
+                  rows={2}
+                  placeholder="Por ejemplo: hielo para el evento del sábado."
+                  onChange={(e) => setDetail(e.target.value)}
+                  className="text-base md:text-sm"
+                />
+                {errors.detail ? (
+                  <p role="alert" className="text-xs text-destructive">
+                    {errors.detail}
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDetail(true)
+                  // El botón desaparece: el foco sigue en el campo que lo reemplaza.
+                  requestAnimationFrame(() => document.getElementById(ids.detail)?.focus())
+                }}
+                className={ADD_LINK}
+              >
+                <Plus className="size-3.5" aria-hidden />
+                Agregar detalle
+              </button>
+            )}
+          </div>
 
-          <EntryPreview
-            entries={entries}
-            emptyText="Completá el monto, en qué y con qué pagaste para ver el asiento."
-          />
+          {/* El ticket: lo que va a pasar, en palabras. El asiento queda plegado debajo. */}
+          <div className="space-y-4">
+            <GastoTicket
+              title={targetName ?? 'Nuevo gasto'}
+              subtitle={[date ? formatDayLabel(date) : null, categoryName]
+                .filter((part) => Boolean(part))
+                .join(' · ')}
+              stamp={stamp}
+              stampNonce={stampNonce}
+              rows={ticketRows}
+              totalLabel={ticketTotalLabel(treasury ?? null)}
+              total={amount !== null && amount > 0 ? formatCents(amount) : EMPTY_VALUE}
+              totalHint={
+                treasury && amount !== null && amount > 0 ? (
+                  <TreasuryAfterHint treasury={treasury} amountCents={amount} />
+                ) : undefined
+              }
+              note={ticketNote}
+              pending={missing !== null}
+            />
+            <EntryPreview
+              entries={entries}
+              label="Ver cómo queda en los libros"
+              emptyText="Completá cuánto, en qué y con qué pagaste para ver cómo queda en los libros."
+            />
+          </div>
 
           {unknownPreviewError ? (
             <FormBanner banner={{ tone: 'error', message: unknownPreviewError }} />
@@ -1264,10 +1415,11 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
           <FormBanner banner={posting.banner} />
         </ActionSheetBody>
 
-        <ActionSheetFooter className="sm:justify-between">
+        {/* En el celular, el tilde arriba y el botón a todo el ancho abajo, donde llega el pulgar. */}
+        <ActionSheetFooter className="flex-col items-stretch gap-1 pt-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <label
             htmlFor={ids.another}
-            className="flex min-h-11 cursor-pointer items-center gap-2.5 text-sm text-muted-foreground md:min-h-9"
+            className="flex min-h-11 cursor-pointer items-center gap-2.5 text-sm text-muted-foreground"
           >
             <Checkbox
               id={ids.another}
@@ -1278,7 +1430,6 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
           </label>
           <Button
             type="submit"
-            className="h-11 w-full sm:w-auto md:h-9"
             disabled={posting.pending || attaching !== null}
             aria-describedby={treasury ? `${uid}-con` : undefined}
           >

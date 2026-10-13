@@ -1,19 +1,11 @@
 'use client'
 
-import { Ellipsis, Plus } from 'lucide-react'
-import Link from 'next/link'
 import type { ComponentProps, ReactNode } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { ACTION_TITLES, type AccountingAction, type ActionParams } from './acciones/types'
 import { useAccounting } from './accounting-provider'
+import { LauncherButton } from './nav/launcher'
 
 /** Lo que dura el «Deshacer» de lo que se guarda sin preguntar (mismo tiempo que el operativo). */
 export const UNDO_MS = 6000
@@ -69,62 +61,23 @@ export function ActionButton({
 }
 
 /**
- * La barra fija de abajo en el celular (H.2), para Resumen, Compras, Ventas y
- * Cajas: [＋ Gasto] · [Cierre del día] · [Más]. Desde `lg` no se ve (las
- * acciones van en el encabezado). Deja su propio espacio al final de la
- * página para no tapar el contenido.
+ * «＋ Cargar» flotante del celular: abre el lanzador «¿Qué querés cargar?». Reemplazó a la barra
+ * fija de tres botones ([＋ Gasto] · [Cierre del día] · [Más]), que ocupaba todo el ancho y
+ * obligaba a saber de antemano qué nombre tenía lo que querías cargar. Va en las pantallas de la
+ * barra (Resumen, Compras y pagos, Gastos fijos, Ventas, Cajas); desde `lg` no se ve, porque
+ * «Cargar» está en la barra de la sección. Conserva el nombre para no tocar a quienes ya lo usan.
+ *
+ * Abajo a la derecha, por encima del área segura del iPhone, y deja su propio espacio al final de
+ * la página para que lo último siempre se pueda leer sin el botón encima. Las hojas (z-50, con su
+ * fondo) lo tapan mientras están abiertas: no compite con sus botones de abajo.
  */
 export function QuickActionsBar() {
-  const { readOnly, openAction, tenantSlug } = useAccounting()
+  const { readOnly } = useAccounting()
   if (readOnly) return null
-  const base = `/${tenantSlug}/administracion`
-  const more: Array<{ action: AccountingAction; label: string }> = [
-    { action: 'pagar', label: 'Pagar' },
-    { action: 'cobrar', label: ACTION_TITLES.cobrar },
-    { action: 'mover', label: ACTION_TITLES.mover },
-    { action: 'ajustar', label: 'Ajustar saldo de una caja' },
-    { action: 'movimiento', label: ACTION_TITLES.movimiento },
-  ]
   return (
     <>
       <div aria-hidden="true" className="h-24 lg:hidden" />
-      <nav
-        aria-label="Acciones rápidas"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-border/60 bg-background/95 px-4 pt-2.5 pb-[calc(env(safe-area-inset-bottom)+0.625rem)] backdrop-blur supports-[backdrop-filter]:bg-background/80 lg:hidden"
-      >
-        <div className="mx-auto flex max-w-xl items-center gap-2">
-          <Button type="button" className="h-11 flex-1 gap-1.5" onClick={() => openAction('gasto')}>
-            <Plus className="size-4" aria-hidden />
-            Gasto
-          </Button>
-          <Button asChild variant="outline" className="h-11">
-            <Link href={`${base}/ventas/cierre`}>Cierre del día</Link>
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" variant="outline" className="h-11 gap-1.5">
-                <Ellipsis className="size-4" aria-hidden />
-                Más
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" side="top" className="w-60">
-              {more.map((item) => (
-                <DropdownMenuItem
-                  key={item.action}
-                  className="min-h-11"
-                  onSelect={() => openAction(item.action)}
-                >
-                  {item.label}
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild className="min-h-11">
-                <Link href={`${base}/compras/nueva`}>Factura de proveedor</Link>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </nav>
+      <LauncherButton className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+1rem)] z-30 h-14 gap-2 px-5 text-base shadow-lg lg:hidden" />
     </>
   )
 }

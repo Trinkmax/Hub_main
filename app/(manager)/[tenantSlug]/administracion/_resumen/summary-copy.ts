@@ -1,9 +1,14 @@
 /**
  * Los textos del Resumen de Administración (H.4), puros: la fecha del
- * encabezado, el desglose de la plata y cada fila de «Necesita atención» con
- * su acción. La base manda el SUJETO de cada aviso (`label`: «Coca-Cola ·
- * Factura A 0003-00001234», «Mercado Pago», «Octubre 2026») y los datos; la
- * frase se arma acá, en un solo lugar.
+ * encabezado y cada renglón de aviso con su acción (los de «Lo que tenés que
+ * pagar» y los de «Avisos»). La base manda el SUJETO de cada aviso (`label`:
+ * «Coca-Cola · Factura A 0003-00001234», «Mercado Pago», «Octubre 2026») y los
+ * datos; la frase se arma acá, en un solo lugar.
+ *
+ * Lo que el Resumen calcula y dibuja (la plata por caja, «Hoy te toca», los
+ * gastos fijos del mes) está en `lib/accounting/home.ts`. Quedan acá, con sus
+ * tests, el desglose en una línea de la plata y la cuenta simple de gastos
+ * fijos por pagar: ya no los usa la pantalla.
  */
 
 import type { AccountingAction, ActionParams } from '@/components/administracion/acciones/types'
@@ -45,14 +50,14 @@ function days(n: number): string {
 
 // ─── Plata disponible ────────────────────────────────────────────────────────
 
-/** Una caja en una línea: «Caja $ 150.000», «Mercado Pago $ 1.390.000 (+ $ 420.000 por acreditar)». */
+/** Una caja en una línea: «Caja $ 150.000», «Mercado Pago $ 1.390.000 (+ $ 420.000 en camino)». */
 export function treasuryShortLine(t: SummaryTreasury): string {
   const balance =
     t.balanceCents < 0
       ? `en descubierto ${formatCentsShort(-t.balanceCents)}`
       : formatCentsShort(t.balanceCents)
   const pending =
-    t.pendingWalletCents > 0 ? ` (+ ${formatCentsShort(t.pendingWalletCents)} por acreditar)` : ''
+    t.pendingWalletCents > 0 ? ` (+ ${formatCentsShort(t.pendingWalletCents)} en camino)` : ''
   return `${t.name} ${balance}${pending}`
 }
 
@@ -133,7 +138,7 @@ export function fixedExpensesHint(pending: FixedExpensesPending): string {
     : `${withAmount} por pagar y ${withoutAmount} sin monto`
 }
 
-// ─── Necesita atención ───────────────────────────────────────────────────────
+// ─── Avisos ──────────────────────────────────────────────────────────────────
 
 export type AttentionAction =
   | { type: 'sheet'; label: string; action: AccountingAction; params: ActionParams }
@@ -177,8 +182,9 @@ function lateDays(item: SummaryAttentionItem, today: string): number | null {
 }
 
 /**
- * Una fila de «Necesita atención»: el texto, el importe y la acción que
- * corresponde (la hoja de acción rápida sobre el Resumen, o la pantalla).
+ * Un renglón de aviso: el texto, el importe y la acción que corresponde (la
+ * hoja de acción rápida sobre el Resumen, o la pantalla). Los de pagar van en
+ * «Lo que tenés que pagar»; el resto, en «Avisos».
  * `base` = `/{slug}/administracion`.
  */
 export function attentionView(
@@ -227,20 +233,20 @@ export function attentionView(
       if (item.refId) {
         actions.push({
           type: 'link',
-          label: 'Cargar factura',
+          label: 'Cargar una compra que debo',
           href: `${base}/compras/nueva?gasto-fijo=${encodeURIComponent(item.refId)}`,
         })
         if (item.date) {
           actions.push({
             type: 'skip',
-            label: 'Saltear este mes',
+            label: 'Este mes no se paga',
             recurringId: item.refId,
             dueDate: item.date,
           })
         }
       }
       return view(
-        `${subject} · ${when} · sin factura cargada`,
+        `${subject} · ${when} · todavía sin cargar`,
         'warning',
         actions,
         item.amountCents,
@@ -276,12 +282,12 @@ export function attentionView(
     }
     case 'treasury_unchecked': {
       const last = item.date
-        ? `El último ajuste fue el ${formatDayMonth(item.date)}`
-        : 'Todavía no se ajustó'
+        ? `La contaste por última vez el ${formatDayMonth(item.date)}`
+        : 'Todavía no la contaste'
       const actions: AttentionAction[] = [
         {
           type: 'sheet',
-          label: 'Ajustar saldo',
+          label: 'Contar la caja',
           action: 'ajustar',
           params: item.refId ? { caja: item.refId } : {},
         },
@@ -324,15 +330,15 @@ export function attentionView(
   }
 }
 
-// ─── Integraciones: la segunda fuente de «Necesita atención» ─────────────────
+// ─── Integraciones: la segunda fuente de «Avisos» ────────────────────────────
 
 const TONE_RANK: Readonly<Record<AttentionTone, number>> = { danger: 0, warning: 1, info: 2 }
 
 /**
  * Un aviso de ARCA, Mercado Pago, el banco o Mis Comprobantes
- * (`getIntegrationAttention`, diseño §5.2.4) como fila de «Necesita
- * atención», con su botón a la pantalla que lo resuelve. `href` viene
- * relativo a `/<bar>/administracion`.
+ * (`getIntegrationAttention`, diseño §5.2.4) como renglón de «Avisos», con su
+ * botón a la pantalla que lo resuelve. `href` viene relativo a
+ * `/<bar>/administracion`.
  */
 export function integrationAttentionView(
   item: IntegrationAttentionItem,
