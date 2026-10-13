@@ -1,6 +1,6 @@
 'use client'
 
-import { Ellipsis, FilePlus2, Pencil, SkipForward, Trash2 } from 'lucide-react'
+import { Ellipsis, FilePlus2, FileText, Pencil, SkipForward, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
@@ -33,9 +33,10 @@ import {
 
 /**
  * Las acciones de un gasto fijo (H.7): [Cargar factura] · [Saltear este mes]
- * · [Editar] · [Eliminar]. Saltear no pregunta: avanza al próximo vencimiento
- * y deja «Deshacer» 6 s (vuelve a poner el vencimiento que había). Eliminar
- * se confirma: si ya se cargó alguna vez, sale de la lista y lo cargado queda.
+ * · [Ver el comprobante] · [Editar] · [Eliminar]. Saltear no pregunta: avanza
+ * al próximo vencimiento y deja «Deshacer» 6 s (vuelve a poner el vencimiento
+ * que había). Eliminar se confirma: si ya se cargó alguna vez, sale de la
+ * lista y lo cargado queda.
  */
 export function RecurringActions({
   tenantSlug,
@@ -46,6 +47,7 @@ export function RecurringActions({
   pending,
   loadHref,
   editHref,
+  documentHref = null,
 }: {
   tenantSlug: string
   id: string
@@ -57,6 +59,8 @@ export function RecurringActions({
   /** `null` en un gasto fijo pausado (solo se edita). */
   loadHref: string | null
   editHref: string
+  /** El comprobante cargado del vencimiento que muestra el renglón (ahí se ve y se paga). */
+  documentHref?: string | null
 }) {
   const router = useRouter()
   const [busy, start] = useTransition()
@@ -169,6 +173,14 @@ export function RecurringActions({
               <Link href={loadHref}>
                 <FilePlus2 className="size-4" aria-hidden />
                 Cargar factura
+              </Link>
+            </DropdownMenuItem>
+          ) : null}
+          {documentHref ? (
+            <DropdownMenuItem asChild className="min-h-11 gap-2 md:min-h-8">
+              <Link href={documentHref}>
+                <FileText className="size-4" aria-hidden />
+                Ver el comprobante
               </Link>
             </DropdownMenuItem>
           ) : null}

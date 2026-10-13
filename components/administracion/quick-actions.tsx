@@ -79,7 +79,7 @@ export function QuickActionsBar() {
   if (readOnly) return null
   const base = `/${tenantSlug}/administracion`
   const more: Array<{ action: AccountingAction; label: string }> = [
-    { action: 'pagar', label: 'Pagar a un proveedor' },
+    { action: 'pagar', label: 'Pagar' },
     { action: 'cobrar', label: ACTION_TITLES.cobrar },
     { action: 'mover', label: ACTION_TITLES.mover },
     { action: 'ajustar', label: 'Ajustar saldo de una caja' },

@@ -19,6 +19,16 @@ import {
 } from '@/components/ui/data-table'
 import { EmptyState } from '@/components/ui/empty-state'
 import {
+  INVOICE_FILTER_OPTIONS,
+  INVOICE_FILTER_PARAM,
+  type InvoiceFilter,
+  invoiceFilterSuffix,
+  isNotInvoicedVoucher,
+  NOT_INVOICED_BADGE,
+  parseInvoiceFilter,
+  withInvoiceFilter,
+} from '@/lib/accounting/invoiced'
+import {
   type DocumentAmountItem,
   type DocumentListRow,
   type DocumentStatusFilter,
@@ -35,7 +45,7 @@ import { comprasHref, documentHref, firstParam, newPurchaseHref } from '../_lib/
 import { periodPhrase, resolveListPeriod } from '../_lib/period'
 import { BlockError } from './block-error'
 import { ExportButton } from './export-button'
-import { SearchFilter } from './list-filters'
+import { SearchFilter, SegmentFilter } from './list-filters'
 import { ListPagination } from './list-pagination'
 import { PeriodChips } from './period-chips'
 
@@ -98,6 +108,16 @@ function Dash() {
   )
 }
 
+/** La marca chica de un egreso que no se facturó (remito u otro comprobante). Con palabras, sin color. */
+function NotInvoicedBadge({ row, className }: { row: DocumentListRow; className?: string }) {
+  if (!isNotInvoicedVoucher(row.voucherType)) return null
+  return (
+    <Badge variant="muted" className={cn('px-1.5 py-0 text-[11px] font-normal', className)}>
+      {NOT_INVOICED_BADGE}
+    </Badge>
+  )
+}
+
 /**
  * Las cajas de un pago o los comprobantes que canceló (H.7: «Medios» y
  * «Aplicado a»): hasta dos con su importe y cuántos más hay.
@@ -149,6 +169,10 @@ function hasDue(row: DocumentListRow): boolean {
  * «Comprobantes» y «Pagos» de Compras (H.7): período por URL, estado,
  * búsqueda, la lista paginada (tarjetas en el celular) y el exporte del
  * subdiario. El detalle de cada uno vive en `/comprobantes/[id]`.
+ *
+ * En «Comprobantes», «Todos · Con factura · Sin factura» (`?factura=`) separa
+ * lo que tiene factura de lo que va con remito u otro comprobante; las filas
+ * sin factura llevan su marca y el exporte respeta el filtro (12/10/2026).
  */
 export async function DocumentsTab({
   mode,
@@ -172,6 +196,8 @@ export async function DocumentsTab({
   })
   const q = firstParam(sp.q).slice(0, 60)
   const status = mode === 'comprobantes' ? statusOf(firstParam(sp.estado)) : STATUS_OPTIONS[0]
+  const invoice: InvoiceFilter =
+    mode === 'comprobantes' ? parseInvoiceFilter(firstParam(sp[INVOICE_FILTER_PARAM])) : 'todos'
   const requestedPage = Number.parseInt(firstParam(sp.pagina), 10)
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 1 ? requestedPage : 1
   const offset = (page - 1) * LIST_PAGE_SIZE
@@ -182,6 +208,7 @@ export async function DocumentsTab({
       to: period.to,
       kinds: mode === 'pagos' ? ['payment'] : PURCHASE_DOCUMENT_KINDS,
       status: status.status,
+      invoice,
       q,
       after: offset > 0 ? encodeCursor({ o: offset }, offset) : null,
       limit: LIST_PAGE_SIZE,
@@ -189,19 +216,20 @@ export async function DocumentsTab({
   )
 
   const tab = mode === 'pagos' ? 'pagos' : 'comprobantes'
-  const exportLink = exportHref(
-    tenantSlug,
-    mode === 'pagos' ? 'subdiario-pagos' : 'subdiario-compras',
-    {
+  // El exporte respeta «con / sin factura» (el estado de pago y la búsqueda, no: es el subdiario).
+  const exportLink = withInvoiceFilter(
+    exportHref(tenantSlug, mode === 'pagos' ? 'subdiario-pagos' : 'subdiario-compras', {
       desde: period.from,
       hasta: period.to,
-    },
+    }),
+    invoice,
   )
   const hrefFor = (p: number) =>
     comprasHref(tenantSlug, tab, {
       periodo: period.param,
       q: q || null,
       estado: mode === 'comprobantes' && status.value !== 'todos' ? status.value : null,
+      [INVOICE_FILTER_PARAM]: invoice !== 'todos' ? invoice : null,
       pagina: p > 1 ? String(p) : null,
     })
 
@@ -218,8 +246,14 @@ export async function DocumentsTab({
         />
         <ExportButton
           href={exportLink}
-          fileName={`${mode === 'pagos' ? 'subdiario-pagos' : 'subdiario-compras'}-${period.from}-${period.to}.csv`}
-          label={mode === 'pagos' ? 'Exportar subdiario de pagos' : 'Exportar subdiario de compras'}
+          fileName={`${mode === 'pagos' ? 'subdiario-pagos' : `subdiario-compras${invoiceFilterSuffix(invoice)}`}-${period.from}-${period.to}.csv`}
+          label={
+            mode === 'pagos'
+              ? 'Exportar subdiario de pagos'
+              : invoice === 'todos'
+                ? 'Exportar subdiario de compras'
+                : `Exportar compras ${invoice} factura`
+          }
           className="h-11 self-start md:h-9 lg:self-auto"
         />
       </div>
@@ -233,6 +267,15 @@ export async function DocumentsTab({
             {period.error} Te mostramos {periodPhrase(period)}.
           </p>
         </div>
+      ) : null}
+      {mode === 'comprobantes' ? (
+        <SegmentFilter
+          options={INVOICE_FILTER_OPTIONS}
+          value={invoice}
+          param={INVOICE_FILTER_PARAM}
+          defaultValue="todos"
+          label="Con factura o sin factura"
+        />
       ) : null}
       <SearchFilter
         placeholder={
@@ -264,7 +307,7 @@ export async function DocumentsTab({
 
   const { rows, totalRows, truncated } = outcome.data
   const totalPages = Math.max(1, Math.ceil(totalRows / LIST_PAGE_SIZE))
-  const filtered = q !== '' || status.value !== 'todos'
+  const filtered = q !== '' || status.value !== 'todos' || invoice !== 'todos'
   const when = periodPhrase(period)
 
   if (rows.length === 0) {
@@ -386,13 +429,16 @@ export async function DocumentsTab({
                         href={documentHref(tenantSlug, row.id)}
                         className="block min-w-0 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
-                        <span
-                          className={cn(
-                            'block font-medium group-hover:text-primary',
-                            voided && 'line-through',
-                          )}
-                        >
-                          {mode === 'pagos' ? 'Pago' : <VoucherText text={row.title} />}
+                        <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          <span
+                            className={cn(
+                              'font-medium group-hover:text-primary',
+                              voided && 'line-through',
+                            )}
+                          >
+                            {mode === 'pagos' ? 'Pago' : <VoucherText text={row.title} />}
+                          </span>
+                          {mode === 'comprobantes' ? <NotInvoicedBadge row={row} /> : null}
                         </span>
                         <span className="block text-[11px] tabular-nums text-muted-foreground">
                           #{row.seq}
@@ -518,6 +564,7 @@ export async function DocumentsTab({
                         {row.partyName}
                       </span>
                     ) : null}
+                    {mode === 'comprobantes' ? <NotInvoicedBadge row={row} /> : null}
                     {mode === 'comprobantes' && hasDue(row) ? (
                       <DueStatus
                         dueDate={row.dueDate}

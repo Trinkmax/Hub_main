@@ -163,6 +163,8 @@ describe('resolveNavGroups — sin desplegables', () => {
       'Reseñas',
       'Documentación',
       'Compras y proveedores',
+      'Compras y pagos',
+      'Gastos fijos',
       'Ventas y clientes',
       'Cajas y bancos',
       'Libros',

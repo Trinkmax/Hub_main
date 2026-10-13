@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   availableBreakdown,
   availableBreakdownParts,
+  fixedExpensesHint,
+  pendingFixedExpenses,
 } from '@/app/(manager)/[tenantSlug]/administracion/_resumen/summary-copy'
 import { splitVoucherText } from '@/components/administracion/voucher-text'
 import type { SummaryTreasury } from '@/lib/accounting/queries/summary'
@@ -84,5 +86,42 @@ describe('Resumen · desglose de «Plata disponible»', () => {
       ],
     })
     expect(parts).toEqual([`Caja $${NB}10.000`, `Tarjeta de la empresa: deuda $${NB}50.000`])
+  })
+})
+
+describe('Resumen · «Te falta de gasto fijo»', () => {
+  const fixed = (
+    monthStatus: 'loaded' | 'pending' | 'skipped' | 'upcoming',
+    amountCents: number | null,
+    active = true,
+  ) => ({ active, monthStatus, amountCents })
+
+  it('suma los pendientes de este mes que tienen monto y cuenta aparte los variables', () => {
+    const pending = pendingFixedExpenses([
+      fixed('pending', 50_000_000),
+      fixed('pending', 12_500_000),
+      fixed('pending', null),
+      fixed('loaded', 99_000_000),
+      fixed('skipped', 99_000_000),
+      fixed('upcoming', 99_000_000),
+      fixed('pending', 99_000_000, false),
+    ])
+    expect(pending).toEqual({ totalCents: 62_500_000, withAmount: 2, withoutAmount: 1 })
+    expect(fixedExpensesHint(pending)).toBe('2 por pagar y 1 sin monto')
+  })
+
+  it('el texto de abajo: nada, solo con monto, solo sin monto', () => {
+    expect(fixedExpensesHint({ totalCents: 0, withAmount: 0, withoutAmount: 0 })).toBe(
+      'Nada por pagar este mes.',
+    )
+    expect(fixedExpensesHint({ totalCents: 100, withAmount: 5, withoutAmount: 0 })).toBe(
+      '5 por pagar',
+    )
+    expect(fixedExpensesHint({ totalCents: 100, withAmount: 5, withoutAmount: 4 })).toBe(
+      '5 por pagar y 4 sin monto',
+    )
+    expect(fixedExpensesHint({ totalCents: 0, withAmount: 0, withoutAmount: 4 })).toBe(
+      '4 por pagar, sin monto',
+    )
   })
 })

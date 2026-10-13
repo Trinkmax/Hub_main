@@ -459,6 +459,11 @@ export function SupplierDataForm({
                   Comprobante habitual <Optional />
                 </>
               }
+              // Un proveedor que no factura: su opción es la de `sin_comprobante` (12/10/2026).
+              hint={`Lo que se propone al cargarle algo. Si no factura, elegí «${
+                voucherOptions.find((o) => o.value === 'sin_comprobante')?.label ??
+                'Remito u otro comprobante (sin factura)'
+              }»: «¿Se factura?» arranca en «No».`}
               error={errors.defaultVoucherType}
             >
               <Select
@@ -467,6 +472,7 @@ export function SupplierDataForm({
               >
                 <SelectTrigger
                   id={id('defaultVoucherType')}
+                  aria-describedby={described('defaultVoucherType', true)}
                   className="w-full data-[size=default]:h-11 md:data-[size=default]:h-10"
                 >
                   <SelectValue />

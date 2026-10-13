@@ -1,6 +1,6 @@
 'use client'
 
-import { ChevronRight, Plus, Trash2, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Trash2, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import {
   type FormEvent,
@@ -25,6 +25,12 @@ import {
   useDocumentPosting,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/use-document-posting'
 import { useSheetData } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/use-sheet-data'
+import {
+  PAY_TARGETS,
+  type PayTarget,
+  payAsksTarget,
+  payTargetSheet,
+} from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/pay-target'
 import {
   creditPairs,
   defaultDebtSelection,
@@ -66,6 +72,7 @@ import type { OpenItemRef, PostingContext } from '@/lib/accounting/types'
 import { formatIsoDay } from '@/lib/dates'
 import { formatCents, formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
+import { useAccounting } from '../accounting-provider'
 import { ActionSheetBody, ActionSheetFooter, ActionSheetHeader } from '../action-sheet'
 import { Amount } from '../amount'
 import { DateField } from '../date-input'
@@ -80,6 +87,7 @@ import { ACTION_TITLES, type ActionSheetProps } from './types'
 
 const TITLE = ACTION_TITLES.pagar
 const DESCRIPTION = 'Elegí a quién, qué facturas y con qué pagás.'
+const ASK_DESCRIPTION = 'Un proveedor, un gasto fijo u otro gasto.'
 const LAST_TREASURY_KEY = 'hub_acc_pago_caja:'
 
 /** Los que se pagan desde esta hoja: proveedores, organismos, sueldos, socios, bancos y otros. */
@@ -128,10 +136,30 @@ function newRow(treasuryId: string | null, amountCents: number | null = null): M
   return { key: `m${rowSeq}`, treasuryId, amountCents, reference: '' }
 }
 
-/** Hoja «Pagar» (H.8): proveedor → facturas (o un pago a cuenta) → con qué → listo. */
+/**
+ * Hoja «Pagar» (H.8). Arranca por «¿Qué pagás?» (pedido de los socios,
+ * 12/10/2026): a un proveedor sigue acá (proveedor → facturas o un pago a
+ * cuenta → con qué → listo); un gasto fijo u otro gasto siguen en «Nuevo
+ * gasto». Si se abrió desde un proveedor o una factura, no pregunta.
+ */
 export function PagarSheet(props: ActionSheetProps) {
-  const { tenantSlug } = props
+  const { tenantSlug, params } = props
+  const { openAction } = useAccounting()
+  // Los saldos se piden de entrada: si la respuesta es «A un proveedor», ya están.
   const load = useSheetData(() => loadSheetData(tenantSlug, { balances: true }), tenantSlug)
+  const [asking, setAsking] = useState(() => payAsksTarget(params))
+
+  if (asking) {
+    return (
+      <PayTargetQuestion
+        onPick={(target) => {
+          const sheet = payTargetSheet(target)
+          if (sheet === 'pagar') setAsking(false)
+          else openAction(sheet)
+        }}
+      />
+    )
+  }
   if (!load.data) {
     return (
       <>
@@ -146,7 +174,43 @@ export function PagarSheet(props: ActionSheetProps) {
       </>
     )
   }
-  return <PagarForm {...props} data={load.data} />
+  return <PagarForm {...props} data={load.data} onChangeTarget={() => setAsking(true)} />
+}
+
+/** «¿Qué pagás?»: tres renglones para tocar, con la misma forma que «Lo más urgente». */
+function PayTargetQuestion({ onPick }: { onPick: (target: PayTarget) => void }) {
+  const uid = useId()
+  return (
+    <>
+      <ActionSheetHeader title={TITLE} description={ASK_DESCRIPTION} />
+      <ActionSheetBody>
+        <section aria-labelledby={`${uid}-que`} className="space-y-2">
+          <h3 id={`${uid}-que`} className="text-sm font-medium">
+            ¿Qué pagás?
+          </h3>
+          <ul className="card-hairline divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-card">
+            {PAY_TARGETS.map((target) => (
+              <li key={target.value}>
+                <button
+                  type="button"
+                  onClick={() => onPick(target.value)}
+                  className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-cream-tint focus-visible:bg-cream-tint"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">{target.label}</span>
+                    <span className="block text-xs text-muted-foreground text-pretty">
+                      {target.hint}
+                    </span>
+                  </span>
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </ActionSheetBody>
+    </>
+  )
 }
 
 function PagarForm({
@@ -155,7 +219,12 @@ function PagarForm({
   close,
   setDirty,
   data,
-}: ActionSheetProps & { data: SheetData }) {
+  onChangeTarget,
+}: ActionSheetProps & {
+  data: SheetData
+  /** Vuelve a «¿Qué pagás?» (no era a un proveedor). */
+  onChangeTarget: () => void
+}) {
   const uid = useId()
   const partyById = useMemo(() => new Map(data.parties.map((p) => [p.id, p])), [data.parties])
   const [partyId, setPartyId] = useState<string | null>(() => {
@@ -248,7 +317,16 @@ function PagarForm({
     }
     return (
       <>
-        <ActionSheetHeader title={TITLE} description={DESCRIPTION} />
+        <ActionSheetHeader title={TITLE} description={DESCRIPTION}>
+          <button
+            type="button"
+            onClick={onChangeTarget}
+            className="inline-flex min-h-11 items-center gap-1 self-start text-xs font-medium text-muted-foreground hover:text-foreground md:min-h-0"
+          >
+            <ChevronLeft className="size-3" aria-hidden />
+            Pagar otra cosa
+          </button>
+        </ActionSheetHeader>
         <ActionSheetBody>
           {lineFromUrl && items.status === 'error' && items.message ? (
             <InlineNotice tone="info">{items.message}</InlineNotice>

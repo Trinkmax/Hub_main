@@ -1845,6 +1845,13 @@ export const recurringSchema = obj({
     (v) => (v === undefined || v === null || v === '' ? null : v),
     isoDay.nullable(),
   ),
+  /** En cuotas: de cuántas es («cuota 2 de 6»). Vacío = no se sabe. Sin `endsOn` no se guarda. */
+  installmentsTotal: formInt({
+    min: 1,
+    max: 120,
+    message: 'El total de cuotas va de 1 a 120.',
+    optional: true,
+  }).default(null),
   /** El detalle (por ejemplo los sueldos): el monto pasa a ser la suma. */
   breakdown: list(recurringBreakdownLineSchema).max(200, 'Hasta 200 renglones.').default([]),
 })

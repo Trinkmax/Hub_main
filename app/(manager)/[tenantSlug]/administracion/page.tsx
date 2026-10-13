@@ -13,9 +13,16 @@ import {
   AccountingForbiddenError,
   requireAccountingAccess,
 } from '@/lib/accounting/access'
-import { getAccountingSettings, getSummary, settleQuery } from '@/lib/accounting/queries'
+import { buildProjection, projectionFigures } from '@/lib/accounting/projection'
+import {
+  getAccountingSettings,
+  getSummary,
+  listRecurringExpenses,
+  settleQuery,
+} from '@/lib/accounting/queries'
 import { getIntegrationAttention } from '@/lib/accounting/queries/integrations'
-import { formatIsoDay, todayInCordoba } from '@/lib/dates'
+import { getSalesProjection } from '@/lib/accounting/queries/projection'
+import { formatIsoDay, monthRange, serviceDayInCordoba, todayInCordoba } from '@/lib/dates'
 import {
   RoleRequiredError,
   type TenantAccess,
@@ -34,7 +41,12 @@ import {
   ThisMonthCard,
   TreasuriesCard,
 } from './_resumen/summary-blocks'
-import { headerDateLine, lastClosedLine, openMonthLine } from './_resumen/summary-copy'
+import {
+  headerDateLine,
+  lastClosedLine,
+  openMonthLine,
+  pendingFixedExpenses,
+} from './_resumen/summary-copy'
 import { Callout } from './ajustes/_components/form-bits'
 
 /**
@@ -42,6 +54,12 @@ import { Callout } from './ajustes/_components/form-bits'
  * con una sola lectura (`acc_report_summary`). El dueño ve las acciones y
  * «Necesita atención»; la contadora, los mismos números sin acciones y el
  * estado de los libros.
+ *
+ * Lo que pidieron los socios el 12/10/2026 suma dos lecturas chicas, cada una
+ * en su bloque (si una falla, el resto del Resumen sale igual): los gastos
+ * fijos por pagar («Te falta de gasto fijo», en lugar de «Te deben») y la
+ * proyección del mes («Vas vendiendo» y «Te falta vender», las mismas cifras
+ * que Ventas › Proyección).
  *
  * «Necesita atención» suma una segunda fuente para el dueño (diseño §5.2.4):
  * los avisos de ARCA, Mercado Pago, el banco y Mis Comprobantes
@@ -78,17 +96,30 @@ export default async function AdministracionResumenPage({
   const canWrite = access.accounting.write
   const today = todayInCordoba()
 
-  const [summaryResult, settingsResult, cookieStore, integrationResult] = await Promise.all([
-    settleQuery(getSummary(tenantId, { asOf: today })),
-    settleQuery(getAccountingSettings(tenantId)),
-    cookies(),
-    canWrite ? settleQuery(getIntegrationAttention(tenantId)) : Promise.resolve(null),
-  ])
+  const [summaryResult, settingsResult, cookieStore, integrationResult, fixedResult, salesResult] =
+    await Promise.all([
+      settleQuery(getSummary(tenantId, { asOf: today })),
+      settleQuery(getAccountingSettings(tenantId)),
+      cookies(),
+      canWrite ? settleQuery(getIntegrationAttention(tenantId)) : Promise.resolve(null),
+      settleQuery(listRecurringExpenses(tenantId, { today })),
+      settleQuery(getSalesProjection(tenantId, monthRange(today))),
+    ])
   const settings = settingsResult.ok ? settingsResult.data : null
   const summary = summaryResult.ok ? summaryResult.data : null
   const integration = integrationResult?.ok ? integrationResult.data : []
   const integrationFailed = integrationResult !== null && !integrationResult.ok
   const stepsHidden = cookieStore.get(firstStepsCookieName(tenantSlug))?.value === '1'
+  const fixed = fixedResult.ok ? pendingFixedExpenses(fixedResult.data) : null
+  const projection = salesResult.ok
+    ? buildProjection(salesResult.data, { serviceDay: serviceDayInCordoba() })
+    : null
+  const figures = projection ? projectionFigures(projection.summary) : null
+  // «Te falta vender» solo si el mes tiene objetivos cargados.
+  const sales =
+    projection && figures
+      ? { sold: figures.sold, remaining: projection.summary.hasTargets ? figures.remaining : null }
+      : null
 
   const openingPending = settings?.openingStatus === 'pending'
   const cuitMissing = settings !== null && !settings.cuit
@@ -161,6 +192,8 @@ export default async function AdministracionResumenPage({
               summary={summary}
               today={today}
               vatRegistered={settings ? settings.ivaCondition === 'responsable_inscripto' : true}
+              base={base}
+              fixed={fixed}
             />
           )}
 
@@ -231,7 +264,7 @@ export default async function AdministracionResumenPage({
                   openMonthText={openMonthLine(summary.books)}
                 />
               )}
-              <ThisMonthCard summary={summary} today={today} base={base} />
+              <ThisMonthCard summary={summary} today={today} base={base} sales={sales} />
             </div>
           )}
 

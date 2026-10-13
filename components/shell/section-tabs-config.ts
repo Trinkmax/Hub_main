@@ -30,6 +30,8 @@ export type SectionTabDef = {
    * cliente queda en «Personas»).
    */
   exact?: boolean
+  /** Otras rutas que también son de esta pestaña (pantallas suyas que viven bajo otra ruta). */
+  alsoPaths?: readonly string[]
   /** Si está, solo la ven estos roles. */
   roles?: readonly TenantRole[]
   /** Si está, solo con la feature prendida (o si mira un superadmin, salvo `accounting`). */
@@ -90,9 +92,9 @@ export const SECTION_TABS: Readonly<Record<SectionKey, SectionDef>> = {
       { value: 'resenas', label: 'Reseñas', path: 'reviews', roles: ['owner'], feature: 'reviews' },
     ],
   },
-  // Las mismas puertas que tenían los seis ítems del sidebar, más «Importar». Las fichas
-  // (comprobantes/[id], asientos/[id]), Ajustes y Configurar no son de ninguna pestaña: la barra
-  // queda sin marca.
+  // Las mismas puertas que tenían los seis ítems del sidebar, más «Importar» y «Gastos fijos».
+  // Las fichas (comprobantes/[id], asientos/[id]), Ajustes y Configurar no son de ninguna
+  // pestaña: la barra queda sin marca.
   administracion: {
     label: 'Secciones de Administración',
     showWhenNoneActive: true,
@@ -110,6 +112,19 @@ export const SECTION_TABS: Readonly<Record<SectionKey, SectionDef>> = {
         value: 'compras',
         label: 'Compras',
         path: 'administracion/compras',
+        roles: ACCOUNTING_ROLES,
+        feature: 'accounting',
+        accounting: 'read',
+      },
+      // Pestaña propia desde el 12/10/2026 (pedido de los socios: aparte de «Compras y pagos»).
+      // La lista vive acá; el alta y la edición siguen en /compras/gastos-fijos/[id] y también
+      // marcan esta pestaña (`alsoPaths`).
+      {
+        value: 'gastos-fijos',
+        label: 'Gastos fijos',
+        shortLabel: 'Fijos',
+        path: 'administracion/gastos-fijos',
+        alsoPaths: ['administracion/compras/gastos-fijos'],
         roles: ACCOUNTING_ROLES,
         feature: 'accounting',
         accounting: 'read',
@@ -198,7 +213,7 @@ export function tabVisible(tab: SectionTabDef, viewer?: SectionViewer | null): b
 }
 
 /** Una pestaña lista para la barra: href resuelto y cómo se marca activa. Serializable. */
-export type ResolvedSectionTab = SectionTabItem & { exact?: boolean }
+export type ResolvedSectionTab = SectionTabItem & { exact?: boolean; alsoHrefs?: string[] }
 
 export type ResolvedSection = {
   label: string
@@ -224,6 +239,7 @@ export function resolveSection(
         ...(tab.shortLabel ? { shortLabel: tab.shortLabel } : {}),
         href: `/${slug}/${tab.path}`,
         ...(tab.exact ? { exact: true } : {}),
+        ...(tab.alsoPaths ? { alsoHrefs: tab.alsoPaths.map((path) => `/${slug}/${path}`) } : {}),
       })),
   }
 }
@@ -239,16 +255,22 @@ function normalizePath(pathname: string): string {
  * Si matchean varias, gana la más larga (la más específica). `null` si no es de ninguna.
  */
 export function activeSectionTab(
-  tabs: readonly Pick<ResolvedSectionTab, 'value' | 'href' | 'exact'>[],
+  tabs: readonly Pick<ResolvedSectionTab, 'value' | 'href' | 'exact' | 'alsoHrefs'>[],
   pathname: string,
 ): string | null {
   const current = normalizePath(pathname)
   let best: { value: string; length: number } | null = null
   for (const tab of tabs) {
-    const path = normalizePath(tab.href)
-    const hit = tab.exact ? current === path : current === path || current.startsWith(`${path}/`)
-    if (hit && (!best || path.length > best.length)) {
-      best = { value: tab.value, length: path.length }
+    // Las rutas extra de una pestaña valen siempre con sus sub-rutas.
+    const candidates = [
+      { path: normalizePath(tab.href), exact: tab.exact === true },
+      ...(tab.alsoHrefs ?? []).map((href) => ({ path: normalizePath(href), exact: false })),
+    ]
+    for (const { path, exact } of candidates) {
+      const hit = exact ? current === path : current === path || current.startsWith(`${path}/`)
+      if (hit && (!best || path.length > best.length)) {
+        best = { value: tab.value, length: path.length }
+      }
     }
   }
   return best?.value ?? null

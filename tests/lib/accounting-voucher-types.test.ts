@@ -65,7 +65,11 @@ describe('catálogo de comprobantes (E.3)', () => {
     expect(voucherLabel('nota_credito_b')).toBe('Nota de crédito B')
     expect(voucherLabel('algo_viejo')).toBe('algo_viejo')
     expect(voucherDisplay('factura_a', 3, 1290)).toBe('Factura A 0003-00001290')
-    expect(voucherDisplay('sin_comprobante', null, null)).toBe('Sin comprobante')
+    // La clave `sin_comprobante` se queda; en pantalla es el remito (12/10/2026).
+    expect(voucherDisplay('sin_comprobante', null, null)).toBe(
+      'Remito u otro comprobante (sin factura)',
+    )
+    expect(VOUCHER_CATALOG.sin_comprobante.shortLabel).toBe('Remito u otro')
   })
 
   it('DDJJ y «sin comprobante» no van a un libro IVA ni llevan número', () => {

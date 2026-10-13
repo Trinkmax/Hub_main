@@ -1313,3 +1313,15 @@ check de CI queda en rojo aunque el job de lint/typecheck/tests esté verde.
 - **Comentario viejo en `lib/platform/features.ts`.** `table_qr` dice cubrir
   `/local/captura`, pero esa página (QR del club) no mira el flag: es del dueño
   siempre.
+- **Administración, quedó de la reunión del 12/10/2026** (`docs/features/administracion-reunion-12-10.md`):
+  - Compra por producto con precio promedio hacia la ficha técnica: necesita Stock y Fichas técnicas.
+  - «A nombre de quién se factura» cada gasto (la planilla de los socios lo lleva): no se pidió todavía.
+  - Anular o deshacer el comprobante de un gasto fijo no devuelve el vencimiento (lo hace el motor): hoy
+    se corrige a mano editando «Próximo vencimiento».
+  - Al «Corregir» un comprobante, sus fotos quedan en el anulado. Pueden quedar archivos sueltos en el
+    bucket `acc-comprobantes` si se corta entre subir y registrar.
+  - `private.acc_reset_tenant` no borra `acc_sales_targets` ni los archivos del bucket.
+  - La lista de proveedores perdió la columna «Última compra» en el ancho máximo del panel (entró
+    «Cuenta»).
+  - Los esqueletos de carga de Gastos fijos y de Cajas no tienen las tarjetas ni el gráfico nuevos.
+  - `MonthStepper` no avanza al futuro: la proyección agregó un chip «Mes que viene» (solo un mes).

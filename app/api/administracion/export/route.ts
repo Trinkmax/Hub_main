@@ -5,9 +5,15 @@ import {
   AccountingForbiddenError,
   requireAccountingAccess,
 } from '@/lib/accounting/access'
+import {
+  INVOICE_FILTER_PARAM,
+  INVOICE_FILTERS,
+  invoiceFilterSuffix,
+} from '@/lib/accounting/invoiced'
 import { exportFilename } from '@/lib/accounting/queries/csv'
 import { buildExport, EXPORT_MAX_ROWS, type ExportSpec } from '@/lib/accounting/queries/exports'
 import { EXPORT_BOOK_INFO, EXPORT_BOOKS, type ExportBook } from '@/lib/accounting/queries/labels'
+import { purchasesByInvoicePlan } from '@/lib/accounting/queries/purchases-invoice-export'
 import { getAccountingSettings } from '@/lib/accounting/queries/settings'
 import { AccQueryError } from '@/lib/accounting/queries/shared'
 import { logAudit } from '@/lib/audit'
@@ -24,6 +30,9 @@ import { RoleRequiredError, TenantNotFoundError, UnauthenticatedError } from '@/
  * los libros de IVA (409) y conteo previo (413 si pasa de 200.000 filas).
  *
  * `GET /api/administracion/export?slug=&libro=&mes=yyyy-MM&desde=&hasta=&cuenta=&participe=&caja=&antes_refundicion=1`
+ *
+ * `&factura=con|sin` vale solo para `subdiario-compras` (el exporte de Compras ›
+ * Comprobantes con su filtro puesto); los libros no se filtran.
  */
 
 export const runtime = 'nodejs'
@@ -48,6 +57,8 @@ const paramsSchema = z
     participe: optionalUuid,
     caja: optionalUuid,
     antesRefundicion: z.boolean(),
+    /** Solo el subdiario de compras: `con` o `sin` factura (el filtro de Compras › Comprobantes). */
+    factura: z.enum(INVOICE_FILTERS, { message: 'Ese filtro no existe.' }),
   })
   .superRefine((v, ctx) => {
     if ((v.desde === null) !== (v.hasta === null)) {
@@ -198,6 +209,7 @@ export async function GET(request: Request): Promise<Response> {
     antesRefundicion: ['1', 'true', 'si', 'sí'].includes(
       (param(url, 'antes_refundicion') ?? '').toLowerCase(),
     ),
+    factura: param(url, INVOICE_FILTER_PARAM) ?? 'todos',
   })
   if (!parsed.success) {
     const message = parsed.error.issues[0]?.message ?? 'Revisá los datos del pedido.'
@@ -221,7 +233,12 @@ export async function GET(request: Request): Promise<Response> {
       }
     }
 
-    const plan = await buildExport(tenantId, spec)
+    // Compras › Comprobantes filtrado por «con / sin factura»: el mismo subdiario, solo esas filas.
+    const invoice = libro === 'subdiario-compras' ? p.factura : 'todos'
+    const plan =
+      invoice === 'todos'
+        ? await buildExport(tenantId, spec)
+        : purchasesByInvoicePlan(tenantId, spec, invoice)
     const expected = await plan.count()
     if (expected > EXPORT_MAX_ROWS) {
       return error(
@@ -257,7 +274,13 @@ export async function GET(request: Request): Promise<Response> {
         userId,
         action: 'acc_export.downloaded',
         entity: 'acc_export',
-        payload: { libro, desde: spec.from, hasta: spec.to, filas: written },
+        payload: {
+          libro,
+          desde: spec.from,
+          hasta: spec.to,
+          filas: written,
+          ...(invoice === 'todos' ? {} : { factura: invoice }),
+        },
       })
     }
 
@@ -266,7 +289,7 @@ export async function GET(request: Request): Promise<Response> {
       status: 200,
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="${exportFilename(p.slug, libro, period)}"`,
+        'Content-Disposition': `attachment; filename="${exportFilename(p.slug, `${libro}${invoiceFilterSuffix(invoice)}`, period)}"`,
         'Cache-Control': 'no-store',
         'X-Content-Type-Options': 'nosniff',
       },

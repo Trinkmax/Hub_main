@@ -37,7 +37,7 @@ const ITEMS = [
     value: 'gastos-fijos',
     label: 'Gastos fijos',
     shortLabel: 'Fijos',
-    href: '/hub/administracion/compras?tab=gastos-fijos',
+    href: '/hub/administracion/gastos-fijos',
   },
 ]
 
@@ -168,8 +168,9 @@ describe('SectionTabsBar: la barra de cada sección según la URL', () => {
       createElement(SectionTabsBar, resolveSection('administracion', 'hub', owner)),
     )
     expect(html).toContain('aria-label="Secciones de Administración"')
-    // Resumen, Compras, Ventas, Cajas, Importar, Libros y Plan de cuentas.
-    expect(anchors(html)).toHaveLength(7)
+    // Resumen, Compras, Gastos fijos, Ventas, Cajas, Importar, Libros y Plan de cuentas.
+    expect(anchors(html)).toHaveLength(8)
+    expect(html).toContain('href="/hub/administracion/gastos-fijos"')
     expect(html).not.toContain('aria-current')
   })
 

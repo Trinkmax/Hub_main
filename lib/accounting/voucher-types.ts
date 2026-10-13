@@ -289,16 +289,24 @@ export const VOUCHER_CATALOG: Readonly<Record<VoucherType, VoucherInfo>> = {
     ivaBook: false,
     numbered: false,
   }),
-  sin_comprobante: v('sin_comprobante', null, 'Sin comprobante', 'Sin comp.', {
-    ...base,
-    letter: null,
-    family: 'sin_comprobante',
-    purchases: true,
-    sales: false,
-    purchaseVat: 'no',
-    ivaBook: false,
-    numbered: false,
-  }),
+  // Desde el 12/10/2026 no existe «sin comprobante» en pantalla: todo egreso tiene algún papel.
+  // La clave se queda y ahora quiere decir «no se factura: va con remito u otro comprobante».
+  sin_comprobante: v(
+    'sin_comprobante',
+    null,
+    'Remito u otro comprobante (sin factura)',
+    'Remito u otro',
+    {
+      ...base,
+      letter: null,
+      family: 'sin_comprobante',
+      purchases: true,
+      sales: false,
+      purchaseVat: 'no',
+      ivaBook: false,
+      numbered: false,
+    },
+  ),
 }
 
 export function isVoucherType(value: unknown): value is VoucherType {

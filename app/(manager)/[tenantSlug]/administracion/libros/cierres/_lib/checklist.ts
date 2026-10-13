@@ -144,7 +144,7 @@ function warningLineRaw(item: ChecklistItemLike, base: string): ChecklistLine {
         key: item.key,
         text,
         detail: names.length > 0 ? `${listText(names)}.` : null,
-        href: `${base}/compras?tab=gastos-fijos`,
+        href: `${base}/gastos-fijos`,
         linkLabel: 'Ver gastos fijos',
       }
     }

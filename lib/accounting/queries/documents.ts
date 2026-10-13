@@ -1,4 +1,5 @@
 import 'server-only'
+import { type InvoiceFilter, NOT_INVOICED_VOUCHER_TYPES } from '@/lib/accounting/invoiced'
 import { parseBreakdown, type RecurringBreakdownRow } from '@/lib/accounting/party-profile'
 import {
   DOCUMENT_KINDS,
@@ -74,6 +75,11 @@ export type DocumentListFilters = {
   partyId?: string | null
   /** `all` = vigentes y anulados; `posted` = solo vigentes. */
   status?: DocumentStatusFilter
+  /**
+   * `con` / `sin` factura (compras y gastos: siempre llevan tipo de comprobante).
+   * «Sin factura» = remito u otro comprobante (`lib/accounting/invoiced.ts`).
+   */
+  invoice?: InvoiceFilter
   /** Busca en el detalle y el partícipe, o por número («1290», «0003-00001290», «#125»). */
   q?: string | null
   after?: string | null
@@ -331,14 +337,22 @@ export type RecurringExpenseRow = {
   endsOn: string | null
   /** Vencimientos que faltan contando el próximo (`null` = no termina). */
   remainingDues: number | null
+  /** En cuotas: de cuántas es (`null` = no se sabe o no termina). */
+  installmentsTotal: number | null
+  /** El último vencimiento que se salteó con «Saltear» (`null` = ninguno). */
+  skippedDue: string | null
+  /** El vencimiento que cubrió el último comprobante cargado (`null` = nunca se cargó). */
+  loadedDue: string | null
   /** En cuotas y ya pasó la última: se apagó solo. */
   ended: boolean
   /** El detalle (por ejemplo los sueldos); vacío si no tiene. */
   breakdown: RecurringBreakdownRow[]
   updatedAt: string
   /**
-   * «Este mes»: `loaded` Cargado ✓ · `pending` vence este mes o ya venció ·
-   * `skipped` se salteó · `upcoming` este mes no vence.
+   * «Este mes»: `loaded` el último comprobante cubre el vencimiento de este
+   * mes (o uno más adelante) · `pending` vence este mes o ya venció ·
+   * `skipped` se salteó con «Saltear» · `upcoming` este mes no vence (o es
+   * nuevo y su primer vencimiento es más adelante).
    */
   monthStatus: RecurringMonthStatus
   /** Días hasta el vencimiento (negativo = vencido). */
@@ -954,6 +968,12 @@ export async function listDocuments(
   }
   if (status === 'voided') query = query.eq('status', 'voided')
   else if (status !== 'all') query = query.eq('status', 'posted')
+  // Con o sin factura (un comprobante sin tipo no es ni una cosa ni la otra).
+  if (filters.invoice === 'sin') {
+    query = query.in('voucher_type', [...NOT_INVOICED_VOUCHER_TYPES])
+  } else if (filters.invoice === 'con') {
+    query = query.not('voucher_type', 'in', `(${NOT_INVOICED_VOUCHER_TYPES.join(',')})`)
+  }
 
   const raw = filters.q?.trim() ?? ''
   if (raw) {
@@ -1800,7 +1820,7 @@ export async function getDailyCloseCalendar(
 // ─── Gastos fijos ────────────────────────────────────────────────────────────
 
 const RECURRING_COLUMNS =
-  'id, name, party_id, account_id, voucher_type, vat_rate_bp, amount_cents, frequency, due_day, next_due_date, remind_days_before, treasury_account_id, active, last_document_id, notes, ends_on, breakdown, updated_at'
+  'id, name, party_id, account_id, voucher_type, vat_rate_bp, amount_cents, frequency, due_day, next_due_date, remind_days_before, treasury_account_id, active, last_document_id, notes, ends_on, installments_total, skipped_due, loaded_due, breakdown, updated_at'
 
 const FREQUENCY_MONTHS = { monthly: 1, bimonthly: 2, quarterly: 3, yearly: 12 } as const
 type Frequency = keyof typeof FREQUENCY_MONTHS
@@ -1818,27 +1838,36 @@ function shiftDue(iso: string, months: number, dueDay: number): string {
 }
 
 /**
- * «Este mes» de un gasto fijo:
- * - vence este mes o ya venció (`next_due_date` ≤ fin de mes) → `pending`;
- * - si el vencimiento de este mes ya pasó al próximo: `loaded` si hay un
- *   comprobante cargado después del vencimiento anterior a ese, si no `skipped`;
- * - este mes no le toca vencer → `upcoming`.
+ * «Este mes» de un gasto fijo. Mira el vencimiento anterior al próximo (el
+ * último que ya pasó de largo):
+ * - el próximo vence este mes o ya venció (`next_due_date` ≤ fin de mes) → `pending`;
+ * - el anterior es de un mes que ya pasó: este mes no le toca → `upcoming`;
+ * - el anterior es de este mes (o de más adelante: se cargó por adelantado):
+ *   `skipped` si se salteó con «Saltear», `loaded` si lo cubre el último
+ *   comprobante vigente. Si no pasó ninguna de las dos (es nuevo, o le
+ *   corrieron la fecha, y su primer vencimiento es el próximo) → `upcoming`.
  */
 export function recurringMonthStatus(input: {
   nextDueDate: string
   frequency: Frequency
   dueDay: number
+  /** Fecha del último comprobante cargado si sigue vigente (`null` = no hay o se anuló). */
   lastDocumentDate: string | null
+  /** El vencimiento que cubrió ese comprobante (`acc_recurring_expenses.loaded_due`). */
+  loadedDue?: string | null
+  /** El último vencimiento salteado con «Saltear» (`acc_recurring_expenses.skipped_due`). */
+  skippedDue?: string | null
   today: string
 }): RecurringMonthStatus {
   if (input.nextDueDate <= endOfMonth(input.today)) return 'pending'
-  const step = FREQUENCY_MONTHS[input.frequency]
-  const previousDue = shiftDue(input.nextDueDate, -step, input.dueDay)
-  if (monthOf(previousDue) !== monthOf(input.today)) return 'upcoming'
-  const beforePrevious = shiftDue(input.nextDueDate, -2 * step, input.dueDay)
-  return input.lastDocumentDate !== null && input.lastDocumentDate > beforePrevious
+  const previousDue = shiftDue(input.nextDueDate, -FREQUENCY_MONTHS[input.frequency], input.dueDay)
+  const month = monthOf(previousDue)
+  if (month < monthOf(input.today)) return 'upcoming'
+  // Saltear manda: solo se saltea lo que está pendiente, así que es lo último que pasó.
+  if (input.skippedDue && monthOf(input.skippedDue) === month) return 'skipped'
+  return input.lastDocumentDate !== null && input.loadedDue && monthOf(input.loadedDue) === month
     ? 'loaded'
-    : 'skipped'
+    : 'upcoming'
 }
 
 /**
@@ -1918,6 +1947,9 @@ async function parseRecurring(
       notes: strOrNull(row.notes),
       endsOn: dayOrNull(row.ends_on),
       remainingDues: remainingDues(nextDueDate, dayOrNull(row.ends_on), frequency),
+      installmentsTotal: intOrNull(row.installments_total),
+      skippedDue: dayOrNull(row.skipped_due),
+      loadedDue: dayOrNull(row.loaded_due),
       ended:
         !bool(row.active) && remainingDues(nextDueDate, dayOrNull(row.ends_on), frequency) === 0,
       breakdown: parseBreakdown(row.breakdown),
@@ -1927,6 +1959,8 @@ async function parseRecurring(
         frequency,
         dueDay,
         lastDocumentDate,
+        loadedDue: dayOrNull(row.loaded_due),
+        skippedDue: dayOrNull(row.skipped_due),
         today,
       }),
       daysToDue: daysBetween(today, nextDueDate),

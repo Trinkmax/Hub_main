@@ -96,7 +96,9 @@ export type DocumentTitleInput = {
 /**
  * El nombre de un comprobante en pantalla: «Factura A 0003-00001290» si tiene
  * comprobante fiscal numerado; si no, el tipo («Pago», «Cierre del día»). Un
- * gasto sin comprobante es «Gasto»; con tique, «Tique».
+ * gasto sin factura (`sin_comprobante`: remito u otro papel) es «Gasto» y una
+ * compra sin factura, «Compra»; con tique, «Tique». La lista les suma la marca
+ * «Sin factura» (`lib/accounting/invoiced.ts`).
  */
 export function documentTitle(doc: DocumentTitleInput): string {
   const type = doc.voucherType

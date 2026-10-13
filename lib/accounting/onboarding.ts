@@ -460,7 +460,7 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
     id: 'recurring',
     section: 'day1',
     title: 'Gastos fijos',
-    where: { label: 'Compras › Gastos fijos', path: '/compras?tab=gastos-fijos' },
+    where: { label: 'Gastos fijos', path: '/gastos-fijos' },
     what: 'Lo que pagás todos los meses, con su día de vencimiento.',
     how: [
       'Tocá «Nuevo gasto fijo» y cargá a quién le pagás, cuánto más o menos y qué día vence.',

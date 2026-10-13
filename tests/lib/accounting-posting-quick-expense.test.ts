@@ -106,6 +106,49 @@ describe('«Nuevo gasto» (H.5, E.5.3 y E.5.4)', () => {
     }
   })
 
+  it('«No se factura» con proveedor: el mismo `expense` de siempre, con `sin_comprobante` y sin aviso', () => {
+    const { r, ctx, meta } = prepare()
+    // Un responsable inscripto al que esta vez se le compró sin factura (con remito).
+    const result = buildQuickExpense(
+      quickExpenseInput({
+        amountCents: 360_000,
+        target: {
+          type: 'party',
+          partyId: r.party('cocacola'),
+          accountId: r.account('purchases_soft_drinks'),
+        },
+        treasuryAccountId: r.treasury('caja'),
+        voucher: 'none',
+        date: '2026-10-12',
+        detail: 'Remito 0001-00001234',
+      }),
+      ctx,
+      meta,
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.bundle.documents).toHaveLength(1)
+    const doc = result.bundle.documents[0]
+    // La clave guardada no cambió; cambió su nombre («Remito u otro…»).
+    expect(doc).toMatchObject({
+      kind: 'expense',
+      voucherType: 'sin_comprobante',
+      pointOfSale: null,
+      number: null,
+      notes: 'Remito 0001-00001234',
+      party: { id: r.party('cocacola') },
+    })
+    expect(doc?.description).not.toMatch(/sin comprobante/i)
+    expect(doc?.description).toMatch(/^Remito u otro comprobante \(sin factura\) · /)
+    expect(doc?.lines.map((l) => [l.role, l.side, l.amountCents])).toEqual([
+      ['gross', 'debit', 360_000],
+      ['treasury', 'credit', 360_000],
+    ])
+    // No entra al Libro IVA y no pasa por la matriz de condición (no frena la carga).
+    expect(doc?.fiscalVouchers).toEqual([])
+    expect(result.warnings).toEqual([])
+  })
+
   it('un tique sin número (aunque tenga proveedor) es un gasto; con proveedor y número, una compra', () => {
     const { r, ctx, meta } = prepare()
     const base = {

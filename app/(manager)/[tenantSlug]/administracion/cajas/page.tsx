@@ -1,5 +1,6 @@
 import { Banknote, CreditCard, Info, Scale, Wallet } from 'lucide-react'
 import Link from 'next/link'
+import { Suspense } from 'react'
 import { BlockError, PeriodError } from '@/components/administracion/cajas-ventas/block-error'
 import { requireAdminPage } from '@/components/administracion/cajas-ventas/page-access'
 import { RangeFilter } from '@/components/administracion/cajas-ventas/period-filters'
@@ -13,6 +14,8 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
 import { StatCard } from '@/components/ui/stat-card'
+import { CASH_CHART_RANGE_PARAM, resolveCashChartRange } from '@/lib/accounting/cash-daily'
+import { getCashDaily } from '@/lib/accounting/queries/cash-flow'
 import { exportHref } from '@/lib/accounting/queries/labels'
 import { settleQuery } from '@/lib/accounting/queries/shared'
 import {
@@ -32,6 +35,7 @@ import {
 import { formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { CajasHeaderActions } from './_components/cajas-header-actions'
+import { CashDailyBody, CashDailyCard, CashDailySkeleton } from './_components/cash-daily-section'
 import { CashFlow, CashProjection } from './_components/cash-flow'
 import { type TreasuryBalanceItem, TreasuryBalances } from './_components/treasury-balances'
 
@@ -80,7 +84,7 @@ export default async function CajasPage({
       />
 
       {tab === 'saldos' ? (
-        <SaldosTab tenantId={tenantId} tenantSlug={tenantSlug} base={base} today={today} />
+        <SaldosTab tenantId={tenantId} tenantSlug={tenantSlug} base={base} today={today} sp={sp} />
       ) : (
         <FlujoTab tenantId={tenantId} tenantSlug={tenantSlug} today={today} sp={sp} />
       )}
@@ -95,12 +99,20 @@ async function SaldosTab({
   tenantSlug,
   base,
   today,
+  sp,
 }: {
   tenantId: string
   tenantSlug: string
   base: string
   today: string
+  sp: Record<string, string | string[] | undefined>
 }) {
+  // El gráfico se pide junto con los saldos pero no se espera acá: se dibuja
+  // cuando llega, en su propio Suspense. `settleQuery` nunca rechaza.
+  const chartRange = resolveCashChartRange(firstParam(sp[CASH_CHART_RANGE_PARAM]), today)
+  const cashDaily = settleQuery(
+    getCashDaily(tenantId, { from: chartRange.from, to: chartRange.to }),
+  )
   const [balances, accounts] = await Promise.all([
     settleQuery(listTreasuryBalances(tenantId, { asOf: today })),
     settleQuery(listTreasuryAccounts(tenantId, { includeInactive: true })),
@@ -221,6 +233,12 @@ async function SaldosTab({
         exportHref={exportHref(tenantSlug, 'cajas-y-bancos', { hasta: today })}
         exportFileName={`administracion-${tenantSlug}-cajas-y-bancos-${today}.csv`}
       />
+
+      <CashDailyCard>
+        <Suspense fallback={<CashDailySkeleton />}>
+          <CashDailyBody report={cashDaily} range={chartRange} today={today} />
+        </Suspense>
+      </CashDailyCard>
     </div>
   )
 }

@@ -64,9 +64,7 @@ export function SummaryActions({ base }: { base: string }) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-60">
-            <DropdownMenuItem onSelect={() => openAction('pagar')}>
-              Pagar a un proveedor
-            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => openAction('pagar')}>Pagar</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => openAction('cobrar')}>
               Registrar un cobro
             </DropdownMenuItem>

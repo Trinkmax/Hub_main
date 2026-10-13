@@ -17,6 +17,7 @@ import { toast } from 'sonner'
 import {
   ExpenseTargetPicker,
   payableParties,
+  type TargetAccountPlan,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/expense-target-picker'
 import {
   FormBanner,
@@ -26,6 +27,7 @@ import {
   SheetSkeleton,
   WarningsDialog,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/form-feedback'
+import { rememberSupplierAccount } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/supplier-account'
 import {
   type SavedState,
   useDocumentPosting,
@@ -43,18 +45,24 @@ import { documentHref } from '@/app/(manager)/[tenantSlug]/administracion/compra
 import {
   amountAfterRecurring,
   buildQuickExpenseValues,
+  detailRoom,
   type ExpenseTarget,
+  INVOICED_QUICK_VOUCHERS,
   isInvoiceVoucher,
+  QUICK_DETAIL_MAX,
   QUICK_VAT_RATES,
   QUICK_VOUCHER_LABELS,
-  QUICK_VOUCHERS,
   type QuickExpenseFormValues,
   type QuickVatRate,
   type QuickVoucher,
   quickExpenseOutcome,
+  quickVoucherHelp,
+  quickVoucherInvoiced,
+  REMITO_MAX,
   recurringPrefill,
   sortRecurringForSheet,
   splitTotal,
+  suggestInvoicedVoucher,
   suggestQuickVatRate,
   suggestQuickVoucher,
   VAT_ADJUST_LIMIT,
@@ -68,11 +76,18 @@ import type {
   QuickSuggestion,
   SheetData,
   SheetDuplicate,
+  SheetParty,
   SheetPartyDefaults,
   SheetRecurring,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/sheet-types'
+import {
+  accountAsk,
+  accountToRemember,
+  supplierDefaultAccount,
+} from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/supplier-account'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -95,6 +110,8 @@ import { formatCuit } from '@/lib/fiscal'
 import { formatCents, formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { ActionSheetBody, ActionSheetFooter, ActionSheetHeader } from '../action-sheet'
+import { AttachmentPicker } from '../adjuntos/attachment-picker'
+import { attachPendingFiles } from '../adjuntos/upload'
 import { DateField } from '../date-input'
 import { EntryPreview } from '../entry-preview'
 import { MoneyField } from '../money-input'
@@ -220,6 +237,20 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
   const [date, setDate] = useState<string | null>(data.today)
   const [detail, setDetail] = useState('')
   const [showDetail, setShowDetail] = useState(false)
+  // «N.º de remito» (opcional, con «No se factura»): va adelante del detalle.
+  const [remito, setRemito] = useState('')
+  const [showRemito, setShowRemito] = useState(false)
+  // La cuenta sale de la ficha del proveedor: [Cambiar] la abre solo para este gasto.
+  const [accountChanging, setAccountChanging] = useState(false)
+  // «Usar siempre para …»: tildado si el proveedor todavía no tiene cuenta habitual.
+  const [rememberAccount, setRememberAccount] = useState(true)
+  // Lo que hay que hacer después de guardar, tal como estaba al tocar «Cargar gasto».
+  const rememberOnSave = useRef<{ party: SheetParty; accountId: string } | null>(null)
+  // La foto o el PDF del comprobante: se elige acá y se sube después de guardar.
+  const [files, setFiles] = useState<File[]>([])
+  // Subiendo esos archivos: `closing` = la hoja espera para cerrarse; `staying` = «Cargar otro después».
+  const [attaching, setAttaching] = useState<'closing' | 'staying' | null>(null)
+  const mounted = useRef(true)
   const [loadAnother, setLoadAnother] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [defaults, setDefaults] = useState<SheetPartyDefaults | null>(null)
@@ -253,12 +284,14 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
       setDefaults(null)
       setDuplicate(null)
       setCuitDraft(null)
-      // Al toque, con lo que ya está en el catálogo (y el chip).
+      // Al toque, con lo que ya está en el catálogo (y el chip). El «Comprobante habitual» de la
+      // ficha manda; si no tiene, el último que se le cargó.
       if (!touched.current.voucher && !fromRecurring.current.voucher) {
         setVoucher(
           suggestQuickVoucher({
             hasParty: true,
-            lastVoucherType: suggestion?.voucherType ?? known?.defaultVoucherType ?? null,
+            habitualVoucherType: known?.defaultVoucherType ?? null,
+            lastVoucherType: suggestion?.voucherType ?? null,
             condition: known?.ivaCondition ?? null,
           }),
         )
@@ -291,7 +324,8 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
         setVoucher(
           suggestQuickVoucher({
             hasParty: true,
-            lastVoucherType: d.voucherType ?? known?.defaultVoucherType ?? null,
+            habitualVoucherType: known?.defaultVoucherType ?? null,
+            lastVoucherType: d.voucherType,
             condition: known?.ivaCondition ?? null,
           }),
         )
@@ -316,8 +350,17 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     fromRecurring.current = { voucher: false, treasury: false, vatRate: false }
   }
 
+  /** Otra elección en «¿En qué?»: la cuenta vuelve a salir de la ficha y el remito se vacía. */
+  const resetAccountChoice = () => {
+    setAccountChanging(false)
+    setRememberAccount(true)
+    setRemito('')
+    setShowRemito(false)
+  }
+
   const pickTarget = (next: ExpenseTarget, suggestion: QuickSuggestion | null) => {
     unlinkRecurring()
+    resetAccountChoice()
     touched.current.voucher = false
     setVatAdjust(0)
     setVoucherNumber({ pos: '', number: '' })
@@ -379,10 +422,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     if (!initialParty) return
     const known = partyById.get(initialParty)
     if (!known?.active) return
-    const account =
-      known.defaultAccountId && imputable.has(known.defaultAccountId)
-        ? known.defaultAccountId
-        : null
+    const account = supplierDefaultAccount(known.defaultAccountId, imputable)
     setTarget({ kind: 'party', partyId: known.id, accountId: account })
     void applyPartyDefaults(known.id, null)
   }, [])
@@ -391,6 +431,14 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
   useEffect(() => {
     const frame = requestAnimationFrame(() => amountRef.current?.focus())
     return () => cancelAnimationFrame(frame)
+  }, [])
+
+  // Si la hoja se cerró a mano mientras subía la foto, al terminar no se toca nada.
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
   }, [])
 
   // ── La vista previa, armada en el navegador con el mismo código que la acción ──
@@ -407,6 +455,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
         number,
         date,
         detail,
+        remito,
         recurringExpenseId: recurringId,
       }),
     [
@@ -420,6 +469,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
       number,
       date,
       detail,
+      remito,
       recurringId,
     ],
   )
@@ -434,18 +484,59 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     [built.values, data.ctx, data.firstOpenDate],
   )
 
+  /**
+   * Lo que sigue a un gasto YA cargado. Nada de acá lo deshace: si algo falla,
+   * se avisa y el gasto queda. `documentId` es el comprobante nuevo (el gasto,
+   * o la compra si fue con factura): lo que haya que colgarle después de
+   * guardar (la foto del comprobante) va acá.
+   */
+  const afterPosted = async (posted: {
+    documentId: string | null
+    remember: { party: SheetParty; accountId: string } | null
+    files: readonly File[]
+  }) => {
+    if (posted.remember) {
+      // «Usar siempre para …»: la cuenta queda en la ficha del proveedor.
+      await rememberSupplierAccount(tenantSlug, posted.remember.party, posted.remember.accountId)
+    }
+    // La foto del comprobante: si alguna no sube, avisa y se suma después desde el comprobante.
+    await attachPendingFiles({
+      tenantSlug,
+      documentId: posted.documentId,
+      files: posted.files,
+      openDocument: (id) => router.push(documentHref(tenantSlug, id)),
+    })
+  }
+
   const onSaved = (saved: SavedState) => {
     if (treasuryId) rememberTreasury(tenantSlug, treasuryId)
     posting.undoToast(saved.message, saved)
+    const remember = rememberOnSave.current
+    rememberOnSave.current = null
+    const picked = files
+    const followUp = afterPosted({
+      documentId: saved.result.documents[0]?.id ?? null,
+      remember,
+      files: picked,
+    })
     router.refresh()
     if (!loadAnother) {
-      close()
+      if (picked.length === 0) {
+        close()
+        return
+      }
+      // Con foto, la hoja espera a que suba y recién ahí se cierra.
+      setAttaching('closing')
+      void followUp.finally(() => {
+        if (mounted.current) close()
+      })
       return
     }
     // «Cargar otro después»: vacía la hoja y conserva la fecha y la caja.
     defaultsSeq.current += 1
     touched.current.voucher = false
     unlinkRecurring()
+    resetAccountChoice()
     prefilledAmount.current = null
     setAmount(null)
     setTarget(null)
@@ -459,7 +550,14 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     setDefaults(null)
     setDuplicate(null)
     setCuitDraft(null)
-    reload()
+    setFiles([])
+    // El próximo gasto se puede ir cargando; se guarda cuando terminó de subir la foto de este.
+    if (picked.length > 0) setAttaching('staying')
+    // Los datos se vuelven a traer cuando terminó lo de después (la ficha ya tiene su cuenta).
+    void followUp.finally(() => {
+      if (mounted.current) setAttaching(null)
+      reload()
+    })
     requestAnimationFrame(() => amountRef.current?.focus())
   }
 
@@ -471,8 +569,15 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     isKnownField: (k) => KNOWN_FIELDS.has(k),
   })
 
+  // Con el gasto ya guardado y la hoja esperando la foto para cerrarse, no hay nada que perder.
   const dirty =
-    amount !== null || target !== null || detail.trim() !== '' || voucherNumber.number !== ''
+    attaching !== 'closing' &&
+    (amount !== null ||
+      target !== null ||
+      detail.trim() !== '' ||
+      voucherNumber.number !== '' ||
+      remito.trim() !== '' ||
+      files.length > 0)
   useEffect(() => {
     setDirty(dirty)
   }, [dirty, setDirty])
@@ -526,9 +631,34 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
       ? preview.message
       : null
 
+  // ── La cuenta: de la ficha del proveedor, o se pregunta (12/10/2026) ──
+  const defaultAccountId = party ? supplierDefaultAccount(party.defaultAccountId, imputable) : null
+  const ask = accountAsk({
+    existingParty: target?.kind === 'party' && party !== null,
+    defaultAccountId,
+    accountId: target?.kind === 'party' ? target.accountId : null,
+    recurringLinked: recurringId !== null,
+    changing: accountChanging,
+  })
+  const accountPlan: TargetAccountPlan = {
+    ask,
+    changing: accountChanging && defaultAccountId !== null,
+    onChange: () => setAccountChanging(true),
+    onUseDefault: () => {
+      setAccountChanging(false)
+      setTarget((prev) =>
+        prev?.kind === 'party' ? { ...prev, accountId: defaultAccountId } : prev,
+      )
+      posting.clearFieldErrors()
+    },
+    remember: rememberAccount,
+    onRememberChange: setRememberAccount,
+  }
+
   const submit = (event?: FormEvent) => {
     event?.preventDefault()
-    if (posting.pending) return
+    // Mientras sube la foto del gasto anterior no se guarda otro (ese ya quedó cargado).
+    if (posting.pending || attaching !== null) return
     setSubmitted(true)
     if (!built.values || !preview?.ok) {
       requestAnimationFrame(() => {
@@ -536,6 +666,13 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
       })
       return
     }
+    // Lo de después de guardar se decide ahora, con lo que se está mandando.
+    const accountToSave = accountToRemember({
+      ask,
+      remember: rememberAccount,
+      accountId: target?.kind === 'party' ? target.accountId : null,
+    })
+    rememberOnSave.current = party && accountToSave ? { party, accountId: accountToSave } : null
     posting.submit(built.values, preview.hash, key)
   }
 
@@ -548,11 +685,35 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
 
   // ── Textos que acompañan ──
   const split = voucher === 'a' ? splitTotal(amount, vatRate, vatAdjust) : null
-  const outcome = quickExpenseOutcome({
+  // «¿Se factura?»: «No» es `none` (se guarda como remito u otro comprobante).
+  const invoiced = quickVoucherInvoiced(voucher)
+  const voucherHelp = quickVoucherHelp({
     voucher,
-    hasParty,
-    hasNumber: pointOfSale !== null && number !== null,
+    outcome: quickExpenseOutcome({
+      voucher,
+      hasParty,
+      hasNumber: pointOfSale !== null && number !== null,
+    }),
+    condition,
   })
+  const chooseInvoiced = (next: 'si' | 'no') => {
+    touched.current.voucher = true
+    setVatAdjust(0)
+    posting.clearFieldErrors()
+    if (next === 'no') {
+      setVoucher('none')
+      return
+    }
+    if (invoiced) return
+    setVoucher(
+      suggestInvoicedVoucher({
+        hasParty,
+        habitualVoucherType: party?.defaultVoucherType ?? null,
+        lastVoucherType: defaults?.voucherType ?? null,
+        condition,
+      }),
+    )
+  }
   const closedMonth =
     date && data.firstOpenDate && date < data.firstOpenDate
       ? `${capitalize(formatMonthYear(date))} está cerrado: lo cargamos el ${formatIsoDay(data.firstOpenDate)} (el IVA va a ${formatMonthYear(data.firstOpenDate)}).`
@@ -603,7 +764,9 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     targetLabel: `${uid}-en-que-label`,
     treasury: `${uid}-caja`,
     treasuryLabel: `${uid}-caja-label`,
+    invoicedLabel: `${uid}-se-factura-label`,
     voucherLabel: `${uid}-comprobante-label`,
+    remito: `${uid}-remito`,
     vat: `${uid}-iva`,
     number: `${uid}-numero`,
     date: `${uid}-fecha`,
@@ -684,6 +847,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
               parties={data.parties}
               accounts={data.accounts}
               value={target}
+              accountPlan={accountPlan}
               onPick={pickTarget}
               onPickRecurring={pickRecurring}
               onAccountChange={(accountId) => {
@@ -706,6 +870,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
               onClear={() => {
                 defaultsSeq.current += 1
                 unlinkRecurring()
+                resetAccountChoice()
                 setTarget(null)
                 setDefaults(null)
                 setDuplicate(null)
@@ -783,22 +948,78 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
             ) : null}
           </div>
 
-          {/* Comprobante */}
+          {/* ¿Se factura? Primero sí o no; con «Sí», qué comprobante. */}
           <div className="grid gap-2">
-            <span id={ids.voucherLabel} className="text-sm font-medium leading-none">
-              Comprobante
+            <span id={ids.invoicedLabel} className="text-sm font-medium leading-none">
+              ¿Se factura?
             </span>
             <RadioChips
-              labelledBy={ids.voucherLabel}
-              value={voucher}
-              onChange={(next) => {
-                touched.current.voucher = true
-                setVoucher(next)
-                setVatAdjust(0)
-                posting.clearFieldErrors()
-              }}
-              options={QUICK_VOUCHERS.map((v) => ({ value: v, label: QUICK_VOUCHER_LABELS[v] }))}
+              labelledBy={ids.invoicedLabel}
+              value={invoiced ? 'si' : 'no'}
+              onChange={chooseInvoiced}
+              options={[
+                { value: 'si', label: 'Sí' },
+                { value: 'no', label: 'No', ariaLabel: `No: ${QUICK_VOUCHER_LABELS.none}` },
+              ]}
             />
+
+            {invoiced ? (
+              <>
+                <span id={ids.voucherLabel} className="mt-1 text-sm font-medium leading-none">
+                  Comprobante
+                </span>
+                <RadioChips
+                  labelledBy={ids.voucherLabel}
+                  value={voucher}
+                  onChange={(next) => {
+                    touched.current.voucher = true
+                    setVoucher(next)
+                    setVatAdjust(0)
+                    posting.clearFieldErrors()
+                  }}
+                  options={INVOICED_QUICK_VOUCHERS.map((v) => ({
+                    value: v,
+                    label: QUICK_VOUCHER_LABELS[v],
+                  }))}
+                />
+              </>
+            ) : showRemito || remito ? (
+              <div className="grid gap-1.5">
+                <Label htmlFor={ids.remito}>
+                  N.º de remito{' '}
+                  <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
+                </Label>
+                <Input
+                  id={ids.remito}
+                  value={remito}
+                  maxLength={REMITO_MAX}
+                  autoComplete="off"
+                  placeholder="0001-00001234"
+                  aria-describedby={`${ids.remito}-hint`}
+                  onChange={(e) => {
+                    setRemito(e.target.value)
+                    posting.clearFieldErrors()
+                  }}
+                  className="h-11 text-base tabular-nums md:h-10 md:text-sm"
+                />
+                <p id={`${ids.remito}-hint`} className="text-xs text-muted-foreground">
+                  Queda anotado en el detalle del gasto.
+                </p>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRemito(true)
+                  // El botón desaparece: el foco sigue en el campo que lo reemplaza.
+                  requestAnimationFrame(() => document.getElementById(ids.remito)?.focus())
+                }}
+                className="inline-flex min-h-11 items-center gap-1.5 justify-self-start text-sm font-medium text-muted-foreground hover:text-foreground md:min-h-0"
+              >
+                <Plus className="size-3.5" aria-hidden />
+                Agregar n.º de remito
+              </button>
+            )}
 
             {voucher === 'a' ? (
               <div className="grid gap-2 rounded-xl border border-border/70 bg-card/50 p-3">
@@ -876,7 +1097,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
               </div>
             ) : null}
 
-            {voucher !== 'none' ? (
+            {invoiced ? (
               <div className="grid gap-1.5">
                 <Label htmlFor={ids.number}>
                   Número
@@ -911,17 +1132,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
               </div>
             ) : null}
 
-            <p className="text-xs text-muted-foreground text-pretty">
-              {outcome === 'expense'
-                ? voucher === 'ticket'
-                  ? 'Sin proveedor o sin número, el tique va como gasto: no entra al Libro IVA.'
-                  : 'Se guarda como gasto de contado, sin IVA.'
-                : voucher === 'ticket'
-                  ? 'Se guarda el tique y el pago: entra al Libro IVA y la cuenta del proveedor queda en cero.'
-                  : voucher === 'bc' && condition === 'responsable_inscripto'
-                    ? 'Con factura B no computás el IVA: va todo al costo. Pedí factura A si podés.'
-                    : 'Se guarda la factura y el pago, así la cuenta del proveedor queda en cero.'}
-            </p>
+            <p className="text-xs text-muted-foreground text-pretty">{voucherHelp}</p>
 
             {cuitMissing && party ? (
               <InlineNotice
@@ -985,6 +1196,13 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
             ) : null}
           </div>
 
+          {/* Foto del comprobante: se sube después de guardar */}
+          <AttachmentPicker
+            value={files}
+            onChange={setFiles}
+            disabled={posting.pending || attaching !== null}
+          />
+
           {/* Fecha */}
           <DateField
             id={ids.date}
@@ -1012,7 +1230,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
               <Textarea
                 id={ids.detail}
                 value={detail}
-                maxLength={280}
+                maxLength={detailRoom(invoiced ? '' : remito, QUICK_DETAIL_MAX)}
                 rows={2}
                 placeholder="Por ejemplo: hielo para el evento del sábado."
                 onChange={(e) => setDetail(e.target.value)}
@@ -1061,10 +1279,14 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
           <Button
             type="submit"
             className="h-11 w-full sm:w-auto md:h-9"
-            disabled={posting.pending}
+            disabled={posting.pending || attaching !== null}
             aria-describedby={treasury ? `${uid}-con` : undefined}
           >
-            {posting.pending ? 'Guardando…' : submitLabel}
+            {posting.pending
+              ? 'Guardando…'
+              : attaching !== null
+                ? 'Subiendo el comprobante…'
+                : submitLabel}
           </Button>
           {treasury ? (
             <span id={`${uid}-con`} className="sr-only">

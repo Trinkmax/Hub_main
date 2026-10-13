@@ -56,7 +56,7 @@ export default async function GastoFijoPage({
       <PageShell width="compact">
         {header('Gasto fijo', 'Los recordatorios de alquiler, luz e internet.')}
         <ReadOnlyNotice
-          description="Esta pantalla es para cargar gastos fijos. Con Contabilidad podés verlos en Compras › Gastos fijos."
+          description="Esta pantalla es para cargar gastos fijos. Con Contabilidad podés verlos en Gastos fijos."
           href={backHref}
           linkLabel="Ir a Gastos fijos"
         />
@@ -120,6 +120,7 @@ export default async function GastoFijoPage({
         active: row.active,
         notes: row.notes ?? '',
         endsOn: row.endsOn,
+        installmentsTotal: row.installmentsTotal,
         breakdown: row.breakdown,
       }
     : {
@@ -139,6 +140,7 @@ export default async function GastoFijoPage({
         active: true,
         notes: '',
         endsOn: null,
+        installmentsTotal: null,
         breakdown: [],
       }
 

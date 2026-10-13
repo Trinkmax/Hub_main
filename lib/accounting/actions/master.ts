@@ -198,6 +198,8 @@ export type SavedRecurringExpense = {
   active: boolean
   notes: string | null
   endsOn: string | null
+  /** En cuotas: de cuántas es (`null` = no se sabe o no termina). */
+  installmentsTotal: number | null
   breakdown: RecurringBreakdownRow[]
   updatedAt: string | null
 }
@@ -332,6 +334,7 @@ function recurringRow(r: Rec): SavedRecurringExpense {
     active: boolOf(r.active, true),
     notes: textOf(r.notes),
     endsOn: dayOf(r.ends_on),
+    installmentsTotal: intOf(r.installments_total),
     breakdown: parseBreakdown(r.breakdown),
     updatedAt: textOf(r.updated_at),
   }
@@ -862,6 +865,7 @@ const RECURRING_FIELDS: FieldMap = [
   ['active', 'active'],
   ['notes', 'notes'],
   ['endsOn', 'ends_on'],
+  ['installmentsTotal', 'installments_total'],
   ['breakdown', 'breakdown'],
 ]
 

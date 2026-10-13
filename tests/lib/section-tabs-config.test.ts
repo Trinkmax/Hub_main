@@ -130,11 +130,20 @@ describe('pestañas de sección: qué ve cada uno', () => {
     })
   })
 
-  describe('Administración: las puertas de los seis ítems que tenía el menú, más «Importar»', () => {
-    const ALL = ['Resumen', 'Compras', 'Ventas', 'Cajas', 'Importar', 'Libros', 'Plan de cuentas']
+  describe('Administración: las puertas de los seis ítems que tenía el menú, más «Importar» y «Gastos fijos»', () => {
+    const ALL = [
+      'Resumen',
+      'Compras',
+      'Gastos fijos',
+      'Ventas',
+      'Cajas',
+      'Importar',
+      'Libros',
+      'Plan de cuentas',
+    ]
     const accountingOn: TenantFeatures = { ...allOff, accounting: true }
 
-    it('dueño con acceso: las siete, con sus rutas; Resumen exacta', () => {
+    it('dueño con acceso: las ocho, con sus rutas; Resumen exacta', () => {
       const section = resolveSection(
         'administracion',
         SLUG,
@@ -145,18 +154,21 @@ describe('pestañas de sección: qué ve cada uno', () => {
       expect(hrefs(section)).toEqual([
         '/hub/administracion',
         '/hub/administracion/compras',
+        '/hub/administracion/gastos-fijos',
         '/hub/administracion/ventas',
         '/hub/administracion/cajas',
         '/hub/administracion/importar',
         '/hub/administracion/libros',
         '/hub/administracion/plan-de-cuentas',
       ])
+      // «Gastos fijos» va justo después de «Compras» y, en el celular, se acorta.
+      expect(section.tabs[2]).toMatchObject({ value: 'gastos-fijos', shortLabel: 'Fijos' })
       expect(section.tabs[0]?.exact).toBe(true)
       expect(section.tabs.slice(1).every((t) => !t.exact)).toBe(true)
       expect(section.showWhenNoneActive).toBe(true)
     })
 
-    it('la contadora ve las mismas siete (Importar, en solo lectura)', () => {
+    it('la contadora ve las mismas ocho (Importar, en solo lectura)', () => {
       const section = resolveSection(
         'administracion',
         SLUG,
@@ -240,6 +252,12 @@ describe('pestaña activa según la URL', () => {
     expect(active('administracion', '/hub/administracion/compras')).toBe('compras')
     expect(active('administracion', '/hub/administracion/compras/proveedores/p1')).toBe('compras')
     expect(active('administracion', '/hub/administracion/compras/nueva')).toBe('compras')
+    // La lista de gastos fijos es pestaña propia; su formulario conserva la ruta de Compras y
+    // marca igual «Gastos fijos».
+    expect(active('administracion', '/hub/administracion/gastos-fijos')).toBe('gastos-fijos')
+    expect(active('administracion', '/hub/administracion/compras/gastos-fijos/nuevo')).toBe(
+      'gastos-fijos',
+    )
     expect(active('administracion', '/hub/administracion/ventas/clientes/c1')).toBe('ventas')
     expect(active('administracion', '/hub/administracion/ventas/cierre')).toBe('ventas')
     expect(active('administracion', '/hub/administracion/cajas/gasto-bancario')).toBe('cajas')

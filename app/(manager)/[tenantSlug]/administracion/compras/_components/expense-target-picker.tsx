@@ -27,6 +27,8 @@ import { cn } from '@/lib/utils'
 import { isPurchaseImputation, isQuickExpenseAccount } from '../_lib/accounts'
 import { type ExpenseTarget, recurringDueText, recurringNote } from '../_lib/quick-expense'
 import type { QuickSuggestion, SheetAccount, SheetParty, SheetRecurring } from '../_lib/sheet-types'
+import { type AccountAsk, supplierDefaultAccount } from '../_lib/supplier-account'
+import { RememberAccountCheckbox, SupplierAccountLine } from './supplier-account'
 
 /** Hasta cuántos gastos fijos pendientes van como chips (el resto, en el buscador). */
 const MAX_RECURRING_CHIPS = 4
@@ -46,11 +48,28 @@ export function partyLabel(p: Pick<SheetParty, 'name' | 'tradeName'>): string {
   return p.tradeName && p.tradeName !== p.name ? `${p.tradeName} (${p.name})` : p.name
 }
 
+/** Cómo va la cuenta de un gasto con proveedor (lo decide `accountAsk`, la hoja lleva el estado). */
+export type TargetAccountPlan = {
+  ask: AccountAsk
+  /** La persona tocó [Cambiar] de «Va a «…»»: la cuenta vale solo para este gasto. */
+  changing: boolean
+  onChange: () => void
+  /** Vuelve a la cuenta habitual del proveedor. */
+  onUseDefault: () => void
+  /** «Usar siempre para …» (solo con `ask-remember`). */
+  remember: boolean
+  onRememberChange: (remember: boolean) => void
+}
+
 /**
  * «¿En qué?» de «Nuevo gasto» (H.5): chips con los gastos fijos pendientes de
  * este mes y lo más usado, un buscador agrupado en Gastos fijos, Proveedores y
  * Gastos con «Crear proveedor «…»», y una vez elegido, la línea «Coca-Cola ·
  * Compras: bebidas» con [Cambiar].
+ *
+ * Con un proveedor que tiene cuenta habitual en su ficha no se pregunta «¿En
+ * qué gastaste?»: va «Va a «Compras: bebidas»» con [Cambiar] para ese gasto.
+ * Si no la tiene, se pregunta y se ofrece «Usar siempre para …» (12/10/2026).
  */
 export function ExpenseTargetPicker({
   id,
@@ -61,6 +80,7 @@ export function ExpenseTargetPicker({
   parties,
   accounts,
   value,
+  accountPlan,
   onPick,
   onPickRecurring,
   onAccountChange,
@@ -80,6 +100,8 @@ export function ExpenseTargetPicker({
   parties: readonly SheetParty[]
   accounts: readonly SheetAccount[]
   value: ExpenseTarget | null
+  /** Con proveedor: si la cuenta sale de su ficha o se pregunta. Sin esto, se pregunta como siempre. */
+  accountPlan?: TargetAccountPlan
   /** Se eligió algo: un chip, un proveedor o una cuenta del buscador, o «Crear proveedor». */
   onPick: (target: ExpenseTarget, suggestion: QuickSuggestion | null) => void
   /** Se eligió un gasto fijo (chip o buscador). */
@@ -156,10 +178,7 @@ export function ExpenseTargetPicker({
     if (kind === 'p:') {
       const party = partyById.get(entityId)
       if (!party) return
-      const account =
-        party.defaultAccountId && imputable.has(party.defaultAccountId)
-          ? party.defaultAccountId
-          : null
+      const account = supplierDefaultAccount(party.defaultAccountId, imputable)
       onPick({ kind: 'party', partyId: party.id, accountId: account }, null)
     } else if (kind === 'a:') {
       onPick({ kind: 'account', accountId: entityId }, null)
@@ -182,13 +201,17 @@ export function ExpenseTargetPicker({
           ? `Proveedor nuevo`
           : (account?.name ?? 'Gasto')
     const linked = linkedRecurringId ? recurringById.get(linkedRecurringId) : undefined
+    // La cuenta sale de la ficha del proveedor: una línea, sin pregunta.
+    const fromSupplier =
+      value.kind === 'party' && accountPlan?.ask === 'fixed' && account !== undefined
+    const partyName = party ? (party.tradeName ?? party.name) : 'este proveedor'
 
     return (
       <div className="space-y-3 rounded-xl border border-border/70 bg-card/50 p-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{title}</p>
-            {value.kind !== 'account' && account ? (
+            {value.kind !== 'account' && account && !fromSupplier ? (
               <p className="truncate text-xs text-muted-foreground">{account.name}</p>
             ) : null}
             {value.kind === 'party' && party?.taxId ? (
@@ -299,7 +322,16 @@ export function ExpenseTargetPicker({
           </div>
         ) : null}
 
-        {value.kind !== 'account' ? (
+        {value.kind === 'account' ? null : fromSupplier && account && accountPlan ? (
+          <SupplierAccountLine
+            accountName={account.name}
+            onChange={() => {
+              accountPlan.onChange()
+              // El botón desaparece: el foco sigue en el selector que lo reemplaza.
+              requestAnimationFrame(() => document.getElementById(`${id}-account`)?.focus())
+            }}
+          />
+        ) : (
           <div className="grid gap-1.5">
             <Label htmlFor={`${id}-account`}>¿En qué gastaste?</Label>
             <AccountCombobox
@@ -315,8 +347,28 @@ export function ExpenseTargetPicker({
                 {errors['target.accountId']}
               </p>
             ) : null}
+            {value.kind === 'party' && accountPlan?.changing ? (
+              <p className="text-xs text-muted-foreground text-pretty">
+                Solo para este gasto: la cuenta habitual de {partyName} no cambia.{' '}
+                <button
+                  type="button"
+                  onClick={accountPlan.onUseDefault}
+                  className="rounded-sm underline underline-offset-4 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  Usar la habitual
+                </button>
+              </p>
+            ) : null}
+            {value.kind === 'party' && accountPlan?.ask === 'ask-remember' ? (
+              <RememberAccountCheckbox
+                id={`${id}-remember`}
+                partyName={partyName}
+                checked={accountPlan.remember}
+                onCheckedChange={accountPlan.onRememberChange}
+              />
+            ) : null}
           </div>
-        ) : null}
+        )}
       </div>
     )
   }
@@ -353,7 +405,16 @@ export function ExpenseTargetPicker({
               onClick={() =>
                 onPick(
                   s.type === 'party' && s.partyId
-                    ? { kind: 'party', partyId: s.partyId, accountId: s.accountId }
+                    ? {
+                        kind: 'party',
+                        partyId: s.partyId,
+                        // La cuenta de la ficha manda; si no tiene, la última que se le usó.
+                        accountId:
+                          supplierDefaultAccount(
+                            partyById.get(s.partyId)?.defaultAccountId,
+                            imputable,
+                          ) ?? s.accountId,
+                      }
                     : { kind: 'account', accountId: s.accountId },
                   s,
                 )

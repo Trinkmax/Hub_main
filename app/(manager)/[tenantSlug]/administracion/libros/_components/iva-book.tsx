@@ -285,7 +285,7 @@ function EmptyIvaBook({
       <EmptyState
         icon={Receipt}
         title={`No hay comprobantes con IVA en ${label.toLowerCase()}`}
-        description="Acá entran las facturas, notas de crédito y débito y los tiques de proveedores con CUIT. Los gastos sin comprobante no van al Libro IVA."
+        description="Acá entran las facturas, notas de crédito y débito y los tiques de proveedores con CUIT. Los gastos sin factura no van al Libro IVA."
         action={
           canWrite ? (
             <Button asChild className="h-11 md:h-9">

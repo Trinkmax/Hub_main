@@ -139,6 +139,25 @@ describe('gastos fijos en cuotas', () => {
     expect(recurringSchema.parse({ ...base, endsOn: '' }).endsOn).toBeNull()
     expect(recurringSchema.parse(base).endsOn).toBeNull()
   })
+
+  it('«¿De cuántas?»: el total es opcional y va de 1 a 120', () => {
+    const base = {
+      name: 'Licuadora 6/6 USA cord',
+      accountId: ACCOUNT,
+      frequency: 'monthly',
+      dueDay: 20,
+      nextDueDate: '2026-10-20',
+      endsOn: '2026-12-20',
+    }
+    expect(recurringSchema.parse({ ...base, installmentsTotal: 6 }).installmentsTotal).toBe(6)
+    expect(recurringSchema.parse({ ...base, installmentsTotal: '12' }).installmentsTotal).toBe(12)
+    expect(recurringSchema.parse({ ...base, installmentsTotal: '' }).installmentsTotal).toBeNull()
+    expect(recurringSchema.parse({ ...base, installmentsTotal: null }).installmentsTotal).toBeNull()
+    expect(recurringSchema.parse(base).installmentsTotal).toBeNull()
+    for (const bad of [0, 121, 2.5, 'seis']) {
+      expect(recurringSchema.safeParse({ ...base, installmentsTotal: bad }).success).toBe(false)
+    }
+  })
 })
 
 describe('el detalle de un gasto fijo (sueldos por empleado y concepto)', () => {

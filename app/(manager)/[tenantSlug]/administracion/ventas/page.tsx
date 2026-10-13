@@ -4,9 +4,13 @@ import {
   CalendarDays,
   FilePlus2,
   FileText,
+  Flag,
   HandCoins,
   Info,
+  Landmark,
   Receipt,
+  Scale,
+  Target,
   Undo2,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -42,32 +46,51 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageShell } from '@/components/ui/page-shell'
 import { StatCard } from '@/components/ui/stat-card'
+import { buildProjection, cashDiffText, projectionFigures } from '@/lib/accounting/projection'
 import { getNetByMethod, getSalesSummary } from '@/lib/accounting/queries/books'
 import { listDocuments } from '@/lib/accounting/queries/documents'
 import { CHANNEL_LABELS, exportHref, SALES_INVOICE_KINDS } from '@/lib/accounting/queries/labels'
 import { listParties } from '@/lib/accounting/queries/parties'
+import {
+  getSalesProjection,
+  listCashCountTreasuries,
+  listDailyCashCounts,
+  listDayEvents,
+} from '@/lib/accounting/queries/projection'
 import { getAccountingSettings } from '@/lib/accounting/queries/settings'
 import { settleQuery } from '@/lib/accounting/queries/shared'
 import { CHANNELS } from '@/lib/accounting/types'
 import {
   addDays,
+  addMonthsToYearMonth,
   formatDayMonth,
+  formatMonthLabel,
   monthOf,
   serviceDayInCordoba,
   todayInCordoba,
   weekdayName,
 } from '@/lib/dates'
 import { formatCentsShort } from '@/lib/money'
+import { CashTable } from './_components/cash-table'
 import { ClosesCalendar } from './_components/closes-calendar'
 import { SalesDocumentsList } from './_components/documents-list'
 import { NetByMethod } from './_components/net-by-method'
+import { ProjectionTable } from './_components/projection-table'
 import { type ReceivableFilter, ReceivablesFilters } from './_components/receivables-filters'
 import { ReceivablesList } from './_components/receivables-list'
 import { VentasHeaderActions } from './_components/ventas-header-actions'
 
 export const metadata = { title: 'Ventas y clientes' }
 
-const TABS = ['cierres', 'clientes', 'cobros', 'neto-por-medio', 'facturas'] as const
+const TABS = [
+  'cierres',
+  'proyeccion',
+  'caja',
+  'clientes',
+  'cobros',
+  'neto-por-medio',
+  'facturas',
+] as const
 type Tab = (typeof TABS)[number]
 
 function parseTab(value: string | null): Tab {
@@ -81,6 +104,11 @@ type TabProps = {
   today: string
   sp: PageSearchParams
   canWrite: boolean
+  /**
+   * La contadora no lee el calendario del bar (está aislada de todo lo que no
+   * es Administración): para ella la proyección no trae los eventos.
+   */
+  canReadCalendar: boolean
 }
 
 export default async function VentasPage({
@@ -105,6 +133,7 @@ export default async function VentasPage({
     today: todayInCordoba(),
     sp,
     canWrite,
+    canReadCalendar: access.role !== 'accountant',
   }
   const tabHref = (value: Tab) =>
     value === 'cierres' ? `${base}/ventas` : `${base}/ventas?tab=${value}`
@@ -118,7 +147,7 @@ export default async function VentasPage({
             Ventas y clientes <ReadOnlyBadge />
           </>
         }
-        description="Lo vendido cada día, quién te debe y cuánto llega de verdad después de los descuentos."
+        description="Lo vendido cada día contra el objetivo, quién te debe y cuánto llega de verdad después de los descuentos."
         actions={<VentasHeaderActions base={base} />}
       />
 
@@ -131,6 +160,13 @@ export default async function VentasPage({
             label: 'Cierres del día',
             shortLabel: 'Cierres',
             href: tabHref('cierres'),
+          },
+          { value: 'proyeccion', label: 'Proyección', href: tabHref('proyeccion') },
+          {
+            value: 'caja',
+            label: 'Ventas contra caja',
+            shortLabel: 'Contra caja',
+            href: tabHref('caja'),
           },
           {
             value: 'clientes',
@@ -150,6 +186,8 @@ export default async function VentasPage({
       />
 
       {tab === 'cierres' ? <CierresTab {...props} /> : null}
+      {tab === 'proyeccion' ? <ProyeccionTab {...props} /> : null}
+      {tab === 'caja' ? <CajaTab {...props} /> : null}
       {tab === 'clientes' ? <ClientesTab {...props} /> : null}
       {tab === 'cobros' ? <CobrosTab {...props} /> : null}
       {tab === 'neto-por-medio' ? <NetoTab {...props} /> : null}
@@ -386,6 +424,196 @@ async function CierresTab({ tenantId, tenantSlug, base, today, sp, canWrite }: T
           </DataTableScroll>
         </DataTableShell>
       ) : null}
+    </div>
+  )
+}
+
+// ─── Proyección: objetivo por día contra lo vendido ──────────────────────────
+
+/** El mismo chip que «Este mes» del selector, como link. */
+const CHIP_LINK =
+  'inline-flex h-11 items-center rounded-full border border-border bg-card/40 px-4 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+
+async function ProyeccionTab({ tenantId, base, today, sp, canWrite, canReadCalendar }: TabProps) {
+  const month = resolveMonth(sp, today)
+  if (!month.ok) {
+    return (
+      <div className="space-y-6">
+        <MonthStepper month={monthOf(today)} today={today} />
+        <PeriodError message={month.message} />
+      </div>
+    )
+  }
+
+  const serviceDay = serviceDayInCordoba()
+  const range = { from: month.from, to: month.to }
+  const [settings, rows, events] = await Promise.all([
+    settleQuery(getAccountingSettings(tenantId)),
+    settleQuery(getSalesProjection(tenantId, range)),
+    canReadCalendar ? settleQuery(listDayEvents(tenantId, range)) : null,
+  ])
+  const booksStart = settings.ok && settings.data ? settings.data.booksStartDate : today
+  const currentMonth = monthOf(today)
+  // Los objetivos se cargan antes de que empiece el mes: desde el mes en curso se llega al que viene.
+  const stepper = (
+    <div className="flex flex-wrap items-center gap-2">
+      <MonthStepper month={month.month} today={today} minMonth={monthOf(booksStart)} />
+      {month.month === currentMonth ? (
+        <Link
+          href={hrefWith(`${base}/ventas`, {
+            tab: 'proyeccion',
+            mes: addMonthsToYearMonth(currentMonth, 1),
+          })}
+          scroll={false}
+          className={CHIP_LINK}
+        >
+          Mes que viene
+        </Link>
+      ) : null}
+    </div>
+  )
+  if (!rows.ok) {
+    return (
+      <div className="space-y-6">
+        {stepper}
+        <BlockError message={rows.message} />
+      </div>
+    )
+  }
+
+  const projection = buildProjection(rows.data, { serviceDay })
+  const figures = projectionFigures(projection.summary)
+
+  return (
+    <div className="space-y-6">
+      {stepper}
+
+      <section className="grid gap-4 sm:grid-cols-3" aria-label="El mes contra el objetivo">
+        <StatCard
+          icon={Receipt}
+          iconClassName="text-success"
+          label={figures.sold.label}
+          value={figures.sold.value}
+          hint={figures.sold.hint}
+        />
+        <StatCard
+          icon={Target}
+          iconClassName="text-primary"
+          label={figures.target.label}
+          value={figures.target.value}
+          hint={figures.target.hint}
+        />
+        <StatCard
+          icon={Flag}
+          iconClassName="text-warning"
+          label={figures.remaining.label}
+          value={figures.remaining.value}
+          hint={figures.remaining.hint}
+        />
+      </section>
+
+      <ProjectionTable
+        projection={projection}
+        // Si el calendario no se pudo leer, la planilla sale igual, sin los eventos.
+        events={events?.ok ? events.data : null}
+        month={month.month}
+        monthLabel={formatMonthLabel(month.month)}
+        base={base}
+        canWrite={canWrite}
+      />
+    </div>
+  )
+}
+
+// ─── Ventas contra caja ──────────────────────────────────────────────────────
+
+async function CajaTab({ tenantId, base, today, sp, canWrite }: TabProps) {
+  const month = resolveMonth(sp, today)
+  if (!month.ok) {
+    return (
+      <div className="space-y-6">
+        <MonthStepper month={monthOf(today)} today={today} />
+        <PeriodError message={month.message} />
+      </div>
+    )
+  }
+
+  const range = { from: month.from, to: month.to }
+  const [settings, rows, counts, treasuries] = await Promise.all([
+    settleQuery(getAccountingSettings(tenantId)),
+    settleQuery(getSalesProjection(tenantId, range)),
+    // Lo de cada caja y la lista de cajas solo hacen falta para cargar.
+    canWrite ? settleQuery(listDailyCashCounts(tenantId, range)) : null,
+    canWrite ? settleQuery(listCashCountTreasuries(tenantId)) : null,
+  ])
+  const booksStart = settings.ok && settings.data ? settings.data.booksStartDate : today
+  const stepper = <MonthStepper month={month.month} today={today} minMonth={monthOf(booksStart)} />
+  const failed = !rows.ok
+    ? rows
+    : counts && !counts.ok
+      ? counts
+      : treasuries && !treasuries.ok
+        ? treasuries
+        : null
+  if (failed || !rows.ok) {
+    return (
+      <div className="space-y-6">
+        {stepper}
+        <BlockError message={failed?.message ?? ''} />
+      </div>
+    )
+  }
+
+  const projection = buildProjection(rows.data, { serviceDay: serviceDayInCordoba() })
+  const { cash } = projection
+  const compared = cash.comparedDays > 0
+  const missing =
+    cash.missingCountDays === 0
+      ? 'Todos los días con cierre tienen cargado lo que entró.'
+      : cash.missingCountDays === 1
+        ? 'Falta cargar lo que entró en 1 día.'
+        : `Falta cargar lo que entró en ${cash.missingCountDays} días.`
+
+  return (
+    <div className="space-y-6">
+      {stepper}
+
+      <section className="grid gap-4 sm:grid-cols-3" aria-label="Ventas contra caja en el mes">
+        <StatCard
+          icon={Receipt}
+          iconClassName="text-success"
+          label="Venta real del salón"
+          value={compared ? formatCentsShort(cash.salesCents) : '—'}
+          hint={
+            cash.comparedDays === 1
+              ? 'De 1 día con las dos puntas cargadas'
+              : `De ${cash.comparedDays} días con las dos puntas cargadas`
+          }
+        />
+        <StatCard
+          icon={Landmark}
+          iconClassName="text-info"
+          label="Entró"
+          value={compared ? formatCentsShort(cash.countedCents) : '—'}
+          hint="Lo que entró de verdad, cargado a mano"
+        />
+        <StatCard
+          icon={Scale}
+          iconClassName="text-primary"
+          label="Diferencia"
+          value={compared ? cashDiffText(cash.diffCents) : '—'}
+          hint={missing}
+        />
+      </section>
+
+      <CashTable
+        projection={projection}
+        counts={counts?.ok ? counts.data : {}}
+        treasuries={treasuries?.ok ? treasuries.data : []}
+        monthLabel={formatMonthLabel(month.month)}
+        base={base}
+        canWrite={canWrite}
+      />
     </div>
   )
 }
@@ -638,7 +866,7 @@ async function NetoTab({ tenantId, tenantSlug, today, sp }: TabProps) {
   )
 }
 
-async function FacturasTab({ tenantId, base, today, sp, canWrite }: TabProps) {
+async function FacturasTab({ tenantId, base, today, sp }: TabProps) {
   const { range, picker } = rangeOrError(sp, today)
   const after = firstParam(sp.despues)
   const page = range.ok
@@ -652,15 +880,6 @@ async function FacturasTab({ tenantId, base, today, sp, canWrite }: TabProps) {
         }),
       )
     : null
-  const newInvoice = canWrite ? (
-    <Button asChild className="gap-2">
-      <Link href={`${base}/ventas/nueva-factura`}>
-        <FilePlus2 className="size-4" aria-hidden />
-        Factura de venta
-      </Link>
-    </Button>
-  ) : null
-
   return (
     <div className="space-y-6">
       <RangeFilter range={picker} today={today} />
@@ -672,8 +891,7 @@ async function FacturasTab({ tenantId, base, today, sp, canWrite }: TabProps) {
         <EmptyState
           icon={FileText}
           title="No hay facturas sueltas en este período"
-          description="Lo del salón y el delivery va en el cierre del día. Acá van las ventas que se facturan aparte: eventos, catering o sponsoreo."
-          action={newInvoice}
+          description="Las ventas se facturan con el cierre del día, también las de eventos. Acá quedan las facturas de venta que se cargaron aparte."
         />
       ) : (
         <>

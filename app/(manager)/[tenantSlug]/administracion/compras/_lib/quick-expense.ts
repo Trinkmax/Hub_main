@@ -4,6 +4,7 @@
  * y qué se guarda. Lo prueba `administracion-gasto-rapido.test.ts`.
  */
 
+import { isNotInvoicedVoucher } from '@/lib/accounting/invoiced'
 import { splitGross } from '@/lib/accounting/iva'
 import type { QuickExpenseValues } from '@/lib/accounting/server/document-types'
 import type { IvaCondition, VatRateBp } from '@/lib/accounting/types'
@@ -11,15 +12,33 @@ import { isVoucherType, VOUCHER_CATALOG } from '@/lib/accounting/voucher-types'
 import { formatDayMonth } from '@/lib/dates'
 import type { SheetRecurring } from './sheet-types'
 
-/** Los comprobantes que ofrece «Nuevo gasto» (el esquema `quickExpenseSchema.voucher`). */
+/**
+ * Los comprobantes de «Nuevo gasto» (el esquema `quickExpenseSchema.voucher`).
+ * Desde el 12/10/2026 se pregunta primero «¿Se factura?»: «No» es `none` (se
+ * guarda `sin_comprobante` y en pantalla es «Remito u otro»); «Sí» abre los
+ * otros tres. Los valores no cambiaron: cambió cómo se preguntan.
+ */
 export const QUICK_VOUCHERS = ['none', 'ticket', 'a', 'bc'] as const
 export type QuickVoucher = (typeof QUICK_VOUCHERS)[number]
 
 export const QUICK_VOUCHER_LABELS: Readonly<Record<QuickVoucher, string>> = {
-  none: 'Sin comprobante',
+  none: 'Remito u otro',
   ticket: 'Tique',
   a: 'Factura A',
   bc: 'Factura B o C',
+}
+
+/** Los de «Sí, se factura», en el orden de los chips. */
+export const INVOICED_QUICK_VOUCHERS = ['ticket', 'a', 'bc'] as const
+export type InvoicedQuickVoucher = (typeof INVOICED_QUICK_VOUCHERS)[number]
+
+/**
+ * La respuesta a «¿Se factura?» que corresponde a un comprobante: «No» solo
+ * para `none`. No confundir con `isInvoiceVoucher` (una factura A, B o C, que
+ * además pide proveedor y número): un tique también «se factura».
+ */
+export function quickVoucherInvoiced(voucher: QuickVoucher): voucher is InvoicedQuickVoucher {
+  return voucher !== 'none'
 }
 
 /** Alícuotas de «Nuevo gasto» (las de una factura A de todos los días). */
@@ -36,25 +55,26 @@ export function isInvoiceVoucher(voucher: QuickVoucher): boolean {
 }
 
 /**
- * El comprobante que se propone (H.5): el último con ese proveedor; si no hay,
- * por su condición (RI: Factura A; monotributo o exento: Factura B o C); sin
- * proveedor, «Sin comprobante».
+ * Un tipo de comprobante cualquiera → el de «Nuevo gasto» que le corresponde.
+ * Lo que no se factura (`sin_comprobante`) es «No»; las
+ * letras A y M, «Factura A»; B y C, «Factura B o C». `null`: no dice nada
+ * (una DDJJ, una liquidación, un valor viejo).
  */
-export function suggestQuickVoucher(input: {
-  hasParty: boolean
-  lastVoucherType?: string | null
-  condition?: IvaCondition | null
-}): QuickVoucher {
-  if (!input.hasParty) return 'none'
-  const last = input.lastVoucherType
-  if (isVoucherType(last)) {
-    const info = VOUCHER_CATALOG[last]
-    if (last === 'sin_comprobante') return 'none'
-    if (last === 'tique') return 'ticket'
-    if (info.letter === 'A' || info.letter === 'M') return 'a'
-    if (info.letter === 'B' || info.letter === 'C') return 'bc'
-  }
-  switch (input.condition) {
+function quickVoucherOf(type: string | null | undefined): QuickVoucher | null {
+  if (!isVoucherType(type)) return null
+  if (isNotInvoicedVoucher(type)) return 'none'
+  if (type === 'tique') return 'ticket'
+  const { letter } = VOUCHER_CATALOG[type]
+  if (letter === 'A' || letter === 'M') return 'a'
+  if (letter === 'B' || letter === 'C') return 'bc'
+  return null
+}
+
+/** Por la condición frente al IVA: RI, Factura A; monotributo o exento, Factura B o C; el resto, tique. */
+function invoicedVoucherByCondition(
+  condition: IvaCondition | null | undefined,
+): InvoicedQuickVoucher {
+  switch (condition) {
     case 'responsable_inscripto':
       return 'a'
     case 'monotributo':
@@ -63,6 +83,47 @@ export function suggestQuickVoucher(input: {
     default:
       return 'ticket'
   }
+}
+
+/**
+ * El comprobante que se propone y, con él, la respuesta a «¿Se factura?»: la
+ * ficha propone y la carga decide. Primero el «Comprobante habitual» de la
+ * ficha del proveedor; si no tiene, el último que se le cargó; si no hay, por
+ * su condición (RI: Factura A; monotributo o exento: Factura B o C). Sin
+ * proveedor, «No» (remito u otro).
+ */
+export function suggestQuickVoucher(input: {
+  hasParty: boolean
+  /** El «Comprobante habitual» de la ficha (`acc_parties.default_voucher_type`). */
+  habitualVoucherType?: string | null
+  lastVoucherType?: string | null
+  condition?: IvaCondition | null
+}): QuickVoucher {
+  if (!input.hasParty) return 'none'
+  return (
+    quickVoucherOf(input.habitualVoucherType) ??
+    quickVoucherOf(input.lastVoucherType) ??
+    invoicedVoucherByCondition(input.condition)
+  )
+}
+
+/**
+ * Al contestar «Sí, se factura»: qué comprobante queda marcado. El habitual o
+ * el último del proveedor si son con factura; si no, por su condición. Sin
+ * proveedor, tique (una factura pide proveedor).
+ */
+export function suggestInvoicedVoucher(input: {
+  hasParty: boolean
+  habitualVoucherType?: string | null
+  lastVoucherType?: string | null
+  condition?: IvaCondition | null
+}): InvoicedQuickVoucher {
+  if (!input.hasParty) return 'ticket'
+  for (const type of [input.habitualVoucherType, input.lastVoucherType]) {
+    const voucher = quickVoucherOf(type)
+    if (voucher !== null && quickVoucherInvoiced(voucher)) return voucher
+  }
+  return invoicedVoucherByCondition(input.condition)
 }
 
 /** La alícuota que se propone: la recordada si es una de las de «Nuevo gasto»; si no, 21 %. */
@@ -101,6 +162,52 @@ export function quickExpenseOutcome(input: {
   return 'purchase'
 }
 
+/** La ayuda debajo de «¿Se factura?»: qué se guarda y si entra al Libro IVA. */
+export function quickVoucherHelp(input: {
+  voucher: QuickVoucher
+  outcome: 'expense' | 'purchase'
+  condition: IvaCondition | null
+}): string {
+  if (input.voucher === 'none') {
+    return 'Se guarda como gasto de contado, con remito u otro comprobante. No entra al Libro IVA.'
+  }
+  if (input.voucher === 'ticket') {
+    return input.outcome === 'expense'
+      ? 'Sin proveedor o sin número, el tique va como gasto: no entra al Libro IVA.'
+      : 'Se guarda el tique y el pago: entra al Libro IVA y la cuenta del proveedor queda en cero.'
+  }
+  if (input.voucher === 'bc' && input.condition === 'responsable_inscripto') {
+    return 'Con factura B no computás el IVA: va todo al costo. Pedí factura A si podés.'
+  }
+  return 'Se guarda la factura y el pago, así la cuenta del proveedor queda en cero.'
+}
+
+// ─── N.º de remito ───────────────────────────────────────────────────────────
+
+/** Hasta dónde llega el número del remito (el detalle entero tiene `QUICK_DETAIL_MAX`). */
+export const REMITO_MAX = 40
+/** El tope del detalle de «Nuevo gasto» (`quickExpenseSchema.detail`). */
+export const QUICK_DETAIL_MAX = 280
+
+/**
+ * El número del remito va adelante del detalle: «Remito 0001-00001234 · hielo
+ * para el evento». Un gasto de contado no lleva punto de venta ni número (el
+ * motor no los guarda en un `expense`), así que queda escrito ahí.
+ */
+export function withRemito(remito: string, text: string): string {
+  const number = remito.trim().replace(/\s+/g, ' ')
+  const rest = text.trim()
+  if (number === '') return rest
+  const head = /^remito\b/i.test(number) ? number : `Remito ${number}`
+  return rest === '' ? head : `${head} · ${rest}`
+}
+
+/** Cuánto lugar le queda al detalle con ese número de remito adelante. */
+export function detailRoom(remito: string, max: number): number {
+  const head = withRemito(remito, '')
+  return head === '' ? max : Math.max(0, max - head.length - ' · '.length)
+}
+
 // ─── Lo que se carga ─────────────────────────────────────────────────────────
 
 /** «¿En qué?»: un proveedor (con su cuenta), una cuenta suelta o un proveedor nuevo. */
@@ -127,6 +234,8 @@ export type QuickExpenseFormState = {
   number: number | null
   date: string | null
   detail: string
+  /** «N.º de remito» (opcional, solo con «No se factura»): va adelante del detalle. */
+  remito?: string
   /** El gasto fijo elegido en «¿En qué?» (`null` si no es uno). */
   recurringExpenseId: string | null
 }
@@ -171,8 +280,10 @@ export function buildQuickExpenseValues(state: QuickExpenseFormState): {
   }
 
   const accountId = target.accountId ?? ''
-  // Sin comprobante no hay número; con factura el esquema lo exige (lo marca en `number`).
-  const numbered = state.voucher !== 'none'
+  // Sin factura no hay punto de venta ni número (el del remito va en el detalle); con factura
+  // el esquema los exige (lo marca en `number`).
+  const numbered = quickVoucherInvoiced(state.voucher)
+  const detail = numbered ? state.detail.trim() : withRemito(state.remito ?? '', state.detail)
   const values: QuickExpenseFormValues = {
     amountCents: state.amountCents,
     target:
@@ -197,7 +308,7 @@ export function buildQuickExpenseValues(state: QuickExpenseFormState): {
     pointOfSale: numbered ? state.pointOfSale : null,
     number: numbered ? state.number : null,
     date: state.date,
-    detail: state.detail.trim() === '' ? null : state.detail.trim(),
+    detail: detail === '' ? null : detail,
     recurringExpenseId: state.recurringExpenseId,
   }
   return { values, missing: {} }
@@ -208,6 +319,7 @@ export function buildQuickExpenseValues(state: QuickExpenseFormState): {
 /**
  * El comprobante habitual de un gasto fijo en el selector de «Nuevo gasto».
  * `null`: no es uno de los cuatro (nota de crédito, recibo…) y no se toca.
+ * Lo que no se factura (el remito) es «No».
  */
 export function quickVoucherFromType(voucherType: string | null | undefined): QuickVoucher | null {
   switch (voucherType) {

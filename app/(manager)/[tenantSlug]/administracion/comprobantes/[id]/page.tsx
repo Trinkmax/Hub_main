@@ -2,6 +2,7 @@ import { Ban, FilePenLine, FileText, Info, Lock, Repeat } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import type { ReactNode } from 'react'
+import { DocumentAttachments } from '@/components/administracion/adjuntos/document-attachments'
 import { Amount } from '@/components/administracion/amount'
 import { DueStatus } from '@/components/administracion/due-status'
 import { EntryPreview, type EntryPreviewData } from '@/components/administracion/entry-preview'
@@ -20,6 +21,7 @@ import {
   PAYMENT_STATUS_LABELS,
   settleQuery,
 } from '@/lib/accounting/queries'
+import { listDocumentAttachments } from '@/lib/accounting/queries/attachments'
 import { loadFirstOpenDate } from '@/lib/accounting/server/document-context'
 import { getArcaVoucherCard } from '@/lib/arca/emit-queries'
 import {
@@ -43,6 +45,7 @@ import {
 } from '../_lib/document-view'
 import { ArcaAuthorizationCard } from './_components/arca-card'
 import { ReverseDocumentButton, VoidDocumentButton } from './_components/document-actions'
+import { attachmentsBlock } from './_lib/attachments-view'
 
 export const metadata = { title: 'Comprobante' }
 
@@ -116,6 +119,8 @@ export default async function ComprobantePage({
   }
 
   const doc = result.data
+  // La foto o el PDF del comprobante: se pide ya y se espera al final (nunca tira).
+  const attachmentsPending = settleQuery(listDocumentAttachments(tenantId, doc.id))
   // ¿Se emitió con ARCA desde la plataforma? Una factura que ya está en ARCA (producción)
   // no se anula desde los libros: se corrige con una nota de crédito emitida con ARCA.
   const arcaOutcome = ARCA_KINDS.has(doc.kind)
@@ -160,6 +165,12 @@ export default async function ComprobantePage({
     : PAYMENT_STATUS_LABELS
   const kindLabel = documentKindLabel(doc.kind)
   const reversed = doc.reversedBy?.status === 'posted' ? doc.reversedBy : null
+  const attachments = await attachmentsPending
+  const attachmentsView = attachmentsBlock(
+    doc,
+    canWrite,
+    attachments.ok ? attachments.data.length : null,
+  )
 
   return (
     <PageShell width="comfortable">
@@ -348,7 +359,18 @@ export default async function ComprobantePage({
       ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <Lines doc={doc} />
+        <div className="space-y-6">
+          <Lines doc={doc} />
+          {attachmentsView.show ? (
+            <DocumentAttachments
+              tenantSlug={tenantSlug}
+              documentId={doc.id}
+              attachments={attachments.ok ? attachments.data : []}
+              canEdit={attachmentsView.canEdit}
+              loadError={attachments.ok ? null : attachments.message}
+            />
+          ) : null}
+        </div>
         <div className="space-y-6">
           {doc.fiscalVouchers.length > 0 ? <FiscalVouchers doc={doc} /> : null}
           <Allocations doc={doc} base={base} statusLabels={statusLabels} />

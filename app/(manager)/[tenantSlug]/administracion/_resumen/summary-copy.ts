@@ -7,6 +7,7 @@
  */
 
 import type { AccountingAction, ActionParams } from '@/components/administracion/acciones/types'
+import type { RecurringExpenseRow } from '@/lib/accounting/queries/documents'
 import type { IntegrationAttentionItem } from '@/lib/accounting/queries/integrations'
 import type {
   AccSummary,
@@ -87,6 +88,49 @@ export function availableBreakdown(
  */
 export function treasuryNormalBalance(t: Pick<SummaryTreasury, 'kind' | 'balanceCents'>): number {
   return t.kind === 'credit_card' ? -t.balanceCents : t.balanceCents
+}
+
+// ─── Te falta de gasto fijo ──────────────────────────────────────────────────
+
+export type FixedExpensesPending = {
+  /** Σ de los pendientes que tienen monto. */
+  totalCents: number
+  /** Pendientes con monto conocido (los que suman). */
+  withAmount: number
+  /** Pendientes de monto variable: no entran en la suma y se cuentan aparte. */
+  withoutAmount: number
+}
+
+/**
+ * Lo que falta pagar de gastos fijos (pedido de los socios, 12/10/2026): los
+ * activos que vencen este mes o ya vencieron y todavía no se cargaron ni se
+ * saltearon (`monthStatus: 'pending'`). Los de monto variable no suman.
+ */
+export function pendingFixedExpenses(
+  rows: ReadonlyArray<Pick<RecurringExpenseRow, 'active' | 'monthStatus' | 'amountCents'>>,
+): FixedExpensesPending {
+  const out: FixedExpensesPending = { totalCents: 0, withAmount: 0, withoutAmount: 0 }
+  for (const row of rows) {
+    if (!row.active || row.monthStatus !== 'pending') continue
+    if (row.amountCents === null) out.withoutAmount += 1
+    else {
+      out.withAmount += 1
+      out.totalCents += row.amountCents
+    }
+  }
+  return out
+}
+
+/** «5 por pagar y 4 sin monto», debajo de «Te falta de gasto fijo». */
+export function fixedExpensesHint(pending: FixedExpensesPending): string {
+  const { withAmount, withoutAmount } = pending
+  if (withAmount === 0 && withoutAmount === 0) return 'Nada por pagar este mes.'
+  if (withAmount === 0) {
+    return withoutAmount === 1 ? '1 por pagar, sin monto' : `${withoutAmount} por pagar, sin monto`
+  }
+  return withoutAmount === 0
+    ? `${withAmount} por pagar`
+    : `${withAmount} por pagar y ${withoutAmount} sin monto`
 }
 
 // ─── Necesita atención ───────────────────────────────────────────────────────

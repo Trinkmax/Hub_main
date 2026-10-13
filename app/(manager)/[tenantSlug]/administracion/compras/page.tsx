@@ -1,5 +1,6 @@
 import { FileDown, FilePlus2, HandCoins, Plus } from 'lucide-react'
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { ActionButton, QuickActionsBar } from '@/components/administracion/quick-actions'
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
 import { SectionNav } from '@/components/administracion/section-nav'
@@ -9,37 +10,40 @@ import { PageShell } from '@/components/ui/page-shell'
 import { todayInCordoba } from '@/lib/dates'
 import { importSourceHref } from '@/lib/imports/ui/labels'
 import { DocumentsTab } from './_components/documents-tab'
-import { RecurringTab } from './_components/recurring-tab'
 import { SuppliersTab } from './_components/suppliers-tab'
 import {
   type ComprasTab,
   comprasHref,
   firstParam,
   isComprasTab,
+  legacyComprasRedirect,
   newPurchaseHref,
 } from './_lib/links'
 import { requireComprasAccess } from './_lib/page-access'
 
-export const metadata = { title: 'Compras y proveedores' }
+export const metadata = { title: 'Compras y pagos' }
 
-const TABS: ReadonlyArray<{ value: ComprasTab; label: string; shortLabel?: string }> = [
+const TABS: ReadonlyArray<{ value: ComprasTab; label: string }> = [
   { value: 'proveedores', label: 'Proveedores' },
   { value: 'comprobantes', label: 'Comprobantes' },
   { value: 'pagos', label: 'Pagos' },
-  { value: 'gastos-fijos', label: 'Gastos fijos', shortLabel: 'Fijos' },
 ]
 
 const DESCRIPTIONS: Readonly<Record<ComprasTab, string>> = {
   proveedores: 'Lo que le debés a cada proveedor, qué está vencido y qué vence esta semana.',
   comprobantes: 'Las facturas, notas y gastos que cargaste, con lo que falta pagar de cada uno.',
   pagos: 'Lo que les pagaste a proveedores y organismos.',
-  'gastos-fijos': 'Alquiler, luz, internet: te avisamos antes de que venzan.',
 }
 
+/** Para quien carga: dónde están la compra y el pago de cada proveedor (el menú de su fila). */
+const PROVEEDORES_HINT = ' Con el ⋯ de cada uno le cargás una compra o un pago.'
+
 /**
- * Compras y proveedores (H.7): pestañas por URL (`?tab=`), las acciones de
- * carga en el encabezado (en el celular, en la barra de abajo) y nada de
- * botones de carga para la contadora.
+ * Compras y pagos (H.7; hasta el 12/10/2026, «Compras y proveedores»):
+ * pestañas por URL (`?tab=`), las acciones de carga en el encabezado (en el
+ * celular, en la barra de abajo) y nada de botones de carga para la contadora.
+ * «Gastos fijos» ya no es una pestaña de acá: tiene la suya en Administración
+ * (`/administracion/gastos-fijos`), y el link viejo redirige.
  */
 export default async function ComprasPage({
   params,
@@ -50,6 +54,10 @@ export default async function ComprasPage({
 }) {
   const { tenantSlug } = await params
   const sp = await searchParams
+  // `?tab=gastos-fijos` (links guardados, avisos de antes): la lista se mudó. Esa página vuelve a
+  // pedir el acceso, así que redirigir antes de la puerta no muestra nada.
+  const moved = legacyComprasRedirect(tenantSlug, sp)
+  if (moved) redirect(moved)
   const rawTab = firstParam(sp.tab)
   const tab: ComprasTab = isComprasTab(rawTab) ? rawTab : 'proveedores'
   const { access, canWrite } = await requireComprasAccess(tenantSlug, comprasHref(tenantSlug, tab))
@@ -62,11 +70,15 @@ export default async function ComprasPage({
         eyebrow="Administración"
         title={
           <>
-            Compras y proveedores
+            Compras y pagos
             <ReadOnlyBadge />
           </>
         }
-        description={DESCRIPTIONS[tab]}
+        description={
+          tab === 'proveedores' && canWrite
+            ? `${DESCRIPTIONS.proveedores}${PROVEEDORES_HINT}`
+            : DESCRIPTIONS[tab]
+        }
         actions={
           canWrite ? (
             <div className="hidden flex-wrap items-center gap-2 lg:flex">
@@ -101,7 +113,6 @@ export default async function ComprasPage({
         items={TABS.map((t) => ({
           value: t.value,
           label: t.label,
-          shortLabel: t.shortLabel,
           href: comprasHref(tenantSlug, t.value),
         }))}
       />
@@ -111,13 +122,6 @@ export default async function ComprasPage({
           tenantId={tenantId}
           tenantSlug={tenantSlug}
           sp={sp}
-          today={today}
-          canWrite={canWrite}
-        />
-      ) : tab === 'gastos-fijos' ? (
-        <RecurringTab
-          tenantId={tenantId}
-          tenantSlug={tenantSlug}
           today={today}
           canWrite={canWrite}
         />

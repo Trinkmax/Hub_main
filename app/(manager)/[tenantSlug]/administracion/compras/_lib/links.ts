@@ -1,10 +1,14 @@
 /**
- * Links y parámetros de «Compras y proveedores» (H.7). Puro: lo usan las
- * páginas, las tablas y las hojas de acción rápida.
+ * Links y parámetros de «Compras y pagos» (H.7) y de «Gastos fijos». Puro: lo
+ * usan las páginas, las tablas y las hojas de acción rápida.
  */
 
-export const COMPRAS_TABS = ['proveedores', 'comprobantes', 'pagos', 'gastos-fijos'] as const
+/** Las pestañas de la pantalla de Compras. «Gastos fijos» es pestaña de Administración desde el 12/10/2026. */
+export const COMPRAS_TABS = ['proveedores', 'comprobantes', 'pagos'] as const
 export type ComprasTab = (typeof COMPRAS_TABS)[number]
+
+/** Lo que `comprasHref` sabe armar: sus pestañas y, por los links de antes, «Gastos fijos». */
+export type ComprasTarget = ComprasTab | 'gastos-fijos'
 
 export function isComprasTab(value: unknown): value is ComprasTab {
   return typeof value === 'string' && (COMPRAS_TABS as readonly string[]).includes(value)
@@ -26,11 +30,26 @@ export function administracionHref(slug: string): string {
   return `/${slug}/administracion`
 }
 
-export function comprasHref(
+/** La lista de gastos fijos: pestaña propia de Administración (pedido de los socios, 12/10/2026). */
+export function gastosFijosHref(
   slug: string,
-  tab: ComprasTab = 'proveedores',
   extra: Readonly<Record<string, string | null | undefined>> = {},
 ): string {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(extra)) {
+    if (value) params.set(key, value)
+  }
+  const query = params.toString()
+  return `/${slug}/administracion/gastos-fijos${query ? `?${query}` : ''}`
+}
+
+/** Una pestaña de Compras. Con `'gastos-fijos'` devuelve la lista nueva (no es más una pestaña de acá). */
+export function comprasHref(
+  slug: string,
+  tab: ComprasTarget = 'proveedores',
+  extra: Readonly<Record<string, string | null | undefined>> = {},
+): string {
+  if (tab === 'gastos-fijos') return gastosFijosHref(slug, extra)
   const params = new URLSearchParams()
   if (tab !== 'proveedores') params.set('tab', tab)
   for (const [key, value] of Object.entries(extra)) {
@@ -38,6 +57,25 @@ export function comprasHref(
   }
   const query = params.toString()
   return `/${slug}/administracion/compras${query ? `?${query}` : ''}`
+}
+
+/**
+ * `…/compras?tab=gastos-fijos` (links guardados, avisos de antes) → la lista
+ * nueva, con lo demás que traía la URL (`?accion=`). `null` si no hay que
+ * redirigir.
+ */
+export function legacyComprasRedirect(
+  slug: string,
+  sp: Readonly<Record<string, string | string[] | undefined>>,
+): string | null {
+  if (firstParam(sp.tab) !== 'gastos-fijos') return null
+  const extra: Record<string, string> = {}
+  for (const [key, value] of Object.entries(sp)) {
+    if (key === 'tab') continue
+    const first = firstParam(value)
+    if (first) extra[key] = first
+  }
+  return gastosFijosHref(slug, extra)
 }
 
 export function supplierHref(slug: string, partyId: string, tab?: string): string {
@@ -50,6 +88,7 @@ export function documentHref(slug: string, documentId: string): string {
   return `/${slug}/administracion/comprobantes/${documentId}`
 }
 
+/** El alta o la edición de un gasto fijo. El formulario conserva su ruta; la lista es `gastosFijosHref`. */
 export function recurringHref(slug: string, id: string | 'nuevo'): string {
   return `/${slug}/administracion/compras/gastos-fijos/${id}`
 }

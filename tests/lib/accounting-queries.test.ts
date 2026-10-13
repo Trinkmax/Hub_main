@@ -304,16 +304,34 @@ describe('gastos fijos: «Este mes»', () => {
     ).toBe('pending')
   })
 
-  it('el de este mes ya pasó al próximo: cargado o salteado', () => {
+  it('el de este mes ya pasó al próximo: cargado o salteado, según lo que quedó anotado', () => {
+    const next = { ...base, nextDueDate: '2026-11-10' }
+    // Lo cubre el último comprobante (aunque tenga fecha de antes).
     expect(
-      recurringMonthStatus({ ...base, nextDueDate: '2026-11-10', lastDocumentDate: '2026-09-28' }),
+      recurringMonthStatus({ ...next, lastDocumentDate: '2026-09-28', loadedDue: '2026-10-10' }),
     ).toBe('loaded')
+    // Se salteó con «Saltear»: manda aunque haya un comprobante del vencimiento anterior.
     expect(
-      recurringMonthStatus({ ...base, nextDueDate: '2026-11-10', lastDocumentDate: '2026-09-05' }),
+      recurringMonthStatus({
+        ...next,
+        lastDocumentDate: '2026-09-28',
+        loadedDue: '2026-09-10',
+        skippedDue: '2026-10-10',
+      }),
     ).toBe('skipped')
+    // El comprobante era de otro vencimiento, o se anuló: no está cargado.
+    expect(
+      recurringMonthStatus({ ...next, lastDocumentDate: '2026-09-05', loadedDue: '2026-09-10' }),
+    ).toBe('upcoming')
+    expect(recurringMonthStatus({ ...next, lastDocumentDate: null, loadedDue: '2026-10-10' })).toBe(
+      'upcoming',
+    )
+  })
+
+  it('ni cargado ni salteado (recién creado, vence el mes que viene) → próximo, nunca «salteado»', () => {
     expect(
       recurringMonthStatus({ ...base, nextDueDate: '2026-11-10', lastDocumentDate: null }),
-    ).toBe('skipped')
+    ).toBe('upcoming')
   })
 
   it('un trimestral que este mes no vence → próximo', () => {

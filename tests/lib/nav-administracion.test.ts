@@ -101,6 +101,8 @@ describe('menú: Administración queda resaltada en toda la sección', () => {
     '/hub/administracion?accion=gasto',
     '/hub/administracion/compras?tab=proveedores',
     '/hub/administracion/compras/proveedores/abc',
+    '/hub/administracion/gastos-fijos',
+    '/hub/administracion/compras/gastos-fijos/nuevo',
     '/hub/administracion/ventas/cierre',
     '/hub/administracion/cajas/abc',
     '/hub/administracion/libros',

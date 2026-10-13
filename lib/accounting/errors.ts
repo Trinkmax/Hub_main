@@ -904,6 +904,12 @@ export const ACC_ERRORS = {
     bug: true,
   },
 
+  // ─── Foto del comprobante (adjuntos) ──────────────────────────────────────
+  attachment_limit: {
+    code: 'conflict',
+    message: 'Un comprobante lleva hasta 5 archivos. Quitá uno para sumar otro.',
+  },
+
   // ─── Por SQLSTATE (sin clave propia en la RPC) ────────────────────────────
   in_use: {
     code: 'conflict',

@@ -27,6 +27,7 @@ import { ACC_UNREACHABLE } from '@/lib/accounting/action-state'
 import { saveRecurringExpense } from '@/lib/accounting/actions/master'
 import type { RecurringBreakdownRow } from '@/lib/accounting/party-profile'
 import { vatRateLabel } from '@/lib/accounting/queries/labels'
+import { recurringInstallment } from '@/lib/accounting/recurring-status'
 import { formatIsoDay } from '@/lib/dates'
 import {
   duesUntil,
@@ -60,6 +61,8 @@ export type RecurringFormValues = {
   notes: string
   /** En cuotas: el último vencimiento (`null` = no termina). */
   endsOn: string | null
+  /** En cuotas: de cuántas es (`null` = no se sabe). */
+  installmentsTotal: number | null
   breakdown: RecurringBreakdownRow[]
 }
 
@@ -158,6 +161,11 @@ export function RecurringForm({
   const detailTotal = lines.reduce((sum, l) => sum + (l.amountCents ?? 0), 0)
   const lastDue =
     dues !== null && dues > 0 ? nthDue(form.nextDueDate, form.dueDay, form.frequency, dues) : null
+  // «Cuota 2 de 6»: sale del total y de las que faltan (la próxima es la actual).
+  const installment =
+    dues !== null && dues > 0
+      ? recurringInstallment({ remainingDues: dues, installmentsTotal: form.installmentsTotal })
+      : null
 
   const set = <K extends keyof RecurringFormValues>(key: K, value: RecurringFormValues[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -189,6 +197,9 @@ export function RecurringForm({
       local.breakdown = 'Cada renglón del detalle necesita a quién corresponde y un monto.'
     }
     if (dues !== null && dues < 1 && !ended) local.endsOn = 'Poné cuántas cuotas faltan (1 o más).'
+    if (dues !== null && form.installmentsTotal !== null && form.installmentsTotal < dues) {
+      local.installmentsTotal = 'El total no puede ser menos que las cuotas que faltan.'
+    }
     if (Object.keys(local).length > 0) {
       setErrors(local)
       requestAnimationFrame(() => {
@@ -215,6 +226,7 @@ export function RecurringForm({
           active: initialDues === 0 && dues !== null && dues > 0 ? true : form.active,
           notes: form.notes,
           endsOn: dues === null ? null : ended ? initial.endsOn : lastDue,
+          installmentsTotal: dues === null ? null : form.installmentsTotal,
           breakdown,
         })
         if (!result.ok) {
@@ -490,12 +502,16 @@ export function RecurringForm({
       <Field
         id={id('endsOn')}
         label="¿Termina?"
-        error={errors.endsOn}
+        error={errors.endsOn ?? errors.installmentsTotal}
         hint={
           ended && initial.endsOn
             ? `Ya terminó: la última cuota venció el ${formatIsoDay(initial.endsOn)}. Para seguir, poné cuántas cuotas faltan.`
             : lastDue
-              ? `La última vence el ${formatIsoDay(lastDue)}. Después deja de aparecer solo.`
+              ? `${
+                  installment?.current
+                    ? `La próxima es la cuota ${installment.current} de ${installment.total}. `
+                    : ''
+                }La última vence el ${formatIsoDay(lastDue)}. Después deja de aparecer solo.`
               : 'Para compras en cuotas: poné cuántas faltan y se saca solo después de la última.'
         }
       >
@@ -535,13 +551,38 @@ export function RecurringForm({
                 onChange={(e) => {
                   const digits = e.target.value.replace(/\D/g, '').slice(0, 3)
                   setDues(digits === '' ? 0 : Math.min(240, Number(digits)))
-                  if (errors.endsOn) setErrors(({ endsOn: _e, ...rest }) => rest)
+                  if (errors.endsOn || errors.installmentsTotal) {
+                    setErrors(({ endsOn: _e, installmentsTotal: _t, ...rest }) => rest)
+                  }
                 }}
                 className="h-11 w-20 text-base tabular-nums md:h-10 md:text-sm"
               />
               <span className="text-sm text-muted-foreground">
                 {dues === 1 ? 'cuota (contando la próxima)' : 'cuotas (contando la próxima)'}
               </span>
+            </div>
+          ) : null}
+          {dues !== null ? (
+            <div className="flex items-center gap-2">
+              <Label htmlFor={id('installmentsTotal')} className="text-sm font-normal">
+                ¿De cuántas?
+              </Label>
+              <Input
+                id={id('installmentsTotal')}
+                value={form.installmentsTotal === null ? '' : String(form.installmentsTotal)}
+                inputMode="numeric"
+                autoComplete="off"
+                aria-invalid={errors.installmentsTotal ? true : undefined}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, '').slice(0, 3)
+                  set(
+                    'installmentsTotal',
+                    digits === '' ? null : Math.min(120, Math.max(1, Number(digits))),
+                  )
+                }}
+                className="h-11 w-20 text-base tabular-nums md:h-10 md:text-sm"
+              />
+              <span className="text-xs text-muted-foreground">(opcional)</span>
             </div>
           ) : null}
         </div>

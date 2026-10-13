@@ -15,6 +15,8 @@ import {
   useState,
 } from 'react'
 import { AccountCombobox } from '@/components/administracion/account-combobox'
+import { AttachmentPicker } from '@/components/administracion/adjuntos/attachment-picker'
+import { attachPendingFiles } from '@/components/administracion/adjuntos/upload'
 import {
   ArcaLookupPanel,
   ArcaLookupTrigger,
@@ -40,6 +42,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { postPurchase, postPurchaseCreditNote } from '@/lib/accounting/actions/documents'
 import { pickTreasury, suggestDueDate } from '@/lib/accounting/defaults'
+import { isNotInvoicedVoucher } from '@/lib/accounting/invoiced'
 import { vatRateLabel } from '@/lib/accounting/queries/labels'
 import { previewDocumentForm } from '@/lib/accounting/server/document-forms'
 import type { IvaCondition, VatRateBp, VoucherType } from '@/lib/accounting/types'
@@ -59,6 +62,11 @@ import {
   RadioChips,
   WarningsDialog,
 } from '../../_components/form-feedback'
+import {
+  RememberAccountCheckbox,
+  rememberSupplierAccount,
+  SupplierAccountLine,
+} from '../../_components/supplier-account'
 import { type SavedState, useDocumentPosting } from '../../_components/use-document-posting'
 import {
   padNumber,
@@ -82,15 +90,34 @@ import {
   type PurchaseParty,
   purchaseTotal,
 } from '../../_lib/purchase'
-import { splitTotal, VAT_ADJUST_LIMIT } from '../../_lib/quick-expense'
-import { findDuplicate, loadPartyDefaults, loadPartyItems } from '../../_lib/sheet-actions'
-import type { SheetData, SheetDuplicate, SheetPartyDefaults } from '../../_lib/sheet-types'
 import {
+  detailRoom,
+  REMITO_MAX,
+  splitTotal,
+  VAT_ADJUST_LIMIT,
+  withRemito,
+} from '../../_lib/quick-expense'
+import { findDuplicate, loadPartyDefaults, loadPartyItems } from '../../_lib/sheet-actions'
+import type {
+  SheetData,
+  SheetDuplicate,
+  SheetParty,
+  SheetPartyDefaults,
+} from '../../_lib/sheet-types'
+import { accountAsk, accountToRemember, supplierDefaultAccount } from '../../_lib/supplier-account'
+import {
+  asksIfInvoiced,
   defaultVoucherFor,
   docKindOf,
+  notInvoicedDefault,
   type PurchaseFamily,
+  rememberedVoucherType,
+  splitByInvoice,
   voucherOptionsFor,
 } from '../../_lib/vouchers'
+
+/** El tope de las notas (`purchaseSchema.notes`). */
+const NOTES_MAX = 1000
 
 /** Un gasto fijo que se puede marcar como cargado con esta factura. */
 export type RecurringOption = {
@@ -301,9 +328,12 @@ export function PurchaseForm({
       : 2100,
   )
   const [vatAdjust, setVatAdjust] = useState(0)
-  const [accountId, setAccountId] = useState<string | null>(
-    firstRecurring && imputable.has(firstRecurring.accountId) ? firstRecurring.accountId : null,
-  )
+  const [accountId, setAccountId] = useState<string | null>(() => {
+    if (firstRecurring && imputable.has(firstRecurring.accountId)) return firstRecurring.accountId
+    // Con el proveedor ya elegido al entrar, su cuenta habitual va desde el primer dibujo.
+    const start = startParty ? partyById.get(startParty) : undefined
+    return supplierDefaultAccount(start?.defaultAccountId, imputable)
+  })
   const [nets, setNets] = useState<Partial<Record<VatRateBp, number | null>>>({})
   const [netAdjust, setNetAdjust] = useState<Partial<Record<VatRateBp, number>>>({})
   const [moreRates, setMoreRates] = useState(false)
@@ -325,6 +355,19 @@ export function PurchaseForm({
   const [payNow, setPayNow] = useState<PurchaseFormState['payNow']>(null)
   const [notes, setNotes] = useState('')
   const [showNotes, setShowNotes] = useState(false)
+  // «N.º de remito» (opcional, sin factura): va adelante de las notas.
+  const [remito, setRemito] = useState('')
+  // La cuenta sale de la ficha del proveedor: [Cambiar] la abre solo para esta compra.
+  const [accountChanging, setAccountChanging] = useState(false)
+  // «Usar siempre para …»: tildado si el proveedor todavía no tiene cuenta habitual.
+  const [rememberAccount, setRememberAccount] = useState(true)
+  // Lo que hay que hacer después de guardar, tal como estaba al tocar «Guardar».
+  const rememberOnSave = useRef<{ party: SheetParty; accountId: string } | null>(null)
+  // La foto o el PDF del comprobante: se elige acá y se sube después de guardar.
+  const [files, setFiles] = useState<File[]>([])
+  // Subiendo esos archivos (el comprobante ya quedó guardado).
+  const [attaching, setAttaching] = useState(false)
+  const mounted = useRef(true)
   const [submitted, setSubmitted] = useState(false)
   const [stayAfterSave, setStayAfterSave] = useState(false)
   const [defaults, setDefaults] = useState<SheetPartyDefaults | null>(null)
@@ -334,6 +377,9 @@ export function PurchaseForm({
   )
   const touched = useRef({ voucher: false, account: false, due: false })
   const defaultsSeq = useRef(0)
+  // El gasto fijo marcado, a mano de `applyDefaults` (que no se rearma con cada cambio).
+  const recurringIdRef = useRef(recurringId)
+  recurringIdRef.current = recurringId
   /** La persona eligió a mano la condición del proveedor nuevo (ARCA pregunta antes de cambiarla). */
   const [newPartyIvaTouched, setNewPartyIvaTouched] = useState(false)
 
@@ -388,6 +434,38 @@ export function PurchaseForm({
   const numbered = voucherType ? VOUCHER_CATALOG[voucherType].numbered : true
   const vat = discriminatesVat(voucherType)
 
+  // ── «¿Se factura?» (12/10/2026): primero sí o no; después, el tipo de ese grupo ──
+  const askInvoiced = asksIfInvoiced({
+    family,
+    options: voucherOptions,
+    isTaxAgency: existing?.kind === 'tax_agency',
+  })
+  const notInvoiced = isNotInvoicedVoucher(voucherType)
+  // La ficha propone: su «Comprobante habitual»; si no tiene, el último que se le cargó.
+  const rememberedVoucher = rememberedVoucherType({
+    habitual: existing?.defaultVoucherType,
+    lastUsed: defaults?.voucherType,
+    recurring: firstRecurring?.voucherType,
+  })
+  // El remito no lleva punto de venta ni número: el suyo queda anotado en las notas.
+  const remitoActive = voucherType === 'sin_comprobante'
+
+  // ── La cuenta: de la ficha del proveedor, o se pregunta (12/10/2026) ──
+  const defaultAccountId = existing
+    ? supplierDefaultAccount(existing.defaultAccountId, imputable)
+    : null
+  const accountMode = accountAsk({
+    existingParty: existing !== null,
+    defaultAccountId,
+    accountId,
+    recurringLinked: recurringId !== null,
+    changing: accountChanging,
+  })
+  const accountName = accountId
+    ? (data.accounts.find((a) => a.id === accountId)?.name ?? null)
+    : null
+  const supplierName = existing ? (existing.tradeName ?? existing.name) : 'este proveedor'
+
   // El tipo sigue al proveedor, a lo que se recuerda de él y a la familia mientras la
   // persona no lo elija a mano (o lo que eligió deje de valer para ese proveedor).
   useEffect(() => {
@@ -397,15 +475,11 @@ export function PurchaseForm({
     const next = defaultVoucherFor({
       family,
       options: voucherOptions,
-      remembered:
-        defaults?.voucherType ??
-        existing?.defaultVoucherType ??
-        firstRecurring?.voucherType ??
-        null,
+      remembered: rememberedVoucher,
       condition,
     })
     if (next !== voucherType) setVoucherType(next)
-  }, [voucherOptions, family, defaults, existing, condition, voucherType, firstRecurring])
+  }, [voucherOptions, family, rememberedVoucher, condition, voucherType])
 
   // El vencimiento sigue a la fecha y al plazo mientras no se toque.
   useEffect(() => {
@@ -420,7 +494,14 @@ export function PurchaseForm({
       setDefaults(null)
       setDuplicate(null)
       const known = partyById.get(partyId)
+      // Con un gasto fijo marcado manda SU cuenta: la habitual del proveedor no la pisa.
+      const fixed = recurringIdRef.current ? recurringById.get(recurringIdRef.current) : undefined
+      const keepFixed =
+        fixed !== undefined &&
+        (!fixed.partyId || fixed.partyId === partyId) &&
+        imputable.has(fixed.accountId)
       if (
+        !keepFixed &&
         !touched.current.account &&
         known?.defaultAccountId &&
         imputable.has(known.defaultAccountId)
@@ -436,7 +517,7 @@ export function PurchaseForm({
       if (seq !== defaultsSeq.current || !result.ok || !result.data) return
       const d = result.data
       setDefaults(d)
-      if (!touched.current.account && d.accountId && imputable.has(d.accountId))
+      if (!keepFixed && !touched.current.account && d.accountId && imputable.has(d.accountId))
         setAccountId(d.accountId)
       if (d.vatRateBp !== null && (QUICK_RATES as readonly number[]).includes(d.vatRateBp)) {
         setVatRateBp(d.vatRateBp as VatRateBp)
@@ -447,12 +528,20 @@ export function PurchaseForm({
         )
       }
     },
-    [imputable, partyById, tenantSlug],
+    [imputable, partyById, recurringById, tenantSlug],
   )
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: solo al entrar con un proveedor elegido
   useEffect(() => {
     if (party?.kind === 'existing') void applyDefaults(party.id)
+  }, [])
+
+  // Si la persona se fue de la pantalla mientras subía la foto, al terminar no se la mueve.
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
   }, [])
 
   // NC: las facturas del proveedor que puede corregir.
@@ -478,10 +567,26 @@ export function PurchaseForm({
     }
   }, [isCreditNote, party, tenantSlug, related])
 
+  /**
+   * Otro proveedor: la cuenta vuelve a salir de su ficha. La que puso el proveedor anterior no
+   * se arrastra (quedaría como la habitual del nuevo); la que eligió la persona y la del gasto
+   * fijo que sigue marcado, sí.
+   */
+  const resetAccountFor = (nextPartyId: string | null) => {
+    setAccountChanging(false)
+    setRememberAccount(true)
+    if (touched.current.account) return
+    const r = recurringId ? recurringById.get(recurringId) : undefined
+    const fromRecurring =
+      r !== undefined && (!r.partyId || r.partyId === nextPartyId) && imputable.has(r.accountId)
+    setAccountId(fromRecurring ? r.accountId : null)
+  }
+
   const choosePartyId = (id: string | null) => {
     touched.current.voucher = false
     setVoucherType(null)
     setVoucherNumber({ pos: '', number: '' })
+    resetAccountFor(id)
     posting.clearFieldErrors()
     if (!id) {
       setParty(null)
@@ -524,7 +629,7 @@ export function PurchaseForm({
     relatedDocumentId,
     recurringExpenseId: recurringId,
     payNow,
-    notes,
+    notes: remitoActive ? withRemito(remito, notes) : notes,
   }
   const built = buildPurchaseValues(formState)
   const key = built.values ? JSON.stringify(built.values) : ''
@@ -540,10 +645,50 @@ export function PurchaseForm({
   const total = purchaseTotal(formState)
   const detail = detailTotals(formState)
 
+  /**
+   * Lo que sigue a un comprobante YA guardado. Nada de acá lo deshace: si algo
+   * falla, se avisa y el comprobante queda. `documentId` es el comprobante
+   * nuevo (la compra o la nota): lo que haya que colgarle después de guardar
+   * (la foto del comprobante) va acá.
+   */
+  const afterPosted = async (posted: {
+    documentId: string | null
+    remember: { party: SheetParty; accountId: string } | null
+    files: readonly File[]
+  }) => {
+    if (posted.remember) {
+      // «Usar siempre para …»: la cuenta queda en la ficha del proveedor.
+      await rememberSupplierAccount(tenantSlug, posted.remember.party, posted.remember.accountId)
+    }
+    // La foto del comprobante: si alguna no sube, avisa y se suma después desde el comprobante.
+    await attachPendingFiles({
+      tenantSlug,
+      documentId: posted.documentId,
+      files: posted.files,
+      openDocument: (id) => router.push(documentHref(tenantSlug, id)),
+    })
+  }
+
   const onSaved = (saved: SavedState) => {
     posting.undoToast(saved.message, saved)
+    const remember = rememberOnSave.current
+    rememberOnSave.current = null
+    const picked = files
+    const followUp = afterPosted({
+      documentId: saved.result.documents[0]?.id ?? null,
+      remember,
+      files: picked,
+    })
     if (!stayAfterSave) {
-      router.push(returnHref)
+      if (picked.length === 0) {
+        router.push(returnHref)
+        return
+      }
+      // Con foto, la pantalla espera a que suba y recién ahí vuelve a la lista.
+      setAttaching(true)
+      void followUp.finally(() => {
+        if (mounted.current) router.push(returnHref)
+      })
       return
     }
     // ⇧⌘↵: queda vacía para cargar otra del mismo proveedor (uno nuevo ya quedó creado:
@@ -573,8 +718,22 @@ export function PurchaseForm({
     setRecurringId(null)
     setPayNow(null)
     setNotes('')
+    setRemito('')
+    // [Cambiar] valía para esa compra: la próxima vuelve a la cuenta de la ficha.
+    if (accountChanging && defaultAccountId !== null) {
+      touched.current.account = false
+      setAccountId(defaultAccountId)
+    }
+    setAccountChanging(false)
     setDuplicate(null)
-    router.refresh()
+    setFiles([])
+    // La próxima se puede ir cargando; se guarda cuando terminó de subir la foto de esta.
+    if (picked.length > 0) setAttaching(true)
+    // Los datos se vuelven a traer cuando terminó lo de después (la ficha ya tiene su cuenta).
+    void followUp.finally(() => {
+      if (mounted.current) setAttaching(false)
+      router.refresh()
+    })
   }
 
   const posting = useDocumentPosting<PurchaseFormValues>({
@@ -643,7 +802,8 @@ export function PurchaseForm({
 
   const submit = (event?: FormEvent, stay = false) => {
     event?.preventDefault()
-    if (posting.pending) return
+    // Mientras sube la foto de la anterior no se guarda otra (esa ya quedó cargada).
+    if (posting.pending || attaching) return
     setSubmitted(true)
     if (!built.values || !preview?.ok) {
       requestAnimationFrame(() => {
@@ -652,6 +812,14 @@ export function PurchaseForm({
       return
     }
     setStayAfterSave(stay)
+    // Lo de después de guardar se decide ahora, con lo que se está mandando.
+    const accountToSave = accountToRemember({
+      ask: accountMode,
+      remember: rememberAccount,
+      accountId,
+    })
+    rememberOnSave.current =
+      existing && accountToSave ? { party: existing, accountId: accountToSave } : null
     posting.submit(built.values, preview.hash, key)
   }
 
@@ -677,6 +845,11 @@ export function PurchaseForm({
     return totalCents - extras > 0 ? totalCents - extras : null
   }
   const voucherHint = (() => {
+    // Lo que es cierto de cada tipo: el remito no va al Libro IVA; el «otro comprobante», sí.
+    if (voucherType === 'sin_comprobante') return 'No entra al Libro IVA: va todo al costo.'
+    if (voucherType === 'otro_comprobante') {
+      return 'Lleva punto de venta y número, y entra al Libro IVA como «Otro comprobante».'
+    }
     if (!voucherType || !condition) return null
     const check = voucherConditionCheck(voucherType, condition)
     if (check.warnings.includes('voucher_m')) {
@@ -705,27 +878,54 @@ export function PurchaseForm({
     ? 'nota de crédito'
     : docKind === 'purchase_debit_note'
       ? 'nota de débito'
-      : 'factura'
+      : notInvoiced
+        ? 'compra'
+        : 'factura'
   const submitLabel = payNow
     ? payAmount
       ? `Guardar y pagar ${formatCentsShort(payAmount)}`
       : 'Guardar y pagar'
     : `Guardar ${title}`
 
+  // Con «¿Se factura?» a la vista, el selector trae solo los tipos de la respuesta elegida.
+  const invoiceSplit = splitByInvoice(voucherOptions)
+  const shownTypes = askInvoiced
+    ? notInvoiced
+      ? invoiceSplit.notInvoiced
+      : invoiceSplit.invoiced
+    : voucherOptions
+  const chooseInvoiced = (next: 'si' | 'no') => {
+    if (voucherType !== null && notInvoiced === (next === 'no')) return
+    const type =
+      next === 'no'
+        ? notInvoicedDefault(voucherOptions)
+        : defaultVoucherFor({
+            family,
+            options: invoiceSplit.invoiced,
+            remembered: rememberedVoucher,
+            condition,
+          })
+    if (!type) return
+    touched.current.voucher = true
+    setVoucherType(type)
+    setVatAdjust(0)
+    posting.clearFieldErrors()
+  }
+
   const typeGroups: Array<{ label: string; types: VoucherType[] }> = [
     {
       label: 'Facturas y tiques',
-      types: voucherOptions.filter(
+      types: shownTypes.filter(
         (t) => !VOUCHER_CATALOG[t].isCreditNote && !VOUCHER_CATALOG[t].isDebitNote,
       ),
     },
     {
       label: 'Notas de débito',
-      types: voucherOptions.filter((t) => VOUCHER_CATALOG[t].isDebitNote),
+      types: shownTypes.filter((t) => VOUCHER_CATALOG[t].isDebitNote),
     },
     {
       label: 'Notas de crédito',
-      types: voucherOptions.filter((t) => VOUCHER_CATALOG[t].isCreditNote),
+      types: shownTypes.filter((t) => VOUCHER_CATALOG[t].isCreditNote),
     },
   ].filter((g) => g.types.length > 0)
 
@@ -898,6 +1098,7 @@ export function PurchaseForm({
                 onCreate={(name) => {
                   touched.current.voucher = false
                   setVoucherType(null)
+                  resetAccountFor(null)
                   defaultsSeq.current += 1
                   setDefaults(null)
                   setNewPartyIvaTouched(false)
@@ -934,6 +1135,24 @@ export function PurchaseForm({
               }}
             />
           </div>
+
+          {/* ── ¿Se factura? (solo facturas y tiques; una nota siempre es con comprobante) ── */}
+          {askInvoiced ? (
+            <div className="grid gap-2">
+              <span id={ids('invoiced')} className="text-sm font-medium leading-none">
+                ¿Se factura?
+              </span>
+              <RadioChips
+                labelledBy={ids('invoiced')}
+                value={voucherType === null ? null : notInvoiced ? 'no' : 'si'}
+                options={[
+                  { value: 'si', label: 'Sí' },
+                  { value: 'no', label: 'No', ariaLabel: 'No: remito u otro comprobante' },
+                ]}
+                onChange={chooseInvoiced}
+              />
+            </div>
+          ) : null}
 
           <div className="grid gap-5 sm:grid-cols-2">
             <Field
@@ -998,6 +1217,27 @@ export function PurchaseForm({
                   describedBy={`${ids('number')}-hint`}
                 />
               </Field>
+            ) : remitoActive ? (
+              <Field
+                id={ids('remito')}
+                label="N.º de remito"
+                optional
+                hint="Si el papel tiene número, queda anotado en las notas."
+              >
+                <Input
+                  id={ids('remito')}
+                  value={remito}
+                  maxLength={REMITO_MAX}
+                  autoComplete="off"
+                  placeholder="0001-00001234"
+                  aria-describedby={`${ids('remito')}-hint`}
+                  onChange={(e) => {
+                    setRemito(e.target.value)
+                    posting.clearFieldErrors()
+                  }}
+                  className="h-11 text-base tabular-nums md:h-10 md:text-sm"
+                />
+              </Field>
             ) : null}
           </div>
 
@@ -1017,6 +1257,13 @@ export function PurchaseForm({
                 : `Ya hay un comprobante de ${duplicate.totalCents !== null ? formatCentsShort(duplicate.totalCents) : 'ese importe'}${duplicate.partyName ? ` de ${duplicate.partyName}` : ''}${duplicate.accountingDate ? ` del ${formatIsoDay(duplicate.accountingDate)}` : ''} (${duplicate.label}). ¿Es otro?`}
             </InlineNotice>
           ) : null}
+
+          {/* Foto del comprobante: se sube después de guardar */}
+          <AttachmentPicker
+            value={files}
+            onChange={setFiles}
+            disabled={posting.pending || attaching}
+          />
 
           <div className="grid gap-5 sm:grid-cols-2">
             <DateField
@@ -1097,6 +1344,10 @@ export function PurchaseForm({
                     setRecurringId(r.id)
                     if (totalCents === null && r.amountCents !== null && amountMode === 'total') {
                       setTotalCents(r.amountCents)
+                    }
+                    // El gasto fijo trae su cuenta, salvo que la persona ya haya elegido otra.
+                    if (!touched.current.account && imputable.has(r.accountId)) {
+                      setAccountId(r.accountId)
                     }
                   }}
                 >
@@ -1516,27 +1767,69 @@ export function PurchaseForm({
             </div>
           ) : null}
 
-          <Field
-            id={ids('account')}
-            label="¿En qué es la compra?"
-            required
-            error={errors.account}
-            hint="La cuenta donde va el neto. Se recuerda para la próxima con este proveedor."
-          >
-            <AccountCombobox
-              id={ids('account')}
-              value={accountId}
-              onValueChange={(next) => {
-                touched.current.account = true
-                setAccountId(next)
-                posting.clearFieldErrors()
+          {accountMode === 'fixed' && accountName ? (
+            // La cuenta sale de la ficha del proveedor: no se pregunta. [Cambiar] la abre.
+            <SupplierAccountLine
+              accountName={accountName}
+              className="text-sm"
+              onChange={() => {
+                setAccountChanging(true)
+                requestAnimationFrame(() => document.getElementById(ids('account'))?.focus())
               }}
-              accounts={accountOptions}
-              placeholder="Elegí la cuenta (mercadería, bebidas, limpieza…)"
-              invalid={Boolean(errors.account)}
-              aria-describedby={`${ids('account')}-hint`}
             />
-          </Field>
+          ) : (
+            <Field
+              id={ids('account')}
+              label="¿En qué es la compra?"
+              required
+              error={errors.account}
+              hint={
+                accountChanging && defaultAccountId !== null ? (
+                  <>
+                    Solo para esta compra: la cuenta habitual de {supplierName} no cambia.{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        touched.current.account = false
+                        setAccountChanging(false)
+                        setAccountId(defaultAccountId)
+                        posting.clearFieldErrors()
+                      }}
+                      className="rounded-sm underline underline-offset-4 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      Usar la habitual
+                    </button>
+                  </>
+                ) : accountMode === 'ask-remember' ? (
+                  'La cuenta donde va el neto.'
+                ) : (
+                  'La cuenta donde va el neto. Se recuerda para la próxima con este proveedor.'
+                )
+              }
+            >
+              <AccountCombobox
+                id={ids('account')}
+                value={accountId}
+                onValueChange={(next) => {
+                  touched.current.account = true
+                  setAccountId(next)
+                  posting.clearFieldErrors()
+                }}
+                accounts={accountOptions}
+                placeholder="Elegí la cuenta (mercadería, bebidas, limpieza…)"
+                invalid={Boolean(errors.account)}
+                aria-describedby={`${ids('account')}-hint`}
+              />
+              {accountMode === 'ask-remember' ? (
+                <RememberAccountCheckbox
+                  id={ids('remember')}
+                  partyName={supplierName}
+                  checked={rememberAccount}
+                  onCheckedChange={setRememberAccount}
+                />
+              ) : null}
+            </Field>
+          )}
         </section>
 
         {/* ── Pago en el mismo envío ── */}
@@ -1631,7 +1924,7 @@ export function PurchaseForm({
             <Textarea
               id={ids('notes')}
               value={notes}
-              maxLength={1000}
+              maxLength={detailRoom(remitoActive ? remito : '', NOTES_MAX)}
               rows={2}
               onChange={(e) => setNotes(e.target.value)}
               className="text-base md:text-sm"
@@ -1686,8 +1979,12 @@ export function PurchaseForm({
               Guardar y pagar…
             </Button>
           ) : null}
-          <Button type="submit" className="h-11 min-w-[160px] md:h-9" disabled={posting.pending}>
-            {posting.pending ? 'Guardando…' : submitLabel}
+          <Button
+            type="submit"
+            className="h-11 min-w-[160px] md:h-9"
+            disabled={posting.pending || attaching}
+          >
+            {posting.pending ? 'Guardando…' : attaching ? 'Subiendo el comprobante…' : submitLabel}
           </Button>
         </div>
         <p className="hidden text-right text-[11px] text-muted-foreground lg:block">

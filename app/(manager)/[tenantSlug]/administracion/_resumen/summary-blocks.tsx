@@ -1,9 +1,9 @@
 import {
   Banknote,
+  CalendarClock,
   CircleDollarSign,
   CreditCard,
   Download,
-  HandCoins,
   Landmark,
   type LucideIcon,
   Percent,
@@ -16,12 +16,19 @@ import { Amount } from '@/components/administracion/amount'
 import { balanceText } from '@/components/administracion/format'
 import { Button } from '@/components/ui/button'
 import { StatCard } from '@/components/ui/stat-card'
+import type { ProjectionFigure } from '@/lib/accounting/projection'
 import type { AccSummary, SummaryTreasury } from '@/lib/accounting/queries/summary'
 import type { TreasuryKind } from '@/lib/accounting/types'
 import { formatDayMonth, monthName } from '@/lib/dates'
 import { formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
-import { availableBreakdownParts, monthWord, treasuryNormalBalance } from './summary-copy'
+import {
+  availableBreakdownParts,
+  type FixedExpensesPending,
+  fixedExpensesHint,
+  monthWord,
+  treasuryNormalBalance,
+} from './summary-copy'
 
 /**
  * Los bloques del Resumen (H.4) con las piezas del panel: fila de
@@ -95,18 +102,29 @@ function Joined({ parts }: { parts: readonly string[] }) {
   })
 }
 
-/** Los cuatro números (H.4): plata, le debés, te deben, IVA del mes. Sin animación. */
+/**
+ * Los cuatro números (H.4): plata, le debés, lo que falta de gasto fijo y el
+ * IVA del mes. Sin animación. «Te falta de gasto fijo» reemplazó a «Te deben»
+ * (pedido de los socios, 12/10/2026): lo que te deben sigue en Ventas ›
+ * Clientes y plataformas.
+ */
 export function SummaryKpis({
   summary,
   today,
   vatRegistered,
+  base,
+  fixed,
 }: {
   summary: AccSummary
   today: string
   /** La SAS es responsable inscripta (si no, no hay IVA del mes). */
   vatRegistered: boolean
+  /** `/{slug}/administracion`. */
+  base: string
+  /** Gastos fijos por pagar este mes; `null` si no se pudieron leer. */
+  fixed: FixedExpensesPending | null
 }) {
-  const { payables, receivables, ivaMonth } = summary
+  const { payables, ivaMonth } = summary
   const ivaMonthName = monthName(Number((ivaMonth?.month ?? today).slice(5, 7)))
 
   let payHint: ReactNode = 'Todavía no está disponible.'
@@ -125,29 +143,19 @@ export function SummaryKpis({
       )
   }
 
-  let receiveHint: ReactNode = 'Todavía no está disponible.'
-  if (receivables) {
-    const top = receivables.top.slice(0, 2).map((r) => `${r.name} ${formatCentsShort(r.openCents)}`)
-    receiveHint =
-      receivables.totalCents === 0 ? (
-        'Nadie te debe nada.'
-      ) : (
-        <span className="block space-y-0.5">
-          {top.length > 0 ? (
-            <span className="block">
-              <Joined parts={top} />
-            </span>
-          ) : null}
-          {receivables.overdueCents > 0 ? (
-            <Status dot="bg-warning">
-              <span className="text-warning-text">
-                {formatCentsShort(receivables.overdueCents)} atrasado
-              </span>
-            </Status>
-          ) : null}
-        </span>
-      )
-  }
+  const fixedHint: ReactNode = fixed ? (
+    <span className="block space-y-0.5">
+      <span className="block">{fixedExpensesHint(fixed)}</span>
+      <Link
+        href={`${base}/gastos-fijos`}
+        className="font-medium text-foreground underline-offset-4 hover:underline"
+      >
+        Ver gastos fijos
+      </Link>
+    </span>
+  ) : (
+    'Todavía no está disponible.'
+  )
 
   let ivaValue = '—'
   let ivaHint: ReactNode = vatRegistered
@@ -199,11 +207,11 @@ export function SummaryKpis({
         hint={payHint}
       />
       <StatCard
-        icon={HandCoins}
+        icon={CalendarClock}
         iconClassName="text-info"
-        label="Te deben"
-        value={receivables ? formatCentsShort(receivables.totalCents) : '—'}
-        hint={receiveHint}
+        label="Te falta de gasto fijo"
+        value={fixed ? formatCentsShort(fixed.totalCents) : '—'}
+        hint={fixedHint}
       />
       <StatCard
         icon={Percent}
@@ -216,30 +224,59 @@ export function SummaryKpis({
   )
 }
 
-/** «Este mes» (hasta hoy): lo vendido y lo gastado. Nunca «ganaste». */
+const FIGURE_LINK =
+  'rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring'
+
+/**
+ * «Este mes» (hasta hoy): lo que vas vendiendo, lo que te falta vender para el
+ * objetivo (solo si el mes tiene objetivos) y lo gastado. Nunca «ganaste». Las
+ * dos cifras de ventas son las de Ventas › Proyección y llevan ahí.
+ */
 export function ThisMonthCard({
   summary,
   today,
   base,
+  sales,
 }: {
   summary: AccSummary
   today: string
   base: string
+  /**
+   * Las cifras de la proyección del mes (`remaining`: `null` si el mes no
+   * tiene objetivos). `null` si no se pudo leer: queda lo vendido del Resumen.
+   */
+  sales: { sold: ProjectionFigure; remaining: ProjectionFigure | null } | null
 }) {
   const day = Number(today.slice(8, 10))
   const month = monthName(Number(today.slice(5, 7)))
+  const projectionHref = `${base}/ventas?tab=proyeccion`
   return (
     <SummaryCard title="Este mes" description={`Del 1 al ${day} de ${month}`}>
-      {/* Al lado de «Necesita atención» la tarjeta queda angosta: ahí los dos importes
-          van uno abajo del otro (en dos columnas se pisaban, «$ 8.008.970 $ 1.001.700»). */}
+      {/* Al lado de «Necesita atención» la tarjeta queda angosta: ahí los importes van uno
+          abajo del otro (en dos columnas se pisaban, «$ 8.008.970 $ 1.001.700»). */}
       <div className="@container">
         <dl className="grid grid-cols-1 gap-4 px-5 py-4 @[22rem]:grid-cols-2">
           <div className="min-w-0 space-y-1">
-            <dt className="text-xs text-muted-foreground">Vendiste</dt>
+            <dt className="text-xs text-muted-foreground">
+              {sales?.sold.label ?? 'Vas vendiendo'}
+            </dt>
             <dd className="font-serif text-2xl font-semibold tracking-tight tabular-nums">
-              {formatCentsShort(summary.monthToDate.soldCents)}
+              <Link href={projectionHref} className={FIGURE_LINK}>
+                {sales?.sold.value ?? formatCentsShort(summary.monthToDate.soldCents)}
+              </Link>
             </dd>
           </div>
+          {sales?.remaining ? (
+            <div className="min-w-0 space-y-1">
+              <dt className="text-xs text-muted-foreground">{sales.remaining.label}</dt>
+              <dd className="font-serif text-2xl font-semibold tracking-tight tabular-nums">
+                <Link href={projectionHref} className={FIGURE_LINK}>
+                  {sales.remaining.value}
+                </Link>
+              </dd>
+              <dd className="text-xs text-muted-foreground text-pretty">{sales.remaining.hint}</dd>
+            </div>
+          ) : null}
           <div className="min-w-0 space-y-1">
             <dt className="text-xs text-muted-foreground">Compras y gastos</dt>
             <dd className="font-serif text-2xl font-semibold tracking-tight tabular-nums">
@@ -249,7 +286,16 @@ export function ThisMonthCard({
         </dl>
       </div>
       <p className="border-t border-border/60 px-5 py-3 text-xs text-muted-foreground text-pretty">
-        Lo vendido sale de los cierres del día: no es ganancia.{' '}
+        {sales
+          ? 'Lo vendido es la venta neta de los cierres del día, sin las comisiones estimadas: no es ganancia.'
+          : 'Lo vendido sale de los cierres del día: no es ganancia.'}{' '}
+        <Link
+          href={projectionHref}
+          className="font-medium text-foreground underline-offset-4 hover:underline"
+        >
+          Ver la proyección
+        </Link>
+        {' · '}
         <Link
           href={`${base}/ventas?tab=neto-por-medio`}
           className="font-medium text-foreground underline-offset-4 hover:underline"
