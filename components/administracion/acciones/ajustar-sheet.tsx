@@ -1,6 +1,7 @@
 'use client'
 
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Plus } from 'lucide-react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { type FormEvent, useEffect, useId, useMemo, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
@@ -49,6 +50,7 @@ import { MoneyField, MoneyInput } from '../money-input'
 import { TreasuryPicker } from '../treasury-picker'
 import { BillCounter, Verdict } from './ajustar-piezas'
 import {
+  COUNT_PICK_LABEL,
   type CountMode,
   type CountPlan,
   type CountReason,
@@ -58,11 +60,21 @@ import {
   countSubmitLabel,
   countVerdict,
   exactMoney,
+  idleVerdict,
   leftToCount,
   reasonOptions as reasonOptionsFor,
+  VERDICT_PICK,
+  walletToExplain,
+  walletUndetailedNote,
 } from './ajustar-vista'
 import { SavedNote } from './gasto-piezas'
-import { BIG_MONEY_FIELD, SHEET_QUESTION_BLOCK, SheetQuestion, TEXT_LINK } from './sheet-parts'
+import {
+  ADD_LINK,
+  BIG_MONEY_FIELD,
+  SHEET_QUESTION_BLOCK,
+  SheetQuestion,
+  TEXT_LINK,
+} from './sheet-parts'
 import type { ActionSheetProps } from './types'
 
 /**
@@ -221,7 +233,10 @@ function AjustarForm({
   const explained = sum(BREAKDOWN_ROWS.map((r) => breakdown[r.key]))
   /** Billetera con partidas: descuentos = lo que había en camino − lo que entró. */
   const discounts = diff !== null && ticked.length > 0 ? pendingTicked - diff : null
-  const unexplained = discounts !== null && discounts >= 0 ? discounts - explained : null
+  // Solo para decirlo en pantalla: cuánto falta explicar (con o sin ventas tildadas).
+  const toExplain =
+    mode === 'wallet' ? walletToExplain({ diff, ticked: ticked.length, pendingTicked }) : null
+  const unexplained = toExplain !== null ? toExplain - explained : null
   const showBreakdown =
     mode === 'wallet' && check !== null && (ticked.length > 0 || (diff !== null && diff < 0))
 
@@ -564,7 +579,10 @@ function AjustarForm({
             ) : null}
           </div>
 
-          {!treasury ? null : checkLoad.status === 'error' && !check ? (
+          {!treasury ? (
+            // Sin caja todavía: el recuadro del resultado ya está, en reposo, y dice qué sigue.
+            <Verdict verdict={idleVerdict(VERDICT_PICK)} />
+          ) : checkLoad.status === 'error' && !check ? (
             <SheetLoadError message={checkLoad.message} onRetry={() => checkLoad.reload()} />
           ) : !check ? (
             // El hueso de lo que viene: «el sistema dice», el campo grande y el resultado.
@@ -625,6 +643,24 @@ function AjustarForm({
                 ) : null}
               </div>
 
+              {/* La primera vez, con el sistema en cero: si faltan los saldos iniciales, contarla
+                  anotaría toda la plata como sobrante. Se avisa antes de que escriba (no bloquea). */}
+              {!lastCounted && check.bookCents === 0 && mode !== 'card' && pendingAll === 0 ? (
+                <p className="-mt-2 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-pretty">
+                  <span className="font-medium">¿Es la primera vez?</span>{' '}
+                  <span className="text-muted-foreground">
+                    Si todavía no cargaste lo que había al arrancar, hacelo primero: contada ahora,
+                    toda la plata quedaría como sobrante.
+                  </span>{' '}
+                  <Link
+                    href={`/${tenantSlug}/administracion/configurar`}
+                    className="inline-flex min-h-11 items-center rounded-sm font-medium text-foreground underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-0"
+                  >
+                    Cargar lo que había
+                  </Link>
+                </p>
+              ) : null}
+
               {/* Renglón 2: lo que contaste. */}
               <div className="grid gap-2">
                 <MoneyField
@@ -644,29 +680,32 @@ function AjustarForm({
                   error={countedError}
                 />
                 {mode === 'cash' ? (
-                  billsOpen ? (
-                    <BillCounter
-                      onUse={(cents) => {
-                        setCounted(cents)
-                        setBillsOpen(false)
-                        adjust.clearFieldError('countedCents')
-                        countedRef.current?.focus()
-                      }}
-                    />
-                  ) : (
+                  <>
+                    {/* El mismo link abre y cierra el contador: abierto, no desaparece. */}
                     <button
                       type="button"
                       className={cn(TEXT_LINK, 'justify-self-start text-sm underline')}
-                      onClick={() => setBillsOpen(true)}
+                      aria-expanded={billsOpen}
+                      onClick={() => setBillsOpen((open) => !open)}
                     >
-                      Ayudame a contar los billetes
+                      {billsOpen ? 'Cerrar el contador' : 'Ayudame a contar los billetes'}
                     </button>
-                  )
+                    {billsOpen ? (
+                      <BillCounter
+                        onUse={(cents) => {
+                          setCounted(cents)
+                          setBillsOpen(false)
+                          adjust.clearFieldError('countedCents')
+                          countedRef.current?.focus()
+                        }}
+                      />
+                    ) : null}
+                  </>
                 ) : null}
               </div>
 
               {items.length > 0 ? (
-                <fieldset className="m-0 grid min-w-0 gap-2 border-0 p-0">
+                <fieldset className="grid min-w-0 gap-2 border-0 p-0">
                   <legend className="mb-1.5 p-0 font-serif text-lg leading-snug font-semibold tracking-tight">
                     ¿Qué ventas ya entraron?
                   </legend>
@@ -757,9 +796,11 @@ function AjustarForm({
               ) : null}
 
               {showBreakdown ? (
-                <fieldset className="m-0 grid min-w-0 gap-3 border-0 p-0">
-                  <legend className="mb-1 flex flex-wrap items-center gap-2 p-0 text-sm leading-snug font-medium">
-                    Lo que se quedó {name}
+                // Sin `m-0`: le ganaba al `space-y-6` de la hoja y lo de abajo quedaba pegado.
+                <fieldset className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2.5 border-0 p-0">
+                  {/* Una pregunta más de la hoja, con la voz de las otras. */}
+                  <legend className="mb-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 p-0">
+                    <SheetQuestion id={`${id}-descuentos`}>¿Qué te descontó {name}?</SheetQuestion>
                     {!breakdownTouched && explained > 0 ? (
                       <StatusPill tone="muted">Estimado</StatusPill>
                     ) : null}
@@ -812,11 +853,10 @@ function AjustarForm({
                         ) : null}
                       </div>
                     </>
-                  ) : (
+                  ) : breakdownSummary ? (
+                    // Ya hay un detalle (el estimado por las tasas): se muestra y se puede corregir.
                     <div className="grid gap-1">
-                      <p className="text-sm tabular-nums text-pretty">
-                        {breakdownSummary || 'Todavía sin detalle.'}
-                      </p>
+                      <p className="text-sm tabular-nums text-pretty">{breakdownSummary}</p>
                       <button
                         type="button"
                         className={cn(TEXT_LINK, 'justify-self-start text-sm underline')}
@@ -827,17 +867,41 @@ function AjustarForm({
                         <ChevronDown className="ml-1 size-3.5" aria-hidden />
                       </button>
                     </div>
+                  ) : (
+                    // Sin detalle: qué pasa si se guarda así, y dónde decirlo.
+                    <div className="grid gap-1">
+                      {unexplained !== null && unexplained > 0 ? (
+                        <p className="text-sm text-muted-foreground text-pretty">
+                          {walletUndetailedNote(unexplained)}
+                        </p>
+                      ) : null}
+                      <button
+                        type="button"
+                        className={ADD_LINK}
+                        aria-expanded={false}
+                        onClick={() => {
+                          setBreakdownOpen(true)
+                          // El botón desaparece: el foco sigue en el primer importe.
+                          requestAnimationFrame(() =>
+                            document.getElementById(`${id}-bd-comision`)?.focus(),
+                          )
+                        }}
+                      >
+                        <Plus className="size-3.5" aria-hidden />
+                        Decir qué te descontaron
+                      </button>
+                    </div>
                   )}
                   {breakdownError || errorOf('breakdown') ? (
                     <p role="alert" className="text-xs text-destructive">
                       {breakdownError ?? errorOf('breakdown')}
                     </p>
-                  ) : unexplained !== null && unexplained > 0 ? (
+                  ) : (breakdownOpenNow || breakdownSummary) &&
+                    unexplained !== null &&
+                    unexplained > 0 ? (
                     <p className="text-sm text-muted-foreground text-pretty">
                       Quedan{' '}
-                      <span className="font-medium text-foreground">
-                        {formatCents(unexplained)}
-                      </span>{' '}
+                      <span className="font-medium text-foreground">{exactMoney(unexplained)}</span>{' '}
                       sin explicar: van aparte para que los revise la contadora.
                     </p>
                   ) : null}
@@ -846,23 +910,26 @@ function AjustarForm({
             </>
           )}
 
-          {/* Lo demás: casi nunca hace falta tocarlo. Una raya lo separa de la cuenta. */}
-          <div className="space-y-5 border-t border-border/60 pt-6">
-            <DateField
-              label="Fecha del conteo"
-              required
-              value={date}
-              onValueChange={(next) => {
-                setDate(next)
-                adjust.clearFieldError('date')
-                wallet.clearFieldError('date')
-              }}
-              min={firstLoadableDay(catalog)}
-              max={today}
-              today={today}
-              error={errorOf('date')}
-            />
-          </div>
+          {/* Lo demás: casi nunca hace falta tocarlo. Una raya lo separa de la cuenta. Sin caja
+              elegida no hay nada que fechar: aparece con la cuenta (viene puesta en hoy). */}
+          {treasury ? (
+            <div className="space-y-5 border-t border-border/60 pt-6">
+              <DateField
+                label="Fecha del conteo"
+                required
+                value={date}
+                onValueChange={(next) => {
+                  setDate(next)
+                  adjust.clearFieldError('date')
+                  wallet.clearFieldError('date')
+                }}
+                min={firstLoadableDay(catalog)}
+                max={today}
+                today={today}
+                error={errorOf('date')}
+              />
+            </div>
+          ) : null}
 
           {plan === 'adjust' || plan === 'wallet' ? (
             <EntryPreview entries={shown} label="Ver cómo queda en los libros" />
@@ -890,8 +957,9 @@ function AjustarForm({
               Contar otra después
             </label>
           ) : null}
-          <Button type="submit" disabled={busy || (Boolean(treasury) && !check)}>
-            {busy ? 'Guardando…' : submitLabel}
+          {/* Sin caja no hay nada que guardar: el botón dice qué falta y espera apagado. */}
+          <Button type="submit" disabled={busy || !treasury || !check}>
+            {busy ? 'Guardando…' : treasury ? submitLabel : COUNT_PICK_LABEL}
           </Button>
         </ActionSheetFooter>
       </form>

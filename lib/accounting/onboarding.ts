@@ -172,9 +172,13 @@ export function parseOnboardingData(raw: unknown): OnboardingData | null {
 export const ONBOARDING_SECTIONS = ['day1', 'daily', 'weekly', 'monthly'] as const
 export type OnboardingSection = (typeof ONBOARDING_SECTIONS)[number]
 
+/**
+ * «Puesta en marcha» es lo de una sola vez: el mismo nombre (y la misma cuenta, «N de M») que la
+ * franja del Resumen, que lleva justo a esta sección. Lo demás es la rutina.
+ */
 export const ONBOARDING_SECTION_LABEL: Readonly<Record<OnboardingSection, string>> = {
-  day1: 'Día 1 · una sola vez',
-  daily: 'Todos los días (≈ 5 minutos)',
+  day1: 'Puesta en marcha · una sola vez',
+  daily: 'Todos los días',
   weekly: 'Todas las semanas',
   monthly: 'Todos los meses',
 }
@@ -182,7 +186,8 @@ export const ONBOARDING_SECTION_LABEL: Readonly<Record<OnboardingSection, string
 /** La bajada de cada sección, en una línea. */
 export const ONBOARDING_SECTION_HINT: Readonly<Record<OnboardingSection, string>> = {
   day1: 'Se hace una sola vez. Seguí el orden: cada paso usa lo que cargaste antes.',
-  daily: 'Lo de cada día. El resto lo arma la plataforma.',
+  // Los mismos minutos que «Tu rutina» de la portada (`guideRoutine`).
+  daily: 'A la mañana siguiente, unos 10 minutos. El resto lo arma la plataforma.',
   weekly: 'Bajás dos archivos y la plataforma arma todo: vos revisás y confirmás.',
   monthly: 'Las compras de ARCA, los saldos y el cierre del mes con la contadora.',
 }
@@ -548,7 +553,8 @@ export const ONBOARDING_ITEMS: readonly OnboardingItem[] = [
     example: 'Ejemplo: hielo por $ 6.000, pagado con la plata de la caja.',
     auto: null,
     minutes: 1,
-    actionLabel: 'Nuevo gasto',
+    // El mismo botón que la receta «Compré y pagué en el momento» (no el título de la hoja).
+    actionLabel: 'Cargar un gasto',
     sheet: 'gasto',
     kind: 'info',
   },
@@ -695,8 +701,11 @@ export const PLATFORM_DOES: readonly string[] = [
 /** Lo que se sigue cargando a mano y por qué (diseño §4.5). */
 export type OnboardingManualTask = {
   title: string
+  /** El «Dónde»: lo que se toca para llegar (el lanzador entra por la situación, no por la hoja). */
   where: { label: string; path: string | null }
   sheet?: OnboardingSheet
+  /** El botón que abre `sheet`: el mismo de la receta del día a día. */
+  sheetLabel?: string
   /** Por qué no se automatiza todavía. */
   why: string
 }
@@ -709,14 +718,16 @@ export const ONBOARDING_STAYS_MANUAL: readonly OnboardingManualTask[] = [
   },
   {
     title: 'Gastos chicos sin factura',
-    where: { label: '«Nuevo gasto»', path: null },
+    where: { label: '«+ Cargar» › «Pagué algo recién»', path: null },
     sheet: 'gasto',
+    sheetLabel: 'Cargar un gasto',
     why: 'El hielo o la verdulería no tienen factura a nombre de la SAS, así que no están en ARCA.',
   },
   {
     title: 'Lo que te depositan las tarjetas',
-    where: { label: '«Registrar un cobro»', path: null },
+    where: { label: '«+ Cargar» › «Me entró plata»', path: null },
     sheet: 'cobrar',
+    sheetLabel: 'Anotar lo que entró',
     why: 'Todavía no leemos las liquidaciones de las tarjetas. Con los porcentajes de Ajustes › Medios de cobro, el cobro viene casi armado.',
   },
   {
@@ -957,8 +968,8 @@ function evaluate(
           d.treasuriesUnchecked === 0
             ? null
             : d.treasuriesUnchecked === 1
-              ? 'Falta ajustar 1 caja este mes.'
-              : `Faltan ajustar ${d.treasuriesUnchecked} cajas este mes.`,
+              ? 'Falta contar 1 caja este mes.'
+              : `Faltan contar ${d.treasuriesUnchecked} cajas este mes.`,
       }
     case 'month_close':
       // Los libros arrancaron este mes: todavía no hay un mes para cerrar.

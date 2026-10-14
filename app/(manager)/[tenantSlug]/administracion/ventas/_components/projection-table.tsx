@@ -1,3 +1,4 @@
+import { ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { Amount } from '@/components/administracion/amount'
@@ -26,6 +27,22 @@ import { TargetsImportDialog } from './targets-import-dialog'
 
 /** Las columnas van juntas (como «Neto por medio»): son doce y tienen que entrar al lado del menú. */
 const NUM = 'px-2.5 text-right'
+
+/**
+ * La columna del día queda fija al deslizar: al ver el desglose de la derecha no se pierde de
+ * qué noche es. Lleva un fondo lleno (el de su fila) para que lo que pasa por debajo no se lea.
+ */
+const DAY_HEAD =
+  'sticky left-0 z-[2] bg-[color-mix(in_oklab,var(--color-secondary)_40%,var(--color-card))]'
+const DAY_CELL = 'sticky left-0 z-[1] bg-card'
+const DAY_FOOT =
+  'sticky left-0 z-[1] bg-[color-mix(in_oklab,var(--color-secondary)_30%,var(--color-card))]'
+
+/**
+ * El borde derecho desvanecido: una columna vacía pegada a la derecha. Si la planilla no entra,
+ * queda sobre lo último que se ve y avisa que sigue; al llegar al final es una columna vacía.
+ */
+const EDGE = 'sticky right-0 w-6 min-w-6 p-0 bg-linear-to-l to-transparent'
 
 function Dash() {
   return <span className="text-xs text-muted-foreground/60">—</span>
@@ -112,6 +129,122 @@ function DayName({ day }: { day: ProjectionDay }) {
   )
 }
 
+/** Celular: una noche con cierre, en su ficha (venta neta, cumplimiento, detalle y acumulado). */
+function LoadedDayItem({
+  day: d,
+  events,
+  base,
+  canWrite,
+}: {
+  day: ProjectionDay
+  events: readonly string[]
+  base: string
+  canWrite: boolean
+}) {
+  const text = complianceText(d.compliance)
+  return (
+    <li className="space-y-1 px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-medium">
+          <DayName day={d} />
+        </span>
+        <span className="shrink-0 text-right">
+          <Amount cents={d.netCents} decimals={0} className="block text-sm font-medium" />
+          <span className="block text-[11px] text-muted-foreground">Venta neta</span>
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1">
+          Objetivo
+          {canWrite ? (
+            <TargetCell
+              day={d.day}
+              dayLabel={longDay(d.day)}
+              targetCents={d.targetCents}
+              align="start"
+            />
+          ) : (
+            <span className="tabular-nums text-foreground">
+              {d.targetCents === null ? '—' : formatCentsShort(d.targetCents)}
+            </span>
+          )}
+        </span>
+        {text ? <ComplianceCell day={d} base={base} canWrite={canWrite} /> : null}
+      </div>
+      <p className="text-xs tabular-nums text-muted-foreground">
+        Bar {formatCentsShort(d.barCents)} · Delivery {formatCentsShort(d.deliveryCents)} ·
+        Comisiones {formatCentsShort(d.posnetCommissionCents + d.deliveryCommissionCents)}
+      </p>
+      <p className="text-xs tabular-nums text-muted-foreground">
+        {/* Un mes sin objetivo no tiene «objetivo $ 0»: se dice solo lo vendido. */}
+        Acumulado:{' '}
+        {[
+          d.targetAccumCents > 0 ? `objetivo ${formatCentsShort(d.targetAccumCents)}` : null,
+          `venta ${formatCentsShort(d.netAccumCents)}`,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
+      </p>
+      {canWrite || events.length > 0 || d.note ? (
+        <div className="text-xs">
+          <EventCell day={d} events={events} canWrite={canWrite} />
+        </div>
+      ) : null}
+    </li>
+  )
+}
+
+/**
+ * Celular: un día sin cierre (uno que faltó, hoy, uno que viene) en un renglón: el día, si
+ * falta el cierre, y su objetivo con el lápiz. La nota se escribe tocando el día en el almanaque.
+ */
+function QuietDayItem({
+  day: d,
+  events,
+  base,
+  canWrite,
+}: {
+  day: ProjectionDay
+  events: readonly string[]
+  base: string
+  canWrite: boolean
+}) {
+  const missing = d.moment === 'past'
+  const extra = [events.join(' · '), d.note].filter(Boolean).join(' · ')
+  return (
+    <li className="flex min-h-11 items-center justify-between gap-3 px-4 py-1.5">
+      <span className="min-w-0 text-sm">
+        <DayName day={d} />
+        {missing ? (
+          canWrite ? (
+            <Link
+              href={`${base}/ventas/cierre?fecha=${d.day}`}
+              className="ml-2 inline-flex min-h-11 items-center rounded-sm text-xs font-medium text-warning-text underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Falta el cierre
+            </Link>
+          ) : (
+            <span className="ml-2 text-xs text-warning-text">Sin cierre</span>
+          )
+        ) : null}
+        {extra ? (
+          <span className="block truncate text-xs text-muted-foreground">{extra}</span>
+        ) : null}
+      </span>
+      <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+        Objetivo
+        {canWrite ? (
+          <TargetCell day={d.day} dayLabel={longDay(d.day)} targetCents={d.targetCents} />
+        ) : (
+          <span className="tabular-nums text-foreground">
+            {d.targetCents === null ? '—' : formatCentsShort(d.targetCents)}
+          </span>
+        )}
+      </span>
+    </li>
+  )
+}
+
 /** El cumplimiento del total: en un mes terminado, como el de un día; si no, cuánto del mes va. */
 function totalCompliance(projection: Projection): ReactNode {
   const { summary, totals } = projection
@@ -157,6 +290,9 @@ export function ProjectionTable({
 }) {
   const { days, totals } = projection
   const eventsOf = (day: string) => events?.[day] ?? []
+  // En el celular: lo que ya pasó (con o sin cierre) a la vista; hoy y lo que viene, plegado.
+  const past = days.filter((d) => d.moment === 'past' || (d.moment === 'today' && d.hasClose))
+  const ahead = days.filter((d) => !past.includes(d))
 
   const Shell = bare ? BareShell : DataTableShell
   return (
@@ -183,18 +319,26 @@ export function ProjectionTable({
             <caption className="sr-only">Proyección de ventas por día, {monthLabel}</caption>
             <DataTableHead>
               <tr>
-                <DataTableHeader>Día</DataTableHeader>
+                {/* El resultado va al lado del objetivo («cómo te fue»); el desglose, después. */}
+                <DataTableHeader className={DAY_HEAD}>Día</DataTableHeader>
                 <DataTableHeader className={NUM}>Objetivo</DataTableHeader>
+                <DataTableHeader className={NUM}>Venta neta</DataTableHeader>
+                <DataTableHeader className="px-2.5">Cumplimiento</DataTableHeader>
                 <DataTableHeader className={NUM}>Venta bar</DataTableHeader>
                 <DataTableHeader className={NUM}>Venta delivery</DataTableHeader>
                 <DataTableHeader className={NUM}>Comisión delivery</DataTableHeader>
                 <DataTableHeader className={NUM}>Comisiones posnet</DataTableHeader>
                 <DataTableHeader className={NUM}>Venta real</DataTableHeader>
-                <DataTableHeader className={NUM}>Venta neta</DataTableHeader>
-                <DataTableHeader className="px-2.5">Cumplimiento</DataTableHeader>
                 <DataTableHeader className={NUM}>Objetivo acumulado</DataTableHeader>
                 <DataTableHeader className={NUM}>Venta acumulada</DataTableHeader>
                 <DataTableHeader className="px-2.5">Evento</DataTableHeader>
+                <th
+                  aria-hidden
+                  className={cn(
+                    EDGE,
+                    'from-[color-mix(in_oklab,var(--color-secondary)_40%,var(--color-card))]',
+                  )}
+                />
               </tr>
             </DataTableHead>
             <DataTableBody>
@@ -206,7 +350,7 @@ export function ProjectionTable({
                     d.moment === 'future' && 'text-muted-foreground',
                   )}
                 >
-                  <DataTableCell className="py-1.5">
+                  <DataTableCell className={cn(DAY_CELL, 'py-1.5')}>
                     <DayName day={d} />
                   </DataTableCell>
                   <DataTableCell className={cn(NUM, 'py-1.5')}>
@@ -219,6 +363,12 @@ export function ProjectionTable({
                     ) : (
                       <Money cents={d.targetCents ?? 0} />
                     )}
+                  </DataTableCell>
+                  <DataTableCell className={cn(NUM, 'py-1.5 font-medium')}>
+                    <Money cents={d.netCents} show={d.hasClose} />
+                  </DataTableCell>
+                  <DataTableCell className="px-2.5 py-1.5">
+                    <ComplianceCell day={d} base={base} canWrite={canWrite} />
                   </DataTableCell>
                   <DataTableCell className={cn(NUM, 'py-1.5')}>
                     <Money cents={d.barCents} show={d.hasClose} />
@@ -235,12 +385,6 @@ export function ProjectionTable({
                   <DataTableCell className={cn(NUM, 'py-1.5')}>
                     <Money cents={d.realCents} show={d.hasClose} />
                   </DataTableCell>
-                  <DataTableCell className={cn(NUM, 'py-1.5 font-medium')}>
-                    <Money cents={d.netCents} show={d.hasClose} />
-                  </DataTableCell>
-                  <DataTableCell className="px-2.5 py-1.5">
-                    <ComplianceCell day={d} base={base} canWrite={canWrite} />
-                  </DataTableCell>
                   <DataTableCell className={cn(NUM, 'py-1.5')}>
                     <Money cents={d.targetAccumCents} />
                   </DataTableCell>
@@ -250,14 +394,21 @@ export function ProjectionTable({
                   <DataTableCell className="min-w-40 px-2.5 py-1.5">
                     <EventCell day={d} events={eventsOf(d.day)} canWrite={canWrite} />
                   </DataTableCell>
+                  <td aria-hidden className={cn(EDGE, 'from-card')} />
                 </tr>
               ))}
             </DataTableBody>
             <tfoot className="border-t border-border bg-secondary/30 font-semibold">
               <tr>
-                <DataTableCell>Total del mes</DataTableCell>
+                <DataTableCell className={DAY_FOOT}>Total del mes</DataTableCell>
                 <DataTableCell className={NUM}>
                   <Money cents={totals.targetCents} />
+                </DataTableCell>
+                <DataTableCell className={NUM}>
+                  <Money cents={totals.netCents} />
+                </DataTableCell>
+                <DataTableCell className="whitespace-nowrap px-2.5 tabular-nums">
+                  {totalCompliance(projection)}
                 </DataTableCell>
                 <DataTableCell className={NUM}>
                   <Money cents={totals.barCents} />
@@ -274,87 +425,73 @@ export function ProjectionTable({
                 <DataTableCell className={NUM}>
                   <Money cents={totals.realCents} />
                 </DataTableCell>
-                <DataTableCell className={NUM}>
-                  <Money cents={totals.netCents} />
-                </DataTableCell>
-                <DataTableCell className="whitespace-nowrap px-2.5 tabular-nums" colSpan={4}>
-                  {totalCompliance(projection)}
-                </DataTableCell>
+                <DataTableCell colSpan={3}>{null}</DataTableCell>
+                <td
+                  aria-hidden
+                  className={cn(
+                    EDGE,
+                    'from-[color-mix(in_oklab,var(--color-secondary)_30%,var(--color-card))]',
+                  )}
+                />
               </tr>
             </tfoot>
           </DataTableRoot>
         </DataTableScroll>
       </div>
 
-      {/* Celular: cada día con su objetivo, la venta neta y el cumplimiento; el detalle, debajo. */}
-      <ul
-        aria-label={`Proyección de ventas por día, ${monthLabel}`}
-        className="divide-y divide-border/60 sm:hidden"
-      >
-        {days.map((d) => {
-          const text = complianceText(d.compliance)
-          const names = eventsOf(d.day)
-          return (
-            <li key={d.day} className="space-y-1 px-4 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-medium">
-                  <DayName day={d} />
-                </span>
-                {d.hasClose ? (
-                  <span className="shrink-0 text-right">
-                    <Amount cents={d.netCents} decimals={0} className="block text-sm font-medium" />
-                    <span className="block text-[11px] text-muted-foreground">Venta neta</span>
-                  </span>
-                ) : null}
-              </div>
-              <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  Objetivo
-                  {canWrite ? (
-                    <TargetCell
-                      day={d.day}
-                      dayLabel={longDay(d.day)}
-                      targetCents={d.targetCents}
-                      align="start"
-                    />
-                  ) : (
-                    <span className="tabular-nums text-foreground">
-                      {d.targetCents === null ? '—' : formatCentsShort(d.targetCents)}
-                    </span>
-                  )}
-                </span>
-                {text ? <ComplianceCell day={d} base={base} canWrite={canWrite} /> : null}
-              </div>
-              {d.hasClose ? (
-                <p className="text-xs tabular-nums text-muted-foreground">
-                  Bar {formatCentsShort(d.barCents)} · Delivery {formatCentsShort(d.deliveryCents)}{' '}
-                  · Comisiones{' '}
-                  {formatCentsShort(d.posnetCommissionCents + d.deliveryCommissionCents)}
-                </p>
-              ) : null}
-              {d.targetAccumCents > 0 || (d.moment !== 'future' && d.netAccumCents !== 0) ? (
-                <p className="text-xs tabular-nums text-muted-foreground">
-                  {/* Un mes sin objetivo no tiene «objetivo $ 0»: se dice solo lo vendido. */}
-                  Acumulado:{' '}
-                  {[
-                    d.targetAccumCents > 0
-                      ? `objetivo ${formatCentsShort(d.targetAccumCents)}`
-                      : null,
-                    d.moment === 'future' ? null : `venta ${formatCentsShort(d.netAccumCents)}`,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </p>
-              ) : null}
-              {canWrite || names.length > 0 || d.note ? (
-                <div className="text-xs">
-                  <EventCell day={d} events={names} canWrite={canWrite} />
-                </div>
-              ) : null}
-            </li>
-          )
-        })}
-        <li className="space-y-1 bg-secondary/30 px-4 py-3 text-sm">
+      {/* Celular: cada noche con cierre en su ficha (venta neta, cumplimiento y el detalle); las
+          que no tienen cierre, en un renglón con su objetivo. Lo que viene, plegado: 31 fichas
+          eran 9.600 px. */}
+      <div className="sm:hidden">
+        <ul
+          aria-label={`Proyección de ventas por día, ${monthLabel}`}
+          className="divide-y divide-border/60"
+        >
+          {past.map((d) =>
+            d.hasClose ? (
+              <LoadedDayItem
+                key={d.day}
+                day={d}
+                events={eventsOf(d.day)}
+                base={base}
+                canWrite={canWrite}
+              />
+            ) : (
+              <QuietDayItem
+                key={d.day}
+                day={d}
+                events={eventsOf(d.day)}
+                base={base}
+                canWrite={canWrite}
+              />
+            ),
+          )}
+        </ul>
+        {ahead.length > 0 ? (
+          <details className="group/ahead border-t border-border/60" open={past.length === 0}>
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [&::-webkit-details-marker]:hidden">
+              {ahead.length === 1
+                ? 'Ver el día que viene'
+                : `Ver los ${ahead.length} días que vienen`}
+              <ChevronDown
+                aria-hidden
+                className="size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-fast) group-open/ahead:rotate-180 motion-reduce:transition-none"
+              />
+            </summary>
+            <ul className="divide-y divide-border/60 border-t border-border/60">
+              {ahead.map((d) => (
+                <QuietDayItem
+                  key={d.day}
+                  day={d}
+                  events={eventsOf(d.day)}
+                  base={base}
+                  canWrite={canWrite}
+                />
+              ))}
+            </ul>
+          </details>
+        ) : null}
+        <div className="space-y-1 border-t border-border/60 bg-secondary/30 px-4 py-3 text-sm">
           <div className="flex items-center justify-between gap-3 font-semibold">
             <span>Total del mes</span>
             <Amount cents={totals.netCents} decimals={0} />
@@ -363,8 +500,8 @@ export function ProjectionTable({
             {totals.targetCents > 0 ? `Objetivo ${formatCentsShort(totals.targetCents)} · ` : null}
             {totalCompliance(projection)}
           </p>
-        </li>
-      </ul>
+        </div>
+      </div>
 
       <p className="border-t border-border/60 px-5 py-3 text-xs text-muted-foreground text-pretty">
         Comisiones estimadas con los porcentajes de{' '}

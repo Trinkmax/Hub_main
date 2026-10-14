@@ -25,16 +25,19 @@ import { isBatchAcceptable } from '@/lib/imports/server/types'
 import { importBatchHref, SUMMARY_KIND_TEXT } from '@/lib/imports/ui/labels'
 import {
   ANSWER,
+  flowOf,
   needPillLabel,
+  rowWords,
   SKIP_COPY,
   STALE_QUESTION,
   skipText,
   VOIDED_QUESTION,
 } from '@/lib/imports/ui/review-copy'
 import { formatCents } from '@/lib/money'
+import { cn } from '@/lib/utils'
 import { ProposalStatusPill } from '../status-badge'
 import { NeedLine, NeedQuestion, type QuestionFrame } from './need-block'
-import { isOpenProposal, PaperFold, unbreakableNumbers } from './proposal-ticket'
+import { isOpenProposal, ProposalTicket, unbreakableNumbers } from './proposal-ticket'
 import { ANSWER_BUTTON, QUIET_ANSWER, QuestionAnswers, QuestionCard } from './question-card'
 import { OFFLINE_TEXT, useReview } from './review-context'
 import type { ProposalView } from './types'
@@ -43,17 +46,38 @@ import { useRowActions } from './use-row-actions'
 /**
  * El título y la línea gris de una hoja en una lista. En una compra manda el
  * proveedor («Limpieza Demo SA» · «Compra · Factura A 0002-…»); en un movimiento
- * de Mercado Pago o del banco manda lo que es («Cobros con QR del 08/10» ·
- * «Cobros del día · QR Mercado Pago»): si no, seis renglones seguidos se
- * titulaban «Mercado Pago».
+ * de Mercado Pago o del banco manda lo que es («Cobros con QR del 08/10»,
+ * «Pasaste plata a Caja»): si no, seis renglones seguidos se titulaban «Mercado
+ * Pago». Las palabras las arma `rowWords()` (puro, con tests).
  */
 export function lineWords(s: ProposalView['summary']): { title: string; paper: string } {
-  const label = unbreakableNumbers(s.label)
-  const kind = SUMMARY_KIND_TEXT[s.kind]
-  if ((s.kind === 'purchase' || s.kind === 'credit_note') && s.counterparty) {
-    return { title: s.counterparty, paper: `${kind} · ${label}` }
-  }
-  return { title: label, paper: s.counterparty ? `${kind} · ${s.counterparty}` : kind }
+  return rowWords({ ...s, label: unbreakableNumbers(s.label) }, SUMMARY_KIND_TEXT[s.kind])
+}
+
+/**
+ * El importe de un renglón: pesos sin centavos (los centavos quedan en el
+ * papel) y, en un movimiento del banco o de Mercado Pago, para qué lado fue la
+ * plata. «↓ salió $ 200.000» y «↑ entró $ 1.584.000» no pueden verse iguales:
+ * la flecha lleva el color, la palabra lo dice igual sin él.
+ */
+export function RowMoney({ s, className }: { s: ProposalView['summary']; className?: string }) {
+  const flow = flowOf(s)
+  return (
+    <span className={cn('inline-flex items-baseline justify-end gap-1.5', className)}>
+      {flow ? (
+        <span className="inline-flex items-baseline gap-1 text-xs font-normal text-muted-foreground">
+          <span
+            aria-hidden
+            className={cn('font-semibold', flow === 'in' ? 'text-adm-in' : 'text-adm-out')}
+          >
+            {flow === 'in' ? '↑' : '↓'}
+          </span>
+          {flow === 'in' ? 'entró' : 'salió'}
+        </span>
+      ) : null}
+      <Amount cents={s.total_cents} decimals={0} />
+    </span>
+  )
 }
 
 /** Qué pregunta trae una hoja, en dos palabras (para «Las que siguen»). */
@@ -480,18 +504,23 @@ export function ProposalInHand({
 /**
  * Una hoja en la lista (listos, cargados, lo que no se carga, todos): un
  * renglón cerrado con margen (el día), quién o qué, el tipo de papel, el estado
- * y el importe. Al tocarlo se abre en el lugar, uno por vez, con el papel
- * resumido y UNA acción según el estado; lo demás, callado.
+ * y el importe. Al tocarlo se abre en el lugar, uno por vez, con su papel y UNA
+ * acción según el estado; lo demás, callado.
+ *
+ * `sameStatus`: la vista ya filtra por ese estado («Cargados», «Listos»), así
+ * que la píldora de cada fila no se dibuja (dieciocho «Cargado» iguales no
+ * informan). Una que está cargándose la sigue mostrando.
  */
-export function ProposalLine({ p }: { p: ProposalView }) {
+export function ProposalLine({ p, sameStatus = false }: { p: ProposalView; sameStatus?: boolean }) {
   const { openKey, setOpenKey } = useReview()
   const open = openKey === p.key
   const s = p.summary
   const reason = p.error?.reason ?? null
   const day = isRealIsoDay(s.date) ? s.date : null
   const { title, paper } = lineWords(s)
-  // Un salteo sin plata (un día cargado a mano, la plata retenida) no muestra «$ 0,00».
+  // Un salteo sin plata (un día cargado a mano, la plata retenida) no muestra «$ 0».
   const showAmount = !(p.status === 'skipped' && s.total_cents === 0)
+  const showStatus = !(sameStatus && (p.status === 'posted' || p.status === 'ready'))
 
   return (
     <LedgerRow
@@ -515,10 +544,14 @@ export function ProposalLine({ p }: { p: ProposalView }) {
         </>
       }
       amount={
-        <span className="inline-flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
-          <ProposalStatusPill status={p.status} reason={reason} />
-          {showAmount ? <Amount cents={s.total_cents} className="min-w-[11ch] text-right" /> : null}
-        </span>
+        showStatus || showAmount ? (
+          <span className="inline-flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+            {showStatus ? (
+              <ProposalStatusPill status={p.status} reason={reason} message={p.error?.message} />
+            ) : null}
+            {showAmount ? <RowMoney s={s} className="min-w-[9ch]" /> : null}
+          </span>
+        ) : undefined
       }
     >
       {open ? <ProposalOpened p={p} /> : null}
@@ -527,10 +560,14 @@ export function ProposalLine({ p }: { p: ProposalView }) {
 }
 
 /**
- * Lo que se ve al abrir un renglón: el papel resumido, lo que le falta o por
- * qué no se carga, y UNA acción según el estado. Va aparte de `ProposalLine`
- * para poder dibujarlo solo (los tests comprueban que quien solo lee no recibe
- * ninguna respuesta ni botón de carga acá adentro).
+ * Lo que se ve al abrir un renglón: su papel (el ticket, directo: el renglón
+ * de arriba ya dice quién, qué y cuánto, así que no se repite en una tarjeta
+ * resumen) y, al lado, lo que le falta o por qué no se carga, con UNA acción
+ * según el estado. En una hoja angosta (el celular) el papel va arriba y lo
+ * demás debajo.
+ *
+ * Va aparte de `ProposalLine` para poder dibujarlo solo (los tests comprueban
+ * que quien solo lee no recibe ninguna respuesta ni botón de carga acá adentro).
  */
 export function ProposalOpened({ p }: { p: ProposalView }) {
   const { editable, slug, batchId, resolve, busyKey } = useReview()
@@ -542,91 +579,96 @@ export function ProposalOpened({ p }: { p: ProposalView }) {
   const creditParty = creditNoteOf(p, editable)
 
   return (
-    <div className="space-y-3 pb-1">
-      <PaperFold p={p} />
-      {movedMonth ? (
-        <p className="text-sm text-muted-foreground">
-          Su mes ya está cerrado: queda con fecha del primer día abierto.
-        </p>
-      ) : null}
-
-      {p.status === 'needs_input' || p.status === 'stale' || p.status === 'error' ? (
-        editable ? (
-          <AskOf p={p} frame={{ inset: true }} />
-        ) : (
-          <ReadOnlyAsk p={p} />
-        )
-      ) : null}
-
-      {p.status === 'skipped' && reason ? (
-        <p className="text-sm text-muted-foreground text-pretty">{skipText(reason)}</p>
-      ) : null}
-      {p.status === 'voided' ? (
-        <p className="text-sm text-muted-foreground text-pretty">
-          {editable ? VOIDED_QUESTION : 'El comprobante se anuló.'}
-        </p>
-      ) : null}
-
-      {creditParty ? <CreditNoteLink p={p} partyId={creditParty} /> : null}
-
-      <RowActions>
-        {p.status === 'posted' && p.documentId ? (
-          <Button asChild variant="outline" className="h-11 gap-2 md:pointer-fine:h-9">
-            <Link href={`/${slug}/administracion/comprobantes/${p.documentId}`}>
-              Ver el comprobante
-              <ArrowRight className="size-4" aria-hidden />
-            </Link>
-          </Button>
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4 pt-1 pb-1 @[40rem]/ledger:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] @[40rem]/ledger:items-start @[40rem]/ledger:gap-6">
+      {/* En una hoja angosta el total baja un escalón: nueve cifras entran en 240 px. */}
+      <ProposalTicket p={p} className="max-w-md @max-[28rem]/ledger:[&_.text-2xl]:text-lg" />
+      <div className="min-w-0 space-y-3">
+        {movedMonth ? (
+          <p className="text-sm text-muted-foreground">
+            Su mes ya está cerrado: queda con fecha del primer día abierto.
+          </p>
         ) : null}
-        {p.status === 'skipped' && p.error?.document_id ? (
-          <Button asChild variant="outline" className="h-11 gap-2 md:pointer-fine:h-9">
-            <Link href={`/${slug}/administracion/comprobantes/${p.error.document_id}`}>
-              Ver el comprobante
-              <ArrowRight className="size-4" aria-hidden />
-            </Link>
-          </Button>
-        ) : null}
-        {p.status === 'skipped' && p.error?.batch_id && p.error.batch_id !== batchId ? (
-          <Button asChild variant="outline" className="h-11 gap-2 md:pointer-fine:h-9">
-            <Link href={importBatchHref(slug, p.error.batch_id)}>
-              Abrir ese archivo
-              <ArrowRight className="size-4" aria-hidden />
-            </Link>
-          </Button>
-        ) : null}
-        {editable && p.status === 'voided' ? (
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11 gap-2 md:pointer-fine:h-9"
-            disabled={busy}
-            onClick={() =>
-              void resolve(p.key, [{ kind: 'reimport', proposalKey: p.key }], {
-                success: 'Listo: lo armé de nuevo para cargarlo.',
-              })
-            }
-          >
-            <RotateCcw className="size-4" aria-hidden />
-            Volver a cargar
-          </Button>
-        ) : null}
-        {editable && p.status === 'skipped' && reason === 'ignored' ? (
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11 gap-2 md:pointer-fine:h-9"
-            disabled={busy}
-            onClick={() => void unignore(p)}
-          >
-            <Undo2 className="size-4" aria-hidden />
-            Volver a incluirlo
-          </Button>
-        ) : null}
-      </RowActions>
 
-      <BooksPreview p={p} />
-      <div className="flex flex-wrap gap-x-4 empty:hidden">
-        <QuietActions p={p} />
+        {p.status === 'needs_input' || p.status === 'stale' || p.status === 'error' ? (
+          editable ? (
+            <AskOf p={p} frame={{ inset: true }} />
+          ) : (
+            <ReadOnlyAsk p={p} />
+          )
+        ) : null}
+
+        {p.status === 'skipped' && reason ? (
+          <p className="text-sm text-muted-foreground text-pretty">
+            {skipText(reason, p.error?.message)}
+          </p>
+        ) : null}
+        {p.status === 'voided' ? (
+          <p className="text-sm text-muted-foreground text-pretty">
+            {editable ? VOIDED_QUESTION : 'El comprobante se anuló.'}
+          </p>
+        ) : null}
+
+        {creditParty ? <CreditNoteLink p={p} partyId={creditParty} /> : null}
+
+        <RowActions>
+          {p.status === 'posted' && p.documentId ? (
+            <Button asChild variant="outline" className="h-11 gap-2 md:pointer-fine:h-9">
+              <Link href={`/${slug}/administracion/comprobantes/${p.documentId}`}>
+                Ver el comprobante
+                <ArrowRight className="size-4" aria-hidden />
+              </Link>
+            </Button>
+          ) : null}
+          {p.status === 'skipped' && p.error?.document_id ? (
+            <Button asChild variant="outline" className="h-11 gap-2 md:pointer-fine:h-9">
+              <Link href={`/${slug}/administracion/comprobantes/${p.error.document_id}`}>
+                Ver el comprobante
+                <ArrowRight className="size-4" aria-hidden />
+              </Link>
+            </Button>
+          ) : null}
+          {p.status === 'skipped' && p.error?.batch_id && p.error.batch_id !== batchId ? (
+            <Button asChild variant="outline" className="h-11 gap-2 md:pointer-fine:h-9">
+              <Link href={importBatchHref(slug, p.error.batch_id)}>
+                Abrir ese archivo
+                <ArrowRight className="size-4" aria-hidden />
+              </Link>
+            </Button>
+          ) : null}
+          {editable && p.status === 'voided' ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 gap-2 md:pointer-fine:h-9"
+              disabled={busy}
+              onClick={() =>
+                void resolve(p.key, [{ kind: 'reimport', proposalKey: p.key }], {
+                  success: 'Listo: lo armé de nuevo para cargarlo.',
+                })
+              }
+            >
+              <RotateCcw className="size-4" aria-hidden />
+              Volver a cargar
+            </Button>
+          ) : null}
+          {editable && p.status === 'skipped' && reason === 'ignored' ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 gap-2 md:pointer-fine:h-9"
+              disabled={busy}
+              onClick={() => void unignore(p)}
+            >
+              <Undo2 className="size-4" aria-hidden />
+              Volver a incluirlo
+            </Button>
+          ) : null}
+        </RowActions>
+
+        <BooksPreview p={p} />
+        <div className="flex flex-wrap gap-x-4 empty:hidden">
+          <QuietActions p={p} />
+        </div>
       </div>
     </div>
   )

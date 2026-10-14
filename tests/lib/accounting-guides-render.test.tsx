@@ -315,6 +315,15 @@ describe('las recetas', () => {
     }
   })
 
+  it('las maquetas no usan la letra de máquina fuera del ticket, y la píldora elegida es verde', () => {
+    const sales = renderToString(<GuideScenePreview scene={{ kind: 'collect', part: 'sales' }} />)
+    // Los importes de las ventas pendientes y de la comisión, como en la hoja de verdad.
+    expect(sales).not.toContain('font-mono')
+    const count = renderToString(<GuideScenePreview scene={{ kind: 'count' }} />)
+    expect(count).toContain('border-primary bg-primary text-primary-foreground')
+    expect(count).not.toContain('bg-foreground text-background')
+  })
+
   it('las pantallas simuladas se dibujan todas y no inventan datos de un bar', () => {
     const seen = new Set<string>()
     for (const r of GUIDE_RECIPES) {
@@ -415,14 +424,21 @@ describe('las recetas', () => {
     ]) {
       expect(sales, label).toContain(label)
     }
-    // Gastos fijos: «Pagar» en el renglón, y después el mismo renglón tildado.
+    // Gastos fijos: «Lo que sigue» con el botón grande arriba, «Pagar» en cada renglón, y
+    // después el mismo renglón tildado.
     const due = draw({ kind: 'fixed', state: 'due' })
     expect(due).toContain(SCREEN_LABELS.gastosFijos.pending)
-    expect(due).toContain(SCREEN_LABELS.gastosFijos.pay)
+    expect(due).toContain(SCREEN_LABELS.gastosFijos.next)
+    expect(due).toContain(`${SCREEN_LABELS.gastosFijos.pay} $ 950.000`)
+    expect(due).toContain('Después: Luz y 1 más.')
     expect(due).toContain('cuota 2 de 6')
+    // Los renglones van agrupados por la línea del día, como se ven en un celular.
+    expect(due).toContain('Jue 15 oct · 2 gastos')
     const paid = draw({ kind: 'fixed', state: 'paid' })
     expect(paid).toContain(`${SCREEN_LABELS.gastosFijos.paid} 07/10`)
     expect(paid).not.toContain('Venció hace')
+    // «Lo que sigue» ya nombra al que viene.
+    expect(paid).toContain(`${SCREEN_LABELS.gastosFijos.pay} $ 180.000`)
     // Las subidas y la revisión, con los nombres de «Importar».
     const upload = draw({ kind: 'import', source: 'arca', phase: 'upload' })
     for (const label of [
@@ -493,6 +509,9 @@ describe('con factura y sin factura', () => {
     // «Con factura / Sin factura» va con su rótulo, en la grilla y en cada tarjeta del celular:
     // una vez por la fila de la grilla y una por cada uno de los cuatro papeles.
     expect(t.split('En Comprobantes figura como').length - 1).toBe(5)
+    // En el celular no hay columnas: la bajada lo dice distinto en cada tamaño.
+    expect(html).toContain('bajá por su columna')
+    expect(html).toContain('Buscá el papel que te dieron: abajo están sus respuestas.')
     expectNeutral(html)
   })
 

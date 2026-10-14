@@ -26,7 +26,8 @@ import type { OpeningTotals } from '../_lib/opening'
  *
  * Vacío no dibuja ceros: «Cargá algún importe y esto se arma solo.» y «—» en
  * el total. Al pie, plegado, cómo queda en los libros (la vista previa del
- * mismo motor que guarda).
+ * mismo motor que guarda): aparece con el primer importe, no antes (vacío, su
+ * sello diría «Falta algo» sin que falte nada).
  */
 
 export type OpeningTicketRow = { id: string; name: string; cents: number }
@@ -166,7 +167,7 @@ export function OpeningTicket({
         </Explain>
       )}
 
-      {showBooks ? (
+      {showBooks && (!empty || entries.length > 0) ? (
         <EntryPreview
           entries={entries}
           label="Ver cómo queda en los libros"

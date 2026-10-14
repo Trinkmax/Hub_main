@@ -136,37 +136,74 @@ export function MonthAsideSlot(props: Parameters<typeof MonthAside>[0]) {
   )
 }
 
-/** La leyenda del almanaque, en palabras: cada muestra con lo que quiere decir. */
-function Legend({ targets, events }: { targets: boolean; events: boolean }) {
+/**
+ * La leyenda del almanaque, en palabras: cada muestra con lo que quiere decir.
+ * Solo lo que aparece en ESTE mes (un mes que viene no tiene «lo vendido» ni
+ * «falta el cierre»): una leyenda de cosas que no están confunde.
+ */
+function Legend({
+  sold,
+  targets,
+  missing,
+  today,
+  selected,
+  events,
+}: {
+  sold: boolean
+  targets: boolean
+  missing: boolean
+  today: boolean
+  selected: boolean
+  events: boolean
+}) {
   const item = 'inline-flex items-center gap-1.5 whitespace-nowrap'
+  if (!sold && !targets && !missing && !today && !selected && !events) return null
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
-      <li className={item}>
-        <span
-          aria-hidden
-          className="relative h-3.5 w-3 overflow-hidden rounded-[3px] border border-adm-s1/30 bg-adm-s1/12 dark:bg-adm-s1/25"
-        >
-          <span className="absolute inset-y-0 left-0 w-[3px] bg-adm-s1" />
-        </span>
-        lo vendido
-      </li>
-      {targets ? (
+      {sold ? (
         <li className={item}>
-          <span aria-hidden className="w-3 border-t-2 border-foreground/75" />
-          el objetivo del día
+          <span
+            aria-hidden
+            className="relative h-3.5 w-3 overflow-hidden rounded-[3px] border border-adm-s1/30 bg-adm-s1/12 dark:bg-adm-s1/25"
+          >
+            <span className="absolute inset-y-0 left-0 w-[3px] bg-adm-s1" />
+          </span>
+          lo vendido
         </li>
       ) : null}
-      <li className={item}>
-        <span
-          aria-hidden
-          className="size-3 rounded-[3px] border border-dashed border-warning bg-warning/10"
-        />
-        falta el cierre
-      </li>
-      <li className={item}>
-        <span aria-hidden className="size-3 rounded-[3px] ring-2 ring-foreground/80 ring-inset" />
-        hoy
-      </li>
+      {targets && sold ? (
+        <li className={item}>
+          <span aria-hidden className="w-2 rounded-r-full border-t-2 border-foreground/75" />
+          el objetivo de la noche
+        </li>
+      ) : null}
+      {missing ? (
+        <li className={item}>
+          <span
+            aria-hidden
+            className="size-3 rounded-[3px] border border-dashed border-warning bg-warning/10"
+          />
+          falta el cierre
+        </li>
+      ) : null}
+      {today ? (
+        <li className={item}>
+          <span
+            aria-hidden
+            className="size-3 rounded-[3px] ring-[1.5px] ring-foreground/75 ring-inset"
+          />
+          <span className="font-semibold text-foreground">hoy</span>
+        </li>
+      ) : null}
+      {selected ? (
+        <li className={item}>
+          <span
+            aria-hidden
+            className="size-3 rounded-[3px] bg-accent outline-2 outline-offset-1 outline-primary"
+          />
+          el día que estás mirando
+        </li>
+      ) : null}
       {events ? (
         <li className={item}>
           <span aria-hidden className="size-2 rounded-full bg-adm-s2" />
@@ -293,6 +330,14 @@ export async function MonthBody(props: MonthBodyProps) {
     selected,
   })
   const hasEvents = cells.some((cell) => cell.dot)
+  const legend = {
+    sold: cells.some((cell) => cell.state === 'loaded'),
+    targets: summary.hasTargets,
+    missing: cells.some((cell) => cell.state === 'missing'),
+    today: cells.some((cell) => cell.state === 'today' || cell.today === true),
+    selected: cells.some((cell) => cell.selected === true),
+    events: hasEvents,
+  }
   const figures = projectionFigures(summary)
   const todayPending =
     isCurrentMonth && days.days.some((d) => d.state === 'today') ? serviceDay : null
@@ -306,6 +351,11 @@ export async function MonthBody(props: MonthBodyProps) {
     isCurrentMonth && days.loaded === 0 && (recentR === null || !recentR.ok || recentR.data === 0)
   const showProjection = !brandNew || focus === 'proyeccion'
   const showCash = (!brandNew || focus === 'caja') && !future
+  // Con la planilla abierta (se entró con `?tab=proyeccion`, o es quien solo mira) «Proyección»
+  // va a todo el ancho, debajo de las dos columnas: sus doce columnas no entran al lado de la
+  // noche. Plegada, se queda debajo del almanaque (así no queda un hueco bajo el almanaque).
+  const projectionOpen = focus === 'proyeccion' || !canWrite
+  const projectionWide = showProjection && projectionOpen
   const closeHref = firstMissing
     ? `${base}/ventas/cierre?fecha=${firstMissing}`
     : `${base}/ventas/cierre`
@@ -336,20 +386,22 @@ export async function MonthBody(props: MonthBodyProps) {
           <section
             id="almanaque"
             aria-labelledby="noche-por-noche"
-            className="card-hairline relative z-[1] -mt-2.5 min-w-0 scroll-mt-28 rounded-2xl border bg-card px-3 pt-6 pb-4 shadow-xs sm:px-5 sm:pb-5 xl:col-start-1 xl:row-start-1"
+            // En el celular la hoja va con 8 px de borde (no 12): cada casillero gana un poco y
+            // «806 mil» entra entero.
+            className="card-hairline relative z-[1] -mt-2.5 min-w-0 scroll-mt-28 rounded-2xl border bg-card px-2 pt-6 pb-4 shadow-xs sm:px-5 sm:pb-5 xl:col-start-1 xl:row-start-1"
           >
             <Rings />
-            <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 px-1">
+            <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 px-1.5 sm:px-1">
               <h2
                 id="noche-por-noche"
                 className="font-serif text-lg font-semibold leading-snug tracking-tight"
               >
                 Noche por noche
               </h2>
-              <Legend targets={summary.hasTargets} events={hasEvents} />
+              <Legend {...legend} />
             </header>
             {startedMidMonth && calendar?.booksStartDate ? (
-              <p className="mt-2 px-1 text-xs text-muted-foreground text-pretty">
+              <p className="mt-2 px-1.5 text-xs text-muted-foreground text-pretty sm:px-1">
                 Llevás la cuenta desde el {formatDayMonth(calendar.booksStartDate)}: los días de
                 antes no se cargan.
               </p>
@@ -364,7 +416,7 @@ export async function MonthBody(props: MonthBodyProps) {
                 ariaLabel={days.sentence}
               />
             ) : (
-              <div className="mt-3 flex flex-col items-start gap-3 px-1">
+              <div className="mt-3 flex flex-col items-start gap-3 px-1.5 sm:px-1">
                 <p role="alert" className="text-sm text-muted-foreground text-pretty">
                   {calendarR.ok ? '' : calendarR.message}
                 </p>
@@ -372,7 +424,7 @@ export async function MonthBody(props: MonthBodyProps) {
               </div>
             )}
 
-            <div className="mt-4 space-y-3 px-1">
+            <div className="mt-4 space-y-3 px-1.5 sm:px-1">
               {summary.soldCents > 0 ? (
                 <div className="border-t border-border/60 pt-3">
                   <Explain note="Es la misma cifra del Resumen. Todavía no se le restan las compras ni los gastos.">
@@ -462,17 +514,7 @@ export async function MonthBody(props: MonthBodyProps) {
           </div>
 
           <div className="@container min-w-0 space-y-6 xl:col-start-1 xl:row-start-2">
-            {brandNew ? (
-              <FirstSteps
-                base={base}
-                month={monthParam}
-                closeHref={closeHref}
-                hasTargets={summary.hasTargets}
-                canWrite={canWrite}
-              />
-            ) : null}
-
-            {showProjection ? (
+            {showProjection && !projectionWide ? (
               <ProjectionPanel
                 projection={projection}
                 days={days}
@@ -481,7 +523,7 @@ export async function MonthBody(props: MonthBodyProps) {
                 currentMonth={currentMonth}
                 base={base}
                 canWrite={canWrite}
-                open={focus === 'proyeccion' || !canWrite}
+                open={false}
               />
             ) : null}
 
@@ -500,6 +542,37 @@ export async function MonthBody(props: MonthBodyProps) {
             {brandNew || future ? null : strip}
           </div>
         </div>
+
+        {/* El bar recién arrancado: los tres pasos en fila, a todo el ancho (al lado de la noche
+            de ejemplo quedaban apilados y dejaban una columna vacía). */}
+        {brandNew ? (
+          <div className="@container mt-6 min-w-0">
+            <FirstSteps
+              base={base}
+              month={monthParam}
+              closeHref={closeHref}
+              hasTargets={summary.hasTargets}
+              canWrite={canWrite}
+            />
+          </div>
+        ) : null}
+
+        {projectionWide ? (
+          <div className="mt-6 min-w-0">
+            <ProjectionPanel
+              projection={projection}
+              days={days}
+              events={events}
+              month={range.month}
+              currentMonth={currentMonth}
+              base={base}
+              canWrite={canWrite}
+              // Un mes sin objetivos ni cierres: abierta eran 31 renglones de rayas. Queda plegada
+              // y lo que enseña es el bloque de arriba (cómo poner el objetivo).
+              open={!canWrite || summary.hasTargets || days.loaded > 0}
+            />
+          </div>
+        ) : null}
       </div>
 
       {focus === 'proyeccion' || focus === 'caja' ? <PanelFocus target={focus} /> : null}

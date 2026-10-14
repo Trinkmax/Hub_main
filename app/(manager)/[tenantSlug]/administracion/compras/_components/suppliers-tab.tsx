@@ -5,8 +5,10 @@ import { EmptyTeach, PanelError } from '@/components/administracion/kit'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
+  type AccountingSettings,
   type AccountRow,
   exportHref,
+  getAccountingSettings,
   listAccounts,
   listParties,
   type PartyList,
@@ -38,6 +40,9 @@ import { UnclassifiedStrip } from './unclassified-strip'
 
 const MATCH = { filter: matchesPartyFilter, query: matchesPartyQuery }
 
+/** Cuántos «sin deuda» se asoman cuando la mayoría todavía no tiene categoría. */
+export const SETTLED_PREVIEW_UNSORTED = 4
+
 /**
  * Lo que lee la pestaña «Proveedores», UNA vez: los saldos del grupo entero
  * (sin filtro ni búsqueda), la ficha de cada uno (su categoría) y, para quien
@@ -51,6 +56,8 @@ export type LibretaData = {
   list: QueryOutcome<PartyList>
   classes: QueryOutcome<Map<string, PartyClassification>>
   plan: QueryOutcome<AccountRow[]> | null
+  /** Para saber si faltan los saldos iniciales (el héroe no dice «$ 0» ni «nada»). */
+  settings: QueryOutcome<AccountingSettings | null>
 }
 
 /** Arranca las lecturas sin esperarlas: cada bloque espera la suya detrás de su `Suspense`. */
@@ -59,7 +66,8 @@ export function loadLibreta(tenantId: string, canWrite: boolean): Promise<Libret
     settleQuery(listParties(tenantId, { group: 'payables' })),
     settleQuery(listPartyClassifications(tenantId, 'payables')),
     canWrite ? settleQuery(listAccounts(tenantId)) : null,
-  ]).then(([list, classes, plan]) => ({ list, classes, plan }))
+    settleQuery(getAccountingSettings(tenantId)),
+  ]).then(([list, classes, plan, settings]) => ({ list, classes, plan, settings }))
 }
 
 /** Las categorías como botones y el plan completo, armados del plan de cuentas. */
@@ -89,18 +97,23 @@ function categoryChoices(
 export async function SuppliersHeroBlock({
   data,
   tenantSlug,
+  canWrite = false,
   className,
 }: {
   data: Promise<LibretaData>
   tenantSlug: string
+  /** Quien carga ve la acción del momento al lado del número. */
+  canWrite?: boolean
   className?: string
 }) {
-  const { list } = await data
+  const { list, settings } = await data
   if (!list.ok) {
     return (
       <PanelError title="Le debés a proveedores" message={list.message} className={className} />
     )
   }
+  // Si la lectura de la configuración falla, el héroe dice lo cargado (como antes).
+  const openingPending = settings.ok && settings.data?.openingStatus === 'pending'
   const rows = list.data.rows
   return (
     <LibretaHero
@@ -109,6 +122,8 @@ export async function SuppliersHeroBlock({
       debtors={rows.filter((r) => r.debtCents > 0).length}
       overdueParties={rows.filter((r) => r.overdueCents > 0).length}
       hasSuppliers={rows.some((r) => isVisibleSupplier(r, 'all'))}
+      openingPending={openingPending}
+      canWrite={canWrite}
       className={className}
     />
   )
@@ -167,8 +182,21 @@ export async function SuppliersBody({
   const q = firstParam(sp.q).slice(0, 80)
   const { value: filter } = supplierFilterOf(firstParam(sp.filtro))
   const classMap = classes.ok ? classes.data : null
-  const view = libretaView({ rows: list.data.rows, classes: classMap, filter, q, match: MATCH })
   const searching = q !== '' || filter !== 'todos'
+  const pending = classMap ? countUnclassified(classMap.values()) : 0
+  const classifiable = classMap ? countClassifiable(classMap.values()) : 0
+  // El bar recién arrancado: casi ninguno tiene categoría y los «sin deuda» eran doce renglones
+  // iguales con su «Elegir categoría» antes de la franja que los clasifica de un tirón. Con la
+  // mayoría sin clasificar se asoman unos pocos (el resto, detrás de «Ver los N que faltan»).
+  const fewSettled = canWrite && !searching && pending > 0 && pending * 2 > classifiable
+  const view = libretaView({
+    rows: list.data.rows,
+    classes: classMap,
+    filter,
+    q,
+    match: MATCH,
+    preview: fewSettled ? SETTLED_PREVIEW_UNSORTED : undefined,
+  })
   const hasSuppliers = list.data.rows.some((r) => isVisibleSupplier(r, 'all'))
   const existingNames = list.data.rows.map((row) => row.partyName)
   const exportLink = exportHref(tenantSlug, 'saldos-proveedores', { hasta: today })
@@ -249,8 +277,6 @@ export async function SuppliersBody({
     )
   }
 
-  const pending = classMap ? countUnclassified(classMap.values()) : 0
-  const classifiable = classMap ? countClassifiable(classMap.values()) : 0
   const sheet: ReactNode =
     view.shown.length === 0 ? (
       filter === 'sin-clasificar' && q === '' ? (
@@ -283,11 +309,20 @@ export async function SuppliersBody({
       />
     )
 
+  const strip =
+    canWrite && !searching ? (
+      <UnclassifiedStrip tenantSlug={tenantSlug} pending={pending} total={classifiable} />
+    ) : null
+  // En esta pantalla lo primero es lo que se debe: con deuda a la vista, la invitación a
+  // ordenar las categorías va DEBAJO de la libreta. Sin deuda no hay nada que apure y ordenar
+  // la casa es lo que toca: ahí va arriba.
+  const stripFirst = view.debt.length === 0
+
   return (
-    <div className="space-y-5">
-      {canWrite && !searching ? (
-        <UnclassifiedStrip tenantSlug={tenantSlug} pending={pending} total={classifiable} />
-      ) : null}
+    // `flex` + `gap` y no `space-y`: en el celular la barra de la libreta se desarma
+    // (`contents`) para mandar «Agregar de una lista» y «Exportar saldos» debajo de la hoja.
+    <div className="flex flex-col gap-5">
+      {stripFirst ? strip : null}
       {toolbar}
       {filter === 'sin-clasificar' && !classes.ok ? (
         <PanelError title="Proveedores sin categoría" message={classes.message} />
@@ -303,6 +338,7 @@ export async function SuppliersBody({
       ) : (
         sheet
       )}
+      {stripFirst ? null : strip}
     </div>
   )
 }
@@ -428,8 +464,19 @@ export function LibretaSkeleton() {
       <div className="space-y-3">
         <Skeleton className="h-11 w-full rounded-full lg:max-w-sm" />
         <div className="flex gap-1.5 overflow-hidden">
-          {['w-20', 'w-28', 'w-24', 'w-20', 'w-40', 'w-32'].map((w) => (
-            <Skeleton key={w} className={`h-11 shrink-0 rounded-full md:h-9 ${w}`} />
+          {/* Las seis píldoras de filtro: la clave es el filtro, no el ancho (dos miden lo mismo). */}
+          {[
+            { key: 'todos', width: 'w-20' },
+            { key: 'con-deuda', width: 'w-28' },
+            { key: 'vencidos', width: 'w-24' },
+            { key: 'a-favor', width: 'w-20' },
+            { key: 'impuestos', width: 'w-40' },
+            { key: 'sin-categoria', width: 'w-32' },
+          ].map((pill) => (
+            <Skeleton
+              key={pill.key}
+              className={`h-11 shrink-0 rounded-full md:h-9 ${pill.width}`}
+            />
           ))}
         </div>
       </div>

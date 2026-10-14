@@ -1,5 +1,16 @@
 import 'server-only'
-import { instantOrNull, isRecord, isUuid, queryError, readerClient, str, strOrNull } from './shared'
+import {
+  chunks,
+  dayOrNull,
+  instantOrNull,
+  isRecord,
+  isUuid,
+  queryError,
+  readerClient,
+  str,
+  strOrNull,
+  uniqueIds,
+} from './shared'
 
 /**
  * De qué archivo importado salió un comprobante (ARCA, Mercado Pago o el
@@ -72,4 +83,47 @@ export async function getDocumentOrigin(
     uploadedByName: str(batch.data.created_by_name),
     role: current ? 'current' : 'previous',
   }
+}
+
+/** Lo que la ficha necesita de otro comprobante para nombrarlo: qué es y de qué día. */
+export type LinkedDocument = { kind: string; issueDate: string }
+
+const DOCUMENTS = 'acc_documents'
+
+/**
+ * Qué son y de qué día los comprobantes del otro lado de las uniones de una
+ * ficha, por id. Sirve para que un cobro diga «Cierre del mar 01/09» en vez de
+ * «Cierre del día #12», que no le dice a nadie qué noche cobró.
+ *
+ * Una lectura con la sesión de la persona, bajo la política de lectores de
+ * `acc_documents` y con el bar explícito; sin `service_role` y sin migración.
+ * Los que no se puedan leer simplemente no están en el mapa: la ficha los
+ * nombra como siempre.
+ */
+export async function getLinkedDocuments(
+  tenantId: string,
+  documentIds: readonly string[],
+): Promise<Map<string, LinkedDocument>> {
+  const out = new Map<string, LinkedDocument>()
+  const ids = uniqueIds(documentIds)
+  if (ids.length === 0) return out
+  const supabase = await readerClient()
+  const results = await Promise.all(
+    chunks(ids).map((chunk) =>
+      supabase
+        .from(DOCUMENTS)
+        .select('id, kind, issue_date')
+        .eq('tenant_id', tenantId)
+        .in('id', chunk),
+    ),
+  )
+  for (const result of results) {
+    if (result.error) throw queryError(DOCUMENTS, result.error)
+    for (const row of (result.data ?? []) as unknown[]) {
+      if (!isRecord(row)) continue
+      const issueDate = dayOrNull(row.issue_date)
+      if (issueDate) out.set(str(row.id), { kind: str(row.kind), issueDate })
+    }
+  }
+  return out
 }

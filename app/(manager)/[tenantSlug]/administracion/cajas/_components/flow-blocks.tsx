@@ -67,7 +67,10 @@ export function FlowBlocks({
     )
   }
 
-  const twoSides = view.in.rows.length > 1
+  // «De dónde vino» tiene su panel solo si hay algo que repartir. Con una sola fuente de
+  // plata, o con una que se lleva todo menos monedas (lo normal en un bar: las ventas),
+  // alcanza con decirlo al pie del panel de al lado.
+  const twoSides = view.in.rows.length > 1 && !view.in.dominant
   return (
     <>
       <Panel>
@@ -95,16 +98,19 @@ export function FlowBlocks({
               : undefined
           }
           footer={
-            // Con una sola fuente de plata (lo normal en un bar) alcanza con decirlo.
+            // Cuánto entró ya lo dice la oración del dibujo de arriba.
             !twoSides && view.in.title ? `${view.in.title}.` : undefined
           }
         >
           {view.out.rows.length > 0 ? (
-            <RankBars
-              rows={view.out.rows.map((row) => ({ ...row, swatch: OUT_SWATCH }))}
-              sort={false}
-              ariaLabel={`${view.out.title}. Salieron ${formatCentsShort(view.out.totalCents)} en total.`}
-            />
+            // Sola, a todo el ancho de la pantalla, las barras quedan muy largas: se angostan.
+            <div className={twoSides ? undefined : 'max-w-3xl'}>
+              <RankBars
+                rows={view.out.rows.map((row) => ({ ...row, swatch: OUT_SWATCH }))}
+                sort={false}
+                ariaLabel={`${view.out.title}. Salieron ${formatCentsShort(view.out.totalCents)} en total.`}
+              />
+            </div>
           ) : null}
         </Panel>
         {twoSides ? (
@@ -121,6 +127,30 @@ export function FlowBlocks({
         ) : null}
       </div>
     </>
+  )
+}
+
+/**
+ * «Entró y salió» entera mientras carga: el período con su «Exportar», los dos
+ * bloques del flujo y las próximas semanas. La usan `loading.tsx` (al entrar) y
+ * la página (al cambiar de vista).
+ */
+export function FlowTabSkeleton() {
+  return (
+    <div className="space-y-6" aria-hidden="true">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Skeleton className="h-11 w-64 max-w-full rounded-full md:h-9" />
+        <Skeleton className="h-11 w-28 md:h-9" />
+      </div>
+      <FlowSkeleton />
+      <div className="card-hairline space-y-4 rounded-2xl border bg-card p-4 shadow-xs sm:p-5">
+        <div className="space-y-2">
+          <Skeleton className="h-6 w-96 max-w-full" />
+          <Skeleton className="h-4 w-full max-w-xl" />
+        </div>
+        <Skeleton className="h-36 w-full" />
+      </div>
+    </div>
   )
 }
 

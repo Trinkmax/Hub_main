@@ -33,7 +33,7 @@ import { pct, percentLabel } from '@/components/administracion/charts/scale'
 import { type PaperStamp, voucherStamp } from '@/components/administracion/voucher-stamp'
 import { dueBucket, dueLabel } from '@/lib/accounting/aging'
 import type { GuideLinkId } from '@/lib/accounting/guides'
-import type { DocumentOrigin } from '@/lib/accounting/queries/document-origin'
+import type { DocumentOrigin, LinkedDocument } from '@/lib/accounting/queries/document-origin'
 import type {
   AllocationDetail,
   DocumentDetail,
@@ -89,6 +89,12 @@ export type StoryContext = {
   attachments: number | null
   /** El estado de la autorización de ARCA, si el comprobante tiene una. */
   arca?: LinkState | null
+  /**
+   * Qué son y de qué día los comprobantes del otro lado de una unión, por id.
+   * Sirve para nombrar un cierre por su fecha («Cierre del mar 01/09») y no por
+   * su número interno. `null` o sin el id: se nombra como siempre.
+   */
+  linked?: ReadonlyMap<string, LinkedDocument> | null
 }
 
 type Line = DocumentDetail['lines'][number]
@@ -111,9 +117,23 @@ function refOf(link: DocumentLink): DocRef {
 
 // ─── Piezas chicas ───────────────────────────────────────────────────────────
 
-/** Un importe dentro de una oración: sin centavos si es redondo. */
+/**
+ * Un importe dentro de una oración, un título o una píldora: en pesos, sin
+ * centavos (el exacto está en el papel de al lado). La excepción es menos de un
+ * peso: nunca «$ 0» por algo que no es cero.
+ */
 function money(cents: number): string {
-  return cents % 100 === 0 ? formatCentsShort(cents) : formatCents(cents)
+  return cents !== 0 && Math.abs(cents) < 100 ? formatCents(cents) : formatCentsShort(cents)
+}
+
+/** «mar 01/09»; de otro año, la fecha entera («15/12/2025»). */
+function dayWords(iso: string, today: string): string {
+  return iso.slice(0, 4) === today.slice(0, 4) ? formatWeekdayDayMonth(iso) : formatIsoDay(iso)
+}
+
+/** «03/10»; de otro año, «03/10/2025». */
+function shortDay(iso: string, today: string): string {
+  return iso.slice(0, 4) === today.slice(0, 4) ? formatDayMonth(iso) : formatIsoDay(iso)
 }
 
 function hasNumber(text: string): boolean {
@@ -227,17 +247,39 @@ function activeAllocations(doc: Pick<DocumentDetail, 'allocations'>): Allocation
   return doc.allocations.filter((a) => a.voidedOn === null)
 }
 
+const LIQUIDATION_LABEL = VOUCHER_CATALOG.liquidacion.label
+
+/**
+ * «Liquidación de tarjeta o plataforma 0001-00031001» → «Liquidación
+ * 0001-00031001». El nombre largo del catálogo sirve para elegirla en una
+ * lista; en un título o en el papel alcanza con la palabra y el número.
+ */
+function shortPaperTitle(title: string): string {
+  return title.startsWith(LIQUIDATION_LABEL)
+    ? `Liquidación${title.slice(LIQUIDATION_LABEL.length)}`
+    : title
+}
+
 /** «Pago #6», «Factura A 0003-00001100 #2»; sin comprobante del otro lado, «Unión hecha a mano». */
 function allocationLabel(a: AllocationDetail): string {
   if (!a.otherDocumentId || !a.otherDocumentTitle) return 'Unión hecha a mano'
-  return a.otherDocumentSeq
-    ? `${a.otherDocumentTitle} #${a.otherDocumentSeq}`
-    : a.otherDocumentTitle
+  const title = shortPaperTitle(a.otherDocumentTitle)
+  return a.otherDocumentSeq ? `${title} #${a.otherDocumentSeq}` : title
 }
 
 /** «la» Factura A 0003-00001100, «el» Tique 0001-00000012: el artículo del otro comprobante. */
 function articleFor(title: string): 'la' | 'el' {
-  return /^(factura|nota|compra|liquidación|boleta|ddjj)/i.test(title.trim()) ? 'la' : 'el'
+  return /^(factura|nota|compra|liquidación|boleta|ddjj|unión)/i.test(title.trim()) ? 'la' : 'el'
+}
+
+/** «La factura», «La compra»: cómo se nombra un papel la segunda vez, sin repetir su número. */
+function nounFor(title: string): string {
+  const key = norm(title)
+  if (key.startsWith('factura')) return 'La factura'
+  if (key.startsWith('nota de débito')) return 'La nota de débito'
+  if (key.startsWith('compra')) return 'La compra'
+  if (key.startsWith('tique')) return 'El tique'
+  return 'Ese comprobante'
 }
 
 // ─── ¿Qué es? El título ──────────────────────────────────────────────────────
@@ -399,10 +441,15 @@ function builtTitle(doc: DocumentDetail): { title: string; saysParty: boolean; s
  * El título y su línea de abajo. Si el comprobante tiene número («Factura A
  * 0003-00001290»), ese es el título y abajo va qué es y de quién; si no, el
  * título se arma con los datos («Compra a La Serenísima», «Gasto · Hielo») y
- * abajo va solo lo que falta decir.
+ * abajo va solo lo que falta decir. La excepción es la liquidación de una
+ * tarjeta o una app: «Cobro de Tarjetas de débito (Posnet)», con «Liquidación
+ * 0001-00031001» abajo.
  */
 export function documentHeading(doc: DocumentDetail): DocumentHeading {
-  const numbered = hasNumber(doc.title)
+  // Una liquidación de tarjeta o de una app tiene número, pero para el dueño es un cobro: se
+  // titula «Cobro de {quién}» y el número va en la línea de abajo.
+  const liquidation = doc.kind === 'collection' && doc.voucherType === 'liquidacion'
+  const numbered = hasNumber(doc.title) && !liquidation
   const built = numbered ? { title: doc.title, saysParty: false, saysDay: false } : builtTitle(doc)
   const parts: HeadingPart[] = []
 
@@ -410,7 +457,7 @@ export function documentHeading(doc: DocumentDetail): DocumentHeading {
   if (numbered || doc.kind === 'manual') {
     parts.push({ key: 'kind', text: documentKindLabel(doc.kind) })
   }
-  // El papel: «Sin factura», o el comprobante sin número («Tique»).
+  // El papel: «Sin factura», o el comprobante que el título no nombró («Tique», «Liquidación 0001-…»).
   if (doc.voucherType === 'sin_comprobante') {
     parts.push({ key: 'paper', text: 'Sin factura' })
   } else if (
@@ -418,7 +465,7 @@ export function documentHeading(doc: DocumentDetail): DocumentHeading {
     doc.voucherType &&
     norm(doc.title) !== norm(documentKindLabel(doc.kind))
   ) {
-    parts.push({ key: 'paper', text: doc.title })
+    parts.push({ key: 'paper', text: shortPaperTitle(doc.title) })
   }
   if (doc.partyName && !built.saysParty) {
     parts.push({
@@ -510,7 +557,7 @@ export type CloseIncomingRow = {
   cents: number
   openCents: number
   tone: StoryTone
-  /** «Llegó» · «Llega el jue 08/10» · «Tendría que haber llegado el 07/10». */
+  /** «Llegó» · «Llega el jue 08/10» · «Debió llegar el 07/10». */
   status: string
   /** Lo vendido en cuenta corriente: lo debe un cliente, no «llega» solo. */
   customer: boolean
@@ -556,20 +603,17 @@ function incomingStatus(
     if (open === 0) return { tone: 'ok', status: 'Pagó' }
     if (open < cents) return { tone: 'warn', status: `Pagó una parte: ${missing}` }
     return due < today
-      ? { tone: 'warn', status: `Tendría que haber pagado el ${formatDayMonth(due)}` }
+      ? { tone: 'warn', status: `Debió pagar el ${formatDayMonth(due)}` }
       : { tone: 'muted', status: 'Todavía no pagó' }
   }
-  // QR y transferencias: no «llegan» en una fecha; están en camino hasta que se cuenta la billetera.
-  if (instant) {
-    if (open === 0) return { tone: 'ok', status: 'Ya entró' }
-    if (open < cents) return { tone: 'warn', status: `Entró una parte: ${missing}` }
-    return { tone: 'muted', status: 'En camino' }
-  }
+  // Un solo verbo para la plata que ya está, el de la leyenda de arriba («Ya llegó»).
   if (open === 0) return { tone: 'ok', status: 'Llegó' }
   if (open < cents) return { tone: 'warn', status: `Llegó una parte: ${missing}` }
+  // QR y transferencias: no «llegan» en una fecha; están en camino hasta que se cuenta la billetera.
+  if (instant) return { tone: 'muted', status: 'En camino' }
   if (due < today) {
     // Ámbar y no rojo: suele ser plata que ya está y falta anotar.
-    return { tone: 'warn', status: `Tendría que haber llegado el ${formatDayMonth(due)}` }
+    return { tone: 'warn', status: `Debió llegar el ${formatDayMonth(due)}` }
   }
   return {
     tone: 'muted',
@@ -638,14 +682,13 @@ export function closeMoney(
   }
 }
 
+/**
+ * La oración del cierre dice dos cosas: cuánto entró a la caja y cuánto falta
+ * llegar. Lo demás (cuánto quedó en camino, cuánto ya llegó) lo dice la leyenda
+ * de la barra, justo debajo: repetirlo acá eran cuatro importes en un renglón.
+ */
 function closeSentence(m: CloseMoney): string {
   const cash = m.cashWords ?? 'la caja'
-  const arrived =
-    m.pendingCents === 0
-      ? 'ya llegó todo.'
-      : m.arrivedCents === 0
-        ? 'todavía no llegó nada.'
-        : `ya llegaron ${money(m.arrivedCents)} y faltan ${money(m.pendingCents)}.`
   const tail =
     m.diffCents > 0
       ? ` En la caja faltaron ${money(m.diffCents)}.`
@@ -657,8 +700,20 @@ function closeSentence(m: CloseMoney): string {
       ? `Entró todo a ${cash}.${tail}`
       : `Este cierre no tiene importes.${tail}`
   }
-  if (m.cashCents === 0) return `Quedó todo en camino: ${arrived}${tail}`
-  return `Entraron ${money(m.cashCents)} a ${cash} y quedaron ${money(m.incomingCents)} en camino: ${arrived}${tail}`
+  const entered = m.cashCents > 0 ? `Entraron ${money(m.cashCents)} a ${cash}. ` : ''
+  if (m.pendingCents === 0) {
+    return m.cashCents > 0
+      ? `${entered}Lo que quedó en camino ya llegó todo.${tail}`
+      : `Quedó todo en camino y ya llegó.${tail}`
+  }
+  if (m.arrivedCents === 0) {
+    return m.cashCents > 0
+      ? `${entered}Quedaron ${money(m.incomingCents)} en camino y todavía no llegó nada.${tail}`
+      : `Quedó todo en camino y todavía no llegó nada.${tail}`
+  }
+  return m.cashCents > 0
+    ? `${entered}De lo que quedó en camino, todavía no llegaron ${money(m.pendingCents)}.${tail}`
+    : `Quedó todo en camino: todavía no llegaron ${money(m.pendingCents)}.${tail}`
 }
 
 // ─── ① Qué pasó con la plata ─────────────────────────────────────────────────
@@ -752,12 +807,14 @@ function payablesHero(doc: DocumentDetail, ctx: StoryContext): DocumentHero {
             params: { cliente: doc.partyId, partida: line.id },
           }
       : null
-  // «Lo pagué y no lo anoté»: el paso que hoy se hace a mano y nadie avisa.
+  // «Lo pagué y no lo anoté»: el paso que hoy se hace a mano y nadie avisa. La hoja «Pagar» abre
+  // con esta factura y con lo otro que esté vencido de ese proveedor ya tildado: por eso se
+  // avisa que hay que dejar solo lo que se pagó.
   const help =
     action && doc.dueDate !== null && doc.dueDate <= ctx.today
       ? sales
         ? '¿Ya te pagó? Tocá «Me entró plata» y elegí a dónde entró.'
-        : '¿Ya lo pagaste? Tocá «Pagar» y elegí con qué: no hace falta cargarlo de nuevo.'
+        : '¿Ya lo pagaste? No lo cargues de nuevo: tocá «Pagar» y dejá tildado solo lo que pagaste.'
       : null
   const due = dueSentence(doc.dueDate, ctx.today)
 
@@ -861,7 +918,9 @@ function closeHero(doc: DocumentDetail, ctx: StoryContext): DocumentHero {
   const cash = m.cashWords ?? 'la caja'
   const segments: HeroSplitSegment[] = [
     { key: 'cash', label: `Entró a ${cash}`, cents: m.cashCents, swatch: 'bg-adm-s1' },
-    { key: 'arrived', label: 'Ya llegó', cents: m.arrivedCents, swatch: 'bg-adm-s4' },
+    // Petróleo y no azul noche: en toda la sección el azul es «sin factura», y esta barra va al
+    // lado del sello y de los renglones «Con factura / Sin factura» del papel.
+    { key: 'arrived', label: 'Ya llegó', cents: m.arrivedCents, swatch: 'bg-adm-s6' },
     {
       key: 'pending',
       label: 'Sigue en camino',
@@ -897,7 +956,7 @@ function closeHero(doc: DocumentDetail, ctx: StoryContext): DocumentHero {
           ? { rows, note: 'Lo que está en camino todavía no es plata en mano.' }
           : null,
     },
-    // Cada renglón del mapa tiene su «Ya llegó», con su partida elegida: este abre la hoja en blanco.
+    // Cada renglón del mapa tiene su «Anotar que llegó», con su partida elegida: este abre la hoja en blanco.
     { action: canCollect ? { action: 'cobrar', label: 'Me entró plata', params: {} } : null },
   )
 }
@@ -1051,7 +1110,9 @@ export function documentHero(doc: DocumentDetail, ctx: StoryContext): DocumentHe
       return heroOf({
         label: where ? `Salieron de ${clip(where, LABEL_NAME_MAX)}` : 'Gasto',
         cents: total,
-        sentence: [`El ${formatDayMonth(doc.issueDate)}${category ? `, en ${category}` : ''}.`],
+        sentence: [
+          `El ${formatDayMonth(doc.issueDate)}.${category ? ` Quedó en «${category}».` : ''}`,
+        ],
       })
     }
 
@@ -1258,6 +1319,7 @@ function purchaseRows(doc: DocumentDetail): Array<{ group: string; row: PaperRow
     doc.lines.filter((l) => BASE_ROLES.has(l.role)).map((l) => l.accountId),
   )
   const creditNote = doc.kind === 'purchase_credit_note'
+  const live = isLive(doc)
   const taxLabels = doc.lines.filter((l) => TAX_ROLES.has(l.role)).map((l) => l.roleLabel)
   const out: Array<{ group: string; row: PaperRow }> = []
   for (const line of doc.lines) {
@@ -1285,12 +1347,14 @@ function purchaseRows(doc: DocumentDetail): Array<{ group: string; row: PaperRow
         row: {
           key: line.id,
           label: `IVA${rateText(line)}`,
-          // Las dos frases del ticket de «Nuevo gasto». Una nota de crédito no recupera nada.
-          hint: creditNote
-            ? undefined
-            : netAccounts.has(line.accountId)
-              ? 'Va al costo'
-              : 'Lo recuperás',
+          // Las dos frases del ticket de «Nuevo gasto». Una nota de crédito no recupera nada, y
+          // un papel anulado tampoco.
+          hint:
+            creditNote || !live
+              ? undefined
+              : netAccounts.has(line.accountId)
+                ? 'Va al costo'
+                : 'Lo recuperás',
           cents: line.amountCents,
         },
       })
@@ -1558,6 +1622,8 @@ function voucherFamily(voucherType: string | null): string | null {
  * al Libro IVA), con papel pero con el IVA al costo, y con IVA que se recupera.
  */
 export function paperNote(doc: DocumentDetail): string | null {
+  // Anulado: al lado dice «Ya no cuenta en los libros». El papel no lo contradice.
+  if (!isLive(doc)) return null
   switch (doc.kind) {
     case 'payment':
       return 'Es solo el pago: lo que compraste ya está contado en la factura.'
@@ -1584,7 +1650,7 @@ export function paperNote(doc: DocumentDetail): string | null {
       ? `Entró al Libro IVA de ${month} y recuperás el IVA.`
       : `Entró al Libro IVA de ${month}. El IVA fue al costo.`
   }
-  if (family === 'tique' && isLive(doc)) {
+  if (family === 'tique') {
     return 'Quedó como gasto con tique. Sin comercio o sin número no entra al Libro IVA.'
   }
   return null
@@ -1630,17 +1696,30 @@ export function documentPaper(
   const treasury = treasuryLines(doc)[0]?.treasuryName ?? null
   const kindTitle =
     doc.kind === 'treasury_adjustment' && treasury ? `Conteo de ${treasury}` : friendlyKind(doc)
-  const title = doc.partyName ?? category ?? kindTitle
+  // Un gasto sin proveedor se llama como lo escribió la persona («Hielo»): la categoría ya es su
+  // renglón, y repetirla de membrete dejaba lo que escribió escondido abajo.
+  const written = doc.kind === 'expense' && !doc.partyName ? descriptionExtra(doc) : null
+  const title = doc.partyName ?? written ?? category ?? kindTitle
   const hasVoucher = Boolean(doc.voucherType) && doc.voucherType !== 'sin_comprobante'
-  const word = hasVoucher ? doc.title : friendlyKind(doc)
+  const word = hasVoucher ? shortPaperTitle(doc.title) : friendlyKind(doc)
+  const body = paperBody(doc, ctx)
+  const detail = paperDetail(doc)
   return {
     title,
     word: norm(word) === norm(title) ? null : word,
     day: formatIsoDay(doc.issueDate),
     taxId: taxIdText(doc.partyDocNumber),
     stamp: documentStamp(doc),
-    ...paperBody(doc, ctx),
-    detail: paperDetail(doc),
+    ...body,
+    // Anulado: ya no vence ni descuenta nada.
+    total: isLive(doc) ? body.total : { ...body.total, hint: null },
+    // Lo que ya es el membrete no se repite en «Detalle».
+    detail:
+      written === null || detail === null
+        ? detail
+        : detail.notes === null
+          ? null
+          : { extra: null, notes: detail.notes },
     note: paperNote(doc),
     footer: paperFooter(doc),
   }
@@ -1679,6 +1758,11 @@ export type SeparateInfo = {
   paymentLabel: string
   /** «Factura A 0003-00001100». */
   invoiceLabel: string
+  /** Con su artículo, para la pregunta: «el Pago #6», «la Factura A 0003-00001100». */
+  paymentWords: string
+  invoiceWords: string
+  /** Cómo se la nombra la segunda vez: «La factura», «La compra». */
+  invoiceNoun: string
   amountCents: number
   partyName: string | null
 }
@@ -1687,8 +1771,9 @@ export type AllocationRow = {
   key: string
   /** El otro comprobante. `null`: una unión hecha a mano. */
   documentId: string | null
+  /** «Pago #6», «Factura A 0003-00001100 #2»; un cierre, por su día: «Cierre del mar 01/09». */
   label: string
-  /** «el 03/10/2026»: cuándo se unió. `null` si esa fecha confundiría con la del otro papel. */
+  /** «el 03/10»: cuándo se unió. `null` si esa fecha confundiría con la del otro papel. */
   meta: string | null
   cents: number
   /** «Se cargó junto con esta compra.» */
@@ -1863,24 +1948,37 @@ export function recurringCandidates(
   })
 }
 
+/** El día del comprobante del otro lado de una unión, si la página lo pudo leer. */
+function linkedDay(a: AllocationDetail, ctx: Pick<StoryContext, 'linked'>): LinkedDocument | null {
+  return (a.otherDocumentId ? ctx.linked?.get(a.otherDocumentId) : null) ?? null
+}
+
 function allocationRow(
   doc: DocumentDetail,
   a: AllocationDetail,
-  ctx: Pick<StoryContext, 'canWrite'>,
+  ctx: Pick<StoryContext, 'canWrite' | 'today' | 'linked'>,
   /** La fecha de la unión: vale en lo que llegó (un pago, un cobro), no en lo que se canceló. */
   dated = true,
 ): AllocationRow {
   const label = allocationLabel(a)
+  // «Cierre del día #12» no le dice a nadie qué noche cobró: un cierre se nombra por su día.
+  const other = linkedDay(a, ctx)
+  const shown =
+    other?.kind === 'sales_close' ? `Cierre del ${dayWords(other.issueDate, ctx.today)}` : label
   const bundled = Boolean(
     a.otherDocumentId && doc.bundleSiblings.some((s) => s.id === a.otherDocumentId),
   )
   const isPayment = doc.kind === 'payment'
   const mine = hasNumber(doc.title) ? doc.title : `${friendlyKind(doc)} #${doc.seq}`
+  const paymentLabel = isPayment ? `Pago #${doc.seq}` : label
+  // Una factura con número se nombra por su número («la Factura A 0003-00001100»), sin el «#2».
+  const otherTitle = a.otherDocumentTitle ? shortPaperTitle(a.otherDocumentTitle) : null
+  const invoiceLabel = isPayment ? (otherTitle && hasNumber(otherTitle) ? otherTitle : label) : mine
   return {
     key: a.id,
     documentId: a.otherDocumentId,
-    label,
-    meta: dated ? `el ${formatIsoDay(a.appliedOn)}` : null,
+    label: shown,
+    meta: dated ? `el ${shortDay(a.appliedOn, ctx.today)}` : null,
     cents: a.amountCents,
     note: bundled
       ? isPayment
@@ -1890,8 +1988,11 @@ function allocationRow(
     separate: canSeparate(doc, a, ctx.canWrite)
       ? {
           allocationId: a.id,
-          paymentLabel: isPayment ? `Pago #${doc.seq}` : label,
-          invoiceLabel: isPayment ? label : mine,
+          paymentLabel,
+          invoiceLabel,
+          paymentWords: `${articleFor(paymentLabel)} ${paymentLabel}`,
+          invoiceWords: `${articleFor(invoiceLabel)} ${invoiceLabel}`,
+          invoiceNoun: nounFor(invoiceLabel),
           amountCents: a.amountCents,
           partyName: doc.partyName,
         }
@@ -1901,7 +2002,7 @@ function allocationRow(
 
 function separatedText(a: AllocationDetail): string {
   const when = a.voidedOn ? formatIsoDay(a.voidedOn) : ''
-  return `${allocationLabel(a)} · ${formatCents(a.amountCents)} · separado el ${when}: quedó a cuenta.`
+  return `${allocationLabel(a)} · ${money(a.amountCents)} · separado el ${when}: quedó a cuenta.`
 }
 
 /** Los renglones de caja de un comprobante que no es un cierre. */
@@ -1939,37 +2040,54 @@ function treasuryRows(
   )
 }
 
-/** Los que rara vez tienen un papel para fotografiar: la foto se ofrece, pero no «falta». */
-const PHOTO_OPTIONAL: ReadonlySet<DocumentKind> = new Set<DocumentKind>([
-  'opening',
-  'manual',
-  'iva_settlement',
-  'treasury_adjustment',
+/**
+ * Los que traen un papel de afuera (la factura o el remito del proveedor, el
+ * cierre de caja y del posnet): a esos la foto les «falta». A todo lo demás
+ * (un pago, un cobro, un conteo, un pase entre cajas, lo que cobró el banco,
+ * una venta propia) se le ofrece, sin píldora: un aviso que está en todas las
+ * fichas deja de leerse.
+ */
+const PHOTO_EXPECTED: ReadonlySet<DocumentKind> = new Set<DocumentKind>([
+  'purchase',
+  'purchase_credit_note',
+  'purchase_debit_note',
+  'expense',
+  'sales_close',
 ])
 
 /** Qué foto conviene sumar, según el papel. Nunca se confunde «sin foto» con «sin factura». */
-export function photoHint(doc: Pick<DocumentDetail, 'kind' | 'voucherType'>): string {
+export function photoHint(
+  doc: Pick<DocumentDetail, 'kind' | 'voucherType'> & { countedCents?: number | null },
+): string {
   const tail = 'No cambia ningún número: es el respaldo si un día te lo piden.'
-  if (PHOTO_OPTIONAL.has(doc.kind)) {
-    return `Si hay un papel de respaldo, subilo acá. ${tail}`
-  }
   const lead = (() => {
-    if (doc.voucherType === 'sin_comprobante') {
-      return 'Aunque sea sin factura, la foto del remito o del papelito sirve de respaldo.'
-    }
     switch (doc.kind) {
-      case 'payment':
-      case 'transfer':
-        return 'Subí el comprobante de la transferencia o el recibo.'
+      case 'purchase':
+      case 'purchase_credit_note':
+      case 'purchase_debit_note':
+      case 'expense':
+        return doc.voucherType === 'sin_comprobante'
+          ? 'Aunque sea sin factura, la foto del remito o del papelito sirve de respaldo.'
+          : 'Sacale una foto a la factura, el tique o el remito, o subí el PDF.'
       case 'sales_close':
         return 'Sacale una foto al cierre de caja y al cierre de lote del posnet.'
+      case 'payment':
+      case 'transfer':
+        return 'Si tenés el comprobante de la transferencia o el recibo, subilo.'
       case 'collection':
-        return 'Subí la liquidación.'
+        // Contar una billetera no deja una liquidación: deja el saldo que se vio en la app.
+        return doc.countedCents != null
+          ? 'Si tenés la captura del saldo, subila.'
+          : 'Si tenés la liquidación, subila.'
       case 'bank_expense':
       case 'cash_movement':
-        return 'Subí el comprobante o el resumen donde figura.'
+        return 'Si tenés el comprobante o el resumen donde figura, subilo.'
+      case 'sales_invoice':
+      case 'sales_credit_note':
+      case 'sales_debit_note':
+        return 'Si tenés el remito o el comprobante firmado, subilo.'
       default:
-        return 'Sacale una foto a la factura, el tique o el remito, o subí el PDF.'
+        return 'Si hay un papel de respaldo, subilo acá.'
     }
   })()
   return `${lead} ${tail}`
@@ -2047,7 +2165,8 @@ function ivaNode(doc: DocumentDetail): Extract<LinkNode, { id: 'libro-iva' }> | 
       groups,
       off: {
         title: 'No entra al Libro IVA.',
-        hint: 'Es sin factura. Queda en tus números igual.',
+        // Anulado ya no «queda en tus números»: al lado dice «Ya no cuenta en los libros».
+        hint: isLive(doc) ? 'Es sin factura. Queda en tus números igual.' : null,
         guide: true,
       },
     }
@@ -2081,7 +2200,9 @@ function ivaNode(doc: DocumentDetail): Extract<LinkNode, { id: 'libro-iva' }> | 
       groups,
       off: {
         title: 'No entra al Libro IVA.',
-        hint: 'Todo lo de este día fue sin factura. Queda en tus números igual.',
+        hint: isLive(doc)
+          ? 'Todo lo de este día fue sin factura. Queda en tus números igual.'
+          : null,
         guide: true,
       },
     }
@@ -2168,9 +2289,14 @@ function othersNode(doc: DocumentDetail): Extract<LinkNode, { id: 'otros' }> | n
   if (doc.related && !creditNote) {
     rows.push({ key: 'related', rich: ['Corresponde a ', refOf(doc.related), '.'] })
   }
-  if (doc.bundleSiblings.length > 0) {
+  // Lo que ya está unido arriba («Pago #83 · Se cargó junto con esta compra») no se repite acá.
+  const shownAbove = new Set(
+    activeAllocations(doc).flatMap((a) => (a.otherDocumentId ? [a.otherDocumentId] : [])),
+  )
+  const bundle = doc.bundleSiblings.filter((sibling) => !shownAbove.has(sibling.id))
+  if (bundle.length > 0) {
     const rich: Array<string | DocRef> = ['Se guardó junto con ']
-    doc.bundleSiblings.forEach((sibling, index) => {
+    bundle.forEach((sibling, index) => {
       if (index > 0) rich.push(', ')
       rich.push(refOf(sibling))
       if (sibling.status === 'voided') rich.push(' (anulado)')
@@ -2294,7 +2420,7 @@ export function documentLinks(doc: DocumentDetail, ctx: StoryContext): LinkNode[
           : null,
         footer:
           !empty && live && open > 0
-            ? `${sales ? 'Falta cobrar' : 'Falta pagar'} ${formatCents(open)}`
+            ? `${sales ? 'Falta cobrar' : 'Falta pagar'} ${money(open)}`
             : null,
         note:
           sales && owes && live
@@ -2306,12 +2432,29 @@ export function documentLinks(doc: DocumentDetail, ctx: StoryContext): LinkNode[
 
   // 3 · Qué pagó / de qué ventas es / qué descontó
   if (applied) {
-    // Sin fecha: la de la unión no es la de la factura ni la del cierre que canceló.
-    const rows = active.map((a) => allocationRow(doc, a, ctx, false))
+    // Sin fecha: la de la unión no es la de la factura ni la del cierre que canceló. Si se
+    // sabe de qué día es cada cosa (los cierres de un cobro), van en ese orden.
+    const dayOf = (a: AllocationDetail) => linkedDay(a, ctx)?.issueDate ?? ''
+    const ordered = active.every((a) => dayOf(a) !== '')
+      ? [...active].sort((a, b) => dayOf(a).localeCompare(dayOf(b)))
+      : active
+    const collection = doc.kind === 'collection'
+    // Un cobro suele cubrir varios medios de un mismo cierre (el QR y la transferencia de la misma
+    // noche): una fila por comprobante, con el importe sumado, y no la misma noche dos veces. Un
+    // pago no se agrupa: cada unión tiene su «Separar».
+    const rows: AllocationRow[] = []
+    for (const a of ordered) {
+      const row = allocationRow(doc, a, ctx, false)
+      const same =
+        collection && row.documentId
+          ? rows.find((r) => r.documentId === row.documentId && r.separate === null)
+          : undefined
+      if (same && row.separate === null) same.cents += row.cents
+      else rows.push(row)
+    }
     const creditNote = doc.kind === 'purchase_credit_note' || doc.kind === 'sales_credit_note'
     const open = live ? (doc.openCents ?? 0) : 0
     const who = doc.partyName
-    const collection = doc.kind === 'collection'
     const side = SUPPLIER_SIDE.has(doc.kind)
       ? 'supplier'
       : CUSTOMER_SIDE.has(doc.kind)
@@ -2345,7 +2488,7 @@ export function documentLinks(doc: DocumentDetail, ctx: StoryContext): LinkNode[
         rest:
           !nothing && open > 0
             ? {
-                title: `Quedaron ${formatCents(open)} a cuenta`,
+                title: `Quedaron ${money(open)} a cuenta`,
                 hint: collection
                   ? 'Todavía no están unidos a ninguna venta.'
                   : `Se descuentan solos de la próxima factura${who ? ` de ${who}` : ''}.`,
@@ -2398,7 +2541,9 @@ export function documentLinks(doc: DocumentDetail, ctx: StoryContext): LinkNode[
         action:
           ctx.canWrite && live && row.openCents > 0 && row.lineId && row.partyId
             ? {
-                label: row.customer ? 'Ya pagó' : 'Ya llegó',
+                // Un verbo, y no «Ya llegó»: al lado de la píldora «Llega el vie 16/10» se leía
+                // como un estado más.
+                label: row.customer ? 'Anotar que pagó' : 'Anotar que llegó',
                 params: { cliente: row.partyId, partida: row.lineId },
               }
             : null,
@@ -2426,9 +2571,9 @@ export function documentLinks(doc: DocumentDetail, ctx: StoryContext): LinkNode[
             ? 'linked'
             : // A un papel que ya no cuenta (anulado con fecha posterior) no le «falta» nada:
               // la foto se sigue ofreciendo, sin píldora.
-              PHOTO_OPTIONAL.has(doc.kind) || !live
-              ? 'ask'
-              : 'missing',
+              PHOTO_EXPECTED.has(doc.kind) && live
+              ? 'missing'
+              : 'ask',
       limit: null,
       canEdit: photo.canEdit,
       error: count === null,
@@ -2500,7 +2645,7 @@ export function linksTitle(
   if (doc.kind === 'sales_close') {
     const pending = closeMoney(doc, today).pendingCents
     return pending > 0
-      ? `De este día todavía faltan llegar ${money(pending)}`
+      ? `De este día todavía no llegaron ${money(pending)}`
       : 'De este día ya llegó toda la plata'
   }
   const missing: string[] = []

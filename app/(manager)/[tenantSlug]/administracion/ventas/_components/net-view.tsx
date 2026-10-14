@@ -9,14 +9,17 @@ import { ActionButton } from '@/components/administracion/quick-actions'
 import { getNetByMethod } from '@/lib/accounting/queries/books'
 import { listDocuments } from '@/lib/accounting/queries/documents'
 import { exportHref } from '@/lib/accounting/queries/labels'
+import { listSalesMethods } from '@/lib/accounting/queries/settings'
 import { settleQuery } from '@/lib/accounting/queries/shared'
 import { capitalizeFirst } from '@/lib/dates'
 import { formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import {
   NET_SEGMENT_LABELS,
+  type NetMethodInfo,
   type NetRowView,
   type NetSegmentKey,
+  netRowDetail,
   netRows,
   netSentence,
   netTitle,
@@ -54,7 +57,14 @@ const SEGMENT_ORDER: readonly NetSegmentKey[] = ['arrived', 'commission', 'withh
  * hay treinta paradas de Tab. El ancho de la barra no cambia con el importe:
  * siempre es «cien».
  */
-function HundredBar({ rows }: { rows: readonly NetRowView[] }) {
+function HundredBar({
+  rows,
+  methods,
+}: {
+  rows: readonly NetRowView[]
+  /** Cómo le llega la plata a cada medio, por id (para decir «entró directo a la caja»). */
+  methods: ReadonlyMap<string, NetMethodInfo>
+}) {
   return (
     <div className="space-y-4">
       <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
@@ -106,11 +116,7 @@ function HundredBar({ rows }: { rows: readonly NetRowView[] }) {
             )}
             {row.state !== 'pending' ? (
               <p className="text-xs tabular-nums text-muted-foreground text-pretty">
-                De {formatCentsShort(row.settledCents)} que ya te liquidó, te llegaron{' '}
-                {formatCentsShort(row.creditedCents)}
-                {row.pendingCents > 0
-                  ? `. Siguen en camino ${formatCentsShort(row.pendingCents)}.`
-                  : '.'}
+                {netRowDetail(row, methods.get(row.id))}
               </p>
             ) : null}
           </li>
@@ -153,7 +159,7 @@ export async function NetView({
   const { range } = rangeOrError(sp, today)
   if (!range.ok) return <PeriodError message={range.message} />
   const after = firstParam(sp.despues)
-  const [net, page] = await Promise.all([
+  const [net, page, methods] = await Promise.all([
     settleQuery(getNetByMethod(tenantId, { from: range.from, to: range.to })),
     settleQuery(
       listDocuments(tenantId, {
@@ -164,7 +170,17 @@ export async function NetView({
         after,
       }),
     ),
+    // Solo para decir cómo le llega la plata a cada medio; si falla, se dice como siempre.
+    settleQuery(listSalesMethods(tenantId, { includeInactive: true })),
   ])
+  const methodInfo = new Map<string, NetMethodInfo>(
+    methods.ok
+      ? methods.data.map((m) => [
+          m.id,
+          { kind: m.kind, partyName: m.partyName, treasuryName: m.treasuryName },
+        ])
+      : [],
+  )
   const words = periodWords(range)
   const collectionsTitle = `Cobros ${words.of}`
 
@@ -173,6 +189,7 @@ export async function NetView({
       {net.ok ? (
         <HundredPanel
           rows={net.data}
+          methods={methodInfo}
           label={range.label}
           period={words.in}
           canWrite={canWrite}
@@ -261,6 +278,7 @@ export async function NetView({
 
 function HundredPanel({
   rows,
+  methods,
   label,
   period,
   canWrite,
@@ -268,6 +286,7 @@ function HundredPanel({
   exportFileName,
 }: {
   rows: Awaited<ReturnType<typeof getNetByMethod>>
+  methods: ReadonlyMap<string, NetMethodInfo>
   /** «Octubre 2026». */
   label: string
   /** «en octubre». */
@@ -313,7 +332,7 @@ function HundredPanel({
           title={capitalizeFirst(netTitle(views, period))}
           sentence={netSentence(totals)}
           defaultView={canWrite ? 'chart' : 'table'}
-          chart={<HundredBar rows={views} />}
+          chart={<HundredBar rows={views} methods={methods} />}
           table={<NetByMethod rows={rows} label={label} />}
           footer={
             <ExportButton

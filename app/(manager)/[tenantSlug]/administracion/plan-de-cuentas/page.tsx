@@ -184,6 +184,10 @@ export default async function PlanDeCuentasPage({
 
         <ViewPills
           label="Vistas del plan de cuentas"
+          // En el celular van sin ícono y con menos aire: así las tres entran sin deslizar. Si
+          // deslizan, la fila arranca mostrando la elegida y «Categorías» quedaba cortada contra
+          // el borde izquierdo, sin nada que avisara que seguía para ese lado.
+          className="max-sm:[&_a]:px-3.5 max-sm:[&_svg]:hidden"
           items={[
             {
               key: 'categorias',

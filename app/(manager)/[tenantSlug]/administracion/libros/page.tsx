@@ -27,6 +27,7 @@ import {
 } from '@/lib/accounting/queries'
 import { loadFirstOpenDate } from '@/lib/accounting/server/document-context'
 import { addDays, monthOf, todayInCordoba } from '@/lib/dates'
+import { cn } from '@/lib/utils'
 import { type BookCounts, BookIndex } from './_components/book-index'
 import { ExportAllButton } from './_components/export-button'
 import { MonthPicker } from './_components/period-picker'
@@ -126,6 +127,7 @@ export default async function LibrosPage({
     : Promise.resolve(null)
 
   const hasCuit = !settings || Boolean(settings.cuit)
+  const nothingLoaded = canWrite && settings !== null && !settings.hasDocuments
   const files = packageFiles(tenantSlug, month, today)
   const downloadable = downloadablePackage(files, hasCuit)
   const noun = monthNoun(month.month)
@@ -144,6 +146,15 @@ export default async function LibrosPage({
             : monthAvailabilityMessage(availability, month.month, settings?.booksStartDate),
       })
     : null
+
+  // Un mes sin libros solo se abre escribiéndolo en la URL: la salida es el mes de hoy.
+  const currentMonth = monthOf(today)
+  const backToCurrent =
+    headline?.kind === 'unavailable' &&
+    month.month !== currentMonth &&
+    monthPeriods(allPeriods).some((p) => monthOf(p.month) === currentMonth)
+      ? { label: `Ir a ${monthNoun(currentMonth)}`, href: bookHref(books, { mes: currentMonth }) }
+      : null
 
   const downloadAll = (className?: string) =>
     downloadable.length > 0 ? (
@@ -212,9 +223,10 @@ export default async function LibrosPage({
             className="card-hairline grid gap-6 rounded-2xl border bg-card p-5 shadow-xs sm:p-6 lg:grid-cols-12"
           >
             <div
-              className={
-                ivaResult ? 'flex flex-col items-start gap-4 lg:col-span-7' : 'lg:col-span-12'
-              }
+              className={cn(
+                'flex flex-col items-start gap-4',
+                ivaResult ? 'lg:col-span-7' : 'lg:col-span-12',
+              )}
             >
               <div className="space-y-2">
                 {headline.kind === 'closed' ? (
@@ -235,7 +247,7 @@ export default async function LibrosPage({
                 <Button
                   asChild
                   variant={headline.action.emphasis === 'primary' ? 'default' : 'outline'}
-                  className="mt-4 h-12 w-full gap-2 px-5 text-base sm:w-auto lg:mt-0"
+                  className="h-12 w-full gap-2 px-5 text-base sm:w-auto"
                 >
                   <Link href={headline.action.href}>
                     {headline.action.label}
@@ -244,10 +256,18 @@ export default async function LibrosPage({
                 </Button>
               ) : null}
               {headline.link ? (
-                <PanelLink href={headline.link.href} className="mt-3 lg:mt-0">
+                <PanelLink href={headline.link.href}>
                   {headline.link.label}
                   <ArrowRight className="size-3.5" aria-hidden />
                 </PanelLink>
+              ) : null}
+              {backToCurrent ? (
+                <Button asChild className="h-12 w-full gap-2 px-5 text-base sm:w-auto">
+                  <Link href={backToCurrent.href}>
+                    {backToCurrent.label}
+                    <ArrowRight className="size-4" aria-hidden />
+                  </Link>
+                </Button>
               ) : null}
             </div>
 
@@ -310,61 +330,61 @@ export default async function LibrosPage({
         </EmptyTeach>
       ) : null}
 
-      <Panel
-        id="paquete-del-mes"
-        title={`Los libros de ${noun}`}
-        description={
-          <>
-            {packageStatusLine(month.month, {
-              status: hasBooks && period ? period.status : 'missing',
-              closedAt: period?.closedAt ?? null,
-              closedByName: period?.closedByName ?? null,
-            })}
-            .{canWrite ? ' Son los libros que usa tu contadora: acá no se escribe nada.' : null}
-          </>
-        }
-        action={hasBooks ? <div className="hidden sm:block">{downloadAll('h-10')}</div> : null}
-      >
-        {!resolved.ok ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            Elegí un mes para ver sus libros.
-          </p>
-        ) : !hasBooks ? (
-          <p className="py-6 text-center text-sm text-muted-foreground text-pretty">
-            {availability === 'ok'
-              ? `${month.label} no tiene libros todavía.`
-              : monthAvailabilityMessage(availability, month.month, settings?.booksStartDate)}
-          </p>
-        ) : (
-          <div className="space-y-4">
-            {/* En el celular el botón va acá: al lado del título no entra. */}
-            <div className="sm:hidden">{downloadAll('h-11 w-full')}</div>
-            {hasCuit ? null : (
-              <p className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl bg-secondary/50 px-3 py-2.5 text-sm text-pretty">
-                <StatusPill tone="warn">Falta la CUIT</StatusPill>
-                <span>
-                  Sin la CUIT del bar no se pueden descargar los{' '}
-                  {files.length - downloadable.length} archivos de IVA.
-                </span>
-                {canWrite ? (
-                  <PanelLink href={`${base}/ajustes?tab=sas`}>Cargarla</PanelLink>
-                ) : (
-                  <span className="text-muted-foreground">Pedísela a los dueños.</span>
-                )}
-              </p>
-            )}
-            <BookIndex
-              tenantSlug={tenantSlug}
-              booksPath={books}
-              month={month}
-              today={today}
-              hasCuit={hasCuit}
-              counts={counts}
-              openAll={!canWrite}
-            />
-          </div>
-        )}
-      </Panel>
+      {/* Un mes sin libros no dibuja el índice: el panel de arriba ya lo dice, con su salida. Y
+          un bar sin nada cargado tampoco, para el dueño: eran quince renglones «Sin movimientos»
+          y un paquete vacío para descargar debajo del vacío que ya enseña. La contadora lo ve
+          igual (es su herramienta). */}
+      {(resolved.ok && !hasBooks) || nothingLoaded ? null : (
+        <Panel
+          id="paquete-del-mes"
+          title={`Los libros de ${noun}`}
+          description={
+            <>
+              {packageStatusLine(month.month, {
+                status: hasBooks && period ? period.status : 'missing',
+                closedAt: period?.closedAt ?? null,
+                closedByName: period?.closedByName ?? null,
+              })}
+              .{canWrite ? ' Son los libros que usa tu contadora: acá no se escribe nada.' : null}
+            </>
+          }
+          action={hasBooks ? <div className="hidden sm:block">{downloadAll('h-10')}</div> : null}
+        >
+          {!resolved.ok ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              Elegí un mes para ver sus libros.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {/* En el celular el botón va acá: al lado del título no entra. */}
+              <div className="sm:hidden">{downloadAll('h-11 w-full')}</div>
+              {hasCuit ? null : (
+                <p className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl bg-secondary/50 px-3 py-2.5 text-sm text-pretty">
+                  <StatusPill tone="warn">Falta la CUIT</StatusPill>
+                  <span>
+                    Sin la CUIT del bar no se pueden descargar los{' '}
+                    {files.length - downloadable.length} archivos de IVA.
+                  </span>
+                  {canWrite ? (
+                    <PanelLink href={`${base}/ajustes?tab=sas`}>Cargarla</PanelLink>
+                  ) : (
+                    <span className="text-muted-foreground">Pedísela a los dueños.</span>
+                  )}
+                </p>
+              )}
+              <BookIndex
+                tenantSlug={tenantSlug}
+                booksPath={books}
+                month={month}
+                today={today}
+                hasCuit={hasCuit}
+                counts={counts}
+                openAll={!canWrite}
+              />
+            </div>
+          )}
+        </Panel>
+      )}
 
       <QuickActionsBar />
     </AdmPage>

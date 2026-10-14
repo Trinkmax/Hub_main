@@ -464,3 +464,22 @@ export function purchaseStepStates(done: readonly boolean[]): PurchaseStepState[
   const first = done.indexOf(false)
   return done.map((ok, index) => (ok ? 'done' : index === first ? 'current' : 'todo'))
 }
+
+/**
+ * Cómo se lee una compra pendiente dentro de la hoja de UN proveedor. El motor
+ * guarda la descripción de una compra sin factura como «Sin comprobante · Nombre»:
+ * en la hoja de ese proveedor el nombre sobra y la palabra del dueño es «sin
+ * factura» («Compra sin factura»). Solo se dibuja así: lo que se manda no cambia.
+ */
+export function pendingItemText(label: string, names: ReadonlyArray<string | null>): string {
+  let text = label.trim()
+  for (const name of names) {
+    const suffix = name ? ` · ${name.trim()}` : ''
+    if (suffix && text.endsWith(suffix)) {
+      text = text.slice(0, -suffix.length).trim()
+      break
+    }
+  }
+  if (/^sin comprobante$/i.test(text)) return 'Compra sin factura'
+  return text.replace(/^sin comprobante\b/i, 'Sin factura')
+}

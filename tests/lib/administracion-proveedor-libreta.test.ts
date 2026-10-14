@@ -266,6 +266,17 @@ describe('la tapa: el número y su oración', () => {
     })
   })
 
+  it('sin los saldos iniciales, «al día» es por lo cargado: lo aclara', () => {
+    const hero = supplierHero({ ...base, openingPending: true })
+    expect(hero.kind).toBe('clear')
+    expect(hero.sentence).not.toContain('Está al día')
+    expect(hero.sentence).toContain('saldos iniciales')
+    // Con deuda no cambia nada: el número es el número.
+    expect(supplierHero({ ...base, debtCents: 100, debtCount: 1, openingPending: true }).kind).toBe(
+      'debt',
+    )
+  })
+
   it('los tres tramos de toda la sección suman la deuda', () => {
     const pos = position(THREE)
     const tranches = agingTranches(pos.aging)
@@ -582,6 +593,13 @@ describe('la tapa dibujada', () => {
     expect(read).not.toContain('Pagarle')
   })
 
+  it('HUB sin saldos iniciales: la tapa del proveedor no promete «al día»', () => {
+    const read = text(cover({ party: bare(), position: position([]), openingPending: true }))
+    expect(read).toContain('No le debés nada')
+    expect(read).toContain('Por lo que cargaste.')
+    expect(read).not.toContain('Está al día.')
+  })
+
   it('si no se pudo leer cuánto se le debe, lo dice en el lugar del número', () => {
     const read = text(cover({ position: null, positionError: 'No pudimos cargar esto.' }))
     expect(read).toContain('No pudimos cargar esto.')
@@ -623,13 +641,10 @@ function owed(canWrite: boolean, pos: PartyPosition) {
     createElement(PendingTab, {
       tenantSlug: SLUG,
       partyId: PARTY_ID,
-      partyName: 'Barracuda',
       position: pos,
       pairs: [{ debitLineId: 'c1', creditLineId: 'l1', amountCents: 6_050_000 }],
       today: TODAY,
       canWrite,
-      canBuy: true,
-      newPurchaseHref: '/hub/administracion/compras/nueva?proveedor=x',
     }),
   )
 }
@@ -654,12 +669,16 @@ describe('«Lo que le debés»', () => {
     expect(read).toContain('$ 1.352.200')
   })
 
-  it('sin deuda: el vacío enseña el paso siguiente', () => {
-    const read = text(owed(true, position([])))
-    expect(read).toContain('No le debés nada a Barracuda')
-    expect(read).toContain('Cargarle una compra')
-    expect(read).toContain('Dejarle plata a cuenta')
-    expect(read).not.toContain('$ 0')
+  it('sin deuda no se dibuja: la tapa ya dice «No le debés nada» y trae la acción', () => {
+    // Tres «nada» apilados y dos botones principales iguales: el panel no va.
+    expect(owed(true, position([]))).toBe('')
+    // Sin deuda pero con algo a favor: el panel es solo eso, sin «Lo que le debés» ni carga.
+    const onlyCredit = text(owed(true, position([], [CREDIT])))
+    expect(onlyCredit).toContain('A tu favor')
+    expect(onlyCredit).toContain('Se descuenta sola en el próximo pago.')
+    expect(onlyCredit).not.toContain('Lo que le debés')
+    expect(onlyCredit).not.toContain('Cargarle una compra')
+    expect(onlyCredit).not.toContain('$ 0')
   })
 
   it('la contadora ve los renglones sin ningún botón', () => {

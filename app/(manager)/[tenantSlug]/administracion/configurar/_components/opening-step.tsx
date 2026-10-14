@@ -196,6 +196,7 @@ export function OpeningStep({
   ctx,
   accounts,
   otherAccountIds,
+  loadedSinceStart = false,
 }: {
   tenantSlug: string
   booksStartDate: string
@@ -205,6 +206,11 @@ export function OpeningStep({
   accounts: AccountOption[]
   /** Las cuentas que se pueden usar en «Otros saldos». */
   otherAccountIds: string[]
+  /**
+   * Ya hay comprobantes cargados desde la fecha de arranque (HUB arrancó con dos compras del
+   * mismo día): se avisa que esas NO van acá, para que no se anoten dos veces.
+   */
+  loadedSinceStart?: boolean
 }) {
   const router = useRouter()
   const [form, setForm] = useState<OpeningFormState>(() =>
@@ -552,11 +558,14 @@ export function OpeningStep({
             Boolean(refError)
           return (
             <li key={row.id} className="rounded-xl bg-secondary/50 p-3">
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem_auto] sm:items-start">
+              {/* En el celular: quién, y debajo el importe con el tacho al lado (no en un renglón
+                  aparte: con doce deudas pegadas eran doce huecos). */}
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-3 sm:grid-cols-[minmax(0,1fr)_11rem_auto] sm:gap-x-3">
                 <Field
                   id={`${id}-party`}
                   label={isPayable ? 'Proveedor' : 'Quién te debía'}
                   error={partyError}
+                  className="col-span-2 sm:col-span-1"
                 >
                   <PartyCombobox
                     id={`${id}-party`}
@@ -587,7 +596,7 @@ export function OpeningStep({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="size-11 justify-self-end text-muted-foreground hover:text-destructive sm:mt-[1.375rem] md:size-10"
+                  className="mt-[1.375rem] size-11 text-muted-foreground hover:text-destructive md:size-10"
                   aria-label={isPayable ? 'Quitar esta deuda' : 'Quitar este renglón'}
                   onClick={() => removeRow(list, row.id)}
                 >
@@ -739,7 +748,9 @@ export function OpeningStep({
               summary={
                 values.payables.length > 0
                   ? countLine(values.payables.length, payablesCents, 'deuda', 'deudas')
-                  : `Las facturas que quedaron sin pagar al ${startDate}. Si no le debías a nadie, dejalo así.`
+                  : loadedSinceStart
+                    ? `Lo que debías de antes del ${startDate}. Las compras que ya cargaste desde ese día no van acá: ya están.`
+                    : `Las facturas que quedaron sin pagar al ${startDate}. Si no le debías a nadie, dejalo así.`
               }
             >
               <div className="grid gap-3">
@@ -889,8 +900,8 @@ export function OpeningStep({
                                   onValueChange={(accountId) => updateOther(row.id, { accountId })}
                                 />
                               </Field>
-                              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem_auto] sm:items-end">
-                                <div className="grid gap-1.5">
+                              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-x-2 gap-y-3 sm:grid-cols-[minmax(0,1fr)_11rem_auto] sm:gap-x-3">
+                                <div className="col-span-2 grid gap-1.5 sm:col-span-1">
                                   <span id={`${id}-side-label`} className="text-sm font-medium">
                                     ¿Lo tenían o lo debían?
                                   </span>
@@ -914,7 +925,7 @@ export function OpeningStep({
                                   type="button"
                                   variant="ghost"
                                   size="icon"
-                                  className="size-11 justify-self-end text-muted-foreground hover:text-destructive md:size-10"
+                                  className="size-11 text-muted-foreground hover:text-destructive md:size-10"
                                   aria-label="Quitar este saldo"
                                   onClick={() => removeRow('others', row.id)}
                                 >
@@ -1056,7 +1067,14 @@ export function OpeningStep({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={skip}>Arrancar en cero</AlertDialogAction>
+            {/* Es lo único de la puesta en marcha que no tiene vuelta: va con el tono de lo que
+                no se deshace (el mismo de «Sacar acceso»), no como la acción recomendada. */}
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={skip}
+            >
+              Arrancar en cero
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

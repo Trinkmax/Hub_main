@@ -6,6 +6,16 @@ import { ReadOnlyBadge } from '@/components/administracion/read-only'
 import { cn } from '@/lib/utils'
 import type { BookKey, BookPeriod } from '../_lib/book-nav'
 import { BookSwitcher } from './book-switcher'
+import { ExportButton, type ExportItem, ExportMenuButton } from './export-button'
+
+/**
+ * La fila del período en el celular: el mes y sus atajos en UN renglón que se
+ * desliza de costado (antes eran tres, y con el título y «Exportar» dejaban la
+ * primera pantalla sin un solo dato). Se le pasa a `RangePicker` / `MonthPicker`
+ * por `className`; desde `sm` no cambia nada (baja de renglón como siempre).
+ */
+export const PERIOD_ROW =
+  'max-sm:-mx-4 max-sm:flex-nowrap max-sm:overflow-x-auto max-sm:px-4 max-sm:py-1 max-sm:[scrollbar-width:none] max-sm:[&::-webkit-scrollbar]:hidden max-sm:[&>*]:shrink-0'
 
 /**
  * El marco de cada libro, igual para todos: el encabezado de la sección (el
@@ -13,6 +23,10 @@ import { BookSwitcher } from './book-switcher'
  * la derecha), la fila para pasar a otro libro con el mismo período, la banda
  * de período y filtros (queda pegada en la compu mientras se baja por la tabla)
  * y, si el libro los tiene, sus totales en una banda. Después, la tabla.
+ *
+ * En el celular el encabezado se achica para que el primer dato entre en la
+ * primera pantalla: «Exportar» es un ícono en la línea del título y la bajada
+ * (que repite el período y la cuenta que ya dicen los filtros) no se muestra.
  *
  * En los libros el diseño es sacar estorbos, no agregar forma: acá no hay
  * héroes, gráficos ni tarjetas. Server-safe.
@@ -22,7 +36,7 @@ export function BookPage({
   backLabel = 'Libros',
   title,
   description,
-  actions,
+  exports,
   badge,
   booksPath,
   book = null,
@@ -36,8 +50,8 @@ export function BookPage({
   backLabel?: string
   title: ReactNode
   description?: ReactNode
-  /** Botones del encabezado (Exportar). */
-  actions?: ReactNode
+  /** Los archivos que se exportan desde el encabezado (uno o dos). */
+  exports?: readonly ExportItem[]
   /** Un estado al lado del título («Mes abierto: puede cambiar»). */
   badge?: ReactNode
   /** `/<bar>/administracion/libros`: con `period`, dibuja la fila «entre libros». */
@@ -53,26 +67,56 @@ export function BookPage({
   width?: 'default' | 'comfortable' | 'compact'
   children: ReactNode
 }) {
+  const hasExports = Boolean(exports && exports.length > 0)
+  // En el celular la bajada y los botones no se dibujan, pero sus lugares quedan vacíos en el
+  // encabezado (8 y 16 px de separación): se le descuentan al margen de abajo (24 px).
+  const mobileTrim =
+    description && hasExports
+      ? 'max-sm:mb-0'
+      : hasExports
+        ? 'max-sm:mb-2'
+        : description
+          ? 'max-sm:mb-4'
+          : undefined
   return (
     <AdmPage width={width}>
       <AdmHeader
         back={{ href: backHref, label: backLabel }}
         title={title}
+        className={mobileTrim}
         badge={
           <>
             <ReadOnlyBadge className="ml-0" />
             {badge}
+            {exports && hasExports ? (
+              <span className="ml-auto flex shrink-0 items-center sm:hidden">
+                <ExportMenuButton items={exports} />
+              </span>
+            ) : null}
           </>
         }
-        description={description}
-        actions={actions}
+        description={description ? <span className="max-sm:hidden">{description}</span> : undefined}
+        actions={
+          exports && hasExports ? (
+            <div className="contents max-sm:hidden">
+              {exports.map((item) => (
+                <ExportButton
+                  key={item.href}
+                  href={item.href}
+                  fileName={item.fileName}
+                  label={item.label}
+                />
+              ))}
+            </div>
+          ) : undefined
+        }
       />
       {booksPath && period ? (
         <BookSwitcher booksPath={booksPath} active={book} period={period} />
       ) : null}
       {toolbar ? (
         // Pegada solo en la compu: en el celular una banda fija se come un cuarto de la pantalla.
-        <div className="z-10 -mx-2 rounded-2xl px-2 py-2 lg:sticky lg:top-14 lg:bg-background/85 lg:backdrop-blur">
+        <div className="z-10 -mx-2 rounded-2xl px-2 py-2 max-sm:py-0 lg:sticky lg:top-14 lg:bg-background/85 lg:backdrop-blur">
           {toolbar}
         </div>
       ) : null}

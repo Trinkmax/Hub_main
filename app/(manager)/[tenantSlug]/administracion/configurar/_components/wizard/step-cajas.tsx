@@ -62,7 +62,9 @@ export function StepCajas({
 
   return (
     <div className="grid gap-4">
-      <ul className="grid gap-4 md:grid-cols-2">
+      {/* `items-start`: cada tarjeta mide lo que tiene adentro (estirada, la de efectivo quedaba
+          con un hueco en el medio). */}
+      <ul className="grid gap-4 md:grid-cols-2 md:items-start">
         {state.treasuries.map((t) => {
           const id = `wz-t-${t.key}`
           const nameError = err(`treasury.${t.key}.name`)
@@ -285,16 +287,16 @@ export function StepCajas({
           )
         })}
         {state.treasuries.length < 20 ? (
-          <li className="flex">
+          // Un renglón bajo a todo el ancho (como «Agregar un punto de venta»), no un casillero
+          // del alto de una tarjeta con un «+» perdido en el medio.
+          <li className="md:col-span-2">
             <button
               type="button"
               onClick={addTreasury}
-              className="press-lift flex min-h-[9rem] w-full flex-col items-center justify-center gap-2.5 rounded-2xl border border-dashed border-border bg-card/40 p-4 text-center outline-none transition-colors hover:border-primary/40 hover:bg-cream-tint focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border text-sm font-medium outline-none transition-colors hover:border-primary/40 hover:bg-cream-tint focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <span className="flex size-10 items-center justify-center rounded-full border border-primary/20 bg-accent text-accent-foreground">
-                <Plus className="size-5" aria-hidden />
-              </span>
-              <span className="text-sm font-medium">Agregar otra</span>
+              <Plus className="size-4" aria-hidden />
+              Agregar otra caja o cuenta
             </button>
           </li>
         ) : null}

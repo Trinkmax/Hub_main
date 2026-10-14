@@ -38,6 +38,7 @@ export function KeyDots({
   size = 'sm',
   max = 24,
   legend = false,
+  center = false,
   className,
 }: {
   /** Cuántos entran (incluye a los que dan accesos). */
@@ -51,6 +52,8 @@ export function KeyDots({
   max?: number
   /** La leyenda en palabras debajo (solo en la habitación, no en la portada). */
   legend?: boolean
+  /** Los puntos al medio (la miniatura de la portada). */
+  center?: boolean
   className?: string
 }) {
   const admins = Math.max(0, Math.min(Math.trunc(adminCount), Math.trunc(inCount)))
@@ -68,7 +71,11 @@ export function KeyDots({
     <div className={cn('min-w-0', className)}>
       <div
         aria-hidden
-        className={cn('flex flex-wrap items-center', size === 'sm' ? 'gap-1' : 'gap-2')}
+        className={cn(
+          'flex flex-wrap items-center',
+          size === 'sm' ? 'gap-1' : 'gap-2',
+          center && 'justify-center',
+        )}
       >
         {shown.map((dot, index) => (
           <span
@@ -81,7 +88,7 @@ export function KeyDots({
         {rest > 0 ? (
           <span
             className={cn(
-              'font-mono text-muted-foreground tabular-nums',
+              'font-medium text-muted-foreground tabular-nums',
               size === 'sm' ? 'text-[9px] leading-none' : 'text-xs',
             )}
           >

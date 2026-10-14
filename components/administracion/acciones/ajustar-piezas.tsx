@@ -1,5 +1,6 @@
 'use client'
 
+import { CircleAlert, CircleCheck, Info } from 'lucide-react'
 import { useId, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,20 +15,32 @@ import { TEXT_LINK } from './sheet-parts'
  * y el contador de billetes. Lo que dicen sale de `ajustar-vista.ts`.
  */
 
+// Tres resultados, tres cajas que se distinguen de un vistazo: verde si coincide,
+// ámbar si falta, azul si sobra (los tonos del cierre del día). El azul de la
+// marca es apagado: al 8 % sobre crema quedaba igual que el verde, así que su
+// lavado y su borde van más cargados.
 const VERDICT_TONE = {
   idle: 'border-transparent bg-secondary/50',
   ok: 'border-success/35 bg-success/8',
   warn: 'border-warning/45 bg-warning/10',
-  info: 'border-info/30 bg-info/8',
+  info: 'border-info/50 bg-info/16',
 } as const
 
 // El rótulo va en tinta (AA sobre el lavado); el ámbar tiene su tinta propia.
-// El tono lo dan el fondo, el borde y, si coincide, el tilde.
+// El tono lo dan el fondo, el borde y el ícono: nunca el color solo.
 const VERDICT_LABEL = {
   idle: '',
   ok: 'text-foreground',
   warn: 'text-warning-text',
   info: 'text-foreground',
+} as const
+
+/** El ícono de cada tono, al lado del rótulo cuando lleva número (sin número va el tilde grande). */
+const VERDICT_ICON = {
+  ok: { icon: CircleCheck, className: 'text-success' },
+  warn: { icon: CircleAlert, className: 'text-warning-text' },
+  // La tinta del azul, como la de `StatusPill`: el tono mezclado con la tinta del tema.
+  info: { icon: Info, className: 'text-[color-mix(in_oklch,var(--info)_75%,var(--foreground))]' },
 } as const
 
 /**
@@ -48,6 +61,10 @@ export function Verdict({
   onUntickAll?: () => void
 }) {
   const idle = verdict.tone === 'idle'
+  const mark = verdict.tone === 'idle' ? null : VERDICT_ICON[verdict.tone]
+  const MarkIcon = mark?.icon
+  // Sin número y si coincide, el rótulo ES el resultado y lleva su tilde grande.
+  const bigTick = verdict.tone === 'ok' && verdict.amountCents === null
   return (
     <div
       role="status"
@@ -69,7 +86,7 @@ export function Verdict({
                 verdict.amountCents === null && 'font-serif text-3xl tracking-tight',
               )}
             >
-              {verdict.tone === 'ok' && verdict.amountCents === null ? (
+              {bigTick ? (
                 <span
                   aria-hidden
                   className="flex size-7 shrink-0 items-center justify-center rounded-full bg-success text-success-foreground"
@@ -85,11 +102,16 @@ export function Verdict({
                     />
                   </svg>
                 </span>
+              ) : MarkIcon ? (
+                <MarkIcon aria-hidden className={cn('size-5 shrink-0', mark?.className)} />
               ) : null}
               {verdict.label}
             </p>
+            {/* Sin `ml-auto`: si el rótulo y el número no entran en un renglón (un celular, nueve
+                cifras), el número baja y queda a la izquierda, debajo de su rótulo, y no solo
+                contra el borde derecho. */}
             {verdict.amountCents !== null ? (
-              <p className="ml-auto font-serif text-4xl leading-none font-semibold tracking-tight whitespace-nowrap tabular-nums">
+              <p className="font-serif text-4xl leading-none font-semibold tracking-tight whitespace-nowrap tabular-nums">
                 {exactMoney(verdict.amountCents)}
               </p>
             ) : null}

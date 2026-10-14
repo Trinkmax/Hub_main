@@ -327,7 +327,7 @@ describe('Resumen · el héroe «la plata hoy»', () => {
     })
     const html = renderToStaticMarkup(await HeroBlock({ data, tone: 'bosque' }))
     expect(html).toContain('Todavía no sé cuánta plata hay')
-    expect(html).toContain('Cargar lo que hay')
+    expect(html).toContain('Cargar lo que había')
     expect(html).toContain(`href="${BASE}/configurar"`)
     expect(html).not.toContain('Plata disponible hoy')
     expect(html).not.toContain(`$${NB}0`)
@@ -345,7 +345,7 @@ describe('Resumen · el héroe «la plata hoy»', () => {
     })
     const html = renderToStaticMarkup(await HeroBlock({ data, tone: 'bosque' }))
     expect(html).toContain('Todavía no sé cuánta plata hay')
-    expect(html).not.toContain('Cargar lo que hay')
+    expect(html).not.toContain('Cargar lo que había')
     expect(html).not.toContain('/configurar')
   })
 
@@ -405,7 +405,8 @@ describe('Resumen · «Hoy te toca»', () => {
     })
     const html = await render(data)
     expect(html).toMatch(/Puesta en marcha · \d+ de \d+/)
-    expect(html).toContain(`href="${BASE}/guias/como-arrancar"`)
+    // «Ver todo» baja a la sección de la puesta en marcha de la guía, con el mismo «N de M».
+    expect(html).toContain(`href="${BASE}/guias/como-arrancar#arranque-day1"`)
     // Primero lo de hoy, después la puesta en marcha: la primera acción no queda tapada.
     expect(html.indexOf('Puesta en marcha')).toBeGreaterThan(html.indexOf('Cargar un gasto'))
     // Lo que sigue es lo que la pantalla todavía no ofrece: los saldos iniciales los pide el
@@ -413,7 +414,7 @@ describe('Resumen · «Hoy te toca»', () => {
     expect(html).toContain('Sigue:')
     expect(html).toContain('Completá los datos de la SAS')
     expect(html).toContain('Poneles monto a los gastos fijos')
-    expect(html).not.toContain('Cargá lo que hay hoy en cada caja')
+    expect(html).not.toContain('Cargá lo que había en cada caja al arrancar')
     expect(html).not.toContain('Cargá tu primer cierre del día')
     expect(html).not.toContain('Cargar saldos iniciales')
     // El avance es una barra continua (no una rayita por paso).
@@ -455,6 +456,59 @@ describe('Resumen · «Lo que tenés que pagar»', () => {
     expect(html).not.toContain('data-tone="late"')
     expect(html).toContain('Te falta de gasto fijo')
     expect(html).toContain(`href="${BASE}/gastos-fijos"`)
+  })
+
+  it('los gastos fijos que tocan, con sus tres acciones al lado del número', async () => {
+    const recurring = [
+      fixed({ id: 'luz', name: 'Luz', nextDueDate: '2026-10-28', daysToDue: 15 }),
+      fixed({
+        id: 'internet',
+        name: 'Internet',
+        amountCents: 3_500_000,
+        nextDueDate: '2026-10-15',
+        daysToDue: 2,
+      }),
+      fixed({
+        id: 'alquiler',
+        name: 'Alquiler del local',
+        amountCents: 85_000_000,
+        nextDueDate: '2026-10-10',
+        daysToDue: -3,
+      }),
+    ]
+    const html = await render(homeData({ recurring }))
+    const part = html.slice(html.indexOf('Gastos fijos del mes'))
+    // Los que entraron en su aviso, del más atrasado al que vence más lejos; la luz (28/10)
+    // todavía no toca.
+    expect(part).toContain('Alquiler del local')
+    expect(part.indexOf('Alquiler del local')).toBeLessThan(part.indexOf('Internet'))
+    expect(part).not.toContain('>Luz<')
+    // El que ya pasó su día dice «venció», y en rojo; el otro, «vence». Sin «todavía sin
+    // pagar»: debajo de «Te falta de gasto fijo» todos lo están.
+    expect(part).toContain('venció el 10/10')
+    expect(part).toContain('vence el 15/10')
+    expect(part).not.toContain('todavía sin pagar')
+    expect(part).toContain('Vencido')
+    expect(part).toContain('Por vencer')
+    // Con varios, un «Pagar» por renglón (como los proveedores): abre el gasto con el gasto fijo.
+    expect(part.split('>Pagar<').length - 1).toBe(2)
+    expect(part).not.toContain('Lo pago después')
+
+    // Uno solo: las tres acciones del aviso.
+    const one = await render(homeData({ recurring: [recurring[2] as RecurringExpenseRow] }))
+    const onePart = one.slice(one.indexOf('Gastos fijos del mes'))
+    expect(onePart.split('>Pagar<').length - 1).toBe(1)
+    expect(onePart).toContain(`href="${BASE}/compras/nueva?gasto-fijo=alquiler"`)
+    expect(onePart).toContain('Este mes no se paga')
+
+    // La contadora ve qué toca, sin ningún botón.
+    ui.readOnly = true
+    const reader = await render(homeData({ recurring, canWrite: false }))
+    const readerPart = reader.slice(reader.indexOf('Gastos fijos del mes'))
+    expect(readerPart).toContain('Alquiler del local')
+    expect(readerPart).not.toContain('>Pagar<')
+    expect(readerPart).not.toContain('Lo pago después')
+    expect(readerPart).not.toContain('Este mes no se paga')
   })
 
   it('lo que no entra en los renglones suma con lo que dice el título', async () => {
@@ -722,6 +776,18 @@ describe('Resumen · «Avisos»', () => {
       0,
     )
     expect(view.text).toBe('Alquiler · vence el 15/10 · todavía sin pagar')
+    expect(view.tone).toBe('warning')
+    // Uno que ya pasó su día: «venció», con el tono de lo vencido.
+    const late = attentionView(
+      attention({ kind: 'recurring_due', refId: FIXED_ID, label: 'Alquiler', date: '2026-10-10' }),
+      TODAY,
+      BASE,
+      0,
+    )
+    expect(late).toMatchObject({
+      text: 'Alquiler · venció el 10/10 · todavía sin pagar',
+      tone: 'danger',
+    })
     // Lo mismo que «Pagar» en su renglón de la planilla: `?accion=gasto&gasto-fijo=`.
     expect(view.actions).toEqual([
       { type: 'sheet', label: 'Pagar', action: 'gasto', params: { 'gasto-fijo': FIXED_ID } },

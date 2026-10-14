@@ -93,7 +93,10 @@ describe('«Cómo arrancar»', () => {
         }),
       ),
     )
-    expect(t).toContain(`${state.done} de ${state.total} listos`)
+    // El número es el de la puesta en marcha; la rutina no se suma (no hay un segundo «N de M»).
+    expect(t).toContain(`${state.sections.day1.done}`)
+    expect(t).toContain(`${state.sections.day1.total}`)
+    expect(t).not.toContain(`${state.done} de ${state.total} listos`)
     expect(t).toContain('Lo próximo: Apps de delivery, tarjetas y Mercado Pago')
     expect(t).toContain('Seguir con la guía')
   })

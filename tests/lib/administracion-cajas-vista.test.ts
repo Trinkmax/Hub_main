@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   type ActivityMovement,
+  activityAmountLabel,
   activityAmountText,
   activityFromMovement,
+  countsAsFlow,
   dayTitle,
   groupByDay,
   mergeTransfers,
@@ -17,12 +19,15 @@ import {
   dayBuckets,
   moveTitle,
   OPENING_DAY_NOTE,
+  OPENING_NOTE,
+  restoreOpeningDay,
 } from '@/app/(manager)/[tenantSlug]/administracion/cajas/_lib/move-view'
 import {
   cajaEmpty,
   cajaHero,
   countStatus,
   lastMovementText,
+  openingMoves,
   treasuryDetail,
   treasuryMoney,
   walletHero,
@@ -207,11 +212,11 @@ describe('lo que se lee de una caja', () => {
 describe('walletView: el bar recién arrancado (HUB)', () => {
   const view = walletView(HUB, PENDING, { today: TODAY, canWrite: true, base: BASE })
 
-  it('no produce ningún cero y trae «Cargar lo que hay»', () => {
+  it('no produce ningún cero y trae «Cargar lo que había»', () => {
     expect(view.kind).toBe('opening_pending')
     if (view.kind !== 'opening_pending') return
     expect(view.title).toBe('Todavía no sé cuánta plata hay')
-    expect(view.action).toEqual({ href: `${BASE}/configurar`, label: 'Cargar lo que hay' })
+    expect(view.action).toEqual({ href: `${BASE}/configurar`, label: 'Cargar lo que había' })
     expect(JSON.stringify(view)).not.toMatch(/\$\s?0/)
     expect(JSON.stringify(view)).not.toContain('balanceCents')
   })
@@ -573,6 +578,110 @@ describe('la ficha de una caja', () => {
     ])
   })
 
+  describe('el mes en que arrancan los libros: lo que había no es plata que entró', () => {
+    // Banco Nación del bar de ejemplo, septiembre: arrancó con $ 3.000.000 y le entraron
+    // $ 30.794.799. La base suma las dos cosas en «entró».
+    const september = {
+      kind: 'range',
+      month: null,
+      from: '2026-09-01',
+      to: '2026-09-30',
+    } as const
+    const bank = {
+      kind: 'bank',
+      period: september,
+      openingCents: 0,
+      inCents: 3_379_479_900,
+      outCents: 0,
+      closingCents: 3_379_479_900,
+      closingDay: '2026-09-30',
+      today: TODAY,
+    } as const
+
+    it('junta los renglones de «Saldos iniciales» de lo leído', () => {
+      expect(
+        openingMoves([
+          { documentKind: 'opening', inCents: 300_000_000, outCents: 0 },
+          { documentKind: 'sales_close', inCents: 5_000, outCents: 0 },
+          { documentKind: 'opening', inCents: 0, outCents: 1_000 },
+          { documentKind: null, inCents: 7, outCents: 7 },
+        ]),
+      ).toEqual({ inCents: 300_000_000, outCents: 1_000 })
+      // Sin saldos iniciales en el período no hay nada que separar.
+      expect(openingMoves([{ documentKind: 'expense', inCents: 0, outCents: 500 }])).toBeNull()
+      expect(openingMoves([])).toBeNull()
+    })
+
+    it('la oración lo dice aparte y «entraron» es lo mismo que dibuja el gráfico', () => {
+      const hero = cajaHero({ ...bank, opening: { inCents: 300_000_000, outCents: 0 } })
+      expect(hero.label).toBe('Había al 30/09')
+      expect(hero.sentence).toBe(
+        `Arrancó con ${money('$ 3.000.000')}. Del 01/09 al 30/09 entraron ${money('$ 30.794.799')} y salieron ${money('$ 0')}.`,
+      )
+      // El mismo número que la leyenda del dibujo de ese día descontado (`dayBuckets`).
+      expect(hero.sentence).not.toContain(money('$ 33.794.799'))
+      // Y la cuenta de «¿Cómo se calcula?» sigue cerrando: 3.000.000 + 30.794.799 = 33.794.799.
+      expect(hero.math.map((m) => [m.op ?? '', m.label, m.value])).toEqual([
+        ['', 'Arrancó con', money('$ 3.000.000')],
+        ['+', 'Entró', money('$ 30.794.799')],
+        ['−', 'Salió', money('$ 0')],
+        ['=', 'Había al 30/09', money('$ 33.794.799')],
+      ])
+    })
+
+    it('sin saldos iniciales en el período, todo queda como siempre', () => {
+      expect(cajaHero(bank).sentence).toBe(
+        `Del 01/09 al 30/09 entraron ${money('$ 33.794.799')} y salieron ${money('$ 0')}.`,
+      )
+      expect(cajaHero({ ...bank, opening: null }).math[0]?.label).toBe(
+        'Había al empezar el período',
+      )
+    })
+
+    it('si después de arrancar no pasó nada más, lo dice', () => {
+      const hero = cajaHero({
+        ...bank,
+        period: { kind: 'month', month: '2026-09', from: '2026-09-01', to: '2026-09-30' },
+        inCents: 300_000_000,
+        closingCents: 300_000_000,
+        opening: { inCents: 300_000_000, outCents: 0 },
+      })
+      expect(hero.sentence).toBe(
+        `Arrancó con ${money('$ 3.000.000')}. En septiembre no hubo otros movimientos.`,
+      )
+    })
+
+    it('una cuenta que arrancó en descubierto y una tarjeta que arrancó con deuda', () => {
+      const overdrawn = cajaHero({
+        ...bank,
+        inCents: 20_000,
+        outCents: 50_000,
+        closingCents: -30_000,
+        opening: { inCents: 0, outCents: 50_000 },
+      })
+      expect(overdrawn.sentence).toBe(
+        `Arrancó con un descubierto de ${money('$ 500')}. Del 01/09 al 30/09 entraron ${money('$ 200')} y salieron ${money('$ 0')}.`,
+      )
+      const card = cajaHero({
+        ...bank,
+        kind: 'credit_card',
+        inCents: 0,
+        outCents: 9_000_000,
+        closingCents: -9_000_000,
+        opening: { inCents: 0, outCents: 8_000_000 },
+      })
+      expect(card.sentence).toBe(
+        `Arrancó debiendo ${money('$ 80.000')}. Del 01/09 al 30/09 hubo consumos por ${money('$ 10.000')} y pagos por ${money('$ 0')}.`,
+      )
+      expect(card.math.map((m) => [m.label, m.value])).toEqual([
+        ['Arrancó debiendo', money('$ 80.000')],
+        ['Consumos', money('$ 10.000')],
+        ['Pagos', money('$ 0')],
+        ['Debías al 30/09', money('$ 90.000')],
+      ])
+    })
+  })
+
   it('una caja que nunca se movió enseña qué la mueve y el paso que sigue', () => {
     expect(
       cajaEmpty({ kind: 'cash', name: 'Caja', methods: ['Efectivo'], openingPending: false }),
@@ -828,16 +937,52 @@ describe('activityFromMovement: lo que pasó, en palabras (con las descripciones
     ).toBe('Ajuste de saldo · Caja · faltante')
   })
 
-  it('el importe va con flecha y signo: la dirección no depende del color', () => {
+  it('el importe va con su flecha (sin signo: decían lo mismo): la dirección no depende del color', () => {
     expect(activityAmountText({ direction: 'in', cents: 12_001_300 })).toBe(
-      `↑ + ${money('$ 120.013')}`,
+      `↑ ${money('$ 120.013')}`,
     )
     expect(activityAmountText({ direction: 'out', cents: 1_200_000 })).toBe(
-      `↓ − ${money('$ 12.000')}`,
+      `↓ ${money('$ 12.000')}`,
     )
     expect(activityAmountText({ direction: 'neutral', cents: 20_000_000 })).toBe(
       `↔ ${money('$ 200.000')}`,
     )
+    // Ni un «+» ni un «−» pelados al lado de la flecha.
+    for (const direction of ['in', 'out'] as const) {
+      expect(activityAmountText({ direction, cents: 100 })).not.toMatch(/[+−-]/)
+    }
+  })
+
+  it('lo que había al arrancar no entró ni salió: va el importe solo', () => {
+    const opening = activityFromMovement(
+      movement({
+        documentKind: 'opening',
+        description: 'Saldos iniciales',
+        inCents: 300_000_000,
+        outCents: 0,
+      }),
+    )
+    expect(opening).toMatchObject({ title: 'Lo que había al arrancar', icon: 'opening' })
+    expect(activityAmountText(opening)).toBe(money('$ 3.000.000'))
+    expect(activityAmountLabel(opening)).toBe(`había ${money('$ 3.000.000')}`)
+    expect(countsAsFlow(opening)).toBe(false)
+    expect(countsAsFlow(activityFromMovement(movement({})))).toBe(true)
+  })
+
+  it('las ventas traen un título corto para una lista angosta', () => {
+    const sale = activityFromMovement(
+      movement({
+        documentKind: 'sales_close',
+        description: 'Cierre del día miércoles 07/10/2026',
+        memo: 'Efectivo',
+        inCents: 100,
+        outCents: 0,
+      }),
+    )
+    expect(sale.title).toBe('Ventas del miércoles 07/10')
+    expect(sale.titleShort).toBe('Ventas del mié 07/10')
+    // Lo demás no lo necesita.
+    expect(activityFromMovement(movement({})).titleShort).toBeUndefined()
   })
 
   it('el renglón lleva al comprobante; sin comprobante, a ningún lado', () => {
@@ -918,6 +1063,41 @@ describe('mergeTransfers y groupByDay', () => {
   it('un pasaje ya unido no cuenta como entrada ni como salida del día', () => {
     const [day] = groupByDay(mergeTransfers([into, out]), { today: TODAY })
     expect(day).toMatchObject({ inCents: 0, outCents: 0 })
+  })
+
+  it('lo que había al arrancar tampoco: el día dice solo lo que entró de verdad', () => {
+    // El día en que arrancan los libros: los saldos iniciales y la primera venta.
+    const rows = [
+      activityFromMovement(
+        movement({
+          key: 'arranque',
+          date: '2026-09-01',
+          documentKind: 'opening',
+          description: 'Saldos iniciales',
+          inCents: 300_000_000,
+          outCents: 0,
+          balanceCents: 300_000_000,
+        }),
+      ),
+      activityFromMovement(
+        movement({
+          key: 'venta',
+          date: '2026-09-01',
+          documentKind: 'sales_close',
+          description: 'Cierre del día martes 01/09/2026',
+          inCents: 50_000_000,
+          outCents: 0,
+          balanceCents: 350_000_000,
+        }),
+      ),
+    ]
+    const [day] = groupByDay(rows, { today: TODAY })
+    expect(day).toMatchObject({ inCents: 50_000_000, outCents: 0, closingCents: 350_000_000 })
+    // Solo los saldos iniciales: el día no dice «entró».
+    expect(groupByDay(rows.slice(0, 1), { today: TODAY })[0]).toMatchObject({
+      inCents: 0,
+      outCents: 0,
+    })
   })
 
   it('una fila del subdiario pasa a movimiento; el «saldo anterior» no', () => {
@@ -1050,6 +1230,52 @@ describe('dayBuckets: un tramo por día', () => {
     expect(note).toBe(OPENING_DAY_NOTE)
   })
 
+  it('si la pantalla sabe cuánto había al arrancar, descuenta solo eso (el resto del día se dibuja)', () => {
+    // El día de arranque entraron $ 500.000: $ 450.000 eran lo que había y $ 50.000, ventas.
+    const { buckets, note } = dayBuckets(series, {
+      booksStartDate: '2026-10-12',
+      opening: { inCents: 45_000_000, outCents: 0 },
+    })
+    expect(buckets[0]).toMatchObject({ key: '2026-10-12', inCents: 5_000_000, outCents: 0 })
+    expect(buckets[1]).toMatchObject({ inCents: 1_000_000, outCents: 300_000 })
+    expect(note).toBe(OPENING_NOTE)
+    // Solo había saldos iniciales ese día: queda en cero, sin restar de más.
+    expect(
+      dayBuckets(series, {
+        booksStartDate: '2026-10-12',
+        opening: { inCents: 50_000_000, outCents: 0 },
+      }).buckets[0],
+    ).toMatchObject({ inCents: 0, outCents: 0 })
+    expect(
+      dayBuckets(series, {
+        booksStartDate: '2026-10-12',
+        opening: { inCents: 99_000_000, outCents: 0 },
+      }).buckets[0]?.inCents,
+    ).toBe(0)
+    // Fuera del día de arranque no toca nada.
+    expect(
+      dayBuckets(series, {
+        booksStartDate: '2026-09-01',
+        opening: { inCents: 45_000_000, outCents: 0 },
+      }).buckets[2],
+    ).toMatchObject({ inCents: 50_000_000 })
+  })
+
+  it('por semana: la semana del arranque recupera lo demás de ese día', () => {
+    const weeks = [
+      { key: 'a', inCents: 1_000, outCents: 200, openingSkipped: true },
+      { key: 'b', inCents: 3_000, outCents: 0, openingSkipped: false },
+    ]
+    const day = { inCents: 50_000, outCents: 700 }
+    expect(restoreOpeningDay(weeks, day, { inCents: 45_000, outCents: 0 })).toEqual([
+      { key: 'a', inCents: 6_000, outCents: 900, openingSkipped: true },
+      { key: 'b', inCents: 3_000, outCents: 0, openingSkipped: false },
+    ])
+    // Sin saber cuánto había (o sin ese día), queda como vino: el día entero afuera.
+    expect(restoreOpeningDay(weeks, day, null)).toEqual(weeks)
+    expect(restoreOpeningDay(weeks, undefined, { inCents: 1, outCents: 0 })).toEqual(weeks)
+  })
+
   it('con un mes de días, el eje rotula unos siete y siempre el último', () => {
     const days = Array.from({ length: 30 }, (_, i) => {
       const day = `2026-09-${String(i + 1).padStart(2, '0')}`
@@ -1172,6 +1398,23 @@ describe('flowView: entró y salió', () => {
     // $ 99 de cada $ 100 al lado de una barra que dice 100 % sería una contradicción.
     expect(view.out.title).toBe('Casi todo lo que salió fue a proveedores')
     expect(view.in.title).toBe('Casi todo lo que entró fue por ventas cobradas')
+    // Con una que se lleva todo, alcanza con la oración: la pantalla no le arma un panel.
+    expect(view.in.dominant).toBe(true)
+    expect(view.out.dominant).toBe(true)
+  })
+
+  it('`dominant`: una sola categoría, sí; un reparto de verdad, no', () => {
+    const one = flowView([flow('2026-10-01', 'sales', 500, 0)])
+    expect(one.in).toMatchObject({
+      title: 'Todo lo que entró fue por ventas cobradas',
+      dominant: true,
+    })
+    expect(one.out).toMatchObject({ title: null, dominant: false })
+    const split = flowView([
+      flow('2026-10-01', 'sales', 800, 0),
+      flow('2026-10-01', 'partners', 200, 0),
+    ])
+    expect(split.in.dominant).toBe(false)
   })
 
   it('el número del título es el mismo que el de la barra (enteros que suman 100)', () => {
@@ -1259,12 +1502,15 @@ describe('projectionView: las próximas 4 semanas', () => {
     )
     expect(view.sentence).toBe(PROJECTION_SENTENCE)
     expect(view.short).toBe(true)
+    // El nombre de la semana es corto («queda $ X» entra al lado en un celular); hasta
+    // cuándo va la primera es una aclaración aparte.
     expect(view.weeks.map((w) => w.label)).toEqual([
-      'Esta semana (hasta el dom 18/10)',
+      'Esta semana',
       'Semana del 19/10',
       'Semana del 26/10',
       'Semana del 02/11',
     ])
+    expect(view.weeks.map((w) => w.note)).toEqual(['hasta el dom 18/10', null, null, null])
     expect(view.weeks.map((w) => w.short)).toEqual([false, true, true, true])
     // Hoy + el último día de cada semana.
     expect(view.points).toEqual([

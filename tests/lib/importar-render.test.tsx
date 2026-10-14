@@ -66,6 +66,7 @@ import {
   HistoryEmpty,
   HistoryList,
   type HistoryRow,
+  historyCounts,
 } from '@/components/administracion/importar/inbox/history-list'
 import { HowItWorks } from '@/components/administracion/importar/inbox/how-it-works'
 import { AgendaLine, NextUp } from '@/components/administracion/importar/inbox/next-up'
@@ -89,7 +90,7 @@ import {
   type ReviewOptions,
   ReviewProvider,
 } from '@/components/administracion/importar/review/review-context'
-import { ReviewHero } from '@/components/administracion/importar/review/review-hero'
+import { ReviewHero, ReviewRoute } from '@/components/administracion/importar/review/review-hero'
 import type { ProposalView } from '@/components/administracion/importar/review/types'
 import {
   InboxSkeleton,
@@ -102,6 +103,7 @@ import { WantRange } from '@/components/administracion/importar/upload/want-rang
 import type { ImportBatchCounts, ImportNeed } from '@/lib/imports/server/types'
 import { filterCounts } from '@/lib/imports/ui/filters'
 import { buildInbox, type InboxBatch } from '@/lib/imports/ui/inbox'
+import { SUMMARY_KIND_TEXT } from '@/lib/imports/ui/labels'
 import { mpCut, mpDays } from '@/lib/imports/ui/mp-insights'
 import { reviewHero, reviewTally } from '@/lib/imports/ui/review-copy'
 import type { UploadPlan } from '@/lib/imports/ui/upload'
@@ -222,6 +224,21 @@ describe('la bandeja', () => {
     for (const name of ['ARCA', 'Mercado Pago', 'Banco']) expect(out).toContain(`>${name}</h2>`)
   })
 
+  it('«Te toca» y la hoja ya llevan a ese archivo: la bandeja no suma una tercera puerta', () => {
+    const inbox = inboxOf(true)
+    const arca = html(<ImportTray tray={inbox.trays[0] as (typeof inbox.trays)[number]} wide />)
+    // El botón de la bandeja ofrece subir otro; a la revisión se entra por la hoja.
+    expect(arca).toContain('Subir otro archivo')
+    expect(arca).not.toContain('Seguir revisando')
+    expect(
+      arca.match(new RegExp(`href="/bar/administracion/importar/${ID(1)}"`, 'g')),
+    ).toHaveLength(2)
+    // El rótulo del botón puede ocupar dos renglones: nunca se sale de la tarjeta.
+    expect(arca).toContain('whitespace-normal')
+    // Y la hoja que espera baja su píldora a otro renglón antes que aplastar el texto.
+    expect(arca).toMatch(/class="[^"]*flex-wrap[^"]*bg-adm-paper/)
+  })
+
   it('la contadora ve las bandejas y el historial, sin un solo botón ni link para subir', () => {
     const out = bandeja(false)
     expect(out).not.toContain('<button')
@@ -281,8 +298,21 @@ describe('la bandeja', () => {
     const out = html(<HistoryList slug="bar" rows={HISTORY} today="2026-10-13" />)
     expect(out).toContain('Septiembre')
     expect(out).toContain('lo subió Luz')
-    expect(out).toContain('18 cargados · 3 para revisar · 2 no van')
-    expect(out).toContain('A medio cargar')
+    // Lo que espera se dice como en la hoja de la bandeja («3 con una pregunta»), y cada
+    // tramo va entero en su renglón (no se parte en «2 / no van»).
+    expect(historyCounts(HISTORY[0] as HistoryRow).replaceAll(NB, ' ')).toBe(
+      '18 cargados · 3 con una pregunta · 2 no se cargan',
+    )
+    for (const part of ['18 cargados', '3 con una pregunta', '2 no se cargan']) {
+      expect(out, part).toContain(`<span class="whitespace-nowrap">${part}</span>`)
+    }
+    expect(out).not.toContain('para revisar')
+    // Con una pregunta sin contestar el archivo está «Para revisar», igual que su hoja.
+    expect(out).toContain('Para revisar')
+    expect(out).not.toContain('A medio cargar')
+    // En una hoja angosta el estado baja a su renglón al pie; con lugar, va a la derecha.
+    expect(out).toContain('@[28rem]/ledger:hidden')
+    expect(out).toContain('@[28rem]/ledger:inline-flex')
     // El archivo «eterno»: todo descartado ya no figura «Para revisar».
     expect(out).toContain('Nada para cargar')
     expect(out).toContain('ARCA · automática')
@@ -381,12 +411,48 @@ describe('subir un archivo', () => {
     for (const step of ['Bajalo de ARCA', 'Subilo acá', 'Revisá y cargá'])
       expect(out).toContain(step)
     expect(out).toContain('Soltá acá el ZIP que bajaste de ARCA')
+    // En un teléfono no se arrastra: ahí el título dice «Elegí…».
+    expect(out).toContain('Elegí el ZIP que bajaste de ARCA')
     expect(out).toContain('Elegir archivo')
-    // Quien ya subió algo arranca en el paso 2, con el paso 1 plegado y su resumen.
-    expect(out).toContain('Pedí del 09/10 al 12/10')
+    // Quien ya subió algo arranca en el paso 2, con el paso 1 plegado y las dos fechas en
+    // sus fichas (cada una con su rótulo): son lo que viene a buscar.
+    expect(out).toContain('Bajá del 09/10 al 12/10')
+    expect(out).toMatch(/>Desde<\/span><span[^>]*>09\/10<\/span>/)
+    expect(out).toMatch(/>Hasta<\/span><span[^>]*>12\/10<\/span>/)
+    expect(out).not.toContain('Pedí del')
+    // Y sin tilde: todavía no dijo «Ya lo tengo».
+    expect(out).toMatch(/id="paso-1"[^>]*data-state="waiting"/)
     expect(out).toContain('Ver cómo se baja')
     expect(out).toContain('id="paso-1"')
     expect(out).toContain('id="paso-2"')
+  })
+
+  it('si hoy no hay nada para pedir, lo dice en el paso 1 antes de ofrecer la ranura', () => {
+    const out = html(
+      <ImportUploader
+        slug="bar"
+        context={{ source: 'arca_recibidos', sasCuit: null }}
+        howTo={<HowToMisComprobantes bare />}
+        wanted={{
+          from: null,
+          to: null,
+          sentence:
+            'Septiembre ya lo subiste. Octubre se baja desde el 11/11. Si querés adelantar, pedí del 01/10 a ayer: lo repetido no se carga dos veces.',
+          extra: null,
+        }}
+        firstTime={false}
+        booksStartDate="2026-09-01"
+      />,
+    )
+    expect(out).toContain('Hoy no hace falta pedir nada')
+    expect(out).toContain('Septiembre ya lo subiste. Octubre se baja desde el 11/11.')
+    expect(out).toContain('Quiero adelantar')
+    expect(out).toContain('Volver a Importar')
+    // El paso 1 es el que toca (sin tilde) y la ranura todavía no se ofrece.
+    expect(out).toMatch(/id="paso-1"[^>]*aria-current="step"[^>]*data-state="current"/)
+    expect(out).not.toContain('Elegir archivo')
+    expect(out).not.toContain('Ya lo tengo: seguir')
+    expect(out).not.toContain('Hoy no hay nada nuevo para pedir')
   })
 
   it('la primera vez arranca en «Bajalo de allá», con el cómo a la vista', () => {
@@ -616,6 +682,11 @@ describe('subir un archivo', () => {
     expect(out).toContain('Lo que cobrás después de medianoche, ¿de qué día es?')
     expect(out).toContain('Mercado Pago le dice')
     expect(out).toContain('Lo deduje por el nombre: fijate.')
+    // Cada cobro muestra SOLO su respuesta, con «Cambiar»: no hay una pared de píldoras.
+    expect(out).toContain('Vos le decís: </span>QR Mercado Pago')
+    expect(out).toContain('Vos le decís: </span>No lo uso')
+    expect(out.match(/>Cambiar<span class="sr-only"> cómo llamás a «/g)).toHaveLength(4)
+    expect(out).not.toContain('Otro…')
     expect(out).toContain('De la noche anterior (hasta las 5 a. m.)')
     expect(out).not.toContain('role="combobox"')
     // La cuenta única ya viene elegida (rellena).
@@ -821,6 +892,70 @@ describe('revisar un archivo', () => {
     expect(out).toContain('?ver=cargadas')
   })
 
+  it('un archivo terminado dice «Cargados» una sola vez, y que los que ya estaban son otros', () => {
+    const done = reviewTally({ posted: 4, skipped: 4 }, 4)
+    const out = html(
+      <ReviewHero
+        hero={reviewHero({ source: 'bank_statement', tally: done, readyCents: 0 })}
+        tally={done}
+        unit="movimientos"
+        active="todos"
+        counts={filterCounts({ posted: 4, skipped: 4 })}
+        hrefFor={(q) => `/x?ver=${q.ver}`}
+      />,
+    )
+    expect(out).toContain('>Cargados</p>')
+    // La etiqueta ya lo dice: no lleva al lado una píldora de estado «Cargado».
+    expect(out).not.toContain('adm-status')
+    expect(out).toContain('Otros 4 ya estaban cargados: no se repiten.')
+    // Los contadores van en la letra de la pantalla, no en la de máquina.
+    expect(out).toContain('<span class="font-sans">4</span>')
+  })
+
+  it('un archivo del que no queda nada (el de HUB): solo las vistas que tienen algo', () => {
+    const nothing = reviewTally({ skipped: 4 }, 0)
+    const out = html(
+      <ReviewHero
+        hero={reviewHero({ source: 'arca_recibidos', tally: nothing, readyCents: 0 })}
+        tally={nothing}
+        unit="comprobantes"
+        active="todos"
+        counts={filterCounts({ skipped: 4 })}
+        hrefFor={(q) => `/x?ver=${q.ver}`}
+      />,
+    )
+    expect(out).toContain('Nada para cargar')
+    expect(out).toContain('Los 4 quedaron en «No se cargan»: abajo dice por qué.')
+    expect(out).toContain('No se cargan')
+    expect(out).toContain('Todos')
+    expect(out).not.toContain('Con una pregunta')
+    expect(out).not.toContain('Listos')
+    expect(out).not.toContain('aria-disabled="true"')
+  })
+
+  it('la ruta se dibuja como pasos (número, texto y raya), no como otra fila de píldoras', () => {
+    const out = html(
+      <ReviewRoute
+        className="max-sm:hidden"
+        steps={[
+          { key: 'questions', title: 'Contestá lo que te pregunto', count: 3, href: '/x' },
+          { key: 'load', title: 'Cargá', count: 0, href: '#cargar' },
+        ]}
+      />,
+    )
+    expect(out).toContain('aria-label="En qué orden"')
+    expect(out).toContain('aria-current="step"')
+    expect(out).toContain('Paso 1: </span>Contestá lo que te pregunto')
+    expect(out).not.toContain('rounded-full border pr-')
+    expect(out).not.toContain('font-mono')
+    // En el celular no va: lo decide quien la monta.
+    expect(out).toContain('max-sm:hidden')
+    // Con una sola cosa por hacer no hay ruta.
+    expect(
+      html(<ReviewRoute steps={[{ key: 'load', title: 'Cargá', count: 18, href: '#cargar' }]} />),
+    ).toBe('')
+  })
+
   it('la pila: hasta 120 hojas una por comprobante; con más, cada hoja vale varios y se dice', () => {
     expect(pileSheets({ ...tally }).each).toBe(1)
     const big = { questions: 10, ready: 1, posted: 1380, already: 9, out: 0, total: 1400 }
@@ -917,6 +1052,59 @@ describe('revisar un archivo', () => {
     // Cerrados: la acción de cada uno aparece recién al abrirlo.
     expect(out).not.toContain('Volver a incluirlo')
     expect(out.match(/aria-expanded="false"/g)?.length).toBe(3)
+    // Los importes de una lista van en pesos, sin centavos.
+    expect(out).toContain('$ 118.580')
+    expect(out).not.toContain('$ 118.580,00')
+  })
+
+  it('en la vista «Cargados» la píldora de cada fila sobra; en «Todos» sigue', () => {
+    const rows = [
+      proposal({ key: 'p1', status: 'posted', needs: [], documentId: ID(71) }),
+      proposal({ key: 'p2', status: 'posted', needs: [], documentId: ID(72) }),
+    ]
+    const same = review(<ProposalList rows={rows} label="Cargados" sameStatus />, {
+      editable: true,
+    })
+    expect(same).not.toContain('adm-status')
+    expect(same).toContain('$ 118.580')
+    const all = review(<ProposalList rows={rows} label="Todos" />, { editable: true })
+    expect(all.match(/adm-status/g)).toHaveLength(2)
+  })
+
+  it('un movimiento del banco dice para qué lado fue la plata y se titula por lo que fue', () => {
+    const bank = (over: Partial<ProposalView['summary']>) =>
+      proposal({
+        key: `bank:${over.label}`,
+        form: 'transfer',
+        status: 'posted',
+        needs: [],
+        summary: {
+          kind: 'bank_transfer',
+          date: '2026-10-01',
+          month: '2026-10',
+          label: 'EXTRACCION POR CAJA',
+          counterparty: 'Caja',
+          total_cents: 20_000_000,
+          item_count: 1,
+          detail: { direction: 'debit' },
+          ...over,
+        },
+      })
+    const out = review(
+      <ProposalList
+        rows={[bank({}), bank({ label: 'CR-DEPEF', detail: { direction: 'credit' } })]}
+        label="Todos"
+      />,
+      { editable: true, source: 'bank_statement' },
+    )
+    expect(out).toContain('Pasaste plata a Caja')
+    expect(out).toContain('Pasaste plata desde Caja')
+    // El texto crudo del archivo queda en la línea gris.
+    expect(out).toContain('EXTRACCION POR CAJA')
+    expect(out).toContain('CR-DEPEF')
+    // La dirección: flecha con color y la palabra, que la dice igual sin él.
+    expect(out).toMatch(/text-adm-out[^>]*>↓<\/span>salió/)
+    expect(out).toMatch(/text-adm-in[^>]*>↑<\/span>entró/)
   })
 
   it('la contadora ve la lista y qué falta, sin respuestas ni botones de carga', () => {
@@ -969,7 +1157,9 @@ describe('revisar un archivo', () => {
     // Lo que sí ve.
     expect(out).toContain('Te falta contestar')
     expect(out).toContain('Proveedores que faltan reconocer (1)')
-    expect(out).toContain('Hay $ 150.000,00 de diferencia con el banco')
+    // El título va sin centavos; los dos números de abajo los llevan.
+    expect(out).toContain('Hay $ 150.000 de diferencia con el banco')
+    expect(out).toContain('$ 41.863.427,70')
     expect(out).toContain('Ver los movimientos de Banco Nación')
   })
 
@@ -1124,6 +1314,15 @@ describe('revisar un archivo', () => {
       />,
     )
     expect(out).toContain('Mercado Pago contra tus cierres')
+    // Con un solo día no hay columnas que comparar: van el título y la tabla, sin dibujo
+    // (una barra sola parecía un gráfico vacío) y sin hablar de una «marca» que no está.
+    expect(out).not.toContain('Cada columna')
+    expect(out).not.toContain('la marca')
+    expect(out).not.toContain('Ver como tabla')
+    // Rótulos cortos: los largos cortaban la tabla en el celular.
+    expect(out).toContain('>Mercado Pago</th>')
+    expect(out).toContain('>Tu cierre</th>')
+    expect(out).toContain('$ 129.600')
     expect(out).toContain('Falta el cierre:')
     expect(out).toContain('href="/bar/administracion/ventas/cierre?fecha=2026-10-08"')
     expect(out).toContain('Te depositaron')
@@ -1281,8 +1480,10 @@ describe('la contadora no escribe: cada pregunta y cada renglón abierto', () =>
       ]) {
         expect(out, name).not.toContain(words)
       }
-      // Lo que sí ve: el papel de la hoja.
-      expect(out, name).toContain('Ver el papel')
+      // Lo que sí ve: el papel de la hoja, directo (el ticket, sin una tarjeta que lo resuma).
+      expect(out, name).toContain(`aria-label="${SUMMARY_KIND_TEXT[row.summary.kind]}: `)
+      expect(out, name).toContain('adm-ticket')
+      expect(out, name).not.toContain('Ver el papel')
     }
     // Los links a lo ya cargado siguen: mirar no es escribir.
     const posted = review(<ProposalOpened p={OPENED[6]?.row as ProposalView} />, {

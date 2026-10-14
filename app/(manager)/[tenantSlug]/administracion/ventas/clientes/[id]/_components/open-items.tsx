@@ -100,46 +100,65 @@ export function OpenItems({
         >
           {group.items.map((item) => {
             const title = itemTitle(item)
+            const metaText =
+              [
+                title === item.documentLabel ? null : item.documentLabel,
+                // La leyenda suele ser el mismo medio que ya dice el título.
+                item.memo && !title.startsWith(item.memo) ? item.memo : null,
+                isCustomer
+                  ? item.dueDate
+                    ? item.dueDate < today
+                      ? `venció el ${formatDayMonth(item.dueDate)}`
+                      : `vence el ${formatDayMonth(item.dueDate)}`
+                    : null
+                  : itemArrival(item.dueDate, today),
+              ]
+                .filter(Boolean)
+                .join(' · ') || null
+            const amount = (
+              <Amount
+                cents={item.openCents}
+                decimals={0}
+                className="font-serif text-lg font-semibold"
+              />
+            )
             return (
               <LedgerRow
                 key={item.lineId}
                 href={`${base}/comprobantes/${item.documentId}`}
                 title={title}
                 rail={<ArrivalRail dueDate={item.dueDate} today={today} />}
+                // En el celular, cada partida en dos pisos: el título y el importe a la izquierda,
+                // «Ya entró» a la derecha. La leyenda se va cuando el margen ya dice el día.
                 meta={
-                  [
-                    title === item.documentLabel ? null : item.documentLabel,
-                    // La leyenda suele ser el mismo medio que ya dice el título.
-                    item.memo && !title.startsWith(item.memo) ? item.memo : null,
-                    isCustomer
-                      ? item.dueDate
-                        ? item.dueDate < today
-                          ? `venció el ${formatDayMonth(item.dueDate)}`
-                          : `vence el ${formatDayMonth(item.dueDate)}`
-                        : null
-                      : itemArrival(item.dueDate, today),
-                  ]
-                    .filter(Boolean)
-                    .join(' · ') || undefined
+                  canCollect || metaText ? (
+                    <>
+                      {canCollect ? (
+                        <span className="block text-foreground sm:hidden">{amount}</span>
+                      ) : null}
+                      {metaText ? (
+                        <span className={item.dueDate ? 'max-sm:hidden' : undefined}>
+                          {metaText}
+                        </span>
+                      ) : null}
+                    </>
+                  ) : undefined
                 }
-                amount={
-                  <Amount
-                    cents={item.openCents}
-                    decimals={0}
-                    className="font-serif text-lg font-semibold"
-                  />
-                }
+                amount={canCollect ? undefined : amount}
                 action={
                   canCollect ? (
-                    <ActionButton
-                      action="cobrar"
-                      params={{ cliente: partyId, partida: item.lineId }}
-                      variant="outline"
-                      className={ROW_ACTION}
-                      aria-label={`Ya entró: ${title}`}
-                    >
-                      Ya entró
-                    </ActionButton>
+                    <span className="flex items-center gap-3">
+                      <span className="max-sm:hidden">{amount}</span>
+                      <ActionButton
+                        action="cobrar"
+                        params={{ cliente: partyId, partida: item.lineId }}
+                        variant="outline"
+                        className={ROW_ACTION}
+                        aria-label={`Ya entró: ${title}`}
+                      >
+                        Ya entró
+                      </ActionButton>
+                    </span>
                   ) : undefined
                 }
               />

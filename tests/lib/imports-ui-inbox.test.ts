@@ -132,7 +132,11 @@ describe('el estado de un archivo', () => {
     const cases: Array<[BatchOver, string]> = [
       [{ status: 'staging' }, 'A medio subir'],
       [{ status: 'review', pending: 3 }, 'Para revisar'],
-      [{ status: 'posting', pending: 3 }, 'A medio cargar'],
+      // Con una pregunta sin contestar sigue «Para revisar», aunque ya se haya cargado una
+      // parte: es lo mismo que dice la hoja de su bandeja.
+      [{ status: 'posting', pending: 3, counts: { posted: 18, needsInput: 3 } }, 'Para revisar'],
+      // «A medio cargar» es una carga que se cortó: nada que contestar, faltan los listos.
+      [{ status: 'posting', pending: 3, counts: { posted: 15, ready: 3 } }, 'A medio cargar'],
       [{ status: 'done', counts: { posted: 18 } }, 'Cargado'],
       [{ status: 'posting', pending: 0, counts: { posted: 18 } }, 'Cargado'],
       [{ status: 'cancelled', counts: { posted: 2 } }, 'Descartado'],
@@ -205,15 +209,12 @@ describe('el bar que recién arranca (los números empiezan el lunes 12/10)', ()
       'Sin el CUIT del bar no puedo chequear que el archivo sea tuyo.',
     ])
     expect(arca.notes[1]?.link?.href).toBe('/bar/administracion/ajustes?tab=sas')
-    const states = arca.strip?.cells.map((c) => `${c.label}:${c.state}`)
-    expect(states).toEqual([
-      'may:before',
-      'jun:before',
-      'jul:before',
-      'ago:before',
-      'sep:before',
-      'oct:today',
-    ])
+    // Los meses de antes de arrancar no se dibujan; con un solo mes que cuenta, la tira no va.
+    expect(arca.strip).toBeNull()
+    // A fines de noviembre ya cuentan octubre y noviembre: la tira arranca en octubre.
+    const later = tray(hub('2026-11-20'), 'arca_recibidos')
+    expect(later.strip?.cells.map((c) => c.label)).toEqual(['oct', 'nov'])
+    expect(later.strip?.ariaLabel).toMatch(/^Desde octubre, cuando arrancan tus números\./)
     expect(arca.waiting).toEqual([])
     expect(arca.action).toEqual({
       label: 'Subir las compras de ARCA',
@@ -230,6 +231,9 @@ describe('el bar que recién arranca (los números empiezan el lunes 12/10)', ()
     const bank = tray(inbox, 'bank_statement')
     expect(bank.state).toBe('blocked')
     expect(bank.blocked).toBe('Primero decime cuál es tu cuenta del banco.')
+    // Trabada, igual enseña qué va a llegar y que sin banco no hace falta.
+    expect(bank.empty?.text).toMatch(/^Cuando la agregues, acá llegan las comisiones/)
+    expect(bank.empty?.text).toContain('esta bandeja no hace falta')
     expect(bank.action).toEqual({
       label: 'Agregar la cuenta',
       href: '/bar/administracion/ajustes?tab=cajas',
@@ -346,8 +350,52 @@ describe('el bar de ejemplo al 13/10 (arranca el 01/09)', () => {
         kind: 'review',
       },
     ])
-    expect(arca.action?.label).toBe('Seguir revisando')
-    expect(arca.secondary?.label).toBe('Subir otro archivo')
+    // «Te toca» ya lleva a ese archivo: la bandeja no repite el botón (serían tres puertas
+    // al mismo lugar). La hoja sigue llevando a la revisión y el botón ofrece subir otro.
+    expect(arca.action).toEqual({
+      label: 'Subir otro archivo',
+      href: '/bar/administracion/importar/arca',
+    })
+    expect(arca.secondary).toBeNull()
+  })
+
+  it('con dos archivos a medio revisar, solo la bandeja de «Te toca» cede su botón', () => {
+    const inbox = buildInbox(
+      input({
+        treasuries: [{ id: 'w', name: 'Mercado Pago', kind: 'wallet' }],
+        booksStartDate: '2026-09-01',
+        batches: [
+          batch({
+            id: 'arca-sep',
+            source: 'arca_recibidos',
+            status: 'review',
+            periodFrom: '2026-09-01',
+            periodTo: '2026-09-30',
+            pending: 3,
+            counts: { proposals: 23, ready: 20, needsInput: 3 },
+            createdAt: '2026-10-08T15:00:00Z',
+          }),
+          batch({
+            id: 'mp-oct',
+            source: 'mp_release',
+            status: 'review',
+            periodFrom: '2026-10-07',
+            periodTo: '2026-10-08',
+            pending: 2,
+            counts: { proposals: 6, ready: 4, needsInput: 2 },
+            createdAt: '2026-10-09T15:00:00Z',
+          }),
+        ],
+      }),
+    )
+    expect(inbox.next?.action.href).toBe('/bar/administracion/importar/arca-sep')
+    expect(tray(inbox, 'arca_recibidos').action?.label).toBe('Subir otro archivo')
+    // La otra bandeja conserva su «Seguir revisando»: nadie más lleva a ese archivo.
+    expect(tray(inbox, 'mp_release').action).toEqual({
+      label: 'Seguir revisando',
+      href: '/bar/administracion/importar/mp-oct',
+    })
+    expect(tray(inbox, 'mp_release').secondary?.label).toBe('Subir otro archivo')
   })
 
   it('Mercado Pago: cuenta desde el día siguiente a lo último subido, y nombra el hueco de atrás', () => {
@@ -362,10 +410,20 @@ describe('el bar de ejemplo al 13/10 (arranca el 01/09)', () => {
     expect(mp.notes.map((n) => n.text)).toEqual(['También falta del 01/09 al 06/10.'])
     expect(mp.strip?.cells).toHaveLength(STRIP_DAYS)
     const byDay = new Map(mp.strip?.cells.map((c) => [c.key, c]))
-    expect(byDay.get('2026-10-13')?.state).toBe('today')
-    expect(byDay.get('2026-10-12')).toMatchObject({ state: 'missing', tick: 'ayer' })
+    // El anillo es hoy y su rótulo lo dice.
+    expect(byDay.get('2026-10-13')).toMatchObject({ state: 'today', tick: 'hoy' })
+    // En ámbar, solo los 4 días que cuenta el número (del 09/10 a ayer).
+    expect(byDay.get('2026-10-12')?.state).toBe('missing')
+    expect(byDay.get('2026-10-12')?.tick).toBeUndefined()
+    expect(mp.strip?.cells.filter((c) => c.state === 'missing')).toHaveLength(4)
     expect(byDay.get('2026-10-08')?.state).toBe('loaded')
-    expect(byDay.get('2026-10-06')?.state).toBe('missing')
+    // El hueco de más atrás va aparte (apagado): no se ve igual que lo que toca ahora.
+    expect(byDay.get('2026-10-06')).toMatchObject({
+      state: 'gap',
+      title: 'Mar 06/10: falta, de más atrás',
+    })
+    // Para lectores, los días sin subir son todos: los 4 de ahora y los 28 de atrás.
+    expect(mp.strip?.ariaLabel).toMatch(/32\sdías sin subir\.$/)
     // Los rótulos nunca quedan pegados.
     const ticks = mp.strip?.cells.flatMap((c, i) => (c.tick ? [i] : [])) ?? []
     for (let i = 1; i < ticks.length; i++) {

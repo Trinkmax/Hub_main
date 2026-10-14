@@ -5,6 +5,7 @@ import {
   doneNextSteps,
   setupNextView,
   stepHref,
+  stepPlaceLinks,
 } from '@/app/(manager)/[tenantSlug]/administracion/configurar/_lib/setup-next'
 import { buildSetup, type SetupStep } from '@/lib/accounting/home'
 import { type OnboardingData, onboardingState } from '@/lib/accounting/onboarding'
@@ -12,7 +13,7 @@ import { type OnboardingData, onboardingState } from '@/lib/accounting/onboardin
 /**
  * «Lo próximo» de la puesta en marcha en la portada de Ajustes y en «Listo». Tiene que ser la
  * MISMA verdad que la franja del Resumen: los pasos salen de `buildSetup`, y acá solo se filtran
- * los de esta área. Si el Resumen dice «Cargá lo que hay hoy en cada caja», Ajustes dice eso
+ * los de esta área. Si el Resumen dice «Cargá lo que había en cada caja al arrancar», Ajustes dice eso
  * mismo, con el mismo botón y al mismo lugar.
  */
 
@@ -112,14 +113,14 @@ describe('HUB hoy: lo que hace que los números sean de verdad', () => {
     expect(view.kind).toBe('urgent')
     if (view.kind !== 'urgent') return
     expect(view.step.id).toBe('opening')
-    expect(view.step.title).toBe('Cargá lo que hay hoy en cada caja')
+    expect(view.step.title).toBe('Cargá lo que había en cada caja al arrancar')
     expect(view.step.detail).toBe(
       'Los saldos iniciales: cuánta plata hay y cuánto se debe. Sin eso, todo arranca en cero.',
     )
     expect(view.step.action).toEqual({
       kind: 'href',
       href: '/hub/administracion/configurar',
-      label: 'Cargar lo que hay',
+      label: 'Cargar lo que había',
     })
     expect(stepHref(view.step)).toBe('/hub/administracion/configurar')
   })
@@ -224,6 +225,66 @@ describe('«Lo próximo» de la pantalla «Listo»', () => {
     }
     expect(stepHref(step)).toBeNull()
     expect(doneNextSteps([step])).toEqual([])
+  })
+})
+
+describe('en una lista corta, cada paso va por el nombre de su lugar', () => {
+  it('HUB: «Datos de la SAS · Cajas y cuentas · Medios de cobro…», no una orden entre nombres', () => {
+    const pending = configSteps(HUB_STRIP).filter((s) => !s.done)
+    const links = stepPlaceLinks(pending)
+    const labels = links.map((l) => l.label)
+    // Los mismos nombres que las tarjetas de la portada y que los títulos de las habitaciones.
+    for (const label of labels) {
+      expect([
+        'Saldos iniciales',
+        'Datos de la SAS',
+        'Cajas y cuentas',
+        'Medios de cobro',
+        'Puntos de venta',
+        'Accesos',
+        'ARCA',
+      ]).toContain(label)
+    }
+    expect(labels).not.toContain('Completá los datos de la SAS')
+    // Ninguno repetido: los medios y sus comisiones son el mismo lugar.
+    expect(new Set(labels).size).toBe(labels.length)
+  })
+
+  it('lleva al mismo lugar que el paso, y dos pasos del mismo lugar van una vez (gana el primero)', () => {
+    const step = (id: string, href: string | null): SetupStep => ({
+      id,
+      title: `título de ${id}`,
+      detail: null,
+      done: false,
+      optional: false,
+      action: href ? { kind: 'href', href, label: 'Ir' } : null,
+    })
+    expect(
+      stepPlaceLinks([
+        step('sas_data', '/a?tab=sas'),
+        step('sales_methods', '/a?tab=medios'),
+        step('platforms', '/a?tab=participes'),
+        step('access', null),
+      ]),
+    ).toEqual([
+      { id: 'sas_data', label: 'Datos de la SAS', href: '/a?tab=sas' },
+      { id: 'sales_methods', label: 'Medios de cobro', href: '/a?tab=medios' },
+      { id: 'access', label: 'Accesos', href: null },
+    ])
+  })
+
+  it('un paso de otra área conserva su título', () => {
+    const other: SetupStep = {
+      id: 'first_close',
+      title: 'Cargá tu primer cierre del día',
+      detail: null,
+      done: false,
+      optional: false,
+      action: null,
+    }
+    expect(stepPlaceLinks([other])).toEqual([
+      { id: 'first_close', label: 'Cargá tu primer cierre del día', href: null },
+    ])
   })
 })
 

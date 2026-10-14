@@ -4,7 +4,6 @@ import { Loader2, PencilLine } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { DateField } from '@/components/administracion/date-input'
 import { EntryPreview, type EntryPreviewData } from '@/components/administracion/entry-preview'
-import { Pill } from '@/components/administracion/kit/pill'
 import { StepCard, type StepState } from '@/components/administracion/kit/step'
 import {
   Ticket,
@@ -24,7 +23,6 @@ import { payrollTemplateLines } from '@/lib/accounting/posting/manual'
 import type { PostingContext } from '@/lib/accounting/types'
 import {
   addDays,
-  capitalizeFirst,
   endOfMonth,
   formatDayMonth,
   formatMonthLabel,
@@ -163,7 +161,12 @@ export function payrollTicket(lines: readonly InitialLine[] | null): PayrollTick
   }
 }
 
-/** Los atajos de «¿Con qué fecha queda?»: fin del mes pasado y fin de este, si entran en el límite. */
+/**
+ * Los atajos de «¿Con qué fecha queda?», en el orden en que se usan: fin del mes pasado, fin de
+ * este (si entran en el límite) y hoy. Son UNA sola fila, la del campo de fecha: antes había dos
+ * juegos de atajos («Hoy / Ayer» y los de fin de mes) con dos estilos de «elegida». El día va en
+ * el campo apenas se toca el atajo (y en su nombre para lectores), por eso acá no se repite.
+ */
 export function payrollDateShortcuts(
   today: string,
   min: string,
@@ -172,11 +175,10 @@ export function payrollDateShortcuts(
   const previousEnd = addDays(startOfMonth(today), -1)
   for (const date of [previousEnd, endOfMonth(today)]) {
     if (date < min) continue
-    out.push({
-      date,
-      label: `Fin de ${monthName(Number(date.slice(5, 7)))} · ${formatDayMonth(date)}`,
-    })
+    out.push({ date, label: `Fin de ${monthName(Number(date.slice(5, 7)))}` })
   }
+  // Si hoy es justo fin de mes, ese atajo ya lo dice.
+  if (today >= min && !out.some((s) => s.date === today)) out.push({ date: today, label: 'Hoy' })
   return out
 }
 
@@ -361,7 +363,9 @@ export function PayrollSteps({
             onValueChange={(iso) => onInputsChange({ socialDue: iso })}
             shortcuts={false}
           />
-          <div className="grid content-start gap-2">
+          {/* A todo el ancho: el campo (del ancho de los de arriba), sus atajos en una fila y la
+              pista debajo. Son los atajos del propio campo, con su estilo de siempre. */}
+          <div className="sm:col-span-2">
             <DateField
               label="¿Con qué fecha queda?"
               required
@@ -372,24 +376,11 @@ export function PayrollSteps({
               today={today}
               error={dateError}
               hint="Normalmente, el último día del mes de los sueldos."
+              shortcuts={shortcuts.map((s) => ({ label: s.label, value: s.date }))}
+              className="sm:[&>input]:max-w-[calc(50%-0.5rem)]"
             />
-            {shortcuts.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {shortcuts.map((s) => (
-                  <Pill
-                    key={s.date}
-                    size="touch"
-                    active={date === s.date}
-                    onClick={() => onDateChange(s.date)}
-                    className="md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]"
-                  >
-                    {capitalizeFirst(s.label)}
-                  </Pill>
-                ))}
-              </div>
-            ) : null}
           </div>
-          <div className="grid content-start gap-1.5">
+          <div className="grid content-start gap-1.5 sm:col-span-2">
             <Label htmlFor={descriptionId}>
               Concepto
               <span aria-hidden="true" className="ml-0.5 text-destructive">
@@ -448,6 +439,9 @@ export function PayrollSteps({
             entries={preview}
             label="Ver cómo queda en los libros"
             emptyText="Cargá los importes para ver cómo queda en los libros."
+            // En el celular el rótulo entra en dos renglones: cortado («Ver cómo queda en los…»)
+            // perdía justo «libros». La pieza lo corta en uno; acá se le deja partir.
+            className="max-sm:[&_button>span]:whitespace-normal"
           />
           <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
             <button

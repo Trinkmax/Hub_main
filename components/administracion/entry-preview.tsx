@@ -34,7 +34,7 @@ export type EntryPreviewProps = {
   /**
    * Texto del botón cuando está plegado. Default «Ver asiento» (la palabra de la
    * contadora); en lo que carga el dueño va «Ver cómo queda en los libros».
-   * Abierto, el botón dice «Ocultar».
+   * Abierto, el botón dice «Ocultar» y lo que oculta («Ocultar cómo queda en los libros»).
    */
   label?: string
   /** Desplegado de entrada (compu, asiento manual). Default `false`: plata primero. */
@@ -123,8 +123,9 @@ export function EntryPreview({
                 !open && '-rotate-90',
               )}
             />
-            {/* Abierto dice solo «Ocultar»: lo que se oculta está a la vista justo debajo. */}
-            <span className="truncate">{open ? 'Ocultar' : label}</span>
+            {/* Abierto conserva el nombre: «Ver cómo queda en los libros» → «Ocultar cómo queda
+                en los libros». Un «Ocultar» solo no decía qué se oculta. */}
+            <span className="truncate">{open ? hideLabel(label) : label}</span>
           </button>
         )}
         <span
@@ -246,4 +247,9 @@ function EntryTable({ entry, multiple }: { entry: EntryPreviewData; multiple: bo
       </table>
     </div>
   )
+}
+
+/** «Ver asiento» → «Ocultar asiento»; un rótulo que no empieza con «Ver» queda en «Ocultar». */
+function hideLabel(label: string): string {
+  return label.startsWith('Ver ') ? `Ocultar ${label.slice(4)}` : 'Ocultar'
 }

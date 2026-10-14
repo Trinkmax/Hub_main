@@ -47,6 +47,21 @@ export function PanelFocus({
 }
 
 /**
+ * Pliega un `<details>` que el servidor mandó abierto, solo en el celular (por
+ * debajo de `below` px). La planilla día por día viene abierta con
+ * `?tab=proyeccion`; en el teléfono son 31 fichas y quien carga llega ahí
+ * desde «Poner el objetivo»: arranca cerrada y un toque la abre.
+ */
+export function FoldOnPhone({ target, below = 640 }: { target: string; below?: number }) {
+  useEffect(() => {
+    if (!window.matchMedia(`(max-width: ${below - 1}px)`).matches) return
+    const element = document.getElementById(target)
+    if (element instanceof HTMLDetailsElement) element.open = false
+  }, [target, below])
+  return null
+}
+
+/**
  * La señal inmediata de un link que ya se tocó: va DENTRO del `<Link>` y se
  * dibuja mientras la navegación está en camino (`useLinkStatus`). El casillero
  * del almanaque se marca al instante, sin esperar al servidor.

@@ -105,7 +105,7 @@ export function LinksMap() {
               <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
                 <span className="font-medium text-foreground">{HOW_TEXT[link.how]}</span>
                 <span>{link.when}</span>
-                {link.limit ? <StatusPill tone="info">Con un límite</StatusPill> : null}
+                {link.limit ? <StatusPill tone="info">Algo no se puede todavía</StatusPill> : null}
               </span>
             </a>
           </li>
@@ -178,7 +178,8 @@ function LinkDetail({ link, base }: { link: GuideLink; base: string }) {
           <div className="flex items-start gap-2.5 rounded-xl bg-secondary/50 px-3.5 py-3 text-sm leading-relaxed sm:order-last sm:col-span-2">
             <Info aria-hidden className="mt-0.5 size-4 shrink-0 text-info" />
             <p className="min-w-0 text-pretty">
-              <span className="sr-only">Un límite: </span>
+              {/* Mismo nombre que el link de la ficha del comprobante que trae hasta acá. */}
+              <span className="font-medium text-foreground">Qué no se puede todavía. </span>
               {link.limit}
             </p>
           </div>

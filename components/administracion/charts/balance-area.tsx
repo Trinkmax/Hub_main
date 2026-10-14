@@ -24,6 +24,11 @@ import {
   valueY,
 } from './scale'
 
+/** Pesos sin «,00»: los centavos solo cuando los hay de verdad (la tabla, no un ticket). */
+function plainMoney(cents: number): string {
+  return cents % 100 === 0 ? formatCentsShort(cents) : formatCents(cents)
+}
+
 /**
  * El saldo en el tiempo: cuánta plata hubo al cierre de cada día.
  *
@@ -298,7 +303,7 @@ export function BalanceArea({
                   href={p.href}
                   label={`${title}: ${label.toLowerCase()} ${formatCents(value)}${estimated ? ', estimado' : ''}${p.href ? '. Abre lo que pasó ese día' : ''}`}
                   tipTitle={title}
-                  tipValue={formatCents(value)}
+                  tipValue={formatCentsShort(value)}
                   tipSub={`${estimated ? `${label} estimado` : label}${p.href ? '\nTocá para ver ese día' : ''}`}
                   className="h-full min-w-0 flex-1 rounded-[3px]"
                 >
@@ -392,7 +397,7 @@ export function BalanceAreaTable({
           key: p.date,
           cells: [
             `${dayTitle(p.date)}${i === today ? ' (hoy)' : ''}`,
-            `${formatCents(Number.isFinite(p.cents) ? p.cents : null)}${estimated ? ' (estimado)' : ''}`,
+            `${Number.isFinite(p.cents) ? plainMoney(p.cents) : formatCents(null)}${estimated ? ' (estimado)' : ''}`,
           ],
           muted: estimated,
         }

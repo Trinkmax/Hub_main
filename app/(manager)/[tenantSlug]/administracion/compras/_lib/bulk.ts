@@ -89,6 +89,24 @@ export const TYPICAL_RECURRING = [
 ] as const
 
 /**
+ * Lo típico que a este bar todavía le falta: lo que se ofrece para tildar. No se
+ * ofrece uno que ya está cargado, ni con el mismo nombre ni adentro de un
+ * nombre más largo («Alquiler» si ya existe «Alquiler del local», «Luz» si ya
+ * existe «Luz (EPEC)»): tildarlo cargaría el mismo gasto dos veces.
+ *
+ * Es solo qué se MUESTRA: lo que se manda sigue saliendo de `parseNameList`.
+ */
+export function missingTypical(existingNames: readonly string[]): string[] {
+  const existing = existingNames.map(nameKey)
+  return TYPICAL_RECURRING.filter((name) => {
+    const escaped = nameKey(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    // Palabra entera: «gas» no está en «gastos varios».
+    const whole = new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`)
+    return !existing.some((key) => whole.test(key))
+  })
+}
+
+/**
  * Lo tildado y lo pegado, juntos y en ese orden, como un solo texto para
  * `parseNameList` (que saca los repetidos y los que ya existen).
  */
@@ -119,7 +137,8 @@ export type AccountHint = { id: string; code: string; name: string }
 const ACCOUNT_RULES: ReadonlyArray<{ match: RegExp; account: readonly RegExp[] }> = [
   { match: /\bsueldo|\bjornal|\bpersonal\b|\baguinaldo/, account: [/sueldos?/, /remuneraciones/] },
   {
-    match: /\baportes?\b|\bcontribuciones?\b|\bcargas sociales\b|\bf\.?\s?931\b/,
+    match:
+      /\baportes?\b|\bcontribuciones?\b|\bcargas sociales\b|\bseguridad social\b|\bf\.?\s?931\b/,
     account: [/cargas sociales/, /contribuciones/, /aportes/],
   },
   { match: /ingresos brutos|\biibb\b|\brentas\b/, account: [/ingresos brutos/, /impuestos/] },
@@ -134,17 +153,24 @@ const ACCOUNT_RULES: ReadonlyArray<{ match: RegExp; account: readonly RegExp[] }
     account: [/honorarios profesionales/, /honorarios/],
   },
   { match: /\balquiler/, account: [/alquiler/] },
+  // Cada servicio a su categoría (en el plan estándar: «Energía eléctrica», «Gas», «Agua»); un
+  // plan que los junta en «Servicios» sigue valiendo.
   {
-    match: /\bluz\b|\bepec\b|\bgas\b|\bagua\b|aguas|\bservicios?\b/,
-    account: [/servicios/, /luz/],
+    match: /\bluz\b|\bepec\b|electricidad|energia electrica/,
+    account: [/energia electrica/, /electricidad/, /\bluz\b/, /servicios/],
   },
+  { match: /\bgas\b/, account: [/^gas$/, /\bgas\b/, /servicios/] },
+  { match: /\bagua\b|aguas/, account: [/^agua$/, /\bagua\b/, /servicios/] },
+  { match: /\bservicios?\b/, account: [/servicios/] },
   {
     match: /internet|telefon|celular|\bwifi\b/,
     account: [/internet/, /telefon/, /comunicaciones/],
   },
+  // «Seguridad», pero no «seguridad social»: la retención del SUSS es un crédito que se puede
+  // elegir en una compra y, por su código, aparece antes que «Seguridad y monitoreo».
   {
-    match: /alarma|seguridad|vigilancia|ecco|area protegida|emergencia/,
-    account: [/seguridad/, /vigilancia/, /servicios/],
+    match: /alarma|seguridad(?! social)|vigilancia|ecco|area protegida|emergencia/,
+    account: [/seguridad(?! social)/, /vigilancia/, /servicios/],
   },
   {
     match: /desinfecci|fumigaci|limpieza|residuos|recolecci/,

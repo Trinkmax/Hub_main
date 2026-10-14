@@ -93,6 +93,17 @@ export type DayBuckets = {
 export const OPENING_DAY_NOTE =
   'No cuenta el día en que arrancaste a llevar la cuenta: lo que había no es plata que entró.'
 
+/**
+ * La aclaración cuando la pantalla SÍ sabe separar lo que había al arrancar (la
+ * ficha de una caja trae sus movimientos): se descuenta eso solo, y lo demás
+ * de ese día se cuenta.
+ */
+export const OPENING_NOTE =
+  'No cuenta lo que había al arrancar: no es plata que entró. La tarjeta de arriba lo dice aparte.'
+
+/** Lo que había al arrancar, como llega de la base (Debe / Haber). */
+type OpeningAmounts = { inCents: number; outCents: number }
+
 /** Hasta cuántos días se rotulan todos en el eje de «entró y salió». */
 const MAX_DAY_LABELS_ALL = 10
 /** Con más días, cuántos llevan su número. */
@@ -107,17 +118,23 @@ const DAY_LABELS = 7
  * día en que arrancan los libros, así que ese día va en cero y deja la nota.
  * Los días anteriores al arranque no se dibujan.
  *
+ * Con `opening` (lo que había al arrancar, que la ficha de una caja conoce
+ * porque trae sus movimientos) ese día no se pierde entero: se le descuenta
+ * solo eso, y lo que se vendió o se pagó ese mismo día se dibuja. Es la misma
+ * cuenta que hace la tarjeta de la ficha (`cajaHero`).
+ *
  * En una tarjeta de la empresa «entró» son los pagos (bajan la deuda) y
  * «salió», los consumos.
  */
 export function dayBuckets(
   series: Pick<CashDailySeries, 'mode' | 'points'>,
-  opts: { booksStartDate?: string | null } = {},
+  opts: { booksStartDate?: string | null; opening?: OpeningAmounts | null } = {},
 ): DayBuckets {
   const start =
     typeof opts.booksStartDate === 'string' && isRealIsoDay(opts.booksStartDate)
       ? opts.booksStartDate
       : null
+  const exact = opts.opening ?? null
   const card = series.mode === 'card'
   let skipped = false
   const buckets: InOutBucket[] = []
@@ -125,8 +142,11 @@ export function dayBuckets(
     if (start !== null && point.day < start) continue
     const isOpening = start !== null && point.day === start
     if (isOpening && point.moved) skipped = true
-    const inCents = isOpening ? 0 : card ? point.downCents : point.upCents
-    const outCents = isOpening ? 0 : card ? point.upCents : point.downCents
+    // Como llegan de la base: en la tarjeta, lo que «entra» (Debe) son los pagos.
+    const dayIn = card ? point.downCents : point.upCents
+    const dayOut = card ? point.upCents : point.downCents
+    const inCents = !isOpening ? dayIn : exact ? Math.max(0, dayIn - exact.inCents) : 0
+    const outCents = !isOpening ? dayOut : exact ? Math.max(0, dayOut - exact.outCents) : 0
     buckets.push({
       key: point.day,
       label: formatDayLabel(point.day) || point.day,
@@ -146,6 +166,31 @@ export function dayBuckets(
   )
   return {
     buckets: buckets.map((bucket, i) => (labeled.has(i) ? bucket : { ...bucket, shortLabel: '' })),
-    note: skipped ? OPENING_DAY_NOTE : null,
+    note: skipped ? (exact ? OPENING_NOTE : OPENING_DAY_NOTE) : null,
   }
+}
+
+/**
+ * Lo mismo para el dibujo por semana (`weekBuckets` deja afuera, entero, el día
+ * en que arrancan los libros y marca esa semana con `openingSkipped`): si la
+ * pantalla sabe cuánto había al arrancar, a esa semana se le devuelve lo demás
+ * de ese día. `openingDay` es lo que entró y salió ese día según la base.
+ */
+export function restoreOpeningDay<
+  T extends { inCents: number; outCents: number; openingSkipped: boolean },
+>(
+  weeks: readonly T[],
+  openingDay: OpeningAmounts | null | undefined,
+  opening: OpeningAmounts | null | undefined,
+): T[] {
+  if (!openingDay || !opening) return [...weeks]
+  return weeks.map((week) =>
+    week.openingSkipped
+      ? {
+          ...week,
+          inCents: week.inCents + Math.max(0, openingDay.inCents - opening.inCents),
+          outCents: week.outCents + Math.max(0, openingDay.outCents - opening.outCents),
+        }
+      : week,
+  )
 }

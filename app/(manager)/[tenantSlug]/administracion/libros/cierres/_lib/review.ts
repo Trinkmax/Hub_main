@@ -6,6 +6,7 @@ import {
   endOfMonth,
   formatDayMonth,
   formatIsoDay,
+  startOfWeek,
   WEEKDAY_NAMES_MIN,
   weekdayName,
   weekdayOf,
@@ -60,13 +61,22 @@ export type ReviewSettings = {
 
 // ─── El almanaque ────────────────────────────────────────────────────────────
 
-/** Los días del mes para `CloseStrip`: cada día que falta (y hoy) lleva a su cierre. */
+/**
+ * Los días del mes para `CloseStrip`: cada día que falta (y hoy) lleva a su cierre.
+ *
+ * El mes en que el bar arranca no dibuja las semanas ENTERAS anteriores al arranque: eran
+ * renglones de números apagados («del 1 al 11») antes del primer día que cuenta. La semana del
+ * arranque va completa (sus días previos, apagados), para que el almanaque siga empezando en lunes.
+ */
 export function closeStripDays(
   calendar: Pick<ReviewCalendar, 'days' | 'serviceDay'>,
   /** `/<bar>/administracion`. `null` = sin links (la contadora no carga). */
   base: string | null,
 ): CloseStripDay[] {
-  return calendar.days.map((day) => {
+  const firstUsed = calendar.days.find((day) => day.status !== 'before_start')
+  const from = firstUsed ? startOfWeek(firstUsed.date) : null
+  const days = from ? calendar.days.filter((day) => day.date >= from) : calendar.days
+  return days.map((day) => {
     const state: CloseStripDay['state'] =
       day.status === 'loaded'
         ? 'loaded'
@@ -109,7 +119,16 @@ export type ReviewAction =
     }
 
 /** Un gasto fijo sin cargar, con su «Pagar». */
-export type ReviewRecurring = { id: string | null; text: string; action: ReviewAction | null }
+export type ReviewRecurring = {
+  id: string | null
+  /** El renglón entero, para el `title` y los lectores: «Alquiler · venció el 10/10 · $ 850.000». */
+  text: string
+  /** «Alquiler del local». */
+  name: string
+  /** «venció el 10/10 · $ 850.000»: en el celular va en su propio renglón, debajo del nombre. */
+  meta: string
+  action: ReviewAction | null
+}
 
 export type ReviewItem = {
   /** La clave del aviso (nunca se muestra). */
@@ -126,6 +145,16 @@ export type ReviewItem = {
   note?: string | null
   /** Una ayuda con su link («Ver cómo»). */
   help?: { text: string; label: string; href: string } | null
+  /**
+   * Algo que todavía no toca (las cajas, a mitad de mes): una sola línea gris con su link, sin
+   * botones. No cuenta como aviso.
+   */
+  soft?: boolean
+  /**
+   * Sus acciones nunca son EL botón relleno de la pantalla: contar una caja de un mes que ya
+   * terminó sirve, pero con la fecha de hoy no apaga el aviso.
+   */
+  quiet?: boolean
 }
 
 export type ReviewRowId = 'closes' | 'purchases' | 'money' | 'papers' | 'other'
@@ -182,6 +211,9 @@ const ROW_TITLE: Readonly<Record<ReviewRowId, string>> = {
 
 const READER_NOTE = 'Lo cargan los dueños.'
 
+/** La píldora de un renglón que solo tiene cosas que todavía no tocan (mes en curso). */
+const SOON_PILL = 'Para ir viendo'
+
 function records(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value)
     ? value.filter((v): v is Record<string, unknown> => typeof v === 'object' && v !== null)
@@ -227,6 +259,11 @@ export type ReviewInput = {
   base: string
   /** El mes ya terminó (su último día es anterior a hoy). */
   finished: boolean
+  /**
+   * Hoy (`yyyy-MM-dd`). En un mes en curso separa lo que ya venció de lo que vence más adelante;
+   * sin la fecha, todo lo que avisa la base se cuenta como aviso.
+   */
+  today?: string
   canWrite: boolean
   checklist: ReviewChecklist
   /** `null` si no se pudo leer: el renglón usa solo el aviso de la base, sin dibujo. */
@@ -364,28 +401,47 @@ function purchasesItem(item: ChecklistItemLike, input: ReviewInput): ReviewItem 
   switch (item.key) {
     case 'recurring_not_loaded': {
       const all = records(d.items)
+      const today = input.today ?? null
+      const dueOf = (r: Record<string, unknown>) => text(r.due_date)?.slice(0, 10) ?? null
+      // En un mes terminado todo venció; en uno en curso, lo anterior a hoy. Sin fecha de
+      // vencimiento no se puede decir que falte tiempo: cuenta como vencido.
+      const isPast = (due: string | null) =>
+        input.finished || due === null || (today !== null && due < today)
       const rows: ReviewRecurring[] = all.slice(0, 3).map((r) => {
         const id = uuid(r.recurring_id)
-        const due = text(r.due_date)?.slice(0, 10) ?? null
+        const due = dueOf(r)
         const cents = num(r.amount_cents)
-        const parts = [
-          text(r.name) ?? 'Gasto fijo',
-          due ? `vence ${formatDayMonth(due)}` : null,
-          cents !== null && cents > 0 ? formatCentsShort(cents) : 'sin monto',
-        ].filter(Boolean)
+        const name = text(r.name) ?? 'Gasto fijo'
+        const when = !due
+          ? null
+          : isPast(due)
+            ? `venció el ${formatDayMonth(due)}`
+            : due === today
+              ? 'vence hoy'
+              : `vence el ${formatDayMonth(due)}`
+        const meta = [when, cents !== null && cents > 0 ? formatCentsShort(cents) : 'sin monto']
+          .filter(Boolean)
+          .join(' · ')
         return {
           id,
-          text: parts.join(' · '),
+          text: `${name} · ${meta}`,
+          name,
+          meta,
           action: id
             ? { kind: 'sheet', label: 'Pagar', sheet: 'gasto', params: { 'gasto-fijo': id } }
             : null,
         }
       })
       const rest = Math.max(0, (count ?? all.length) - rows.length)
+      // A mitad de mes, un gasto fijo que vence el 15 no es un atraso: si ninguno venció, el
+      // renglón no cuenta como aviso (la lista viene ordenada por vencimiento).
+      const noneDue = !input.finished && today !== null && !all.some((r) => isPast(dueOf(r)))
       return {
         key: item.key,
-        tone: 'warn',
-        title: `Hay gastos fijos de ${noun} sin cargar`,
+        tone: noneDue ? 'muted' : 'warn',
+        title: noneDue
+          ? `Gastos fijos de ${noun} que todavía no vencieron`
+          : `Hay gastos fijos de ${noun} sin cargar`,
         detail: null,
         recurring: rows,
         more: rest > 0 ? `y ${rest} más` : null,
@@ -440,25 +496,34 @@ function moneyItem(item: ChecklistItemLike, input: ReviewInput): ReviewItem {
           : []
       })
       const names = treasuries.map((t) => text(t.name)).filter((n): n is string => n !== null)
-      // La base da por contada una caja solo si el conteo tiene fecha DENTRO del mes. La hoja abre
-      // con la fecha de hoy: en un mes que ya terminó hay que decirlo, o se cuenta y el aviso sigue.
-      const dated = input.finished
-        ? ` Para que valga para ${noun}, en la hoja poné en «Fecha del conteo» un día de ${noun} (por ejemplo, el ${formatDayMonth(endOfMonth(month))}): con la fecha de hoy este aviso no se va.`
-        : ''
+      const seeAll: ReviewAction = { kind: 'href', label: 'Ver cajas', href: `${base}/cajas` }
+      // A mitad de mes no es un aviso: alcanza con contarlas una vez antes de cerrar. Va como
+      // una línea gris con su link, sin un botón por caja.
+      if (!input.finished) {
+        return {
+          key: item.key,
+          tone: 'muted',
+          soft: true,
+          title: `Las cajas de ${noun} se cuentan antes de cerrar el mes.`,
+          detail: names.length > 0 ? `Todavía sin contar: ${names.join(', ')}.` : null,
+          actions: [seeAll],
+        }
+      }
       return {
         key: item.key,
         tone: 'warn',
         title: `Hay cajas sin contar en ${noun}`,
+        // La base da por contada una caja solo si el conteo tiene fecha DENTRO del mes, y la hoja
+        // abre con la fecha de hoy: hay que decirlo, o se cuenta y el aviso sigue.
         detail: canWrite
-          ? `Contalas para saber si coincide lo que dice el sistema.${dated}`
+          ? `Contalas con fecha de ${noun} (por ejemplo, ${formatDayMonth(endOfMonth(month))}) para que valga para este mes.`
           : names.length > 0
             ? `Sin contar: ${names.join(', ')}.`
             : null,
         // Si la base no dijo cuáles, queda el camino general.
-        actions:
-          actions.length === 0
-            ? [{ kind: 'href', label: 'Ver cajas', href: `${base}/cajas` }]
-            : actions,
+        actions: actions.length === 0 ? [seeAll] : actions,
+        // Con la fecha de hoy no apaga el aviso: no puede ser EL botón de la pantalla.
+        quiet: true,
       }
     }
     case 'treasury_negative': {
@@ -609,7 +674,7 @@ export function closeReview(input: ReviewInput): CloseReview {
       id: 'purchases',
       title: ROW_TITLE.purchases,
       tone: purchasesTone,
-      pill: pillOf(purchasesTone, purchases),
+      pill: pillOf(purchasesTone, purchases, SOON_PILL),
       okText:
         purchases.length === 0
           ? `No hay gastos fijos de ${noun} sin cargar ni tiques sin comercio.`
@@ -631,7 +696,7 @@ export function closeReview(input: ReviewInput): CloseReview {
       id: 'money',
       title: ROW_TITLE.money,
       tone: moneyTone,
-      pill: pillOf(moneyTone, money),
+      pill: pillOf(moneyTone, money, SOON_PILL),
       okText:
         money.length === 0 ? 'Ninguna caja con movimientos quedó sin contar ni en negativo.' : null,
       items: money,
@@ -688,6 +753,8 @@ export function closeReview(input: ReviewInput): CloseReview {
 export function firstReviewAction(review: Pick<CloseReview, 'rows'>): ReviewAction | null {
   for (const row of review.rows) {
     for (const item of row.items) {
+      // Lo que todavía no toca, o lo que hoy no apaga su aviso, nunca es el botón relleno.
+      if (item.soft || item.quiet) continue
       const recurring = item.recurring?.find((r) => r.action)?.action
       if (recurring) return recurring
       const [first] = item.actions
@@ -920,21 +987,29 @@ export function ivaClosePlan(iva: CloseIva | null, month: string): IvaClosePlan 
   if (settles) {
     const again = replaces ? ' Reemplaza al que había quedado viejo.' : ''
     const lead = `Al cerrar queda anotado el IVA de ${noun}: `
+    // La oración de la pantalla va en pesos, como el papel del mes y «¿Cómo se calcula?»; el
+    // importe exacto (con centavos) queda en el diálogo de «Cerrar» y en la cuenta completa.
     if (iva.toPayCents > 0) {
-      const amount = formatCents(iva.toPayCents)
       return {
         ...plan,
-        text: { lead, amount, tail: ` a pagarle a ARCA.${again}` },
-        summary: `Queda anotado el IVA de ${noun}: a pagar ${amount}.${again}`,
+        text: {
+          lead,
+          amount: formatCentsShort(iva.toPayCents),
+          tail: ` a pagarle a ARCA.${again}`,
+        },
+        summary: `Queda anotado el IVA de ${noun}: a pagar ${formatCents(iva.toPayCents)}.${again}`,
       }
     }
     if (iva.inFavorCents > 0) {
-      const amount = formatCents(iva.inFavorCents)
       const next = monthNoun(addMonthsToYearMonth(month.slice(0, 7), 1))
       return {
         ...plan,
-        text: { lead: `${lead}quedan `, amount, tail: ` a favor para ${next}.${again}` },
-        summary: `Queda anotado el IVA de ${noun}: quedan ${amount} a favor.${again}`,
+        text: {
+          lead: `${lead}quedan `,
+          amount: formatCentsShort(iva.inFavorCents),
+          tail: ` a favor para ${next}.${again}`,
+        },
+        summary: `Queda anotado el IVA de ${noun}: quedan ${formatCents(iva.inFavorCents)} a favor.${again}`,
       }
     }
     return {

@@ -118,6 +118,15 @@ export async function InvoicesView({
         ¿Cómo se factura acá?
       </h2>
       <div className="grid gap-3">
+        {/* Sin puntos de venta, ese es el primer paso: va arriba (abajo parecía un detalle). */}
+        {noSalesPoints && canWrite ? (
+          <ActionTile
+            icon={Hash}
+            title="Primero, cargá tus puntos de venta"
+            hint="Sin eso, todo lo de cada noche queda como venta sin factura (se registra igual)."
+            href={`${base}/ajustes?tab=puntos-de-venta`}
+          />
+        ) : null}
         {canWrite ? (
           <ActionTile
             icon={CalendarCheck}
@@ -131,20 +140,11 @@ export async function InvoicesView({
             número se facturó. Lo demás queda como venta sin factura.
           </p>
         )}
-        {noSalesPoints ? (
-          canWrite ? (
-            <ActionTile
-              icon={Hash}
-              title="Cargá tus puntos de venta"
-              hint="Sin eso, todo el día queda como venta sin factura."
-              href={`${base}/ajustes?tab=puntos-de-venta`}
-            />
-          ) : (
-            <p className="rounded-2xl bg-secondary/50 p-4 text-sm leading-relaxed text-pretty">
-              El bar todavía no tiene puntos de venta cargados: por ahora todo el día queda como
-              venta sin factura.
-            </p>
-          )
+        {noSalesPoints && !canWrite ? (
+          <p className="rounded-2xl bg-secondary/50 p-4 text-sm leading-relaxed text-pretty">
+            El bar todavía no tiene puntos de venta cargados: por ahora todo el día queda como venta
+            sin factura.
+          </p>
         ) : null}
         {canWrite && arcaOn ? (
           <ActionTile

@@ -10,15 +10,20 @@ import {
 import {
   BILL_VALUES,
   billsTotalCents,
+  COUNT_PICK_LABEL,
   countModeOf,
   countQuestion,
   countSavedNote,
   countSubmitLabel,
   countVerdict,
   exactMoney,
+  idleVerdict,
   leftToCount,
   reasonOptions,
   VERDICT_IDLE,
+  VERDICT_PICK,
+  walletToExplain,
+  walletUndetailedNote,
 } from '@/components/administracion/acciones/ajustar-vista'
 import {
   cardDebtOf,
@@ -28,8 +33,10 @@ import {
   moveShortcuts,
 } from '@/components/administracion/acciones/mover-vista'
 import {
+  accountPlaceholder,
   accountQuestion,
   applySituation,
+  booksEmptyText,
   MOTIVE_ACCOUNT,
   motiveStillValid,
   movementSubmitLabel,
@@ -42,6 +49,7 @@ import {
   voucherTotalLabel,
 } from '@/components/administracion/acciones/movimiento-vista'
 import { ACTION_TITLES } from '@/components/administracion/acciones/types'
+import { moneyLabel } from '@/components/administracion/cajas-ventas/money'
 import type { SheetTreasury } from '@/components/administracion/cajas-ventas/types'
 import { bankExpenseSchema, CASH_MOVEMENT_SHORTCUTS } from '@/lib/accounting/schemas'
 import { formatCents } from '@/lib/money'
@@ -385,6 +393,35 @@ describe('¿Coincide la caja?: por qué hay diferencia, el botón y lo que falta
     expect(fees?.consequence).toContain(`con ${money('$ 8.676')} ya puesto como total`)
   })
 
+  it('sin caja elegida, el recuadro del resultado enseña el primer paso y el botón lo pide', () => {
+    expect(idleVerdict(VERDICT_PICK)).toEqual({
+      tone: 'idle',
+      label: null,
+      amountCents: null,
+      sentence: 'Elegí la caja y te decimos cuánto dice el sistema.',
+      offerUntick: false,
+      note: null,
+    })
+    // Con caja y sin número, el reposo de siempre.
+    expect(idleVerdict().sentence).toBe(VERDICT_IDLE)
+    expect(COUNT_PICK_LABEL).toBe('Elegí una caja')
+  })
+
+  it('billetera: cuánto falta explicar y qué pasa si no se detalla', () => {
+    // Sin ventas tildadas y con plata de menos: lo que falta es toda la diferencia.
+    expect(walletToExplain({ diff: -1_140_962, ticked: 0, pendingTicked: 0 })).toBe(1_140_962)
+    // Con ventas tildadas: lo que estaba en camino y no entró.
+    expect(walletToExplain({ diff: 900_000, ticked: 2, pendingTicked: 1_000_000 })).toBe(100_000)
+    // Entró todo, entró de más, hay de más o todavía no hay número: nada que explicar.
+    expect(walletToExplain({ diff: 1_000_000, ticked: 2, pendingTicked: 1_000_000 })).toBe(0)
+    expect(walletToExplain({ diff: 1_200_000, ticked: 2, pendingTicked: 1_000_000 })).toBeNull()
+    expect(walletToExplain({ diff: 500, ticked: 0, pendingTicked: 0 })).toBeNull()
+    expect(walletToExplain({ diff: null, ticked: 0, pendingTicked: 0 })).toBeNull()
+    expect(walletUndetailedNote(1_140_962)).toBe(
+      `Si no lo detallás, los ${money('$ 11.409,62')} quedan aparte para que los revise la contadora.`,
+    )
+  })
+
   it('el botón dice lo que va a pasar', () => {
     expect(countSubmitLabel(null, 0)).toBe('Guardar')
     expect(countSubmitLabel('check', 0)).toBe('Sí, coincide')
@@ -658,6 +695,27 @@ describe('Otra entrada o salida: los textos', () => {
     )
     expect(voucherNote('other')).toContain('No lleva factura')
     expect(voucherNote(null)).toContain('No lleva factura')
+    // Un solo libro: lo que no es venta ni compra no queda «por fuera» de nada.
+    expect(voucherNote('other')).toBe(
+      'No lleva factura: no es una venta ni una compra. Queda registrada igual.',
+    )
+    for (const motive of ['other', 'mp_yield', 'loan_received', 'partner_withdrawal'] as const) {
+      expect(voucherNote(motive)).not.toMatch(/por fuera|afuera|en negro|en blanco/i)
+    }
+  })
+
+  it('el selector de la categoría habla como su pregunta (sin «cuenta»)', () => {
+    expect(accountPlaceholder('out')).toBe('Elegí en qué se fue')
+    expect(accountPlaceholder('in')).toBe('Elegí de qué es')
+    expect(accountPlaceholder(null)).not.toMatch(/cuenta/i)
+  })
+
+  it('«Ver cómo queda en los libros» abierto dice QUÉ falta', () => {
+    expect(booksEmptyText(['el socio'])).toBe('Para verlo falta: el socio.')
+    expect(booksEmptyText(['qué pasó', 'la caja', 'el importe'])).toBe(
+      'Para verlo falta: qué pasó, la caja y el importe.',
+    )
+    expect(booksEmptyText([])).toBe('Completá lo que falta para ver cómo queda en los libros.')
   })
 
   it('el botón', () => {
@@ -738,6 +796,20 @@ describe('Gastos del banco: los renglones del resumen', () => {
       kind: 'no_control',
       text: `Total debitado ${money('$ 18.124,00')}`,
     })
+  })
+
+  it('en la pantalla el avance va sin centavos de más (el papel sigue al centavo)', () => {
+    // La pantalla le pasa `moneyLabel`: redondo sin «,00»; con centavos, con centavos.
+    expect(bankProgress(2_072_800, 2_680_000, moneyLabel).text).toBe(
+      `Repartiste ${money('$ 20.728')} de ${money('$ 26.800')}. Faltan ${money('$ 6.072')}.`,
+    )
+    expect(bankProgress(2_072_850, 2_680_000, moneyLabel).text).toBe(
+      `Repartiste ${money('$ 20.728,50')} de ${money('$ 26.800')}. Faltan ${money('$ 6.071,50')}.`,
+    )
+    // La nota del papel se arma aparte, con centavos.
+    expect(bankStatementNote(bankProgress(2_072_800, 2_680_000, moneyLabel), formatCents)).toBe(
+      `Faltan ${money('$ 6.072,00')} para llegar al total.`,
+    )
   })
 
   it('la nota del papel dice lo mismo, o nada si no hay contra qué medir', () => {

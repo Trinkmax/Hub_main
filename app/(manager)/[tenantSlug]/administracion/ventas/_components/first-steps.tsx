@@ -71,7 +71,7 @@ export function FirstSteps({
           id="ventas-primeros-pasos"
           className="font-serif text-xl font-semibold leading-snug tracking-tight text-balance sm:text-2xl"
         >
-          Así se llenan las ventas, sin punto de venta
+          Así se llenan las ventas, a mano
         </h2>
         {canWrite ? null : (
           <p className="text-sm text-muted-foreground text-pretty">

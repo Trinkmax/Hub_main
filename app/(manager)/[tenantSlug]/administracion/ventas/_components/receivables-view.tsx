@@ -41,7 +41,7 @@ import {
   type ReceivableFilter,
   ReceivablesFilters,
 } from './receivables-filters'
-import { ReceivablesList, SettledParties } from './receivables-list'
+import { partyDisplayName, ReceivablesList, SettledParties } from './receivables-list'
 import { PanelSkeleton } from './skeletons'
 
 /**
@@ -150,31 +150,40 @@ export async function ReceivablesView({ tenantId, tenantSlug, base, today, sp, c
     )
   }
 
-  const segments: SplitBarSegment[] = [
-    {
-      key: 'late',
-      label: TRANCHE_LABELS.late,
-      cents: tranches.lateCents,
-      swatch: 'bg-destructive',
-      href: tranches.lateCents > 0 ? tabHref(base, 'clientes', { filtro: 'atrasados' }) : undefined,
-    },
-    { key: 'week', label: TRANCHE_LABELS.week, cents: tranches.weekCents, swatch: 'bg-adm-s1' },
-    {
-      key: 'later',
-      label: TRANCHE_LABELS.later,
-      cents: tranches.laterCents,
-      swatch: 'bg-adm-neutral',
-    },
-  ]
-  if (tranches.walletCents > 0) {
-    segments.push({
-      key: 'wallet',
-      label: TRANCHE_LABELS.wallet,
-      cents: tranches.walletCents,
-      swatch: 'bg-adm-s4',
-      hatched: true,
-    })
-  }
+  // Solo los tramos que tienen algo: un renglón «Más adelante — $ 0» es ruido.
+  const segments: SplitBarSegment[] = (
+    [
+      {
+        key: 'late',
+        label: TRANCHE_LABELS.late,
+        cents: tranches.lateCents,
+        swatch: 'bg-destructive',
+        href: tabHref(base, 'clientes', { filtro: 'atrasados' }),
+      },
+      { key: 'week', label: TRANCHE_LABELS.week, cents: tranches.weekCents, swatch: 'bg-adm-s1' },
+      {
+        key: 'later',
+        label: TRANCHE_LABELS.later,
+        cents: tranches.laterCents,
+        swatch: 'bg-adm-neutral',
+      },
+      {
+        key: 'wallet',
+        label: TRANCHE_LABELS.wallet,
+        cents: tranches.walletCents,
+        swatch: 'bg-adm-s4',
+        hatched: true,
+      },
+    ] satisfies SplitBarSegment[]
+  ).filter((segment) => segment.cents > 0)
+  // Quién tiene plata a favor, para decirlo con su nombre en la oración de arriba.
+  const creditors = everyRow
+    .filter((r) => r.creditCents > 0)
+    .map((r) => ({
+      name: partyDisplayName(r),
+      cents: r.creditCents,
+      isCustomer: r.partyKind === 'customer',
+    }))
 
   const listRows = found.ok ? found.data.rows : []
   const isWallet = (row: PartyListRow) => wallets.has(row.partyId)
@@ -198,7 +207,7 @@ export async function ReceivablesView({ tenantId, tenantSlug, base, today, sp, c
             animate
             cents={totals.debtCents}
             label="Plata por cobrar"
-            sentence={incomingSentence(tranches, { creditCents: totals.creditCents })}
+            sentence={incomingSentence(tranches, { creditCents: totals.creditCents, creditors })}
           />
           {canWrite ? (
             <ActionButton
@@ -210,7 +219,15 @@ export async function ReceivablesView({ tenantId, tenantSlug, base, today, sp, c
             </ActionButton>
           ) : null}
         </div>
-        <SplitBar segments={segments} totalLabel="Plata por cobrar" />
+        {/* La barra mide lo mismo que su leyenda: de borde a borde dejaba media tarjeta vacía
+            debajo de una barra larguísima. */}
+        {segments.length > 0 ? (
+          <SplitBar
+            segments={segments}
+            totalLabel="Plata por cobrar"
+            className="lg:max-w-[34rem]"
+          />
+        ) : null}
       </HeroPanel>
 
       <Suspense fallback={<PanelSkeleton tall />}>

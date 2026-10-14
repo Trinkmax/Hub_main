@@ -126,6 +126,8 @@ export function reviewHero(input: {
   /** Renglones que ya habían entrado con otro archivo. */
   duplicates?: number
   cancelled?: boolean
+  /** Quien solo lee (la contadora): no se le habla de «te». */
+  reader?: boolean
 }): ReviewHeroCopy {
   const { tally: t, source } = input
   const [one, many] = IMPORT_SOURCE_COPY[source].unit
@@ -159,13 +161,19 @@ export function reviewHero(input: {
     }
     if (t.posted > 0) rest.push(t.posted === 1 ? '1 ya se cargó' : `${t.posted} ya se cargaron`)
     if (t.already > 0) rest.push(already(t.already))
-    if (t.out > 0) rest.push(t.out === 1 ? '1 no va' : `${t.out} no van`)
+    if (t.out > 0) rest.push(t.out === 1 ? '1 no se carga' : `${t.out} no se cargan`)
     return {
       stage: 'pending',
-      label: 'Te falta contestar',
+      label: input.reader ? 'Falta contestar' : 'Te falta contestar',
       value: String(t.questions),
       unit: `de ${t.total} ${unit(t.total)}`,
-      sentence: `${rest.length > 0 ? `${capitalizeFirst(listWords(rest))}.` : 'Contestá lo que te pregunto y ya se puede cargar.'}${dup}`,
+      sentence: `${
+        rest.length > 0
+          ? `${capitalizeFirst(listWords(rest))}.`
+          : input.reader
+            ? 'Con eso contestado ya se puede cargar.'
+            : 'Contestá lo que te pregunto y ya se puede cargar.'
+      }${dup}`,
     }
   }
 
@@ -186,15 +194,23 @@ export function reviewHero(input: {
   }
 
   if (t.posted > 0) {
-    const rest: string[] = []
-    if (t.already > 0) rest.push(already(t.already))
-    if (t.out > 0) rest.push(t.out === 1 ? '1 no iba' : `${t.out} no iban`)
+    // «Otros»: el número de arriba son los cargados; estos son aparte (no los mismos).
+    const others =
+      t.already === 1 ? 'Otro ya estaba cargado' : `Otros ${t.already} ya estaban cargados`
+    const sentence =
+      t.already > 0 && t.out > 0
+        ? `${others} y ${t.out === 1 ? '1 no iba' : `${t.out} no iban`}.`
+        : t.already > 0
+          ? `${others}: no se ${t.already === 1 ? 'repite' : 'repiten'}.`
+          : t.out > 0
+            ? `${t.out === 1 ? 'Otro no iba' : `Otros ${t.out} no iban`}.`
+            : 'No quedó nada pendiente.'
     return {
       stage: 'loaded',
       label: 'Cargados',
       value: String(t.posted),
       unit: unit(t.posted),
-      sentence: `${rest.length > 0 ? `${capitalizeFirst(listWords(rest))}.` : 'No quedó nada pendiente.'}${dup}`,
+      sentence: `${sentence}${dup}`,
     }
   }
 
@@ -210,8 +226,8 @@ export function reviewHero(input: {
         : t.already === t.total
           ? `${all} ya ${t.total === 1 ? 'estaba cargado' : 'estaban cargados'}: no se ${t.total === 1 ? 'repite' : 'repiten'}.${dup}`
           : t.already === 0
-            ? `${all} ${t.total === 1 ? 'quedó' : 'quedaron'} en «No van».${dup}`
-            : `${capitalizeFirst(already(t.already))} y ${t.out === 1 ? '1 no va' : `${t.out} no van`}.${dup}`,
+            ? `${all} ${t.total === 1 ? 'quedó' : 'quedaron'} en «No se cargan»: abajo dice por qué.${dup}`
+            : `${capitalizeFirst(already(t.already))} y ${t.out === 1 ? '1 no se carga' : `${t.out} no se cargan`}.${dup}`,
   }
 }
 
@@ -226,8 +242,30 @@ const ALREADY_REASONS: ReadonlySet<string> = new Set([
 
 export type ProposalBadge = { label: string; tone: InboxTone }
 
+/**
+ * Por qué alguien sacó una hoja del archivo (`error.reason = 'ignored'`): el
+ * motivo que se guardó con sus renglones al tocar «No es nuestro», «Cargarlo a
+ * mano», «Ya estaba cargado»… Sin motivo, como siempre: «No es nuestro» (el
+ * botón de la lista es el único que no lo guarda distinto).
+ */
+export type IgnoredKind = 'ours' | 'manual' | 'already'
+
+export function ignoredKind(message?: string | null): IgnoredKind {
+  const m = (message ?? '').trim().toLowerCase()
+  if (m.startsWith('se carga a mano')) return 'manual'
+  if (m.startsWith('ya estaba cargad') || m.startsWith('recibo de una factura ya cargada')) {
+    return 'already'
+  }
+  return 'ours'
+}
+
 /** El estado de una hoja, en una o dos palabras. La Guía enseña «Ya está cargado». */
-export function proposalBadge(status: ProposalStatus, reason?: string | null): ProposalBadge {
+export function proposalBadge(
+  status: ProposalStatus,
+  reason?: string | null,
+  /** Con `reason = 'ignored'`: el motivo que se guardó al sacarla (`ignoredKind`). */
+  message?: string | null,
+): ProposalBadge {
   switch (status) {
     case 'needs_input':
       return { label: 'Con una pregunta', tone: 'warn' }
@@ -245,23 +283,43 @@ export function proposalBadge(status: ProposalStatus, reason?: string | null): P
       return { label: 'Anulado', tone: 'muted' }
     default:
       if (reason && ALREADY_REASONS.has(reason)) return { label: 'Ya está cargado', tone: 'muted' }
-      if (reason === 'ignored') return { label: 'No es nuestro', tone: 'muted' }
+      if (reason === 'ignored') {
+        const kind = ignoredKind(message)
+        return {
+          label:
+            kind === 'manual'
+              ? 'Se carga a mano'
+              : kind === 'already'
+                ? 'Ya está cargado'
+                : 'No es nuestro',
+          tone: 'muted',
+        }
+      }
       return { label: 'No va', tone: 'muted' }
   }
 }
 
-/** Los tres grupos de «No se cargan». */
-export type OutGroup = 'already' | 'ours' | 'other'
+/** Los grupos de «No se cargan». */
+export type OutGroup = 'already' | 'manual' | 'ours' | 'other'
 
 export const OUT_GROUP_TITLE: Readonly<Record<OutGroup, string>> = {
   already: 'Ya estaban cargados',
+  manual: 'Los sacaste para cargarlos a mano',
   ours: 'Dijiste que no son nuestros',
   other: 'No van',
 }
 
-export function outGroup(status: ProposalStatus, reason?: string | null): OutGroup {
+export function outGroup(
+  status: ProposalStatus,
+  reason?: string | null,
+  /** Con `reason = 'ignored'`: el motivo que se guardó al sacarla. */
+  message?: string | null,
+): OutGroup {
   if (status === 'skipped' && reason && ALREADY_REASONS.has(reason)) return 'already'
-  if (status === 'skipped' && reason === 'ignored') return 'ours'
+  if (status === 'skipped' && reason === 'ignored') {
+    const kind = ignoredKind(message)
+    return kind === 'already' ? 'already' : kind
+  }
   return 'other'
 }
 
@@ -280,7 +338,15 @@ export const SKIP_COPY: Readonly<Record<SkipReason | 'post_failed', string>> = {
   post_failed: 'No se pudo cargar.',
 }
 
-export function skipText(reason: string | null | undefined): string {
+/** Lo que se dice al abrir una hoja sacada del archivo, según el motivo que se guardó. */
+const IGNORED_TEXT: Readonly<Record<IgnoredKind, string>> = {
+  manual: 'Lo sacaste de este archivo para cargarlo a mano.',
+  already: 'Dijiste que ya estaba cargado: no se carga dos veces.',
+  ours: SKIP_COPY.ignored,
+}
+
+export function skipText(reason: string | null | undefined, message?: string | null): string {
+  if (reason === 'ignored') return IGNORED_TEXT[ignoredKind(message)]
   return reason && reason in SKIP_COPY ? SKIP_COPY[reason as SkipReason] : ''
 }
 
@@ -529,7 +595,8 @@ export function questionFor(need: ImportNeed, ctx: QuestionContext): QuestionCop
     case 'other_taxes_as':
       return {
         ...base,
-        question: `Esta factura trae ${formatCents(need.amount_cents)} de «otros impuestos» y ARCA no dice cuáles. ¿Qué son?`,
+        // Un título: pesos sin centavos (los centavos quedan en el papel de al lado).
+        question: `Esta factura trae ${formatCentsShort(need.amount_cents)} de «otros impuestos» y ARCA no dice cuáles. ¿Qué son?`,
       }
     case 'foreign_currency': {
       const word = CURRENCY_WORD[need.currency] ?? need.currency
@@ -561,7 +628,7 @@ export function questionFor(need: ImportNeed, ctx: QuestionContext): QuestionCop
     case 'unknown_tax':
       return {
         ...base,
-        question: `Mercado Pago te descontó ${formatCents(Math.abs(need.amount_cents))} de «${need.tax}» y no sé qué impuesto es. ¿Dónde lo anoto?`,
+        question: `Mercado Pago te descontó ${formatCentsShort(Math.abs(need.amount_cents))} de «${need.tax}» y no sé qué impuesto es. ¿Dónde lo anoto?`,
       }
     case 'engine_error': {
       if (isBeforeStart(need)) {
@@ -607,7 +674,7 @@ export function needLine(need: ImportNeed, ctx: Pick<QuestionContext, 'partyName
       return `Falta: confirmar cómo factura ${name ?? 'el proveedor'}.`
     }
     case 'other_taxes_as':
-      return `Falta: decir qué son los ${formatCents(need.amount_cents)} de «otros impuestos».`
+      return `Falta: decir qué son los ${formatCentsShort(need.amount_cents)} de «otros impuestos».`
     case 'foreign_currency':
       return 'Falta: confirmar el cambio a pesos.'
     case 'possible_duplicate':
@@ -805,17 +872,120 @@ export function paperLines(summary: ProposalSummary): PaperCopy {
   }
 
   // Un movimiento del banco o de Mercado Pago: lo que dice el archivo, y si entró o salió.
-  const direction = text(d, 'direction')
+  const flow = flowOf(summary)
   const lines: PaperLine[] = []
   const voucher = text(d, 'voucher')
   if (voucher) lines.push({ label: 'Comprobante n.º', value: voucher })
   return {
     lines,
     total: {
-      label: direction === 'credit' ? 'Entró' : direction === 'debit' ? 'Salió' : 'Importe',
+      label: flow === 'in' ? 'Entró' : flow === 'out' ? 'Salió' : 'Importe',
       value: total,
     },
     aside: [],
+  }
+}
+
+// ─── Un renglón de la lista ──────────────────────────────────────────────────
+
+/** Para qué lado fue la plata de un movimiento del banco o de Mercado Pago. */
+export type MoneyFlow = 'in' | 'out'
+
+/**
+ * Si la plata de una hoja entró o salió, con el mismo dato que arma el rótulo
+ * del papel («Entró», «Salió», «Te depositaron»). Un importe del banco sin
+ * dirección es un número sin sentido: la lista lo dice al lado de cada uno.
+ *
+ * `null` cuando no corresponde (una compra de ARCA no «sale» de ninguna caja:
+ * queda como deuda) o cuando el resumen no lo trae: no se inventa.
+ */
+export function flowOf(summary: Pick<ProposalSummary, 'kind' | 'detail'>): MoneyFlow | null {
+  const direction = text(summary.detail, 'direction')
+  if (direction === 'credit' || direction === 'in') return 'in'
+  if (direction === 'debit' || direction === 'out') return 'out'
+  switch (summary.kind) {
+    case 'mp_collection':
+    case 'bank_collection':
+    case 'mp_yield':
+      return 'in'
+    case 'bank_expense':
+    case 'bank_payment':
+    case 'mp_bank_tax':
+    case 'mp_iibb':
+    case 'mp_payment':
+      return 'out'
+    case 'mp_transfer':
+      // El retiro a tu banco trae los últimos dígitos de la cuenta de destino; la
+      // transferencia propia que entra a Mercado Pago, no.
+      return summary.detail && 'last4' in summary.detail ? 'out' : 'in'
+    default:
+      return null
+  }
+}
+
+/** «(SIRTAC)» → «SIRTAC»: el régimen de una retención, si el rótulo lo trae. */
+function regimeOf(label: string): string | null {
+  return /\((SIRTAC|SIRCUPA)\)/.exec(label)?.[1] ?? null
+}
+
+/**
+ * El título y la línea gris de una hoja en una lista.
+ *
+ * - En una compra manda el proveedor («Limpieza Demo SA» · «Compra · Factura A
+ *   0002-…»).
+ * - En Mercado Pago manda lo que es, con las palabras del dibujo de arriba
+ *   («Impuesto al cheque del 08/10», no «Impuesto a los débitos y créditos (Ley
+ *   25.413) del 08/10»): el nombre largo queda en la línea gris.
+ * - En el banco el título dice qué fue («Pasaste plata a Caja», «Pago a
+ *   Distribuidora…») y el texto crudo del archivo («CR-DEPEF») queda en la línea
+ *   gris. Si no se sabe qué fue, el texto del archivo es lo único que lo
+ *   identifica y va de título.
+ *
+ * Es solo presentación: el rótulo guardado (`summary.label`) no cambia y es el
+ * que encabeza el papel.
+ */
+export function rowWords(
+  summary: Pick<ProposalSummary, 'kind' | 'label' | 'counterparty' | 'date' | 'detail'>,
+  kindText: string,
+): { title: string; paper: string } {
+  const { kind, label } = summary
+  const who = summary.counterparty?.trim() || null
+  const day = isRealIsoDay(summary.date) ? formatDayMonth(summary.date) : null
+  const generic = { title: label, paper: who ? `${kindText} · ${who}` : kindText }
+
+  switch (kind) {
+    case 'purchase':
+    case 'credit_note':
+      return who ? { title: who, paper: `${kindText} · ${label}` } : generic
+    case 'mp_bank_tax':
+      return day ? { ...generic, title: `Impuesto al cheque del ${day}` } : generic
+    case 'mp_iibb': {
+      const regime = regimeOf(label)
+      const name = regime ? `${kindText} (${regime})` : kindText
+      return {
+        title: day ? `Retención de Ingresos Brutos del ${day}` : label,
+        paper: who ? `${name} · ${who}` : name,
+      }
+    }
+    case 'bank_transfer': {
+      const flow = flowOf(summary)
+      if (!who) return { title: label, paper: kindText }
+      return {
+        title: flow === 'in' ? `Pasaste plata desde ${who}` : `Pasaste plata a ${who}`,
+        paper: label,
+      }
+    }
+    case 'bank_payment':
+      return who ? { title: `Pago a ${who}`, paper: label } : { title: label, paper: kindText }
+    case 'bank_collection':
+      return who ? { title: `Cobro de ${who}`, paper: label } : { title: label, paper: kindText }
+    case 'bank_review': {
+      // Lo que el bar le enseñó a reconocer («Luz del local») dice más que el texto del banco.
+      const rule = text(summary.detail, 'rule')
+      return rule ? { title: rule, paper: label } : { title: label, paper: kindText }
+    }
+    default:
+      return generic
   }
 }
 

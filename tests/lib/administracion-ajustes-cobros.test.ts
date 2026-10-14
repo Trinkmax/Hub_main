@@ -8,6 +8,7 @@ import {
   chargeTitle,
   closeGroupTitle,
   closeLookup,
+  cuitList,
   flowText,
   groupCloseMethods,
   hasRates,
@@ -489,5 +490,65 @@ describe('cambiar el orden', () => {
     expect(moveId(['a', 'b', 'c'], 'a', -1)).toEqual(['a', 'b', 'c'])
     expect(moveId(['a', 'b', 'c'], 'c', 1)).toEqual(['a', 'b', 'c'])
     expect(moveId(['a', 'b', 'c'], 'z', 1)).toEqual(['a', 'b', 'c'])
+  })
+})
+
+describe('la lista de CUIT', () => {
+  const party = (kind: Parameters<typeof cuitList>[0][number]['kind'], over = {}) => ({
+    kind,
+    taxId: null as string | null,
+    active: true,
+    ...over,
+  })
+
+  it('llevan CUIT las tarjetas, las billeteras, las apps, los bancos y los organismos', () => {
+    const parties = [
+      party('payment_wallet'),
+      party('card_processor'),
+      party('delivery_platform'),
+      party('bank'),
+      party('tax_agency'),
+    ]
+    const list = cuitList(parties)
+    expect(list.expected).toEqual(parties)
+    expect(list.exempt).toEqual([])
+    expect(list.missing).toBe(5)
+  })
+
+  it('los que juntan a varios (sueldos, proveedores varios, señas) no la llevan ni cuentan', () => {
+    const wallet = party('payment_wallet')
+    const payroll = party('payroll')
+    const misc = party('supplier')
+    const advances = party('customer', { active: false })
+    const other = party('other')
+    const list = cuitList([wallet, payroll, misc, advances, other])
+    expect(list.expected).toEqual([wallet])
+    expect(list.exempt).toEqual([payroll, misc, advances, other])
+    expect(list.missing).toBe(1)
+  })
+
+  it('una app apagada sigue en la lista, pero no es un pendiente', () => {
+    const off = party('delivery_platform', { active: false })
+    const list = cuitList([off, party('bank')])
+    expect(list.expected).toContain(off)
+    expect(list.missing).toBe(1)
+  })
+
+  it('con la CUIT cargada deja de contar; y si un grupo la tiene, se muestra con los demás', () => {
+    const bank = party('bank', { taxId: '30500010912' })
+    const union = party('other', { taxId: '30546741253' })
+    const list = cuitList([bank, union])
+    expect(list.expected).toEqual([bank, union])
+    expect(list.exempt).toEqual([])
+    expect(list.missing).toBe(0)
+  })
+
+  it('conserva el orden en que llegan', () => {
+    const a = party('tax_agency')
+    const b = party('payroll')
+    const c = party('payment_wallet')
+    const list = cuitList([a, b, c])
+    expect(list.expected).toEqual([a, c])
+    expect(list.exempt).toEqual([b])
   })
 })

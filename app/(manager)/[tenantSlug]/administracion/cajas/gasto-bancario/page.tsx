@@ -37,7 +37,14 @@ export default async function GastoBancarioPage({
       back={{ href: `${base}/cajas`, label: 'Cajas y bancos' }}
       title="Gastos del banco"
       badge={<ReadOnlyBadge />}
-      description="Comisiones, impuestos y cargos que el banco, la billetera o la tarjeta se cobraron solos. Se copian del resumen."
+      // En el celular cada renglón de arriba es un campo menos a la vista, y el primer paso
+      // ya dice de qué se trata: la bajada queda para pantallas con lugar (como en el cierre).
+      description={
+        <span className="hidden sm:inline">
+          Comisiones, impuestos y cargos que el banco, la billetera o la tarjeta se cobraron solos.
+          Se copian del resumen.
+        </span>
+      }
     />
   )
 

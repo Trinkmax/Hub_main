@@ -11,18 +11,13 @@ import {
 } from '@/components/administracion/kit'
 import { Button } from '@/components/ui/button'
 import type { MonthDayState } from '@/lib/accounting/home'
-import {
-  cashDiffText,
-  complianceText,
-  type MonthState,
-  type ProjectionDay,
-} from '@/lib/accounting/projection'
+import { cashDiffText, type MonthState, type ProjectionDay } from '@/lib/accounting/projection'
 import { type DailyCloseDay, getDocument } from '@/lib/accounting/queries/documents'
 import type { CashCountTreasury } from '@/lib/accounting/queries/projection'
 import { settleQuery } from '@/lib/accounting/queries/shared'
 import { capitalizeFirst, formatDayMonth, weekdayName } from '@/lib/dates'
 import { formatCentsShort } from '@/lib/money'
-import { longDayTitle, nightSentence } from '../_lib/almanac'
+import { longDayTitle, nightPaceText, nightSentence } from '../_lib/almanac'
 import { ExampleTicket } from '../cierre/_components/close-pieces'
 import { CloseTicket } from '../cierre/_components/close-ticket'
 import { closeTicketProps } from '../cierre/_lib/close-ticket-props'
@@ -87,6 +82,28 @@ function BackToAlmanac() {
   )
 }
 
+/*
+ * Las celdas que se editan en el lugar (`TargetCell`, `NoteCell`) son las de la planilla: un
+ * «Cargar ✎» gris de 12 px. Acá, mientras esa noche no tiene objetivo o nota, el mismo botón se
+ * viste de botón de verdad (contorno, 44 px, la acción escrita). Se apunta al botón solo mientras
+ * muestra su «Cargar» (`:has(>span.text-xs)`): apenas se guarda, vuelve a mostrar el importe.
+ * El texto que se ve está dentro del nombre que lee el lector («Cargar el objetivo del…»,
+ * «Agregar una nota al…»): quien maneja la pantalla por voz lo encuentra igual.
+ */
+const TARGET_PROMPT = [
+  '[&>button:has(>span.text-xs)]:mx-0 [&>button:has(>span.text-xs)]:h-11 [&>button:has(>span.text-xs)]:rounded-full [&>button:has(>span.text-xs)]:border [&>button:has(>span.text-xs)]:border-border/70 [&>button:has(>span.text-xs)]:bg-card [&>button:has(>span.text-xs)]:px-4 [&>button:has(>span.text-xs)]:shadow-xs',
+  'md:pointer-fine:[&>button:has(>span.text-xs)]:h-9',
+  '[&>button:has(>span.text-xs)>span]:sr-only [&>button:has(>span.text-xs)>svg]:hidden',
+  "[&>button:has(>span.text-xs)]:before:text-sm [&>button:has(>span.text-xs)]:before:font-medium [&>button:has(>span.text-xs)]:before:text-foreground [&>button:has(>span.text-xs)]:before:content-['Cargar_el_objetivo']",
+].join(' ')
+
+const NOTE_PROMPT = [
+  '[&>button:has(>span.text-xs)]:mx-0 [&>button:has(>span.text-xs)]:h-11 [&>button:has(>span.text-xs)]:rounded-full [&>button:has(>span.text-xs)]:border [&>button:has(>span.text-xs)]:border-border/70 [&>button:has(>span.text-xs)]:bg-card [&>button:has(>span.text-xs)]:px-4 [&>button:has(>span.text-xs)]:shadow-xs',
+  'md:pointer-fine:[&>button:has(>span.text-xs)]:h-9',
+  '[&>button:has(>span.text-xs)>span]:sr-only [&>button:has(>span.text-xs)>svg]:hidden',
+  "[&>button:has(>span.text-xs)]:before:text-sm [&>button:has(>span.text-xs)]:before:font-medium [&>button:has(>span.text-xs)]:before:text-foreground [&>button:has(>span.text-xs)]:before:content-['＋_Agregar_una_nota']",
+].join(' ')
+
 /** El objetivo del día (se edita en el lugar) y cómo quedó contra lo vendido. */
 function TargetLine({
   day,
@@ -101,7 +118,18 @@ function TargetLine({
 }) {
   const target = projectionDay?.targetCents ?? null
   const compliance = projectionDay?.compliance
-  const text = compliance?.kind === 'value' ? complianceText(compliance) : null
+  // Una sola cosa en la pastilla: «16 % abajo del objetivo» (no «84 % · 16 % abajo»).
+  const pace = compliance?.kind === 'value' ? compliance : null
+  if (canWrite && target === null) {
+    return (
+      <div className="grid justify-items-start gap-1.5">
+        <span className="text-sm text-muted-foreground">{label}</span>
+        <div className={TARGET_PROMPT}>
+          <TargetCell day={day} dayLabel={dayWords(day)} targetCents={target} align="start" />
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
       <span className="text-sm text-muted-foreground">{label}</span>
@@ -113,8 +141,10 @@ function TargetLine({
             {target === null ? 'Sin objetivo' : formatCentsShort(target)}
           </span>
         )}
-        {text && compliance?.kind === 'value' ? (
-          <StatusPill tone={compliance.side === 'below' ? 'warn' : 'ok'}>{text}</StatusPill>
+        {pace ? (
+          <StatusPill tone={pace.side === 'below' ? 'warn' : 'ok'}>
+            {nightPaceText(pace)}
+          </StatusPill>
         ) : null}
       </span>
     </div>
@@ -150,10 +180,17 @@ function EventLine({
         </p>
       ) : null}
       {canWrite ? (
-        <div className="flex flex-wrap items-center gap-x-2 text-sm">
-          <span className="text-muted-foreground">Nota</span>
-          <NoteCell day={day} dayLabel={dayWords(day)} note={note} />
-        </div>
+        note === null ? (
+          // Sin nota: el botón «＋ Agregar una nota», sin rótulo al lado (diría lo mismo dos veces).
+          <div className={NOTE_PROMPT}>
+            <NoteCell day={day} dayLabel={dayWords(day)} note={note} />
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-x-2 text-sm">
+            <span className="text-muted-foreground">Nota</span>
+            <NoteCell day={day} dayLabel={dayWords(day)} note={note} />
+          </div>
+        )
       ) : note ? (
         <p className="text-sm text-pretty">
           <span className="text-muted-foreground">Nota: </span>
@@ -192,7 +229,7 @@ export function NightSheet(props: NightSheetProps) {
             </div>
           </div>
         )}
-        <BackToAlmanac />
+        {/* Sin «Volver al almanaque»: acá no se eligió ninguna noche, no hay a dónde volver. */}
       </div>
     )
   }

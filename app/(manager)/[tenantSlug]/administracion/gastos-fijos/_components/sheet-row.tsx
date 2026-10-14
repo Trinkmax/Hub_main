@@ -81,14 +81,24 @@ const WIDE = {
   },
 } as const
 
-const rowGrid = (cuotas: boolean) =>
+/**
+ * En angosto son tres líneas (nombre y monto · lo gris · cómo va y «Pagar»).
+ * `compact` es el renglón sin monto bajo el encabezado de su día: dos líneas,
+ * con «Poner monto» a la derecha (31 renglones que repetían «Sin monto», el
+ * vencimiento y «Poner monto» eran una pared).
+ */
+const rowGrid = (cuotas: boolean, compact: boolean) =>
   cn(
     'grid items-start gap-x-3 gap-y-1.5 grid-cols-[2rem_minmax(0,1fr)_auto]',
-    "[grid-template-areas:'tick_name_amount'_'._sub_sub'_'._status_action']",
+    compact
+      ? "[grid-template-areas:'tick_name_action'_'._sub_action']"
+      : "[grid-template-areas:'tick_name_amount'_'._sub_sub'_'._status_action']",
     WIDE[cuotas ? 'cuotas' : 'plain'].columns,
     '@[58rem]/ledger:items-center @[58rem]/ledger:gap-y-0.5',
     WIDE[cuotas ? 'cuotas' : 'plain'].areas,
   )
+/** Lo que el renglón compacto no dibuja en angosto y sí en la hoja ancha, que tiene su columna. */
+const WIDE_ONLY = 'hidden @[58rem]/ledger:block'
 
 const TINT = {
   ok: 'bg-success/6',
@@ -216,6 +226,7 @@ export function SheetRow({
   month,
   canWrite,
   payInRow = true,
+  underDay = false,
   defaultOpen = false,
   isMisc = false,
   cuotas = false,
@@ -228,6 +239,8 @@ export function SheetRow({
   cuotas?: boolean
   /** `false` en los plegados de abajo: el botón queda adentro del renglón. */
   payInRow?: boolean
+  /** Cuelga del encabezado de su día (no en los plegados): el día ya está dicho arriba. */
+  underDay?: boolean
   /** `?abrir=<id>`: entra abierto, a la vista y resaltado un momento. */
   defaultOpen?: boolean
   /** Quedó en «Gastos varios»: se ofrece cambiarlo. */
@@ -252,6 +265,12 @@ export function SheetRow({
   // frase de al lado no lo repite y queda solo el vencimiento.
   const needsAmount = line.dueCents === null && actions.edit
   const quietStatus = needsAmount && line.state === 'no_amount' && words.detail !== null
+  // Sin monto, todavía sin vencer y bajo su día: en angosto, dos líneas (el encabezado del día
+  // ya dice cuándo vence y «Poner monto» ya dice que no tiene).
+  const compact =
+    underDay && line.state === 'no_amount' && !line.pastDue && !showPay && words.extras.length === 0
+  // La pregunta «¿Era eso?» ya dice la diferencia y ofrece el comprobante: no se repiten.
+  const asking = actions.ask && words.short !== null
   const openAmount = () => {
     setOpen(true)
     setFocusAmount(true)
@@ -310,7 +329,7 @@ export function SheetRow({
     >
       <div
         className={cn(
-          rowGrid(cuotas),
+          rowGrid(cuotas, compact),
           'relative px-3 py-3 transition-colors duration-(--duration-fast) hover:bg-cream-tint motion-reduce:transition-none @[28rem]/ledger:px-4',
         )}
       >
@@ -391,20 +410,29 @@ export function SheetRow({
                 {cuota}
               </span>
             ) : (
-              <Dash label="No es en cuotas" />
+              // Vacía y no con una raya: una columna de rayas no dice nada.
+              <span className="sr-only">No es en cuotas</span>
             )}
           </div>
         ) : null}
 
-        <div className="text-right text-sm font-medium whitespace-nowrap tabular-nums [grid-area:amount]">
+        <div
+          className={cn(
+            'text-right text-sm font-medium whitespace-nowrap tabular-nums [grid-area:amount]',
+            compact && WIDE_ONLY,
+          )}
+        >
           {line.dueCents !== null ? (
             <Amount cents={line.dueCents} decimals={0} />
           ) : needsAmount ? (
             <>
-              {/* En angosto «Poner monto» va abajo, donde iría «Pagar»: acá queda el dato. */}
-              <span className="text-xs font-normal text-muted-foreground @[58rem]/ledger:hidden">
-                Sin monto
-              </span>
+              {/* En angosto «Poner monto» va abajo, donde iría «Pagar»: acá queda el dato. (En el
+                  renglón compacto esta celda no se ve en angosto: lo dice «Poner monto».) */}
+              {compact ? null : (
+                <span className="text-xs font-normal text-muted-foreground @[58rem]/ledger:hidden">
+                  Sin monto
+                </span>
+              )}
               <button
                 type="button"
                 tabIndex={-1}
@@ -423,7 +451,7 @@ export function SheetRow({
           )}
         </div>
 
-        <div className="min-w-0 self-center [grid-area:status]">
+        <div className={cn('min-w-0 self-center [grid-area:status]', compact && WIDE_ONLY)}>
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
             {quietStatus ? (
               line.pastDue ? (
@@ -440,8 +468,9 @@ export function SheetRow({
                 ) : (
                   <span className="text-xs text-muted-foreground">{words.label}</span>
                 )}
-                {words.detail ? (
-                  <span className="text-xs text-muted-foreground">{words.detail}</span>
+                {/* Con mayúscula: cuando baja de renglón no parece una frase cortada. */}
+                {words.detail && !asking ? (
+                  <span className="text-xs text-muted-foreground">{capitalize(words.detail)}</span>
                 ) : null}
               </>
             )}
@@ -453,7 +482,12 @@ export function SheetRow({
           ))}
         </div>
 
-        <div className="relative z-[1] flex items-center justify-end gap-1 self-end [grid-area:action] @[58rem]/ledger:self-center">
+        <div
+          className={cn(
+            'relative z-[1] flex items-center justify-end gap-1 [grid-area:action] @[58rem]/ledger:self-center',
+            compact ? 'self-center' : 'self-end',
+          )}
+        >
           {showPay && payAction ? (
             payAction.kind === 'document' ? (
               <Button
@@ -486,11 +520,17 @@ export function SheetRow({
               onClick={openAmount}
               className={cn(
                 BLANK_AMOUNT,
-                'inline-flex h-11 px-4 text-[13px] @[58rem]/ledger:hidden',
+                'inline-flex h-11 @[58rem]/ledger:hidden',
+                !compact && 'px-4 text-[13px]',
               )}
             >
               Poner monto
             </button>
+          ) : compact ? (
+            // A quien solo mira: el dato, donde a quien carga le va «Poner monto».
+            <StatusPill tone="muted" className="@[58rem]/ledger:hidden">
+              Sin monto
+            </StatusPill>
           ) : null}
           {/* Dice que el renglón se abre; el botón es el nombre, estirado a toda la fila. */}
           <ChevronDown
@@ -503,7 +543,7 @@ export function SheetRow({
         </div>
       </div>
 
-      {actions.ask && words.short ? (
+      {asking && words.short ? (
         // La pregunta va a la vista, sin abrir el renglón: es lo que destraba «Te falta».
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 pb-3 pl-[3.5rem] text-sm @[28rem]/ledger:px-4 @[28rem]/ledger:pl-[3.75rem] @[58rem]/ledger:pl-[5.25rem]">
           <p className="text-pretty">
@@ -543,6 +583,7 @@ export function SheetRow({
           tenantSlug={tenantSlug}
           autoFocusAmount={focusAmount}
           payShownInRow={showPay}
+          docLinkShown={asking && line.documentId !== null}
           onPay={pay}
         />
       ) : null}
@@ -577,6 +618,7 @@ function RowBody({
   tenantSlug,
   autoFocusAmount,
   payShownInRow,
+  docLinkShown,
   onPay,
 }: {
   id: string
@@ -587,6 +629,8 @@ function RowBody({
   autoFocusAmount: boolean
   /** El renglón ya muestra su «Pagar»: adentro no se repite. */
   payShownInRow: boolean
+  /** La pregunta «¿Era eso?» ya lleva al comprobante: adentro no se repite el link. */
+  docLinkShown: boolean
   onPay: (action: PayAction) => void
 }) {
   const { row, line, doc } = item
@@ -634,10 +678,15 @@ function RowBody({
           {doc ? (
             <p className="text-sm text-pretty">
               Lo último que cargaste: <Amount cents={doc.totalCents} decimals={0} /> el{' '}
-              {formatIsoDay(doc.accountingDate).slice(0, 5)}.{' '}
-              <Link href={documentHref(tenantSlug, doc.id)} className={TEXT_LINK}>
-                Ver el comprobante
-              </Link>
+              {formatIsoDay(doc.accountingDate).slice(0, 5)}.
+              {docLinkShown ? null : (
+                <>
+                  {' '}
+                  <Link href={documentHref(tenantSlug, doc.id)} className={TEXT_LINK}>
+                    Ver el comprobante
+                  </Link>
+                </>
+              )}
             </p>
           ) : null}
 

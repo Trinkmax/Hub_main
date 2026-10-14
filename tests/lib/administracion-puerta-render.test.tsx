@@ -29,6 +29,7 @@ import {
   SasSettingsView,
   yearTitle,
 } from '@/app/(manager)/[tenantSlug]/administracion/ajustes/_components/settings-views'
+import { SystemPartiesList } from '@/app/(manager)/[tenantSlug]/administracion/ajustes/_components/system-parties-panel'
 import { TreasuriesPanel } from '@/app/(manager)/[tenantSlug]/administracion/ajustes/_components/treasuries-panel'
 import {
   maskedTail,
@@ -417,15 +418,53 @@ describe('Cajas y cuentas', () => {
     expect(out).toContain('Las que ya no se usan')
     // El código de la cuenta es de la contadora: el dueño no lo ve.
     expect(out).not.toContain('Cuenta 1.1.01')
-    expect(out).toContain('123.456.789,50')
+    // En la tarjeta, pesos sin centavos (como la misma caja en Cajas y en el Resumen).
+    expect(out).toMatch(/Saldo <\/span><span[^>]*>(?:<span[^>]*>)?\$.123\.456\.790</)
+    expect(out).not.toContain('123.456.789,50')
     expect(out).toContain('Falta el CVU')
     expect(out).toContain('Alias bar.mp')
+  })
+
+  it('con los saldos iniciales pendientes, una caja en cero no dice «$ 0»: dice que falta cargarlo', () => {
+    const out = panel(false)
+    // Mercado Pago está en cero y los saldos iniciales no se cargaron: ese cero no es un dato.
+    expect(out).toContain('falta cargarlo')
+    expect(out).toContain('href="/hub/administracion/configurar"')
+    expect(out).not.toMatch(/\$.0(?:,00)?</)
+    // La contadora lo lee en palabras, sin link (no carga).
+    const accountant = panel(true)
+    expect(accountant).toContain('sin cargar')
+    expect(accountant).not.toContain('falta cargarlo')
+    expect(accountant).not.toMatch(/\$.0(?:,00)?</)
+    // Con los saldos ya cargados, el cero es un dato y se muestra.
+    const loaded = html(
+      createElement(TreasuriesPanel, {
+        tenantSlug: 'hub',
+        rows: CAJAS,
+        balances: { caja: 12_345_678_950, mp: 0 },
+        tones: { caja: { kind: 'cash', step: 1 }, mp: { kind: 'wallet', step: 1 } },
+        readOnly: false,
+        afterCreate: 'view',
+      }),
+    )
+    expect(loaded).not.toContain('falta cargarlo')
+    expect(loaded).toMatch(/\$.0</)
+  })
+
+  it('la letra de máquina es del alias y del CBU, no de una frase ni de un contador', () => {
+    const out = panel(false)
+    expect(out).toMatch(/<p class="[^"]*font-mono[^"]*">Alias bar\.mp<\/p>/)
+    expect(out).toMatch(/<p class="(?![^"]*font-mono)[^"]*">Billetes y monedas<\/p>/)
+    // «Las que ya no se usan [1]»: el contador va en su pastilla, en la letra de siempre.
+    expect(out).toMatch(/<span class="(?![^"]*font-mono)[^"]*tabular-nums[^"]*">1<\/span>/)
   })
 
   it('la contadora: las mismas tarjetas, sin controles y con el código de la cuenta', () => {
     const out = panel(true)
     expect(out).toContain('Caja Efectivo')
     expect(out).toContain('Cuenta 1.1.01.01')
+    // La contadora sí ve los centavos.
+    expect(out).toContain('123.456.789,50')
     expect(out).toContain('No hay ningún banco cargado')
     expect(out).not.toContain('role="switch"')
     expect(out).not.toMatch(/Agregar|Editar|Ver movimientos|En uso/)
@@ -597,16 +636,63 @@ describe('Medios de cobro', () => {
       /Agregar un medio|Cambiar el orden|Cargar la comisión|Prenderla|Abrir el cierre del día|aria-label="Editar/,
     )
     // Lo único que se toca son controles de lectura: «Ver como tabla» y «¿Cómo se calcula?».
-    expect(buttons(out)).toBe(1)
-    expect(out).toContain('Ver como tabla')
+    // «Ver como tabla» está dos veces en el HTML y se ve una sola: al lado del título en la
+    // compu, al pie del panel en el celular.
+    expect(buttons(out)).toBe(2)
+    expect((out.match(/Ver como tabla/g) ?? []).length).toBe(2)
+    expect(out).toMatch(
+      /<button[^>]*class="[^"]*hidden sm:inline-flex[^"]*"[^>]*>.*?Ver como tabla/,
+    )
+    expect(out).toMatch(/<div class="[^"]*sm:hidden[^"]*"><button[^>]*>.*?Ver como tabla/)
   })
 
   it('para el dueño la lista de CUIT viene plegada, y están todos', () => {
     const out = panel(false)
     expect(out).not.toMatch(/<details[^>]*id="cuit"[^>]*open=""/)
-    expect(out).toContain('4 sin CUIT')
+    // Pendientes de verdad: PedidosYa, Rappi y ARCA. Pedix está apagada: no cuenta.
+    expect(out).toContain('3 sin CUIT')
     expect(out).toContain('ARCA')
     expect(out).toContain('aria-label="Editar ARCA"')
+    // Los cuatro siguen en la lista, cada uno con su «Editar».
+    for (const name of ['PedidosYa', 'Rappi', 'Pedix', 'ARCA']) {
+      expect(out).toContain(`aria-label="Editar ${name}"`)
+    }
+  })
+
+  it('la lista de CUIT: los que no la llevan van aparte y no cuentan como pendientes', () => {
+    const out = html(
+      createElement(SystemPartiesList, {
+        parties: [
+          ...PARTIES,
+          partyRow({ id: 'personal', name: 'Personal (sueldos)', kind: 'payroll' }),
+          partyRow({ id: 'varios', name: 'Proveedores varios', kind: 'supplier' }),
+          partyRow({
+            id: 'mp',
+            name: 'Mercado Pago',
+            kind: 'payment_wallet',
+            taxId: '30703088534',
+            rates: { ...NO_RATES, commissionBp: 150, iibbWithholdingBp: 300 },
+          }),
+        ],
+        readOnly: false,
+        defaultOpen: true,
+        onEdit: () => undefined,
+      }),
+    )
+    // Sigue en tres: sueldos y proveedores varios no suman, y Mercado Pago ya la tiene.
+    expect(out).toContain('3 sin CUIT')
+    expect(out).toContain('No llevan CUIT')
+    const [expected, exempt] = out.split('No llevan CUIT') as [string, string]
+    expect(expected).toContain('PedidosYa')
+    expect(expected).not.toContain('Personal (sueldos)')
+    expect(exempt).toContain('Personal (sueldos)')
+    expect(exempt).toContain('Proveedores varios')
+    // En el grupo de los que no la llevan no se repite «Sin CUIT» en cada renglón.
+    expect(exempt).not.toContain('Sin CUIT')
+    // Se pueden seguir editando, y las tasas van con todas las letras.
+    expect(exempt).toContain('aria-label="Editar Personal (sueldos)"')
+    expect(expected).toMatch(/Comisión 1,5.% · Ingresos Brutos 3.%/)
+    expect(out).not.toContain('IIBB')
   })
 })
 
@@ -827,7 +913,11 @@ describe('los meses del ejercicio', () => {
     )
     expect(out).toContain('Ejercicio 2026: ningún mes cerrado todavía')
     expect(out).toContain('Del 12/10/2026 al 31/12/2026.')
-    for (const label of ['Oct', 'Nov', 'Dic', 'Ajustes']) expect(out).toContain(label)
+    for (const label of ['Oct', 'Nov', 'Dic', 'Cierre']) expect(out).toContain(`>${label}</span>`)
+    // «Ajustes», adentro de Ajustes, se leía como el nombre de la sección: la pestaña dice
+    // «Cierre» y el nombre entero queda en el globito.
+    expect(out).not.toContain('>Ajustes</span>')
+    expect(out).toContain('Ajustes de cierre 2026')
     expect(out).toContain('En curso')
     expect(out).toContain('Ver como tabla')
     expect(out).toContain('Libros › Fin de mes')
@@ -848,12 +938,12 @@ describe('los meses del ejercicio', () => {
 describe('la portada', () => {
   const step = (over: Partial<SetupStep>): SetupStep => ({
     id: 'opening',
-    title: 'Cargá lo que hay hoy en cada caja',
+    title: 'Cargá lo que había en cada caja al arrancar',
     detail:
       'Los saldos iniciales: cuánta plata hay y cuánto se debe. Sin eso, todo arranca en cero.',
     done: false,
     optional: false,
-    action: { kind: 'href', href: '/hub/administracion/configurar', label: 'Cargar lo que hay' },
+    action: { kind: 'href', href: '/hub/administracion/configurar', label: 'Cargar lo que había' },
     ...over,
   })
   const sas = step({
@@ -871,11 +961,13 @@ describe('la portada', () => {
       }),
     )
     expect(out).toContain('Puesta en marcha')
-    expect(out).toContain('Cargá lo que hay hoy en cada caja')
-    expect(out).toContain('Cargar lo que hay')
+    expect(out).toContain('Cargá lo que había en cada caja al arrancar')
+    expect(out).toContain('Cargar lo que había')
     expect(out).toContain('href="/hub/administracion/configurar"')
     expect(out).toContain('Después:')
-    expect(out).toContain('Completá los datos de la SAS')
+    // En fila, el paso va por el nombre de su lugar (el de su tarjeta), con el mismo link.
+    expect(out).toMatch(/href="\/hub\/administracion\/ajustes\?tab=sas"[^>]*>Datos de la SAS</)
+    expect(out).not.toContain('Completá los datos de la SAS')
     expect(out).toContain('Ver todo lo que falta')
     // No repite el «N de M» del Resumen.
     expect(out).not.toMatch(/\d+ de \d+/)
@@ -889,6 +981,7 @@ describe('la portada', () => {
       }),
     )
     expect(later).toContain('Para completar cuando puedas:')
+    expect(later).toMatch(/href="\/hub\/administracion\/ajustes\?tab=sas"[^>]*>Datos de la SAS</)
     expect(later).toContain('y 2 más')
     expect(later).toContain('Ver todo')
     const done = html(createElement(SetupNext, { view: { kind: 'complete' }, guideHref: '/g' }))

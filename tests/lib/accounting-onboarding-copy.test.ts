@@ -6,6 +6,8 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import { LAUNCHER_ITEMS } from '@/components/administracion/nav/launcher-items'
+import { GUIDE_RECIPES, guideRoutine } from '@/lib/accounting/guides'
 import {
   canMarkManually,
   minutesText,
@@ -176,6 +178,29 @@ describe('con los nombres de las pantallas de hoy', () => {
     })
     const purchase = ONBOARDING_STAYS_MANUAL.find((task) => task.where.path === '/compras/nueva')
     expect(purchase?.where.label).toBe('Compras y pagos › Cargar una compra que debo')
+  })
+
+  it('la puesta en marcha se llama igual que la franja del Resumen, y la rutina diaria dura lo mismo', () => {
+    expect(ONBOARDING_SECTION_LABEL.day1.startsWith('Puesta en marcha')).toBe(true)
+    const daily = guideRoutine(null).find((group) => group.frequency === 'daily')
+    // «A la mañana siguiente, unos 10 minutos.»: el mismo número en la portada y acá.
+    expect(daily?.hint).toBeTruthy()
+    expect(ONBOARDING_SECTION_HINT.daily.startsWith(daily?.hint ?? '-')).toBe(true)
+    expect(Object.values(ONBOARDING_SECTION_LABEL).join(' ')).not.toMatch(/minutos/)
+  })
+
+  it('lo que se carga con una hoja dice por dónde se entra y su botón es el de la receta', () => {
+    const launcher = LAUNCHER_ITEMS.map((item) => item.title)
+    const recipeButtons = new Set(GUIDE_RECIPES.map((r) => r.action.label))
+    for (const task of ONBOARDING_STAYS_MANUAL.filter((t) => t.sheet)) {
+      // «+ Cargar» › y la tarjeta del lanzador, no el título de la hoja.
+      const quoted = /^«\+ Cargar» › «(.+)»$/.exec(task.where.label)?.[1]
+      expect(quoted, task.title).toBeDefined()
+      expect(launcher, task.title).toContain(quoted)
+      expect(recipeButtons, task.title).toContain(task.sheetLabel)
+    }
+    const small = ONBOARDING_ITEMS.find((i) => i.id === 'small_expenses')
+    expect(recipeButtons).toContain(small?.actionLabel)
   })
 
   it('las tres subidas dicen «Subir…», como el botón de cada bandeja de Importar', () => {

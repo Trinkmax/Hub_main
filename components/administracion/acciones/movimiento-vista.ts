@@ -141,6 +141,29 @@ export function accountQuestion(direction: MoveDirection | null): string {
   return direction === 'in' ? '¿De qué es esta plata?' : '¿En qué se fue?'
 }
 
+/**
+ * Lo que dice el selector de la categoría antes de elegir. Con las palabras de
+ * su pregunta: «cuenta» es la palabra de la contadora (la sección dice
+ * «categoría») y acá no hace falta ninguna de las dos.
+ */
+export function accountPlaceholder(direction: MoveDirection | null): string {
+  return direction === 'in' ? 'Elegí de qué es' : 'Elegí en qué se fue'
+}
+
+/**
+ * Lo que dice «Ver cómo queda en los libros» abierto cuando todavía no se puede
+ * armar: QUÉ falta («Para verlo falta: el socio y el importe.»), no un «falta
+ * algo» que hay que adivinar. `missing` en el orden de la hoja.
+ */
+export function booksEmptyText(missing: readonly string[]): string {
+  if (missing.length === 0) return 'Completá lo que falta para ver cómo queda en los libros.'
+  const list =
+    missing.length === 1
+      ? missing[0]
+      : `${missing.slice(0, -1).join(', ')} y ${missing[missing.length - 1]}`
+  return `Para verlo falta: ${list}.`
+}
+
 /** Lo que NO va en esta hoja, dicho al elegir «otra». `null` con un motivo conocido. */
 export function otherWarning(
   direction: MoveDirection | null,
@@ -176,7 +199,8 @@ export function voucherNote(motive: MoveMotive | null): string {
   if (motive === 'partner_withdrawal' || motive === 'partner_contribution') {
     return 'Queda a nombre del socio: no es un gasto ni una venta del bar.'
   }
-  return 'No lleva factura: es plata que entra o sale por fuera de las ventas y las compras.'
+  // Un solo libro: nada queda «por fuera». Lo que no es venta ni compra queda registrado igual.
+  return 'No lleva factura: no es una venta ni una compra. Queda registrada igual.'
 }
 
 /** El texto del botón del pie: «Anotar la salida · $ 100.000», o «Anotar» si falta algo. */

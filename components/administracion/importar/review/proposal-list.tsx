@@ -2,17 +2,16 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef } from 'react'
-import { Amount } from '@/components/administracion/amount'
 import { LedgerGroup, LedgerList, LedgerRail, LedgerRow } from '@/components/administracion/kit'
 import { isRealIsoDay, MONTH_NAMES_SHORT } from '@/lib/dates'
 import { OUT_GROUP_TITLE, type OutGroup, outGroup } from '@/lib/imports/ui/review-copy'
 import { RuleDialog } from '../bank-rules-card'
-import { askLabel, lineWords, ProposalInHand, ProposalLine } from './proposal-row'
+import { askLabel, lineWords, ProposalInHand, ProposalLine, RowMoney } from './proposal-row'
 import { PaperFold, ProposalTicket } from './proposal-ticket'
 import { useReview } from './review-context'
 import type { ProposalView } from './types'
 
-const OUT_ORDER: readonly OutGroup[] = ['already', 'ours', 'other']
+const OUT_ORDER: readonly OutGroup[] = ['already', 'manual', 'ours', 'other']
 
 /**
  * La lista de hojas de una vista (listos, cargados, lo que no se carga, todos):
@@ -24,29 +23,37 @@ export function ProposalList({
   rows,
   label,
   grouped = false,
+  sameStatus = false,
 }: {
   rows: ProposalView[]
   label: string
   /** Agrupar por qué no se carga (la vista «No se cargan»). */
   grouped?: boolean
+  /** La vista ya filtra por un estado («Cargados», «Listos»): la píldora de cada fila sobra. */
+  sameStatus?: boolean
 }) {
   if (!grouped) {
     return (
       <LedgerList aria-label={label}>
         {rows.map((p) => (
-          <ProposalLine key={p.key} p={p} />
+          <ProposalLine key={p.key} p={p} sameStatus={sameStatus} />
         ))}
       </LedgerList>
     )
   }
   const groups = OUT_ORDER.map((group) => ({
     group,
-    rows: rows.filter((p) => outGroup(p.status, p.error?.reason) === group),
+    rows: rows.filter((p) => outGroup(p.status, p.error?.reason, p.error?.message) === group),
   })).filter((g) => g.rows.length > 0)
   return (
     <LedgerList aria-label={label}>
       {groups.map((g) => (
-        <LedgerGroup key={g.group} title={OUT_GROUP_TITLE[g.group]} count={g.rows.length}>
+        <LedgerGroup
+          key={g.group}
+          title={OUT_GROUP_TITLE[g.group]}
+          // En sans: la letra de máquina queda para el papel (el «0» sale tachado).
+          count={<span className="font-sans">{g.rows.length}</span>}
+        >
           {g.rows.map((p) => (
             <ProposalLine key={p.key} p={p} />
           ))}
@@ -62,7 +69,8 @@ export function ProposalList({
  * una línea cada una. Tocar una la trae a la mano. Al contestar, la página se
  * vuelve a armar, la siguiente pasa a ser la primera y el foco va a su pregunta.
  *
- * En el celular el papel va arriba de la pregunta, resumido, con «Ver el papel».
+ * En el celular y en una compu chica (hasta `xl`) el papel va arriba de la
+ * pregunta, resumido, con «Ver el papel».
  */
 export function QuestionDeck({
   rows,
@@ -97,12 +105,14 @@ export function QuestionDeck({
 
   return (
     <div ref={top} className="scroll-mt-28 space-y-6">
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-6">
-        <aside className="min-w-0 lg:sticky lg:top-20 lg:order-2">
-          <PaperFold p={hand} className="lg:hidden" />
-          <ProposalTicket p={hand} className="max-lg:hidden" />
+      {/* El papel al lado recién desde `xl`: entre 1024 y 1279 px, con el menú abierto, la
+          pregunta quedaba en 310 px y se partía en cinco renglones. Ahí va resumido arriba. */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start xl:gap-6">
+        <aside className="min-w-0 xl:sticky xl:top-20 xl:order-2">
+          <PaperFold p={hand} className="xl:hidden" />
+          <ProposalTicket p={hand} className="max-xl:hidden" />
         </aside>
-        <div className="min-w-0 lg:order-1">
+        <div className="min-w-0 xl:order-1">
           <ProposalInHand
             key={hand.key}
             p={hand}
@@ -145,7 +155,7 @@ export function QuestionDeck({
                       <span className="block font-medium text-warning-text">{askLabel(p)}</span>
                     </>
                   }
-                  amount={<Amount cents={s.total_cents} />}
+                  amount={<RowMoney s={s} />}
                 />
               )
             })}

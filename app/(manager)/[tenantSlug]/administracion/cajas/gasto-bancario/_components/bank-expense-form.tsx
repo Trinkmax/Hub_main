@@ -1,6 +1,6 @@
 'use client'
 
-import { ChevronDown, CircleCheck, Plus, ReceiptText, X } from 'lucide-react'
+import { ArrowRight, ChevronDown, CircleCheck, Plus, ReceiptText, X } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { type FormEvent, useId, useMemo, useRef, useState } from 'react'
@@ -280,19 +280,24 @@ export function BankExpenseForm({
     vatPerceptionCents: [vatPerception, setVatPerception],
     feesNoVatCents: [feesNoVat, setFeesNoVat],
   }
-  /** Lo que se dice debajo de un renglón cuando ya tiene importe. */
+  /**
+   * Lo que se dice debajo de un renglón cuando ya tiene importe. Fuera del papel
+   * y de los campos, la plata va sin centavos si es redonda (`moneyLabel`):
+   * «$ 2.604», «$ 1.888,92». Tres «,00» en un renglón son ruido, y el botón de
+   * guardar ya decía el total así.
+   */
   const computed = (field: BankAmountField): string | null => {
     if (field === 'feesNetCents' && feesNet !== null && feesNet > 0) {
-      return `IVA ${vatRateLabel(rate)}: ${formatCents(vat)}`
+      return `IVA ${vatRateLabel(rate)}: ${moneyLabel(vat)}`
     }
     if (field === 'ley25413DebitCents' && leyDebit !== null && leyDebit > 0) {
       return leyDebitSplit.computable > 0
-        ? `El ${vatRateLabel(settings.bankTaxDebitComputableBp)} lo podés tomar a cuenta del impuesto a las Ganancias: ${formatCents(leyDebitSplit.computable)}`
+        ? `El ${vatRateLabel(settings.bankTaxDebitComputableBp)} lo podés tomar a cuenta del impuesto a las Ganancias: ${moneyLabel(leyDebitSplit.computable)}`
         : null
     }
     if (field === 'ley25413CreditCents' && leyCredit !== null && leyCredit > 0) {
       return leyCreditSplit.computable > 0
-        ? `El ${vatRateLabel(settings.bankTaxCreditComputableBp)} lo podés tomar a cuenta del impuesto a las Ganancias: ${formatCents(leyCreditSplit.computable)}`
+        ? `El ${vatRateLabel(settings.bankTaxCreditComputableBp)} lo podés tomar a cuenta del impuesto a las Ganancias: ${moneyLabel(leyCreditSplit.computable)}`
         : null
     }
     return null
@@ -304,7 +309,8 @@ export function BankExpenseForm({
     others.length > 0
   const showMore = moreOpen || moreHasContent
 
-  const progress = bankProgress(total, control, formatCents)
+  // El avance se lee en la pantalla (sin centavos de más); la nota del papel, al centavo.
+  const progress = bankProgress(total, control, moneyLabel)
   const accountName = (accountId: string | null) =>
     accounts.find((a) => a.id === accountId)?.name ?? 'Otro concepto'
 
@@ -462,8 +468,8 @@ export function BankExpenseForm({
                 Venís de contar {treasury.name}
               </StatusPill>
               <p className="text-sm text-pretty">
-                Había {formatCents(prefill.totalCents)} menos que en el sistema. Repartí ese importe
-                y, al guardar, te llevamos a confirmar que coincide.
+                Había {moneyLabel(prefill.totalCents ?? 0)} menos que en el sistema. Repartí ese
+                importe y, al guardar, te llevamos a confirmar que coincide.
               </p>
             </div>
           ) : null}
@@ -508,6 +514,20 @@ export function BankExpenseForm({
                     {errorOf('treasuryAccountId')}
                   </p>
                 ) : null}
+                {/* Sin un banco cargado, la pantalla se llama «del banco» y ofrece solo la
+                    billetera: se dice por qué y dónde se agrega (como en «Registrar un cobro»). */}
+                {treasuries.some((t) => t.kind === 'bank') ? null : (
+                  <p className="text-xs text-muted-foreground text-pretty">
+                    No tenés un banco cargado.{' '}
+                    <Link
+                      href={`${base}/ajustes?tab=cajas`}
+                      className="inline-flex min-h-11 items-center rounded-sm font-medium text-foreground underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-0"
+                    >
+                      Agregalo en Ajustes
+                    </Link>{' '}
+                    si te cobra comisiones.
+                  </p>
+                )}
               </div>
               <DateField
                 label="Fecha"
@@ -533,7 +553,7 @@ export function BankExpenseForm({
             title="¿Cuánto te debitaron en total?"
             summary={
               control !== null
-                ? `${formatCents(control)} según el resumen`
+                ? `${moneyLabel(control)} según el resumen`
                 : 'Para saber cuándo terminaste de cargar. Si no lo tenés, dejalo vacío.'
             }
           >
@@ -710,7 +730,7 @@ export function BankExpenseForm({
                         ? 'Falta el CUIT del banco para recuperar el IVA.'
                         : block === 'no_fees'
                           ? 'No cargaste comisiones con IVA: no hay IVA para recuperar.'
-                          : `Recuperás el IVA de las comisiones: ${formatCents(vat)}.`
+                          : `Recuperás el IVA de las comisiones: ${moneyLabel(vat)}.`
                   }
                 />
                 <ChoiceCard
@@ -726,14 +746,16 @@ export function BankExpenseForm({
                 />
               </div>
               {block === 'no_cuit' ? (
-                <p className="text-sm text-muted-foreground text-pretty">
-                  Para recuperar el IVA falta el CUIT del banco. Se carga una sola vez, en Ajustes ›
-                  Medios de cobro.{' '}
+                // El motivo ya lo dice la tarjeta apagada: acá va solo la salida. Queda afuera
+                // de la tarjeta para que se lea con todo su contraste y se pueda tocar. En su
+                // propio renglón: suelto, quedaba pegado a «Agregar una nota» («→+»).
+                <p className="-mt-1">
                   <Link
                     href={`${base}/ajustes?tab=participes`}
-                    className="rounded-sm font-medium text-foreground underline decoration-border underline-offset-4 outline-none hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-ring max-sm:py-3"
+                    className={cn(ADD_LINK, 'text-foreground underline underline-offset-4')}
                   >
-                    Ir a Ajustes
+                    Cargar el CUIT del banco en Ajustes › Medios de cobro
+                    <ArrowRight className="size-3.5 shrink-0" aria-hidden />
                   </Link>
                 </p>
               ) : null}

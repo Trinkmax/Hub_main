@@ -2,10 +2,13 @@ import { ArrowRight } from 'lucide-react'
 import { Panel, PanelLink } from '@/components/administracion/kit'
 import { cashDiffText, type Projection } from '@/lib/accounting/projection'
 import type { CashCountTreasury, DailyCashCounts } from '@/lib/accounting/queries/projection'
+import { formatWeekdayDayMonth } from '@/lib/dates'
 import { formatCentsShort } from '@/lib/money'
 import { cashTitle } from '../_lib/almanac'
+import { CashCountDialog } from './cash-count-dialog'
 import { CashTable, cashPending } from './cash-table'
 import { FOLD_SUMMARY, FoldChevron } from './projection-panel'
+import { longDay } from './projection-table'
 
 /**
  * El bloque «Ventas contra caja» de «El mes» (pedido de los socios): lo vendido
@@ -40,6 +43,12 @@ export function CashPanel({
   const hasCloses = projection.days.some((d) => d.hasClose)
   const compared = cash.comparedDays > 0
   const pending = cashPending(cash)
+  // La acción al lado del aviso: anotar la última noche con cierre a la que le falta lo que
+  // entró (el mismo diálogo de la tabla, sin tener que abrirla).
+  const lastUncounted = canWrite
+    ? projection.days.filter((d) => d.cash.kind === 'missing_count').at(-1)
+    : undefined
+  const lastInitial = lastUncounted ? (counts[lastUncounted.day] ?? {}) : {}
 
   return (
     <Panel id="caja" title="Ventas contra caja">
@@ -95,14 +104,28 @@ export function CashPanel({
       </div>
 
       {pending.length > 0 ? (
-        <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
-          {pending.map((text) => (
-            <li key={text} className="flex items-start gap-2 text-pretty">
-              <span aria-hidden className="mt-2 size-1.5 shrink-0 rounded-full bg-warning" />
-              {text}
-            </li>
-          ))}
-        </ul>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <ul className="min-w-0 space-y-1 text-sm text-muted-foreground">
+            {pending.map((text) => (
+              <li key={text} className="flex items-start gap-2 text-pretty">
+                <span aria-hidden className="mt-2 size-1.5 shrink-0 rounded-full bg-warning" />
+                {text}
+              </li>
+            ))}
+          </ul>
+          {lastUncounted ? (
+            <CashCountDialog
+              trigger="button"
+              buttonLabel={`Anotar lo que entró el ${formatWeekdayDayMonth(lastUncounted.day)}`}
+              day={lastUncounted.day}
+              dayLabel={longDay(lastUncounted.day)}
+              treasuries={treasuries.filter((t) => t.active || lastInitial[t.id] !== undefined)}
+              initial={lastInitial}
+              salesCents={lastUncounted.realCents}
+              countedCents={null}
+            />
+          ) : null}
+        </div>
       ) : null}
 
       {hasCloses || cash.missingCloseDays > 0 ? (

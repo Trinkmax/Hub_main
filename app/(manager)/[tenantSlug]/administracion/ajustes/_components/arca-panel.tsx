@@ -176,6 +176,17 @@ function InProgress({
     return { ...s, title: def?.title ?? s.id, optional: def?.optional ?? false }
   })
   const progress = progressText(guide.summary)
+  // «1 de 9 pasos listos» cuenta los obligatorios; la lista trae además los opcionales. El rótulo
+  // de la lista dice los dos números, para que no parezcan dos cuentas distintas.
+  const optionalCount = steps.filter((s) => s.optional).length
+  const stepsLabel =
+    optionalCount > 0 && guide.summary.total === steps.length - optionalCount
+      ? `Ver los ${guide.summary.total} pasos y ${
+          optionalCount === 1 ? 'el opcional' : `los ${optionalCount} opcionales`
+        }`
+      : guide.summary.total === steps.length
+        ? `Ver los ${steps.length} pasos`
+        : 'Ver todos los pasos'
   return (
     <HeroPanel tone="crema" className="space-y-6">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:items-center lg:gap-10">
@@ -225,7 +236,7 @@ function InProgress({
             aria-hidden
             className="size-4 text-muted-foreground transition-transform group-open/steps:rotate-90 motion-reduce:transition-none"
           />
-          Ver los {steps.length} pasos
+          {stepsLabel}
         </summary>
         <ol className="mt-2 grid gap-1 sm:grid-cols-2">
           {steps.map((s) => (

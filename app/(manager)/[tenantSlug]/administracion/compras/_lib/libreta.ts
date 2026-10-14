@@ -292,7 +292,7 @@ export type DocumentRowState = {
   /** «Pagada», «Falta pagar $ 120.000», «Vencida hace 3 días»… */
   text: string
   tone: DocumentRowTone
-  /** La aclaración chica debajo: «de $ 500.000», «falta $ 120.000», «vence el 30/10». */
+  /** La aclaración, en gris al lado: «de $ 500.000», «falta $ 120.000», «vence el 30/10». */
   note: string | null
   /** Anulado: el renglón va atenuado y el importe tachado. */
   voided: boolean
@@ -339,7 +339,8 @@ export function documentRowState(row: DocumentRowLike, today: string): DocumentR
         ...base,
         text: `Vencida hace ${late} ${daysUnit(late)}`,
         tone: 'late',
-        note: `falta ${formatCentsShort(open)}`,
+        // «Falta $ X» solo si no es el total: sin ningún pago repetiría el importe de al lado.
+        note: open !== row.totalCents ? `falta ${formatCentsShort(open)}` : null,
         payable,
       }
     }

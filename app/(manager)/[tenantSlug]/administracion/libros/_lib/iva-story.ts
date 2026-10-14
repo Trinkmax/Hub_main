@@ -125,14 +125,18 @@ export function ivaHero(p: IvaLike, month: string): IvaHero {
     }
   }
   if (p.inFavorCents > 0) {
+    // Sin ventas con factura cargadas, «pagaste más IVA del que cobraste» se lee como un hecho
+    // del mes; casi siempre es que todavía faltan los cierres del día. Se dice así.
+    const noSales = p.status === 'open' && p.debitFiscal.totalCents === 0
     return {
       kind: 'in_favor',
       cents: p.inFavorCents,
       label: `IVA de ${noun} · a favor`,
-      sentence:
-        'Pagaste más IVA en tus compras del que cobraste en tus ventas. La diferencia queda para el mes que viene.',
+      sentence: noSales
+        ? `Por ahora solo cuenta el IVA de tus compras con Factura A: ${noun} todavía no tiene ventas con factura cargadas. Cuando cargues los cierres del día, este número cambia.`
+        : 'Pagaste más IVA en tus compras del que cobraste en tus ventas. La diferencia queda para el mes que viene.',
       short: `${formatCentsShort(p.inFavorCents)} a favor`,
-      brief: 'Te queda a favor.',
+      brief: noSales ? 'A favor por ahora: faltan las ventas con factura.' : 'Te queda a favor.',
     }
   }
   return {

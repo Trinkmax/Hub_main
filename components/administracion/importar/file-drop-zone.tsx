@@ -10,10 +10,14 @@ import { cn } from '@/lib/utils'
  * se llega con Tab y se abre con Enter o Espacio, y en el celular abre el
  * selector de archivos. Arriba lleva el dibujo del origen (de dónde viene ese
  * papel); el botón dice «Elegir archivo», que es el texto que enseña la Guía.
+ *
+ * En un teléfono no se arrastra nada: ahí el título es `touchTitle` («Elegí el
+ * ZIP…») en lugar de «Soltá acá…».
  */
 export function FileDropZone({
   accept,
   title,
+  touchTitle,
   hint,
   art,
   disabled = false,
@@ -23,6 +27,8 @@ export function FileDropZone({
   /** `.zip,.csv,.xlsx` (lo que el selector muestra primero). */
   accept: string
   title: string
+  /** El título donde no se puede arrastrar (pantalla táctil o angosta). Sin él, vale `title`. */
+  touchTitle?: string
   hint: string
   /** El dibujo del origen (`SourceMark`). Sin él, una hoja genérica. */
   art?: ReactNode
@@ -72,7 +78,16 @@ export function FileDropZone({
         {art ?? <FileUp className="size-6" aria-hidden />}
       </span>
       <span className="font-serif text-lg font-semibold leading-snug tracking-tight text-balance text-foreground">
-        {dragging ? 'Soltalo acá' : title}
+        {dragging ? (
+          'Soltalo acá'
+        ) : touchTitle ? (
+          <>
+            <span className="max-sm:hidden pointer-coarse:hidden">{title}</span>
+            <span className="hidden max-sm:inline pointer-coarse:inline">{touchTitle}</span>
+          </>
+        ) : (
+          title
+        )}
       </span>
       <span className="max-w-md text-sm text-muted-foreground text-pretty">{hint}</span>
       <span

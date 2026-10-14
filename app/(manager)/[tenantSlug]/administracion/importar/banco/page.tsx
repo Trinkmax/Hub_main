@@ -177,7 +177,8 @@ export default async function ImportarBancoPage({
       ) : (
         <PanelError title="Subir los movimientos" message={layouts.message} />
       )}
-      {rules.ok ? (
+      {/* Sin cuenta del banco y sin nada enseñado, «Lo que ya sé reconocer» era un plegable vacío. */}
+      {rules.ok && (banks.length > 0 || rules.data.length > 0) ? (
         <BankRulesCard slug={tenantSlug} rules={rules.data.map(ruleView)} options={options} />
       ) : null}
     </AdmPage>

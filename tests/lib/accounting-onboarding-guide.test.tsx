@@ -89,7 +89,9 @@ describe('la guía con el estado del bar', () => {
   it('el avance, lo próximo y el estado de cada ítem en palabras', () => {
     const t = text(render())
     expect(t).toContain('Tu avance')
-    expect(t).toContain('de 19 listos')
+    // Un solo número: el de la puesta en marcha (lo de una sola vez), como la franja del Resumen.
+    expect(t).toContain('de 12 listos')
+    expect(t).not.toContain('de 19 listos')
     expect(t).toContain('Lo próximo que te conviene hacer')
     // Faltan los datos de la SAS: es lo primero.
     expect(t).toContain('Falta el número de Ingresos Brutos.')
@@ -108,7 +110,7 @@ describe('la guía con el estado del bar', () => {
     // Día 1: los medios de cobro (los vio la base) y las plataformas (marcadas a mano); el
     // opcional (Mercado Pago) no cuenta.
     expect(text(html)).toContain('2 de 12 listos')
-    expect(text(html)).toContain('3 de 19 listos')
+    expect(text(html)).not.toContain('3 de 19 listos')
     expect(html).toContain('href="#arranque-sas_data"')
   })
 

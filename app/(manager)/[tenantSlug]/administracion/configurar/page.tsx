@@ -179,6 +179,7 @@ export default async function ConfigurarPage({
         ctx={ctx}
         accounts={accounts}
         otherAccountIds={otherAccountIds}
+        loadedSinceStart={settings.hasDocuments}
       />
     </AdmPage>
   )

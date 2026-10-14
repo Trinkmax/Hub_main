@@ -23,6 +23,7 @@ import {
   otherPaperTypes,
   paperLine,
   paperOfVoucher,
+  pendingItemText,
   purchaseDraftMissing,
   purchaseOutcomeNote,
   purchaseStamp,
@@ -921,5 +922,24 @@ describe('la página de la compra: quién llega al formulario', () => {
     const out = await render()
     expect(out).toContain('data-purchase-form')
     expect(page.loadSheetData).toHaveBeenCalledWith('hub', { suggestions: true, balances: true })
+  })
+})
+
+describe('cómo se lee una compra pendiente en la hoja de un proveedor', () => {
+  it('«Sin comprobante · Nombre» → «Compra sin factura», sin repetir el nombre', () => {
+    expect(pendingItemText('Sin comprobante · Fiambres del Sur', ['Fiambres del Sur', null])).toBe(
+      'Compra sin factura',
+    )
+    expect(pendingItemText('Sin comprobante', [])).toBe('Compra sin factura')
+  })
+
+  it('una factura queda igual (sin el nombre del proveedor si lo trae)', () => {
+    expect(pendingItemText('Factura A 0003-00001290', ['Hielo Cristal'])).toBe(
+      'Factura A 0003-00001290',
+    )
+    expect(pendingItemText('Factura A 0003-00001290 · Hielo Cristal', ['Hielo Cristal'])).toBe(
+      'Factura A 0003-00001290',
+    )
+    expect(pendingItemText('Compra', ['Hielo Cristal'])).toBe('Compra')
   })
 })

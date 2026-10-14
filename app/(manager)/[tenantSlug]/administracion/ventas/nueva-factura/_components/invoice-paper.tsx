@@ -60,13 +60,25 @@ export function paperAmounts(input: {
   return { netCents, otherCents, vatCents: Math.max(0, input.totalCents - netCents - otherCents) }
 }
 
-function Field({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
+function Field({
+  label,
+  value,
+  sub,
+  muted,
+}: {
+  label: string
+  value: string
+  /** Un segundo renglón (el CUIT, entero en su renglón). */
+  sub?: string | null
+  muted?: boolean
+}) {
   return (
     <div className="min-w-0">
       <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
         {label}
       </p>
       <p className={cn('mt-0.5 text-sm text-pretty', muted && 'text-muted-foreground')}>{value}</p>
+      {sub ? <p className="text-sm whitespace-nowrap tabular-nums">{sub}</p> : null}
     </div>
   )
 }
@@ -102,12 +114,18 @@ export function InvoicePaper({
       }
     >
       <div className="flex items-start gap-4">
-        {/* El recuadro de la letra, como en el encabezado de una factura de verdad. */}
+        {/* El recuadro de la letra, como en el encabezado de una factura de verdad. Sin cliente
+            todavía no se sabe: va vacío y punteado. */}
         <div
           aria-hidden={letter === null}
-          className="flex size-14 shrink-0 flex-col items-center justify-center rounded-[3px] border-2 border-current"
+          className={cn(
+            'flex size-14 shrink-0 flex-col items-center justify-center rounded-[3px] border-2',
+            letter === null ? 'border-dashed border-current/35' : 'border-current',
+          )}
         >
-          <span className="font-serif text-3xl font-semibold leading-none">{letter ?? '·'}</span>
+          {letter ? (
+            <span className="font-serif text-3xl font-semibold leading-none">{letter}</span>
+          ) : null}
         </div>
         <div className="grid min-w-0 flex-1 gap-2.5">
           <Field
@@ -117,11 +135,8 @@ export function InvoicePaper({
           />
           <Field
             label="Señor/es"
-            value={
-              customerName
-                ? `${customerName}${customerTaxId ? ` · CUIT ${formatCuit(customerTaxId)}` : ''}`
-                : 'Todavía sin elegir'
-            }
+            value={customerName ?? 'Todavía sin elegir'}
+            sub={customerName && customerTaxId ? `CUIT ${formatCuit(customerTaxId)}` : null}
             muted={!customerName}
           />
         </div>

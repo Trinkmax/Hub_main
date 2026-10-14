@@ -448,6 +448,45 @@ export const PARTY_KIND_WORD: Readonly<Record<PartyKind, string>> = {
   other: 'Otro',
 }
 
+/**
+ * Los que tienen una CUIT para cargar: una tarjeta, una billetera, una app, un
+ * banco, un organismo. Los demás partícipes del sistema («Personal (sueldos)»,
+ * «Proveedores varios», «Señas de clientes»…) juntan a varios: no son una
+ * empresa y no llevan CUIT.
+ */
+const CUIT_KINDS: ReadonlySet<PartyKind> = new Set([
+  'card_processor',
+  'payment_wallet',
+  'delivery_platform',
+  'bank',
+  'tax_agency',
+])
+
+export type CuitListParty = { kind: PartyKind; taxId: string | null; active: boolean }
+
+export type CuitList<P> = {
+  /** Los que llevan CUIT (y cualquiera que ya la tenga cargada), en el orden que llegan. */
+  expected: P[]
+  /** Los que no la llevan: van aparte y no cuentan como pendientes. */
+  exempt: P[]
+  /** De los que la llevan y están en uso, cuántos no la tienen: lo que dice la píldora. */
+  missing: number
+}
+
+/**
+ * Parte la lista de CUIT en dos. La píldora cuenta solo lo que de verdad falta:
+ * una app apagada o un grupo sin CUIT no son un pendiente.
+ */
+export function cuitList<P extends CuitListParty>(parties: readonly P[]): CuitList<P> {
+  const expected = parties.filter((p) => CUIT_KINDS.has(p.kind) || Boolean(p.taxId))
+  const exempt = parties.filter((p) => !CUIT_KINDS.has(p.kind) && !p.taxId)
+  return {
+    expected,
+    exempt,
+    missing: expected.filter((p) => p.active && !p.taxId).length,
+  }
+}
+
 /** El orden de la lista: primero los que cobran, después bancos y organismos. */
 export const PARTY_KIND_ORDER: Readonly<Record<string, number>> = {
   payment_wallet: 0,

@@ -20,6 +20,7 @@ import {
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/supplier-sorter'
 import {
   type LibretaData,
+  SETTLED_PREVIEW_UNSORTED,
   SuppliersBody,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/suppliers-tab'
 import { UnclassifiedStrip } from '@/app/(manager)/[tenantSlug]/administracion/compras/_components/unclassified-strip'
@@ -596,8 +597,12 @@ describe('documentRowState: el estado de un comprobante con palabras de dueño',
   it('impaga vencida, por vencer y sin apuro', () => {
     const late = documentRowState(doc({ dueDate: '2026-10-10' }), TODAY)
     expect(late.text).toBe('Vencida hace 3 días')
-    expect(late.note?.replaceAll(NB, ' ')).toBe('falta $ 120.000')
+    // Sin ningún pago, «falta $ X» repetiría el total de al lado: no se dice.
+    expect(late.note).toBeNull()
     expect(late.tone).toBe('late')
+    // Con una parte ya descontada (una nota de crédito aplicada), sí: lo que falta es otro número.
+    const lessOpen = documentRowState(doc({ dueDate: '2026-10-10', openCents: 7_000_000 }), TODAY)
+    expect(lessOpen.note?.replaceAll(NB, ' ')).toBe('falta $ 70.000')
     expect(documentRowState(doc({ dueDate: '2026-10-12' }), TODAY).text).toBe('Vencida hace 1 día')
     expect(documentRowState(doc({ dueDate: TODAY }), TODAY).text).toBe('Vence hoy')
     expect(documentRowState(doc({ dueDate: '2026-10-14' }), TODAY).text).toBe('Vence mañana')
@@ -712,6 +717,50 @@ describe('el héroe «Le debés a proveedores»', () => {
     )
     expect(out).toContain('No le debés nada a nadie')
     expect(out).not.toContain('$ 0')
+  })
+
+  it('sin los saldos iniciales y sin deuda cargada no dice «nada»: dice que todavía no sabe', () => {
+    const out = text(
+      html(
+        createElement(LibretaHero, {
+          tenantSlug: SLUG,
+          totals: { debtCents: 0, overdueCents: 0, dueSoonCents: 0, creditCents: 0, count: 79 },
+          debtors: 0,
+          overdueParties: 0,
+          hasSuppliers: true,
+          openingPending: true,
+        }),
+      ),
+    )
+    expect(out).toContain('Todavía no sé cuánto debés')
+    expect(out).toContain('saldos iniciales')
+    expect(out).not.toContain('No le debés nada')
+    expect(out).not.toContain('$ 0')
+  })
+
+  it('sin los saldos iniciales y con deuda (HUB): el número y que es lo cargado hasta ahora', () => {
+    const out = text(
+      html(
+        createElement(LibretaHero, {
+          tenantSlug: SLUG,
+          totals: {
+            debtCents: 19_235_800,
+            overdueCents: 19_235_800,
+            dueSoonCents: 0,
+            creditCents: 0,
+            count: 79,
+          },
+          debtors: 2,
+          overdueParties: 2,
+          hasSuppliers: true,
+          openingPending: true,
+          canWrite: true,
+        }),
+      ),
+    )
+    expect(out).toContain('192.358')
+    expect(out).toContain('Pagar lo vencido')
+    expect(out).toContain('Es lo que cargaste hasta ahora')
   })
 })
 
@@ -904,7 +953,9 @@ describe('los comprobantes como renglones', () => {
         }),
       ),
     )
-    expect(out).toContain('Le pagaste a Barracuda Bebidas')
+    // El nombre es el título del renglón (no se corta detrás de «Le pagaste a…»).
+    expect(out).toContain('Barracuda Bebidas')
+    expect(out).not.toContain('Le pagaste a')
     expect(out).toContain('con Mercado Pago')
     expect(out).toContain('quedó a cuenta')
     expect(out).toContain('$ 380.000')
@@ -994,6 +1045,7 @@ describe('la pestaña «Proveedores» entera, para la contadora', () => {
       list: { ok: true, data: { rows: s.rows, totals, asOf: TODAY } },
       classes: { ok: true, data: s.classes },
       plan: null,
+      settings: { ok: true, data: null },
     }
     // Quien carga sí ve la franja: es la misma pestaña con el permiso puesto.
     expect(text(await body(data, true))).toContain('proveedores no tienen categoría')
@@ -1010,11 +1062,37 @@ describe('la pestaña «Proveedores» entera, para la contadora', () => {
     expect(out).not.toContain('compras/nueva')
   })
 
+  it('con casi todos sin categoría asoman pocos «sin deuda» (el resto, plegado)', async () => {
+    const s = sample()
+    const data: LibretaData = {
+      list: { ok: true, data: { rows: s.rows, totals, asOf: TODAY } },
+      classes: { ok: true, data: s.classes },
+      plan: null,
+      settings: { ok: true, data: null },
+    }
+    const all = libretaView({
+      rows: s.rows,
+      classes: s.classes,
+      filter: 'todos',
+      q: '',
+      match: MATCH,
+    })
+    const settled = all.settled.length + all.settledMore.length
+    expect(settled).toBeGreaterThan(SETTLED_PREVIEW_UNSORTED)
+    const owner = text(await body(data, true))
+    expect(owner).toContain(`Ver los ${settled - SETTLED_PREVIEW_UNSORTED} que faltan`)
+    // La contadora no clasifica: ve el pliegue de siempre.
+    ui.readOnly = true
+    const read = text(await body(data, false))
+    expect(read).toContain(`Ver los ${settled - SETTLED_PREVIEW} que faltan`)
+  })
+
   it('el bar sin proveedores: el vacío enseña, sin botones para ella', async () => {
     const data: LibretaData = {
       list: { ok: true, data: { rows: [], totals, asOf: TODAY } },
       classes: { ok: true, data: new Map() },
       plan: null,
+      settings: { ok: true, data: null },
     }
     const owner = text(await body(data, true))
     expect(owner).toContain('Acá va tu libreta de proveedores')

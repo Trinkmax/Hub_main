@@ -415,7 +415,7 @@ export function CategoryPicker({
         ) : null}
 
         {hasChosen || onOpenFullPlan ? (
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             {hasChosen ? (
               <p className="min-w-0 text-xs text-muted-foreground text-pretty">
                 En los libros va a «{chosen?.name ?? chosenOutside?.name}».
@@ -425,7 +425,7 @@ export function CategoryPicker({
               <button
                 type="button"
                 onClick={onOpenFullPlan}
-                className="ml-auto inline-flex min-h-11 items-center rounded-sm text-sm font-medium text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"
+                className="inline-flex min-h-11 items-center rounded-sm text-sm font-medium text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"
               >
                 Ver el plan completo
               </button>

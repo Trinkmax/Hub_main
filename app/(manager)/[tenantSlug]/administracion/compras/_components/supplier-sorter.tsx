@@ -404,7 +404,7 @@ export function SupplierSorter({
           <div
             ref={cardRef}
             tabIndex={-1}
-            className="card-hairline rounded-2xl border bg-card p-5 shadow-xs outline-none sm:p-6"
+            className="card-hairline rounded-2xl border bg-card p-4 shadow-xs outline-none sm:p-6"
           >
             <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
               Proveedor {index + 1} de {items.length}
@@ -421,7 +421,9 @@ export function SupplierSorter({
             <p className="mt-0.5 text-sm text-muted-foreground text-pretty">
               Tocá una y pasamos al siguiente. Queda en su ficha.
             </p>
-            <div className="mt-4">
+            {/* En el celular los botones van más apretados: entran de a dos por renglón y la
+                ficha de UN proveedor no mide dos pantallas (son decenas de corrido). */}
+            <div className="mt-4 max-sm:[&_[data-category-chip]]:px-3 max-sm:[&_fieldset>div]:gap-1.5">
               <CategoryPicker
                 key={current.partyId}
                 id={`${uid}-categoria`}
@@ -457,11 +459,18 @@ export function SupplierSorter({
                 {error}
               </p>
             ) : null}
-            <div className="mt-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border/60 pt-3">
+            {/* Sin la cola al costado (celular, tablet) el pie queda pegado abajo mientras se
+                recorre la ficha: «Saltear» y por dónde vas, siempre a mano. Va a la izquierda:
+                a la derecha está el flotante «＋ Cargar». */}
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border/60 pt-3 max-lg:sticky max-lg:bottom-0 max-lg:z-[1] max-lg:-mx-4 max-lg:-mb-4 max-lg:justify-start max-lg:rounded-b-2xl max-lg:bg-card max-lg:px-4 max-lg:pt-1.5 max-lg:pb-1.5 sm:max-lg:-mx-6 sm:max-lg:-mb-6 sm:max-lg:px-6">
               <button type="button" onClick={skip} className={QUIET}>
                 <SkipForward aria-hidden className="size-3.5" />
                 Saltear
               </button>
+              {/* Lo mismo que dice arriba (ahí lo anuncia el lector): acá es para no perderlo de vista. */}
+              <p aria-hidden className="text-xs tabular-nums text-muted-foreground lg:hidden">
+                Vas {done.size} de {items.length}
+              </p>
               <p className="hidden text-xs text-muted-foreground lg:block">
                 Con el teclado: 1 a 9 eligen las de arriba · S saltea · ← vuelve
               </p>

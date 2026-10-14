@@ -20,6 +20,7 @@ export function SetupRail({
   summaries,
   doneUpTo,
   orientation = 'auto',
+  after = true,
   className,
 }: {
   /** El paso que toca (1 a 6), o `'done'` con todo hecho. */
@@ -29,6 +30,11 @@ export function SetupRail({
   /** El último paso ya resuelto, cuando se volvió atrás a cambiar uno anterior. */
   doneUpTo?: number
   orientation?: 'auto' | 'horizontal'
+  /**
+   * El renglón «Después: sumar a tus socios y conectar ARCA…». Es un texto fijo: con todo
+   * hecho no va (ahí lo que sigue sale de los datos, en «Lo próximo»).
+   */
+  after?: boolean
   className?: string
 }) {
   return (
@@ -38,14 +44,16 @@ export function SetupRail({
         orientation={orientation}
         steps={setupRailItems(current, summaries, doneUpTo)}
       />
-      <p
-        className={cn(
-          'text-xs text-muted-foreground text-pretty',
-          orientation === 'auto' ? 'mt-2 lg:mt-1' : 'mt-2',
-        )}
-      >
-        Después: sumar a tus socios y conectar ARCA, cuando quieras.
-      </p>
+      {after ? (
+        <p
+          className={cn(
+            'text-xs text-muted-foreground text-pretty',
+            orientation === 'auto' ? 'mt-2 lg:mt-1' : 'mt-2',
+          )}
+        >
+          Después: sumar a tus socios y conectar ARCA, cuando quieras.
+        </p>
+      ) : null}
     </div>
   )
 }

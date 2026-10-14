@@ -36,7 +36,8 @@ import { SupplierRowMenu } from './supplier-row-menu'
 /**
  * La barra de la libreta: el buscador (busca mientras se escribe), los filtros
  * como píldoras con su contador (la elegida, rellena en tinta) y, calladas a la
- * derecha, «Agregar de una lista» y «Exportar saldos».
+ * derecha, «Agregar de una lista» y «Exportar saldos» (en el celular, debajo de
+ * la hoja: no pueden demorar al primer proveedor).
  *
  * Los filtros viven en la URL (`?filtro=`): cada píldora es un link, así la
  * lista se comparte y «atrás» funciona. El contador de cada una sale de la
@@ -63,13 +64,16 @@ export function LibretaToolbar({
   exportFileName: string
 }) {
   return (
-    <div className="space-y-3">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+    // Sin lugar para una fila (celular, tablet) la barra se desarma (`contents`): el buscador y
+    // los filtros quedan arriba de la hoja y lo de cada tanto («Agregar de una lista»,
+    // «Exportar saldos») baja al final de la pantalla. Quien la monta es una columna `flex`.
+    <div className="space-y-3 max-lg:contents">
+      <div className="flex flex-col gap-3 max-lg:contents lg:flex-row lg:items-center">
         <LiveSearch
           placeholder="Buscar un proveedor o un CUIT"
           className="w-full lg:max-w-sm lg:flex-1"
         />
-        <div className="flex flex-wrap items-center gap-1 lg:ml-auto">
+        <div className="flex flex-wrap items-center gap-1 max-lg:order-last lg:ml-auto">
           {canWrite ? (
             <BulkSuppliersDialog
               tenantSlug={tenantSlug}
@@ -87,7 +91,7 @@ export function LibretaToolbar({
           />
         </div>
       </div>
-      <nav aria-label="Qué proveedores ver">
+      <nav aria-label="Qué proveedores ver" className="max-lg:-mt-2">
         {/* En el celular la fila desliza, con desvanecido a la derecha: se nota que sigue. */}
         <ul className="-mx-4 flex items-center gap-1.5 overflow-x-auto px-4 py-1 [scrollbar-width:none] max-sm:pr-10 max-sm:[mask-image:linear-gradient(to_right,black_calc(100%_-_2.5rem),transparent)] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden">
           {SUPPLIER_FILTERS.map((f) => (

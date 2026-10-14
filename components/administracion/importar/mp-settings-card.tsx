@@ -154,19 +154,22 @@ export function MpSettingsCard({
       cutoffWords(conn?.dayCutoffHour ?? 0),
     ].filter(Boolean)
     return (
+      // En el celular va en una línea (el título y «Cambiar»): el detalle eran cuatro renglones
+      // corridos antes de los pasos, y se ve entero al tocar «Cambiar».
       <section
         id="antes"
         aria-label="Cómo leo tu Mercado Pago"
-        className="card-hairline flex scroll-mt-28 flex-col gap-2 rounded-2xl border bg-card/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+        className="card-hairline flex scroll-mt-28 items-center justify-between gap-3 rounded-2xl border bg-card/60 px-4 py-2 sm:gap-4 sm:py-3"
       >
         <p className="min-w-0 text-sm text-pretty">
-          <span className="font-medium">Cómo leo tu Mercado Pago:</span>{' '}
-          <span className="text-muted-foreground">{summary.join(' · ')}</span>
+          <span className="font-medium sm:hidden">Cómo leo tu Mercado Pago</span>
+          <span className="font-medium max-sm:hidden">Cómo leo tu Mercado Pago:</span>{' '}
+          <span className="text-muted-foreground max-sm:hidden">{summary.join(' · ')}</span>
         </p>
         <Button
           type="button"
           variant="outline"
-          className="h-11 shrink-0 self-start sm:self-auto md:pointer-fine:h-9"
+          className="h-11 shrink-0 md:pointer-fine:h-9"
           onClick={() => setOpen(true)}
         >
           Cambiar

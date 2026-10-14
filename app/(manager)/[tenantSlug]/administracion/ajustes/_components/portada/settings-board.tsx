@@ -72,7 +72,14 @@ export function SettingsBoard({
     accesos: {
       state: tileAccess(access, { showMembers, manualDone: manualDone('access') }),
       art: counts ? (
-        <KeyDots {...counts} className="w-[68px]" />
+        // Con pocos socios (HUB arrancó con tres), puntos de 12 px: tres puntitos de 8 px se
+        // pierden en el casillero. Hasta nueve entran en tres filas de tres.
+        <KeyDots
+          {...counts}
+          size={counts.inCount + counts.outCount <= 9 ? 'md' : 'sm'}
+          center
+          className="w-[68px]"
+        />
       ) : (
         <KeyDots inCount={0} adminCount={0} outCount={0} />
       ),

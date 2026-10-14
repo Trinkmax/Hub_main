@@ -47,6 +47,41 @@ export function groupHistoryByDay<T extends { createdAt: string }>(
   return groups
 }
 
+/** Un renglón de la historia y cuántas veces seguidas pasó lo mismo. */
+export type HistoryRun<T> = { row: T; count: number }
+
+type RunnableRow = {
+  createdAt: string
+  actorName: string
+  text: string
+  documentId: string | null
+  amountCents: number | null
+  detail: string | null
+}
+
+/**
+ * Lo mismo, seguido, en un solo renglón: la misma persona hizo lo mismo en el mismo minuto
+ * («cambió un gasto fijo» treinta veces, al cargar la planilla) y se lee «· 30 veces». Lo que
+ * lleva a un comprobante o tiene importe nunca se junta: cada uno es un papel distinto.
+ */
+export function collapseHistoryRuns<T extends RunnableRow>(rows: readonly T[]): HistoryRun<T>[] {
+  const out: HistoryRun<T>[] = []
+  let lastKey: string | null = null
+  for (const row of rows) {
+    const key =
+      row.documentId === null && row.amountCents === null
+        ? [row.actorName, historyText(row.text), historyTime(row.createdAt), row.detail ?? ''].join(
+            '|',
+          )
+        : null
+    const last = out.at(-1)
+    if (key !== null && key === lastKey && last) last.count += 1
+    else out.push({ row, count: 1 })
+    lastKey = key
+  }
+  return out
+}
+
 /** «14:32»: dentro de un grupo el día ya está dicho en el encabezado. */
 export function historyTime(createdAt: string): string {
   return timeInCordoba(createdAt) ?? ''

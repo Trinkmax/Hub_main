@@ -6,6 +6,7 @@ import { AdmPage, PanelError, type ViewPillItem, ViewPills } from '@/components/
 import { QuickActionsBar } from '@/components/administracion/quick-actions'
 import {
   exportHref,
+  getAccountingSettings,
   getParty,
   getPartyPosition,
   listAccounts,
@@ -16,13 +17,7 @@ import { formatIsoDay, todayInCordoba } from '@/lib/dates'
 import { formatCuit, normalizeCuit } from '@/lib/fiscal'
 import { SupplierAccountProvider } from '../../_components/supplier-account-picker'
 import { isPurchaseImputation } from '../../_lib/accounts'
-import {
-  comprasHref,
-  firstParam,
-  isUuidLike,
-  newPurchaseHref,
-  supplierHref,
-} from '../../_lib/links'
+import { comprasHref, firstParam, isUuidLike, supplierHref } from '../../_lib/links'
 import { requireComprasAccess } from '../../_lib/page-access'
 import { creditPairs } from '../../_lib/payment-plan'
 import { supplierAccountOptions, supplierCategoryChoices } from '../../_lib/suppliers'
@@ -54,8 +49,9 @@ function isSupplierTab(value: string): value is SupplierTab {
  * - **La tapa**: «Le debés $ X», la acción del momento ([Pagarle]) y sus tres
  *   datos de carga. Verde por defecto; `?tapa=crema` muestra la variante clara
  *   (parámetro temporal de revisión, como `?hero=crema` del Resumen).
- * - **Su libreta**: «Lo que le debés» (una compra sin pagar por renglón) y
- *   debajo sus movimientos (te dejó · le pagaste · le debés).
+ * - **Su libreta**: «Lo que le debés» (una compra sin pagar por renglón; sin
+ *   deuda no se dibuja, la tapa ya lo dice) y debajo sus movimientos (te dejó ·
+ *   le pagaste · le debés).
  * - **Sus datos**: para pedirle, para cargarle y los fiscales.
  *
  * El selector de categoría y «Editar datos» se montan UNA vez para toda la
@@ -91,12 +87,16 @@ export default async function SupplierPage({
       : null
   // El plan y ARCA, para quien carga y en las dos vistas: la categoría y «Editar datos» se
   // abren también desde la tapa. Si fallan, la hoja se ve igual, sin esos dos botones.
-  const [positionOutcome, verificationOutcome, accounts, arcaLookup] = await Promise.all([
-    settleQuery(getPartyPosition(tenantId, { partyId: id, group: 'payables' })),
-    cuit && cuit.length === 11 ? settleQuery(getPadronVerification(tenantId, cuit)) : null,
-    canWrite ? settleQuery(listAccounts(tenantId)) : null,
-    canWrite ? settleQuery(getArcaLookupStatus(tenantId)) : null,
-  ])
+  const [positionOutcome, verificationOutcome, accounts, arcaLookup, settingsOutcome] =
+    await Promise.all([
+      settleQuery(getPartyPosition(tenantId, { partyId: id, group: 'payables' })),
+      cuit && cuit.length === 11 ? settleQuery(getPadronVerification(tenantId, cuit)) : null,
+      canWrite ? settleQuery(listAccounts(tenantId)) : null,
+      canWrite ? settleQuery(getArcaLookupStatus(tenantId)) : null,
+      settleQuery(getAccountingSettings(tenantId)),
+    ])
+  // Sin los saldos iniciales, «no le debés nada» es por lo cargado: la tapa lo aclara.
+  const openingPending = settingsOutcome.ok && settingsOutcome.data?.openingStatus === 'pending'
   const position = positionOutcome.ok ? positionOutcome.data : null
   const verification = verificationOutcome?.ok ? verificationOutcome.data : null
   const shown = party.tradeName ?? party.name
@@ -154,6 +154,7 @@ export default async function SupplierPage({
           hasta: today,
         })}
         exportFileName={`estado-de-cuenta-${today}.csv`}
+        openingPending={openingPending}
       />
 
       <ViewPills label={`Vistas de ${shown}`} items={views} />
@@ -172,16 +173,10 @@ export default async function SupplierPage({
             <PendingTab
               tenantSlug={tenantSlug}
               partyId={party.id}
-              partyName={shown}
               position={position}
               pairs={pairs}
               today={today}
               canWrite={canWrite}
-              canBuy={party.active}
-              newPurchaseHref={newPurchaseHref(tenantSlug, {
-                proveedor: party.id,
-                volver: baseHref,
-              })}
             />
           ) : (
             <PanelError
@@ -261,9 +256,12 @@ function EditScope({
 }) {
   const options = plan ?? []
   const imputable = new Set(options.filter(isPurchaseImputation).map((a) => a.id))
+  // Las categorías como botones: las mismas de «Elegir categoría» y de «Editar datos».
+  const categories = plan === null ? null : supplierCategoryChoices(plan)
   const edit = (
     <SupplierEditProvider
       tenantSlug={tenantSlug}
+      categories={categories}
       values={{
         id: party.id,
         updatedAt: party.updatedAt,
@@ -304,7 +302,7 @@ function EditScope({
       {children}
     </SupplierEditProvider>
   )
-  if (plan === null) return edit
+  if (plan === null || categories === null) return edit
   return (
     <SupplierAccountProvider
       tenantSlug={tenantSlug}
@@ -312,7 +310,7 @@ function EditScope({
         plan,
         new Set(party.defaultAccountId ? [party.defaultAccountId] : []),
       )}
-      categories={supplierCategoryChoices(plan)}
+      categories={categories}
       rows={[
         {
           partyId: party.id,

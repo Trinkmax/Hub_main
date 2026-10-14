@@ -121,6 +121,12 @@ export type FlowSide = {
   /** Una fila por categoría, de mayor a menor. */
   rows: RankBarsRow[]
   totalCents: number
+  /**
+   * Una sola categoría se lleva todo, o todo menos monedas («Casi todo lo que
+   * entró fue por ventas cobradas»): con decirlo alcanza, un panel con una
+   * barra de 100 % y otra de «<1 %» no agrega nada.
+   */
+  dominant: boolean
 }
 
 export type FlowView = {
@@ -160,7 +166,7 @@ function side(
     cents: v.cents,
   }))
   const top = entries[0]
-  if (!top || totalCents <= 0) return { title: null, rows, totalCents }
+  if (!top || totalCents <= 0) return { title: null, rows, totalCents, dominant: false }
   const [category, value] = top
   const words = wordsOf(category, value.label)
   if (entries.length === 1) {
@@ -171,6 +177,7 @@ function side(
           : `Todo lo que entró ${words.allIn}`,
       rows,
       totalCents,
+      dominant: true,
     }
   }
   // El mismo reparto que dibujan las barras de abajo (enteros que suman 100):
@@ -185,6 +192,7 @@ function side(
           : `Casi todo lo que entró ${words.allIn}`,
       rows,
       totalCents,
+      dominant: true,
     }
   }
   const of100 = Math.max(1, rounded)
@@ -195,6 +203,7 @@ function side(
         : `De cada $ 100 que entraron, $ ${of100} ${words.in}`,
     rows,
     totalCents,
+    dominant: false,
   }
 }
 
@@ -253,8 +262,8 @@ export function flowView(rows: readonly CashFlowRow[]): FlowView {
       outCents: 0,
       title: 'Todavía no entró ni salió plata de las cajas',
       sentence: 'En este período no entró ni salió plata de las cajas.',
-      out: { title: null, rows: [], totalCents: 0 },
-      in: { title: null, rows: [], totalCents: 0 },
+      out: { title: null, rows: [], totalCents: 0, dominant: false },
+      in: { title: null, rows: [], totalCents: 0, dominant: false },
     }
   }
 
@@ -292,8 +301,10 @@ export const PROJECTION_SENTENCE =
 
 export type ProjectionWeek = {
   key: string
-  /** «Esta semana (hasta el dom 18/10)» · «Semana del 19/10». */
+  /** «Esta semana» · «Semana del 19/10»: corto, para que «queda $ X» entre al lado en un celular. */
   label: string
+  /** La aclaración de la primera semana, que va de hoy al domingo: «hasta el dom 18/10». */
+  note: string | null
   inCents: number
   outCents: number
   /** Cómo quedaría al terminar esa semana. Negativo: faltaría. */
@@ -353,10 +364,8 @@ export function projectionView(
     const end = endOfWeek(r.weekStart)
     return {
       key: r.weekStart,
-      label:
-        index === 0
-          ? `Esta semana (hasta el ${weekdayShort(end)} ${formatDayMonth(end)})`
-          : `Semana del ${formatDayMonth(r.weekStart)}`,
+      label: index === 0 ? 'Esta semana' : `Semana del ${formatDayMonth(r.weekStart)}`,
+      note: index === 0 ? `hasta el ${weekdayShort(end)} ${formatDayMonth(end)}` : null,
       inCents: Math.max(0, r.inCents),
       outCents: Math.max(0, r.outCents),
       balanceCents: r.projectedBalanceCents,

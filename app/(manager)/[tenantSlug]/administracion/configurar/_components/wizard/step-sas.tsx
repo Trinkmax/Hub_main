@@ -154,6 +154,8 @@ export function StepSas({
           ]}
           hint="Todo lo anterior a ese día no se carga acá: entra como saldos iniciales. Si dudás, elegí el 1 del mes. Después del primer comprobante esta fecha ya no se cambia."
           error={err('booksStartDate')}
+          // Una fecha no necesita 770 px: el campo a su medida y los atajos al lado.
+          className="sm:flex sm:flex-wrap sm:items-center sm:gap-2 sm:space-y-0 sm:[&>input]:w-48"
           onValueChange={(iso) => {
             update({ booksStartDate: iso, booksStartTouched: true })
             clearError('booksStartDate')

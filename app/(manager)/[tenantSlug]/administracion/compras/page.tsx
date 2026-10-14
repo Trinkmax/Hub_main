@@ -43,8 +43,9 @@ const DESCRIPTIONS: Readonly<Record<ComprasTab, string>> = {
  * Compras y pagos: la libreta de cuenta corriente con los proveedores.
  *
  * - **Proveedores** (por defecto): el índice de la libreta. Arriba, «Le debés a
- *   proveedores» y la puerta de carga («¿Qué querés cargar?», tres situaciones);
- *   abajo, un renglón por proveedor con el «desde cuándo» en el margen.
+ *   proveedores» con [Pagar lo vencido] y, en la compu, la puerta de carga
+ *   («¿Qué querés cargar?», tres situaciones); abajo, un renglón por proveedor
+ *   con el «desde cuándo» en el margen.
  * - **Comprobantes** y **Pagos**: el diario de lo anotado.
  * - `?filtro=sin-clasificar`, para quien carga: «Clasificar proveedores», un
  *   mazo de fichas (un toque por proveedor). Con `&vista=lista`, la lista común.
@@ -108,23 +109,37 @@ export default async function ComprasPage({
     <AdmPage>
       <AdmHeader
         title="Compras y pagos"
-        description={DESCRIPTIONS[tab]}
+        // En el celular la bajada no se dibuja: el número de abajo ya dice de qué va la pantalla
+        // y son dos renglones menos antes del primer dato.
+        description={<span className="max-sm:hidden">{DESCRIPTIONS[tab]}</span>}
         badge={<ReadOnlyBadge />}
       />
-      <ViewPills label="Vistas de Compras y pagos" items={views} />
+      {/* Son tres vistas y entran en un celular: la fila arranca siempre desde «Proveedores»
+          (sin esto arrancaba corrida hasta la vista elegida y «Proveedores» quedaba cortada), y
+          el relleno y el desvanecido de la derecha se achican para que ninguna, ni «Pagos»
+          elegida, quede debajo del desvanecido cuando todas entran. */}
+      <ViewPills
+        label="Vistas de Compras y pagos"
+        items={views}
+        className="max-sm:[&_li]:[scroll-initial-target:none] max-sm:[&_ul]:pr-4 max-sm:[&_ul]:[mask-image:linear-gradient(to_right,black_calc(100%_-_1rem),transparent)]"
+      />
 
       {libreta ? (
         <>
-          {/* El número y la puerta. La puerta no espera a nadie: pinta con el encabezado. */}
+          {/* El número y la puerta. La puerta no espera a nadie: pinta con el encabezado.
+              Sin lugar para las dos columnas (celular, tablet) la puerta no se dibuja: ahí ya
+              está el flotante «＋ Cargar», que abre las mismas tres tarjetas, y la libreta
+              tiene que asomar cuanto antes. */}
           <div className="grid gap-5 lg:grid-cols-12 lg:items-start">
             <Suspense fallback={<HeroSkeleton className={heroSpan(canWrite)} />}>
               <SuppliersHeroBlock
                 data={libreta}
                 tenantSlug={tenantSlug}
+                canWrite={canWrite}
                 className={heroSpan(canWrite)}
               />
             </Suspense>
-            <ComprasDoor tenantSlug={tenantSlug} className="lg:col-span-5" />
+            <ComprasDoor tenantSlug={tenantSlug} className="max-lg:hidden lg:col-span-5" />
           </div>
           <Suspense fallback={<LibretaSkeleton />}>
             <SuppliersBody

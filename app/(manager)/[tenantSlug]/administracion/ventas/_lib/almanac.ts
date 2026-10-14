@@ -14,9 +14,21 @@ import { hrefWith } from '@/components/administracion/cajas-ventas/periods'
 import { compactCents } from '@/components/administracion/charts/scale'
 import type { PostingCatalog } from '@/lib/accounting/context'
 import type { MonthDay } from '@/lib/accounting/home'
-import type { CashTotals, ProjectionDay } from '@/lib/accounting/projection'
+import {
+  type CashTotals,
+  type Compliance,
+  complianceOf,
+  type Projection,
+  type ProjectionDay,
+} from '@/lib/accounting/projection'
 import type { DayEvents } from '@/lib/accounting/queries/projection'
-import { capitalizeFirst, isRealIsoDay, monthName, weekdayName } from '@/lib/dates'
+import {
+  capitalizeFirst,
+  formatWeekdayDayMonth,
+  isRealIsoDay,
+  monthName,
+  weekdayName,
+} from '@/lib/dates'
 import { formatCents, formatCentsShort, NBSP } from '@/lib/money'
 import type { MonthGridCell } from '../_components/month-grid'
 
@@ -31,17 +43,28 @@ export function cellAmount(cents: number): string {
   return Math.abs(cents) >= CELL_FULL_LIMIT_CENTS ? compactCents(cents) : formatCentsShort(cents)
 }
 
-/** De $ 100.000 a $ 999.999: tres cifras y «mil» no entran en un casillero de 42 px. */
+/** De $ 100.000 a $ 999.999 el almanaque chico del asistente habla en millones. */
 const SHORT_AS_MILLIONS_FROM_CENTS = 10_000_000
 const ONE_MILLION_CENTS = 100_000_000
 
 /**
- * El importe de un casillero en el celular, sin el «$»: «1,1 M», «85 mil». Entre
- * $ 100.000 y $ 1 M va en millones con un decimal («0,8 M»): «806 mil» se cortaba
- * contra el borde, y así todo el mes se lee en la misma unidad. El importe entero
- * está en la noche elegida y en el `label` del casillero.
+ * El importe de un casillero en el celular, sin el «$»: «1,1 M», «806 mil»,
+ * «85 mil». Como lo dice el dueño: una noche de $ 805.794 son «806 mil», no
+ * «0,8 M» (que además escondía 90 mil pesos entre dos noches). El número va en
+ * grande y la unidad chica y gris al lado (`MonthGrid`). El importe entero está
+ * en la noche elegida y en el `label` del casillero.
  */
 export function cellShort(cents: number): string {
+  if (!Number.isFinite(cents)) return ''
+  return compactCents(cents).replace(`$${NBSP}`, '')
+}
+
+/**
+ * Lo mismo, siempre en millones desde $ 100.000 («0,8 M»): es para el almanaque
+ * chico de «Armar el objetivo», donde el casillero mide 30 px y «806 mil» no
+ * entra. Ahí se compara un día contra otro, no se lee una noche.
+ */
+export function cellMillions(cents: number): string {
   if (!Number.isFinite(cents)) return ''
   const abs = Math.abs(cents)
   if (abs >= SHORT_AS_MILLIONS_FROM_CENTS && abs < ONE_MILLION_CENTS) {
@@ -151,6 +174,104 @@ export function commissionGaps(
   return { names, sentence }
 }
 
+/**
+ * El «%» pegado a su número con un espacio duro: «vas 4 %» nunca se parte en
+ * «vas 4» y, abajo, «% abajo». Solo para mostrar (los textos de
+ * `projectionFigures` no se tocan).
+ */
+export function keepPercent(text: string): string {
+  return text.replace(/(\d) %/g, `$1${NBSP}%`)
+}
+
+// ─── «A hoy» contra lo cargado ───────────────────────────────────────────────
+
+type Pace = Extract<Compliance, { kind: 'value' }>
+
+/**
+ * Cuando «Objetivo a hoy» cuenta noches que todavía no tienen cierre (pasa
+ * todas las mañanas, antes de cargar el de anoche), la pantalla daba dos
+ * cuentas que parecían contradecirse: «a hoy vas 4 % abajo» y, en la carrera,
+ * «vas 4 % arriba» (que corta en la última noche cargada). Las dos están bien;
+ * esto junta lo que hace falta para decir por qué. `null` si no pasa.
+ */
+export type StaleTarget = {
+  /** La última noche con cierre. */
+  lastLoaded: string
+  /** Las noches de después, con objetivo y sin cierre, que «a hoy» ya cuenta. */
+  missing: string[]
+  /** Cómo venís con lo cargado (hasta `lastLoaded`). */
+  loadedPace: Pace | null
+  /** Cómo da «a hoy» (la cuenta de `projectionFigures`). */
+  todayPace: Pace | null
+}
+
+export function staleTarget(projection: Pick<Projection, 'days' | 'summary'>): StaleTarget | null {
+  const { summary, days } = projection
+  const through = summary.throughDay
+  if (!summary.hasTargets || summary.monthState !== 'current' || through === null) return null
+  const last = days.filter((d) => d.hasClose && d.moment !== 'future').at(-1)
+  if (!last || last.day >= through) return null
+  const missing = days
+    .filter((d) => d.day > last.day && d.day <= through && !d.hasClose && d.targetCents !== null)
+    .map((d) => d.day)
+  if (missing.length === 0) return null
+  return {
+    lastLoaded: last.day,
+    missing,
+    loadedPace:
+      last.targetAccumCents > 0 ? complianceOf(last.netAccumCents, last.targetAccumCents) : null,
+    todayPace: summary.pace,
+  }
+}
+
+/** «4 % arriba» / «4 % abajo» / «justo», con el «%» pegado a su número. */
+function paceShort(pace: Pace): string {
+  if (pace.side === 'on') return 'justo'
+  return `${pace.gapPercent}${NBSP}% ${pace.side === 'above' ? 'arriba' : 'abajo'}`
+}
+
+/**
+ * La oración de «Proyección» cuando «a hoy» cuenta noches sin cierre: «Con lo
+ * cargado hasta el dom 11/10 vas 4 % arriba. Falta el cierre del lun 12/10: el
+ * objetivo a hoy ya cuenta esa noche, por eso te da 4 % abajo.»
+ */
+export function staleSentence(stale: StaleTarget): string {
+  const until = formatWeekdayDayMonth(stale.lastLoaded)
+  const loaded = stale.loadedPace
+    ? stale.loadedPace.side === 'on'
+      ? `Con lo cargado hasta el ${until} vas justo en el objetivo.`
+      : `Con lo cargado hasta el ${until} vas ${paceShort(stale.loadedPace)}.`
+    : `Lo cargado llega hasta el ${until}.`
+  const first = formatWeekdayDayMonth(stale.missing[0] ?? '')
+  const one = stale.missing.length === 1
+  const gap = one
+    ? `Falta el cierre del ${first}`
+    : `Faltan ${stale.missing.length} cierres, desde el ${first}`
+  const counts = one
+    ? 'el objetivo a hoy ya cuenta esa noche'
+    : 'el objetivo a hoy ya cuenta esas noches'
+  const result = stale.todayPace ? `, por eso te da ${paceShort(stale.todayPace)}` : ''
+  return `${loaded} ${gap}: ${counts}${result}.`
+}
+
+/**
+ * La pastilla de la noche elegida contra su objetivo: dice UNA cosa («16 %
+ * abajo del objetivo»). «84 % · 16 % abajo» eran dos porcentajes pegados que
+ * sumaban cien y no decían de qué.
+ */
+export function nightPaceText(pace: Pace): string {
+  if (pace.side === 'on') return 'Justo en el objetivo'
+  return `${paceShort(pace)} del objetivo`
+}
+
+/** El renglón de la hoja verde debajo de «vas 4 % abajo»: qué noche sin cierre está contando. */
+export function staleNote(stale: StaleTarget): string {
+  if (stale.missing.length === 1) {
+    return `Cuenta el ${formatWeekdayDayMonth(stale.missing[0] ?? '')}, que todavía no tiene cierre.`
+  }
+  return `Cuenta ${stale.missing.length} noches que todavía no tienen cierre.`
+}
+
 /** «obj. $ 1,5 M». */
 function targetCaption(targetCents: number | null): string | null {
   return targetCents !== null && targetCents > 0 ? `obj. ${compactCents(targetCents)}` : null
@@ -212,7 +333,9 @@ export function almanacCells(input: AlmanacInput): MonthGridCell[] {
     const common = {
       date: d.date,
       today: d.isToday,
-      marker: scale(d.targetCents),
+      // La raya del objetivo va solo donde hay algo para comparar: la noche cargada. En un día
+      // que viene (y en hoy) el objetivo se dice con palabras; en uno que falta, no va nada.
+      marker: d.state === 'loaded' ? scale(d.targetCents) : null,
       dot: names.length > 0 || Boolean(source?.note),
       note: d.state === 'before' ? null : note,
       selected: selected === d.date,

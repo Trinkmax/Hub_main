@@ -866,7 +866,8 @@ describe('los filtros de período de Ventas y Cajas: píldoras, con los mismos b
     expect(range).toContain('aria-haspopup="dialog"')
     expect(range).toContain('aria-expanded="false"')
     expect(range).not.toContain('text-background')
-    expect(html).toMatch(/Rango<\/span><\/button>/)
+    // En el celular «Rango» queda solo para el lector de pantalla (la píldora es el ícono).
+    expect(html).toMatch(/<span class="max-sm:sr-only">Rango<\/span>/)
     expect(html).not.toContain('Rango elegido')
     for (const button of [thisMonth, range]) {
       // 44 px donde se toca con el dedo (también una tablet); con mouse, la medida de las

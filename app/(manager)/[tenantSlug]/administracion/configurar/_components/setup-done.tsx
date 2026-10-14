@@ -30,7 +30,9 @@ export function SetupDone({
   const base = `/${tenantSlug}/administracion`
   return (
     <div className="space-y-6">
-      <SetupRail current="done" orientation="horizontal" className="max-w-md" />
+      {/* Sin el «Después: …» fijo del riel: acá lo que sigue es «Lo próximo», que sale de los
+          datos (el renglón fijo lo contradecía: decía «sumar a tus socios» con todos adentro). */}
+      <SetupRail current="done" orientation="horizontal" after={false} className="max-w-md" />
 
       <div>
         <h2 className="flex items-start gap-3 font-serif text-2xl leading-tight font-semibold tracking-tight text-balance sm:text-3xl">

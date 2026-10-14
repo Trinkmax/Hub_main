@@ -550,9 +550,9 @@ const WRITE_LABELS = [
   'Anular con fecha de hoy',
   'Agregar foto o PDF',
   'Agregar otra',
-  // El botón, no el renglón «Ya llegó» de la cuenta.
-  'Ya llegó</button>',
-  'Ya pagó</button>',
+  // El botón, no el renglón «Ya llegó» de la cuenta ni la píldora «Llegó».
+  'Anotar que llegó</button>',
+  'Anotar que pagó</button>',
   'Cargar la nota de crédito',
   'Cargar una nota de crédito',
   'Anularla con una nota de crédito',
@@ -575,7 +575,11 @@ describe('la ficha de HUB #1 (una compra sin factura, sin pago ni foto)', () => 
     expect(html).toContain('Le debés a Verdulería del Mercado')
     expect(html).toContain('120.000')
     expect(html).toContain('Todavía no hay ningún pago anotado: venció ayer, el 12/10.')
-    expect(html).toContain('¿Ya lo pagaste? Tocá «Pagar» y elegí con qué')
+    // La hoja «Pagar» abre con lo vencido de ese proveedor tildado: la ayuda avisa que se deja
+    // solo lo que se pagó.
+    expect(html).toContain(
+      '¿Ya lo pagaste? No lo cargues de nuevo: tocá «Pagar» y dejá tildado solo lo que pagaste.',
+    )
     expect(html).toContain('>Pagar<')
     // ② El papel, con el sello que mostró la carga y sin renglón de CUIT.
     expect(html).toContain('El comprobante, como quedó guardado')
@@ -694,7 +698,9 @@ describe('la contadora (solo lectura) no ve ningún control que escriba', () => 
     expect(html).toContain('¿Cómo se calcula?')
     expect(html).toContain(`${BASE}/comprobantes/doc-6`)
     expect(html).toContain('factura.jpg')
-    expect(html).toContain('Falta pagar $ 710.000,00')
+    // El mapa es una lista del dueño: pesos sin centavos (los exactos están en el papel).
+    expect(html).toContain('Falta pagar $ 710.000')
+    expect(html).not.toContain('Falta pagar $ 710.000,00')
     // Lo de la contadora llega a la vista: de qué tipo es el asiento.
     expect(html).toContain('Común · 12/10/2026')
   })
@@ -725,21 +731,26 @@ describe('quien carga ve la acción de cada unión', () => {
     const html = ficha(d)
     expect(html).not.toContain('Separar')
     expect(html).toContain('Se cargó junto con esta compra.')
-    expect(html).toContain('Se guardó junto con')
+    // El pago ya está en «Pago»: «Otros papeles» no lo repite.
+    expect(html).not.toContain('Se guardó junto con')
   })
 
-  it('el cierre: cada medio con su estado y «Ya llegó» en lo que falta', () => {
+  it('el cierre: cada medio con su estado y «Anotar que llegó» en lo que falta', () => {
     const html = ficha(cierre())
     expect(html).toContain('Se vendió')
     expect(html).toContain(
-      'Entraron $ 120.013 a Caja y quedaron $ 193.354 en camino: todavía no llegó nada.',
+      'Entraron $ 120.013 a Caja. Quedaron $ 193.354 en camino y todavía no llegó nada.',
     )
     expect(html).toContain('Me entró plata')
-    expect(html).toContain('De este día todavía faltan llegar $ 193.354')
-    expect(html).toContain('Tendría que haber llegado el 07/10')
-    expect(html).toContain('Ya llegó</button>')
-    expect(html).toContain('aria-label="Ya llegó: Débito"')
-    expect(html).toContain('Con un límite')
+    expect(html).toContain('De este día todavía no llegaron $ 193.354')
+    expect(html).toContain('Debió llegar el 07/10')
+    // Un verbo, y no un estado: al lado de la píldora del medio, «Ya llegó» se leía como una.
+    expect(html).toContain('Anotar que llegó</button>')
+    expect(html).toContain('aria-label="Anotar que llegó: Débito"')
+    expect(html).not.toContain('Ya llegó</button>')
+    // El límite de la unión es un link que dice lo que es, no una píldora de estado.
+    expect(html).toContain('Qué no se puede todavía')
+    expect(html).not.toContain('Con un límite')
     expect(html).toContain(`${BASE}/guias/como-se-vincula#vinculo-cierre-cajas`)
     // El papel es el ticket del cierre, quieto y sin «Cuándo entra».
     expect(html).toContain('Ticket del cierre del martes 06/10')
@@ -771,7 +782,8 @@ describe('quien carga ve la acción de cada unión', () => {
   it('desde el pago también se separa, nombrando el pago y la factura', () => {
     const html = ficha(pagoUnido())
     expect(html).toContain('Qué pagó')
-    expect(html).toContain('aria-label="Separar Pago #6 de Factura A 0003-00001100 #2"')
+    // La fila dice «Factura A 0003-00001100 #2»; el botón la nombra por su número, como desde la factura.
+    expect(html).toContain('aria-label="Separar Pago #6 de Factura A 0003-00001100"')
   })
 
   it('«¿Era el alquiler?»: la pregunta y el camino, sin prometer unirlo después', () => {
@@ -828,6 +840,12 @@ describe('un comprobante anulado', () => {
       'Lo anuló Luz el 13/10/2026 12:30: «lo cargué dos veces». Ya no cuenta en los libros.',
     )
     expect(html).toContain('Con qué estaba unido')
+    // La banda cae sobre los renglones, no sobre el sello ni el total; y el papel no la
+    // contradice al lado («Quedó en tus números», «Vence el…»).
+    expect(html).toMatch(/data-voided-rows="[^"]*"[^>]*>[\s\S]*data-void-mark/)
+    expect(html).toContain('Sin factura')
+    expect(html).not.toContain('Quedó en tus números')
+    expect(html).not.toContain('Vence el')
     for (const label of WRITE_LABELS) {
       expect(html, label).not.toContain(label)
     }
@@ -857,6 +875,9 @@ describe('las piezas que escriben, una por una', () => {
       allocationId: 'union-1',
       paymentLabel: 'Pago #6',
       invoiceLabel: 'Factura A 0003-00001100',
+      paymentWords: 'el Pago #6',
+      invoiceWords: 'la Factura A 0003-00001100',
+      invoiceNoun: 'La factura',
       amountCents: 50_000_000,
       partyName: 'Verdulería del Mercado',
     }
@@ -1109,7 +1130,7 @@ describe('lo que se manda al servidor es lo de siempre', () => {
     expect(code.match(/removeDocumentAttachment\(/g)).toHaveLength(1)
   })
 
-  it('«Pagar», «Me entró plata» y «Ya llegó» abren las hojas con parámetros que ya existían', () => {
+  it('«Pagar», «Me entró plata» y «Anotar que llegó» abren las hojas con parámetros que ya existían', () => {
     for (const key of ['proveedor', 'cliente', 'partida']) {
       expect(ACTION_PARAM_KEYS).toContain(key)
     }
@@ -1118,7 +1139,7 @@ describe('lo que se manda al servidor es lo de siempre', () => {
     const row = node?.id === 'en-camino' ? node.rows[0] : undefined
     // La partida es el renglón del ASIENTO (lo que la hoja tilda), no el del comprobante.
     expect(row?.action).toEqual({
-      label: 'Ya llegó',
+      label: 'Anotar que llegó',
       params: { cliente: 'part-debito', partida: 'partida-2' },
     })
     // El botón de arriba de un cierre abre la hoja en blanco.
@@ -1133,7 +1154,10 @@ describe('lo que se manda al servidor es lo de siempre', () => {
 describe('mientras carga', () => {
   it('el esqueleto tiene la forma de la ficha: la plata, el papel y el mapa', () => {
     const html = renderToString(createElement(ComprobanteLoading))
-    expect(html).toContain('lg:grid-cols-[minmax(0,1fr)_360px]')
+    // Las dos columnas las decide el ancho de la ficha (`@container`), igual que la página: con
+    // el menú lateral abierto, una notebook chica no tiene lugar para el papel al costado.
+    expect(html).toContain('@4xl:grid-cols-[minmax(0,1fr)_360px]')
+    expect(html).toContain('@container')
     expect(html).toContain('border-dashed')
     expect(html).not.toContain('<button')
   })

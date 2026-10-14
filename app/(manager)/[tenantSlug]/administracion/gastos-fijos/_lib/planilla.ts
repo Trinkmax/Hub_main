@@ -26,6 +26,7 @@ import {
   type Sheet,
   type SheetGroup,
   type SheetItem,
+  sheetCarry,
 } from './planilla-words'
 
 function factsOf(
@@ -216,29 +217,92 @@ export function buildSheet(
 
 // ─── Los dibujos ─────────────────────────────────────────────────────────────
 
-/** Lo que falta pagar, por día: todos los días del mes y, adelante, lo vencido de antes. */
-export function dueStripDays(sheet: Pick<Sheet, 'month' | 'today' | 'groups'>): DueDay[] {
-  const byDay = new Map<string, DueDay>()
+/**
+ * Lo que entra a los dibujos: los renglones del mes que se mira. Mirando el mes
+ * que viene, lo que quedó de antes sin pagar no es «lo fijo de noviembre»:
+ * queda afuera (la cabecera lo dice aparte, con su link a la hoja de hoy).
+ */
+export function chartScope(sheet: Sheet): Pick<Sheet, 'month' | 'today' | 'items' | 'groups'> {
+  const carry = sheetCarry(sheet)
+  if (!carry) return sheet
+  const own = new Set(carry.own)
+  return {
+    month: sheet.month,
+    today: sheet.today,
+    items: carry.own,
+    groups: sheet.groups.flatMap((group) => {
+      const items = group.items.filter((item) => own.has(item))
+      if (items.length === 0) return []
+      return [
+        {
+          ...group,
+          items,
+          remainingCents: items.reduce((sum, item) => sum + (item.line.remainingCents ?? 0), 0),
+          dueCents: items.reduce(
+            (sum, item) =>
+              sum + (item.line.remainingCents !== null ? (item.line.dueCents ?? 0) : 0),
+            0,
+          ),
+        },
+      ]
+    }),
+  }
+}
+
+/** Los días que tienen algo sin pagar, uno por uno y en orden (es lo que lista la tabla). */
+export function dueDays(sheet: Pick<Sheet, 'today' | 'groups'>): DueDay[] {
+  const days: DueDay[] = []
   for (const group of sheet.groups) {
     const pending = group.items.filter((item) => (item.line.remainingCents ?? 0) > 0)
     if (pending.length === 0) continue
-    byDay.set(group.day, {
+    days.push({
       date: group.day,
-      cents: group.remainingCents,
+      cents: pending.reduce((sum, item) => sum + (item.line.remainingCents ?? 0), 0),
       count: pending.length,
       overdue: group.day < sheet.today,
     })
   }
+  return days.sort((a, b) => (a.date < b.date ? -1 : 1))
+}
+
+/** Lo de otros meses, junto en UNA columna: en el eje va con palabras, no con un día suelto. */
+function joinOutside(days: readonly DueDay[], outside: NonNullable<DueDay['outside']>): DueDay[] {
+  const first = days[0]
+  if (!first) return []
+  return [
+    {
+      date: first.date,
+      cents: days.reduce((sum, d) => sum + d.cents, 0),
+      count: days.reduce((sum, d) => sum + d.count, 0),
+      overdue: days.some((d) => d.overdue),
+      outside,
+    },
+  ]
+}
+
+/**
+ * Lo que falta pagar, para el dibujo: todos los días del mes y, adelante, una
+ * sola columna con lo que quedó de meses anteriores («Antes»). Un «10» de
+ * septiembre puesto antes del día 1 es un eje que miente.
+ */
+export function dueStripDays(sheet: Pick<Sheet, 'month' | 'today' | 'groups'>): DueDay[] {
+  const days = dueDays(sheet)
+  const byDay = new Map(days.map((d) => [d.date, d]))
   const first = `${sheet.month}-01`
   const last = endOfMonth(sheet.month)
-  const outside = [...byDay.values()].filter((d) => d.date < first || d.date > last)
   const inside = eachIsoDay(first, last).map(
     (date) => byDay.get(date) ?? { date, cents: 0, count: 0, overdue: date < sheet.today },
   )
   return [
-    ...outside.filter((d) => d.date < first).sort((a, b) => (a.date < b.date ? -1 : 1)),
+    ...joinOutside(
+      days.filter((d) => d.date < first),
+      'before',
+    ),
     ...inside,
-    ...outside.filter((d) => d.date > last).sort((a, b) => (a.date < b.date ? -1 : 1)),
+    ...joinOutside(
+      days.filter((d) => d.date > last),
+      'after',
+    ),
   ]
 }
 

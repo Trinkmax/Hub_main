@@ -27,14 +27,17 @@ export function BatchStatusPill({
 export function ProposalStatusPill({
   status,
   reason,
+  message,
   className,
 }: {
   status: ProposalStatus
   /** Por qué se salteó (`error.reason`): separa «Ya está cargado» de «No es nuestro». */
   reason?: string | null
+  /** El motivo que se guardó al sacarla del archivo («Se carga a mano»). */
+  message?: string | null
   className?: string
 }) {
-  const badge = proposalBadge(status, reason)
+  const badge = proposalBadge(status, reason, message)
   return (
     <StatusPill tone={badge.tone} className={className}>
       {badge.label}

@@ -221,7 +221,8 @@ export const SCREEN_LABELS = {
     voidNote: 'Queda anulado con tu nombre y el motivo (no se borra) y deja de contar en los',
     cancel: 'Cancelar',
     separate: 'Separar',
-    arrived: 'Ya llegó',
+    /** El botón del renglón «en camino» del cierre (antes «Ya llegó»). */
+    arrived: 'Anotar que llegó',
   },
   /** Gastos fijos: la planilla del mes. */
   gastosFijos: {
@@ -752,7 +753,9 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
     minutes: 2,
     steps: [
       {
-        text: `En Gastos fijos, tocá «${S.gastosFijos.pay}» en el renglón. Se abre «Nuevo gasto» con ese gasto fijo ya elegido.`,
+        // Arriba, en «Lo que sigue», está el botón grande del que vence primero; cada renglón
+        // tiene el suyo. Los dos abren lo mismo.
+        text: `En Gastos fijos, tocá «${S.gastosFijos.pay}»: arriba, en «${S.gastosFijos.next}», o en su renglón. Se abre «Nuevo gasto» con ese gasto fijo ya elegido.`,
         screen: 0,
       },
       {
@@ -767,8 +770,8 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
     ],
     screens: [
       {
-        title: `«${S.gastosFijos.pay}», en el renglón`,
-        label: `La planilla de gastos fijos del mes: arriba, «${S.gastosFijos.pending}» con el importe. Debajo, un renglón por gasto, con el día en que vence en el margen, un casillero y el monto. El alquiler está vencido y tiene el botón «${S.gastosFijos.pay}», marcado. La heladera muestra sus cuotas en puntitos.`,
+        title: `«${S.gastosFijos.pay}», arriba o en el renglón`,
+        label: `La planilla de gastos fijos del mes: arriba, «${S.gastosFijos.pending}» con el importe y, adentro, «${S.gastosFijos.next}»: el alquiler, vencido, con el botón grande «${S.gastosFijos.pay}» y su importe, marcado. Debajo, los renglones agrupados por el día en que vencen, cada uno con su casillero, su monto y su «${S.gastosFijos.pay}». La heladera muestra sus cuotas en puntitos.`,
         scene: { kind: 'fixed', state: 'due' },
       },
       {
@@ -778,7 +781,7 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
       },
       {
         title: 'El renglón queda tildado',
-        label: `La misma planilla después de pagar: el casillero del alquiler está tildado y el renglón dice «${S.gastosFijos.paid}» con el día (marcado). «${S.gastosFijos.pending}» bajó.`,
+        label: `La misma planilla después de pagar: el casillero del alquiler está tildado y el renglón dice «${S.gastosFijos.paid}» con el día (marcado). «${S.gastosFijos.pending}» bajó y «${S.gastosFijos.next}» ya nombra la luz.`,
         scene: { kind: 'fixed', state: 'paid' },
       },
     ],
@@ -1121,8 +1124,8 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
         fix: `No se anula con su fecha. En «${S.comprobante.fix}» el comprobante te ofrece la salida: una nota de crédito, «${S.comprobante.voidToday}» o un ajuste de la contadora.`,
       },
       {
-        problem: 'Tiene pagos aplicados',
-        fix: 'Si lo anulás, esos pagos quedan como saldo a favor con el proveedor.',
+        problem: 'Tiene pagos unidos',
+        fix: 'Si lo anulás, esos pagos quedan a cuenta: como saldo a favor con el proveedor.',
       },
       {
         problem: 'Es una factura hecha con ARCA',
@@ -1198,7 +1201,11 @@ export const GUIDE_RECIPES: readonly GuideRecipe[] = [
       },
     ],
     result: 'El mes queda fijo y la contadora tiene todo para trabajar.',
-    action: { label: 'Cerrar el mes', target: { kind: 'route', path: '/libros/cierres' } },
+    // Lleva a la pantalla, no cierra nada: el botón dice adónde va, como todos los de las recetas.
+    action: {
+      label: `Ir a ${S.cierreMes.title}`,
+      target: { kind: 'route', path: '/libros/cierres' },
+    },
   },
 ]
 
@@ -1315,7 +1322,11 @@ export const GUIDE_STATIONS: readonly GuideStation[] = [
     moves: [],
     movesText: 'No mueve plata. Deja el mes fijo: después ya no cambia.',
     recipe: 'fin-de-mes',
-    action: { label: 'Cerrar el mes', target: { kind: 'route', path: '/libros/cierres' } },
+    // Lleva a la pantalla, no cierra nada: el botón dice adónde va, como todos los de las recetas.
+    action: {
+      label: `Ir a ${S.cierreMes.title}`,
+      target: { kind: 'route', path: '/libros/cierres' },
+    },
   },
 ]
 
@@ -1411,7 +1422,7 @@ export function routineStatus(
       // Sin los saldos iniciales no hay con qué comparar lo contado: primero se dice cuánto hay
       // en cada caja (es lo que pide el Resumen). Recién después contar es una rutina.
       if (!data.openingDone) {
-        return { state: 'idle', text: 'Primero cargá lo que hay en cada caja' }
+        return { state: 'idle', text: 'Primero cargá lo que había en cada caja al arrancar' }
       }
       const n = data.treasuriesUnchecked
       return {
@@ -2045,4 +2056,21 @@ export const GUIDE_GLOSSARY: readonly GuideGlossaryEntry[] = [
   },
   { idea: 'ARCA', name: null, meaning: sharedMeaning('ARCA') },
   { idea: 'CUIT', name: null, meaning: sharedMeaning('CUIT') },
+  // Las de la puesta en marcha: «Cómo arrancar» manda acá en vez de tener su propia lista.
+  {
+    idea: 'La hoja de ARCA de la SAS',
+    name: 'Constancia de inscripción',
+    meaning: sharedMeaning('Constancia de inscripción'),
+  },
+  {
+    idea: 'El impuesto de la provincia',
+    name: 'Ingresos Brutos',
+    meaning: sharedMeaning('Ingresos Brutos'),
+  },
+  {
+    idea: 'Tus facturas, en ARCA',
+    name: 'Mis Comprobantes',
+    meaning: sharedMeaning('Mis Comprobantes'),
+  },
+  { idea: 'El número de una cuenta', name: 'CBU y CVU', meaning: sharedMeaning('CBU y CVU') },
 ]

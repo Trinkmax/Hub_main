@@ -95,7 +95,7 @@ export async function TodayBlock({
   const { today: items, setup } = agenda
   const { canWrite } = data
 
-  // Si el héroe ya ofrece el paso que lo destraba («Cargar lo que hay»), ese es el botón
+  // Si el héroe ya ofrece el paso que lo destraba («Cargar lo que había»), ese es el botón
   // relleno de la pantalla: acá quedan todos en contorno.
   const hero = summaryResult.ok
     ? heroState(summaryResult.data, settingsResult.ok ? settingsResult.data : null, {

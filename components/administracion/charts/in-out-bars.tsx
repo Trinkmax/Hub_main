@@ -132,8 +132,11 @@ export function InOutBars({
   }
   axis.push({ pos: zero, label: compactCents(0), strong: true })
   if (downTop > 0) {
-    // Las marcas intermedias de abajo siguen el paso de arriba; la última es el tope.
-    for (let v = step; v < downTop; v += step) {
+    // Las marcas intermedias de abajo siguen el paso de arriba; la última es el tope. Con una
+    // salida mucho más grande que lo que entró, el paso se agranda (múltiplo del de arriba)
+    // para no pasar de tres marcas intermedias: ocho rótulos «↓ $ 200 mil … ↓ $ 1,6 M» no se leen.
+    const downStep = step * Math.max(1, Math.ceil((downTop / step - 1) / 3))
+    for (let v = downStep; v < downTop; v += downStep) {
       if (pct(downTop - v, span) >= MIN_TICK_GAP) {
         axis.push({ pos: pct(upTop + v, span), label: `↓ ${compactCents(v)}` })
       }

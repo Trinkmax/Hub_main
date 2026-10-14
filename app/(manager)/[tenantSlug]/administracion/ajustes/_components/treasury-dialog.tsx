@@ -25,7 +25,9 @@ import { useMasterAction } from './use-master-action'
  *
  * Manda lo mismo de siempre (`treasurySavePayload`, fijado por un test). Lo
  * que cambió es cómo se pregunta: «¿Qué es?» son cuatro tarjetas con su
- * consecuencia (antes, un desplegable «Tipo»).
+ * consecuencia (antes, un desplegable «Tipo»). Van en fila —ícono a la
+ * izquierda, 64 px— para que en el celular entren las cuatro y el nombre. En
+ * una edición el nombre va primero: es lo que se viene a cambiar.
  *
  * `afterCreate` decide qué ofrece el aviso al crear una caja:
  * - `opening`: los saldos iniciales siguen pendientes → «Cargar los saldos
@@ -146,6 +148,73 @@ export function TreasuryDialog({
   const offersOther = !editing || draft?.kind !== 'credit_card'
   const set = (patch: Partial<TreasuryDraft>) => setDraft((d) => (d ? { ...d, ...patch } : d))
 
+  const kindField = draft ? (
+    <fieldset className="m-0 grid min-w-0 gap-2.5 border-0 p-0">
+      <legend className="mb-2.5 p-0 text-sm font-medium">¿Qué es?</legend>
+      <div className="grid gap-2">
+        {choices.map((c) => {
+          const Icon = WALLET_ICONS[c.value]
+          return (
+            <ChoiceCard
+              key={c.value}
+              name="tr-kind"
+              value={c.value}
+              title={c.title}
+              consequence={c.consequence}
+              checked={draft.kind === c.value}
+              onChange={() => set({ kind: c.value })}
+              art={
+                <span className="flex size-9 items-center justify-center rounded-full border border-border/70 bg-card text-foreground shadow-2xs">
+                  <Icon className="size-4" />
+                </span>
+              }
+            />
+          )
+        })}
+      </div>
+      {offersOther ? (
+        <div>
+          <Pill
+            size="touch"
+            className="md:h-9 md:px-3 md:text-[13px]"
+            active={draft.kind === 'other'}
+            onClick={() => set({ kind: 'other' })}
+          >
+            Es otra cosa
+          </Pill>
+        </div>
+      ) : null}
+      {err('kind') ? (
+        <p role="alert" className="text-xs text-destructive">
+          {err('kind')}
+        </p>
+      ) : null}
+    </fieldset>
+  ) : null
+
+  const nameField = draft ? (
+    <Field id="tr-name" label="Nombre" required error={err('name')}>
+      <Input
+        id="tr-name"
+        value={draft.name}
+        maxLength={60}
+        placeholder={
+          draft.kind === 'cash'
+            ? 'Caja del local'
+            : draft.kind === 'wallet'
+              ? 'Mercado Pago'
+              : draft.kind === 'credit_card'
+                ? 'Visa de la empresa'
+                : 'Banco Galicia · cuenta corriente'
+        }
+        aria-invalid={err('name') ? true : undefined}
+        aria-describedby={describedBy('tr-name', null, err('name'))}
+        onChange={(e) => set({ name: e.target.value })}
+        className={INPUT_CLASS}
+      />
+    </Field>
+  ) : null
+
   return (
     <EditDialog
       open={target !== null}
@@ -154,7 +223,7 @@ export function TreasuryDialog({
       }}
       title={editing ? 'Editar caja o cuenta' : 'Nueva caja o cuenta'}
       description={
-        editing ? 'Cambiar el nombre también renombra su cuenta en el plan.' : 'Arranca en $ 0.'
+        editing ? 'Si le cambiás el nombre, cambia en toda la sección.' : 'Arranca en $ 0.'
       }
       pending={pending}
       message={message}
@@ -162,69 +231,9 @@ export function TreasuryDialog({
     >
       {draft ? (
         <>
-          <fieldset className="m-0 grid min-w-0 gap-2.5 border-0 p-0">
-            <legend className="mb-2.5 p-0 text-sm font-medium">¿Qué es?</legend>
-            <div className={cn('grid gap-2', choices.length > 1 && 'sm:grid-cols-2')}>
-              {choices.map((c) => {
-                const Icon = WALLET_ICONS[c.value]
-                return (
-                  <ChoiceCard
-                    key={c.value}
-                    name="tr-kind"
-                    layout="stack"
-                    value={c.value}
-                    title={c.title}
-                    consequence={c.consequence}
-                    checked={draft.kind === c.value}
-                    onChange={() => set({ kind: c.value })}
-                    art={
-                      <span className="flex size-9 items-center justify-center rounded-full border border-border/70 bg-card text-foreground shadow-2xs">
-                        <Icon className="size-4" />
-                      </span>
-                    }
-                  />
-                )
-              })}
-            </div>
-            {offersOther ? (
-              <div>
-                <Pill
-                  size="touch"
-                  className="md:h-9 md:px-3 md:text-[13px]"
-                  active={draft.kind === 'other'}
-                  onClick={() => set({ kind: 'other' })}
-                >
-                  Es otra cosa
-                </Pill>
-              </div>
-            ) : null}
-            {err('kind') ? (
-              <p role="alert" className="text-xs text-destructive">
-                {err('kind')}
-              </p>
-            ) : null}
-          </fieldset>
-
-          <Field id="tr-name" label="Nombre" required error={err('name')}>
-            <Input
-              id="tr-name"
-              value={draft.name}
-              maxLength={60}
-              placeholder={
-                draft.kind === 'cash'
-                  ? 'Caja del local'
-                  : draft.kind === 'wallet'
-                    ? 'Mercado Pago'
-                    : draft.kind === 'credit_card'
-                      ? 'Visa de la empresa'
-                      : 'Banco Galicia · cuenta corriente'
-              }
-              aria-invalid={err('name') ? true : undefined}
-              aria-describedby={describedBy('tr-name', null, err('name'))}
-              onChange={(e) => set({ name: e.target.value })}
-              className={INPUT_CLASS}
-            />
-          </Field>
+          {/* En una edición, el nombre primero: es lo que se viene a cambiar. */}
+          {editing ? nameField : kindField}
+          {editing ? kindField : nameField}
 
           {draft.kind === 'bank' || draft.kind === 'credit_card' ? (
             <div className="grid gap-3 sm:grid-cols-2">

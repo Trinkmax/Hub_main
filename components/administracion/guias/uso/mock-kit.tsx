@@ -161,11 +161,14 @@ export function MockAmount({ children }: { children: string }) {
   )
 }
 
-/** Chips para elegir: la elegida va rellena, como las píldoras de la sección. */
+/**
+ * Chips para elegir: la elegida va rellena en el verde del botón, como las de las hojas de verdad
+ * (`TreasuryPicker`, los plazos). `tick` solo donde la pantalla lo pone (la categoría elegida).
+ */
 export function MockChips({
   items,
 }: {
-  items: ReadonlyArray<{ label: string; active?: boolean }>
+  items: ReadonlyArray<{ label: string; active?: boolean; tick?: boolean }>
 }) {
   return (
     <span className="flex flex-wrap gap-1.5">
@@ -175,11 +178,13 @@ export function MockChips({
           className={cn(
             'inline-flex h-8 items-center gap-1 rounded-full border px-3 text-xs font-medium whitespace-nowrap',
             item.active
-              ? 'border-foreground bg-foreground text-background'
+              ? 'border-primary bg-primary text-primary-foreground'
               : 'border-border/70 bg-card text-foreground',
           )}
         >
-          {item.active ? <Check aria-hidden className="size-3" strokeWidth={3} /> : null}
+          {item.active && item.tick ? (
+            <Check aria-hidden className="size-3" strokeWidth={3} />
+          ) : null}
           {item.label}
         </span>
       ))}
@@ -250,7 +255,8 @@ export function MockCheckRow({
         <span className="block truncate font-medium">{title}</span>
         {meta ? <span className="flex items-center text-[11px]">{meta}</span> : null}
       </span>
-      <span className="shrink-0 font-mono tabular-nums">{amount}</span>
+      {/* Letra normal con números parejos: la de máquina es solo del ticket. */}
+      <span className="shrink-0 font-medium tabular-nums">{amount}</span>
     </span>
   )
 }

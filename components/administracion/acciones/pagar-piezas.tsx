@@ -117,6 +117,24 @@ export function UrgentSuppliers({
 const WAY_OUT =
   'flex min-h-14 w-full items-center gap-3 rounded-xl bg-secondary/50 px-3.5 py-2.5 text-left outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring'
 
+// El rojo pelado no llega a AA a 12 px: va mezclado con la tinta del tema (la receta de
+// `StatusPill` y del margen de la libreta), siempre con su punto y su palabra.
+const LATE_INK = 'text-[color-mix(in_oklch,var(--destructive)_75%,var(--foreground))]'
+
+/**
+ * Cuándo vence un gasto fijo, sin mentir el tiempo del verbo: lo que ya pasó su
+ * día «venció» (y va marcado como atrasado), lo de hoy «vence hoy» y el resto
+ * «vence el 15/10». Las mismas palabras que la planilla de Gastos fijos.
+ */
+export function fixedDueWords(
+  dueDate: string,
+  today: string | null,
+): { text: string; late: boolean } {
+  if (today && dueDate < today) return { text: `venció el ${formatDayMonth(dueDate)}`, late: true }
+  if (today && dueDate === today) return { text: 'vence hoy', late: false }
+  return { text: `vence el ${formatDayMonth(dueDate)}`, late: false }
+}
+
 export type PendingFixed = {
   id: string
   name: string
@@ -140,6 +158,7 @@ export function OtherThanSupplier({
   open,
   onToggle,
   fixed,
+  today = null,
   onPickFixed,
   onOther,
   sheetHref,
@@ -152,6 +171,8 @@ export function OtherThanSupplier({
   open: boolean
   onToggle: () => void
   fixed: readonly PendingFixed[] | null
+  /** Hoy (`yyyy-MM-dd`), para decir «venció» de lo que ya pasó su día. `null`: todavía no se sabe. */
+  today?: string | null
   onPickFixed: (id: string) => void
   onOther: () => void
   /** «Ver la planilla»: la pantalla de Gastos fijos. */
@@ -198,29 +219,43 @@ export function OtherThanSupplier({
               </p>
             ) : (
               <ul className="grid gap-1.5">
-                {fixed.map((item) => (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      onClick={() => onPickFixed(item.id)}
-                      className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg bg-card px-3 py-2 text-left text-sm shadow-2xs outline-none transition-colors hover:bg-cream-tint focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate font-medium">{item.name}</span>
-                        <span className="block text-xs tabular-nums text-muted-foreground">
-                          vence el {formatDayMonth(item.nextDueDate)}
+                {fixed.map((item) => {
+                  const due = fixedDueWords(item.nextDueDate, today)
+                  return (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        onClick={() => onPickFixed(item.id)}
+                        className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg bg-card px-3 py-2 text-left text-sm shadow-2xs outline-none transition-colors hover:bg-cream-tint focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium">{item.name}</span>
+                          <span
+                            className={cn(
+                              'flex items-center gap-1.5 text-xs tabular-nums',
+                              due.late ? LATE_INK : 'text-muted-foreground',
+                            )}
+                          >
+                            {due.late ? (
+                              <span
+                                aria-hidden
+                                className="size-1.5 shrink-0 rounded-full bg-destructive"
+                              />
+                            ) : null}
+                            {due.text}
+                          </span>
                         </span>
-                      </span>
-                      <span className="shrink-0 tabular-nums whitespace-nowrap">
-                        {item.amountCents !== null ? (
-                          formatCentsShort(item.amountCents)
-                        ) : (
-                          <span className="text-xs text-muted-foreground">sin monto</span>
-                        )}
-                      </span>
-                    </button>
-                  </li>
-                ))}
+                        <span className="shrink-0 tabular-nums whitespace-nowrap">
+                          {item.amountCents !== null ? (
+                            formatCentsShort(item.amountCents)
+                          ) : (
+                            <span className="text-xs text-muted-foreground">sin monto</span>
+                          )}
+                        </span>
+                      </button>
+                    </li>
+                  )
+                })}
               </ul>
             )}
             <Link
@@ -287,7 +322,8 @@ export type PayTicketRow = { key: string; label: ReactNode; cents: number }
 /**
  * El ticket del pago (sin sello: un pago no es un papel con o sin factura): a
  * quién, qué compras paga, lo que se usa de lo que hay a favor, y cuánto sale
- * de qué caja. La letra chica es la misma oración de arriba.
+ * de qué caja. La letra chica es la misma oración de arriba. Los importes, como
+ * en los otros tickets de la sección: todos con centavos o ninguno.
  */
 export function PayTicket({
   name,
@@ -319,8 +355,16 @@ export function PayTicket({
   note: ReactNode
   pending: boolean
 }) {
-  const exact = (cents: number) =>
-    cents % 100 === 0 ? formatCentsShort(cents) : formatCents(cents)
+  // Como un tique de verdad (la regla del ticket del cierre): si algún importe tiene
+  // centavos, los llevan todos y las comas quedan una abajo de la otra; si no, ninguno.
+  const withCents = [
+    ...rows.map((row) => row.cents),
+    moreCents,
+    creditUsedCents,
+    writeOffCents,
+    totalCents ?? 0,
+  ].some((cents) => cents % 100 !== 0)
+  const exact = (cents: number) => formatCents(cents, { decimals: withCents ? 2 : 0 })
   const hasRows = rows.length > 0 || creditUsedCents > 0 || writeOffCents > 0
   return (
     <Ticket aria-label="Lo que vas a pagar" className="mx-auto w-full max-w-[22rem]">

@@ -1,8 +1,9 @@
 'use client'
 
 import { AlertTriangle, ArrowDown, CircleCheck } from 'lucide-react'
-import { useMemo, useOptimistic, useTransition } from 'react'
+import { useEffect, useMemo, useOptimistic, useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { StatusPill } from '@/components/administracion/kit/status-pill'
 import { toastUndo } from '@/components/administracion/quick-actions'
 import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
@@ -88,8 +89,24 @@ export function OnboardingGuide({
   const nextId = state ? state.next : (rows.find((r) => r.status !== 'info')?.id ?? null)
   const nextRow = nextId ? (rows.find((r) => r.id === nextId) ?? null) : null
   const canMark = canWrite && data !== null
+  // Lo que se marcó o desmarcó en esta visita no se pliega: el botón queda donde estaba.
+  const [touched, setTouched] = useState<ReadonlySet<string>>(() => new Set())
+
+  // Quien llega con `#arranque-<ítem>` ve ese ítem abierto, aunque ya esté hecho.
+  useEffect(() => {
+    const openFromHash = () => {
+      const id = window.location.hash.slice(1)
+      if (!id.startsWith('arranque-')) return
+      const details = document.getElementById(id)?.querySelector('details')
+      if (details) details.open = true
+    }
+    openFromHash()
+    window.addEventListener('hashchange', openFromHash)
+    return () => window.removeEventListener('hashchange', openFromHash)
+  }, [])
 
   function mark(row: OnboardingRow, done: boolean) {
+    setTouched((prev) => (prev.has(row.id) ? prev : new Set(prev).add(row.id)))
     startTransition(async () => {
       addMark({ step: row.id, done })
       let result: AccSimpleState<{ step: string; done: boolean }>
@@ -141,6 +158,7 @@ export function OnboardingGuide({
               rows={rows.filter((r) => r.section === section)}
               counts={state ? state.sections[section] : null}
               nextId={nextId}
+              touched={touched}
               base={base}
               canWrite={canWrite}
               canMark={canMark}
@@ -160,6 +178,7 @@ function SectionCard({
   rows,
   counts,
   nextId,
+  touched,
   base,
   canWrite,
   canMark,
@@ -171,6 +190,7 @@ function SectionCard({
   rows: OnboardingRow[]
   counts: { done: number; total: number } | null
   nextId: OnboardingItemId | null
+  touched: ReadonlySet<string>
   base: string
   canWrite: boolean
   canMark: boolean
@@ -191,12 +211,12 @@ function SectionCard({
           <h2 id={titleId} className="font-serif text-lg font-semibold tracking-tight">
             {ONBOARDING_SECTION_LABEL[section]}
           </h2>
-          <p className="text-xs text-muted-foreground text-pretty">
+          <p className="text-sm text-muted-foreground text-pretty">
             {ONBOARDING_SECTION_HINT[section]}
           </p>
         </div>
         {progress ? (
-          <p className="shrink-0 text-xs font-medium tabular-nums text-muted-foreground">
+          <p className="shrink-0 text-sm font-medium tabular-nums text-muted-foreground">
             {progress}
           </p>
         ) : null}
@@ -208,6 +228,7 @@ function SectionCard({
             row={row}
             n={index + 1}
             isNext={row.id === nextId}
+            keepOpen={touched.has(row.id)}
             base={base}
             canWrite={canWrite}
             canMark={canMark}
@@ -240,7 +261,8 @@ function ProgressCard({
   base: string
   supplier: SupplierMessageData
 }) {
-  const percent = state && state.total > 0 ? Math.round((state.done / state.total) * 100) : 0
+  const setup = state ? state.sections.day1 : { done: 0, total: 0 }
+  const setupPercent = setup.total > 0 ? Math.round((setup.done / setup.total) * 100) : 0
   const minutes = nextRow ? minutesText(nextRow.minutes) : null
   const eyebrow = guess
     ? 'Por dónde arrancar'
@@ -260,35 +282,45 @@ function ProgressCard({
           </h2>
           {state ? (
             <>
-              <p className="flex items-baseline gap-2">
-                <span className="font-serif text-4xl font-semibold tabular-nums">{state.done}</span>
-                <span className="text-sm text-muted-foreground">
-                  de {state.total} {state.total === 1 ? 'listo' : 'listos'}
-                </span>
-              </p>
-              <Progress
-                value={percent}
-                aria-label={`Avance de la guía: ${state.done} de ${state.total} listos`}
-              />
-              <ul className="grid gap-1.5">
-                {ONBOARDING_SECTIONS.map((section) => {
-                  const counts = state.sections[section]
-                  if (counts.total === 0) return null
-                  return (
-                    <li key={section} className="flex items-center justify-between gap-3 text-sm">
-                      <a
-                        href={`#arranque-${section}`}
-                        className="inline-flex min-h-11 min-w-0 items-center text-muted-foreground underline-offset-4 hover:text-foreground hover:underline md:min-h-0"
-                      >
-                        {ONBOARDING_SECTION_LABEL[section]}
-                      </a>
-                      <span className="shrink-0 text-xs font-medium tabular-nums">
-                        {sectionProgressText(section, counts)}
-                      </span>
-                    </li>
-                  )
-                })}
-              </ul>
+              {/* El número es el de la puesta en marcha (lo de una sola vez): el mismo «N de M»
+                  de la franja del Resumen, que trae justo a esa sección. La rutina va aparte,
+                  dicha como «Al día» o «Te toca»: no se suma a la puesta en marcha. */}
+              <div className="space-y-2">
+                <p className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="font-serif text-4xl font-semibold tabular-nums">
+                    {setup.done}
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    de {setup.total} {setup.total === 1 ? 'listo' : 'listos'} de la puesta en marcha
+                  </span>
+                </p>
+                <Progress
+                  value={setupPercent}
+                  aria-label={`Puesta en marcha: ${setup.done} de ${setup.total} listos`}
+                />
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  La rutina
+                </p>
+                <ul className="grid">
+                  {ROUTINE_SECTIONS.map((section) => {
+                    const counts = state.sections[section]
+                    if (counts.total === 0) return null
+                    return (
+                      <li key={section} className="flex items-center justify-between gap-3 text-sm">
+                        <a
+                          href={`#arranque-${section}`}
+                          className="inline-flex min-h-11 min-w-0 items-center rounded-sm text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring md:min-h-9"
+                        >
+                          {ONBOARDING_SECTION_LABEL[section]}
+                        </a>
+                        <RoutineState counts={counts} />
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
             </>
           ) : problem?.kind === 'error' ? (
             <p className="text-sm text-muted-foreground text-pretty">
@@ -355,6 +387,18 @@ function ProgressCard({
         </div>
       </div>
     </section>
+  )
+}
+
+/** La rutina, sin la puesta en marcha: se dice «Al día» o «Te toca», no se suma. */
+const ROUTINE_SECTIONS = ONBOARDING_SECTIONS.filter((section) => section !== 'day1')
+
+function RoutineState({ counts }: { counts: { done: number; total: number } }) {
+  // Cuántos de cada una lo dice el encabezado de su sección, adonde lleva el link.
+  return counts.done >= counts.total ? (
+    <StatusPill tone="ok">Al día</StatusPill>
+  ) : (
+    <StatusPill tone="warn">Te toca</StatusPill>
   )
 }
 

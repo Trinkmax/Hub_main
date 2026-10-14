@@ -52,6 +52,7 @@ export function SupplierCover({
   baseHref,
   exportHref,
   exportFileName,
+  openingPending = false,
 }: {
   tenantSlug: string
   party: PartyDetail
@@ -67,6 +68,8 @@ export function SupplierCover({
   baseHref: string
   exportHref: string
   exportFileName: string
+  /** Faltan los saldos iniciales: «al día» es solo por lo cargado. */
+  openingPending?: boolean
 }) {
   const onHero = tone === 'bosque'
   const soft = onHero ? 'text-adm-hero-muted' : 'text-muted-foreground'
@@ -81,6 +84,7 @@ export function SupplierCover({
         oldestDueDate: position.aging.oldestDueDate,
         nextDueDate: position.aging.nextDueDate,
         today,
+        openingPending,
       })
     : null
   const hasDebt = (position?.debtCents ?? 0) > 0
@@ -161,7 +165,9 @@ export function SupplierCover({
       </div>
 
       {position && split ? (
-        <div className="space-y-3">
+        // La barra, del ancho de su tabla (34rem): en la compu no queda una barra de punta a
+        // punta con la leyenda que la explica ocupando la mitad.
+        <div className="max-w-[34rem] space-y-3">
           <SplitBar
             ariaLabel={`Le debés ${formatCentsShort(position.debtCents)} a ${shown}, por urgencia`}
             segments={tranches.map((t) => ({

@@ -48,7 +48,7 @@ export function AccountBadges({ account }: { account: ChartAccount }) {
       ) : null}
       {account.purchaseSelectable && account.postable ? (
         <Badge variant="outline" className={BADGE_CLASS}>
-          En compras
+          En «¿En qué se gastó?»
         </Badge>
       ) : null}
       {account.active ? null : <Badge variant="muted">Inactiva</Badge>}

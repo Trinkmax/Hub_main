@@ -73,7 +73,10 @@ export type CoverageState =
   | 'loaded'
   | 'review'
   | 'partial'
+  /** Falta, y es lo que cuenta el número de la bandeja («4 días»). */
   | 'missing'
+  /** Falta de más atrás: un hueco viejo que el número no cuenta (va apagado). */
+  | 'gap'
   | 'today'
   | 'future'
   | 'before'
@@ -88,7 +91,7 @@ export type CoverageCell = {
   state: CoverageState
   /** El archivo que lo cubre (solo en meses: cada casillero subido es un link). */
   href?: string
-  /** Rótulo debajo de la marca (solo algunos: el primer día, los lunes, «ayer»). */
+  /** Rótulo debajo de la marca (solo algunos: el primer día, los lunes, «hoy»). */
   tick?: string
 }
 
@@ -128,7 +131,7 @@ export type InboxTray = {
   state: 'ok' | 'never' | 'blocked'
   /** Con `blocked`: qué falta antes de poder usarla. */
   blocked: string | null
-  /** Con `never`: qué va a llegar acá. */
+  /** Con `never` (y con `blocked`): qué va a llegar acá. */
   empty: { title: string; text: string } | null
   hero: InboxHero | null
   strip: { granularity: 'day' | 'month'; cells: CoverageCell[]; ariaLabel: string } | null
@@ -351,18 +354,24 @@ export function displayBatchStatus(
     }
   }
   if (batch.status !== 'done' && batch.pending > 0) {
-    return batch.status === 'posting'
+    // Mientras quede una pregunta el archivo está «Para revisar», igual que la hoja de su
+    // bandeja. «A medio cargar» queda para una carga que se cortó: ya no hay nada que
+    // contestar y faltan cargarse los que estaban listos.
+    return batch.status === 'posting' && batchWaiting(batch).questions === 0
       ? {
           key: 'posting',
           label: 'A medio cargar',
           tone: 'warn',
-          hint: 'Ya se cargó una parte: entrá para revisar y cargar lo que falta.',
+          hint: 'Ya se cargó una parte: entrá y cargá lo que falta.',
         }
       : {
           key: 'review',
           label: 'Para revisar',
           tone: 'warn',
-          hint: 'Ya está armado: revisalo y cargalo.',
+          hint:
+            batch.status === 'posting'
+              ? 'Ya se cargó una parte: contestá lo que falta y cargá el resto.'
+              : 'Ya está armado: revisalo y cargalo.',
         }
   }
   return posted > 0
@@ -551,13 +560,20 @@ const MONTH_STATE_WORDS: Readonly<Record<CoverageState, string>> = {
   review: 'subido, falta revisarlo',
   partial: 'subido a medias',
   missing: 'falta bajarlo',
+  gap: 'falta, de más atrás',
   today: 'en curso',
   future: 'todavía no se baja',
   before: 'de antes de arrancar',
 }
 
 function arcaStrip(input: InboxInput, spans: readonly Span[], start: string | null) {
-  const months = arcaMonths(input.today, spans, start, ARCA_STRIP_MONTHS)
+  const back = arcaMonths(input.today, spans, start, ARCA_STRIP_MONTHS)
+  // Los meses de antes de arrancar no se dibujan: un bar que arrancó este mes veía cinco
+  // casilleros grises «de antes de arrancar» y uno solo que contaba. Con un mes o ninguno
+  // que cuente, la tira no dice nada que la oración de arriba no diga: no va.
+  const months = back.filter((m) => m.state !== 'before')
+  if (months.length < 2) return null
+  const trimmed = months.length < back.length
   const cells: CoverageCell[] = months.map((m) => {
     const name = capitalizeFirst(monthWord(m.month))
     const words =
@@ -577,7 +593,9 @@ function arcaStrip(input: InboxInput, spans: readonly Span[], start: string | nu
   const missing = months.filter(isMissing).map((m) => monthWord(m.month))
   const loaded = months.filter((m) => m.state === 'loaded' || m.state === 'review').length
   const ariaLabel = [
-    `Los últimos ${months.length} meses.`,
+    trimmed
+      ? `Desde ${monthWord(months[0]?.month ?? '')}, cuando arrancan tus números.`
+      : `Los últimos ${months.length} meses.`,
     loaded > 0 ? `${count(loaded, 'mes subido', 'meses subidos')}.` : 'Ningún mes subido todavía.',
     missing.length > 0 ? `Falta bajar ${joinWords(missing)}.` : '',
   ]
@@ -637,6 +655,7 @@ const DAY_STATE_WORDS: Readonly<Record<CoverageState, string>> = {
   review: 'subido, falta revisarlo',
   partial: 'subido a medias',
   missing: 'falta subir',
+  gap: 'falta, de más atrás',
   today: 'hoy',
   future: 'todavía no toca',
   before: 'de antes de arrancar',
@@ -647,17 +666,18 @@ function dayTitle(day: string): string {
 }
 
 /**
- * Los rótulos de la tira de días: «ayer», el primer día y los lunes, sin que
- * dos queden pegados (gana «ayer», después el primero).
+ * Los rótulos de la tira de días: «hoy» (debajo del anillo, que es la última
+ * marca), el primer día y los lunes, sin que dos queden pegados (gana «hoy»,
+ * después el primero).
  */
-function dayTicks(days: readonly string[], yesterday: string): Map<number, string> {
+function dayTicks(days: readonly string[], today: string): Map<number, string> {
   const ticks = new Map<number, string>()
   const place = (index: number, text: string) => {
     if (index < 0 || index >= days.length) return
     for (const taken of ticks.keys()) if (Math.abs(taken - index) < TICK_GAP) return
     ticks.set(index, text)
   }
-  place(days.indexOf(yesterday), 'ayer')
+  place(days.indexOf(today), 'hoy')
   place(0, formatDayMonth(days[0]))
   days.forEach((day, index) => {
     if (weekdayOf(day) === 1) place(index, formatDayMonth(day))
@@ -665,10 +685,22 @@ function dayTicks(days: readonly string[], yesterday: string): Map<number, strin
   return ticks
 }
 
-function dayStrip(today: string, spans: readonly Span[], start: string | null, name: string) {
+/**
+ * La tira de los últimos 35 días. `since` es el primer día que cuenta el número
+ * de la bandeja («4 días»): lo que falta desde ahí va en ámbar (`missing`); un
+ * hueco de más atrás va apagado (`gap`), para que el dibujo no contradiga al
+ * número ni alarme de más.
+ */
+function dayStrip(
+  today: string,
+  spans: readonly Span[],
+  start: string | null,
+  name: string,
+  since: string | null,
+) {
   const days: string[] = []
   for (let i = STRIP_DAYS - 1; i >= 0; i--) days.push(addDays(today, -i))
-  const ticks = dayTicks(days, addDays(today, -1))
+  const ticks = dayTicks(days, today)
   let loaded = 0
   let missing = 0
   const cells: CoverageCell[] = days.map((day, index) => {
@@ -682,9 +714,11 @@ function dayStrip(today: string, spans: readonly Span[], start: string | null, n
             ? span.waiting
               ? 'review'
               : 'loaded'
-            : 'missing'
+            : since !== null && day >= since
+              ? 'missing'
+              : 'gap'
     if (state === 'loaded' || state === 'review') loaded++
-    if (state === 'missing') missing++
+    if (state === 'missing' || state === 'gap') missing++
     const tick = ticks.get(index)
     return {
       key: day,
@@ -868,7 +902,7 @@ function arcaTray(
   if (input.hasCuit === false && input.canWrite) {
     notes.push({
       text: 'Sin el CUIT del bar no puedo chequear que el archivo sea tuyo.',
-      link: { label: 'Cargalo', href: `${base}/ajustes?tab=sas` },
+      link: { label: 'Cargar el CUIT', href: `${base}/ajustes?tab=sas` },
     })
   }
   return {
@@ -916,6 +950,11 @@ function weeklyTray(
       source === 'mp_release'
         ? 'Primero agregá tu cuenta de Mercado Pago.'
         : 'Primero decime cuál es tu cuenta del banco.'
+    // Qué va a llegar acá cuando la agregue, y que si el bar no la usa, no hace falta.
+    const teach =
+      source === 'mp_release'
+        ? 'Cuando la agregues, acá llega lo que cobraste por QR, Point y transferencias y lo que te depositó, día por día. Si no usan Mercado Pago, esta bandeja no hace falta.'
+        : 'Cuando la agregues, acá llegan las comisiones, los impuestos y las transferencias del banco, sin tipearlos. Si el bar no tiene cuenta en el banco, esta bandeja no hace falta.'
     return {
       due: false,
       used: list.length > 0,
@@ -927,7 +966,7 @@ function weeklyTray(
         line: TRAY_LINE[source],
         state: 'blocked',
         blocked: text,
-        empty: null,
+        empty: { title: text, text: teach },
         hero: null,
         strip: null,
         last: null,
@@ -1004,7 +1043,7 @@ function weeklyTray(
       blocked: null,
       empty: null,
       hero,
-      strip: dayStrip(input.today, spans, start, name),
+      strip: dayStrip(input.today, spans, start, name, facts.since),
       last: last?.text ?? null,
       notes: notes.slice(0, 2),
       ...trayFrame(ctx, source, list),
@@ -1132,6 +1171,16 @@ export function buildInbox(input: InboxInput): Inbox {
     }
   }
 
+  // Si «Te toca» ya lleva a ese archivo, su bandeja no repite el botón (serían tres puertas
+  // al mismo lugar): la hoja de adentro sigue llevando a la revisión y el botón pasa a ser
+  // «Subir otro archivo».
+  const reviewHref = next?.kind === 'review' ? next.action.href : null
+  const shownTrays = trays.map((tray) =>
+    reviewHref !== null && tray.secondary && tray.action?.href === reviewHref
+      ? { ...tray, action: tray.secondary, secondary: null }
+      : tray,
+  )
+
   // La agenda: lo semanal que el bar puede subir, el próximo lunes; ARCA, el 11 que sigue.
   const weekly = [mp.blocked ? null : 'Mercado Pago', bank.blocked ? null : 'el banco'].filter(
     (name): name is string => name !== null,
@@ -1144,7 +1193,7 @@ export function buildInbox(input: InboxInput): Inbox {
   const agenda = `Lo próximo: ${parts.join('; ')}.`
 
   return {
-    trays,
+    trays: shownTrays,
     next,
     agenda,
     startNote:

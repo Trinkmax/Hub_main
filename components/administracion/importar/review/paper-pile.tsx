@@ -137,30 +137,52 @@ export function pileSheets(tally: Pick<ReviewTally, PileGroup | 'total'>): {
   }
 }
 
+/** ¿Son pocas hojas (hasta 40)? Entonces se dibujan grandes y entran al lado del número. */
+export function pileIsFew(tally: Pick<ReviewTally, PileGroup | 'total'>): boolean {
+  return pileSheets(tally).groups.reduce((sum, g) => sum + g.sheets, 0) <= PILE_BIG_UP_TO
+}
+
 export function PaperPile({
   tally,
   unit,
+  beside = false,
   className,
 }: {
   tally: ReviewTally
   /** «comprobantes» / «movimientos». */
   unit: string
+  /**
+   * La pila va AL LADO del número también en pantallas angostas (el celular):
+   * ahí se dibuja chica y contra el borde derecho, y recién con lugar (`lg`)
+   * pasa al tamaño grande. Solo tiene sentido con pocas hojas (`pileIsFew`).
+   */
+  beside?: boolean
   className?: string
 }) {
   if (tally.total <= 0) return null
   const { each, groups } = pileSheets(tally)
   // Con pocas hojas (lo normal en un archivo semanal) se dibujan más grandes: se cuentan de un vistazo.
-  const few = groups.reduce((sum, g) => sum + g.sheets, 0) <= PILE_BIG_UP_TO
+  const few = pileIsFew(tally)
   return (
     <div className={cn('space-y-2', className)}>
-      <div aria-hidden className={cn('flex flex-wrap', few ? 'gap-1' : 'gap-[3px]')}>
+      <div
+        aria-hidden
+        className={cn(
+          'flex flex-wrap',
+          beside
+            ? 'content-start justify-end gap-[3px] lg:justify-start lg:gap-1'
+            : few
+              ? 'gap-1'
+              : 'gap-[3px]',
+        )}
+      >
         {groups.flatMap((g) =>
           Array.from({ length: g.sheets }, (_, i) => (
             <PileSheet
               // biome-ignore lint/suspicious/noArrayIndexKey: hojitas idénticas de un mismo grupo, sin reordenar
               key={`${g.group}-${i}`}
               group={g.group}
-              className={few ? 'h-[26px] w-5' : undefined}
+              className={beside ? 'lg:h-[26px] lg:w-5' : few ? 'h-[26px] w-5' : undefined}
             />
           )),
         )}

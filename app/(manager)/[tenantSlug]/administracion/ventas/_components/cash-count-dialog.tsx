@@ -17,19 +17,19 @@ import { saveDailyCash } from '@/lib/accounting/actions/projection'
 import { cashDiffText } from '@/lib/accounting/projection'
 import type { CashCountTreasury } from '@/lib/accounting/queries/projection'
 import { MAX_CENTS } from '@/lib/accounting/schemas'
-import { formatCents, formatCentsShort } from '@/lib/money'
+import { formatCentsShort } from '@/lib/money'
 import { useMasterAction } from '../../ajustes/_components/use-master-action'
 
 /**
  * «Entró» de un día (pedido de los socios, 12/10/2026): lo que entró de verdad
  * en cada caja o banco, cargado a mano, para compararlo con lo vendido en el
- * salón. No registra nada en los libros. Un campo vacío es «sin cargar», que no
- * es lo mismo que cero.
+ * salón. No cambia ningún saldo. Un campo vacío es «sin cargar», que no es lo
+ * mismo que cero.
  *
  * El disparador tiene dos formas y nada más cambia: `cell` es la celda de la
  * tabla (el importe con su lápiz) y `button`, el botón de la noche elegida
- * («Anotar lo que entró» / «Cambiar lo que entró»). El diálogo y lo que se
- * guarda son los mismos.
+ * («Anotar lo que entró» / «Cambiar lo que entró», o el `buttonLabel` que le
+ * pasen). El diálogo y lo que se guarda son los mismos.
  */
 export function CashCountDialog({
   day,
@@ -39,9 +39,12 @@ export function CashCountDialog({
   salesCents,
   countedCents,
   trigger = 'cell',
+  buttonLabel,
 }: {
   /** Cómo se ve lo que abre el diálogo. */
   trigger?: 'cell' | 'button'
+  /** El texto del botón, si no es el de siempre: «Anotar lo que entró el lun 05/10». */
+  buttonLabel?: string
   day: string
   /** «lunes 05/10». */
   dayLabel: string
@@ -98,7 +101,7 @@ export function CashCountDialog({
           onClick={openDialog}
         >
           <Pencil className="size-3.5" aria-hidden />
-          {countedCents === null ? 'Anotar lo que entró' : 'Cambiar lo que entró'}
+          {buttonLabel ?? (countedCents === null ? 'Anotar lo que entró' : 'Cambiar lo que entró')}
         </Button>
       ) : (
         <button
@@ -124,8 +127,8 @@ export function CashCountDialog({
           <DialogHeader>
             <DialogTitle>Lo que entró el {dayLabel}</DialogTitle>
             <DialogDescription>
-              Cargá lo que entró de verdad ese día en cada caja o banco. No se registra nada en los
-              libros: es para compararlo con lo vendido en el salón.
+              Cargá lo que entró de verdad ese día en cada caja o banco. No cambia ningún saldo: es
+              para comparar con lo vendido en el salón.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -157,13 +160,13 @@ export function CashCountDialog({
               <div className="flex items-center justify-between gap-3">
                 <dt className="text-muted-foreground">Entró</dt>
                 <dd className="font-medium tabular-nums">
-                  {loaded.length === 0 ? 'Sin cargar' : formatCents(total)}
+                  {loaded.length === 0 ? 'Sin cargar' : formatCentsShort(total)}
                 </dd>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <dt className="text-muted-foreground">Venta real del salón</dt>
+                <dt className="text-muted-foreground">Vendido en el salón</dt>
                 <dd className="tabular-nums">
-                  {salesCents === null ? 'Falta el cierre' : formatCents(salesCents)}
+                  {salesCents === null ? 'Falta el cierre' : formatCentsShort(salesCents)}
                 </dd>
               </div>
               {salesCents !== null && loaded.length > 0 ? (

@@ -35,8 +35,12 @@ import { useMasterAction } from './use-master-action'
 
 const LOCKED_BY_DOCUMENTS =
   'Ya hay comprobantes cargados: este dato no se puede cambiar. Hablalo con la contadora.'
-const LOCKED_BY_CLOSES =
-  'Ya hay meses cerrados o comprobantes: el cierre del ejercicio no se cambia desde acá.'
+/** Por qué no se cambia el cierre del ejercicio: lo que de verdad lo traba, no «esto o aquello». */
+function lockedByCloses(settings: { hasClosedPeriods: boolean }): string {
+  return settings.hasClosedPeriods
+    ? 'Ya hay meses cerrados: el cierre del ejercicio no se cambia desde acá.'
+    : 'Ya hay comprobantes cargados: el cierre del ejercicio no se cambia desde acá.'
+}
 /** La fecha de arranque trabada dice por qué, y qué significa (es el piso de toda carga). */
 const BOOKS_START_LOCKED =
   'Ya hay comprobantes cargados: la fecha de arranque no se puede cambiar desde acá. Todo lo anterior a ese día no se carga.'
@@ -111,6 +115,11 @@ const END_MONTH_OPTIONS: readonly ChoiceChip<string>[] = MONTH_NAMES.map((name, 
  *
  * Un solo formulario, el mismo envío de siempre: `settingsPayload` con las
  * mismas nueve claves; lo bloqueado viaja con el valor guardado.
+ *
+ * «Guardar cambios» va al pie de la hoja, donde se termina de escribir. En la
+ * compu son dos filas: la hoja y, debajo, el botón; la columna de «Los libros»
+ * ocupa las dos (la fila del botón es la que estira si esa columna es más
+ * alta, así el botón nunca se despega de la hoja). En el celular va último.
  */
 export function SasSettingsForm({
   tenantSlug,
@@ -180,9 +189,13 @@ export function SasSettingsForm({
       ref={formRef}
       onSubmit={submit}
       noValidate
-      className="grid gap-6 lg:grid-cols-12 lg:items-start"
+      className="grid gap-6 lg:grid-cols-12 lg:grid-rows-[auto_1fr] lg:items-start"
     >
-      <PaperSheet title="Datos de la SAS" aside="como en la constancia" className="lg:col-span-7">
+      <PaperSheet
+        title="Datos de la SAS"
+        aside="como en la constancia"
+        className="lg:col-span-7 lg:row-start-1"
+      >
         <div className="grid gap-5">
           {/* La CUIT, arriba y grande, como en el papel. Si falta, el casillero lo dice. */}
           <div className="grid gap-1.5">
@@ -324,7 +337,7 @@ export function SasSettingsForm({
         </div>
       </PaperSheet>
 
-      <div className="grid gap-6 lg:col-span-5">
+      <div className="grid gap-6 lg:col-span-5 lg:col-start-8 lg:row-span-2 lg:row-start-1">
         <Panel title="Los libros" description={firstYear}>
           <div className="grid gap-5">
             {docsLocked ? (
@@ -355,7 +368,10 @@ export function SasSettingsForm({
             <div className="grid gap-1.5">
               <Label id="aj-fy-end-label">El ejercicio cierra en</Label>
               {endLocked ? (
-                <Locked value={monthTitle(settings.fiscalYearEndMonth)} reason={LOCKED_BY_CLOSES} />
+                <Locked
+                  value={monthTitle(settings.fiscalYearEndMonth)}
+                  reason={lockedByCloses(settings)}
+                />
               ) : (
                 <ChoiceChips
                   options={END_MONTH_OPTIONS}
@@ -398,10 +414,10 @@ export function SasSettingsForm({
             </ol>
           </details>
         ) : null}
+      </div>
 
-        <div className="grid gap-3 sm:justify-items-end">
-          <SaveBar pending={pending} message={err('form')} />
-        </div>
+      <div className="grid gap-3 sm:justify-items-end lg:col-span-7 lg:col-start-1 lg:row-start-2">
+        <SaveBar pending={pending} message={err('form')} />
       </div>
     </form>
   )

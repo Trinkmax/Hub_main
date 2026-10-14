@@ -93,7 +93,41 @@ export type CountVerdict = {
 }
 
 export const VERDICT_IDLE = 'Escribí lo que contaste y te decimos si coincide.'
+/** Antes de elegir la caja: el recuadro del resultado ya está, y dice qué va a pasar. */
+export const VERDICT_PICK = 'Elegí la caja y te decimos cuánto dice el sistema.'
 const FOR_ACCOUNTANT = 'Queda aparte para que lo revise la contadora.'
+
+/** El recuadro del resultado en reposo, con lo que hay que hacer para que diga algo. */
+export function idleVerdict(sentence: string = VERDICT_IDLE): CountVerdict {
+  return { tone: 'idle', label: null, amountCents: null, sentence, offerUntick: false, note: null }
+}
+
+/** El botón del pie cuando todavía no se eligió qué caja se cuenta. */
+export const COUNT_PICK_LABEL = 'Elegí una caja'
+
+/**
+ * Lo que una billetera se quedó y todavía no tiene explicación (comisión, IVA,
+ * Ingresos Brutos…): lo que estaba en camino y no entró o, sin ventas tildadas,
+ * lo que hay de menos. Lo que no se detalla queda aparte para la contadora.
+ * `null`: no hay nada que explicar.
+ */
+export function walletToExplain(input: {
+  diff: number | null
+  ticked: number
+  pendingTicked: number
+}): number | null {
+  if (input.diff === null) return null
+  if (input.ticked > 0) {
+    const kept = input.pendingTicked - input.diff
+    return kept >= 0 ? kept : null
+  }
+  return input.diff < 0 ? -input.diff : null
+}
+
+/** «Si no lo detallás, los $ 11.409,62 quedan aparte para que los revise la contadora.» */
+export function walletUndetailedNote(cents: number): string {
+  return `Si no lo detallás, los ${exactMoney(cents)} quedan aparte para que los revise la contadora.`
+}
 
 /**
  * El resultado del conteo. `diff` es lo contado menos lo que dice el sistema
@@ -113,9 +147,7 @@ export function countVerdict(input: {
 }): CountVerdict {
   const { mode, name, diff } = input
   const base = { offerUntick: false, note: null } as const
-  if (diff === null) {
-    return { tone: 'idle', label: null, amountCents: null, sentence: VERDICT_IDLE, ...base }
-  }
+  if (diff === null) return idleVerdict()
   const money = exactMoney
   const amountCents = Math.abs(diff)
 
@@ -215,7 +247,8 @@ export function countVerdict(input: {
           tone: 'warn',
           label: 'Hay menos que en el sistema',
           amountCents,
-          sentence: `Decí abajo qué te descontaron. Lo que no expliques queda aparte para que lo revise la contadora.`,
+          // Qué pasa con lo que no se explique lo dice el bloque de abajo, con su importe.
+          sentence: 'Decí abajo qué te descontaron.',
           ...base,
         }
   }

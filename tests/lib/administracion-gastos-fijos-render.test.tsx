@@ -337,6 +337,9 @@ describe('un bar que recién arranca (HUB: 31 sin monto, todos al 10/11)', () =>
     expect(text).toContain('6 están en «Gastos varios».')
     expect(text).toContain('Completar la planilla')
     expect(html).toContain(`href="/${SLUG}/administracion/gastos-fijos/completar"`)
+    // Al lado del titular, qué va a aparecer cuando tengan monto (sin números: no inventa).
+    expect(text).toContain('Cuando tengan monto, acá vas a ver cuánto ya pagaste')
+    for (const word of ['Ya pagaste', 'Vencido', 'Por vencer']) expect(text).toContain(word)
     // Nunca un cero por un dato que falta.
     expect(text).not.toMatch(/\$\s?0(?![\d.,])/)
     expect(html).toContain('aria-label="Noviembre, el mes que viene: 31 por pagar"')
@@ -375,6 +378,8 @@ describe('un bar que recién arranca (HUB: 31 sin monto, todos al 10/11)', () =>
     expect(text).toContain('No vencen en octubre')
     expect(text).not.toContain('te muestro noviembre')
     expect(text).not.toMatch(/\$\s?0(?![\d.,])/)
+    // En octubre no vence nada: no hay barra que anticipar.
+    expect(text).not.toContain('Cuando tengan monto, acá vas a ver')
   })
 
   it('sin ningún gasto fijo: enseña qué va a aparecer y da el botón del paso siguiente', async () => {
@@ -510,9 +515,22 @@ describe('pagaste distinto de lo que calculabas', () => {
     expect(text).toContain('Calculabas $ 180.000 y pagaste $ 170.000 . ¿Era eso?')
     expect(text).toContain('Sí, dejar $ 170.000')
     expect(text).toContain('Ver el comprobante')
-    expect(text).toContain('$ 10.000 menos que el monto')
+    // La pregunta ya dice la diferencia: el renglón no la repite debajo de la píldora.
+    expect(text).toContain('Pagaste $ 170.000')
+    expect(text).not.toContain('menos que el monto')
     expect(count(html, />Pagar</g)).toBe(0)
     expect(html).toContain('data-tick="half"')
+  })
+
+  it('abierto, el link al comprobante va una sola vez (el de la pregunta)', () => {
+    const html = planilla([short], { payments, openId: short.id })
+    expect(textOf(html)).toContain('Lo último que cargaste: $ 170.000 el 08/10.')
+    expect(count(html, />Ver el comprobante</g)).toBe(1)
+    // Sin la pregunta (la contadora), el link sigue estando: adentro del renglón.
+    ui.readOnly = true
+    expect(count(planilla([short], { payments, openId: short.id }), />Ver el comprobante</g)).toBe(
+      1,
+    )
   })
 
   it('a la contadora se le dice qué pasó, sin la pregunta', () => {
@@ -521,6 +539,180 @@ describe('pagaste distinto de lo que calculabas', () => {
     expect(text).toContain('$ 10.000 menos que el monto')
     expect(text).not.toContain('¿Era eso?')
     expect(text).not.toContain('Sí, dejar')
+  })
+})
+
+describe('la hoja del mes que viene, con cosas que quedaron de antes', () => {
+  it('si es lo único que hay: sin número, sin «Lo que sigue», y con la vuelta a la hoja de hoy', async () => {
+    // El bar de ejemplo mirando noviembre: los tres siguen sin pagar desde octubre.
+    data.rows = DEMO
+    data.accounts = ACCOUNTS
+    const html = await page({ mes: '2026-11' })
+    const text = textOf(html)
+    expect(text).toContain('Noviembre todavía no se armó')
+    expect(text).toContain(
+      'Acá abajo están los 3 que quedaron de antes sin pagar: suman $ 915.000. Cuando los pagues, vas a ver los de noviembre.',
+    )
+    expect(text).toContain('Ver octubre')
+    expect(html).toContain(`href="/${SLUG}/administracion/gastos-fijos?mes=2026-10"`)
+    // Ni el número de octubre con el nombre de noviembre, ni el botón de octubre.
+    expect(text).not.toContain('Lo que sigue')
+    expect(text).not.toContain('Pagar $')
+    expect(text).not.toContain('Total de noviembre')
+    expect(text).not.toContain('¿Cómo se calcula?')
+    expect(text).toContain('Quedó de antes $ 915.000')
+    // La píldora de noviembre no repite el contador de octubre.
+    expect(html).toContain('aria-label="Octubre, este mes: 3 por pagar"')
+    expect(html).toContain(
+      'aria-label="Noviembre, el mes que viene: nada por pagar; quedan 3 de antes"',
+    )
+    // Los renglones siguen ahí, con su «Pagar», bajo un solo rótulo.
+    expect(count(html, />Pagar</g)).toBe(3)
+    expect(count(html, />Quedó de antes</g)).toBe(2) // el rótulo del tramo y el de la fila de suma
+    // Lo de octubre no es «lo fijo de noviembre»: sin dibujos.
+    expect(text).not.toContain('Cómo es tu mes de gastos fijos')
+  })
+
+  it('si hay de los dos: el número es lo de noviembre y lo de antes va al lado, aparte', async () => {
+    const luz = mk({ id: uuid(30), name: 'Luz', amountCents: 12_000_000 })
+    data.rows = [...DEMO, luz]
+    data.accounts = ACCOUNTS
+    const html = await page({ mes: '2026-11' })
+    const text = textOf(html)
+    expect(text).toContain('Te falta de gasto fijo · noviembre')
+    expect(text).toMatch(/\$ ?120\.000/)
+    expect(text).toContain(
+      'Es un solo gasto de noviembre. Los 3 que quedaron de antes sin pagar van aparte.',
+    )
+    expect(text).toContain('Quedó de antes $ 915.000 · 3 gastos sin pagar Ver octubre')
+    expect(text).toContain('Lo primero que vence')
+    // La cuenta es la de noviembre, y dice qué queda afuera.
+    expect(text).toContain('Lo que vence en noviembre $ 120.000')
+    expect(text).toContain('Lo que quedó de antes sin pagar va aparte')
+    expect(text).toContain('Te falta de noviembre $ 120.000')
+    expect(text).not.toContain('Total de noviembre')
+    // Un rótulo por tramo: lo de antes y donde arranca el mes.
+    expect(text).toContain('Vence en noviembre')
+    expect(html).toContain(
+      'aria-label="Noviembre, el mes que viene: 1 por pagar; quedan 3 de antes"',
+    )
+  })
+})
+
+describe('la fila de suma suma lo que se ve', () => {
+  it('con un filtro puesto, lo que quedó a la vista; el total del mes pasa a una línea gris', async () => {
+    data.rows = DEMO
+    data.accounts = ACCOUNTS
+    const text = textOf(await page({ ver: 'vencido' }))
+    expect(text).toContain('2 de 3 gastos')
+    expect(text).toContain('Estos 2 suman $ 880.000')
+    expect(text).toContain('Te falta $ 880.000')
+    expect(text).toContain('Todo octubre: 3 gastos, total $ 915.000 , te falta $ 915.000 .')
+    expect(text).not.toContain('Total de octubre')
+
+    const one = textOf(await page({ categoria: ACC_ALQUILER }))
+    expect(one).toContain('1 de 3 gastos')
+    expect(one).toContain('Este gasto $ 850.000')
+    expect(one).toContain('Te falta $ 850.000')
+  })
+
+  it('sin filtro, el total del mes de siempre', async () => {
+    data.rows = DEMO
+    data.accounts = ACCOUNTS
+    const text = textOf(await page())
+    expect(text).toContain('3 gastos Total de octubre $ 915.000 Ya pagaste $ 0 Te falta $ 915.000')
+    expect(text).not.toContain('Todo octubre:')
+  })
+})
+
+describe('lo que se dice una sola vez', () => {
+  it('el día en angosto: con un solo gasto alcanza con la fecha; con varios, cuántos y cuánto', async () => {
+    data.rows = DEMO
+    data.accounts = ACCOUNTS
+    const html = await page()
+    expect(html).toMatch(
+      /id="dia-2026-10-15-titulo"[^>]*><span class="whitespace-nowrap">jue 15 oct<\/span><\/h3>/,
+    )
+    expect(textOf(html)).toContain('sáb 10 oct · 2 gastos · $ 880.000')
+    // Cada parte baja de renglón entera: un «falta» nunca queda separado de su importe.
+    expect(count(html, /<span class="whitespace-nowrap">/g)).toBeGreaterThanOrEqual(4)
+  })
+
+  it('HUB en el celular: el renglón sin monto va en dos líneas, con «Poner monto» a la derecha', async () => {
+    data.rows = HUB
+    data.accounts = ACCOUNTS
+    const html = await page()
+    // Los 31 usan la grilla compacta (nombre y «Poner monto» · categoría): sin la línea que
+    // repetía «Sin monto» y el vencimiento que ya dice el encabezado del día.
+    expect(count(html, /tick_name_action/g)).toBe(31)
+    expect(count(html, />Sin monto</g)).toBe(0)
+    // En los plegados no hay encabezado de día: el renglón conserva su vencimiento.
+    const october = await page({ mes: '2026-10' })
+    expect(count(october, /tick_name_action/g)).toBe(0)
+  })
+
+  it('los dibujos y sus tablas van en pesos, sin centavos, y la nota de los sin monto va una vez', async () => {
+    const blank = mk({ id: uuid(31), name: 'Seguro', nextDueDate: '2026-10-20', dueDay: 20 })
+    data.rows = [...DEMO, blank]
+    data.accounts = ACCOUNTS
+    const html = await page()
+    const text = textOf(html)
+    expect(text).toContain('Total 3 gastos $ 915.000')
+    expect(text).not.toMatch(/,00(?!\d)/)
+    expect(count(html, /sin monto no está en estos dibujos/g)).toBe(1)
+  })
+
+  it('pagaste de más o falta una parte: el detalle lleva su palabra y arranca con mayúscula', () => {
+    const over = mk({
+      id: uuid(32),
+      name: 'Gas',
+      amountCents: 6_000_000,
+      nextDueDate: '2026-11-10',
+      loadedDue: '2026-10-10',
+      lastDocumentId: 'doc-gas',
+      lastDocumentDate: '2026-10-05',
+    })
+    const owed = mk({
+      id: uuid(33),
+      name: 'Expensas',
+      amountCents: 20_000_000,
+      dueDay: 25,
+      nextDueDate: '2026-11-25',
+      loadedDue: '2026-10-25',
+      lastDocumentId: 'doc-exp',
+      lastDocumentDate: '2026-10-06',
+    })
+    const payments = new Map<string, RecurringPaymentFacts>([
+      [
+        over.id,
+        {
+          document: doc({
+            id: 'doc-gas',
+            accountingDate: '2026-10-05',
+            totalCents: 7_500_000,
+            paidCents: 7_500_000,
+          }),
+          priorOpenCents: 0,
+        },
+      ],
+      [
+        owed.id,
+        {
+          document: doc({
+            id: 'doc-exp',
+            accountingDate: '2026-10-06',
+            dueDate: '2026-10-25',
+            totalCents: 20_000_000,
+            paidCents: 8_000_000,
+            openCents: 12_000_000,
+          }),
+          priorOpenCents: 0,
+        },
+      ],
+    ])
+    const text = textOf(planilla([over, owed], { payments }))
+    expect(text).toContain('Pagado el 05/10 $ 15.000 más que el monto')
+    expect(text).toContain('Pagaste $ 80.000 Falta $ 120.000')
   })
 })
 
@@ -1015,6 +1207,47 @@ describe('la ficha (quien carga)', () => {
     expect(text).toContain('En pausa')
     expect(text).toContain('Guardar cambios')
     expect(text).toContain('cuota 2 de 6')
+  })
+
+  it('uno que ya terminó: no anuncia un «próximo» al lado de «Ya terminó»', async () => {
+    data.accounts = ACCOUNTS
+    data.rows = [
+      mk({
+        id: uuid(15),
+        name: 'Licuadora',
+        amountCents: 8_000_000,
+        nextDueDate: '2026-10-10',
+        endsOn: '2026-09-10',
+        remainingDues: 0,
+        installmentsTotal: 6,
+        active: false,
+        ended: true,
+      }),
+    ]
+    const text = textOf(await render(uuid(15)))
+    expect(text).toContain('Ya terminó: la última cuota venció el 10/09/2026.')
+    expect(text).toContain('Terminó: ya pasó la última cuota.')
+    expect(text).not.toContain('El próximo es')
+    expect(text).not.toContain('Vence el sábado 10/10')
+    // El resumen del primer paso es la categoría: el nombre ya es el título de la pantalla.
+    expect(count(text, /Licuadora/g)).toBe(2)
+  })
+
+  it('uno vencido sin pagar: su vencimiento se dice en pasado, no como «el próximo»', async () => {
+    data.accounts = ACCOUNTS
+    data.rows = [
+      mk({
+        id: uuid(16),
+        name: 'Alquiler del local',
+        amountCents: 85_000_000,
+        nextDueDate: '2026-10-10',
+      }),
+    ]
+    const text = textOf(await render(uuid(16)))
+    expect(text).toContain('Venció el sábado 10/10: todavía no lo pagaste.')
+    expect(text).toContain('Venció el sábado 10/10')
+    expect(text).not.toContain('El próximo es el sábado 10/10')
+    expect(text).not.toContain('Vence el sábado 10/10')
   })
 })
 

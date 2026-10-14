@@ -96,9 +96,10 @@ function Recipe({
         </GuideDo>
       }
     >
-      {/* En la compu, el texto a la izquierda y la pantalla a la derecha (`StepScreens`
-          devuelve primero la pantalla: se da vuelta con `order`). */}
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_342px] lg:items-start lg:[&>*:first-child]:order-2">
+      {/* Desde la tablet, el texto a la izquierda y la pantalla a la derecha (`StepScreens`
+          devuelve primero la pantalla: se da vuelta con `order`). En una sola columna, a 820 px,
+          el dibujo quedaba pegado a la izquierda con media tarjeta vacía al lado. */}
+      <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_300px] md:items-start md:[&>*:first-child]:order-2 lg:grid-cols-[minmax(0,1fr)_342px]">
         <StepScreens
           seeLabel="Así se ve"
           doLabel="Paso a paso"

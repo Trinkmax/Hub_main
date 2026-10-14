@@ -69,14 +69,21 @@ export default async function ImportarPage({
     settleQuery(getAccountingSettings(tenantId)),
   ])
 
-  const header = (
+  const header = (teaching: boolean) => (
     <AdmHeader
       title="Importar"
       badge={<ReadOnlyBadge />}
       description={
-        canWrite
-          ? 'Lo que ARCA, Mercado Pago y el banco ya saben no hace falta tipearlo: lo bajás de allá, lo subís acá y lo revisás.'
-          : 'Lo que se subió de ARCA, Mercado Pago y el banco, y en qué quedó cada archivo.'
+        canWrite ? (
+          // Con «Así funciona» abajo (bajalo, subilo, revisá), en el celular la bajada dice
+          // lo mismo dos veces y empuja las bandejas fuera de la primera pantalla.
+          <span className={teaching ? 'max-sm:hidden' : undefined}>
+            Lo que ARCA, Mercado Pago y el banco ya saben no hace falta tipearlo: lo bajás de allá,
+            lo subís acá y lo revisás.
+          </span>
+        ) : (
+          'Lo que se subió de ARCA, Mercado Pago y el banco, y en qué quedó cada archivo.'
+        )
       }
     />
   )
@@ -84,7 +91,7 @@ export default async function ImportarPage({
   if (!batches.ok) {
     return (
       <AdmPage>
-        {header}
+        {header(false)}
         <PanelError title="Tus archivos" message={batches.message} />
       </AdmPage>
     )
@@ -113,10 +120,14 @@ export default async function ImportarPage({
   const last = rows[rows.length - 1]
   const olderHref = hasOlder && last ? historyHref({ antes: last.createdAt }) : null
   const newestHref = before ? historyHref({}) : null
+  // Filtrar por origen sirve cuando hay archivos de más de uno: con un solo archivo de ARCA,
+  // cuatro píldoras (dos renglones en el celular) para elegir entre nada.
+  const sourcesUsed = new Set(batches.data.map((b) => b.source)).size
+  const showFilter = source !== null || sourcesUsed > 1
 
   return (
     <AdmPage>
-      {header}
+      {header(canWrite && !inbox.everLoaded)}
 
       {canWrite && inbox.next ? <NextUp next={inbox.next} /> : null}
       {canWrite && !inbox.everLoaded ? (
@@ -131,9 +142,17 @@ export default async function ImportarPage({
         </p>
       ) : null}
 
-      <div className="grid gap-5 lg:grid-cols-3">
-        {inbox.trays.map((tray) => (
-          <ImportTray key={tray.source} tray={tray} />
+      {/* Tres columnas recién desde `xl`: con el menú abierto, en 1024–1279 px cada bandeja
+          quedaba de 218 px y los botones se salían. En el medio, ARCA (la mensual) va sola
+          arriba y las dos semanales, lado a lado. */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 md:grid-cols-2 xl:grid-cols-3">
+        {inbox.trays.map((tray, index) => (
+          <ImportTray
+            key={tray.source}
+            tray={tray}
+            wide={index === 0}
+            className={index === 0 ? 'md:max-xl:col-span-2' : undefined}
+          />
         ))}
       </div>
 
@@ -143,23 +162,28 @@ export default async function ImportarPage({
           title="Todo lo que subiste"
           description="Cada archivo, del más nuevo al más viejo."
         >
-          <nav aria-label="Filtrar los archivos por origen" className="mb-3 flex flex-wrap gap-1.5">
-            {[null, ...UI_IMPORT_SOURCES].map((s) => {
-              const q = new URLSearchParams()
-              if (s) q.set('origen', s)
-              return (
-                <PillLink
-                  key={s ?? 'todos'}
-                  href={`${importHref(tenantSlug)}${q.toString() ? `?${q}` : ''}#historial`}
-                  scroll={false}
-                  active={s === source}
-                  className="h-11 px-4 text-sm md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]"
-                >
-                  {s ? IMPORT_SOURCE_COPY[s].short : 'Todos'}
-                </PillLink>
-              )
-            })}
-          </nav>
+          {showFilter ? (
+            <nav
+              aria-label="Filtrar los archivos por origen"
+              className="mb-3 flex flex-wrap gap-1.5"
+            >
+              {[null, ...UI_IMPORT_SOURCES].map((s) => {
+                const q = new URLSearchParams()
+                if (s) q.set('origen', s)
+                return (
+                  <PillLink
+                    key={s ?? 'todos'}
+                    href={`${importHref(tenantSlug)}${q.toString() ? `?${q}` : ''}#historial`}
+                    scroll={false}
+                    active={s === source}
+                    className="h-11 px-4 text-sm md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]"
+                  >
+                    {s ? IMPORT_SOURCE_COPY[s].short : 'Todos'}
+                  </PillLink>
+                )
+              })}
+            </nav>
+          ) : null}
           {canWrite ? (
             rows.length === 0 ? (
               <HistoryEmpty newestHref={newestHref} />

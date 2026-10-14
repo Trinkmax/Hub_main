@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { Panel, StatusPill } from '@/components/administracion/kit'
 import { ActionButton } from '@/components/administracion/quick-actions'
 import { formatDayMonth } from '@/lib/dates'
-import { formatCents } from '@/lib/money'
+import { formatCents, formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 
 /**
@@ -65,9 +65,12 @@ export function BalanceCheck({
 
   const match = book.balanceCents === reportCents
   const diff = Math.abs(book.balanceCents - reportCents)
+  // El título va en pesos sin centavos (los dos números de abajo los llevan); una
+  // diferencia de menos de un peso sí los muestra: «$ 0 de diferencia» no sería cierto.
+  const diffWords = diff < 100 ? formatCents(diff) : formatCentsShort(diff)
   return (
     <Panel
-      title={match ? '¿Coincide?' : `Hay ${formatCents(diff)} de diferencia con ${who}`}
+      title={match ? '¿Coincide?' : `Hay ${diffWords} de diferencia con ${who}`}
       action={
         match ? (
           <StatusPill tone="ok">Coincide</StatusPill>

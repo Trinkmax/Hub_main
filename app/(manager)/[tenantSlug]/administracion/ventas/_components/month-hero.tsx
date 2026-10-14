@@ -13,6 +13,7 @@ import {
   weekdayName,
 } from '@/lib/dates'
 import { formatCentsShort } from '@/lib/money'
+import { keepPercent, staleNote, staleTarget } from '../_lib/almanac'
 import { tabHref } from '../_lib/ventas-view'
 
 /**
@@ -66,15 +67,39 @@ export function MonthHero({
   const title = monthTitle(summary, name)
   const hasSales = summary.soldCents > 0
   const future = summary.monthState === 'future'
+  // «A hoy» cuenta una noche que todavía no tiene cierre: se dice cuál, debajo de su cifra.
+  const stale = staleTarget(projection)
+  // Un mes que viene sin objetivo: una sola frase a la izquierda y, a la derecha, solo la acción.
+  const futureBare = future && !summary.hasTargets
+  // Quien solo mira un mes que viene sin objetivo no tiene nada que hacer en el recuadro.
+  const showTrack = summary.hasTargets || canWrite || !future
   // La oración de siempre le habla a quien carga; a quien solo mira, se le dice qué va a ver.
   const sentence =
     !canWrite && !hasSales && summary.monthState === 'current'
       ? 'Cuando los dueños carguen los cierres del día, vas a ver acá lo vendido de cada noche.'
-      : monthSentence(projection)
+      : futureBare
+        ? canWrite
+          ? 'Ponele el objetivo ahora: cuando arranque, cada noche te dice si quedó arriba o abajo.'
+          : 'Todavía no tiene objetivos cargados.'
+        : // Un mes sin nada cargado: la oración nombra el MISMO día que el botón (decía «el cierre
+          // de ayer» y el botón llevaba al primero que falta, que puede ser de antes).
+          canWrite &&
+            !hasSales &&
+            !summary.hasTargets &&
+            summary.monthState === 'current' &&
+            firstMissingDate
+          ? `Cargá el cierre del ${dayWords(firstMissingDate)} para empezar a ver cómo viene el mes.`
+          : monthSentence(projection)
 
   return (
     <HeroPanel tone="bosque" className="grid gap-x-8 gap-y-5 lg:grid-cols-12">
-      <div className="flex min-w-0 flex-col gap-4 lg:col-span-7">
+      <div
+        className={
+          showTrack
+            ? 'flex min-w-0 flex-col gap-4 lg:col-span-7'
+            : 'flex min-w-0 flex-col gap-4 lg:col-span-12'
+        }
+      >
         {hasSales ? (
           <MoneyHero
             tone="onHero"
@@ -144,79 +169,104 @@ export function MonthHero({
       </div>
 
       {/* La pista: lo vendido contra el objetivo del mes, con la marca de «a hoy». */}
-      <div className="min-w-0 rounded-2xl bg-white/8 p-4 sm:p-5 lg:col-span-5">
-        {summary.hasTargets ? (
-          <div className="space-y-4">
-            <h3 className="font-serif text-lg font-semibold leading-snug tracking-tight text-adm-hero-fg text-balance">
-              {hasSales
-                ? title
-                : `El objetivo de ${name} es ${formatCentsShort(summary.monthTargetCents)}`}
-            </h3>
-            <Meter
-              tone="onHero"
-              height={14}
-              valueCents={summary.soldCents}
-              totalCents={summary.monthTargetCents}
-              markerCents={summary.targetToDateCents}
-              markerLabel="objetivo a hoy"
-              label="Vendido del objetivo del mes"
-            />
-            <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
-              {[figures.target, figures.remaining].map((figure) => (
-                <div key={figure.label} className="min-w-0">
-                  <dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-adm-hero-muted">
-                    {figure.label}
-                  </dt>
-                  <dd className="mt-1 font-serif text-2xl font-semibold leading-none tracking-tight text-adm-hero-fg tabular-nums">
-                    {figure.value}
-                  </dd>
-                  {figure.hint ? (
-                    <dd className="mt-1.5 text-xs leading-snug text-adm-hero-muted text-pretty">
-                      {figure.hint}
+      {showTrack ? (
+        <div
+          className={
+            futureBare
+              ? 'flex min-w-0 flex-col justify-center gap-2 rounded-2xl bg-white/8 p-4 sm:p-5 lg:col-span-5'
+              : 'min-w-0 rounded-2xl bg-white/8 p-4 sm:p-5 lg:col-span-5'
+          }
+        >
+          {summary.hasTargets ? (
+            <div className="space-y-4">
+              <h3 className="font-serif text-lg font-semibold leading-snug tracking-tight text-adm-hero-fg text-balance">
+                {hasSales
+                  ? keepPercent(title)
+                  : `El objetivo de ${name} es ${formatCentsShort(summary.monthTargetCents)}`}
+              </h3>
+              <Meter
+                tone="onHero"
+                height={14}
+                valueCents={summary.soldCents}
+                totalCents={summary.monthTargetCents}
+                markerCents={summary.targetToDateCents}
+                markerLabel="objetivo a hoy"
+                label="Vendido del objetivo del mes"
+              />
+              {/* Lado a lado: el «%» va pegado a su número (`keepPercent`), así «vas 4 %» nunca
+                  queda partido en dos renglones. */}
+              <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                {[figures.target, figures.remaining].map((figure) => (
+                  <div key={figure.label} className="min-w-0">
+                    <dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-adm-hero-muted">
+                      {figure.label}
+                    </dt>
+                    <dd className="mt-1 font-serif text-2xl font-semibold leading-none tracking-tight text-adm-hero-fg tabular-nums">
+                      {figure.value}
                     </dd>
-                  ) : null}
-                </div>
-              ))}
-            </dl>
-          </div>
-        ) : (
-          <div className="flex h-full flex-col gap-1 lg:gap-3">
-            <h3 className="font-serif text-lg font-semibold leading-snug tracking-tight text-adm-hero-fg text-balance">
-              {capitalizeFirst(name)}{' '}
-              {summary.monthState === 'past' ? 'no tuvo objetivo' : 'todavía no tiene objetivo'}
-            </h3>
-            {/* La pista vacía: el riel punteado, con la marca de «hoy» donde iría. En el celular
-                no se dibuja (cada renglón cuenta): quedan el título y el link. */}
-            <div
-              aria-hidden
-              className="relative h-3.5 rounded-full border border-dashed border-white/35 max-lg:hidden"
-            >
-              <span className="absolute inset-y-[-4px] left-[42%] w-px bg-white/45" />
+                    {figure.hint ? (
+                      <dd className="mt-1.5 text-xs leading-snug text-adm-hero-muted text-pretty">
+                        {keepPercent(figure.hint)}
+                        {figure === figures.target && stale ? (
+                          <span className="block">{staleNote(stale)}</span>
+                        ) : null}
+                      </dd>
+                    ) : null}
+                  </div>
+                ))}
+              </dl>
             </div>
-            {canWrite ? (
-              <>
-                <p className="text-sm leading-relaxed text-adm-hero-muted text-pretty max-lg:hidden">
-                  {summary.monthState === 'past'
-                    ? 'Con un objetivo, cada noche del almanaque dice si quedó arriba o abajo.'
-                    : 'Con un objetivo, acá ves por dónde deberías ir hoy y cuánto te falta vender.'}
-                </p>
-                <Link
-                  href={tabHref(base, 'proyeccion', { mes: month })}
-                  className="mt-auto inline-flex min-h-11 w-fit items-center gap-1.5 rounded-sm text-sm font-medium text-adm-hero-fg underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                >
+          ) : futureBare ? (
+            canWrite ? (
+              // Un mes que viene: solo la acción, la del momento (lo que pasa después ya lo dice
+              // la izquierda).
+              <Button
+                asChild
+                className="min-h-12 w-full gap-2 px-5 text-base font-semibold sm:w-fit"
+              >
+                <Link href={tabHref(base, 'proyeccion', { mes: month })}>
                   <Target aria-hidden className="size-4 shrink-0" />
                   Poner el objetivo de {name}
-                  <ArrowRight aria-hidden className="size-3.5 shrink-0" />
                 </Link>
-              </>
-            ) : (
-              <p className="text-sm leading-relaxed text-adm-hero-muted text-pretty">
-                Este mes no tiene objetivos cargados.
-              </p>
-            )}
-          </div>
-        )}
-      </div>
+              </Button>
+            ) : null
+          ) : (
+            <div className="flex h-full flex-col gap-1 lg:gap-3">
+              <h3 className="font-serif text-lg font-semibold leading-snug tracking-tight text-adm-hero-fg text-balance">
+                {capitalizeFirst(name)}{' '}
+                {summary.monthState === 'past' ? 'no tuvo objetivo' : 'todavía no tiene objetivo'}
+              </h3>
+              {/* La pista vacía: el riel punteado, sin marcas (sin objetivo no hay «a hoy»). En
+                  el celular no se dibuja (cada renglón cuenta): quedan el título y el link. */}
+              <div
+                aria-hidden
+                className="h-3.5 rounded-full border border-dashed border-white/35 max-lg:hidden"
+              />
+              {canWrite ? (
+                <>
+                  <p className="text-sm leading-relaxed text-adm-hero-muted text-pretty max-lg:hidden">
+                    {summary.monthState === 'past'
+                      ? 'Con un objetivo, cada noche del almanaque dice si quedó arriba o abajo.'
+                      : 'Con un objetivo, acá ves por dónde deberías ir hoy y cuánto te falta vender.'}
+                  </p>
+                  <Link
+                    href={tabHref(base, 'proyeccion', { mes: month })}
+                    className="mt-auto inline-flex min-h-11 w-fit items-center gap-1.5 rounded-sm text-sm font-medium text-adm-hero-fg underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Target aria-hidden className="size-4 shrink-0" />
+                    Poner el objetivo de {name}
+                    <ArrowRight aria-hidden className="size-3.5 shrink-0" />
+                  </Link>
+                </>
+              ) : (
+                <p className="text-sm leading-relaxed text-adm-hero-muted text-pretty">
+                  Este mes no tiene objetivos cargados.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      ) : null}
     </HeroPanel>
   )
 }

@@ -341,6 +341,24 @@ describe('«El mes» con cierres y objetivos', () => {
     expect(read).toContain('Cargar una lista')
   })
 
+  it('antes de cargar el cierre de anoche, la hoja verde y «Proyección» dicen por qué «a hoy» da abajo', async () => {
+    // Cierres hasta el 11; hoy es el 13 y falta el del 12, que «a hoy» ya cuenta.
+    const read = text(await renderMonth({ targetCents: 100_000_000 }))
+    expect(read).toContain('Cuenta el lun 12/10, que todavía no tiene cierre.')
+    expect(read).toContain('Con lo cargado hasta el dom 11/10')
+    expect(read).toContain('Falta el cierre del lun 12/10: el objetivo a hoy ya cuenta esa noche')
+  })
+
+  it('con la planilla abierta, «Proyección» va a todo el ancho, fuera de la columna del almanaque', async () => {
+    const markup = await renderMonth({ targetCents: 150_000_000 }, { focus: 'proyeccion' })
+    const column = markup.indexOf('xl:row-start-2')
+    const block = markup.indexOf('id="proyeccion"')
+    // Va después de la grilla de dos columnas (y de la columna de abajo del almanaque).
+    expect(column).toBeGreaterThan(-1)
+    expect(block).toBeGreaterThan(column)
+    expect(markup.slice(column, block)).toContain('id="caja"')
+  })
+
   it('la suma de los casilleros es el número de arriba: la venta neta de cada noche', async () => {
     const markup = await renderMonth({ targetCents: 150_000_000 })
     // 11 noches de $ 955.000 netos (900 + 100 − 20 − 25 mil).
@@ -410,7 +428,7 @@ describe('el bar recién arrancado (así está HUB)', () => {
     const read = text(markup)
     expect(read).toContain('Todavía no hay ventas cargadas en octubre')
     expect(read).toContain('Cargar el cierre del lun 12/10 lunes 12/10')
-    expect(read).toContain('Así se llenan las ventas, sin punto de venta')
+    expect(read).toContain('Así se llenan las ventas, a mano')
     expect(read).toContain('El ticket de cada noche')
     expect(read).toContain('Ejemplo')
     expect(read).toContain('Llevás la cuenta desde el 12/10')
@@ -596,7 +614,9 @@ describe('la contadora (solo lectura) no ve ningún botón de carga', () => {
     expect(read).toContain('Sábado 10 de octubre')
     expect(read).toContain('Vendido esa noche')
     expect(read).toContain('$ 1.500.000')
-    expect(read).toContain('64 % · 36 % abajo')
+    // La pastilla dice una sola cosa (no «64 % · 36 % abajo»).
+    expect(read).toContain('36 % abajo del objetivo')
+    expect(read).not.toContain('64 % · 36 %')
     expect(read).toContain('Todavía no se anotó lo que entró ese día.')
     expect(markup).not.toContain('<button')
     expect(markup).not.toContain('/ventas/cierre')
@@ -982,11 +1002,12 @@ describe('las piezas de «Registrar un cobro»', () => {
       )
     expect(line(null, null)).toBe('Escribí cuánto te entró y te mostramos cuánto te descontaron.')
     expect(line(0, 100)).toBe('Coincide con la liquidación.')
-    expect(line(320_000, 100)).toBe(
-      'Faltan explicar $ 3.200,00 Es comisión Son otros cargos No sé qué es',
+    // Sin centavos: es un aviso, no un ticket (los centavos quedan en los campos y en el papel).
+    expect(line(320_050, 100)).toBe(
+      'Faltan explicar $ 3.201. ¿Qué es? Es comisión Son otros cargos No sé qué es',
     )
-    expect(line(-320_000, 100)).toContain('Entraron $ 3.200,00 más de lo que da la cuenta')
-    expect(line(-320_000, 100)).toContain('Dejarlo a cuenta ($ 3.200,00)')
+    expect(line(-320_000, 100)).toContain('Entraron $ 3.200 más de lo que da la cuenta')
+    expect(line(-320_000, 100)).toContain('Dejarlo a cuenta ($ 3.200)')
   })
 
   it('el ticket de la liquidación: las ventas, cada descuento con su menos y lo que entró', () => {

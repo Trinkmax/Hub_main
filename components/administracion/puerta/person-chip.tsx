@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils'
  *
  * - `tone="filled"`: entra (círculo relleno suave). `tone="hollow"`: todavía no
  *   entra (círculo punteado, vacío). El tono nunca va solo: al lado va el
- *   renglón que lo dice («Sin acceso a Administración»).
+ *   renglón que lo dice («Sin acceso todavía»).
  * - `badge`: al lado del nombre («Vos»). `sub`: el renglón gris de abajo.
  * - `framed`: la persona como una ficha con borde, para ir suelta en una frase
  *   («Pedile acceso a [Franco] [Nacho]»).

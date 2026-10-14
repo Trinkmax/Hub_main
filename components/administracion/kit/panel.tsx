@@ -101,7 +101,14 @@ export function PanelSection({
       )}
     >
       {hasHeader ? (
-        <div className="mb-3 flex items-start justify-between gap-3">
+        <div
+          className={cn(
+            'mb-3 flex items-start justify-between gap-3',
+            // En el celular, con descripción, la acción baja a su renglón: al lado, la
+            // descripción quedaba en una columna angosta de cuatro renglones.
+            description && action && 'max-sm:flex-col max-sm:gap-2',
+          )}
+        >
           <div className="min-w-0">
             {title ? <h3 className="text-sm font-semibold leading-snug">{title}</h3> : null}
             {description ? (

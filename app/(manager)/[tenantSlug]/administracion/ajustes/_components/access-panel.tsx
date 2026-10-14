@@ -50,7 +50,7 @@ import { useMasterAction } from './use-master-action'
 /** Un contador al lado de un título: en su pastilla, nunca un número suelto. */
 function Count({ n }: { n: number }) {
   return (
-    <span className="ml-2 inline-flex translate-y-[-1px] rounded-full bg-secondary px-2 py-0.5 align-middle font-mono text-[11px] font-medium tabular-nums">
+    <span className="ml-2 inline-flex translate-y-[-1px] rounded-full bg-secondary px-2 py-0.5 align-middle text-[11px] font-medium tabular-nums">
       {n}
     </span>
   )
@@ -212,7 +212,9 @@ export function AccessPanel({
         </div>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:items-start">
+      {/* La columna única del celular también es `minmax(0, …)`: sin eso, un nombre largo (que no
+          corta de renglón) ensancha los dos paneles y el botón «Dar acceso» queda fuera de la pantalla. */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:items-start">
         <Panel
           title={
             <>
@@ -239,7 +241,7 @@ export function AccessPanel({
                 return (
                   <li
                     key={row.userId}
-                    className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+                    className="flex min-w-0 flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <PersonChip
                       name={row.displayName}
@@ -323,16 +325,21 @@ export function AccessPanel({
                 {outside.map((member) => (
                   <li
                     key={member.userId}
-                    className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
+                    className="flex min-w-0 items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
                   >
                     <PersonChip
                       name={member.name}
                       tone="hollow"
-                      sub="Sin acceso a Administración"
+                      // Corto: el título del panel ya dice dónde; en el celular entra en un renglón
+                      // al lado de «Dar acceso».
+                      sub="Sin acceso todavía"
                     />
                     {isAdmin ? (
+                      // En contorno: con doce socios afuera eran doce botones verdes rellenos en
+                      // columna, y el relleno queda para la acción de la vista.
                       <Button
                         type="button"
+                        variant="outline"
                         className="h-11 shrink-0 rounded-full px-4"
                         disabled={pending}
                         aria-label={`Dar acceso a ${member.name}`}
@@ -357,7 +364,7 @@ export function AccessPanel({
                 {overview.accountants.map((a) => (
                   <li
                     key={a.userId}
-                    className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
+                    className="flex min-w-0 items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
                   >
                     <PersonChip name={a.name} />
                     <StatusPill tone="muted" icon={Eye}>
@@ -420,7 +427,7 @@ export function AccessPanel({
               className="size-4 text-muted-foreground transition-transform group-open/history:rotate-90 motion-reduce:transition-none"
             />
             Accesos que se sacaron
-            <span className="rounded-full bg-card px-1.5 py-px font-mono text-[11px] tabular-nums">
+            <span className="rounded-full bg-card px-1.5 py-px text-[11px] font-medium tabular-nums">
               {overview.revoked.length}
             </span>
           </summary>

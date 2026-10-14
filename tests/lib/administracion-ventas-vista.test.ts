@@ -2,9 +2,15 @@ import { describe, expect, it } from 'vitest'
 import {
   almanacCells,
   cellAmount,
+  cellMillions,
   cellShort,
   defaultDay,
+  keepPercent,
   longDayTitle,
+  nightPaceText,
+  staleNote,
+  staleSentence,
+  staleTarget,
 } from '@/app/(manager)/[tenantSlug]/administracion/ventas/_lib/almanac'
 import {
   receivableMeta,
@@ -231,6 +237,21 @@ describe('almanacCells: qué dice cada casillero', () => {
     expect(cell('2026-10-20').href).toBe(`${BASE}/ventas?mes=2026-10&dia=2026-10-20`)
   })
 
+  it('la raya del objetivo va solo en las noches cargadas: nunca sobre «hoy», lo que viene ni lo que falta', () => {
+    const rows = source((day) =>
+      day === '2026-10-09'
+        ? { closes: 1, salonCents: 200_000_000, targetCents: 150_000_000 }
+        : { targetCents: 150_000_000 },
+    )
+    const { cell } = almanac(rows)
+    expect(cell('2026-10-09').marker).toBeCloseTo(150_000_000 / 200_000_000, 5)
+    // Falta el cierre, hoy y un día que viene: el objetivo se dice con palabras (o nada), sin raya.
+    for (const date of ['2026-10-08', '2026-10-13', '2026-10-20']) {
+      expect(cell(date).marker ?? null).toBeNull()
+    }
+    expect(cell('2026-10-20').caption).toBe(`obj. $${NB}1,5${NB}M`)
+  })
+
   it('quien no lee el calendario no ve los eventos, pero sí las notas', () => {
     const rows = source((day) => (day === '2026-10-20' ? { note: '2x1 burger' } : {}))
     const { cell } = almanac(rows, { events: null })
@@ -260,15 +281,27 @@ describe('cellAmount y cellShort: el importe entra en el casillero', () => {
     expect(cellShort(113_802_900)).toBe(`1,1${NB}M`)
   })
 
-  it('en el celular, de $ 100.000 a $ 1 M va en millones: «806 mil» no entra en 42 px', () => {
-    expect(cellShort(80_579_400)).toBe(`0,8${NB}M`)
-    expect(cellShort(10_000_000)).toBe(`0,1${NB}M`)
-    expect(cellShort(97_000_000)).toBe(`1${NB}M`)
-    // Más chico que eso son dos cifras y sí entra con su «mil».
+  it('en el celular, debajo del millón va en miles, como lo dice el dueño: «806 mil», no «0,8 M»', () => {
+    expect(cellShort(80_579_400)).toBe(`806${NB}mil`)
+    expect(cellShort(71_631_600)).toBe(`716${NB}mil`)
+    expect(cellShort(10_000_000)).toBe(`100${NB}mil`)
     expect(cellShort(8_500_000)).toBe(`85${NB}mil`)
-    // Ninguno pasa de cinco caracteres.
+    // Desde $ 999.500 ya es «1 M».
+    expect(cellShort(99_999_999)).toBe(`1${NB}M`)
+    // Tres cifras y su unidad: siete caracteres como mucho.
+    for (const cents of [10_000_000, 55_500_000, 99_940_000]) {
+      expect(cellShort(cents).length).toBeLessThanOrEqual(7)
+    }
+  })
+
+  it('el almanaque chico del asistente sigue en millones: su casillero mide 30 px', () => {
+    expect(cellMillions(80_579_400)).toBe(`0,8${NB}M`)
+    expect(cellMillions(10_000_000)).toBe(`0,1${NB}M`)
+    expect(cellMillions(97_000_000)).toBe(`1${NB}M`)
+    expect(cellMillions(113_802_900)).toBe(`1,1${NB}M`)
+    expect(cellMillions(8_500_000)).toBe(`85${NB}mil`)
     for (const cents of [10_000_000, 55_500_000, 99_999_999]) {
-      expect(cellShort(cents).length).toBeLessThanOrEqual(5)
+      expect(cellMillions(cents).length).toBeLessThanOrEqual(5)
     }
   })
 
@@ -277,6 +310,71 @@ describe('cellAmount y cellShort: el importe entra en el casillero', () => {
     expect(cellShort(0)).toBe('0')
     expect(cellAmount(Number.NaN)).toBe('')
     expect(cellShort(Number.POSITIVE_INFINITY)).toBe('')
+  })
+})
+
+describe('«A hoy» contra lo cargado: cuando hoy todavía falta el cierre de anoche', () => {
+  /** Octubre con objetivo de $ 1.000.000 por noche y cierres hasta el `closedBefore` (sin incluirlo). */
+  function month(closedBefore: string, salonCents: number) {
+    const rows = source((day) => ({
+      targetCents: 100_000_000,
+      ...(day < closedBefore ? { closes: 1, salonCents } : {}),
+    }))
+    return buildProjection(rows, { serviceDay: TODAY })
+  }
+
+  it('con lo cargado vas arriba, pero «a hoy» cuenta una noche sin cierre y te da abajo', () => {
+    // Cierres del 1 al 11 de $ 1.040.000; falta el del 12. A hoy (el 12) se cuentan 12 objetivos.
+    const projection = month('2026-10-12', 104_000_000)
+    expect(projection.summary.pace).toMatchObject({ side: 'below', gapPercent: 5 })
+    const stale = staleTarget(projection)
+    expect(stale).toMatchObject({
+      lastLoaded: '2026-10-11',
+      missing: ['2026-10-12'],
+      loadedPace: { side: 'above', gapPercent: 4 },
+    })
+    if (!stale) throw new Error('sin puente')
+    expect(staleSentence(stale)).toBe(
+      `Con lo cargado hasta el dom 11/10 vas 4${NB}% arriba. Falta el cierre del lun 12/10: el objetivo a hoy ya cuenta esa noche, por eso te da 5${NB}% abajo.`,
+    )
+    expect(staleNote(stale)).toBe('Cuenta el lun 12/10, que todavía no tiene cierre.')
+  })
+
+  it('con varias noches sin cierre, las cuenta', () => {
+    const stale = staleTarget(month('2026-10-07', 104_000_000))
+    expect(stale?.missing).toHaveLength(6)
+    if (!stale) throw new Error('sin puente')
+    expect(staleSentence(stale)).toContain('Faltan 6 cierres, desde el mié 07/10')
+    expect(staleSentence(stale)).toContain('ya cuenta esas noches')
+    expect(staleNote(stale)).toBe('Cuenta 6 noches que todavía no tienen cierre.')
+  })
+
+  it('con todo cargado hasta ayer no hay nada que explicar', () => {
+    expect(staleTarget(month('2026-10-13', 104_000_000))).toBeNull()
+    // Sin objetivos, tampoco.
+    const rows = source((day) => (day < '2026-10-12' ? { closes: 1, salonCents: 100 } : {}))
+    expect(staleTarget(buildProjection(rows, { serviceDay: TODAY }))).toBeNull()
+  })
+})
+
+describe('la pastilla de la noche y el «%» pegado a su número', () => {
+  it('la pastilla dice una sola cosa', () => {
+    expect(nightPaceText({ kind: 'value', percent: 84, side: 'below', gapPercent: 16 })).toBe(
+      `16${NB}% abajo del objetivo`,
+    )
+    expect(nightPaceText({ kind: 'value', percent: 108, side: 'above', gapPercent: 8 })).toBe(
+      `8${NB}% arriba del objetivo`,
+    )
+    expect(nightPaceText({ kind: 'value', percent: 100, side: 'on', gapPercent: 0 })).toBe(
+      'Justo en el objetivo',
+    )
+  })
+
+  it('«vas 4 %» no se parte: el espacio antes del «%» es duro', () => {
+    expect(keepPercent('Hasta el lun 12/10: vas 4 % abajo.')).toBe(
+      `Hasta el lun 12/10: vas 4${NB}% abajo.`,
+    )
+    expect(keepPercent('Sin porcentaje.')).toBe('Sin porcentaje.')
   })
 })
 

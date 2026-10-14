@@ -52,6 +52,7 @@ import {
   planPayment,
   resolveMethods,
 } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/payment-plan'
+import { pendingItemText } from '@/app/(manager)/[tenantSlug]/administracion/compras/_lib/purchase-paper'
 import {
   loadPartyDefaults,
   loadPartyItems,
@@ -94,7 +95,7 @@ import { PartyCombobox, type PartyOption } from '../party-combobox'
 import { TreasuryPicker } from '../treasury-picker'
 import { TreasurySelect } from '../treasury-select'
 import { VoucherText } from '../voucher-text'
-import { ticketTotalLabel } from './gasto-papel'
+import { exactAmountText, ticketTotalLabel } from './gasto-papel'
 import { TreasuryAfterHint, TreasuryAfterLine } from './gasto-piezas'
 import {
   OtherThanSupplier,
@@ -350,6 +351,7 @@ function WhoScreen({
             open={fixedOpen}
             onToggle={() => setFixedOpen((v) => !v)}
             fixed={fixed}
+            today={data?.today ?? null}
             // «Nuevo gasto» con ese gasto fijo ya elegido (`?gasto-fijo=`).
             onPickFixed={(id) => openAction('gasto', { 'gasto-fijo': id })}
             onOther={() => openAction(payTargetSheet(OTHER_TARGET.value))}
@@ -430,7 +432,13 @@ function PagarForm({
   if (!items.data || items.data.partyId !== chosen.id) {
     return (
       <>
-        <ActionSheetHeader title={`Pagar a ${partyName(chosen)}`} description={DESCRIPTION} />
+        <ActionSheetHeader
+          title={
+            // Un renglón en el celular, como cuando llega lo que se le debe: el encabezado no salta.
+            <span className="max-sm:block max-sm:truncate">Pagar a {partyName(chosen)}</span>
+          }
+          description={DESCRIPTION}
+        />
         <ActionSheetBody>
           {items.status === 'error' ? (
             <SheetLoadError message={items.message} onRetry={items.reload} />
@@ -488,6 +496,8 @@ function PaymentForm({
   const formRef = useRef<HTMLFormElement>(null)
   const rowsTouchedRef = useRef(false)
   const name = partyName(party)
+  // Solo para dibujar: «Sin comprobante · Nombre» → «Compra sin factura» (el plan no cambia).
+  const itemText = (label: string) => pendingItemText(label, [party.name, party.tradeName])
 
   // Las partidas por cuenta de control: un pago no mezcla cuentas (`mixed_control_accounts`).
   const accounts = useMemo(() => {
@@ -526,8 +536,13 @@ function PaymentForm({
     [partyItems.items, accountId],
   )
 
-  const [selected, setSelected] = useState<ReadonlySet<string>>(
-    () => new Set(defaultDebtSelection(debts, today, { extra: focusLine })),
+  // Con `?partida=` («Pagar» en un renglón de la libreta o en la ficha de un comprobante) se
+  // tilda SOLO esa: quien tocó «Pagar» en una compra no quiere pagarle todo al proveedor.
+  // Sin partida, lo vencido y lo de esta semana, como siempre.
+  const [selected, setSelected] = useState<ReadonlySet<string>>(() =>
+    focusLine && debts.some((d) => d.lineId === focusLine)
+      ? new Set([focusLine])
+      : new Set(defaultDebtSelection(debts, today)),
   )
   /** Importe a cancelar de cada factura tildada (`undefined` = todo lo pendiente). */
   const [targets, setTargets] = useState<ReadonlyMap<string, number | null>>(() => new Map())
@@ -796,25 +811,34 @@ function PaymentForm({
   const ticketLines = payTicketRows(plan.applications, (lineId) => labelOf.get(lineId))
   const ticketRows: PayTicketRow[] = ticketLines.rows.map((row) => ({
     key: row.key,
-    label: <VoucherText text={row.label} />,
+    label: <VoucherText text={itemText(row.label)} />,
     cents: row.cents,
   }))
   const nothingYet = outcome.kind === 'nothing'
+  const headline = payHeadline({
+    debtCents: debtTotal,
+    creditCents: creditTotal,
+    count: debts.length,
+  })
 
   return (
     <>
+      {/* En el celular el encabezado fijo es UN renglón con el nombre (cortado si es largo) y
+          «Elegir otro proveedor»: lo que se le debe baja al cuerpo y se va con el scroll. Con
+          el título en dos renglones y la oración en otros dos, el marco se comía media pantalla. */}
       <ActionSheetHeader
-        title={`Pagar a ${name}`}
-        description={payHeadline({
-          debtCents: debtTotal,
-          creditCents: creditTotal,
-          count: debts.length,
-        })}
+        title={
+          <span title={`Pagar a ${name}`} className="max-sm:block max-sm:truncate">
+            Pagar a {name}
+          </span>
+        }
+        description={<span className="max-sm:hidden">{headline}</span>}
       >
         <button
           type="button"
           onClick={onChangeParty}
-          className="inline-flex min-h-11 items-center gap-1 self-start rounded-sm text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"
+          // 44 px de toque en el celular, sin sumarle alto al encabezado.
+          className="inline-flex min-h-11 items-center gap-1 self-start rounded-sm text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-md:-my-2.5 md:min-h-0"
         >
           <X className="size-3" aria-hidden />
           Elegir otro proveedor
@@ -828,6 +852,8 @@ function PaymentForm({
         className="flex min-h-0 flex-1 flex-col"
       >
         <ActionSheetBody>
+          <p className="text-sm text-muted-foreground text-pretty sm:hidden">{headline}</p>
+
           {/* ¿Qué le pagás?: los atajos y las compras sin pagar, cada una con su tilde */}
           {debts.length > 0 || accounts.length > 1 ? (
             <section aria-labelledby={`${uid}-que`} className={SHEET_QUESTION_BLOCK}>
@@ -874,18 +900,22 @@ function PaymentForm({
 
               {debts.length > 0 ? (
                 <>
-                  <fieldset className="m-0 flex min-w-0 flex-wrap gap-2 border-0 p-0">
+                  {/* En el celular las dos píldoras van lado a lado (de a una por renglón dejaban
+                      entrar dos compras y media en la primera pantalla) y el link, en su renglón:
+                      nada queda escondido detrás del borde. Con importes muy largos bajan de
+                      renglón en vez de cortarse. */}
+                  <fieldset className="m-0 flex min-w-0 flex-wrap items-center gap-2 border-0 p-0">
                     <legend className="sr-only">Atajos para tildar</legend>
                     {quick.overdue.ids.length > 0 &&
                     quick.overdue.ids.length < quick.all.ids.length ? (
                       <Pill
                         size="touch"
                         active={quickActive === 'overdue'}
-                        className="md:pointer-fine:h-9"
+                        className="max-sm:px-3 md:pointer-fine:h-9"
                         onClick={() => pickQuick(quick.overdue.ids)}
                       >
                         Lo vencido
-                        <span className="ml-1.5 tabular-nums opacity-80">
+                        <span className="ml-1 tabular-nums opacity-80 sm:ml-1.5">
                           {formatCentsShort(quick.overdue.cents)}
                         </span>
                       </Pill>
@@ -893,22 +923,27 @@ function PaymentForm({
                     <Pill
                       size="touch"
                       active={quickActive === 'all'}
-                      className="md:pointer-fine:h-9"
+                      className="max-sm:px-3 md:pointer-fine:h-9"
                       onClick={() => pickQuick(quick.all.ids)}
                     >
                       Todo
-                      <span className="ml-1.5 tabular-nums opacity-80">
+                      <span className="ml-1 tabular-nums opacity-80 sm:ml-1.5">
                         {formatCentsShort(quick.all.cents)}
                       </span>
                     </Pill>
-                    <Pill
-                      size="touch"
-                      active={quickActive === 'none'}
-                      className="md:pointer-fine:h-9"
+                    {/* La salida rara, callada: un link, no una tercera píldora. */}
+                    <button
+                      type="button"
+                      aria-pressed={quickActive === 'none'}
                       onClick={() => pickQuick([])}
+                      className={cn(
+                        TEXT_LINK,
+                        'shrink-0 whitespace-nowrap px-1 text-sm',
+                        quickActive === 'none' && 'font-medium text-foreground underline',
+                      )}
                     >
                       Nada: le dejo plata a cuenta
-                    </Pill>
+                    </button>
                   </fieldset>
 
                   <LedgerList aria-label="Compras sin pagar">
@@ -927,7 +962,7 @@ function PaymentForm({
                                 <TickMark on={on} />
                               </span>
                               <span>
-                                <VoucherText text={d.label} />
+                                <VoucherText text={itemText(d.label)} />
                               </span>
                             </span>
                           }
@@ -1028,7 +1063,7 @@ function PaymentForm({
                           </span>
                           <span>
                             {/* El número entero: truncado, «Nota de crédito A 0003-000…» no se distingue de otra. */}
-                            <VoucherText text={c.label} />
+                            <VoucherText text={itemText(c.label)} />
                           </span>
                         </span>
                       }
@@ -1085,7 +1120,7 @@ function PaymentForm({
               error={errors.amount ?? null}
               hint={
                 plan.creditUsedCents > 0
-                  ? `Lo tildado ${formatCents(plan.appliedCents)} menos lo que tenés a favor ${formatCents(plan.creditUsedCents)}.`
+                  ? `Lo tildado ${exactAmountText(plan.appliedCents)} menos lo que tenés a favor ${exactAmountText(plan.creditUsedCents)}.`
                   : undefined
               }
               className={BIG_MONEY_FIELD}
@@ -1100,7 +1135,7 @@ function PaymentForm({
                     setAmount(null)
                   }}
                 >
-                  Volver a lo tildado: {formatCents(plan.suggestedCents)}
+                  Volver a lo tildado: {exactAmountText(plan.suggestedCents)}
                 </button>
               ) : null}
             </MoneyField>
@@ -1118,7 +1153,7 @@ function PaymentForm({
                 />
                 <span className="space-y-0.5">
                   <span className="block font-medium">
-                    Dar por pagados los {formatCents(plan.restCents)} que faltan
+                    Dar por pagados los {exactAmountText(plan.restCents)} que faltan
                   </span>
                   <span className="block text-xs text-muted-foreground">
                     Para diferencias chicas de redondeo (hasta $ 1.000).

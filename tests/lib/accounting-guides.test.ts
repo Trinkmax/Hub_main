@@ -383,7 +383,11 @@ const SCREEN_SOURCES: Readonly<Record<ScreenKey, readonly string[]>> = {
     'lib/imports/ui/inbox.ts',
     'lib/imports/ui/review-copy.ts',
   ],
-  comprobante: [`${ADM}/comprobantes/[id]/_components`],
+  // El mapa de vínculos arma sus botones en `document-story.ts` («Anotar que llegó»).
+  comprobante: [
+    `${ADM}/comprobantes/[id]/_components`,
+    `${ADM}/comprobantes/_lib/document-story.ts`,
+  ],
   gastosFijos: [
     `${ADM}/gastos-fijos/page.tsx`,
     `${ADM}/gastos-fijos/_components`,
@@ -583,10 +587,38 @@ describe('textos para cualquier bar, con un solo libro', () => {
   it('el glosario dice la idea primero y explica cada palabra', () => {
     expect(new Set(GUIDE_GLOSSARY.map((g) => g.idea)).size).toBe(GUIDE_GLOSSARY.length)
     for (const g of GUIDE_GLOSSARY) expect(g.meaning.trim(), g.idea).not.toBe('')
-    const names = GUIDE_GLOSSARY.map((g) => g.name)
-    for (const name of ['Asiento', 'Plan de cuentas', 'Crédito fiscal', 'Punto de venta']) {
+    const names = GUIDE_GLOSSARY.map((g) => g.name ?? g.idea)
+    // Es el único glosario: «Cómo arrancar» manda acá, así que trae también sus palabras.
+    for (const name of [
+      'Asiento',
+      'Plan de cuentas',
+      'Crédito fiscal',
+      'Punto de venta',
+      'Constancia de inscripción',
+      'Ingresos Brutos',
+      'Mis Comprobantes',
+      'CBU y CVU',
+      'Retención',
+      'Saldos iniciales',
+      'ARCA',
+      'CUIT',
+    ]) {
       expect(names, name).toContain(name)
     }
+  })
+
+  it('los botones dicen adónde llevan: «Fin de mes» no «cierra» nada con un toque', () => {
+    const label = `Ir a ${SCREEN_LABELS.cierreMes.title}`
+    expect(guideRecipe('fin-de-mes').action.label).toBe(label)
+    expect(GUIDE_STATIONS.find((s) => s.id === 'fin-de-mes')?.action.label).toBe(label)
+    for (const r of GUIDE_RECIPES) expect(r.action.label, r.id).not.toMatch(/^Cerrar /)
+  })
+
+  it('«Pago un gasto fijo» nombra los dos «Pagar» de la planilla: el de arriba y el del renglón', () => {
+    const first = guideRecipe('gasto-fijo').steps[0]?.text ?? ''
+    expect(first).toContain(`«${SCREEN_LABELS.gastosFijos.pay}»`)
+    expect(first).toContain(`«${SCREEN_LABELS.gastosFijos.next}»`)
+    expect(first).toContain('en su renglón')
   })
 
   it('las páginas de la guía cuelgan de /guias', () => {
@@ -669,7 +701,7 @@ describe('el estado de la rutina', () => {
     // (lo pide el Resumen). Contar contra un saldo en cero cargaría un sobrante que no existe.
     expect(routineStatus('treasury_check', o)).toEqual({
       state: 'idle',
-      text: 'Primero cargá lo que hay en cada caja',
+      text: 'Primero cargá lo que había en cada caja al arrancar',
     })
     // Con los saldos iniciales cargados, las mismas dos cajas sí son un «te toca».
     expect(routineStatus('treasury_check', overviewOf({ ...NEW_BAR, opening_done: true }))).toEqual(

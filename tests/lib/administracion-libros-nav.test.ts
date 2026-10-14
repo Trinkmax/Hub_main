@@ -12,6 +12,7 @@ import {
   packageStatusLine,
 } from '@/app/(manager)/[tenantSlug]/administracion/libros/_lib/package'
 import {
+  collapseHistoryRuns,
   groupHistoryByDay,
   historyDayLabel,
   historyText,
@@ -375,5 +376,52 @@ describe('la historia agrupada por día', () => {
     expect(personInitial('  Ángela Gómez')).toBe('Á')
     expect(personInitial('')).toBe('·')
     expect(personInitial(null)).toBe('·')
+  })
+})
+
+describe('historia: lo mismo seguido va en un renglón', () => {
+  const row = (
+    over: Partial<Parameters<typeof collapseHistoryRuns>[0][number]> & { id: string },
+  ) => ({
+    createdAt: '2026-10-12T22:31:10Z',
+    actorName: 'Socio Nueve',
+    text: 'cambió un gasto fijo',
+    documentId: null,
+    amountCents: null,
+    detail: null,
+    ...over,
+  })
+
+  it('treinta cambios de la misma persona en el mismo minuto → uno con «30 veces»', () => {
+    const rows = Array.from({ length: 30 }, (_, i) => row({ id: `r${i}` }))
+    const runs = collapseHistoryRuns([
+      ...rows,
+      row({ id: 'otro', text: 'cargó varios gastos fijos de una vez' }),
+      row({ id: 'r-late', createdAt: '2026-10-12T22:35:00Z' }),
+    ])
+    expect(runs.map((r) => [r.row.id, r.count])).toEqual([
+      ['r0', 30],
+      ['otro', 1],
+      ['r-late', 1],
+    ])
+  })
+
+  it('lo que tiene comprobante o importe nunca se junta', () => {
+    const runs = collapseHistoryRuns([
+      row({ id: 'a', text: 'cargó Compra', documentId: 'd1' }),
+      row({ id: 'b', text: 'cargó Compra', documentId: 'd1' }),
+      row({ id: 'c', amountCents: 100 }),
+      row({ id: 'd', amountCents: 100 }),
+    ])
+    expect(runs.map((r) => r.count)).toEqual([1, 1, 1, 1])
+  })
+
+  it('otra persona corta la racha', () => {
+    const runs = collapseHistoryRuns([
+      row({ id: 'a' }),
+      row({ id: 'b', actorName: 'Socio Cuatro' }),
+      row({ id: 'c' }),
+    ])
+    expect(runs.map((r) => r.count)).toEqual([1, 1, 1])
   })
 })

@@ -8,7 +8,9 @@ import { cn } from '@/lib/utils'
 /**
  * La fila de acciones de la billetera, pegada al total: lo que se hace con las
  * cajas, a un toque. En el celular son círculos con su nombre debajo (como en
- * la app del banco); en la compu, píldoras con ícono.
+ * la app del banco); en una compu angosta, píldoras con ícono; y desde `xl`,
+ * cuatro botones grandes, de a dos, a la derecha del total (la grilla de dos
+ * columnas la arma `Wallet`).
  *
  * Reemplaza a los botones del encabezado y al menú «Más», que en el celular
  * dejaban afuera casi todo. No repite «＋ Cargar»: son las cosas de ESTA
@@ -23,7 +25,7 @@ type Item = {
   icon: LucideIcon
   /** Compu, y lo que escucha un lector. */
   label: string
-  /** Celular: hasta dos renglones bajo el círculo. */
+  /** Celular (hasta dos renglones bajo el círculo) y compu angosta (las píldoras en una fila). */
   short: string
 } & ({ href: string } | { action: 'mover' | 'ajustar' | 'movimiento' })
 
@@ -32,22 +34,36 @@ const SHELL = cn(
   'focus-visible:ring-2 focus-visible:ring-ring',
   'sm:h-11 sm:w-auto sm:flex-row sm:gap-2 sm:rounded-full sm:border sm:border-border/70 sm:bg-card sm:px-4 sm:shadow-xs',
   'sm:transition-colors sm:duration-(--duration-fast) sm:hover:bg-cream-tint motion-reduce:transition-none',
+  // Al lado del total: un botón grande por acción, con su ícono en un círculo.
+  'xl:h-14 xl:w-full xl:gap-3 xl:rounded-2xl xl:px-3 xl:text-left',
 )
 
 function Body({ item }: { item: Item }) {
   const Icon = item.icon
   return (
     <>
+      {/* En el celular el círculo ES el botón: va como una ficha (fondo de tarjeta, borde y
+          sombra), no como un relleno crema que se pierde contra el fondo de la página. */}
       <span
         aria-hidden
-        className="flex size-12 items-center justify-center rounded-full bg-secondary text-foreground transition-[background-color,scale] duration-(--duration-fast) group-hover:bg-accent group-active:scale-95 motion-reduce:transition-none sm:size-auto sm:bg-transparent sm:group-hover:bg-transparent sm:group-active:scale-100"
+        className={cn(
+          'flex size-12 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-xs',
+          'transition-[background-color,scale] duration-(--duration-fast) group-hover:bg-accent group-active:scale-95 motion-reduce:transition-none',
+          'sm:size-auto sm:border-0 sm:bg-transparent sm:shadow-none sm:group-hover:bg-transparent sm:group-active:scale-100',
+          'xl:size-9 xl:shrink-0 xl:bg-secondary xl:group-hover:bg-secondary',
+        )}
       >
         <Icon className="size-5 sm:size-4" />
       </span>
       <span aria-hidden className="text-xs leading-tight font-medium text-balance sm:hidden">
         {item.short}
       </span>
-      <span aria-hidden className="text-sm font-medium whitespace-nowrap max-sm:hidden">
+      {/* En una compu angosta o una tablet las cuatro píldoras van en una fila: con el nombre
+          largo, «Gastos del banco» quedaba sola en un segundo renglón. */}
+      <span aria-hidden className="text-sm font-medium whitespace-nowrap max-sm:hidden xl:hidden">
+        {item.short}
+      </span>
+      <span aria-hidden className="hidden min-w-0 text-sm leading-tight font-medium xl:inline">
         {item.label}
       </span>
     </>
@@ -121,7 +137,7 @@ export function CajasAcciones({
     <ul
       aria-label="Acciones de las cajas"
       className={cn(
-        'grid gap-2 sm:flex sm:flex-wrap',
+        'grid gap-2 sm:flex sm:flex-wrap xl:grid xl:grid-cols-2',
         COLUMNS[items.length] ?? 'grid-cols-4',
         className,
       )}

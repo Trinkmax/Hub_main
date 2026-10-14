@@ -72,6 +72,20 @@ function Group({
   )
 }
 
+/**
+ * Un grupo de un solo medio (el efectivo, la cuenta corriente): no repite el
+ * nombre en un encabezado. El ícono del grupo va en el renglón del medio, igual
+ * que en Ajustes › Medios de cobro y en el Cierre del día.
+ */
+function Single({ icon, children }: { icon: LucideIcon; children: ReactNode }) {
+  return (
+    <section className="flex items-start gap-2.5 rounded-xl bg-secondary/50 p-3 sm:p-4">
+      <GroupIcon icon={icon} />
+      <div className="min-w-0 flex-1 [&>div]:py-0">{children}</div>
+    </section>
+  )
+}
+
 /** El porcentaje de un medio, al lado de su interruptor: «Te descuentan [ 1,5 ] %». */
 function Rate({
   id,
@@ -91,6 +105,10 @@ function Rate({
   error: string | null
   onChange: (text: string) => void
 }) {
+  // Vacío no es un error: el medio queda sin comisión y se carga después. Se dice, para que
+  // un casillero en blanco al lado de otros con un valor propuesto no parezca que falta algo.
+  const blank = value.trim() === '' && !error
+  const helped = Boolean(hint) || proposed || blank
   return (
     <div className="col-span-2 grid gap-1">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
@@ -103,17 +121,20 @@ function Rate({
           onChange={onChange}
           invalid={Boolean(error)}
           describedBy={
-            [hint || proposed ? `${id}-hint` : null, error ? `${id}-error` : null]
+            [helped ? `${id}-hint` : null, error ? `${id}-error` : null]
               .filter(Boolean)
               .join(' ') || undefined
           }
           className="w-28"
         />
       </div>
-      {hint || proposed ? (
+      {helped ? (
         <p id={`${id}-hint`} className="text-xs text-muted-foreground text-pretty">
           {proposed ? 'Propuesto: confirmalo con tu liquidación. ' : null}
-          {hint}
+          {blank
+            ? 'Si no la sabés, dejala vacía: la cargás después en Ajustes › Medios de cobro. '
+            : null}
+          {blank ? null : hint}
         </p>
       ) : null}
       {error ? (
@@ -233,7 +254,7 @@ export function StepCobros({
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_17.5rem] xl:items-start">
       <div className="grid min-w-0 gap-3">
-        <Group icon={Banknote} title="Efectivo">
+        <Single icon={Banknote}>
           <Method
             id="wz-m-cash"
             name="Efectivo"
@@ -241,7 +262,7 @@ export function StepCobros({
             checked={methods.cash}
             onChange={toggle('cash')}
           />
-        </Group>
+        </Single>
 
         <Group icon={QrCode} title={walletTitle}>
           <Method
@@ -396,7 +417,7 @@ export function StepCobros({
           ))}
         </Group>
 
-        <Group icon={NotebookPen} title="Cuenta corriente">
+        <Single icon={NotebookPen}>
           <Method
             id="wz-m-customer_account"
             name="Cuenta corriente"
@@ -404,7 +425,7 @@ export function StepCobros({
             checked={methods.customer_account}
             onChange={toggle('customer_account')}
           />
-        </Group>
+        </Single>
 
         {err('methods') ? (
           <p role="alert" className="text-sm text-destructive">

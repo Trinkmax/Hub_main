@@ -14,8 +14,10 @@ import { cn } from '@/lib/utils'
  * caja (el del Resumen: `treasuryTones`), el mismo ícono y la misma forma. Así
  * una caja se reconoce igual en Cajas, en el Resumen y acá.
  *
- * - El renglón monoespaciado dice el dato de la tarjeta («Alias hub.sas.mp»,
- *   «CBU ···· 4567»: solo los últimos cuatro).
+ * - El renglón de abajo dice el dato de la tarjeta. El alias y el CBU («Alias
+ *   hub.sas.mp», «CBU ···· 4567»: solo los últimos cuatro) van en letra de
+ *   máquina, porque se copian; una frase («Billetes y monedas», «La emite el
+ *   banco») va en la letra de siempre.
  * - `controls` son los botones del pie: los pasa quien puede cargar. La
  *   contadora no recibe ninguno y ve, en gris, el código de la cuenta del plan.
  *
@@ -90,7 +92,7 @@ export function TreasuryCard({
   kind: TreasuryKind
   /** `treasuryTones(cajas)[id] ?? null`: el color del Resumen. */
   tone: TreasuryTone | null
-  /** El renglón monoespaciado (`treasuryLine`). */
+  /** El renglón del dato (`treasuryLine`): alias y CBU, o la frase de su tipo. */
   line: string | null
   /** «Falta el CBU» (`treasuryMissing`). */
   missing?: string | null
@@ -120,7 +122,15 @@ export function TreasuryCard({
     >
       <div className="grid gap-2.5">
         {line ? (
-          <p className="font-mono text-xs leading-snug break-words text-muted-foreground">{line}</p>
+          <p
+            className={cn(
+              'text-xs leading-snug break-words text-muted-foreground',
+              // La letra de máquina es de lo que se copia (un alias, un CBU), no de una frase.
+              (kind === 'bank' || kind === 'wallet') && 'font-mono',
+            )}
+          >
+            {line}
+          </p>
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
           {missing ? <StatusPill tone="info">{missing}</StatusPill> : <span />}

@@ -57,6 +57,11 @@ export function RecurringBreakdown({
       .map((l) => ({ label: l.label, kind: l.kind, amountCents: l.amountCents ?? 0 })),
   )
 
+  // Sin centavos cuando todo es redondo (lo de siempre); con centavos solo si alguien los tipeó.
+  const decimals = [totals.total, ...totals.byKind.map((t) => t.cents)].every((c) => c % 100 === 0)
+    ? 0
+    : 2
+
   return (
     <div className="grid gap-3">
       <ul className="grid gap-2.5">
@@ -128,14 +133,14 @@ export function RecurringBreakdown({
                 {t.kind ? BREAKDOWN_KIND_LABELS[t.kind] : 'Sin detallar'}
               </dt>
               <dd className="tabular-nums">
-                <Amount cents={t.cents} />
+                <Amount cents={t.cents} decimals={decimals} />
               </dd>
             </div>
           ))}
           <div className="mt-1 flex items-center justify-between gap-3 border-t border-border/60 pt-1.5 font-medium">
             <dt>Total</dt>
             <dd className="tabular-nums">
-              <Amount cents={totals.total} />
+              <Amount cents={totals.total} decimals={decimals} />
             </dd>
           </div>
         </dl>

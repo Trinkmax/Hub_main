@@ -296,13 +296,17 @@ function MoverForm({
                 <SheetQuestion id={`${id}-from-label`} required>
                   ¿De dónde sale?
                 </SheetQuestion>
+                {/* Acá están TODAS las cajas: la pregunta es «¿de dónde sale?» y la que se busca
+                    tiene que estar, aunque hoy sea el destino. Si se elige esa, el pase se da
+                    vuelta (lo mismo que «Dar vuelta»). */}
                 <TreasuryPicker
                   id={`${id}-from`}
                   aria-labelledby={`${id}-from-label`}
                   value={fromId}
-                  onValueChange={(next) => pick({ from: next })}
+                  onValueChange={(next) =>
+                    pick(next === toId ? { from: next, to: fromId } : { from: next })
+                  }
                   treasuries={treasuries}
-                  exclude={toId ? [toId] : []}
                   placeholder="¿De dónde sale la plata?"
                   invalid={Boolean(fromError)}
                   aria-describedby={fromError ? `${id}-from-error` : undefined}

@@ -164,6 +164,8 @@ export function RecurringForm({
   const detailed = lines.length > 0
   const detailTotal = lines.reduce((sum, l) => sum + (l.amountCents ?? 0), 0)
   const wasEnded = initialDues === 0
+  // Terminó y nadie dijo todavía cuántas cuotas más faltan: no hay «próximo» que anunciar.
+  const stillEnded = wasEnded && dues === 0
   const payloadInput = { form: { ...form, installmentsTotal }, initial, dues, lines }
   const vatInPaper = paperShowsVat(form.voucherType)
   const [moreOpen, setMoreOpen] = useState(
@@ -293,6 +295,7 @@ export function RecurringForm({
           frequency={form.frequency}
           dues={dues}
           installmentsTotal={installmentsTotal}
+          ended={stillEnded}
           today={today}
         />
       </div>
@@ -303,11 +306,8 @@ export function RecurringForm({
           n={1}
           title="¿Qué es?"
           state={stateOf(0)}
-          summary={
-            done[0]
-              ? `${form.name.trim()} · ${account?.name ?? 'sin categoría'}`
-              : 'El nombre y en qué se gasta.'
-          }
+          // Solo la categoría: el nombre ya es el título de la pantalla y el campo de abajo.
+          summary={done[0] ? (account?.name ?? 'Sin categoría') : 'El nombre y en qué se gasta.'}
         >
           <div className="grid gap-5">
             <Ask label="Nombre" htmlFor={id('name')} error={errors.name}>
@@ -437,19 +437,23 @@ export function RecurringForm({
                 />
                 <span className="text-sm text-muted-foreground">de cada mes</span>
               </div>
-              <p className="text-sm text-pretty">
-                El próximo es el {weekdayName(form.nextDueDate)}{' '}
-                {formatIsoDay(form.nextDueDate).slice(0, 5)}.{' '}
-                {dateOpen ? null : (
-                  <button
-                    type="button"
-                    onClick={() => setDateOpen(true)}
-                    className={cn(QUIET_LINK, 'pointer-coarse:min-h-11')}
-                  >
-                    Cambiar la fecha
-                  </button>
-                )}
-              </p>
+              {stillEnded ? null : (
+                <p className="text-sm text-pretty">
+                  {/* Abierto con un vencimiento que ya pasó: es el que se debe, no «el próximo». */}
+                  {form.nextDueDate < today ? 'Venció el' : 'El próximo es el'}{' '}
+                  {weekdayName(form.nextDueDate)} {formatIsoDay(form.nextDueDate).slice(0, 5)}
+                  {form.nextDueDate < today ? ': todavía no lo pagaste.' : '.'}{' '}
+                  {dateOpen ? null : (
+                    <button
+                      type="button"
+                      onClick={() => setDateOpen(true)}
+                      className={cn(QUIET_LINK, 'pointer-coarse:min-h-11')}
+                    >
+                      Cambiar la fecha
+                    </button>
+                  )}
+                </p>
+              )}
               {dateOpen || errors.nextDueDate ? (
                 <DateField
                   id={id('nextDueDate')}
@@ -658,7 +662,7 @@ export function RecurringForm({
         </section>
 
         {editing ? (
-          wasEnded && dues === 0 ? (
+          stillEnded ? (
             <p className="rounded-xl bg-secondary/50 p-3.5 text-sm text-muted-foreground">
               Terminó: ya pasó la última cuota.
             </p>

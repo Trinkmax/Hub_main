@@ -89,19 +89,31 @@ const HEAD = [
 ] as const
 
 // Las medidas van escritas enteras (Tailwind no ve clases armadas por partes).
+// El texto arranca siempre a la derecha del carril del termómetro (la columna y la raya del
+// objetivo viven en los primeros 5 px del angosto y 8 px del ancho): nada lo tacha.
+// `--cell-top`: el renglón del número del día. El relleno y la raya se miden en lo que queda
+// debajo: la columna nunca sube hasta el número.
 const BOX_AUTO =
-  'h-14 py-1 pr-0.5 pl-1.5 @[28rem]/almanac:h-16 @[28rem]/almanac:pr-1 @[28rem]/almanac:pl-2 @[42rem]/almanac:h-24 @[42rem]/almanac:py-1.5 @[42rem]/almanac:pr-1.5 @[42rem]/almanac:pl-2.5'
-const BOX_COMPACT = 'h-12 py-1 pr-0.5 pl-1.5'
+  '[--cell-top:16px] @[42rem]/almanac:[--cell-top:22px] h-14 py-1 pr-0 pl-1.5 @[28rem]/almanac:h-16 @[28rem]/almanac:pr-1 @[28rem]/almanac:pl-2 @[42rem]/almanac:h-24 @[42rem]/almanac:py-1.5 @[42rem]/almanac:pr-1.5 @[42rem]/almanac:pl-2.5'
+const BOX_COMPACT = '[--cell-top:16px] h-12 py-1 pr-0.5 pl-1.5'
+/** Una semana entera anterior al arranque: solo los números, en un renglón bajo. */
+const BOX_SHORT = 'h-6 py-0.5 pr-0 pl-1.5 @[42rem]/almanac:pl-2.5'
 const WIDE_ONLY = 'hidden @[42rem]/almanac:flex'
 const NARROW_ONLY = '@[42rem]/almanac:hidden'
+
+/** Hoy: un anillo fino (el contorno grueso con fondo es el del día que estás mirando). */
+const TODAY_RING = 'ring-[1.5px] ring-foreground/75 ring-inset'
 
 const STATE_BOX: Readonly<Record<MonthGridCell['state'], string>> = {
   loaded: 'border border-adm-s1/30 bg-card',
   missing: 'border border-dashed border-warning bg-warning/10',
-  today: 'bg-card ring-2 ring-foreground/80 ring-inset',
+  today: `bg-card ${TODAY_RING}`,
   future: 'border border-border/50',
   before: '',
 }
+
+/** El día que estás mirando: fondo propio y contorno afuera, para no confundirlo con «hoy». */
+const SELECTED_BOX = 'bg-accent/60 outline-2 outline-offset-2 outline-primary'
 
 const BADGE_TONE = {
   ok: 'text-success',
@@ -118,16 +130,23 @@ function tipSub(cell: MonthGridCell): string | undefined {
   return parts.length > 0 ? parts.join('\n') : undefined
 }
 
+/** La altura de un nivel (0 a 1) medida debajo del renglón del día (`--cell-top`). */
+function level(value: number): string {
+  return `calc((100% - var(--cell-top, 0px)) * ${Math.round(value * 1000) / 1000})`
+}
+
 function CellBody({ cell, day, compact }: { cell: MonthGridCell; day: number; compact: boolean }) {
   const fill = typeof cell.fill === 'number' && cell.fill > 0 ? Math.min(1, cell.fill) : null
   const marker =
     typeof cell.marker === 'number' && cell.marker > 0 ? Math.min(1, cell.marker) : null
   const word = cell.state === 'missing' || cell.state === 'today'
   const wordClass = cn(
-    'text-[10px] font-medium leading-none',
-    cell.state === 'missing' ? 'text-warning-text' : 'text-muted-foreground',
+    'text-[10px] leading-none',
+    // «hoy» en negrita: junto con su anillo fino, no se confunde con el día que estás mirando.
+    cell.state === 'missing' ? 'font-medium text-warning-text' : 'font-semibold text-foreground',
   )
-  // «806 mil», «1,1 M»: el número va en grande y la unidad chica al lado, para que entre en 46 px.
+  // «806 mil», «1,1 M»: el número va en grande y la unidad chica al lado. En el casillero angosto
+  // del celular (43 px) el número va en 12 px y apretado, así «806 mil» entra entero.
   const [shortNumber, shortUnit] = (cell.valueShort ?? '').split(/[\s\u00a0]+/, 2)
   const wideCurrency = /^\$\s/.test(cell.value ?? '')
   const wideAmount = wideCurrency ? (cell.value ?? '').replace(/^\$\s/, '') : cell.value
@@ -144,21 +163,23 @@ function CellBody({ cell, day, compact }: { cell: MonthGridCell; day: number; co
           <span
             aria-hidden
             className="absolute inset-x-0 bottom-0 bg-adm-s1/12 dark:bg-adm-s1/25"
-            style={{ height: `${Math.round(fill * 1000) / 10}%` } as CSSProperties}
+            style={{ height: level(fill) } as CSSProperties}
           />
           <span
             aria-hidden
             className="absolute bottom-0 left-0 w-[3px] rounded-tr-full bg-adm-s1 @[42rem]/almanac:w-1"
-            style={{ height: `${Math.round(fill * 1000) / 10}%` } as CSSProperties}
+            style={{ height: level(fill) } as CSSProperties}
           />
         </>
       ) : null}
-      {/* El objetivo del día: una marca corta sobre esa misma columna, en la misma escala. */}
+      {/* El objetivo de la noche: una marca corta pegada a la columna, en la misma escala. Vive en
+          el carril de la columna (5 px en el angosto, 8 en el ancho) y el texto arranca después:
+          a cualquier altura, nunca tacha un número. */}
       {marker !== null ? (
         <span
           aria-hidden
-          className="absolute left-0 w-2 border-t-2 border-foreground/75 @[42rem]/almanac:w-3"
-          style={{ bottom: `${Math.round(marker * 1000) / 10}%` } as CSSProperties}
+          className="absolute left-0 w-[5px] rounded-r-full border-t-2 border-foreground/75 @[42rem]/almanac:w-2"
+          style={{ bottom: `calc(${level(marker)} - 1px)` } as CSSProperties}
         />
       ) : null}
       {cell.dot ? (
@@ -187,7 +208,15 @@ function CellBody({ cell, day, compact }: { cell: MonthGridCell; day: number; co
         {word ? (
           <span className={wordClass}>{cell.valueShort ?? cell.value}</span>
         ) : cell.valueShort ? (
-          <span className={cn(numberClass, 'whitespace-nowrap text-[13px]')}>
+          <span
+            className={cn(
+              numberClass,
+              'whitespace-nowrap',
+              compact
+                ? 'text-[13px]'
+                : 'text-[12px] tracking-[-0.03em] @[28rem]/almanac:text-[13px] @[28rem]/almanac:tracking-normal',
+            )}
+          >
             {compact ? null : (
               <span className="hidden font-sans text-[10px] font-normal text-muted-foreground @[28rem]/almanac:inline">
                 ${' '}
@@ -195,7 +224,17 @@ function CellBody({ cell, day, compact }: { cell: MonthGridCell; day: number; co
             )}
             {shortNumber}
             {shortUnit ? (
-              <span className="ml-px font-sans text-[9px] font-medium text-muted-foreground">
+              <span
+                className={cn(
+                  'font-sans font-medium tracking-normal text-muted-foreground',
+                  compact
+                    ? 'ml-px text-[9px]'
+                    : 'text-[8px] @[28rem]/almanac:ml-px @[28rem]/almanac:text-[9px]',
+                  // En una hoja de menos de 304 px (un teléfono de 320) «mil» no entra: se esconde
+                  // antes que cortarse («82 mi»). El importe entero está en el globito y el lector.
+                  !compact && shortUnit === 'mil' && '@max-[19rem]/almanac:hidden',
+                )}
+              >
                 {shortUnit}
               </span>
             ) : null}
@@ -249,14 +288,25 @@ function CellBody({ cell, day, compact }: { cell: MonthGridCell; day: number; co
   )
 }
 
-function Cell({ cell, day, compact }: { cell: MonthGridCell; day: number; compact: boolean }) {
+function Cell({
+  cell,
+  day,
+  compact,
+  short = false,
+}: {
+  cell: MonthGridCell
+  day: number
+  compact: boolean
+  /** La semana entera es de antes del arranque: el casillero se achica a un renglón. */
+  short?: boolean
+}) {
   const box = cn(
     'group/cell relative flex w-full flex-col overflow-hidden rounded-lg text-left',
-    compact ? BOX_COMPACT : BOX_AUTO,
+    short ? BOX_SHORT : compact ? BOX_COMPACT : BOX_AUTO,
     STATE_BOX[cell.state],
     // El día de hoy conserva su anillo aunque ya tenga el cierre cargado.
-    cell.today && cell.state === 'loaded' && 'ring-2 ring-foreground/80 ring-inset',
-    cell.selected && 'outline-2 outline-offset-2 outline-primary',
+    cell.today && cell.state === 'loaded' && TODAY_RING,
+    cell.selected && SELECTED_BOX,
   )
   const body = <CellBody cell={cell} day={day} compact={compact} />
 
@@ -341,9 +391,13 @@ export function MonthGrid({
       {ariaLabel ? <p className="sr-only">{ariaLabel}</p> : null}
       <ChartTip scrub={false}>
         <table
+          // En el celular, 3 px entre casilleros (no 4): cada uno gana un píxel y «828 mil» entra
+          // entero también en un teléfono de 360 px.
           className={cn(
-            'w-full table-fixed border-separate border-spacing-1',
-            !compact && '@[42rem]/almanac:border-spacing-1.5',
+            'w-full table-fixed border-separate',
+            compact
+              ? 'border-spacing-1'
+              : 'border-spacing-[3px] @[28rem]/almanac:border-spacing-1 @[42rem]/almanac:border-spacing-1.5',
           )}
         >
           <caption className="sr-only">{caption}</caption>
@@ -362,19 +416,27 @@ export function MonthGrid({
             </tr>
           </thead>
           <tbody>
-            {weeks.map((week) => (
-              <tr key={week[0]?.iso}>
-                {week.map((day) => {
-                  const cell = day.inMonth ? byDate.get(day.iso) : undefined
-                  if (!cell) return <td key={day.iso} aria-hidden="true" className="p-0" />
-                  return (
-                    <td key={day.iso} className="p-0 align-top">
-                      <Cell cell={cell} day={day.day} compact={compact} />
-                    </td>
-                  )
-                })}
-              </tr>
-            ))}
+            {weeks.map((week) => {
+              // Una semana entera de antes de que se lleven las cuentas no se carga ni se toca:
+              // a lo alto de una semana normal eran dos filas de casilleros vacíos en un bar
+              // recién arrancado. Va en un renglón bajo, con los números apagados.
+              const short = week.every(
+                (day) => !day.inMonth || byDate.get(day.iso)?.state === 'before',
+              )
+              return (
+                <tr key={week[0]?.iso}>
+                  {week.map((day) => {
+                    const cell = day.inMonth ? byDate.get(day.iso) : undefined
+                    if (!cell) return <td key={day.iso} aria-hidden="true" className="p-0" />
+                    return (
+                      <td key={day.iso} className="p-0 align-top">
+                        <Cell cell={cell} day={day.day} compact={compact} short={short} />
+                      </td>
+                    )
+                  })}
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </ChartTip>

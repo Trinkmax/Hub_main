@@ -73,6 +73,27 @@ function ItemBlock({
   /** La acción que va rellena en esta pantalla (una sola), o `null`. */
   primaryAction: ReviewAction | null
 }) {
+  // Algo que todavía no toca: una línea gris con su link, sin título ni botones.
+  if (item.soft) {
+    const [link] = item.actions
+    return (
+      <p className="text-sm leading-relaxed text-muted-foreground text-pretty">
+        {item.title}
+        {item.detail ? ` ${item.detail}` : null}
+        {link?.kind === 'href' ? (
+          <>
+            {' '}
+            <Link
+              href={link.href}
+              className="rounded-sm font-medium whitespace-nowrap text-foreground underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {link.label}
+            </Link>
+          </>
+        ) : null}
+      </p>
+    )
+  }
   return (
     <div className="space-y-2.5">
       <div className="space-y-0.5">
@@ -85,9 +106,20 @@ function ItemBlock({
       {item.recurring && item.recurring.length > 0 ? (
         <ul className="divide-y divide-border/50 rounded-xl bg-secondary/50 px-3">
           {item.recurring.map((row) => (
-            <li key={row.id ?? row.text} className="flex items-center justify-between gap-3 py-1.5">
-              <span className="line-clamp-1 min-w-0 text-sm" title={row.text}>
-                {row.text}
+            <li key={row.id ?? row.text} className="flex items-center justify-between gap-3 py-2">
+              {/* Celular: el nombre arriba y «venció el 10/10 · $ 850.000» abajo (en un renglón
+                  se cortaba justo la fecha y el importe). Compu: todo en un renglón. */}
+              <span
+                className="min-w-0 text-sm sm:flex sm:items-baseline sm:gap-1.5"
+                title={row.text}
+              >
+                <span className="block truncate font-medium sm:font-normal">{row.name}</span>
+                <span aria-hidden className="text-muted-foreground max-sm:hidden">
+                  ·
+                </span>
+                <span className="block shrink-0 text-xs whitespace-nowrap tabular-nums text-muted-foreground sm:text-sm">
+                  {row.meta}
+                </span>
               </span>
               {row.action ? (
                 <ActionControl action={row.action} primary={row.action === primaryAction} />
@@ -204,9 +236,13 @@ export function ReviewStep({
       {review.info.length > 0 ? (
         <ul className="space-y-2 border-t border-border/60 pt-4">
           {review.info.map((text) => (
-            <li key={text} className="flex flex-wrap items-start gap-x-2 gap-y-1 text-sm">
+            // Celular: la píldora arriba del texto (al costado lo apretaba a cuatro renglones).
+            <li
+              key={text}
+              className="flex flex-col items-start gap-1.5 text-sm sm:flex-row sm:gap-x-2"
+            >
               <StatusPill tone="info">Para la contadora</StatusPill>
-              <span className="min-w-0 flex-1 text-muted-foreground text-pretty">{text}</span>
+              <span className="min-w-0 text-muted-foreground text-pretty sm:flex-1">{text}</span>
             </li>
           ))}
         </ul>

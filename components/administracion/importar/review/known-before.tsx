@@ -113,44 +113,39 @@ export function KnownBefore({
       }
     >
       <div className="space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
           <Progress done={answered} total={rows.length} />
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          {/* Los atajos: en el celular, links en una fila (tres botones a todo el ancho
+              empujaban la primera pregunta fuera de la pantalla); con lugar, botones. */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-0 sm:gap-2">
             {canLink && counts.pending > 0 ? (
-              <Button
+              <button
                 type="button"
-                variant="outline"
-                className="h-11 md:pointer-fine:h-9"
+                className={SHORTCUT}
                 onClick={() => {
                   model.allNew()
                   setOpenCuit(null)
                 }}
               >
                 Son todos nuevos
-              </Button>
+              </button>
             ) : null}
             {model.suggestible > 0 ? (
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 gap-2 md:pointer-fine:h-9"
-                onClick={model.applySuggestions}
-              >
-                <Sparkles className="size-4" aria-hidden />
+              <button type="button" className={SHORTCUT} onClick={model.applySuggestions}>
+                <Sparkles className="size-4 shrink-0" aria-hidden />
                 Usar las categorías sugeridas ({model.suggestible})
-              </Button>
+              </button>
             ) : null}
             {lookup?.environment ? (
-              <Button
+              <button
                 type="button"
-                variant="outline"
-                className="h-11 gap-2 md:pointer-fine:h-9"
+                className={SHORTCUT}
                 disabled={model.looking}
                 onClick={model.completeWithArca}
               >
-                <Wand2 className="size-4" aria-hidden />
+                <Wand2 className="size-4 shrink-0" aria-hidden />
                 {model.looking ? 'Consultando ARCA…' : 'Completar los nombres con ARCA'}
-              </Button>
+              </button>
             ) : (
               <Link href={connectHref} className={QUIET_ANSWER}>
                 Conectá ARCA para completarlos solos
@@ -230,6 +225,13 @@ export function KnownBefore({
 /** Ninguna fila abierta a propósito (todas contestadas). */
 const CLOSED = '—'
 
+/**
+ * Un atajo de arriba («Son todos nuevos», «Usar las categorías sugeridas»): en
+ * el celular es un link callado de 44 px; desde `sm`, un botón de contorno.
+ */
+const SHORTCUT =
+  'inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md text-left text-sm font-medium text-foreground underline underline-offset-4 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 sm:h-11 sm:border sm:border-border sm:bg-card sm:px-3.5 sm:no-underline sm:shadow-xs sm:hover:bg-cream-tint md:pointer-fine:h-9 md:pointer-fine:min-h-9'
+
 /** ¿Le falta una respuesta? Sin contestar, o «nuevo» sin decir en qué se le compra. */
 function needsAnswer(row: SupplierRowState | undefined): boolean {
   return row !== undefined && (row.answer === 'pending' || (row.answer === 'new' && !row.accountId))
@@ -275,10 +277,13 @@ function Progress({ done, total }: { done: number; total: number }) {
 
 type RowProps = { supplier: NewSupplierView; row: SupplierRowState; model: NewSuppliersModel }
 
-/** El papel de un proveedor: tal cual viene en las facturas. */
+/**
+ * El papel de un proveedor: tal cual viene en las facturas, sobre una hojita
+ * (la misma de las bandejas). Suelto era texto, no un papel.
+ */
 function SupplierPaper({ supplier, row }: Pick<RowProps, 'supplier' | 'row'>) {
   return (
-    <div className="min-w-0 space-y-1">
+    <div className="force-light min-w-0 space-y-1 self-start rounded-md border border-adm-paper-rule/60 bg-adm-paper px-3.5 py-3 text-adm-paper-ink shadow-xs">
       <p className="font-medium leading-snug [overflow-wrap:anywhere]">{row.name}</p>
       <p className="text-xs text-muted-foreground">
         CUIT {formatCuit(supplier.cuit)} · {count(supplier.vouchers, 'factura', 'facturas')}
@@ -540,15 +545,14 @@ function OpenRow({ supplier, row, model, onDone }: RowProps & { onDone: () => vo
                 </div>
               </div>
             </details>
-            <Button
-              type="button"
-              variant="outline"
-              className={ANSWER_BUTTON}
-              disabled={!row.accountId}
-              onClick={onDone}
-            >
-              Listo: el que sigue
-            </Button>
+            {/* Sin categoría elegida no hay botón: apagado parecía un campo vacío. */}
+            {row.accountId ? (
+              <Button type="button" variant="outline" className={ANSWER_BUTTON} onClick={onDone}>
+                Listo: el que sigue
+              </Button>
+            ) : (
+              <p className="text-sm text-muted-foreground">Elegí una categoría para seguir.</p>
+            )}
           </div>
         ) : null}
 

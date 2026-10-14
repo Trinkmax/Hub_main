@@ -6,6 +6,7 @@ import { Panel, PanelSection } from '@/components/administracion/kit/panel'
 import { StatusPill } from '@/components/administracion/kit/status-pill'
 import {
   type FixedProgress,
+  fixedDueRows,
   fixedProgress,
   type PayableTrancheKey,
   payableAttention,
@@ -15,7 +16,7 @@ import { formatCentsShort } from '@/lib/money'
 import { AttentionRows, type AttentionWords } from './attention-rows'
 import { PanelLink } from './block-states'
 import type { HomeData } from './home-data'
-import { attentionView } from './summary-copy'
+import { type AttentionView, attentionView, fixedDueViews } from './summary-copy'
 
 /**
  * Los tres tramos de la deuda. Acá el color SÍ es un estado (vencido / por
@@ -39,7 +40,12 @@ const MAX_ROWS = 3
  * pagar primero con su botón, y abajo los gastos fijos del mes.
  *
  * Los gastos fijos usan las mismas cuentas que su pestaña (`fixedProgress`):
- * el «Te falta de gasto fijo» de acá es el «Falta pagar» de allá. Si ninguno
+ * el «Te falta de gasto fijo» de acá es el «Falta pagar» de allá. Debajo, los
+ * que tocan pagar (hasta tres, del más atrasado), cada uno con su «Pagar» (y,
+ * si es uno solo, también «Lo pago después» y «Este mes no se paga»): la
+ * acción al lado del número, sin salir a la planilla. (La tarjeta de «Hoy te
+ * toca» los cuenta y por eso no se repiten en «Avisos»: acá es donde se
+ * pagan.) Si ninguno
  * tiene monto no se muestra «$ 0» (sería decir «está todo pago»): se dice que
  * faltan los montos.
  *
@@ -68,6 +74,11 @@ export async function PayablesBlock({ data, className }: { data: HomeData; class
   const fixed = recurringResult.ok
     ? fixedProgress(recurringResult.data, paymentsResult.ok ? paymentsResult.data : null, today)
     : null
+  const dueRows = recurringResult.ok ? fixedDueRows(recurringResult.data) : []
+  const due = {
+    views: fixedDueViews(dueRows.slice(0, MAX_ROWS), today, base),
+    more: Math.max(0, dueRows.length - MAX_ROWS),
+  }
 
   return (
     <Panel
@@ -147,6 +158,7 @@ export async function PayablesBlock({ data, className }: { data: HomeData; class
         {fixed ? (
           <FixedExpenses
             fixed={fixed}
+            due={due}
             base={base}
             canWrite={canWrite}
             paymentsMissing={!paymentsResult.ok}
@@ -161,13 +173,38 @@ export async function PayablesBlock({ data, className }: { data: HomeData; class
   )
 }
 
+/** Los gastos fijos que tocan, con su «Pagar», y cuántos más hay en la planilla. */
+function DueFixedRows({
+  due,
+  href,
+}: {
+  due: { views: readonly AttentionView[]; more: number }
+  href: string
+}) {
+  if (due.views.length === 0) return null
+  return (
+    <div className="border-t border-border/60 pt-4">
+      <AttentionRows views={due.views} words={PAY_WORDS} quietWhenUniform />
+      {due.more > 0 ? (
+        <PanelLink href={href} className="mt-3">
+          {due.more === 1 ? 'Y 1 más' : `Y ${due.more} más`}: ver gastos fijos
+          <ArrowRight className="size-3.5" aria-hidden />
+        </PanelLink>
+      ) : null}
+    </div>
+  )
+}
+
 function FixedExpenses({
   fixed,
+  due,
   base,
   canWrite,
   paymentsMissing,
 }: {
   fixed: FixedProgress
+  /** Los que tocan pagar, ya como renglones con sus acciones (`fixedDueViews`). */
+  due: { views: readonly AttentionView[]; more: number }
   base: string
   canWrite: boolean
   /** No se pudo leer lo pagado: lo ya cargado cuenta como sin pagar. */
@@ -214,6 +251,7 @@ function FixedExpenses({
             <ArrowRight className="size-3.5" aria-hidden />
           </PanelLink>
         ) : null}
+        <DueFixedRows due={due} href={href} />
       </div>
     )
   }
@@ -259,6 +297,7 @@ function FixedExpenses({
           ) : null}
         </ul>
       ) : null}
+      <DueFixedRows due={due} href={href} />
     </div>
   )
 }

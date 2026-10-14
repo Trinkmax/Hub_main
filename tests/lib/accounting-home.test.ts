@@ -418,8 +418,9 @@ describe('qué muestra el héroe', () => {
       kind: 'unknown',
       reason: 'opening_pending',
       title: 'Todavía no sé cuánta plata hay',
-      sentence: 'Contame cuánto hay hoy en cada caja y empiezo a llevar la cuenta.',
-      action: { kind: 'href', href: `${BASE}/configurar`, label: 'Cargar lo que hay' },
+      sentence:
+        'Contame cuánto había en cada caja el día que arrancaste y empiezo a llevar la cuenta.',
+      action: { kind: 'href', href: `${BASE}/configurar`, label: 'Cargar lo que había' },
     })
   })
 
@@ -1687,8 +1688,27 @@ describe('hoy te toca', () => {
       title: 'Gasto fijo: Sistema',
       status: `Vence el jueves 15/10 · aprox. $${NB}35.000`,
       tone: 'warn',
-      action: { label: 'Ver y pagar' },
+      // Uno solo: «Pagar» abre «Nuevo gasto» con ese gasto fijo puesto, sin salir del Resumen.
+      action: {
+        kind: 'sheet',
+        sheet: 'gasto',
+        params: { 'gasto-fijo': 'sistema' },
+        label: 'Pagar',
+      },
     })
+    // Varios: cada uno tiene su «Pagar» en «Lo que tenés que pagar»; la tarjeta lleva a la planilla.
+    expect(byId(buildToday(today({ recurring: DEMO_FIXED })), 'fixed')?.action).toEqual({
+      kind: 'href',
+      href: `${BASE}/gastos-fijos`,
+      label: 'Ver gastos fijos',
+    })
+    // La contadora lee la tarjeta sin el botón.
+    expect(
+      byId(
+        buildToday(today({ recurring: [DEMO_FIXED[2] as HomeRecurringRow], canWrite: false })),
+        'fixed',
+      )?.action,
+    ).toBeNull()
     const overdue = byId(
       buildToday(today({ recurring: [fixedRow({ amountCents: null })] })),
       'fixed',
@@ -1967,6 +1987,14 @@ describe('la lectura de integraciones no pide un mes anterior a la fecha de arra
 
 describe('puesta en marcha', () => {
   it('el bar recién configurado: una sola lista, con lo próximo que conviene', () => {
+    const guide = onboarding({
+      sasMissing: ['cuit', 'fiscal_address'],
+      openingDone: false,
+      accountantAdded: false,
+      salesPoints: 0,
+      bankWithCbu: false,
+      recurringActive: 31,
+    })
     const strip = buildSetup({
       summary: summary({
         firstSteps: {
@@ -2021,19 +2049,21 @@ describe('puesta en marcha', () => {
     // Cada cosa una sola vez: saldos iniciales y CUIT no se repiten con los de la guía.
     expect(new Set(strip.steps.map((s) => s.id)).size).toBe(strip.steps.length)
 
-    const required = strip.steps.filter((s) => !s.optional)
-    expect(strip.total).toBe(required.length)
-    expect(strip.done).toBe(required.filter((s) => s.done).length)
-    expect(strip.title).toBe(`Puesta en marcha · ${strip.done} de ${strip.total}`)
+    // «N de M» es el de la guía: sus ítems de una sola vez, la sección adonde lleva «Ver todo».
+    // Los pasos que no son de la guía (primer cierre, primer gasto, categorías y montos) no se
+    // cuentan: si no, el Resumen decía «9 de 16» y la guía «6 de 12».
+    expect(guide.state.sections.day1).toEqual({ done: 2, total: 12 })
+    expect({ done: strip.done, total: strip.total }).toEqual(guide.state.sections.day1)
+    expect(strip.title).toBe('Puesta en marcha · 2 de 12')
     expect(strip.complete).toBe(false)
-    expect(strip.guideHref).toBe(`${BASE}/guias/como-arrancar`)
+    expect(strip.guideHref).toBe(`${BASE}/guias/como-arrancar#arranque-day1`)
 
     expect(strip.next.map((s) => s.id)).toEqual(['opening', 'first_close', 'sas_data'])
     expect(strip.next[0]).toMatchObject({
-      title: 'Cargá lo que hay hoy en cada caja',
+      title: 'Cargá lo que había en cada caja al arrancar',
       done: false,
       // El mismo nombre que el botón del héroe: una cosa, un nombre.
-      action: { kind: 'href', href: `${BASE}/configurar`, label: 'Cargar lo que hay' },
+      action: { kind: 'href', href: `${BASE}/configurar`, label: 'Cargar lo que había' },
     })
     expect(strip.next[2]?.detail).toBe('Falta la CUIT y el domicilio fiscal.')
 
@@ -2044,7 +2074,7 @@ describe('puesta en marcha', () => {
       { openingStatus: 'pending' },
       { canWrite: true, base: BASE },
     )
-    expect(hero).toMatchObject({ kind: 'unknown', action: { label: 'Cargar lo que hay' } })
+    expect(hero).toMatchObject({ kind: 'unknown', action: { label: 'Cargar lo que había' } })
     const today: TodayItem[] = [
       {
         id: 'daily_close',
@@ -2108,7 +2138,33 @@ describe('puesta en marcha', () => {
       canWrite: true,
     })
     expect(strip.steps.filter((s) => !s.optional).every((s) => s.done)).toBe(true)
-    expect(strip).toMatchObject({ complete: true, next: [], done: strip.total })
+    expect(strip).toMatchObject({ complete: true, next: [], done: 12, total: 12 })
+  })
+
+  it('lo que no es de la guía no se cuenta, pero se sigue pidiendo y no deja ir la franja', () => {
+    const strip = buildSetup({
+      summary: summary(),
+      settings: { openingStatus: 'posted', cuit: '30712345678' },
+      onboarding: onboarding({
+        arca: { status: 'connected', certNotAfter: null, emissionEnabled: true },
+        imports: {
+          arca_recibidos: {
+            lastBatchAt: '2026-10-11T12:00:00Z',
+            postedBatches: 1,
+            pendingReview: 0,
+          },
+        },
+        manual: ['platforms', 'chart_review', 'suppliers_message'],
+      }),
+      recurring: DEMO_FIXED,
+      suppliers: { total: 11, withoutCategory: 4 },
+      canWrite: true,
+    })
+    // La guía está completa: 12 de 12, igual que su sección.
+    expect(strip.title).toBe('Puesta en marcha · 12 de 12')
+    // Pero faltan las categorías de cuatro proveedores: la franja sigue y lo ofrece.
+    expect(strip.complete).toBe(false)
+    expect(strip.next.map((s) => s.id)).toEqual(['suppliers_category'])
   })
 
   it('sin la guía en la base: alcanza con el resumen y los ajustes', () => {
@@ -2132,6 +2188,7 @@ describe('puesta en marcha', () => {
       ['sas_data', false],
       ['access', false],
     ])
+    // Sin la guía no hay con qué empatar: cuenta todo lo que hay.
     expect(strip.title).toBe('Puesta en marcha · 1 de 5')
     expect(strip.steps.at(-1)?.detail).toBe('Falta sumar a la contadora.')
     expect(strip.steps[3]?.detail).toBe('Falta el CUIT: los libros de IVA lo necesitan.')

@@ -126,6 +126,30 @@ export function netRows(rows: readonly NetByMethodRow[]): NetRowView[] {
     })
 }
 
+/** Cómo le llega la plata a un medio (lo justo de `SalesMethodRow` para decirlo). */
+export type NetMethodInfo = { kind: string; partyName: string | null; treasuryName: string | null }
+
+/**
+ * La aclaración debajo de la barra de un medio, con las palabras de cómo te
+ * paga: el efectivo «entró directo a la caja», el QR «quedó en Mercado Pago»
+ * y solo una tarjeta o una app «te liquidó». `null` si todavía no llegó nada
+ * (lo dice el renglón).
+ */
+export function netRowDetail(row: NetRowView, method?: NetMethodInfo | null): string | null {
+  if (row.state === 'pending') return null
+  const credited = formatCentsShort(row.creditedCents)
+  const pending =
+    row.pendingCents > 0 ? ` Siguen en camino ${formatCentsShort(row.pendingCents)}.` : ''
+  if (method?.kind === 'treasury') return `Entró directo a la caja: ${credited}.${pending}`
+  if (method?.kind === 'settled_now') {
+    const where = method.partyName ?? method.treasuryName ?? 'la billetera'
+    return row.creditedCents === row.settledCents
+      ? `Quedó en ${where}: ${credited}.${pending}`
+      : `Quedó en ${where}: ${credited} de ${formatCentsShort(row.settledCents)}.${pending}`
+  }
+  return `De ${formatCentsShort(row.settledCents)} que ya te liquidó, te llegaron ${credited}.${pending}`
+}
+
 export type NetTotals = {
   soldCents: number
   creditedCents: number

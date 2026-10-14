@@ -4,6 +4,7 @@ import { BookOpen } from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
 import { Amount } from '@/components/administracion/amount'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -22,7 +23,12 @@ import { AccountCreateForm } from './account-create-form'
 import { AccountEditForm } from './account-edit-form'
 
 export type AccountSheetState =
-  | { mode: 'account'; id: string }
+  | {
+      mode: 'account'
+      id: string
+      /** Abierta desde «Tus categorías»: primero el nombre y «para qué se usa». */
+      simple?: boolean
+    }
   | {
       mode: 'create'
       /** `undefined` = elegir; `null` = cuenta principal; un id = adentro de ese grupo. */
@@ -63,6 +69,9 @@ export function AccountSheet({
   const account = state?.mode === 'account' ? (index.byId.get(state.id) ?? null) : null
   const creating = state?.mode === 'create' ? state : null
   const open = account !== null || creating !== null
+  // La categoría como la ve un socio: sin código ni tipo en el encabezado (quedan en «Más
+  // opciones»). La contadora (solo lectura) ve la ficha de siempre.
+  const simpleEdit = Boolean(account && state?.mode === 'account' && state.simple && !readOnly)
 
   return (
     <Sheet
@@ -74,7 +83,9 @@ export function AccountSheet({
       <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-lg">
         <SheetHeader className="border-b border-border/60 px-5 py-4 pr-12">
           <SheetTitle className="font-serif text-lg">
-            {account ? (
+            {account && simpleEdit ? (
+              account.name
+            ) : account ? (
               <>
                 <span className="mr-2 font-mono text-sm font-normal text-muted-foreground">
                   {account.code}
@@ -88,13 +99,23 @@ export function AccountSheet({
             )}
           </SheetTitle>
           <SheetDescription className="text-pretty">
-            {account
-              ? accountKindText(account)
-              : creating?.simple
-                ? 'Va a aparecer en «¿En qué se gastó?» cuando cargues un gasto o una compra.'
-                : 'Puede ir adentro de cualquier grupo o ser una cuenta principal.'}
+            {account && simpleEdit
+              ? account.purchaseSelectable
+                ? 'Una de tus categorías: aparece en «¿En qué se gastó?» cuando cargás un gasto o una compra.'
+                : 'Hoy no aparece en «¿En qué se gastó?».'
+              : account
+                ? accountKindText(account)
+                : creating?.simple
+                  ? 'Va a aparecer en «¿En qué se gastó?» cuando cargues un gasto o una compra.'
+                  : 'Puede ir adentro de cualquier grupo o ser una cuenta principal.'}
           </SheetDescription>
-          {account ? (
+          {account && simpleEdit ? (
+            account.active ? null : (
+              <div className="pt-1">
+                <Badge variant="muted">Inactiva</Badge>
+              </div>
+            )
+          ) : account ? (
             <div className="flex flex-wrap gap-1.5 pt-1">
               <AccountBadges account={account} />
             </div>
@@ -115,6 +136,7 @@ export function AccountSheet({
             index={index}
             account={account}
             balancesAvailable={balancesAvailable}
+            simple={simpleEdit}
             onBusyChange={setBusy}
             onDone={(saved) => {
               if (saved) onSaved(saved, false)

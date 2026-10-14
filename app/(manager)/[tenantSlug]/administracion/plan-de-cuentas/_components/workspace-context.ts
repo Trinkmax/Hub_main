@@ -21,7 +21,12 @@ export type ChartWorkspaceValue = {
   /** La última cuenta creada o movida: el árbol la muestra y la resalta un momento. */
   focusId: string | null
   clearFocus: () => void
-  openAccount: (id: string) => void
+  /**
+   * Abre la hoja de una cuenta. Con `simple` (desde «Tus categorías») la hoja muestra primero lo
+   * que un socio sabe contestar (nombre y «para qué se usa») y pliega lo de la contadora; es el
+   * mismo formulario y manda lo mismo.
+   */
+  openAccount: (id: string, opts?: { simple?: boolean }) => void
   /**
    * `undefined` = elegir dónde va; `null` = cuenta principal; un id = adentro de ese grupo.
    * Con `simple`, la hoja pide solo el nombre y «para qué se usa» (el alta corta de «Tus

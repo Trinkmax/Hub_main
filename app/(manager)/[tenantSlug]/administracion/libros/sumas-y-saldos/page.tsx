@@ -23,9 +23,8 @@ import {
 import { todayInCordoba } from '@/lib/dates'
 import { formatCents } from '@/lib/money'
 import { cn } from '@/lib/utils'
-import { BookPage, WideBookHint } from '../_components/book-page'
+import { BookPage, PERIOD_ROW, WideBookHint } from '../_components/book-page'
 import { BalanceSeal, BookTotals } from '../_components/book-totals'
-import { ExportButton } from '../_components/export-button'
 import { RangePicker } from '../_components/period-picker'
 import { PeriodError, QueryErrorBlock } from '../_components/report-error'
 import { loadBookContext } from '../_lib/book-context'
@@ -113,18 +112,19 @@ export default async function SumasYSaldosPage({
       backHref={bookHref(`${base}/libros`, shown.month ? { mes: shown.month } : {})}
       title="Sumas y saldos"
       description={`El balance de comprobación · ${shown.label}${beforeFyResult ? ' · antes de la refundición' : ''}`}
-      actions={
-        <ExportButton
-          href={exportLink}
-          fileName={`administracion-${tenantSlug}-sumas-y-saldos-${shown.from}_${shown.to}.csv`}
-        />
-      }
+      exports={[
+        {
+          href: exportLink,
+          fileName: `administracion-${tenantSlug}-sumas-y-saldos-${shown.from}_${shown.to}.csv`,
+        },
+      ]}
       booksPath={`${base}/libros`}
       book="sumas-y-saldos"
       period={shown}
       toolbar={
         <div className="space-y-3">
           <RangePicker
+            className={PERIOD_ROW}
             range={shown}
             today={today}
             fiscalYear={ctx.fiscalYear}

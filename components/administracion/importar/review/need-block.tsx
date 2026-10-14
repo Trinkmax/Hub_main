@@ -452,7 +452,9 @@ function OtherTaxes({
         </div>
       ) : null}
       {need.party_id ? (
-        <div className="flex items-start gap-2.5">
+        // Con aire arriba: pegada a la última tarjeta parecía parte de «Otra cosa». El
+        // `m-0` del fieldset anula el `space-y` del contenedor: el aire va entero acá.
+        <div className="flex items-start gap-2.5 pt-4">
           <Checkbox
             id={`${base}-rem`}
             checked={remember}

@@ -29,7 +29,7 @@ import {
   type RoomContext,
   SasRoom,
 } from './_components/rooms'
-import { type RoomKey, readTab, roomOfTab } from './_lib/rooms'
+import { ROOMS, type RoomKey, readTab, roomOfTab } from './_lib/rooms'
 
 export const metadata = { title: 'Ajustes · Administración' }
 
@@ -131,6 +131,10 @@ export default async function AjustesPage({
             </Link>
             .
           </>
+        ) : room === 'medios' ? (
+          // En el celular la bajada no se dibuja (queda para lectores): el título del panel ya lo
+          // dice, y lo primero que tiene que verse son los medios.
+          <span className="max-sm:sr-only">{ROOMS.medios.description}</span>
         ) : undefined
       }
     >
