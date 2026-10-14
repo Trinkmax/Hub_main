@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { NARROW_COLUMN, PANEL_GRID, PANEL_ORDER, WIDE_COLUMN } from './panel-columns'
 
 /**
  * Los esqueletos del Resumen: cada bloque con SU forma (el héroe verde con su
@@ -214,14 +215,16 @@ export function ResumenSkeleton() {
       </div>
       <HeroSkeleton />
       <TodaySkeleton />
-      <div className="@container space-y-6">
-        <div className="grid gap-6 @min-[58rem]:grid-cols-12 @min-[58rem]:items-start">
-          <MonthSkeleton className="@min-[58rem]:col-span-7" />
-          <PayablesSkeleton className="@min-[58rem]:col-span-5" />
-        </div>
-        <div className="grid gap-6 @min-[58rem]:grid-cols-12 @min-[58rem]:items-start">
-          <InOutSkeleton className="@min-[58rem]:col-span-6" />
-          <SpendingSkeleton className="@min-[58rem]:col-span-6" />
+      <div className="@container">
+        <div className={PANEL_GRID}>
+          <div className={WIDE_COLUMN}>
+            <MonthSkeleton className={PANEL_ORDER[0]} />
+            <InOutSkeleton className={PANEL_ORDER[2]} />
+          </div>
+          <div className={NARROW_COLUMN}>
+            <PayablesSkeleton className={PANEL_ORDER[1]} />
+            <SpendingSkeleton className={PANEL_ORDER[3]} />
+          </div>
         </div>
       </div>
     </>

@@ -25,6 +25,7 @@ import { InOutBlock } from './_resumen/in-out-block'
 import { IvaBlock } from './_resumen/iva-block'
 import { MonthBlock } from './_resumen/month-block'
 import { NoticesBlock } from './_resumen/notices-block'
+import { NARROW_COLUMN, PANEL_GRID, PANEL_ORDER, WIDE_COLUMN } from './_resumen/panel-columns'
 import { PayablesBlock } from './_resumen/payables-block'
 import {
   BooksSkeleton,
@@ -132,27 +133,32 @@ export default async function AdministracionResumenPage({
         <TodayBlock data={data} setupCookie={setupCookie} setupCollapsed={setupCollapsed} />
       </Suspense>
 
-      {/* Las dos filas de paneles pasan a dos columnas según el ancho que de verdad tienen
-          (`@container`), no el de la ventana: con el menú abierto en una notebook de 1024 a
-          1279 px, «Lo que tenés que pagar» quedaba en 277 px. Cada panel mide lo suyo
-          (`items-start`): estirado al alto del vecino dejaba un hueco de casi una pantalla. */}
-      <div className="@container space-y-6">
-        <div className={PANEL_ROW}>
-          <Suspense fallback={<MonthSkeleton className={WIDE_PANEL} />}>
-            <MonthBlock data={data} className={WIDE_PANEL} />
-          </Suspense>
-          <Suspense fallback={<PayablesSkeleton className={NARROW_PANEL} />}>
-            <PayablesBlock data={data} className={NARROW_PANEL} />
-          </Suspense>
-        </div>
-
-        <div className={PANEL_ROW}>
-          <Suspense fallback={<InOutSkeleton className={HALF_PANEL} />}>
-            <InOutBlock data={data} className={HALF_PANEL} />
-          </Suspense>
-          <Suspense fallback={<SpendingSkeleton className={HALF_PANEL} />}>
-            <SpendingBlock data={data} className={HALF_PANEL} />
-          </Suspense>
+      {/* Dos columnas fijas, 7 + 5, según el ancho que de verdad tienen (`@container`), no el
+          de la ventana: con el menú abierto en una notebook, «Lo que tenés que pagar» quedaba en
+          277 px. Cada columna apila sus paneles por su cuenta: en filas, cada panel esperaba al
+          alto del vecino y quedaban huecos, y las filas 7/5 y 6/6 no alineaban sus bordes.
+          A la izquierda lo que entra (las ventas y la plata de las cajas, con su dibujo ancho);
+          a la derecha lo que sale (lo que tenés que pagar y en qué se gastó). En una sola
+          columna las cajas de las columnas no existen (`contents`) y `order` deja el orden de
+          siempre: ventas, pagos, entró y salió, en qué se gastó. */}
+      <div className="@container">
+        <div className={PANEL_GRID}>
+          <div className={WIDE_COLUMN}>
+            <Suspense fallback={<MonthSkeleton className={PANEL_ORDER[0]} />}>
+              <MonthBlock data={data} className={PANEL_ORDER[0]} />
+            </Suspense>
+            <Suspense fallback={<InOutSkeleton className={PANEL_ORDER[2]} />}>
+              <InOutBlock data={data} className={PANEL_ORDER[2]} />
+            </Suspense>
+          </div>
+          <div className={NARROW_COLUMN}>
+            <Suspense fallback={<PayablesSkeleton className={PANEL_ORDER[1]} />}>
+              <PayablesBlock data={data} className={PANEL_ORDER[1]} />
+            </Suspense>
+            <Suspense fallback={<SpendingSkeleton className={PANEL_ORDER[3]} />}>
+              <SpendingBlock data={data} className={PANEL_ORDER[3]} />
+            </Suspense>
+          </div>
         </div>
       </div>
 
@@ -168,12 +174,6 @@ export default async function AdministracionResumenPage({
     </AdmPage>
   )
 }
-
-/* Las clases de las filas de paneles, escritas enteras (Tailwind las busca como texto). */
-const PANEL_ROW = 'grid gap-6 @min-[58rem]:grid-cols-12 @min-[58rem]:items-start'
-const WIDE_PANEL = 'min-w-0 @min-[58rem]:col-span-7'
-const NARROW_PANEL = 'min-w-0 @min-[58rem]:col-span-5'
-const HALF_PANEL = 'min-w-0 @min-[58rem]:col-span-6'
 
 /** La razón social, chica al lado de la fecha: llega con los ajustes, sin frenar el título. */
 async function LegalName({ data }: { data: HomeData }) {
