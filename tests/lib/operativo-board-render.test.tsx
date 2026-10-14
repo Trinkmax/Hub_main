@@ -109,6 +109,7 @@ function weekly(capacity: number, warn?: { at: number; note: string }): Resolved
 
 /** Cupos por servicio de un sábado del HUB: 120 en los tres. */
 const SAT_CAPS: DaySegmentCaps = {
+  breakfast: weekly(130),
   lunch: weekly(120),
   tea_time: weekly(120),
   dinner: weekly(120),
@@ -368,6 +369,7 @@ describe('OperativoBoard (SSR)', () => {
         ],
         initialCapacity: [],
         initialSegmentCaps: {
+          breakfast: weekly(130),
           lunch: weekly(70, { at: 50, note: 'Conviene abrir la terraza' }),
           tea_time: weekly(120),
           dinner: weekly(120),

@@ -223,11 +223,22 @@ function lunch(guests: number, config: SegmentConfig = HUB_CONFIG): SegmentLoad 
 }
 
 describe('labels', () => {
-  it('nombres de los 3 servicios en cada densidad', () => {
-    expect(SEGMENT_LABELS).toEqual({ lunch: 'Almuerzo', tea_time: 'Merienda', dinner: 'Cena' })
-    expect(SEGMENT_SHORT_LABELS).toEqual({ lunch: 'Alm', tea_time: 'Mer', dinner: 'Cena' })
-    expect(SEGMENT_LETTERS).toEqual({ lunch: 'A', tea_time: 'M', dinner: 'C' })
+  it('nombres de los 4 servicios en cada densidad', () => {
+    expect(SEGMENT_LABELS).toEqual({
+      breakfast: 'Desayuno',
+      lunch: 'Almuerzo',
+      tea_time: 'Merienda',
+      dinner: 'Cena',
+    })
+    expect(SEGMENT_SHORT_LABELS).toEqual({
+      breakfast: 'Des',
+      lunch: 'Alm',
+      tea_time: 'Mer',
+      dinner: 'Cena',
+    })
+    expect(SEGMENT_LETTERS).toEqual({ breakfast: 'D', lunch: 'A', tea_time: 'M', dinner: 'C' })
     expect(SEGMENT_WITH_ARTICLE).toEqual({
+      breakfast: 'el desayuno',
       lunch: 'el almuerzo',
       tea_time: 'la merienda',
       dinner: 'la cena',

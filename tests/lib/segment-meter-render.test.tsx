@@ -76,7 +76,7 @@ function cap(capacity: number | null, warnAt: number | null = null): ResolvedSeg
 }
 
 function caps(over: Partial<DaySegmentCaps> = {}): DaySegmentCaps {
-  return { lunch: cap(120), tea_time: cap(120), dinner: cap(120), ...over }
+  return { breakfast: cap(130), lunch: cap(120), tea_time: cap(120), dinner: cap(120), ...over }
 }
 
 function segmentOf(

@@ -27,24 +27,28 @@ import {
 import { type SalonZone, ZONE_LABELS } from './types'
 
 export const SEGMENT_LABELS: Record<SegmentKey, string> = {
+  breakfast: 'Desayuno',
   lunch: 'Almuerzo',
   tea_time: 'Merienda',
   dinner: 'Cena',
 }
 
 export const SEGMENT_SHORT_LABELS: Record<SegmentKey, string> = {
+  breakfast: 'Des',
   lunch: 'Alm',
   tea_time: 'Mer',
   dinner: 'Cena',
 }
 
 export const SEGMENT_LETTERS: Record<SegmentKey, string> = {
+  breakfast: 'D',
   lunch: 'A',
   tea_time: 'M',
   dinner: 'C',
 }
 
 export const SEGMENT_WITH_ARTICLE: Record<SegmentKey, string> = {
+  breakfast: 'el desayuno',
   lunch: 'el almuerzo',
   tea_time: 'la merienda',
   dinner: 'la cena',
@@ -88,7 +92,8 @@ function inEventsPhrase(s: SegmentLoad): string {
 
 /** "todo el almuerzo" / "toda la cena": el cuantificador concuerda con el artículo. */
 function wholeSegment(key: SegmentKey): string {
-  return `${key === 'lunch' ? 'todo' : 'toda'} ${SEGMENT_WITH_ARTICLE[key]}`
+  const article = SEGMENT_WITH_ARTICLE[key]
+  return `${article.startsWith('el ') ? 'todo' : 'toda'} ${article}`
 }
 
 /** "Pizza libre tiene" / "Los eventos tienen", con la mayúscula donde va. */

@@ -632,7 +632,12 @@ describe('segment-queries: migración pendiente y paginación', () => {
     if (!res.ok) return
     expect(res.data.caps.dinner.capacity).toBe(130)
     expect(res.data.isoDow).toBe(4)
-    expect(res.data.suggestedRaise).toEqual({ lunch: null, tea_time: null, dinner: null })
+    expect(res.data.suggestedRaise).toEqual({
+      breakfast: null,
+      lunch: null,
+      tea_time: null,
+      dinner: null,
+    })
     // El cupo de cada planta viaja para el filtro de planta de la vista del día.
     expect(res.data.zoneCaps).toEqual({ planta_alta: 60, planta_baja: 70 })
   })

@@ -30,7 +30,7 @@ export type NewReservationDefaults = {
   segment: SegmentKey
   targetEventId: string | null
   initialValues: {
-    meal_type: 'lunch' | 'tea_time' | 'dinner'
+    meal_type: 'breakfast' | 'lunch' | 'tea_time' | 'dinner'
     reservation_time_local: string // 'HH:MM'
     zone?: 'event_floating'
     scheduled_event_id?: string

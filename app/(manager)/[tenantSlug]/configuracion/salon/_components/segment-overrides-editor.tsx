@@ -27,12 +27,12 @@ import { isRealIsoDay } from '@/lib/salon/date-presets'
 import { removeSegmentOverride, upsertSegmentOverride } from '@/lib/salon/segment-actions'
 import { type SegmentActionResult, segmentOverrideSchema } from '@/lib/salon/segment-schemas'
 import {
+  CONFIGURABLE_SEGMENT_KEYS,
+  type ConfigurableSegmentKey,
   type IsoDow,
+  isConfigurableSegmentKey,
   isoDowOf,
-  isSegmentKey,
   resolveDaySegmentCaps,
-  SEGMENT_KEYS,
-  type SegmentKey,
   type SegmentOverrideRow,
   type SegmentWeeklyCapRow,
 } from '@/lib/salon/segments'
@@ -104,7 +104,7 @@ function rowKey(o: Pick<SegmentOverrideRow, 'override_date' | 'segment'>): strin
 function sortOverrides(rows: SegmentOverrideRow[]): SegmentOverrideRow[] {
   return [...rows].sort((a, b) =>
     a.override_date === b.override_date
-      ? SEGMENT_KEYS.indexOf(a.segment) - SEGMENT_KEYS.indexOf(b.segment)
+      ? CONFIGURABLE_SEGMENT_KEYS.indexOf(a.segment) - CONFIGURABLE_SEGMENT_KEYS.indexOf(b.segment)
       : a.override_date < b.override_date
         ? -1
         : 1,
@@ -151,7 +151,7 @@ export function SegmentOverridesEditor({
 
   const [overrides, setOverrides] = useState(() => sortOverrides(initialOverrides))
   const [date, setDate] = useState('')
-  const [segment, setSegment] = useState<SegmentKey>('lunch')
+  const [segment, setSegment] = useState<ConfigurableSegmentKey>('lunch')
   const [capacity, setCapacity] = useState('')
   const [warn, setWarn] = useState('')
   const [reason, setReason] = useState('')
@@ -166,7 +166,10 @@ export function SegmentOverridesEditor({
    * `resolveDaySegmentCaps` que usa el calendario, con los especiales vacíos:
    * así «en vez de 70» nunca contradice lo que muestra el día.
    */
-  function baseCap(isoDate: string, seg: SegmentKey): { capacity: number | null; text: string } {
+  function baseCap(
+    isoDate: string,
+    seg: ConfigurableSegmentKey,
+  ): { capacity: number | null; text: string } {
     const cap = resolveDaySegmentCaps(isoDate, {
       weekly,
       overrides: [],
@@ -184,7 +187,7 @@ export function SegmentOverridesEditor({
     }
   }
 
-  function baseLine(isoDate: string, seg: SegmentKey): string {
+  function baseLine(isoDate: string, seg: ConfigurableSegmentKey): string {
     const base = baseCap(isoDate, seg)
     if (base.capacity === null) return 'Sin el especial, ese servicio no tiene tope.'
     return base.capacity === 0
@@ -193,7 +196,7 @@ export function SegmentOverridesEditor({
   }
 
   /** «El almuerzo del lun 12/10 tiene 70 (cupo de los lunes).»: contra qué se compara el especial. */
-  function baseHint(isoDate: string, seg: SegmentKey): string {
+  function baseHint(isoDate: string, seg: ConfigurableSegmentKey): string {
     const base = baseCap(isoDate, seg)
     const who = `${capitalize(SEGMENT_WITH_ARTICLE[seg])} del ${shortDay(isoDate)}`
     if (base.capacity === null) return `${who} no tiene tope.`
@@ -414,7 +417,7 @@ export function SegmentOverridesEditor({
             <Select
               value={segment}
               onValueChange={(v) => {
-                if (isSegmentKey(v)) setSegment(v)
+                if (isConfigurableSegmentKey(v)) setSegment(v)
                 setFormError(null)
               }}
             >
@@ -422,7 +425,7 @@ export function SegmentOverridesEditor({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {SEGMENT_KEYS.map((key) => (
+                {CONFIGURABLE_SEGMENT_KEYS.map((key) => (
                   <SelectItem key={key} value={key}>
                     {SEGMENT_LABELS[key]}
                   </SelectItem>

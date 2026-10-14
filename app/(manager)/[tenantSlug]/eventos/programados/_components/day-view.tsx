@@ -29,6 +29,8 @@ import {
   computeDaySegments,
   focusSegment,
   groupReservationsBySegment,
+  isConfigurableSegmentKey,
+  isOccasionalSegment,
   isoDowOf,
   SEGMENT_KEYS,
   type SegmentKey,
@@ -315,6 +317,14 @@ export function DayView({
   const rowsBySegment = useMemo(
     () => (overview ? groupReservationsBySegment(overview.reservations, overview.events) : null),
     [overview],
+  )
+  // El desayuno solo se dibuja el día que tiene algo (un evento, gente o una
+  // reserva cancelada que alguien va a buscar).
+  const shownKeys = SEGMENT_KEYS.filter(
+    (key) =>
+      !isOccasionalSegment(key) ||
+      Boolean(daySegments?.segments[key].hasActivity) ||
+      (rowsBySegment?.[key].length ?? 0) > 0,
   )
 
   // Vista rápida abierta, atada a su día y a su filtro de planta: al cambiar
@@ -694,7 +704,7 @@ export function DayView({
               ) : null}
 
               <div className="divide-y divide-border/60">
-                {SEGMENT_KEYS.map((key) => (
+                {shownKeys.map((key) => (
                   <DaySegmentSection
                     key={key}
                     tenantSlug={tenantSlug}
@@ -716,7 +726,9 @@ export function DayView({
                     onOpenReservation={onOpenReservation}
                     onRaise={(capacity) => {
                       // Mismo cupo especial que el editor, sin motivo: "subí el
-                      // almuerzo porque se llenó" no necesita explicación.
+                      // almuerzo porque se llenó" no necesita explicación. El
+                      // desayuno no tiene cupo propio (nunca ofrece subirlo).
+                      if (!isConfigurableSegmentKey(key)) return
                       void saveOverride(shownDate, {
                         segment: key,
                         capacity,
@@ -753,7 +765,7 @@ function DaySkeleton() {
   return (
     <div role="status" className="divide-y divide-border/60">
       <span className="sr-only">Cargando el día…</span>
-      {SEGMENT_KEYS.map((key) => (
+      {SEGMENT_KEYS.filter((key) => !isOccasionalSegment(key)).map((key) => (
         <div key={key} aria-hidden className="space-y-2.5 px-4 py-4 sm:px-6">
           <div className="flex items-center justify-between gap-3">
             <Skeleton className="h-5 w-28" />

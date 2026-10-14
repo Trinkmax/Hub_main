@@ -39,7 +39,12 @@ const MANAGER_ID = '11111111-1111-4111-8111-111111111111'
 function weekly(capacity: number): ResolvedSegmentCap {
   return { capacity, warnAt: null, warnNote: null, source: 'weekly', overrideReason: null }
 }
-const CAPS: DaySegmentCaps = { lunch: weekly(70), tea_time: weekly(120), dinner: weekly(120) }
+const CAPS: DaySegmentCaps = {
+  breakfast: weekly(130),
+  lunch: weekly(70),
+  tea_time: weekly(120),
+  dinner: weekly(120),
+}
 
 const PIZZA: ScheduledEventWithTemplate = {
   id: PIZZA_ID,

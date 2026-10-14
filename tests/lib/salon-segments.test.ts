@@ -10,6 +10,7 @@ import {
   eventSegmentMap,
   focusSegment,
   groupReservationsBySegment,
+  isConfigurableSegmentKey,
   isoDowOf,
   isSegmentConfigured,
   isSegmentKey,
@@ -27,6 +28,7 @@ import {
   segmentOfMealType,
   segmentOfReservation,
   segmentOfTime,
+  shownSegmentKeys,
   suggestedCapacityRaise,
   VIRTUAL_EVENT_ID,
   ZONE_FILTERS,
@@ -306,7 +308,10 @@ describe('segmentOfTime', () => {
   it.each([
     ['00:30', 'dinner'],
     ['04:59', 'dinner'],
-    ['05:00', 'lunch'],
+    ['05:00', 'breakfast'],
+    ['09:30:00', 'breakfast'],
+    ['11:59', 'breakfast'],
+    ['12:00', 'lunch'],
     ['13:00:00', 'lunch'],
     ['14:59', 'lunch'],
     ['15:00', 'tea_time'],
@@ -325,7 +330,7 @@ describe('segmentOfTime', () => {
 
 describe('segmentOfMealType / mealTypeForSegment', () => {
   it.each([
-    ['breakfast', 'lunch'],
+    ['breakfast', 'breakfast'],
     ['lunch', 'lunch'],
     ['tea_time', 'tea_time'],
     ['dinner', 'dinner'],
@@ -334,18 +339,20 @@ describe('segmentOfMealType / mealTypeForSegment', () => {
     expect(segmentOfMealType(meal)).toBe(expected)
   })
 
-  it('mealTypeForSegment es la inversa sobre los 3 servicios (nunca hub_event)', () => {
+  it('mealTypeForSegment es la inversa sobre los 4 servicios (nunca hub_event)', () => {
     for (const key of SEGMENT_KEYS) {
       expect(segmentOfMealType(mealTypeForSegment(key))).toBe(key)
     }
     expect(mealTypeForSegment('dinner')).toBe('dinner')
   })
 
-  it('isSegmentKey solo acepta los 3 servicios', () => {
+  it('isSegmentKey acepta los 4 servicios; el desayuno no se configura', () => {
     expect(isSegmentKey('tea_time')).toBe(true)
-    expect(isSegmentKey('breakfast')).toBe(false)
+    expect(isSegmentKey('breakfast')).toBe(true)
     expect(isSegmentKey('hub_event')).toBe(false)
     expect(isSegmentKey(3)).toBe(false)
+    expect(isConfigurableSegmentKey('lunch')).toBe(true)
+    expect(isConfigurableSegmentKey('breakfast')).toBe(false)
   })
 })
 
@@ -407,7 +414,8 @@ describe('isoDowOf', () => {
 describe('currentSegment', () => {
   it.each([
     [120, 'dinner'],
-    [600, 'lunch'],
+    [600, 'breakfast'],
+    [720, 'lunch'],
     [960, 'tea_time'],
     [1300, 'dinner'],
   ] as const)('%i → %s', (minutes, expected) => {
@@ -496,8 +504,9 @@ describe('resolveDaySegmentCaps', () => {
 })
 
 describe('resolveSegmentSettings', () => {
-  it('sin filas → 13:00 / 15:30 / 21:00 y sin nota', () => {
+  it('sin filas → 09:00 / 13:00 / 15:30 / 21:00 y sin nota', () => {
     expect(resolveSegmentSettings([])).toEqual({
+      breakfast: { defaultTime: '09:00', warnNote: null },
       lunch: { defaultTime: '13:00', warnNote: null },
       tea_time: { defaultTime: '15:30', warnNote: null },
       dinner: { defaultTime: '21:00', warnNote: null },
@@ -805,9 +814,9 @@ describe('computeDaySegments', () => {
     expect(d.segments.tea_time).toMatchObject({ normalUsed: 8, eventUsed: 0, people: 8 })
   })
 
-  it('siempre devuelve los 3 servicios, aunque el día esté vacío', () => {
+  it('siempre devuelve los 4 servicios, aunque el día esté vacío', () => {
     const d = day('2026-09-10', [], [])
-    expect(Object.keys(d.segments)).toEqual(['lunch', 'tea_time', 'dinner'])
+    expect(Object.keys(d.segments)).toEqual(['breakfast', 'lunch', 'tea_time', 'dinner'])
     expect(d.segments.tea_time).toMatchObject({ people: 0, freeForNormal: 120, status: 'ok' })
   })
 })
@@ -870,14 +879,19 @@ describe('computeMonthSegments', () => {
 })
 
 describe('groupReservationsBySegment', () => {
-  it('siempre las 3 claves y respeta el orden de entrada', () => {
+  it('siempre las 4 claves y respeta el orden de entrada', () => {
     const { reservations, events } = sep10()
     const grouped = groupReservationsBySegment(reservations, events)
-    expect(Object.keys(grouped)).toEqual(['lunch', 'tea_time', 'dinner'])
+    expect(Object.keys(grouped)).toEqual(['breakfast', 'lunch', 'tea_time', 'dinner'])
     expect(grouped.lunch.map((r) => r.estimated_guests)).toEqual([19])
     expect(grouped.tea_time.map((r) => r.estimated_guests)).toEqual([20, 13])
     expect(grouped.dinner.map((r) => r.id)).toEqual(reservations.slice(3).map((r) => r.id))
-    expect(groupReservationsBySegment([], [])).toEqual({ lunch: [], tea_time: [], dinner: [] })
+    expect(groupReservationsBySegment([], [])).toEqual({
+      breakfast: [],
+      lunch: [],
+      tea_time: [],
+      dinner: [],
+    })
   })
 })
 
@@ -1219,5 +1233,102 @@ describe('el día filtrado por planta', () => {
     expect(without.zoneCaps).toEqual({ planta_alta: 0, planta_baja: 0 })
     // Copia, no la constante compartida: mutarla no cambia NO_ZONE_CAPS.
     expect(without.zoneCaps).not.toBe(NO_ZONE_CAPS)
+  })
+})
+
+// ──────────────────────────────────────────────────────────
+// Desayuno (pedido del 14/10/2026: «Desayuno libre» del Día de la Madre)
+// ──────────────────────────────────────────────────────────
+
+describe('desayuno', () => {
+  // Domingo 18/10: Desayuno libre a las 09:30 (cupo 70, 6 personas) y 50
+  // normales al almuerzo. Antes el evento contaba como almuerzo: el almuerzo
+  // quedaba con 70 apartados y en rojo.
+  const DATE = '2026-10-18'
+  const desayuno = ev({
+    id: 'desayuno',
+    name: 'Desayuno libre',
+    event_date: DATE,
+    starts_at_local: '09:30:00',
+    capacity: 70,
+  })
+  const rows = [
+    // Las reservas del evento quedaron guardadas como 'lunch': manda el evento.
+    res({
+      reservation_date: DATE,
+      meal_type: 'lunch',
+      reservation_time_local: '09:30:00',
+      scheduled_event_id: 'desayuno',
+      estimated_guests: 4,
+    }),
+    res({
+      reservation_date: DATE,
+      meal_type: 'lunch',
+      reservation_time_local: '09:30:00',
+      scheduled_event_id: 'desayuno',
+      estimated_guests: 2,
+    }),
+    res({
+      reservation_date: DATE,
+      meal_type: 'lunch',
+      reservation_time_local: '13:00:00',
+      estimated_guests: 50,
+    }),
+  ]
+
+  it('el evento de la mañana cuenta en el desayuno y no le come el cupo al almuerzo', () => {
+    const d = day(DATE, rows, [desayuno])
+    expect(d.segments.breakfast).toMatchObject({
+      people: 6,
+      capacity: 130,
+      capSource: 'fallback',
+      reservedForEvents: 70,
+      status: 'ok',
+    })
+    expect(d.segments.breakfast.events.map((e) => e.name)).toEqual(['Desayuno libre'])
+    expect(d.segments.lunch).toMatchObject({
+      people: 50,
+      capacity: 120,
+      reservedForEvents: 0,
+      status: 'ok',
+    })
+    expect(d.mismatches).toEqual([])
+  })
+
+  it('el cupo del desayuno es siempre el general, aunque el bar cargue los otros', () => {
+    const caps = resolveDaySegmentCaps(DATE, HUB_CONFIG)
+    expect(caps.breakfast).toMatchObject({ capacity: 130, source: 'fallback', warnAt: null })
+    expect(suggestedCapacityRaise(HUB_CONFIG, 'breakfast', 130)).toBeNull()
+  })
+
+  it('solo se dibuja el día que tiene algo', () => {
+    expect(shownSegmentKeys(day(DATE, rows, [desayuno]).segments)).toEqual([
+      'breakfast',
+      'lunch',
+      'tea_time',
+      'dinner',
+    ])
+    expect(shownSegmentKeys(day(DATE, rows.slice(2), []).segments)).toEqual([
+      'lunch',
+      'tea_time',
+      'dinner',
+    ])
+  })
+
+  it('a la mañana el foco es el desayuno solo si hay desayuno', () => {
+    expect(focusSegment(day(DATE, rows, [desayuno]), 10 * 60)).toBe('breakfast')
+    expect(focusSegment(day(DATE, rows.slice(2), []), 10 * 60)).toBe('lunch')
+    expect(focusSegment(day(DATE, rows.slice(2), []), null)).toBe('dinner')
+  })
+
+  it('una reserva de desayuno sin evento cuenta en el desayuno', () => {
+    const d = day(
+      DATE,
+      [res({ reservation_date: DATE, meal_type: 'breakfast', estimated_guests: 3 })],
+      [],
+    )
+    expect(d.segments.breakfast.people).toBe(3)
+    expect(d.segments.lunch.people).toBe(0)
+    expect(mealTypeForSegment('breakfast')).toBe('breakfast')
   })
 })

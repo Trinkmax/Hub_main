@@ -1,5 +1,5 @@
 /**
- * Cupo POR SERVICIO: almuerzo, merienda y cena.
+ * Cupo POR SERVICIO: desayuno, almuerzo, merienda y cena.
  *
  * POR QUÉ: el jueves 10/09 el calendario decía "171 de 130" en rojo y no había
  * sobrecupo: eran 19 al mediodía, 33 en la merienda y 119 en la cena, todo
@@ -17,25 +17,61 @@
 
 import type { MealType, ReservationKind, SalonReservationStatus, SalonZone } from './types'
 
-export const SEGMENT_KEYS = ['lunch', 'tea_time', 'dinner'] as const
+export const SEGMENT_KEYS = ['breakfast', 'lunch', 'tea_time', 'dinner'] as const
 export type SegmentKey = (typeof SEGMENT_KEYS)[number]
 export type IsoDow = 1 | 2 | 3 | 4 | 5 | 6 | 7
+
+/**
+ * Los servicios que se configuran (cupo semanal, cupo especial, hora
+ * sugerida). El desayuno no: las tablas de cupo solo aceptan estos tres, así
+ * que su cupo es siempre el general (PA + PB) menos lo que apartan sus eventos.
+ */
+export const CONFIGURABLE_SEGMENT_KEYS = ['lunch', 'tea_time', 'dinner'] as const
+export type ConfigurableSegmentKey = (typeof CONFIGURABLE_SEGMENT_KEYS)[number]
+
+export function isConfigurableSegmentKey(value: unknown): value is ConfigurableSegmentKey {
+  return (
+    typeof value === 'string' &&
+    (CONFIGURABLE_SEGMENT_KEYS as ReadonlyArray<string>).includes(value)
+  )
+}
+
+/**
+ * El desayuno es un servicio de ocasión (el «Desayuno libre» del Día de la
+ * Madre, 18/10/2026): el alta lo ofrece siempre, pero el calendario, el
+ * operativo y el salón lo muestran solo el día que tiene algo. Un bar que no
+ * sirve desayuno no tiene por qué ver «Desayuno 0/130» todos los días.
+ */
+export function isOccasionalSegment(key: SegmentKey): boolean {
+  return key === 'breakfast'
+}
+
+/** Los servicios que se dibujan ese día: los fijos siempre, el desayuno si tiene algo. */
+export function shownSegmentKeys(
+  segments: Readonly<Record<SegmentKey, Pick<SegmentLoad, 'hasActivity'>>>,
+): SegmentKey[] {
+  return SEGMENT_KEYS.filter((key) => !isOccasionalSegment(key) || segments[key].hasActivity)
+}
 
 /**
  * Cortes en minutos desde 00:00 (R2). Salen de los datos: con la merienda
  * arrancando en (14:30, 15:00] y la cena en (18:30, 19:00] hay 0
  * contradicciones sobre las 504 reservas del HUB. Antes de las 05:00 es la
  * cena de esa noche (la gente que llega pasada la medianoche no es un
- * "almuerzo de madrugada").
+ * "almuerzo de madrugada"). De 05:00 a 12:00 es el desayuno: en el HUB no
+ * hay ningún almuerzo antes de las 12:00 (los más tempranos son a las 12:00
+ * justas, que siguen siendo almuerzo).
  */
 export const SEGMENT_CUTS = {
   nightRolloverMin: 5 * 60,
+  lunchStartMin: 12 * 60,
   teaStartMin: 15 * 60,
   dinnerStartMin: 19 * 60,
 } as const
 
 /** Hora que precarga el alta cuando el bar no configuró la suya. */
 export const DEFAULT_SEGMENT_TIMES: Readonly<Record<SegmentKey, string>> = {
+  breakfast: '09:00',
   lunch: '13:00',
   tea_time: '15:30',
   dinner: '21:00',
@@ -69,6 +105,7 @@ function minutesOf(time: string): number | null {
 /** A qué servicio pertenece un minuto del día. Misma regla para horas y reloj. */
 function segmentOfMinutes(minutes: number): SegmentKey {
   if (minutes < SEGMENT_CUTS.nightRolloverMin) return 'dinner'
+  if (minutes < SEGMENT_CUTS.lunchStartMin) return 'breakfast'
   if (minutes < SEGMENT_CUTS.teaStartMin) return 'lunch'
   if (minutes < SEGMENT_CUTS.dinnerStartMin) return 'tea_time'
   return 'dinner'
@@ -94,12 +131,10 @@ export function segmentOfEventStart(startsAtLocal: string): SegmentKey {
 }
 
 /**
- * El desayuno cuenta como almuerzo (hubo 2 en toda la historia) y el
- * 'hub_event' legacy como cena: ninguno de los dos es un servicio con cupo
- * propio.
+ * El 'hub_event' legacy cuenta como cena: no es un servicio con cupo propio.
  */
 const MEAL_TYPE_SEGMENT: Readonly<Record<MealType, SegmentKey>> = {
-  breakfast: 'lunch',
+  breakfast: 'breakfast',
   lunch: 'lunch',
   tea_time: 'tea_time',
   dinner: 'dinner',
@@ -121,7 +156,7 @@ export function segmentOfMealType(meal: MealType): SegmentKey {
  */
 export function mealTypeForSegment(
   segment: SegmentKey,
-): Extract<MealType, 'lunch' | 'tea_time' | 'dinner'> {
+): Extract<MealType, 'breakfast' | 'lunch' | 'tea_time' | 'dinner'> {
   return segment
 }
 
@@ -206,11 +241,11 @@ export function segmentOfReservation(
 }
 
 function emptyBySegment<T>(make: () => T): Record<SegmentKey, T> {
-  return { lunch: make(), tea_time: make(), dinner: make() }
+  return { breakfast: make(), lunch: make(), tea_time: make(), dinner: make() }
 }
 
 /**
- * Reparte filas por servicio. Siempre devuelve las 3 claves (la vista del día
+ * Reparte filas por servicio. Siempre devuelve las 4 claves (la vista del día
  * dibuja un servicio vacío con su "Nueva reserva") y conserva el orden de
  * entrada, que ya viene por hora.
  */
@@ -281,20 +316,20 @@ export function zoneCapacity(zone: SalonZone, caps: Readonly<ZoneCaps>): number 
 // ──────────────────────────────────────────────────────────
 
 export type SegmentWeeklyCapRow = {
-  segment: SegmentKey
+  segment: ConfigurableSegmentKey
   iso_dow: IsoDow
   capacity: number
   warn_at: number | null
 }
 export type SegmentOverrideRow = {
-  segment: SegmentKey
+  segment: ConfigurableSegmentKey
   override_date: string
   capacity: number
   warn_at: number | null
   reason: string | null
 }
 export type SegmentSettingRow = {
-  segment: SegmentKey
+  segment: ConfigurableSegmentKey
   default_time: string
   warn_note: string | null
 }
@@ -511,7 +546,7 @@ export type EventSegmentMismatch = {
 export type DaySegments = {
   date: string
   isoDow: IsoDow
-  segments: Record<SegmentKey, SegmentLoad> // SIEMPRE los 3
+  segments: Record<SegmentKey, SegmentLoad> // SIEMPRE los 4 (el desayuno se dibuja si tiene algo)
   mismatches: EventSegmentMismatch[]
 }
 export type DaySegmentsInput = {
@@ -702,7 +737,7 @@ function findMismatches(
 }
 
 /**
- * La cuenta de un día: SIEMPRE los 3 servicios, cada uno contra su cupo.
+ * La cuenta de un día: SIEMPRE los 4 servicios, cada uno contra su cupo.
  *
  * - Cuentan las reservas de esa fecha que no están canceladas ni "no vino".
  * - Reserva colgada de un evento del día → suma al evento, aunque la zona sea
@@ -782,6 +817,7 @@ export function computeDaySegments(input: DaySegmentsInput): DaySegments {
     date,
     isoDow: isoDowOf(date),
     segments: {
+      breakfast: finishSegment('breakfast', caps.breakfast, tallies.breakfast),
       lunch: finishSegment('lunch', caps.lunch, tallies.lunch),
       tea_time: finishSegment('tea_time', caps.tea_time, tallies.tea_time),
       dinner: finishSegment('dinner', caps.dinner, tallies.dinner),
@@ -963,9 +999,13 @@ export function dayHasZoneActivity(day: DaySegments, zone: SalonZone): boolean {
 /**
  * Servicio en foco: con reloj (el día es hoy), el que está en curso; sin reloj,
  * la cena, que es el servicio que más se reserva y el que se consulta primero.
+ * A la mañana de un día sin desayuno el foco es el almuerzo: el desayuno no se
+ * dibuja si no tiene nada.
  */
-export function focusSegment(_day: DaySegments, nowMinutes: number | null): SegmentKey {
-  return nowMinutes === null ? 'dinner' : currentSegment(nowMinutes)
+export function focusSegment(day: DaySegments, nowMinutes: number | null): SegmentKey {
+  if (nowMinutes === null) return 'dinner'
+  const current = currentSegment(nowMinutes)
+  return isOccasionalSegment(current) && !day.segments[current].hasActivity ? 'lunch' : current
 }
 
 // ──────────────────────────────────────────────────────────

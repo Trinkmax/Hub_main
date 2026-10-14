@@ -52,7 +52,12 @@ const PIZZA_EVENT: SegmentEventInput = {
 function cap(capacity: number) {
   return { capacity, warnAt: null, warnNote: null, source: 'weekly' as const, overrideReason: null }
 }
-const CAPS: DaySegmentCaps = { lunch: cap(70), tea_time: cap(120), dinner: cap(120) }
+const CAPS: DaySegmentCaps = {
+  breakfast: cap(130),
+  lunch: cap(70),
+  tea_time: cap(120),
+  dinner: cap(120),
+}
 
 describe('activeDaySegments', () => {
   it('cada servicio contra SU cupo, nunca el total del día contra PA + PB', () => {

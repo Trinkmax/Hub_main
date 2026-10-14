@@ -8,12 +8,18 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { segmentOverrideSchema } from '@/lib/salon/segment-schemas'
-import { type IsoDow, SEGMENT_KEYS, type SegmentKey, type SegmentLoad } from '@/lib/salon/segments'
+import {
+  CONFIGURABLE_SEGMENT_KEYS,
+  type ConfigurableSegmentKey,
+  type IsoDow,
+  type SegmentKey,
+  type SegmentLoad,
+} from '@/lib/salon/segments'
 import { capSourceLabel, SEGMENT_LABELS } from '@/lib/salon/segments-copy'
 
 /** Lo que manda "Guardar" de una fila: un cupo especial ya validado con el zod de la action. */
 export type DayOverrideInput = {
-  segment: SegmentKey
+  segment: ConfigurableSegmentKey
   capacity: number
   warn_at: number | null
   reason: string | null
@@ -37,10 +43,10 @@ function toDraft(capacity: number | null): string {
   return capacity === null ? '' : String(capacity)
 }
 
-type Drafts = Record<SegmentKey, string>
-type Seen = Record<SegmentKey, number | null>
+type Drafts = Record<ConfigurableSegmentKey, string>
+type Seen = Record<ConfigurableSegmentKey, number | null>
 
-function capsOf(segments: Record<SegmentKey, SegmentLoad>): Seen {
+function capsOf(segments: Record<ConfigurableSegmentKey, SegmentLoad>): Seen {
   return {
     lunch: segments.lunch.capacity,
     tea_time: segments.tea_time.capacity,
@@ -74,24 +80,28 @@ export function DayCapacityEditor({
   dayLabel: string
   isoDow: IsoDow
   /** null mientras el día carga: el botón queda deshabilitado en su lugar (sin saltos). */
-  segments: Record<SegmentKey, SegmentLoad> | null
+  segments: Record<ConfigurableSegmentKey, SegmentLoad> | null
   /** Servicio con un guardado en curso. */
   busy: SegmentKey | null
   onSave: (input: DayOverrideInput) => Promise<boolean>
-  onRemove: (segment: SegmentKey) => Promise<boolean>
+  onRemove: (segment: ConfigurableSegmentKey) => Promise<boolean>
 }) {
   const baseId = useId()
   const [open, setOpen] = useState(false)
   const [drafts, setDrafts] = useState<Drafts>({ lunch: '', tea_time: '', dinner: '' })
   const [reason, setReason] = useState('')
-  const [errors, setErrors] = useState<Partial<Record<SegmentKey | 'reason', string>>>({})
+  const [errors, setErrors] = useState<Partial<Record<ConfigurableSegmentKey | 'reason', string>>>(
+    {},
+  )
 
   // Cuando el cupo real de un servicio cambia (se guardó, se quitó el especial
   // o se cambió de día) el input vuelve a mostrar el valor vigente. Lo que el
   // dueño está tipeando en otro servicio no se pisa.
   const [seen, setSeen] = useState<Seen | null>(null)
   if (segments) {
-    const changed = SEGMENT_KEYS.filter((k) => seen === null || seen[k] !== segments[k].capacity)
+    const changed = CONFIGURABLE_SEGMENT_KEYS.filter(
+      (k) => seen === null || seen[k] !== segments[k].capacity,
+    )
     if (changed.length > 0) {
       setSeen(capsOf(segments))
       setDrafts((prev) => {
@@ -111,7 +121,7 @@ export function DayCapacityEditor({
       })
       // El motivo es uno solo para los 3 servicios: arranca con el del primer
       // especial vigente, así editar "Feriado" no obliga a volver a escribirlo.
-      const current = SEGMENT_KEYS.map((k) => segments[k]).find(
+      const current = CONFIGURABLE_SEGMENT_KEYS.map((k) => segments[k]).find(
         (s) => s.capSource === 'override' && s.capReason,
       )
       setReason(current?.capReason ?? '')
@@ -120,7 +130,7 @@ export function DayCapacityEditor({
     setOpen(next)
   }
 
-  async function save(key: SegmentKey) {
+  async function save(key: ConfigurableSegmentKey) {
     if (!segments) return
     const s = segments[key]
     const raw = drafts[key].trim()
@@ -203,7 +213,7 @@ export function DayCapacityEditor({
 
         {segments ? (
           <ul className="space-y-3 border-t border-border/60 pt-3">
-            {SEGMENT_KEYS.map((key) => {
+            {CONFIGURABLE_SEGMENT_KEYS.map((key) => {
               const s = segments[key]
               const inputId = `${baseId}-${key}`
               const sourceId = `${inputId}-origen`

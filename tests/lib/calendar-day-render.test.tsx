@@ -129,6 +129,7 @@ function weekly(capacity: number, warnAt: number | null = null): ResolvedSegment
 
 /** Jueves del HUB: almuerzo de 70 con aviso en 50, merienda y cena de 120. */
 const THU_CAPS: DaySegmentCaps = {
+  breakfast: weekly(130),
   lunch: weekly(70, 50),
   tea_time: weekly(120),
   dinner: weekly(120),

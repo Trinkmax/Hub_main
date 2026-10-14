@@ -185,11 +185,10 @@ type Props = {
   customerServiceAlerts?: ServiceAlert[]
 }
 
-// El servicio se elige con <SegmentPicker> (Almuerzo / Merienda / Cena). Ni
-// 'hub_event' (retirado: los eventos viven en el Calendario y la reserva se
-// asocia tocando el evento en "Dónde se sienta") ni 'breakfast' (2 en toda la historia,
-// cuenta como almuerzo) se ofrecen; el enum los sigue aceptando por las
-// reservas viejas.
+// El servicio se elige con <SegmentPicker> (Desayuno / Almuerzo / Merienda /
+// Cena). 'hub_event' no se ofrece (retirado: los eventos viven en el
+// Calendario y la reserva se asocia tocando el evento en "Dónde se sienta"); el
+// enum lo sigue aceptando por las reservas viejas.
 const ORIGINS: ReservationOrigin[] = [
   'whatsapp',
   'instagram',

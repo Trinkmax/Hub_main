@@ -172,7 +172,7 @@ describe('resolveNewReservationDefaults — sin evento', () => {
 
   it('params rotos se ignoran y quedan los defaults', () => {
     const d = resolveNewReservationDefaults({
-      params: params({ meal: 'breakfast', time: '25:00', date: '2026-02-30' }),
+      params: params({ meal: 'hub_event', time: '25:00', date: '2026-02-30' }),
       today: TODAY,
       event: null,
       settings: SETTINGS,
@@ -325,6 +325,7 @@ describe('buildReservationCandidate', () => {
     const snapshot = {
       date: '2026-09-10',
       caps: {
+        breakfast: cap(130),
         lunch: cap(70),
         tea_time: cap(120),
         dinner: cap(120),

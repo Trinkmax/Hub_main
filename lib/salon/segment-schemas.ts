@@ -13,9 +13,12 @@
 
 import { z } from 'zod'
 import { isRealIsoDay } from './date-presets'
-import { SEGMENT_KEYS, ZONE_FILTERS } from './segments'
+import { CONFIGURABLE_SEGMENT_KEYS, SEGMENT_KEYS, ZONE_FILTERS } from './segments'
 
 export const segmentKeySchema = z.enum(SEGMENT_KEYS)
+
+/** Lo que se guarda en las tablas de cupo: el desayuno no tiene filas propias. */
+export const configurableSegmentKeySchema = z.enum(CONFIGURABLE_SEGMENT_KEYS)
 
 /** 'YYYY-MM-DD' que además existe (el 30/02 matchea la forma pero no es un día). */
 export const isoDaySchema = z
@@ -65,7 +68,7 @@ function optionalText(max: number) {
  */
 export const segmentWeeklyCellSchema = z
   .object({
-    segment: segmentKeySchema,
+    segment: configurableSegmentKeySchema,
     iso_dow: z.literal([1, 2, 3, 4, 5, 6, 7], { error: 'Día de la semana inválido' }),
     capacity: capacityField.nullable(),
     warn_at: warnAtField.nullable(),
@@ -80,7 +83,7 @@ export const segmentWeeklyCellSchema = z
   })
 
 export const segmentSettingInputSchema = z.object({
-  segment: segmentKeySchema,
+  segment: configurableSegmentKeySchema,
   default_time: hhmmSchema,
   warn_note: optionalText(80),
 })
@@ -117,7 +120,7 @@ export const segmentConfigSaveSchema = z
 export const segmentOverrideSchema = z
   .object({
     override_date: isoDaySchema,
-    segment: segmentKeySchema,
+    segment: configurableSegmentKeySchema,
     capacity: capacityField,
     warn_at: warnAtField.nullable().default(null),
     reason: optionalText(120),
@@ -130,7 +133,7 @@ export const segmentOverrideSchema = z
 
 export const segmentOverrideKeySchema = z.object({
   override_date: isoDaySchema,
-  segment: segmentKeySchema,
+  segment: configurableSegmentKeySchema,
 })
 
 /**

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   calendarParamsSchema,
+  configurableSegmentKeySchema,
   dayRequestSchema,
   firstParams,
   hhmmSchema,
@@ -23,10 +24,12 @@ function issueAt(result: { success: boolean; error?: { issues: Array<{ path: Pro
 }
 
 describe('primitivas', () => {
-  it('segmentKeySchema solo acepta los 3 servicios', () => {
+  it('segmentKeySchema acepta los 4 servicios; el de las tablas de cupo, solo 3', () => {
     expect(segmentKeySchema.safeParse('tea_time').success).toBe(true)
-    expect(segmentKeySchema.safeParse('breakfast').success).toBe(false)
+    expect(segmentKeySchema.safeParse('breakfast').success).toBe(true)
     expect(segmentKeySchema.safeParse('hub_event').success).toBe(false)
+    expect(configurableSegmentKeySchema.safeParse('lunch').success).toBe(true)
+    expect(configurableSegmentKeySchema.safeParse('breakfast').success).toBe(false)
   })
 
   it('isoDaySchema rechaza días que no existen', () => {
@@ -52,7 +55,8 @@ describe('primitivas', () => {
 
 describe('newReservationParamsSchema', () => {
   it('un parámetro inválido se ignora sin romper los demás', () => {
-    expect(newReservationParamsSchema.parse({ meal: 'breakfast' }).meal).toBeUndefined()
+    expect(newReservationParamsSchema.parse({ meal: 'brunch' }).meal).toBeUndefined()
+    expect(newReservationParamsSchema.parse({ meal: 'breakfast' }).meal).toBe('breakfast')
     expect(newReservationParamsSchema.parse({ time: '25:00' }).time).toBeUndefined()
     expect(newReservationParamsSchema.parse({ time: '21:00' }).time).toBe('21:00')
     expect(newReservationParamsSchema.parse({ event: 'x' }).event).toBeUndefined()
@@ -129,7 +133,7 @@ describe('calendarParamsSchema', () => {
       tab: 'eventos',
     })
     expect(
-      calendarParamsSchema.parse({ day: 'ayer', seg: 'breakfast', res: 'x', tab: 'lista' }),
+      calendarParamsSchema.parse({ day: 'ayer', seg: 'hub_event', res: 'x', tab: 'lista' }),
     ).toEqual({})
   })
 

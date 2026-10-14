@@ -99,7 +99,7 @@ evento, además suma a su `event:<uuid>`. Nunca sumes zonas + eventos.
 > **por servicio** y ver el desglose en el calendario.
 
 El día ya no tiene un número propio: se lee como **Almuerzo · Merienda · Cena**
-y cada servicio muestra **personas sobre su cupo**. El 10/09 ahora dice
+(más **Desayuno** el día que hay) y cada servicio muestra **personas sobre su cupo**. El 10/09 ahora dice
 `Alm 19/70 · Mer 33/120 · Cena 119/120`, con la cena en ámbar y «Queda 1 lugar
 para reservas normales». Un solo cálculo en TS puro (`computeDaySegments` en
 `lib/salon/segments.ts`) alimenta el mes, la vista del día, el form, la vista
@@ -110,13 +110,21 @@ número distinto para lo mismo. No hay RPC (R8): la capa server
 **Las reglas** (los tests de `tests/lib/salon-segments.test.ts` usan días reales
 del HUB: 10/09, 19/09, 21/09, 22/09, 03/09, 15/09 y 03/10):
 
-- **R1 · Tres servicios.** `lunch` / `tea_time` / `dinner` (valores del enum
-  `meal_type`). El desayuno cuenta como almuerzo y `hub_event` como cena; ninguno
-  se configura aparte.
+- **R1 · Cuatro servicios.** `breakfast` / `lunch` / `tea_time` / `dinner`
+  (valores del enum `meal_type`); `hub_event` cuenta como cena. El desayuno
+  volvió el 14/10/2026 por el «Desayuno libre» del Día de la Madre (domingo
+  18/10, 09:30, cupo 70): contado como almuerzo, le apartaba 70 lugares al
+  almuerzo de ese día. Es un servicio **de ocasión**: el alta lo ofrece siempre,
+  pero el calendario, `/operativo` y el salón lo muestran solo el día que tiene
+  algo (`shownSegmentKeys`), y **no se configura**: las tablas de cupo aceptan
+  solo los otros tres (`CONFIGURABLE_SEGMENT_KEYS`), así que su cupo es siempre
+  el general (PA + PB). Para darle cupo propio hay que ampliar los CHECK de
+  `salon_segment_*` y sumarlo a los editores.
 - **R2 · El evento cae por su hora de inicio.** Cortes fijos (`SEGMENT_CUTS`):
-  antes de las 05:00 es la cena de esa noche, hasta las 15:00 almuerzo, hasta
-  las 19:00 merienda y después cena. Salen de los datos: 0 contradicciones sobre
-  504 reservas. `scheduled_events.meal_type` se ignora (25 eventos dicen
+  antes de las 05:00 es la cena de esa noche, hasta las 12:00 desayuno, hasta
+  las 15:00 almuerzo, hasta las 19:00 merienda y después cena. Salen de los
+  datos: 0 contradicciones sobre 504 reservas (los almuerzos más tempranos del
+  HUB son a las 12:00 justas). `scheduled_events.meal_type` se ignora (25 eventos dicen
   `hub_event` y Ramen figura `lunch` a las 21:00).
 - **R3 · La reserva.** Atada a un evento del día → el servicio del evento. Sin
   evento → su `meal_type`. Por eso el form y la vista rápida mantienen hora y

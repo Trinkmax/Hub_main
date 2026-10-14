@@ -17,18 +17,17 @@ import {
 import { cn } from '@/lib/utils'
 
 /**
- * "Tipo de servicio" del alta y la edición de reservas: Almuerzo, Merienda y
- * Cena, cada uno con su hora sugerida y cómo viene su cupo ese día ("19/70").
+ * "Tipo de servicio" del alta y la edición de reservas: Desayuno, Almuerzo,
+ * Merienda y Cena, cada uno con su hora sugerida y cómo viene su cupo ese día
+ * ("19/70"). Elegir el servicio y ver si entra es la misma decisión.
  *
- * Reemplaza al selector de `meal_type` con 4 opciones: el desayuno dejó de
- * ofrecerse (hubo 2 en toda la historia y cuenta como almuerzo) y el cupo se
- * mide por estos 3 servicios, así que elegir el servicio y ver si entra es la
- * misma decisión.
+ * El desayuno volvió el 14/10/2026 por el «Desayuno libre» del Día de la Madre:
+ * antes contaba como almuerzo y le comía el cupo.
  *
  * Presentacional y sin estado: el form decide qué pasa al tocar (mover la hora
  * si no la tocaron, avisar si la hora es de otro servicio). Una reserva legacy
- * con 'breakfast' o 'hub_event' se ve marcada en Almuerzo o Cena sin cambiar
- * su valor hasta que alguien toque un servicio.
+ * con 'hub_event' se ve marcada en Cena sin cambiar su valor hasta que alguien
+ * toque un servicio.
  */
 export function SegmentPicker({
   value,
@@ -48,7 +47,7 @@ export function SegmentPicker({
   segments: Record<SegmentKey, SegmentLoad> | null
   /**
    * No se pudo leer el cupo del día. Sin esto, `segments` null se leía como
-   * "está llegando" y los 3 skeletons quedaban para siempre; el reintento vive
+   * "está llegando" y los skeletons quedaban para siempre; el reintento vive
    * en el medidor de personas.
    */
   segmentsFailed: boolean
@@ -68,7 +67,7 @@ export function SegmentPicker({
     <div className="space-y-2">
       <fieldset aria-describedby={locked ? 'segment-picker-locked' : undefined} className="min-w-0">
         <legend className="sr-only">Servicio</legend>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {SEGMENT_KEYS.map((key) => {
             const active = value === key
             const load = segments?.[key] ?? null

@@ -12,7 +12,7 @@
 import {
   eventDisplayName,
   type IsoDow,
-  isSegmentKey,
+  isConfigurableSegmentKey,
   NO_ZONE_CAPS,
   type SegmentEventInput,
   type SegmentKey,
@@ -184,7 +184,7 @@ export function toWeeklyCapRows(
   const out: SegmentWeeklyCapRow[] = []
   for (const row of rows) {
     const isoDow = asNumber(row.iso_dow, Number.NaN)
-    if (!isSegmentKey(row.segment) || !isIsoDow(isoDow)) continue
+    if (!isConfigurableSegmentKey(row.segment) || !isIsoDow(isoDow)) continue
     out.push({
       segment: row.segment,
       iso_dow: isoDow,
@@ -199,7 +199,7 @@ export function toWeeklyCapRows(
 export function toOverrideRows(rows: ReadonlyArray<Record<string, unknown>>): SegmentOverrideRow[] {
   const out: SegmentOverrideRow[] = []
   for (const row of rows) {
-    if (!isSegmentKey(row.segment)) continue
+    if (!isConfigurableSegmentKey(row.segment)) continue
     const date = asString(row.override_date)
     if (!date) continue
     out.push({
@@ -249,7 +249,7 @@ export function fallbackTotalFromSettings(settings: unknown): number {
 export function toSettingRows(rows: ReadonlyArray<Record<string, unknown>>): SegmentSettingRow[] {
   const out: SegmentSettingRow[] = []
   for (const row of rows) {
-    if (!isSegmentKey(row.segment)) continue
+    if (!isConfigurableSegmentKey(row.segment)) continue
     out.push({
       segment: row.segment,
       default_time: asString(row.default_time).slice(0, 5),

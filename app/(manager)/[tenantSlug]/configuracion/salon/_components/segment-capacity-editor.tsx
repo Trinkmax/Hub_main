@@ -14,11 +14,11 @@ import {
   segmentWeeklyCellSchema,
 } from '@/lib/salon/segment-schemas'
 import {
+  CONFIGURABLE_SEGMENT_KEYS,
+  type ConfigurableSegmentKey,
   type IsoDow,
-  isSegmentKey,
+  isConfigurableSegmentKey,
   resolveSegmentSettings,
-  SEGMENT_KEYS,
-  type SegmentKey,
   type SegmentSettingRow,
   type SegmentWeeklyCapRow,
 } from '@/lib/salon/segments'
@@ -77,28 +77,32 @@ const SAVE_UNREACHABLE =
 type CellDraft = { capacity: string; warn: string }
 type SettingDraft = { time: string; note: string }
 type Draft = {
-  cells: Record<SegmentKey, Record<IsoDow, CellDraft>>
-  settings: Record<SegmentKey, SettingDraft>
+  cells: Record<ConfigurableSegmentKey, Record<IsoDow, CellDraft>>
+  settings: Record<ConfigurableSegmentKey, SettingDraft>
 }
 
 type CellErrors = { capacity?: string; warn?: string }
 type SettingErrors = { time?: string; note?: string }
 type SavePayload = {
   weekly: Array<{
-    segment: SegmentKey
+    segment: ConfigurableSegmentKey
     iso_dow: IsoDow
     capacity: number | null
     warn_at: number | null
   }>
-  settings: Array<{ segment: SegmentKey; default_time: string; warn_note: string | null }>
+  settings: Array<{
+    segment: ConfigurableSegmentKey
+    default_time: string
+    warn_note: string | null
+  }>
 }
 type Validation = {
-  cells: Record<SegmentKey, Partial<Record<IsoDow, CellErrors>>>
-  settings: Record<SegmentKey, SettingErrors>
+  cells: Record<ConfigurableSegmentKey, Partial<Record<IsoDow, CellErrors>>>
+  settings: Record<ConfigurableSegmentKey, SettingErrors>
   /** null si hay algún error: no se manda nada a medio validar. */
   payload: SavePayload | null
   /** Primer servicio con error, para abrir su pestaña en el celu. */
-  firstInvalid: SegmentKey | null
+  firstInvalid: ConfigurableSegmentKey | null
 }
 
 /** Solo dígitos y hasta 3 (el tope es 999): pegar «70 personas» deja «70». */
@@ -120,7 +124,7 @@ function buildDraft(
   const resolved = resolveSegmentSettings(settings)
   const cells = {} as Draft['cells']
   const settingDrafts = {} as Draft['settings']
-  for (const segment of SEGMENT_KEYS) {
+  for (const segment of CONFIGURABLE_SEGMENT_KEYS) {
     const row = {} as Record<IsoDow, CellDraft>
     for (const dow of ISO_DOWS) {
       const saved = weekly.find((w) => w.segment === segment && w.iso_dow === dow)
@@ -145,7 +149,7 @@ function buildDraft(
 function normalizeDraft(draft: Draft): Draft {
   const cells = {} as Draft['cells']
   const settings = {} as Draft['settings']
-  for (const segment of SEGMENT_KEYS) {
+  for (const segment of CONFIGURABLE_SEGMENT_KEYS) {
     const row = {} as Record<IsoDow, CellDraft>
     for (const dow of ISO_DOWS) {
       const cell = draft.cells[segment][dow]
@@ -175,9 +179,9 @@ function validateDraft(draft: Draft): Validation {
   const settings = {} as Validation['settings']
   const weekly: SavePayload['weekly'] = []
   const settingsOut: SavePayload['settings'] = []
-  let firstInvalid: SegmentKey | null = null
+  let firstInvalid: ConfigurableSegmentKey | null = null
 
-  for (const segment of SEGMENT_KEYS) {
+  for (const segment of CONFIGURABLE_SEGMENT_KEYS) {
     const rowErrors: Partial<Record<IsoDow, CellErrors>> = {}
     for (const dow of ISO_DOWS) {
       const cell = draft.cells[segment][dow]
@@ -231,7 +235,7 @@ function validateDraft(draft: Draft): Validation {
   }
 }
 
-function segmentHasErrors(validation: Validation, segment: SegmentKey): boolean {
+function segmentHasErrors(validation: Validation, segment: ConfigurableSegmentKey): boolean {
   const s = validation.settings[segment]
   return Object.keys(validation.cells[segment]).length > 0 || Boolean(s.time || s.note)
 }
@@ -254,7 +258,7 @@ export function SegmentCapacityEditor({
 
   const [saved, setSaved] = useState<Draft>(() => normalizeDraft(buildDraft(weekly, settings)))
   const [draft, setDraft] = useState<Draft>(() => buildDraft(weekly, settings))
-  const [tab, setTab] = useState<SegmentKey>('lunch')
+  const [tab, setTab] = useState<ConfigurableSegmentKey>('lunch')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
@@ -270,7 +274,12 @@ export function SegmentCapacityEditor({
       ? `Vacío = usa el cupo general (${fallbackTotal}).`
       : 'Vacío = sin tope (el cupo general por planta está en 0).'
 
-  function setCell(segment: SegmentKey, dow: IsoDow, field: keyof CellDraft, raw: string) {
+  function setCell(
+    segment: ConfigurableSegmentKey,
+    dow: IsoDow,
+    field: keyof CellDraft,
+    raw: string,
+  ) {
     const value = onlyDigits(raw)
     setSaveError(null)
     setDraft((prev) => ({
@@ -285,7 +294,7 @@ export function SegmentCapacityEditor({
     }))
   }
 
-  function setSetting(segment: SegmentKey, field: keyof SettingDraft, value: string) {
+  function setSetting(segment: ConfigurableSegmentKey, field: keyof SettingDraft, value: string) {
     setSaveError(null)
     setDraft((prev) => ({
       ...prev,
@@ -294,7 +303,11 @@ export function SegmentCapacityEditor({
   }
 
   /** Copia el lunes (cupo y aviso) a los días pedidos del mismo servicio. */
-  function copyMonday(segment: SegmentKey, targets: ReadonlyArray<IsoDow>, message: string) {
+  function copyMonday(
+    segment: ConfigurableSegmentKey,
+    targets: ReadonlyArray<IsoDow>,
+    message: string,
+  ) {
     setSaveError(null)
     setDraft((prev) => {
       const monday = prev.cells[segment][1]
@@ -310,7 +323,7 @@ export function SegmentCapacityEditor({
    * Lleva el foco al primer campo con error VISIBLE: en el celu las otras
    * pestañas no están montadas, así que primero se abre la del servicio.
    */
-  function focusFirstInvalid(segment: SegmentKey | null) {
+  function focusFirstInvalid(segment: ConfigurableSegmentKey | null) {
     if (segment) setTab(segment)
     requestAnimationFrame(() => {
       const candidates =
@@ -356,7 +369,7 @@ export function SegmentCapacityEditor({
 
   // ── Piezas compartidas por las dos vistas ──
 
-  function cellInputs(segment: SegmentKey, dow: IsoDow, view: 'd' | 'm') {
+  function cellInputs(segment: ConfigurableSegmentKey, dow: IsoDow, view: 'd' | 'm') {
     const cell = draft.cells[segment][dow]
     const errors = validation.cells[segment][dow]
     const label = SEGMENT_LABELS[segment]
@@ -412,7 +425,7 @@ export function SegmentCapacityEditor({
     }
   }
 
-  function segmentExtras(segment: SegmentKey, view: 'd' | 'm') {
+  function segmentExtras(segment: ConfigurableSegmentKey, view: 'd' | 'm') {
     const setting = draft.settings[segment]
     const errors = validation.settings[segment]
     const label = SEGMENT_LABELS[segment]
@@ -520,7 +533,7 @@ export function SegmentCapacityEditor({
   // Errores de la tabla de escritorio: en una celda de 80 px el mensaje no
   // entra, así que la celda se marca en rojo y el texto va en esta lista (y
   // queda atado al input con aria-describedby).
-  const desktopErrors = SEGMENT_KEYS.flatMap((segment) =>
+  const desktopErrors = CONFIGURABLE_SEGMENT_KEYS.flatMap((segment) =>
     ISO_DOWS.flatMap((dow) => {
       const errors = validation.cells[segment][dow]
       if (!errors) return []
@@ -585,7 +598,7 @@ export function SegmentCapacityEditor({
             </tr>
           </thead>
           <tbody>
-            {SEGMENT_KEYS.map((segment) => (
+            {CONFIGURABLE_SEGMENT_KEYS.map((segment) => (
               <tr key={segment}>
                 <th scope="row" className="pr-2 pt-1.5 text-left align-top font-normal">
                   <span className="block text-sm font-semibold">{SEGMENT_LABELS[segment]}</span>
@@ -620,7 +633,7 @@ export function SegmentCapacityEditor({
         ) : null}
 
         <div className="grid gap-3 xl:grid-cols-3">
-          {SEGMENT_KEYS.map((segment) => (
+          {CONFIGURABLE_SEGMENT_KEYS.map((segment) => (
             <fieldset
               key={segment}
               className="min-w-0 space-y-3 rounded-lg border border-border/60 p-3"
@@ -637,11 +650,11 @@ export function SegmentCapacityEditor({
         <Tabs
           value={tab}
           onValueChange={(v) => {
-            if (isSegmentKey(v)) setTab(v)
+            if (isConfigurableSegmentKey(v)) setTab(v)
           }}
         >
           <TabsList className="grid w-full grid-cols-3">
-            {SEGMENT_KEYS.map((segment) => {
+            {CONFIGURABLE_SEGMENT_KEYS.map((segment) => {
               const hasErrors = segmentHasErrors(validation, segment)
               return (
                 <TabsTrigger key={segment} value={segment} className="gap-1">
@@ -657,7 +670,7 @@ export function SegmentCapacityEditor({
             })}
           </TabsList>
 
-          {SEGMENT_KEYS.map((segment) => (
+          {CONFIGURABLE_SEGMENT_KEYS.map((segment) => (
             <TabsContent key={segment} value={segment} className="space-y-5 pt-2">
               <div>
                 <div
