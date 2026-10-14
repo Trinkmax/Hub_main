@@ -25,7 +25,11 @@ import {
   type ReviewOptions,
   ReviewProvider,
 } from '@/components/administracion/importar/review/review-context'
-import { ReviewHero, ReviewRoute } from '@/components/administracion/importar/review/review-hero'
+import {
+  PillCount,
+  ReviewHero,
+  ReviewRoute,
+} from '@/components/administracion/importar/review/review-hero'
 import type { ProposalView } from '@/components/administracion/importar/review/types'
 import {
   AdmHeader,
@@ -41,7 +45,7 @@ import {
   loadPostingCatalog,
   type PostingCatalog,
 } from '@/lib/accounting/context'
-import { isUuid, settleQuery } from '@/lib/accounting/queries/shared'
+import { isUuid, queryError, settleQuery } from '@/lib/accounting/queries/shared'
 import { getTreasuryAccount, listTreasuryBalances } from '@/lib/accounting/queries/treasury'
 import { getArcaLookupStatus } from '@/lib/arca/queries'
 import { formatDateTime } from '@/lib/dates'
@@ -78,6 +82,7 @@ import {
   routeSteps,
 } from '@/lib/imports/ui/review-copy'
 import { formatCents } from '@/lib/money'
+import { createClient } from '@/lib/supabase/server'
 import { firstParam, requireImportAccess } from '../_lib/page-access'
 
 export const metadata = { title: 'Revisar un archivo · Administración' }
@@ -87,6 +92,13 @@ const PAGE = 50
 /** La medida de las píldoras de filtro: 44 px con el dedo, 36 con mouse. */
 const FILTER_PILL =
   'h-11 px-4 text-sm md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]'
+/**
+ * Hasta cuántas preguntas no hace falta filtrarlas por tipo: se contestan de a
+ * una y cada una ya dice de qué es («Pregunta 1 de 3 · Otros impuestos»). Con
+ * tres preguntas, cuatro filtros de «1» cada uno eran una fila más de píldoras
+ * entre el número y la pregunta.
+ */
+const FEW_QUESTIONS = 5
 
 async function catalogOf(tenantId: string): Promise<PostingCatalog | null> {
   try {
@@ -97,8 +109,41 @@ async function catalogOf(tenantId: string): Promise<PostingCatalog | null> {
   }
 }
 
-function viewOf(row: ImportProposalRow): ProposalView {
+/**
+ * Por qué se sacó cada hoja del archivo («Se carga a mano», «No es nuestro», «Ya estaba
+ * cargado»): el motivo queda guardado en sus renglones, no en la hoja. Sin esto, todo lo
+ * sacado decía «No es nuestro», aunque se hubiera sacado para cargarlo a mano.
+ */
+async function ignoredReasons(tenantId: string, batchId: string): Promise<Map<string, string>> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('acc_import_items')
+    .select('proposal_keys, issues')
+    .eq('tenant_id', tenantId)
+    .eq('batch_id', batchId)
+    .eq('status', 'ignored')
+    .limit(1000)
+  if (error) throw queryError('acc_import_items', error)
+  const out = new Map<string, string>()
+  for (const row of (data ?? []) as Array<{ proposal_keys: unknown; issues: unknown }>) {
+    const issues = Array.isArray(row.issues) ? (row.issues as unknown[]) : []
+    const found = issues.find(
+      (i): i is { key: string; reason: string } =>
+        typeof i === 'object' &&
+        i !== null &&
+        (i as { key?: unknown }).key === 'ignored' &&
+        typeof (i as { reason?: unknown }).reason === 'string',
+    )
+    if (!found) continue
+    const keys = Array.isArray(row.proposal_keys) ? row.proposal_keys : []
+    for (const key of keys) if (typeof key === 'string' && !out.has(key)) out.set(key, found.reason)
+  }
+  return out
+}
+
+function viewOf(row: ImportProposalRow, reasons: ReadonlyMap<string, string>): ProposalView {
   const fv = row.formValues
+  const reason = row.error?.reason === 'ignored' ? reasons.get(row.key) : undefined
   const decisions = row.summary.decisions ?? {}
   const partyId =
     typeof fv.partyId === 'string' && isUuid(fv.partyId) ? fv.partyId : (decisions.party_id ?? null)
@@ -111,7 +156,7 @@ function viewOf(row: ImportProposalRow): ProposalView {
     needs: row.needs,
     warningsAck: row.warningsAck,
     documentId: row.documentId,
-    error: row.error,
+    error: row.error && reason ? { ...row.error, message: reason } : row.error,
     partyId,
     hasDecisions: Object.keys(decisions).length > 0 || row.warningsAck.length > 0,
     hasValues: Object.keys(fv).length > 0,
@@ -254,33 +299,39 @@ export default async function ImportBatchPage({
   const wantsBalance = hasReportBalance && settled
   const wantsInsights = source === 'mp_release' && proposals > 0 && proposals <= MP_INSIGHTS_LIMIT
 
-  const [list, catalog, lookup, balances, mpSettings, mpAll, bankAccount] = await Promise.all([
-    settleQuery(
-      listImportProposals(tenantId, batchId, {
-        statuses: resolved.statuses,
-        need: resolved.need,
-        limit: PAGE,
-        offset: (page - 1) * PAGE,
-      }),
-    ),
-    editable ? catalogOf(tenantId) : Promise.resolve(null),
-    editable && source === 'arca_recibidos' && r.newSuppliers.length > 0
-      ? settleQuery(getArcaLookupStatus(tenantId))
-      : Promise.resolve(null),
-    wantsBalance
-      ? settleQuery(listTreasuryBalances(tenantId, { asOf: batch.periodTo }))
-      : Promise.resolve(null),
-    wantsBalance && source === 'mp_release'
-      ? settleQuery(getMpImportSettings(tenantId))
-      : Promise.resolve(null),
-    wantsInsights
-      ? settleQuery(listImportProposals(tenantId, batchId, { limit: MP_INSIGHTS_LIMIT }))
-      : Promise.resolve(null),
-    // El nombre de la cuenta para el título, cuando no se carga el catálogo entero.
-    source === 'bank_statement' && batch.treasuryAccountId && !editable
-      ? settleQuery(getTreasuryAccount(tenantId, batch.treasuryAccountId))
-      : Promise.resolve(null),
-  ])
+  const [list, catalog, lookup, balances, mpSettings, mpAll, bankAccount, reasons] =
+    await Promise.all([
+      settleQuery(
+        listImportProposals(tenantId, batchId, {
+          statuses: resolved.statuses,
+          need: resolved.need,
+          limit: PAGE,
+          offset: (page - 1) * PAGE,
+        }),
+      ),
+      editable ? catalogOf(tenantId) : Promise.resolve(null),
+      editable && source === 'arca_recibidos' && r.newSuppliers.length > 0
+        ? settleQuery(getArcaLookupStatus(tenantId))
+        : Promise.resolve(null),
+      wantsBalance
+        ? settleQuery(listTreasuryBalances(tenantId, { asOf: batch.periodTo }))
+        : Promise.resolve(null),
+      wantsBalance && source === 'mp_release'
+        ? settleQuery(getMpImportSettings(tenantId))
+        : Promise.resolve(null),
+      wantsInsights
+        ? settleQuery(listImportProposals(tenantId, batchId, { limit: MP_INSIGHTS_LIMIT }))
+        : Promise.resolve(null),
+      // El nombre de la cuenta para el título, cuando no se carga el catálogo entero.
+      source === 'bank_statement' && batch.treasuryAccountId && !editable
+        ? settleQuery(getTreasuryAccount(tenantId, batch.treasuryAccountId))
+        : Promise.resolve(null),
+      // Si no se puede leer, cada hoja sacada dice «No es nuestro», como antes.
+      (r.byStatus.skipped ?? 0) > 0
+        ? settleQuery(ignoredReasons(tenantId, batchId))
+        : Promise.resolve(null),
+    ])
+  const reasonOf: ReadonlyMap<string, string> = reasons?.ok ? reasons.data : new Map()
   const options = catalog ? optionsOf(catalog) : null
   const lookupView: LookupView = lookup?.ok
     ? { environment: lookup.data.environment, testData: lookup.data.testData }
@@ -331,6 +382,7 @@ export default async function ImportBatchPage({
     readyCents: r.readyCents,
     duplicates,
     cancelled: batch.status === 'cancelled',
+    reader: !canWrite,
   })
   const readyCount = tally.ready
   const unit = copy.unit
@@ -340,9 +392,13 @@ export default async function ImportBatchPage({
   ]
     .filter(Boolean)
     .join(' · ')
+  // Con preguntas por contestar, en el celular la bajada (el archivo y quién lo subió) baja
+  // al pie: cada renglón que se saca de arriba deja ver antes la pregunta.
+  const answering = editable && counts.revisar > 0
   const hrefFor = (query: Record<string, string | number | null>) =>
     importBatchHref(tenantSlug, batchId, query)
   const chips = resolved.filter === 'revisar' ? needChips(r.needs) : []
+  const showChips = resolved.need !== null || (chips.length > 1 && counts.revisar > FEW_QUESTIONS)
   const listTotal = list.ok ? list.data.total : 0
   const totalPages = Math.max(1, Math.ceil(listTotal / PAGE))
   const warnings = fileWarnings(batch.meta)
@@ -356,7 +412,7 @@ export default async function ImportBatchPage({
         hrefFor,
       })
     : []
-  const rows = list.ok ? list.data.rows.map(viewOf) : []
+  const rows = list.ok ? list.data.rows.map((row) => viewOf(row, reasonOf)) : []
   const viewLabel = resolved.need
     ? `${REVIEW_FILTER_COPY.revisar.label}: ${needPillLabel(resolved.need)}`
     : REVIEW_FILTER_COPY[resolved.filter].label
@@ -372,7 +428,14 @@ export default async function ImportBatchPage({
       booksStartDate={catalog?.settings.booksStartDate ?? null}
     >
       <AdmPage>
-        <AdmHeader back={back} title={title} description={description} badge={<ReadOnlyBadge />} />
+        <AdmHeader
+          back={back}
+          title={title}
+          description={
+            answering ? <span className="hidden sm:inline">{description}</span> : description
+          }
+          badge={<ReadOnlyBadge />}
+        />
 
         {batch.status === 'cancelled' ? (
           <QuestionCard
@@ -442,7 +505,8 @@ export default async function ImportBatchPage({
           />
         ) : null}
 
-        <ReviewRoute steps={route} />
+        {/* En el celular no va: el número de arriba ya dice qué falta. */}
+        <ReviewRoute steps={route} className="max-sm:hidden" />
 
         {editable && !options ? (
           <PanelError
@@ -503,7 +567,7 @@ export default async function ImportBatchPage({
 
         {proposals > 0 ? (
           <section aria-label={viewLabel} className="space-y-4">
-            {chips.length > 1 || resolved.need ? (
+            {showChips ? (
               // En el celular la fila se desliza (con tres o cuatro preguntas ocupaba media pantalla).
               <nav
                 aria-label="Qué te pregunto"
@@ -513,7 +577,7 @@ export default async function ImportBatchPage({
                   href={hrefFor({ ver: 'revisar' })}
                   scroll={false}
                   active={resolved.need === null}
-                  count={counts.revisar}
+                  count={<PillCount n={counts.revisar} />}
                   className={FILTER_PILL}
                 >
                   Todas las preguntas
@@ -524,7 +588,7 @@ export default async function ImportBatchPage({
                     href={hrefFor({ ver: 'revisar', falta: c.key })}
                     scroll={false}
                     active={resolved.need === c.key}
-                    count={c.count}
+                    count={<PillCount n={c.count} />}
                     className={FILTER_PILL}
                   >
                     {needPillLabel(c.key)}
@@ -564,6 +628,7 @@ export default async function ImportBatchPage({
                     rows={rows}
                     label={viewLabel}
                     grouped={resolved.filter === 'no-se-cargan'}
+                    sameStatus={resolved.filter === 'cargadas' || resolved.filter === 'listas'}
                   />
                 )}
                 {listTotal > rows.length ? (
@@ -603,6 +668,12 @@ export default async function ImportBatchPage({
 
         {editable && proposals > 0 ? (
           <MoreOptions slug={tenantSlug} batchId={batchId} posted={r.byStatus.posted ?? 0} />
+        ) : null}
+
+        {answering ? (
+          <p className="text-xs text-muted-foreground text-pretty [overflow-wrap:anywhere] sm:hidden">
+            {description}
+          </p>
         ) : null}
 
         <TeachHost />

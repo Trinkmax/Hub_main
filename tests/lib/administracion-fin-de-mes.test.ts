@@ -694,10 +694,17 @@ describe('la revisión: un «está bien» nunca sale de que la base calle', () =
     expect(purchases?.pill).toBe('2 avisos')
     const recurring = purchases?.items[0]
     expect(recurring?.title).toBe('Hay gastos fijos de septiembre sin cargar')
+    // El mes ya terminó: todos «vencieron» (no «vence», que suena a que todavía hay tiempo).
     expect(recurring?.recurring?.map((row) => plain(row.text))).toEqual([
-      'Alquiler · vence 10/09 · $ 850.000',
-      'Internet · vence 15/09 · sin monto',
-      'Seguro · vence 20/09 · sin monto',
+      'Alquiler · venció el 10/09 · $ 850.000',
+      'Internet · venció el 15/09 · sin monto',
+      'Seguro · venció el 20/09 · sin monto',
+    ])
+    // En el celular el nombre y «cuándo · cuánto» van en dos renglones: llegan separados.
+    expect(recurring?.recurring?.map((row) => [row.name, plain(row.meta)])).toEqual([
+      ['Alquiler', 'venció el 10/09 · $ 850.000'],
+      ['Internet', 'venció el 15/09 · sin monto'],
+      ['Seguro', 'venció el 20/09 · sin monto'],
     ])
     // Sin un id válido no hay «Pagar» (no se abre una hoja con un parámetro roto).
     expect(recurring?.recurring?.map((row) => row.action?.kind ?? null)).toEqual([
@@ -747,28 +754,146 @@ describe('la revisión: un «está bien» nunca sale de que la base calle', () =
     // abre con la de hoy: sin decirlo, se cuenta y el aviso sigue ahí.
     const warning = item('treasuries_not_reconciled', {
       detail: {
-        treasuries: [{ treasury_id: '00000000-0000-4000-8000-0000000000aa', name: 'Caja' }],
+        treasuries: [
+          { treasury_id: '00000000-0000-4000-8000-0000000000aa', name: 'Caja' },
+          { treasury_id: '00000000-0000-4000-8000-0000000000bb', name: 'Banco Nación' },
+        ],
       },
     })
-    const detailOf = (over: Partial<ReviewInput>) =>
-      review({ checklist: checklist({ canClose: true, warnings: [warning] }), ...over }).rows.find(
-        (row) => row.id === 'money',
-      )?.items[0]?.detail
+    const moneyOf = (over: Partial<ReviewInput>) => ({
+      row: review({
+        checklist: checklist({ canClose: true, warnings: [warning] }),
+        ...over,
+      }).rows.find((row) => row.id === 'money'),
+    })
 
-    const finished = detailOf({ month: '2026-09', finished: true })
-    expect(finished).toContain('Contalas para saber si coincide lo que dice el sistema.')
-    expect(finished).toContain('«Fecha del conteo»')
-    expect(finished).toContain('un día de septiembre (por ejemplo, el 30/09)')
-    expect(finished).toContain('con la fecha de hoy este aviso no se va')
-
-    // En el mes en curso, contar hoy ya cae adentro del mes: no hace falta aclarar nada.
-    expect(detailOf({ month: '2026-10', finished: false })).toBe(
-      'Contalas para saber si coincide lo que dice el sistema.',
+    // Una sola oración (antes eran ocho renglones en el celular), con la fecha de ejemplo.
+    const finished = moneyOf({ month: '2026-09', finished: true, today: TODAY })
+    expect(finished.row?.pill).toBe('1 aviso')
+    expect(finished.row?.items[0]?.title).toBe('Hay cajas sin contar en septiembre')
+    expect(plain(finished.row?.items[0]?.detail)).toBe(
+      'Contalas con fecha de septiembre (por ejemplo, 30/09) para que valga para este mes.',
     )
+    expect(finished.row?.items[0]?.actions.map((a) => a.label)).toEqual([
+      'Contar Caja',
+      'Contar Banco Nación',
+    ])
+    // Con la fecha de hoy «Contar» no apaga el aviso: nunca es EL botón relleno de la pantalla.
+    expect(finished.row?.items[0]?.quiet).toBe(true)
+    expect(firstReviewAction({ rows: finished.row ? [finished.row] : [] })).toBeNull()
+
     // A la contadora no se le explica cómo cargar.
-    expect(detailOf({ month: '2026-09', finished: true, canWrite: false })).toBe(
-      'Sin contar: Caja.',
-    )
+    const reader = moneyOf({ month: '2026-09', finished: true, canWrite: false })
+    expect(reader.row?.items[0]?.detail).toBe('Sin contar: Caja, Banco Nación.')
+    expect(reader.row?.items[0]?.actions).toEqual([])
+  })
+
+  it('cajas sin contar a mitad de mes: una línea gris con su link, no un aviso', () => {
+    // El 13/10 «Hay cajas sin contar en octubre» todavía no es cierto: alcanza con contarlas una
+    // vez antes de cerrar. No cuenta como aviso, no lleva un botón por caja ni es el primario.
+    const warning = item('treasuries_not_reconciled', {
+      detail: {
+        treasuries: [
+          { treasury_id: '00000000-0000-4000-8000-0000000000aa', name: 'Caja' },
+          { treasury_id: '00000000-0000-4000-8000-0000000000bb', name: 'Banco Nación' },
+        ],
+      },
+    })
+    const r = review({
+      month: '2026-10',
+      finished: false,
+      today: TODAY,
+      checklist: checklist({ warnings: [warning] }),
+    })
+    const money = r.rows.find((row) => row.id === 'money')
+    expect(money?.tone).toBe('muted')
+    expect(money?.pill).toBe('Para ir viendo')
+    expect(money?.items).toHaveLength(1)
+    expect(money?.items[0]).toMatchObject({
+      soft: true,
+      tone: 'muted',
+      title: 'Las cajas de octubre se cuentan antes de cerrar el mes.',
+      detail: 'Todavía sin contar: Caja, Banco Nación.',
+      actions: [{ kind: 'href', label: 'Ver cajas', href: `${BASE}/cajas` }],
+    })
+    expect(JSON.stringify(money?.items)).not.toContain('Hay cajas sin contar')
+    // Sigue habiendo algo para mirar en el paso 1, pero su link no es el botón relleno.
+    expect(r.hasWork).toBe(true)
+    expect(firstReviewAction({ rows: money ? [money] : [] })).toBeNull()
+
+    // Con un aviso de verdad al lado, el renglón cuenta ESE aviso (y solo ese).
+    const both = review({
+      month: '2026-10',
+      finished: false,
+      today: TODAY,
+      checklist: checklist({
+        warnings: [item('receivables_overdue', { count: 3, amountCents: 240_000_00 }), warning],
+      }),
+    }).rows.find((row) => row.id === 'money')
+    expect(both?.tone).toBe('warn')
+    expect(both?.pill).toBe('1 aviso')
+
+    // La contadora ve la misma línea, sin link.
+    const reader = review({
+      month: '2026-10',
+      finished: false,
+      today: TODAY,
+      canWrite: false,
+      checklist: checklist({ warnings: [warning] }),
+    }).rows.find((row) => row.id === 'money')
+    expect(reader?.items[0]?.soft).toBe(true)
+    expect(reader?.items[0]?.actions).toEqual([])
+  })
+
+  it('gastos fijos a mitad de mes: separa lo que ya venció de lo que vence más adelante', () => {
+    const fixed = (rows: Array<{ name: string; due_date: string; amount_cents: number }>) =>
+      review({
+        month: '2026-10',
+        finished: false,
+        today: TODAY,
+        checklist: checklist({
+          warnings: [
+            item('recurring_not_loaded', {
+              count: rows.length,
+              detail: {
+                items: rows.map((row, i) => ({
+                  recurring_id: `00000000-0000-4000-8000-00000000000${i + 1}`,
+                  ...row,
+                })),
+              },
+            }),
+          ],
+        }),
+      }).rows.find((row) => row.id === 'purchases')
+
+    // Hoy es 13/10: el del 10 venció, el del 13 vence hoy y el del 15 todavía no.
+    const mixed = fixed([
+      { name: 'Alquiler del local', due_date: '2026-10-10', amount_cents: 850_000_00 },
+      { name: 'Seguro', due_date: '2026-10-13', amount_cents: 60_000_00 },
+      { name: 'Internet y teléfono', due_date: '2026-10-15', amount_cents: 35_000_00 },
+    ])
+    expect(mixed?.tone).toBe('warn')
+    expect(mixed?.pill).toBe('1 aviso')
+    expect(mixed?.items[0]?.title).toBe('Hay gastos fijos de octubre sin cargar')
+    expect(mixed?.items[0]?.recurring?.map((row) => plain(row.meta))).toEqual([
+      'venció el 10/10 · $ 850.000',
+      'vence hoy · $ 60.000',
+      'vence el 15/10 · $ 35.000',
+    ])
+
+    // Si ninguno venció todavía, no es un aviso: es algo «para ir viendo» (con su «Pagar» igual).
+    const upcoming = fixed([
+      { name: 'Internet y teléfono', due_date: '2026-10-15', amount_cents: 35_000_00 },
+      { name: 'Expensas', due_date: '2026-10-20', amount_cents: 120_000_00 },
+    ])
+    expect(upcoming?.tone).toBe('muted')
+    expect(upcoming?.pill).toBe('Para ir viendo')
+    expect(upcoming?.items[0]?.title).toBe('Gastos fijos de octubre que todavía no vencieron')
+    expect(upcoming?.items[0]?.recurring?.map((row) => plain(row.text))).toEqual([
+      'Internet y teléfono · vence el 15/10 · $ 35.000',
+      'Expensas · vence el 20/10 · $ 120.000',
+    ])
+    expect(upcoming?.items[0]?.recurring?.[0]?.action).toMatchObject({ label: 'Pagar' })
   })
 
   it('sueldos: un renglón fijo que no cuenta como aviso (el sistema no puede saberlo)', () => {
@@ -854,7 +979,9 @@ describe('el almanaque del paso 1', () => {
       BASE,
     )
     const by = new Map(days.map((d) => [d.date, d]))
-    expect(by.get('2026-10-11')?.state).toBe('before')
+    // El bar arrancó el lunes 12: las semanas enteras de antes no se dibujan.
+    expect(days[0]?.date).toBe('2026-10-12')
+    expect(by.has('2026-10-11')).toBe(false)
     expect(by.get('2026-10-12')).toMatchObject({
       state: 'missing',
       href: `${BASE}/ventas/cierre?fecha=2026-10-12`,
@@ -862,6 +989,25 @@ describe('el almanaque del paso 1', () => {
     })
     expect(by.get('2026-10-13')).toMatchObject({ state: 'today', isToday: true })
     expect(by.get('2026-10-14')?.href).toBeUndefined()
+  })
+
+  it('si arranca a mitad de semana, esa semana va entera (apagada antes del arranque)', () => {
+    const days = closeStripDays(
+      calendar({ monthYm: '2026-10', from: '2026-10-15', serviceDay: TODAY, loaded: [] }),
+      BASE,
+    )
+    expect(days[0]?.date).toBe('2026-10-12')
+    expect(days.find((d) => d.date === '2026-10-14')?.state).toBe('before')
+    expect(days.find((d) => d.date === '2026-10-15')?.state).not.toBe('before')
+  })
+
+  it('un mes entero de uso arranca el día 1', () => {
+    const days = closeStripDays(
+      calendar({ monthYm: '2026-10', serviceDay: TODAY, loaded: [] }),
+      BASE,
+    )
+    expect(days[0]?.date).toBe('2026-10-01')
+    expect(days).toHaveLength(31)
   })
 
   it('para la contadora no hay links de carga', () => {
@@ -888,9 +1034,11 @@ describe('el IVA que toma el cierre: las mismas ramas, otras palabras', () => {
   it('se anota, a pagar', () => {
     const plan = ivaClosePlan({ ...base, toPayCents: 411_706_204 }, '2026-09')
     expect(plan).toMatchObject({ settles: true, replaces: false, voidsOnly: false })
+    // La oración de la pantalla va en pesos, como el papel del mes y «¿Cómo se calcula?»…
     expect(`${plan.text?.lead}${plan.text?.amount}${plan.text?.tail}`.replace(/ /g, ' ')).toBe(
-      'Al cerrar queda anotado el IVA de septiembre: $ 4.117.062,04 a pagarle a ARCA.',
+      'Al cerrar queda anotado el IVA de septiembre: $ 4.117.062 a pagarle a ARCA.',
     )
+    // …y el importe exacto, con centavos, queda en la frase del diálogo de «Cerrar».
     expect(plan.summary.replace(/ /g, ' ')).toBe(
       'Queda anotado el IVA de septiembre: a pagar $ 4.117.062,04.',
     )
@@ -899,7 +1047,10 @@ describe('el IVA que toma el cierre: las mismas ramas, otras palabras', () => {
   it('se anota, a favor: dice para qué mes queda', () => {
     const plan = ivaClosePlan({ ...base, inFavorCents: 12_000_000 }, '2026-09')
     expect(`${plan.text?.lead}${plan.text?.amount}${plan.text?.tail}`.replace(/ /g, ' ')).toBe(
-      'Al cerrar queda anotado el IVA de septiembre: quedan $ 120.000,00 a favor para octubre.',
+      'Al cerrar queda anotado el IVA de septiembre: quedan $ 120.000 a favor para octubre.',
+    )
+    expect(plan.summary.replace(/ /g, ' ')).toBe(
+      'Queda anotado el IVA de septiembre: quedan $ 120.000,00 a favor.',
     )
   })
 

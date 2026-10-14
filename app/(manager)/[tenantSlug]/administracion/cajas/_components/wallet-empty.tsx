@@ -40,10 +40,13 @@ export function WalletEmpty({
   const countText =
     'Comparás lo que dice el sistema con lo que hay de verdad. Si no coincide, queda anotado.'
 
+  // Cada tarjeta muestra un «¿cuánto hay?» con forma de campo: se toca y lleva al mismo lugar que
+  // el botón. No es otra parada de Tab (el botón de abajo es el único).
+  const target = canWrite ? view.action : null
   const slots = (
     <ul aria-label="Tus cajas" className="grid gap-3 sm:grid-cols-2">
-      {view.slots.map((slot) => (
-        <li key={slot.id} className="flex">
+      {view.slots.map((slot) => {
+        const card = (
           <WalletCard
             empty
             size="sm"
@@ -53,10 +56,37 @@ export function WalletEmpty({
             detail={slot.detail}
             tone={slot.tone}
           />
-        </li>
-      ))}
+        )
+        return (
+          <li key={slot.id} className="flex">
+            {target ? (
+              <Link
+                href={target.href}
+                tabIndex={-1}
+                aria-label={`¿Cuánto hay en ${slot.name}?`}
+                className="press-lift flex w-full rounded-2xl outline-none"
+              >
+                {card}
+              </Link>
+            ) : (
+              card
+            )}
+          </li>
+        )
+      })}
     </ul>
   )
+  // «¿Usás una cuenta de banco o una tarjeta?»: solo lo que todavía no está.
+  const hasBank = view.slots.some((slot) => slot.kind === 'bank')
+  const hasCard = view.slots.some((slot) => slot.kind === 'credit_card')
+  const missing =
+    !hasBank && !hasCard
+      ? 'una cuenta de banco o una tarjeta de la empresa'
+      : !hasBank
+        ? 'una cuenta de banco'
+        : !hasCard
+          ? 'una tarjeta de la empresa'
+          : 'otra cuenta'
 
   return (
     <section aria-label="La billetera" className="space-y-6">
@@ -86,7 +116,7 @@ export function WalletEmpty({
                 </Button>
               ) : null}
               <p className="text-sm text-muted-foreground text-pretty">
-                Es una sola vez. ¿Usás una cuenta de banco o una tarjeta de la empresa?{' '}
+                Es una sola vez. ¿Usás {missing}?{' '}
                 <Link
                   href={view.addHref}
                   className="rounded-sm font-medium text-foreground underline decoration-border underline-offset-4 outline-none hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-ring max-sm:py-3"

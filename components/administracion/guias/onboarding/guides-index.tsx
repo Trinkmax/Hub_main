@@ -23,6 +23,7 @@ import {
 import { guideStep } from '@/lib/arca/guide'
 import type { ArcaOverview } from '@/lib/arca/views'
 import { formatDate } from '@/lib/dates'
+import { IMPORT_SOURCE_COPY } from '@/lib/imports/ui/labels'
 import { HowToFor } from './how-to-slot'
 
 /**
@@ -149,7 +150,13 @@ export function OnboardingGuideCard({
     >
       {state ? (
         <>
-          <ProgressLine done={state.done} total={state.total} unit="listos" />
+          {/* El número es el de la puesta en marcha (lo de una sola vez): el mismo «N de M» de
+              la franja del Resumen. La rutina no se suma ahí; va aparte, dicha como tal. */}
+          <ProgressLine
+            done={state.sections.day1.done}
+            total={state.sections.day1.total}
+            unit="listos"
+          />
           {nextTitle ? (
             <p className="text-sm text-pretty">
               <span className="text-muted-foreground">Lo próximo: </span>
@@ -296,7 +303,7 @@ const DOWNLOADS: ReadonlyArray<{
     title: 'Compras de ARCA',
     subtitle: '«Mis Comprobantes» › Recibidos',
     when: 'Una vez por mes, del día 11 en adelante.',
-    importLabel: 'Importar de ARCA',
+    importLabel: IMPORT_SOURCE_COPY.arca_recibidos.cta,
     importPath: '/importar/arca',
   },
   {
@@ -305,7 +312,7 @@ const DOWNLOADS: ReadonlyArray<{
     title: 'Mercado Pago',
     subtitle: 'Reporte de «Liquidaciones»',
     when: 'Una vez por semana, desde la compu.',
-    importLabel: 'Importar Mercado Pago',
+    importLabel: IMPORT_SOURCE_COPY.mp_release.cta,
     importPath: '/importar/mercado-pago',
   },
   {
@@ -314,7 +321,7 @@ const DOWNLOADS: ReadonlyArray<{
     title: 'Banco',
     subtitle: 'Movimientos de la cuenta',
     when: 'Una vez por semana: muchos bancos guardan solo los últimos 3 meses.',
-    importLabel: 'Importar del banco',
+    importLabel: IMPORT_SOURCE_COPY.bank_statement.cta,
     importPath: '/importar/banco',
   },
 ]
@@ -335,40 +342,30 @@ export function DownloadGuides({ base, canWrite }: { base: string; canWrite: boo
           className="space-y-3 border-t border-border/60 pt-5 first:border-t-0 first:pt-0"
         >
           {/* Compu: el ícono, el nombre con su bajada y el botón, en un renglón. Celular: el
-              ícono, el nombre y el botón arriba, y la bajada debajo a todo el ancho (al lado del
-              botón quedaba en una columna de cuatro renglones). */}
-          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 sm:gap-y-0.5">
-            <span className="sm:row-span-2">
+              ícono y el nombre arriba, la bajada debajo a todo el ancho y el botón al final, a
+              todo el ancho y con el mismo nombre que la bandeja de Importar («Subir…»). */}
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-y-0.5">
+            <span className="col-start-1 row-start-1 sm:row-span-2">
               <IconBox icon={d.icon} />
             </span>
-            <h3 className="font-serif text-lg font-semibold leading-tight tracking-tight sm:self-end">
+            <h3 className="col-start-2 row-start-1 font-serif text-lg font-semibold leading-tight tracking-tight sm:self-end">
               {d.title}
             </h3>
+            <p className="col-span-2 row-start-2 text-xs text-muted-foreground text-pretty sm:col-span-1 sm:col-start-2 sm:self-start">
+              {d.subtitle} · {d.when}
+            </p>
             {canWrite ? (
-              // En el celular dice solo «Importar» (el archivo ya está nombrado al lado): entero
-              // no entraba en el renglón y se llevaba una fila para él solo.
               <Button
                 asChild
                 variant="outline"
-                className="h-11 shrink-0 gap-2 sm:row-span-2 md:h-9"
+                className="col-span-2 row-start-3 h-11 w-full gap-2 sm:col-span-1 sm:col-start-3 sm:row-span-2 sm:row-start-1 sm:w-auto md:h-9"
               >
-                <Link href={`${base}${d.importPath}`} aria-label={d.importLabel}>
-                  <span aria-hidden="true" className="sm:hidden">
-                    Importar
-                  </span>
-                  <span aria-hidden="true" className="max-sm:hidden">
-                    {d.importLabel}
-                  </span>
+                <Link href={`${base}${d.importPath}`}>
+                  {d.importLabel}
                   <ArrowRight className="size-4" aria-hidden="true" />
                 </Link>
               </Button>
-            ) : (
-              // Sin botón (modo lectura), la tercera columna queda vacía y la grilla no se corre.
-              <span aria-hidden="true" className="sm:row-span-2" />
-            )}
-            <p className="col-span-3 text-xs text-muted-foreground text-pretty sm:col-span-1 sm:col-start-2 sm:self-start">
-              {d.subtitle} · {d.when}
-            </p>
+            ) : null}
           </div>
           {/* Sobre la tarjeta va como un bloque teñido, no como otra tarjeta adentro. */}
           <HowToFor source={d.source} className="border-transparent bg-secondary/50" />

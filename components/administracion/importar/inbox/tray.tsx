@@ -1,4 +1,4 @@
-import { ArrowRight, CircleCheck, Lock } from 'lucide-react'
+import { ArrowRight, ChevronRight, CircleCheck, Lock } from 'lucide-react'
 import Link from 'next/link'
 import { ChartSilhouette } from '@/components/administracion/charts/chart-parts'
 import { StatusPill } from '@/components/administracion/kit'
@@ -20,19 +20,35 @@ import { SourceMark } from './source-mark'
  * No calcula nada: dibuja lo que arma `buildInbox()` (`lib/imports/ui/inbox.ts`).
  * Quien solo lee no recibe `action`, `secondary` ni `howHref`, así que no ve
  * ningún botón de carga. Server-safe.
+ *
+ * Lado a lado (desde `md`), las bandejas comparten renglones (`subgrid`): el
+ * rótulo, el cuerpo y el pie de cada una arrancan a la misma altura aunque un
+ * nombre o una bajada ocupen un renglón más. `wide` es la que va sola en su
+ * fila en una tablet (ARCA, arriba de las dos semanales).
  */
-export function ImportTray({ tray }: { tray: InboxTray }) {
+export function ImportTray({
+  tray,
+  wide = false,
+  className,
+}: {
+  tray: InboxTray
+  /** Va sola en su fila entre `md` y `xl`: no reserva el renglón del rótulo. */
+  wide?: boolean
+  className?: string
+}) {
   const titleId = `bandeja-${tray.source}`
   const blocked = tray.state === 'blocked'
   return (
     <section
       aria-labelledby={titleId}
       className={cn(
-        'card-hairline flex h-full flex-col gap-4 rounded-2xl border bg-card p-4 shadow-xs sm:p-5',
+        'card-hairline flex h-full min-w-0 flex-col gap-4 rounded-2xl border bg-card p-4 shadow-xs sm:p-5',
+        'md:row-span-3 md:grid md:grid-rows-subgrid',
         blocked && 'border-dashed bg-card/60 shadow-none',
+        className,
       )}
     >
-      <header className="flex items-start gap-3">
+      <header className="flex min-w-0 items-start gap-3">
         <span
           className={cn(
             'flex size-12 shrink-0 items-center justify-center rounded-xl bg-accent',
@@ -57,10 +73,28 @@ export function ImportTray({ tray }: { tray: InboxTray }) {
         </div>
       </header>
 
+      {/* Trabada: el candado con lo que falta y, debajo, qué va a llegar acá (la misma
+          silueta que una bandeja sin estrenar, más apagada). Antes era un recuadro gris alto
+          con una sola oración. */}
       {blocked ? (
-        <div className="flex flex-1 items-start gap-2.5 rounded-xl bg-secondary/50 p-3.5">
-          <Lock aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-          <p className="text-sm leading-snug text-pretty">{tray.blocked}</p>
+        <div className="flex-1 space-y-3">
+          <div
+            aria-hidden
+            className="pointer-events-none select-none rounded-xl bg-secondary/50 p-3 opacity-45"
+          >
+            <ChartSilhouette kind="strip" />
+          </div>
+          <div>
+            <p className="flex items-start gap-2 text-sm font-medium leading-snug text-pretty">
+              <Lock aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              {tray.blocked}
+            </p>
+            {tray.empty ? (
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground text-pretty">
+                {tray.empty.text}
+              </p>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
@@ -86,9 +120,15 @@ export function ImportTray({ tray }: { tray: InboxTray }) {
       {tray.state === 'ok' && tray.hero ? (
         <div className="flex-1 space-y-4">
           <div>
-            {/* El renglón del rótulo va siempre (aunque quede vacío): así el número de las tres
-                bandejas arranca a la misma altura. */}
-            <div className="mb-1.5 flex min-h-6 flex-wrap items-center gap-2">
+            {/* Lado a lado, el renglón del rótulo va siempre (aunque quede vacío): así el
+                número de las bandejas vecinas arranca a la misma altura. Apiladas (el celular,
+                o la que va sola en su fila) no se reserva: dejaba un hueco arriba de «Al día». */}
+            <div
+              className={cn(
+                'mb-1.5 flex flex-wrap items-center gap-2',
+                wide ? 'max-xl:empty:hidden xl:min-h-6' : 'max-md:empty:hidden md:min-h-6',
+              )}
+            >
               {tray.hero.label ? (
                 <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
                   {tray.hero.label}
@@ -153,11 +193,17 @@ export function ImportTray({ tray }: { tray: InboxTray }) {
       ) : null}
 
       {tray.action || tray.howHref ? (
-        <footer className="mt-auto flex flex-col gap-2 pt-1">
+        <footer className="mt-auto flex min-w-0 flex-col gap-2 pt-1 md:mt-0">
           {tray.action ? (
-            <Button asChild variant="outline" className="h-11 w-full justify-between gap-2 px-4">
+            // El rótulo puede ocupar dos renglones («Subir el reporte de Mercado Pago» en una
+            // bandeja angosta): el botón crece, nunca se sale de la tarjeta.
+            <Button
+              asChild
+              variant="outline"
+              className="h-auto min-h-11 w-full justify-between gap-2 whitespace-normal px-4 py-2 text-left"
+            >
               <Link href={tray.action.href}>
-                {tray.action.label}
+                <span className="min-w-0 text-pretty">{tray.action.label}</span>
                 <ArrowRight aria-hidden className="size-4 shrink-0" />
               </Link>
             </Button>
@@ -218,16 +264,21 @@ function WaitingSheets({
           >
             <Link
               href={sheet.href}
-              className="force-light press-lift flex items-center gap-3 rounded-md border border-adm-paper-rule/60 bg-adm-paper px-3 py-2 text-adm-paper-ink shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="force-light press-lift flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-adm-paper-rule/60 bg-adm-paper px-3 py-2 text-adm-paper-ink shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
-              <span className="min-w-0 flex-1">
+              {/* `basis-32`: si la píldora no entra al lado, baja entera a su renglón en vez de
+                  aplastar el texto de a una palabra. */}
+              <span className="min-w-0 flex-1 basis-32">
                 <span className="block font-medium leading-snug">{sheet.title}</span>
                 <span className="block text-xs leading-snug text-muted-foreground text-pretty">
                   {sheet.detail}
                 </span>
               </span>
-              {/* La hoja a medio subir ya lo dice en su título. */}
-              {sheet.kind === 'review' ? <StatusPill tone="warn">Para revisar</StatusPill> : null}
+              <span className="inline-flex shrink-0 items-center gap-1">
+                {/* La hoja a medio subir ya lo dice en su título. */}
+                {sheet.kind === 'review' ? <StatusPill tone="warn">Para revisar</StatusPill> : null}
+                <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              </span>
             </Link>
           </li>
         ))}

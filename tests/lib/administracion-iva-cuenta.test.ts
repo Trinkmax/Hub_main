@@ -111,14 +111,25 @@ describe('el número del héroe', () => {
     expect(plain(hero.short)).toBe('$ 4.117.062 a pagar')
   })
 
-  it('a favor (HUB hoy)', () => {
+  it('a favor (HUB hoy): sin ventas con factura no afirma que «cobraste» menos', () => {
     const hero = ivaHero(HUB_OCTOBER, '2026-10')
     expect(hero).toMatchObject({
       kind: 'in_favor',
       cents: 2_100_000,
       label: 'IVA de octubre · a favor',
-      brief: 'Te queda a favor.',
+      brief: 'A favor por ahora: faltan las ventas con factura.',
     })
+    expect(hero.sentence).toContain('octubre todavía no tiene ventas con factura cargadas')
+    expect(hero.sentence).not.toContain('cobraste')
+  })
+
+  it('a favor con ventas: la diferencia queda para el mes que viene', () => {
+    const hero = ivaHero(
+      position({ debit: 400_000, credit: 520_000, inFavorCents: 120_000 }),
+      '2026-10',
+    )
+    expect(hero).toMatchObject({ kind: 'in_favor', brief: 'Te queda a favor.' })
+    expect(hero.sentence).toContain('La diferencia queda para el mes que viene')
   })
 
   it('en cero NO devuelve número: nunca «$ 0»', () => {

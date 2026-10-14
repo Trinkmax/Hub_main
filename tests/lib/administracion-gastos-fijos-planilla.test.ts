@@ -6,19 +6,23 @@ import {
 import {
   buildSheet,
   categoryBars,
+  chartScope,
   defaultSheetMonth,
+  dueDays,
   dueStripDays,
   paperSplit,
   parseSheetMonth,
 } from '@/app/(manager)/[tenantSlug]/administracion/gastos-fijos/_lib/planilla'
 import {
   categoryTitle,
+  DUE_OUTSIDE_LABELS,
   detectInstallment,
   dueTitle,
   installmentWords,
   invoiceBucket,
   matchesSheetQuery,
   nextUpView,
+  ownItems,
   papelLabel,
   paperTitle,
   parseInvoiceBucket,
@@ -29,9 +33,12 @@ import {
   rowWords,
   type SheetItem,
   saveFailure,
+  sheetCarry,
   sheetFilterPills,
   sheetSentence,
+  shownTotals,
   tickState,
+  topCategoryBars,
 } from '@/app/(manager)/[tenantSlug]/administracion/gastos-fijos/_lib/planilla-words'
 import { fixedProgress } from '@/lib/accounting/home'
 import { type RecurringExpenseRow, recurringMonthStatus } from '@/lib/accounting/queries/documents'
@@ -346,29 +353,74 @@ describe('la hoja del mes que viene', () => {
       detail: `1 gasto · ${$('120.000')}`,
       daysText: 'Faltan 28 días.',
     })
-    // Y la oración no los mezcla: uno quedó de antes, el otro es de noviembre.
-    expect(sheetSentence(sheet)).toMatchObject({
-      text: 'Son 2 gastos: 1 quedó de antes sin pagar y 1 vence en noviembre.',
+    // El número es SOLO lo de noviembre: lo que quedó de antes va aparte, con su importe y la
+    // hoja donde se paga. Un «Te falta · noviembre» con la deuda de octubre adentro sería un
+    // número con el mes equivocado.
+    expect(sheetSentence(sheet)).toEqual({
+      kind: 'number',
+      cents: 12_000_000,
+      text: 'Es un solo gasto de noviembre. El que quedó de antes sin pagar va aparte.',
+      allPaid: false,
+      noAmount: 0,
+      carried: { month: OCT, count: 1, cents: 85_000_000 },
     })
+    expect(sheetCarry(sheet)).toMatchObject({
+      month: OCT,
+      count: 1,
+      cents: 85_000_000,
+      ownTotals: { count: 1, totalCents: 12_000_000, paidCents: 0, remainingCents: 12_000_000 },
+    })
+    expect(ownItems(sheet).map((item) => item.row.name)).toEqual(['Luz'])
+    // Y los dibujos de noviembre no cuentan lo de octubre.
+    expect(categoryBars(chartScope(sheet))).toEqual([
+      { id: 'acc-alquiler', name: 'Alquiler', cents: 12_000_000, count: 1 },
+    ])
+    expect(
+      dueStripDays(chartScope(sheet))
+        .filter((d) => d.cents > 0)
+        .map((d) => d.date),
+    ).toEqual(['2026-11-10'])
   })
 
-  it('si lo único que hay es lo que quedó de antes, se dice y lo que sigue es pagarlo', () => {
+  it('si lo único que hay es lo que quedó de antes: sin número ni «lo que sigue», y dice dónde se paga', () => {
     // El bar de ejemplo en noviembre: los tres siguen sin pagar desde octubre.
     const sheet = sheetOf(DEMO, NOV)
     expect(sheet.groups.every((g) => g.place === 'before')).toBe(true)
-    expect(sheetSentence(sheet)).toMatchObject({
-      kind: 'number',
-      cents: 91_500_000,
-      text: 'Son los 3 que quedaron de antes sin pagar. Cuando los pagues, acá vas a ver los de noviembre.',
+    expect(sheetSentence(sheet)).toEqual({
+      kind: 'carried',
+      title: 'Noviembre todavía no se armó',
+      text: `Acá abajo están los 3 que quedaron de antes sin pagar: suman ${$('915.000')}. Cuando los pagues, vas a ver los de noviembre.`,
+      carried: { month: OCT, count: 3, cents: 91_500_000 },
     })
-    expect(nextUpView(sheet, { canWrite: true })).toMatchObject({
-      kind: 'pay',
-      name: 'Alquiler del local',
-      amountCents: 85_000_000,
-    })
+    // El botón de pagar manda en la hoja de hoy; en la del mes que viene no se repite.
+    expect(nextUpView(sheet, { canWrite: true })).toEqual({ kind: 'none' })
+    expect(nextUpView(sheetOf(DEMO, OCT), { canWrite: true }).kind).toBe('pay')
     expect(sheetSentence(sheetOf([ALQUILER], NOV))).toMatchObject({
-      text: 'Es el que quedó de antes sin pagar. Cuando lo pagues, acá vas a ver el de noviembre.',
+      kind: 'carried',
+      text: `Acá abajo está el que quedó de antes sin pagar: ${$('850.000')}. Cuando lo pagues, vas a ver el de noviembre.`,
     })
+    // Nada de noviembre para dibujar.
+    expect(chartScope(sheet).items).toEqual([])
+    expect(chartScope(sheet).groups).toEqual([])
+  })
+
+  it('lo de noviembre sin monto y algo de antes: tampoco hay número, y lo de antes va aparte', () => {
+    const blank = mk({ id: 'gf-luz', name: 'Luz' })
+    expect(sheetSentence(sheetOf([blank, ALQUILER], NOV))).toEqual({
+      kind: 'no_amounts',
+      title: 'Todavía no sé cuánto te falta',
+      text: 'Es un solo gasto de noviembre y no tiene monto. El que quedó de antes sin pagar va aparte.',
+      carried: { month: OCT, count: 1, cents: 85_000_000 },
+    })
+  })
+
+  it('en el mes de hoy no se separa nada: lo vencido de antes es parte de «Te falta»', () => {
+    const old = mk({ ...ALQUILER, nextDueDate: '2026-09-10', monthStatus: undefined })
+    const sheet = sheetOf([old, INTERNET])
+    expect(sheetCarry(sheet)).toBeNull()
+    expect(ownItems(sheet)).toBe(sheet.items)
+    expect(chartScope(sheet)).toBe(sheet)
+    expect(sheetSentence(sheet)).toMatchObject({ kind: 'number', cents: 88_500_000 })
   })
 
   it('lo pagado por adelantado cuenta como pago de este mes y queda último', () => {
@@ -585,9 +637,11 @@ describe('la frase de estado de cada renglón', () => {
       doc({ id: 'doc-1', totalCents: 19_500_000, paidCents: 19_500_000 }),
     )
     const item = itemOf(row, payments)
+    // La diferencia con su palabra, como cuando pagaste de menos: nunca un importe pelado.
     expect(rowWords(item, TODAY)).toMatchObject({
       label: 'Pagado el 08/10',
-      detail: $('195.000'),
+      detail: `${$('15.000')} más que el monto`,
+      text: `Pagado el 08/10 · ${$('15.000')} más que el monto`,
       tone: 'ok',
       short: null,
     })
@@ -898,11 +952,76 @@ describe('los dibujos: cuándo aparecen y qué afirman', () => {
     expect(dueTitle([])).toBe('Este mes no queda nada por vencer')
   })
 
-  it('lo vencido de un mes anterior va adelante, con su fecha', () => {
+  it('lo vencido de meses anteriores va adelante, junto en UNA columna «Antes»', () => {
     const old = mk({ ...ALQUILER, nextDueDate: '2026-09-10', monthStatus: undefined })
-    const days = dueStripDays(sheetOf([old, INTERNET]))
-    expect(days[0]).toEqual({ date: '2026-09-10', cents: 85_000_000, count: 1, overdue: true })
+    const older = mk({
+      ...DISPENSER,
+      nextDueDate: '2026-08-25',
+      dueDay: 25,
+      monthStatus: undefined,
+    })
+    const sheet = sheetOf([old, older, INTERNET])
+    const days = dueStripDays(sheet)
+    // Un «10» de septiembre adelante del día 1 sería un eje que miente: va con palabras.
+    expect(days[0]).toEqual({
+      date: '2026-08-25',
+      cents: 88_000_000,
+      count: 2,
+      overdue: true,
+      outside: 'before',
+    })
+    expect(DUE_OUTSIDE_LABELS.before).toBe('Antes')
     expect(days).toHaveLength(32)
+    expect(days.slice(1).every((d) => d.outside === undefined)).toBe(true)
+    expect(dueTitle(days)).toBe(`Tenés ${$('880.000')} vencidos de antes`)
+    // La tabla los lista de a uno, cada uno con su fecha.
+    expect(dueDays(sheet)).toEqual([
+      { date: '2026-08-25', cents: 3_000_000, count: 1, overdue: true },
+      { date: '2026-09-10', cents: 85_000_000, count: 1, overdue: true },
+      { date: '2026-10-15', cents: 3_500_000, count: 1, overdue: false },
+    ])
+  })
+
+  it('con muchas categorías, las más chicas van juntas en «Otras»', () => {
+    const bar = (n: number) => ({ id: `c${n}`, name: `Categoría ${n}`, cents: 1000 - n, count: n })
+    const few = [1, 2, 3, 4, 5, 6, 7].map(bar)
+    // Con una sola de más no se junta nada: «Otras 1 categoría» ocuparía lo mismo.
+    expect(topCategoryBars(few)).toEqual({ top: few, rest: null })
+    const many = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(bar)
+    const { top, rest } = topCategoryBars(many)
+    expect(top).toEqual(many.slice(0, 6))
+    expect(rest).toEqual({ categories: 3, cents: 993 + 992 + 991, count: 7 + 8 + 9 })
+    // Nada se pierde: lo dibujado más «Otras» suma lo mismo que todas.
+    expect(top.reduce((sum, b) => sum + b.cents, 0) + (rest?.cents ?? 0)).toBe(
+      many.reduce((sum, b) => sum + b.cents, 0),
+    )
+  })
+
+  it('la fila de suma de un filtro: suma lo que se ve, sin los que no tienen monto', () => {
+    const blank = mk({ id: 'gf-luz', name: 'Luz', nextDueDate: '2026-10-20', dueDay: 20 })
+    const all = sheetOf([...DEMO, blank])
+    expect(shownTotals(all.items)).toEqual({
+      count: 4,
+      totalCents: all.progress.totalCents,
+      paidCents: all.progress.paidCents,
+      remainingCents: all.progress.remainingCents,
+      noAmount: 1,
+    })
+    const overdue = all.items.filter((item) => item.line.state === 'overdue')
+    expect(shownTotals(overdue)).toEqual({
+      count: 2,
+      totalCents: 88_000_000,
+      paidCents: 0,
+      remainingCents: 88_000_000,
+      noAmount: 0,
+    })
+    expect(shownTotals([])).toEqual({
+      count: 0,
+      totalCents: 0,
+      paidCents: 0,
+      remainingCents: 0,
+      noAmount: 0,
+    })
   })
 
   it('en qué se va lo fijo: por categoría, de mayor a menor', () => {

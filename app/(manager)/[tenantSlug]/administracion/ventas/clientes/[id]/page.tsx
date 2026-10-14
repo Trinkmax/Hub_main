@@ -1,7 +1,6 @@
 import { HandCoins, Wallet } from 'lucide-react'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
-import { AgingBar } from '@/components/administracion/aging-bar'
 import { PeriodError } from '@/components/administracion/cajas-ventas/block-error'
 import { ExportButton } from '@/components/administracion/cajas-ventas/export-button'
 import { requireAdminPage } from '@/components/administracion/cajas-ventas/page-access'
@@ -13,6 +12,7 @@ import {
   type RangeValue,
   resolveRange,
 } from '@/components/administracion/cajas-ventas/periods'
+import { SplitBar, type SplitBarSegment } from '@/components/administracion/charts/split-bar'
 import {
   AdmHeader,
   AdmPage,
@@ -26,7 +26,6 @@ import { ActionButton, QuickActionsBar } from '@/components/administracion/quick
 import { ReadOnlyBadge } from '@/components/administracion/read-only'
 import { type StatementRow, StatementTable } from '@/components/administracion/statement-table'
 import { Button } from '@/components/ui/button'
-import { agingBuckets } from '@/lib/accounting/aging'
 import { exportHref, PARTY_KIND_LABELS } from '@/lib/accounting/queries/labels'
 import {
   getParty,
@@ -40,7 +39,13 @@ import { type QueryOutcome, settleQuery } from '@/lib/accounting/queries/shared'
 import { listTreasuryAccounts } from '@/lib/accounting/queries/treasury'
 import { formatIsoDay, todayInCordoba } from '@/lib/dates'
 import { formatCuit } from '@/lib/fiscal'
-import { partyCreditSentence, partySentence } from '../../_lib/incoming'
+import {
+  groupOpenItems,
+  partyCreditSentence,
+  partySentence,
+  TRANCHE_LABELS,
+  type TrancheKey,
+} from '../../_lib/incoming'
 import { tabHref } from '../../_lib/ventas-view'
 import { OpenItems } from './_components/open-items'
 import { IVA_LABELS, PartyData } from './_components/party-data'
@@ -52,6 +57,14 @@ type FichaView = (typeof VIEWS)[number]
 
 function parseView(value: string | null): FichaView {
   return (VIEWS as readonly string[]).includes(value ?? '') ? (value as FichaView) : 'pendiente'
+}
+
+/** Los mismos colores que «Plata por cobrar»: un tramo se ve y se llama igual en toda la sección. */
+const TRANCHE_SWATCH: Readonly<Record<TrancheKey, string>> = {
+  late: 'bg-destructive',
+  week: 'bg-adm-s1',
+  later: 'bg-adm-neutral',
+  wallet: 'bg-adm-s4',
 }
 
 function displayName(p: Pick<PartyDetail, 'name' | 'tradeName'>): string {
@@ -121,6 +134,25 @@ export default async function ClientePage({
       ? (treasuries.data.find((t) => t.active && t.bankPartyId === party.id) ?? null)
       : null
   const credit = pos ? partyCreditSentence(pos, { isCustomer }) : null
+  // La barra de arriba: lo que te debe, por cuándo llega (los tramos de «Plata por cobrar», sin
+  // centavos y sin renglones en cero). Lo de una billetera con su caja ya está en la app: un solo
+  // tramo, rayado. La antigüedad en días queda en «Estado de cuenta», que es de la contadora.
+  const tranches: SplitBarSegment[] = walletBox
+    ? [
+        {
+          key: 'wallet',
+          label: TRANCHE_LABELS.wallet,
+          cents: pos?.debtCents ?? 0,
+          swatch: TRANCHE_SWATCH.wallet,
+          hatched: true,
+        },
+      ]
+    : groupOpenItems(debtItems, today).map((group) => ({
+        key: group.key,
+        label: group.title,
+        cents: group.totalCents,
+        swatch: TRANCHE_SWATCH[group.key],
+      }))
   const picker: RangeValue = range.ok
     ? range
     : { kind: 'month', month: today.slice(0, 7), from: today, to: today, label: '' }
@@ -198,14 +230,8 @@ export default async function ClientePage({
               )
             ) : null}
           </div>
-          {pos.debtCents > 0 ? (
-            <AgingBar
-              title="Te debe"
-              buckets={agingBuckets(
-                debtItems.map((i) => ({ dueDate: i.dueDate, openCents: i.openCents })),
-                today,
-              )}
-            />
+          {pos.debtCents > 0 && tranches.some((t) => t.cents > 0) ? (
+            <SplitBar segments={tranches.filter((t) => t.cents > 0)} className="lg:max-w-[34rem]" />
           ) : null}
         </HeroPanel>
       ) : (

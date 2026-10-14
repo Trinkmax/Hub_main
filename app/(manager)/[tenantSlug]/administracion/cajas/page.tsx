@@ -28,8 +28,13 @@ import {
   startOfMonth,
   todayInCordoba,
 } from '@/lib/dates'
-import { CashMoveBlock, CashMoveSkeleton } from './_components/cash-daily-section'
-import { FlowBlocks } from './_components/flow-blocks'
+import {
+  CashMoveBlock,
+  CashMoveSkeleton,
+  LoQueHaySkeleton,
+  MOVE_SPLIT,
+} from './_components/cash-daily-section'
+import { FlowBlocks, FlowTabSkeleton } from './_components/flow-blocks'
 import { ProjectionBlock } from './_components/projection-block'
 import { RECENT_DAYS, RecentActivity, RecentActivitySkeleton } from './_components/recent-activity'
 import { type TreasuryBalanceItem, TreasuryBalances } from './_components/treasury-balances'
@@ -81,25 +86,31 @@ export default async function CajasPage({
         ]}
       />
 
-      {tab === 'saldos' ? (
-        <LoQueHay
-          tenantId={tenantId}
-          tenantSlug={tenantSlug}
-          base={base}
-          today={today}
-          canWrite={canWrite}
-          sp={sp}
-        />
-      ) : (
-        <EntroYSalio
-          tenantId={tenantId}
-          tenantSlug={tenantSlug}
-          base={base}
-          today={today}
-          canWrite={canWrite}
-          sp={sp}
-        />
-      )}
+      {/* Con `key`, cambiar de vista muestra enseguida el esqueleto de la que viene (y la
+          píldora ya marcada): sin esto la pantalla vieja quedaba quieta hasta que llegaba todo
+          y el toque parecía no haber entrado. Cambiar el período o la caja del dibujo no
+          cambia la `key`: ahí se queda lo anterior, sin saltos. */}
+      <Suspense key={tab} fallback={tab === 'flujo' ? <FlowTabSkeleton /> : <LoQueHaySkeleton />}>
+        {tab === 'saldos' ? (
+          <LoQueHay
+            tenantId={tenantId}
+            tenantSlug={tenantSlug}
+            base={base}
+            today={today}
+            canWrite={canWrite}
+            sp={sp}
+          />
+        ) : (
+          <EntroYSalio
+            tenantId={tenantId}
+            tenantSlug={tenantSlug}
+            base={base}
+            today={today}
+            canWrite={canWrite}
+            sp={sp}
+          />
+        )}
+      </Suspense>
 
       <QuickActionsBar />
     </AdmPage>
@@ -182,8 +193,8 @@ async function LoQueHay({ tenantId, tenantSlug, base, today, canWrite, sp }: Tab
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-12 lg:items-start">
-        <Suspense fallback={<CashMoveSkeleton className="lg:col-span-8" />}>
+      <div className={MOVE_SPLIT.grid}>
+        <Suspense fallback={<CashMoveSkeleton className={MOVE_SPLIT.chart} />}>
           <CashMoveBlock
             report={cashDaily}
             range={chartRange}
@@ -191,10 +202,10 @@ async function LoQueHay({ tenantId, tenantSlug, base, today, canWrite, sp }: Tab
             base={base}
             booksStartDate={settings?.booksStartDate ?? null}
             tones={tones}
-            className="min-w-0 lg:col-span-8"
+            className={MOVE_SPLIT.chart}
           />
         </Suspense>
-        <Suspense fallback={<RecentActivitySkeleton className="lg:col-span-4" />}>
+        <Suspense fallback={<RecentActivitySkeleton className={MOVE_SPLIT.recent} />}>
           <RecentActivity
             page={recent}
             base={base}
@@ -202,7 +213,7 @@ async function LoQueHay({ tenantId, tenantSlug, base, today, canWrite, sp }: Tab
             swatches={swatches}
             kinds={kinds}
             lastMovementDate={view.lastMovementDate}
-            className="min-w-0 lg:col-span-4"
+            className={MOVE_SPLIT.recent}
           />
         </Suspense>
       </div>

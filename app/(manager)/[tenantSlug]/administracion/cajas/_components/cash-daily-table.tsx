@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { moneyLabel } from '@/components/administracion/cajas-ventas/money'
 import {
   DataTableBody,
   DataTableCell,
@@ -13,7 +14,6 @@ import {
   cashDailyBalanceText,
 } from '@/lib/accounting/cash-daily'
 import { formatDayLabel } from '@/lib/dates'
-import { formatCents } from '@/lib/money'
 import { cn } from '@/lib/utils'
 
 const DAY_LINK =
@@ -42,8 +42,19 @@ export function CashDailyTable({
   const skipped = series.points.length - moved.length
   const opening = `${labels.balance} anterior`
   const alarm = (cents: number) => series.mode === 'money' && cents < 0
+  // Centavos solo si los hay (`moneyLabel`): «$ 400.371», «$ 471.409,62». Treinta «,00» en una
+  // lista de días son ruido, y el gráfico de arriba ya habla en pesos. Lo exacto no se pierde.
+  const balance = (cents: number) =>
+    cashDailyBalanceText(series.mode, cents, cents % 100 === 0 ? 0 : 2)
+  // En el celular, lo que entró y salió va debajo del día. El lado que es cero no se nombra
+  // («Salió $ 0,00» en cada renglón era ruido y partía la línea en dos).
   const flows = (up: number, down: number) =>
-    `${labels.up} ${formatCents(up)} · ${labels.down} ${formatCents(down)}`
+    [
+      up > 0 ? `${labels.up} ${moneyLabel(up)}` : null,
+      down > 0 ? `${labels.down} ${moneyLabel(down)}` : null,
+    ]
+      .filter((part) => part !== null)
+      .join(' · ') || 'Sin movimientos'
   const day = (iso: string) =>
     dayHref ? (
       <Link href={dayHref(iso)} className={DAY_LINK}>
@@ -76,7 +87,7 @@ export function CashDailyTable({
                       alarm(series.openingCents) && 'text-destructive',
                     )}
                   >
-                    {cashDailyBalanceText(series.mode, series.openingCents)}
+                    {balance(series.openingCents)}
                   </DataTableCell>
                 </tr>
                 {moved.map((p) => (
@@ -88,10 +99,10 @@ export function CashDailyTable({
                       {day(p.day)}
                     </DataTableCell>
                     <DataTableCell className="text-right tabular-nums">
-                      {p.upCents > 0 ? formatCents(p.upCents) : null}
+                      {p.upCents > 0 ? moneyLabel(p.upCents) : null}
                     </DataTableCell>
                     <DataTableCell className="text-right tabular-nums">
-                      {p.downCents > 0 ? formatCents(p.downCents) : null}
+                      {p.downCents > 0 ? moneyLabel(p.downCents) : null}
                     </DataTableCell>
                     <DataTableCell
                       className={cn(
@@ -99,7 +110,7 @@ export function CashDailyTable({
                         alarm(p.balanceCents) && 'text-destructive',
                       )}
                     >
-                      {cashDailyBalanceText(series.mode, p.balanceCents)}
+                      {balance(p.balanceCents)}
                     </DataTableCell>
                   </tr>
                 ))}
@@ -108,10 +119,10 @@ export function CashDailyTable({
                 <tr className="border-t border-border">
                   <DataTableCell className="text-xs">Total del período</DataTableCell>
                   <DataTableCell className="text-right tabular-nums">
-                    {formatCents(series.upCents)}
+                    {moneyLabel(series.upCents)}
                   </DataTableCell>
                   <DataTableCell className="text-right tabular-nums">
-                    {formatCents(series.downCents)}
+                    {moneyLabel(series.downCents)}
                   </DataTableCell>
                   <DataTableCell
                     className={cn(
@@ -119,7 +130,7 @@ export function CashDailyTable({
                       alarm(series.closingCents) && 'text-destructive',
                     )}
                   >
-                    {cashDailyBalanceText(series.mode, series.closingCents)}
+                    {balance(series.closingCents)}
                   </DataTableCell>
                 </tr>
               </tfoot>
@@ -137,7 +148,7 @@ export function CashDailyTable({
                 alarm(series.openingCents) && 'text-destructive',
               )}
             >
-              {cashDailyBalanceText(series.mode, series.openingCents)}
+              {balance(series.openingCents)}
             </span>
           </li>
           {moved.map((p) => (
@@ -155,7 +166,7 @@ export function CashDailyTable({
                     alarm(p.balanceCents) && 'text-destructive',
                   )}
                 >
-                  {cashDailyBalanceText(series.mode, p.balanceCents)}
+                  {balance(p.balanceCents)}
                 </span>
                 <span className="block text-[11px] text-muted-foreground">{labels.balance}</span>
               </span>
@@ -175,7 +186,7 @@ export function CashDailyTable({
                   alarm(series.closingCents) && 'text-destructive',
                 )}
               >
-                {cashDailyBalanceText(series.mode, series.closingCents)}
+                {balance(series.closingCents)}
               </span>
               <span className="block text-[11px] text-muted-foreground">{labels.balance}</span>
             </span>

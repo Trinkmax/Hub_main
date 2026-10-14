@@ -83,6 +83,43 @@ export function stepHref(step: Pick<SetupStep, 'action'>): string | null {
   return step.action?.kind === 'href' ? step.action.href : null
 }
 
+/**
+ * Cómo se nombra cada paso cuando va en una lista corta, uno al lado del otro
+ * («Para completar cuando puedas: …», «Después: …»): con el nombre del lugar
+ * donde se resuelve —el mismo de su tarjeta en la portada—, no con su título.
+ * Los títulos de `buildSetup` mezclan órdenes y nombres («Completá los datos de
+ * la SAS · Cajas y cuentas · Accesos»); sueltos en una fila, se leen desparejos.
+ * El título entero sigue yendo donde el paso va solo, con su detalle y su botón.
+ */
+const STEP_PLACE: Readonly<Record<ConfigStepId, string>> = {
+  opening: 'Saldos iniciales',
+  sas_data: 'Datos de la SAS',
+  treasuries: 'Cajas y cuentas',
+  sales_methods: 'Medios de cobro',
+  platforms: 'Medios de cobro',
+  sales_points: 'Puntos de venta',
+  access: 'Accesos',
+  arca: 'ARCA',
+}
+
+export type StepPlaceLink = { id: string; label: string; href: string | null }
+
+/**
+ * Los pasos de una lista corta, por el nombre de su lugar. Dos pasos del mismo
+ * lugar (los medios y sus comisiones) van una sola vez: gana el primero.
+ */
+export function stepPlaceLinks(steps: readonly SetupStep[]): StepPlaceLink[] {
+  const seen = new Set<string>()
+  const out: StepPlaceLink[] = []
+  for (const step of steps) {
+    const label = CONFIG_IDS.has(step.id) ? STEP_PLACE[step.id as ConfigStepId] : step.title
+    if (seen.has(label)) continue
+    seen.add(label)
+    out.push({ id: step.id, label, href: stepHref(step) })
+  }
+  return out
+}
+
 /** «Lo próximo» de la pantalla «Listo»: hasta tres pendientes, con su link. */
 export function doneNextSteps(steps: readonly SetupStep[], max = 3): SetupStep[] {
   return steps.filter((s) => !s.done && stepHref(s) !== null).slice(0, Math.max(0, max))

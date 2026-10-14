@@ -28,9 +28,8 @@ import {
 import { decodePageToken } from '@/lib/accounting/queries/shared'
 import { formatIsoDay, todayInCordoba } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import { BookPage, WideBookHint } from '../_components/book-page'
+import { BookPage, PERIOD_ROW, WideBookHint } from '../_components/book-page'
 import { BalanceSeal, BookTotals, TotalPending } from '../_components/book-totals'
-import { ExportButton } from '../_components/export-button'
 import { KeysetPagination } from '../_components/keyset-pagination'
 import { RangePicker } from '../_components/period-picker'
 import { PeriodError, QueryErrorBlock } from '../_components/report-error'
@@ -103,12 +102,13 @@ export default async function DiarioPage({
       backHref={bookHref(`${base}/libros`, shown.month ? { mes: shown.month } : {})}
       title="Libro diario"
       description={description}
-      actions={<ExportButton href={exportLink} fileName={fileName} />}
+      exports={[{ href: exportLink, fileName }]}
       booksPath={`${base}/libros`}
       book="diario"
       period={shown}
       toolbar={
         <RangePicker
+          className={PERIOD_ROW}
           range={shown}
           today={today}
           fiscalYear={ctx.fiscalYear}

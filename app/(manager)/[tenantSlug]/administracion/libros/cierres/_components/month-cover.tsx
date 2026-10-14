@@ -72,9 +72,11 @@ function CoverPaper({ data, className }: { data: MonthCoverData; className?: str
       </TicketHeader>
       <TicketRule />
       {data.soldCents !== null ? (
+        // Solo los cierres del día: «El IVA del mes» suma además las facturas cargadas aparte, y
+        // sin esta aclaración un socio veía dos «vendido» distintos para el mismo mes.
         <TicketRow
-          label="Vendido"
-          hint="según los cierres del día"
+          label="Vendido en los cierres del día"
+          hint="sin las facturas cargadas aparte"
           value={formatCentsShort(data.soldCents)}
         />
       ) : (

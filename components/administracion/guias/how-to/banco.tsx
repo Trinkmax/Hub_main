@@ -21,7 +21,7 @@ export function HowToBanco({
 }) {
   return (
     <HowToShell
-      subtitle="Los movimientos de la cuenta del banco, para cargar gastos bancarios y transferencias."
+      subtitle="Los movimientos de la cuenta del banco, para cargar los gastos del banco y las transferencias."
       defaultOpen={defaultOpen}
       bare={bare}
       className={className}

@@ -44,10 +44,19 @@ import {
 import { daysBetween, formatDayMonth, formatIsoDay, todayInCordoba } from '@/lib/dates'
 import { SAME_AXIS } from '../_components/cash-move-panel'
 import { activityFromMovement, groupByDay, movementFromTreasuryRow } from '../_lib/activity'
-import { dayBuckets, type MoveFrame, moveTitle, OPENING_DAY_NOTE } from '../_lib/move-view'
+import {
+  dayBuckets,
+  type MoveFrame,
+  moveTitle,
+  OPENING_DAY_NOTE,
+  OPENING_NOTE,
+  restoreOpeningDay,
+} from '../_lib/move-view'
 import {
   type CajaPeriod,
   cajaHero,
+  type OpeningMoves,
+  openingMoves,
   periodName,
   treasuryCountStatus,
   treasuryMoney,
@@ -152,6 +161,10 @@ export default async function CajaPage({
     }
   })
   const firstPage = after === null
+  // Lo que había al arrancar no es plata que entró: la tarjeta lo dice aparte y el dibujo lo
+  // descuenta. Los saldos iniciales son lo primero del período, así que están en la primera
+  // página; en las siguientes no se sabe, y queda todo como venía.
+  const opening = firstPage ? openingMoves(lines) : null
   // El mes en curso termina después de hoy: si no hay nada cargado con fecha
   // posterior (las filas vienen en orden y esta es la última página), el saldo
   // del cierre es el de hoy. «Saldo al 31/10» un 7 de octubre parece una proyección.
@@ -206,6 +219,10 @@ export default async function CajaPage({
     .map((m) => m.name)
 
   const money = balance ? treasuryMoney(treasury.kind, balance.balanceCents) : null
+  // Faltan los saldos iniciales y esta caja nunca se movió: su «$ 0» no es un dato (como en la
+  // billetera). Arriba se dice y el botón de la pantalla es «Cargar lo que había».
+  const openingUnknown =
+    settings?.openingStatus === 'pending' && !everMoved && treasury.active && balance !== null
 
   return (
     <AdmPage width="comfortable">
@@ -238,6 +255,7 @@ export default async function CajaPage({
                 closingCents: data.closingCents,
                 closingDay,
                 today,
+                opening,
               })
             : null
         }
@@ -259,6 +277,7 @@ export default async function CajaPage({
           { today, since },
         )}
         pendingCents={pendingCents}
+        opening={openingUnknown ? { href: `${base}/configurar` } : null}
         base={base}
         canWrite={canWrite}
       />
@@ -287,6 +306,7 @@ export default async function CajaPage({
               to={chartTo}
               today={today}
               booksStartDate={since}
+              opening={opening}
               base={base}
             />
           </Suspense>
@@ -352,11 +372,17 @@ export default async function CajaPage({
                       treasury={{ id: treasury.id, name: treasury.name, kind: treasury.kind }}
                       everMoved={everMoved}
                       lastMovementDate={balance?.lastMovementDate ?? null}
-                      periodLabel={range.label}
+                      period={{
+                        kind: range.kind,
+                        month: range.month,
+                        from: range.from,
+                        to: range.to,
+                      }}
                       methods={methodNames}
                       openingPending={settings?.openingStatus === 'pending'}
                       base={base}
-                      canWrite={canWrite}
+                      // «Cargar lo que había» ya es el botón de arriba: acá no se repite.
+                      canWrite={canWrite && !openingUnknown}
                     />
                   }
                 />
@@ -440,6 +466,7 @@ async function HowItMoved({
   to,
   today,
   booksStartDate,
+  opening,
   base,
 }: {
   report: Promise<QueryOutcome<CashDailyReport>>
@@ -449,6 +476,8 @@ async function HowItMoved({
   to: string
   today: string
   booksStartDate: string | null
+  /** Lo que había al arrancar, si cae en este período: no se dibuja como plata que entró. */
+  opening: OpeningMoves | null
   base: string
 }) {
   const outcome = await report
@@ -477,12 +506,22 @@ async function HowItMoved({
     href: hrefWith(`${base}/cajas/${treasury.id}`, { desde: p.date, hasta: p.date }),
   }))
   const days = daysBetween(range.from, to) + 1
-  const daily = days <= DAILY_BARS_MAX ? dayBuckets(series, { booksStartDate }) : null
-  const weekly =
+  const daily = days <= DAILY_BARS_MAX ? dayBuckets(series, { booksStartDate, opening }) : null
+  const weeks =
     daily === null && days <= WEEKLY_BARS_MAX
       ? weekBuckets(account.days, { from: range.from, to, booksStartDate })
       : null
-  const note = daily?.note ?? (weekly?.some((w) => w.openingSkipped) ? OPENING_DAY_NOTE : null)
+  // La semana en que arrancan los libros recupera lo demás de ese día (ver `restoreOpeningDay`).
+  const weekly = weeks
+    ? restoreOpeningDay(
+        weeks,
+        account.days.find((d) => d.day === booksStartDate),
+        opening,
+      )
+    : null
+  const note =
+    daily?.note ??
+    (weekly?.some((w) => w.openingSkipped) ? (opening ? OPENING_NOTE : OPENING_DAY_NOTE) : null)
   const inLabel = card ? 'Pagos' : 'Entró'
   const outLabel = card ? 'Consumos' : 'Salió'
   const todayIndex = endsToday ? points.length - 1 : null
@@ -507,7 +546,9 @@ async function HowItMoved({
               />
             </div>
             {daily || weekly ? (
-              <div className="space-y-1">
+              // La leyenda, a todo el ancho del dibujo (como en la portada): los importes
+              // terminan donde terminan las barras, no a media tarjeta.
+              <div className="space-y-1 [&_table]:max-w-none">
                 <p className="text-xs font-medium text-muted-foreground">
                   {card ? 'Los pagos y los consumos' : 'Lo que entró y lo que salió'}{' '}
                   {daily ? 'cada día' : 'cada semana'}
@@ -520,6 +561,11 @@ async function HowItMoved({
                 />
               </div>
             ) : null}
+            {/* Lo que habla del dibujo va con el dibujo: en «Ver como tabla» no se ve. */}
+            <div className="space-y-0.5 text-xs leading-snug text-muted-foreground">
+              {note ? <p>{note}</p> : null}
+              <p>Tocá un día del dibujo para ver qué pasó ese día.</p>
+            </div>
           </div>
         }
         table={
@@ -530,13 +576,7 @@ async function HowItMoved({
             caption={`${labels.balance} de ${treasury.name} al cierre de cada día, ${range.label}`}
           />
         }
-        footer={
-          <>
-            {card ? <p>Es una deuda: sube con los consumos y baja con los pagos.</p> : null}
-            {note ? <p>{note}</p> : null}
-            <p>Tocá un día del dibujo para ver qué pasó ese día.</p>
-          </>
-        }
+        footer={card ? <p>Es una deuda: sube con los consumos y baja con los pagos.</p> : undefined}
       />
     </Panel>
   )

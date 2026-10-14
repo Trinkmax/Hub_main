@@ -17,7 +17,7 @@ import {
   settleQuery,
 } from '@/lib/accounting/queries'
 import { listDocumentAttachments } from '@/lib/accounting/queries/attachments'
-import { getDocumentOrigin } from '@/lib/accounting/queries/document-origin'
+import { getDocumentOrigin, getLinkedDocuments } from '@/lib/accounting/queries/document-origin'
 import { loadFirstOpenDate } from '@/lib/accounting/server/document-context'
 import { getArcaVoucherCard } from '@/lib/arca/emit-queries'
 import { maxIsoDay, todayInCordoba } from '@/lib/dates'
@@ -53,8 +53,14 @@ import { FixBlock } from './_components/fix-block'
  * con lo que pasó con la plata y el botón del momento, y debajo lo que el
  * papel tiene unido (o le falta), cómo se corrige y cómo queda en los libros.
  *
- * En el celular va en ese mismo orden, en una columna: qué pasó con la plata →
- * el papel → con qué está unido → ¿hay algo mal? → los libros.
+ * Sin lugar para dos columnas va en ese mismo orden, en una: qué pasó con la
+ * plata → el papel → con qué está unido → ¿hay algo mal? → los libros. La
+ * excepción es un cierre con plata por anotar: ahí el mapa (que tiene los
+ * botones) va antes que el papel, que no le pide nada a nadie.
+ *
+ * Una o dos columnas lo decide el ancho que le queda a la ficha (`@container`),
+ * no el de la ventana: con el menú lateral abierto, una notebook de 13" o una
+ * tableta acostada dejan menos lugar del que su ventana promete.
  *
  * Los textos salen de `_lib/document-story.ts` (puro, con tests); acá se leen
  * los datos y se arma la pantalla. Solo la lectura del comprobante puede tirar
@@ -226,23 +232,38 @@ export default async function ComprobantePage({
     doc.accountingDate.slice(0, 7) === today.slice(0, 7)
   const hasTreasury = doc.lines.some((line) => line.treasuryAccountId !== null)
 
+  // Un cobro o un conteo cubren ventas de varios días: para nombrar cada cierre por su fecha
+  // («Cierre del mar 01/09») y no por su número interno.
+  const linkedIds =
+    doc.kind === 'collection'
+      ? [...new Set(doc.allocations.flatMap((a) => (a.otherDocumentId ? [a.otherDocumentId] : [])))]
+      : []
+
   // Todo lo demás se pide junto y ninguna lectura tira la pantalla.
-  const [attachments, arcaOutcome, recurringOutcome, candidatesOutcome, treasuries, origin] =
-    await Promise.all([
-      // La foto o el PDF del comprobante.
-      settleQuery(listDocumentAttachments(tenantId, doc.id)),
-      // ¿Se emitió con ARCA desde la plataforma? Una factura que ya está en ARCA (producción)
-      // no se anula desde los libros: se corrige con una nota de crédito emitida con ARCA.
-      ARCA_KINDS.has(doc.kind) ? settleQuery(getArcaVoucherCard(tenantId, doc.id)) : null,
-      doc.recurringExpenseId
-        ? settleQuery(getRecurringExpense(tenantId, doc.recurringExpenseId))
-        : null,
-      askRecurring ? settleQuery(listRecurringExpenses(tenantId, { today })) : null,
-      // Para saber si una caja es la tarjeta de la empresa.
-      hasTreasury ? settleQuery(listTreasuryAccounts(tenantId, { includeInactive: true })) : null,
-      // ¿Vino de un archivo importado?
-      settleQuery(getDocumentOrigin(tenantId, doc.id)),
-    ])
+  const [
+    attachments,
+    arcaOutcome,
+    recurringOutcome,
+    candidatesOutcome,
+    treasuries,
+    origin,
+    linked,
+  ] = await Promise.all([
+    // La foto o el PDF del comprobante.
+    settleQuery(listDocumentAttachments(tenantId, doc.id)),
+    // ¿Se emitió con ARCA desde la plataforma? Una factura que ya está en ARCA (producción)
+    // no se anula desde los libros: se corrige con una nota de crédito emitida con ARCA.
+    ARCA_KINDS.has(doc.kind) ? settleQuery(getArcaVoucherCard(tenantId, doc.id)) : null,
+    doc.recurringExpenseId
+      ? settleQuery(getRecurringExpense(tenantId, doc.recurringExpenseId))
+      : null,
+    askRecurring ? settleQuery(listRecurringExpenses(tenantId, { today })) : null,
+    // Para saber si una caja es la tarjeta de la empresa.
+    hasTreasury ? settleQuery(listTreasuryAccounts(tenantId, { includeInactive: true })) : null,
+    // ¿Vino de un archivo importado?
+    settleQuery(getDocumentOrigin(tenantId, doc.id)),
+    linkedIds.length > 0 ? settleQuery(getLinkedDocuments(tenantId, linkedIds)) : null,
+  ])
 
   const arcaCard = arcaOutcome?.ok ? arcaOutcome.data : null
   const arcaEmitted =
@@ -301,18 +322,29 @@ export default async function ComprobantePage({
             : arcaOutcome.data.cae !== null
               ? 'linked'
               : 'ask',
+    linked: linked?.ok ? linked.data : null,
   }
 
   const heading = documentHeading(doc)
   const badge = documentBadge(doc, today)
   const hero = documentHero(doc, ctx)
   const nodes = documentLinks(doc, ctx)
+  // Un cierre con plata por anotar: quien entra viene a tocar «Anotar que llegó».
+  const mapFirst = nodes.some(
+    (node) => node.id === 'en-camino' && node.rows.some((row) => row.action !== null),
+  )
 
   return (
     <AdmPage width="comfortable">
       <AdmHeader
         back={backLinkFor(doc.kind, base, doc.accountingDate)}
-        title={<VoucherText text={heading.title} />}
+        // En el celular un nombre muy largo se corta a tres renglones, para que el número no
+        // se vaya de la primera pantalla: entero está en el papel.
+        title={
+          <span className="max-sm:line-clamp-3">
+            <VoucherText text={heading.title} />
+          </span>
+        }
         description={<HeadingLine parts={heading.parts} tenantSlug={tenantSlug} base={base} />}
         badge={
           <>
@@ -322,66 +354,96 @@ export default async function ComprobantePage({
         }
       />
 
-      {/* La grilla del cierre del día: el papel siempre a la derecha, pegado. En el celular,
-          una columna en el orden del DOM. */}
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:grid-rows-[auto_1fr] lg:items-start">
-        <div className="min-w-0 lg:col-start-1 lg:row-start-1">
-          <DocumentHero
-            hero={hero}
-            base={base}
-            arcaPending={
-              canWrite && Boolean(arcaCard && (arcaCard.canReconcile || arcaCard.canPost))
-            }
-          />
-        </div>
-
-        <aside className="min-w-0 lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1">
-          {/* Si la pantalla es baja, el papel se desliza adentro de su columna. El margen
-              negativo deja lugar a su sombra, que el recorte del scroll se comería. */}
-          <div className="lg:-mx-3 lg:max-h-[calc(100dvh-6rem)] lg:overflow-y-auto lg:px-3 lg:pb-4 lg:[scrollbar-width:thin]">
-            <DocumentTicket doc={doc} ctx={ctx} />
+      {/* Con lugar (56rem de ficha), dos columnas: el papel a la derecha, pegado. Sin lugar,
+          una columna en el orden del DOM (o con el mapa antes del papel, si `mapFirst`). */}
+      <div className="@container">
+        <div className="grid gap-6 @4xl:grid-cols-[minmax(0,1fr)_360px] @4xl:grid-rows-[auto_auto_1fr] @4xl:items-start">
+          <div className={cn('min-w-0 @4xl:col-start-1 @4xl:row-start-1', mapFirst && 'order-1')}>
+            <DocumentHero
+              hero={hero}
+              base={base}
+              arcaPending={
+                canWrite && Boolean(arcaCard && (arcaCard.canReconcile || arcaCard.canPost))
+              }
+            />
           </div>
-        </aside>
 
-        <div className="min-w-0 space-y-6 lg:col-start-1 lg:row-start-2">
-          <DocumentLinks
-            tenantSlug={tenantSlug}
-            base={base}
-            documentId={doc.id}
-            title={linksTitle(nodes, doc, today)}
-            nodes={nodes}
-            canWrite={canWrite}
-            attachments={attachments}
-            arcaOutcome={arcaOutcome}
-          />
-
-          <FixBlock
-            tenantSlug={tenantSlug}
-            base={base}
-            doc={doc}
-            canWrite={canWrite}
-            actions={actions}
-            arcaEmitted={arcaEmitted}
-            arcaCreditNoteHref={arcaCreditNoteHref}
-            arcaSibling={canWrite ? arcaSibling : null}
-            siblings={siblings}
-            appliedCents={appliedCents}
-            today={today}
-            minDate={maxIsoDay(firstOpenDate ?? today, doc.accountingDate)}
-            ivaMode={settings?.ok && settings.data ? settings.data.closedPeriodVoidIvaMode : null}
-            extraNotes={voidNotes(doc, ctx)}
-          />
-
-          {doc.entry ? (
-            // Plegado para quien carga; abierto para la contadora, que viene a esto.
-            <div id="libros" className="scroll-mt-28">
-              <EntryPreview
-                entries={[entryData(doc.entry)]}
-                label="Ver cómo queda en los libros"
-                defaultOpen={!canWrite}
-              />
+          <aside
+            className={cn(
+              'min-w-0 @4xl:sticky @4xl:top-20 @4xl:col-start-2 @4xl:row-span-3 @4xl:row-start-1',
+              mapFirst && 'order-3',
+            )}
+          >
+            {/* Si la pantalla es baja, el papel se desliza adentro de su columna. El margen
+                negativo deja lugar a su sombra, que el recorte del scroll se comería. */}
+            <div className="@4xl:-mx-3 @4xl:max-h-[calc(100dvh-6rem)] @4xl:overflow-y-auto @4xl:px-3 @4xl:pb-4 @4xl:[scrollbar-width:thin]">
+              <DocumentTicket doc={doc} ctx={ctx} />
             </div>
-          ) : null}
+          </aside>
+
+          <div
+            className={cn(
+              'min-w-0 empty:hidden @4xl:col-start-1 @4xl:row-start-2',
+              mapFirst && 'order-2',
+            )}
+          >
+            <DocumentLinks
+              tenantSlug={tenantSlug}
+              base={base}
+              documentId={doc.id}
+              title={linksTitle(nodes, doc, today)}
+              nodes={nodes}
+              canWrite={canWrite}
+              attachments={attachments}
+              arcaOutcome={arcaOutcome}
+            />
+          </div>
+
+          <div
+            className={cn(
+              'min-w-0 space-y-6 empty:hidden @4xl:col-start-1 @4xl:row-start-3',
+              mapFirst && 'order-4',
+            )}
+          >
+            <FixBlock
+              tenantSlug={tenantSlug}
+              base={base}
+              doc={doc}
+              canWrite={canWrite}
+              actions={actions}
+              arcaEmitted={arcaEmitted}
+              arcaCreditNoteHref={arcaCreditNoteHref}
+              arcaSibling={canWrite ? arcaSibling : null}
+              siblings={siblings}
+              appliedCents={appliedCents}
+              today={today}
+              minDate={maxIsoDay(firstOpenDate ?? today, doc.accountingDate)}
+              ivaMode={settings?.ok && settings.data ? settings.data.closedPeriodVoidIvaMode : null}
+              extraNotes={voidNotes(doc, ctx)}
+            />
+
+            {doc.entry ? (
+              <div id="libros" className="scroll-mt-28">
+                {/* La contadora viene a esto: le llega abierto, con su título y sin botón de
+                    plegar (abierto, ese botón decía solo «Ocultar» y la tabla quedaba sin nombre).
+                    Para quien carga queda plegado, y el título lo dice el propio botón. */}
+                <h2
+                  className={
+                    canWrite
+                      ? 'sr-only'
+                      : 'mb-3 font-serif text-lg font-semibold leading-snug tracking-tight'
+                  }
+                >
+                  Cómo queda en los libros
+                </h2>
+                <EntryPreview
+                  entries={[entryData(doc.entry)]}
+                  label="Ver cómo queda en los libros"
+                  alwaysOpen={!canWrite}
+                />
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
     </AdmPage>

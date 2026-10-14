@@ -77,7 +77,7 @@ function html(node: ReactElement): string {
 
 /** Lo que una persona puede apretar para CARGAR algo: los rótulos de carga de toda el área. */
 const WRITE_LABELS = [
-  'Cargar lo que hay',
+  'Cargar lo que había',
   'Cargar lo que había',
   'Contar la caja',
   '>Contar<',
@@ -208,10 +208,13 @@ describe('la billetera de un bar recién arrancado (HUB)', () => {
     expect(markup).toContain('queda en camino hasta que decís «ya me entró»')
   })
 
-  it('tiene UN solo botón: «Cargar lo que hay»', () => {
+  it('tiene UN solo botón: «Cargar lo que había»', () => {
     const markup = empty(true)
-    expect(markup.match(/Cargar lo que hay/g)).toHaveLength(1)
+    expect(markup.match(/Cargar lo que había/g)).toHaveLength(1)
     expect(markup).toContain(`href="${BASE}/configurar"`)
+    // Las tarjetas con su «¿cuánto hay?» se tocan y llevan al mismo lugar, pero no son otra
+    // parada de Tab: el botón es uno solo.
+    expect(markup.match(/tabindex="-1"/g)).toHaveLength(2)
     // Ningún botón de hoja: contar antes de decir cuánto hay es el consejo equivocado.
     expect(markup).not.toContain('<button')
     expect(markup).not.toContain('Contar')
@@ -413,6 +416,20 @@ describe('la ficha de una caja', () => {
       />,
     )
 
+  it('sin saldos iniciales y sin movimientos: no dice «$ 0» y el botón es cargar lo que hay', () => {
+    const markup = hero({ opening: { href: `${BASE}/configurar` } })
+    expect(markup).toContain('Todavía no sé cuánto hay')
+    expect(markup).toContain(`href="${BASE}/configurar"`)
+    expect(markup).toContain('Cargar lo que había')
+    // Contarla antes anotaría toda la plata como sobrante: ese botón no está.
+    expect(markup).not.toContain('Contar la caja')
+    expect(markup).not.toMatch(/\$\s?0</)
+    ui.readOnly = true
+    const reader = hero({ opening: { href: `${BASE}/configurar` }, canWrite: false })
+    expect(reader).toContain('Todavía no sé cuánto hay')
+    expectNoWriteControls(reader)
+  })
+
   it('el número con su oración y su cuenta, y EL botón para contarla', () => {
     const markup = hero()
     expect(markup).toContain('Hay hoy')
@@ -523,8 +540,12 @@ describe('la ficha de una caja', () => {
     expect(markup.indexOf('Martes 13/10 · hoy')).toBeLessThan(markup.indexOf('Lunes 12/10 · ayer'))
     expect(markup).toContain('Hielo')
     expect(markup).toContain('Ventas del lunes 12/10')
-    expect(markup).toContain('↓ − $ 12.000')
-    expect(markup).toContain('↑ + $ 120.013')
+    // En una lista angosta (el celular), el título corto: los dos están y el ancho elige.
+    expect(markup).toContain('Ventas del lun 12/10')
+    // La flecha dice la dirección; sin signo al lado (decían lo mismo).
+    expect(markup).toContain('↓ $ 12.000')
+    expect(markup).toContain('↑ $ 120.013')
+    expect(markup).not.toMatch(/[↑↓] [+−]/)
     expect(markup).toContain('Al cierre del día quedó en $ 394.757')
     expect(markup).toContain(`href="${BASE}/comprobantes/d2"`)
     // El filtro, con «Todo» apretado.
@@ -544,7 +565,7 @@ describe('la ficha de una caja', () => {
           treasury={{ id: 'caja', name: 'Caja', kind: 'cash' }}
           everMoved={false}
           lastMovementDate={null}
-          periodLabel="Octubre 2026"
+          period={{ kind: 'month', month: '2026-10', from: '2026-10-01', to: '2026-10-31' }}
           methods={['Efectivo']}
           openingPending={false}
           base={BASE}
@@ -563,7 +584,7 @@ describe('la ficha de una caja', () => {
       // Con los saldos iniciales pendientes, el paso de todas es decir cuánto hay.
       const pending = empty({ openingPending: true })
       expect(pending).toContain(`href="${BASE}/configurar"`)
-      expect(pending).toContain('Cargar lo que hay')
+      expect(pending).toContain('Cargar lo que había')
       expect(pending).not.toContain('Cargar el cierre')
       // A un banco la plata llega desde otra caja.
       const moved = empty({ treasury: bank, methods: [] })
@@ -587,12 +608,33 @@ describe('la ficha de una caja', () => {
     it('con historia pero nada en el período, lleva al último mes con movimientos (también a la contadora)', () => {
       ui.readOnly = true
       const markup = empty({ everMoved: true, lastMovementDate: '2026-09-28', canWrite: false })
-      expect(markup).toContain('No hubo movimientos en octubre 2026')
+      expect(markup).toContain('En octubre no hubo movimientos')
       expect(markup).toContain(`href="${BASE}/cajas/caja?mes=2026-09"`)
       expect(markup).toContain('Ir a septiembre, el último mes con movimientos')
       expectNoWriteControls(markup)
       // Sin saber cuándo fue el último, no inventa un mes.
       expect(empty({ everMoved: true })).toContain('Probá con otro período.')
+    })
+
+    it('unos días sin movimientos adentro del último mes que sí tuvo: ofrece ver el mes entero', () => {
+      const markup = empty({
+        everMoved: true,
+        lastMovementDate: '2026-10-06',
+        period: { kind: 'range', month: null, from: '2026-10-09', to: '2026-10-11' },
+      })
+      expect(markup).toContain('Del 09/10 al 11/10 no hubo movimientos')
+      expect(markup).toContain(`href="${BASE}/cajas/caja?mes=2026-10"`)
+      expect(markup).toContain('Ver todo octubre')
+      // No manda «a octubre» a quien ya está mirando octubre.
+      expect(markup).not.toContain('el último mes con movimientos')
+      // Un rango que cruza a otro mes sí lleva al último con movimientos.
+      expect(
+        empty({
+          everMoved: true,
+          lastMovementDate: '2026-09-28',
+          period: { kind: 'range', month: null, from: '2026-10-09', to: '2026-10-11' },
+        }),
+      ).toContain('Ir a septiembre, el último mes con movimientos')
     })
   })
 
@@ -860,7 +902,11 @@ describe('«Las próximas 4 semanas»', () => {
     expect(markup).toContain('No cuenta lo que vas a vender.')
     // Lo dice la oración, no una píldora que le saque lugar al título en el celular.
     expect(markup).toContain('Estimado. Cuenta la plata que hay hoy')
-    expect(markup).toContain('Esta semana (hasta el dom 18/10)')
+    // El nombre corto deja «queda $ X» siempre a la derecha; hasta cuándo va, en gris debajo.
+    expect(markup).toContain('>Esta semana<')
+    expect(markup).toContain('hasta el dom 18/10')
+    // El lado que es cero no se nombra.
+    expect(markup).not.toMatch(/entra \$\s?0</)
     expect(markup).toContain('faltarían $ 310.000')
     expect(markup).toContain('queda </span><span class="font-medium">$ 600.000')
     // Ámbar, no rojo: es una estimación.
@@ -876,6 +922,18 @@ describe('«Las próximas 4 semanas»', () => {
     expect(markup).toContain(`href="${BASE}/configurar"`)
     expect(markup).not.toContain('faltarían')
     expect(markup).not.toContain('600.000')
+    // Lo que hay que pagar sí se sabe: se dice (HUB arrancó con dos compras vencidas).
+    expect(markup).toContain('Lo que ya se sabe:')
+    expect(markup).toContain('$ 1.010.000')
+    expect(markup).toContain('Los gastos fijos sin monto no entran en esta cuenta.')
+  })
+
+  it('sin saber cuánta plata hay y sin nada que pagar, no inventa «$ 0 para pagar»', () => {
+    const markup = block({
+      known: false,
+      projection: { ok: true, data: weeks.map((w) => ({ ...w, outCents: 0 })) },
+    })
+    expect(markup).not.toContain('Lo que ya se sabe')
   })
 
   it('con todo en cero, dice que no vence nada (no cuatro filas de «$ 0»)', () => {

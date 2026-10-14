@@ -73,9 +73,18 @@ export function ArcaHomologacion({
         <span className="min-w-0 flex-1 basis-40 text-pretty sm:flex-none sm:basis-auto">
           Pruebas (homologación) · para quien programa
         </span>
-        <StatusPill tone={statusTone}>{active ? active.statusLabel : 'Sin empezar'}</StatusPill>
+        {/* Plegado va en gris y dice de qué habla («Pruebas: …»): es el ambiente de pruebas, que
+            el dueño no usa. El rojo es de la conexión de verdad; acá aparece recién al abrir. */}
+        <StatusPill tone="muted">
+          Pruebas: {active ? active.statusLabel.toLowerCase() : 'sin empezar'}
+        </StatusPill>
       </summary>
       <div className="mt-3 space-y-6 rounded-2xl bg-secondary/50 p-4 text-sm sm:p-5">
+        {active && statusTone !== 'muted' ? (
+          <p>
+            <StatusPill tone={statusTone}>{active.statusLabel}</StatusPill>
+          </p>
+        ) : null}
         <p className="text-muted-foreground text-pretty">
           Homologación es el ARCA de pruebas: lo que se emite ahí no vale. Sirve para probar la
           conexión y las facturas antes de producción, con un certificado de WSASS (el autoservicio

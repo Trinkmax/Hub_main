@@ -97,7 +97,15 @@ export function PapersCompare() {
       id={PAPERS_ANCHOR.papers}
       className={ANCHORED}
       title="Los cuatro quedan en tus números. Lo que cambia es el IVA."
-      description="Mirá el papel que te dieron y bajá por su columna."
+      description={
+        // En el celular no hay columnas: los papeles van uno debajo del otro.
+        <>
+          <span className="max-md:hidden">Mirá el papel que te dieron y bajá por su columna.</span>
+          <span className="md:hidden">
+            Buscá el papel que te dieron: abajo están sus respuestas.
+          </span>
+        </>
+      }
     >
       <div className="hidden md:block">
         <table className="w-full table-fixed border-separate border-spacing-0 text-left">

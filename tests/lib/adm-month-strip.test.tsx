@@ -84,16 +84,17 @@ describe('MonthStrip: cada estado con su palabra y su forma', () => {
 
   it('falta cerrar: contorno punteado ámbar y «Falta cerrar» en el ámbar de texto', () => {
     expect(text(sep ?? '')).toContain('Falta cerrar')
-    expect(sep).toContain('border-dashed')
-    expect(sep).toContain('border-warning')
+    // Septiembre es además el elegido: su borde pasa a tinta y lleno (la marca del elegido).
+    expect(sep).toContain('border-foreground')
+    expect(sep).toContain('inset-ring-1')
     expect(sep).toContain('text-warning-text')
     expect(sep).toContain('lucide-lock-open')
   })
 
-  it('en curso: anillo en tinta y «En curso»', () => {
+  it('en curso: «En curso» con borde en tinta suave, sin el anillo del elegido', () => {
     expect(text(oct ?? '')).toContain('En curso')
-    expect(oct).toContain('inset-ring-1')
-    expect(oct).toContain('border-foreground/80')
+    expect(oct).toContain('border-foreground/40')
+    expect(oct).not.toContain('inset-ring-1')
   })
 
   it('abierto: hueco y «Abierto» (el período de ajustes de Ajustes › Ejercicio)', () => {

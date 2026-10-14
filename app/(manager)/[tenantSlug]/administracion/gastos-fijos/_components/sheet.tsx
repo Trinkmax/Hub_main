@@ -1,6 +1,6 @@
 import { Plus, X } from 'lucide-react'
 import Link from 'next/link'
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import {
   comprasHref,
   gastosFijosFillHref,
@@ -12,6 +12,7 @@ import { LedgerRail, type LedgerTone, PillLink } from '@/components/administraci
 import {
   addMonthsToYearMonth,
   MONTH_NAMES_SHORT,
+  monthOf,
   WEEKDAY_NAMES_SHORT,
   weekdayOf,
 } from '@/lib/dates'
@@ -26,7 +27,9 @@ import {
   type SheetGroup,
   type SheetItem,
   type SheetQuery,
+  sheetCarry,
   sheetFilterPills,
+  shownTotals,
 } from '../_lib/planilla-words'
 import { SheetHead } from './sheet-head'
 import { SheetColumnLabels, SheetFold, SheetRow } from './sheet-row'
@@ -64,20 +67,49 @@ function groupTone(items: readonly SheetItem[]): LedgerTone {
   return 'muted'
 }
 
-/** «SÁB 10 OCT · 2 gastos · $ 880.000»: el margen del día, dicho en una línea. */
-function groupLine(group: SheetGroup, shown: readonly SheetItem[]): string {
+/**
+ * «SÁB 10 OCT», «2 gastos», «$ 880.000», «falta $ 10.000»: el margen del día en
+ * angosto, en partes que bajan de renglón ENTERAS (un «falta» separado de su
+ * importe se lee como un número suelto).
+ *
+ * Suma lo que se ve: con un filtro puesto, los renglones que quedaron. Con un
+ * solo gasto alcanza con el día: el renglón de abajo ya dice cuánto es.
+ */
+function groupParts(group: SheetGroup, shown: readonly SheetItem[]): string[] {
   const day = group.day
   const parts = [
     `${WEEKDAY_NAMES_SHORT[weekdayOf(day)] ?? ''} ${Number(day.slice(8, 10))} ${MONTH_NAMES_SHORT[Number(day.slice(5, 7)) - 1] ?? ''}`,
-    shown.length === 1 ? '1 gasto' : `${shown.length} gastos`,
   ]
-  if (group.dueCents > 0) parts.push(formatCentsShort(group.dueCents))
-  if (group.remainingCents > 0 && group.remainingCents < group.dueCents) {
-    parts.push(`falta ${formatCentsShort(group.remainingCents)}`)
+  if (shown.length > 1) {
+    const due = shown.reduce(
+      (sum, { line }) => sum + (line.remainingCents !== null ? (line.dueCents ?? 0) : 0),
+      0,
+    )
+    const remaining = shown.reduce((sum, { line }) => sum + (line.remainingCents ?? 0), 0)
+    parts.push(`${shown.length} gastos`)
+    if (due > 0) parts.push(formatCentsShort(due))
+    if (remaining > 0 && remaining < due) parts.push(`falta ${formatCentsShort(remaining)}`)
   }
   if (group.place === 'before') parts.push('de antes')
   if (group.place === 'ahead') parts.push('adelantado')
-  return parts.join(' · ')
+  return parts
+}
+
+/**
+ * El rótulo de un tramo de la hoja ancha, UNA vez donde empieza: «Quedó de
+ * antes» antes del primer día arrastrado y «Vence en noviembre» donde arranca
+ * el mes (repetido encima de cada día eran ocho filas con el mismo rótulo).
+ */
+function stretchLabel(
+  place: SheetGroup['place'],
+  previous: SheetGroup['place'] | undefined,
+  mes: string,
+): string | null {
+  if (place === previous) return null
+  if (place === 'before') return 'Quedó de antes'
+  if (place === 'ahead') return 'Pagado por adelantado'
+  // El mes abre la hoja: no hace falta decir de qué mes es.
+  return previous === undefined ? null : `Vence en ${mes}`
 }
 
 export function SheetView({
@@ -130,14 +162,16 @@ export function SheetView({
   const cuotas = [...sheet.items, ...sheet.later, ...sheet.off].some(
     (item) => item.line.installment !== null,
   )
-  const row = (item: SheetItem, payInRow: boolean) => (
+  const row = (item: SheetItem, underDay: boolean) => (
     <SheetRow
       key={item.row.id}
       item={item}
       month={month}
       canWrite={canWrite}
       cuotas={cuotas}
-      payInRow={payInRow}
+      // En los plegados de abajo no hay margen del día ni «Pagar» a la vista.
+      payInRow={underDay}
+      underDay={underDay}
       defaultOpen={item.row.id === openId}
       isMisc={miscAccountId !== null && item.row.accountId === miscAccountId}
     />
@@ -162,6 +196,7 @@ export function SheetView({
           fillHref={gastosFijosFillHref(tenantSlug)}
           miscHref={gastosFijosFillHref(tenantSlug, { ver: 'varios' })}
           nextMonthHref={gastosFijosHref(tenantSlug, { mes: addMonthsToYearMonth(month, 1) })}
+          currentMonthHref={gastosFijosHref(tenantSlug, { mes: monthOf(sheet.today) })}
           filterHref={filterHref}
         />
 
@@ -222,11 +257,25 @@ export function SheetView({
                   <SheetColumnLabels cuotas={cuotas} />
                 </div>
                 <div className="relative border-t border-border/60">
-                  {groups.map(({ group, shown }) => (
-                    <DayGroup key={group.day} group={group} shown={shown} today={sheet.today}>
-                      {shown.map((item) => row(item, true))}
-                    </DayGroup>
-                  ))}
+                  {groups.map(({ group, shown }, index) => {
+                    const stretch = stretchLabel(group.place, groups[index - 1]?.group.place, mes)
+                    return (
+                      <Fragment key={group.day}>
+                        {stretch ? (
+                          // Solo en la hoja ancha: en angosto cada día ya lo dice en su línea.
+                          <p
+                            aria-hidden
+                            className="hidden border-b border-border/60 bg-secondary/40 py-1.5 pr-4 pl-20 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground @[40rem]/ledger:block"
+                          >
+                            {stretch}
+                          </p>
+                        ) : null}
+                        <DayGroup group={group} shown={shown} today={sheet.today}>
+                          {shown.map((item) => row(item, true))}
+                        </DayGroup>
+                      </Fragment>
+                    )
+                  })}
                   {/* La raya del margen: una sola, de arriba abajo, cálida como la de un cuaderno. */}
                   <span
                     aria-hidden
@@ -247,7 +296,7 @@ export function SheetView({
 
         <SheetFoot
           sheet={sheet}
-          shownCount={shownCount}
+          shown={groups.flatMap(({ shown }) => shown)}
           filtering={filtering}
           installmentsLeft={query.ver === 'en-cuotas' ? installmentsLeft : null}
           comprasHref={comprasHref(tenantSlug)}
@@ -343,8 +392,7 @@ function DayGroup({
   const { day } = group
   const isToday = day === today
   const headingId = `dia-${day}-titulo`
-  const line = groupLine(group, shown)
-  const outside = group.place === 'before' ? 'Quedó de antes' : 'Pagado por adelantado'
+  const parts = groupParts(group, shown)
 
   return (
     <section
@@ -352,8 +400,10 @@ function DayGroup({
       aria-labelledby={headingId}
       className="relative flex scroll-mt-32 border-b border-border/60 last:border-b-0"
     >
-      {/* El margen del día (la columna «Vencimiento» de la planilla): pegado arriba mientras dura su grupo. */}
-      <div aria-hidden className="hidden w-16 shrink-0 @[40rem]/ledger:block">
+      {/* El margen del día (la columna «Vencimiento» de la planilla): pegado arriba mientras dura su
+          grupo. En oscuro el margen va un tono arriba de la hoja: debajo de la pestaña, al lado de
+          renglones teñidos, el fondo pelado se veía como un hueco negro. */}
+      <div aria-hidden className="hidden w-16 shrink-0 dark:bg-secondary/40 @[40rem]/ledger:block">
         <div
           className={cn('sticky flex', STICKY_TOP, isToday && 'ring-2 ring-primary/40 ring-inset')}
         >
@@ -365,39 +415,69 @@ function DayGroup({
           />
         </div>
       </div>
-      <div className="min-w-0 flex-1">
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* En angosto, la línea del día (pegada arriba); en la hoja ancha lo dice el margen y el
+            título queda solo para lectores. */}
         <h3
           id={headingId}
           className={cn(
-            'sticky z-[2] border-b border-border/60 bg-card/95 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground backdrop-blur @[28rem]/ledger:px-4',
+            'sticky z-[2] flex flex-wrap gap-x-1.5 border-b border-border/60 bg-card/95 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground backdrop-blur @[28rem]/ledger:px-4 @[40rem]/ledger:sr-only',
             STICKY_TOP,
-            group.place === 'month' && '@[40rem]/ledger:sr-only',
-            group.place !== 'month' &&
-              '@[40rem]/ledger:static @[40rem]/ledger:bg-transparent @[40rem]/ledger:backdrop-blur-none',
           )}
         >
-          <span className="@[40rem]/ledger:hidden">{line}</span>
-          {group.place !== 'month' ? (
-            <span className="hidden @[40rem]/ledger:inline">{outside}</span>
-          ) : null}
+          {parts.map((part, index) => (
+            <span key={part} className="whitespace-nowrap">
+              {part}
+              {index < parts.length - 1 ? ' ·' : null}
+            </span>
+          ))}
         </h3>
-        <ul>{children}</ul>
+        {/* Un día con un solo renglón: el renglón ocupa todo el alto del margen (que mide tres
+            líneas), así su tinte no deja una franja pelada abajo. */}
+        <ul className="flex flex-1 flex-col [&>li:only-child]:flex [&>li:only-child]:flex-1 [&>li:only-child]:flex-col [&>li:only-child]:justify-center">
+          {children}
+        </ul>
       </div>
     </section>
   )
 }
 
-/** La fila de suma de la planilla y, punteada como su renglón vacío, «＋ Agregar un gasto fijo». */
+/** Una cifra de la fila de suma: su rótulo y su importe. La que manda va en Fraunces. */
+function Sum({ label, cents, strong = false }: { label: string; cents: number; strong?: boolean }) {
+  return (
+    <div className="contents sm:flex sm:items-baseline sm:gap-2">
+      <dt className={strong ? 'font-medium' : 'text-muted-foreground'}>{label}</dt>
+      <dd
+        className={cn(
+          'text-right',
+          strong ? 'font-serif text-xl font-semibold leading-none tracking-tight' : 'tabular-nums',
+        )}
+      >
+        <Amount cents={cents} decimals={0} />
+      </dd>
+    </div>
+  )
+}
+
+/**
+ * La fila de suma de la planilla y, punteada como su renglón vacío, «＋ Agregar
+ * un gasto fijo».
+ *
+ * Suma lo que se ve arriba: con un filtro puesto, los renglones que quedaron
+ * (y el total del mes pasa a una línea gris). Mirando el mes que viene, lo que
+ * quedó de antes va con su nombre, nunca como «Total de noviembre».
+ */
 function SheetFoot({
   sheet,
-  shownCount,
+  shown,
   filtering,
   installmentsLeft,
   comprasHref: comprasLink,
   addHref,
 }: {
   sheet: Sheet
-  shownCount: number
+  /** Los renglones que se ven en la hoja (con el filtro puesto). */
+  shown: readonly SheetItem[]
   filtering: boolean
   installmentsLeft: number | null
   comprasHref: string
@@ -406,13 +486,19 @@ function SheetFoot({
   const { progress, items, month } = sheet
   const mes = monthWord(month)
   if (items.length === 0 && addHref === null && progress.priorOpenCents === 0) return null
-  const counted = progress.countedRows > 0
-  const count =
-    filtering && shownCount !== items.length
-      ? `${shownCount} de ${items.length} gastos`
-      : items.length === 1
-        ? '1 gasto'
-        : `${items.length} gastos`
+  const filtered = filtering && shown.length !== items.length
+  const carry = sheetCarry(sheet)
+  const part = shownTotals(shown)
+  const own = carry?.ownTotals ?? null
+  const ownSums = carry?.own.some((item) => item.line.remainingCents !== null) ?? false
+  // Lo que se suma: lo que deja el filtro, lo del mes (si hay algo de antes aparte) o todo.
+  const noAmount = filtered ? part.noAmount : progress.noAmountDue
+  const sums = filtered
+    ? shown.some((item) => item.line.remainingCents !== null)
+    : progress.countedRows > 0
+  const many = items.length === 1 ? '1 gasto' : `${items.length} gastos`
+  const count = filtered ? `${shown.length} de ${many}` : many
+  const none = filtered ? shown.length : items.length
 
   return (
     <div className="border-t border-border/60">
@@ -420,35 +506,44 @@ function SheetFoot({
         <div className="flex flex-col gap-x-6 gap-y-2 px-4 py-3.5 text-sm sm:flex-row sm:flex-wrap sm:items-baseline sm:justify-between sm:px-5">
           <p className="text-muted-foreground">
             <span className="font-medium text-foreground tabular-nums">{count}</span>
-            {!counted
-              ? ` · ${items.length === 1 ? 'no tiene monto todavía' : 'ninguno tiene monto todavía'}`
-              : progress.noAmountDue > 0
-                ? ` · ${progress.noAmountDue} sin monto: no ${progress.noAmountDue === 1 ? 'suma' : 'suman'}`
+            {!sums
+              ? ` · ${none === 1 ? 'no tiene monto todavía' : 'ninguno tiene monto todavía'}`
+              : noAmount > 0
+                ? ` · ${noAmount} sin monto: no ${noAmount === 1 ? 'suma' : 'suman'}`
                 : ''}
           </p>
-          {counted ? (
+          {!sums ? null : filtered ? (
             <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 sm:flex sm:flex-wrap sm:items-baseline sm:gap-x-6">
-              <div className="contents sm:flex sm:items-baseline sm:gap-2">
-                <dt className="text-muted-foreground">Total de {mes}</dt>
-                <dd className="text-right tabular-nums">
-                  <Amount cents={progress.totalCents} decimals={0} />
-                </dd>
-              </div>
-              <div className="contents sm:flex sm:items-baseline sm:gap-2">
-                <dt className="text-muted-foreground">Ya pagaste</dt>
-                <dd className="text-right tabular-nums">
-                  <Amount cents={progress.paidCents} decimals={0} />
-                </dd>
-              </div>
-              <div className="contents sm:flex sm:items-baseline sm:gap-2">
-                <dt className="font-medium">Te falta</dt>
-                <dd className="text-right font-serif text-xl font-semibold leading-none tracking-tight">
-                  <Amount cents={progress.remainingCents} decimals={0} />
-                </dd>
-              </div>
+              <Sum
+                label={shown.length === 1 ? 'Este gasto' : `Estos ${shown.length} suman`}
+                cents={part.totalCents}
+              />
+              {part.paidCents > 0 ? <Sum label="Ya pagaste" cents={part.paidCents} /> : null}
+              <Sum strong label="Te falta" cents={part.remainingCents} />
             </dl>
-          ) : null}
+          ) : carry ? (
+            <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 sm:flex sm:flex-wrap sm:items-baseline sm:gap-x-6">
+              {carry.cents > 0 ? (
+                <Sum strong={!ownSums} label="Quedó de antes" cents={carry.cents} />
+              ) : null}
+              {own && ownSums ? (
+                <Sum strong label={`Te falta de ${mes}`} cents={own.remainingCents} />
+              ) : null}
+            </dl>
+          ) : (
+            <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 sm:flex sm:flex-wrap sm:items-baseline sm:gap-x-6">
+              <Sum label={`Total de ${mes}`} cents={progress.totalCents} />
+              <Sum label="Ya pagaste" cents={progress.paidCents} />
+              <Sum strong label="Te falta" cents={progress.remainingCents} />
+            </dl>
+          )}
         </div>
+      ) : null}
+      {filtered && !carry && progress.countedRows > 0 ? (
+        <p className="border-t border-border/60 px-4 py-2.5 text-xs text-muted-foreground sm:px-5">
+          Todo {mes}: {many}, total <Amount cents={progress.totalCents} decimals={0} />, te falta{' '}
+          <Amount cents={progress.remainingCents} decimals={0} />.
+        </p>
       ) : null}
       {installmentsLeft !== null && installmentsLeft > 0 ? (
         <p className="border-t border-border/60 px-4 py-3 text-sm sm:px-5">

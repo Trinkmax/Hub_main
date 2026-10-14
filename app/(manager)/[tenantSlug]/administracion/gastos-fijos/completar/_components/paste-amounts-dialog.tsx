@@ -67,7 +67,11 @@ export function PasteAmountsDialog({
             placeholder={'Alarma\t45.000\t10/11/2026\nInternet\t35.000\t15/11/2026'}
             aria-describedby={`${uid}-summary`}
             onChange={(event) => setText(event.target.value)}
-            className="font-mono text-base md:text-sm"
+            // Cada renglón de la planilla, en un renglón: si no entra de ancho se desliza, no se
+            // parte en dos (tres filas pegadas parecían cuatro). Sin letra de máquina: las columnas
+            // ya vienen separadas por tabulaciones.
+            wrap="off"
+            className="overflow-x-auto text-base whitespace-pre [tab-size:4] md:text-sm"
           />
           <div id={`${uid}-summary`} aria-live="polite" className="grid gap-1.5 text-sm">
             {empty ? (

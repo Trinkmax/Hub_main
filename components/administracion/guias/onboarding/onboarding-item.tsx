@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowRight, Check, Sparkles, Undo2 } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Check, ChevronDown, Sparkles, Undo2 } from 'lucide-react'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -80,11 +80,19 @@ export function WhereText({ row, base }: { row: OnboardingRow; base: string }) {
  * cargás, dónde (link a la pantalla exacta), cómo (pasos y ejemplo), lo que
  * hace la plataforma sola y la acción. Los que solo pasan afuera se marcan con
  * «Ya lo hice»; el mismo botón pasa a «Desmarcar» (el foco no se pierde).
+ *
+ * Lo que ya está («Listo», «Al día», «Marcado por vos») viene plegado a un
+ * renglón: el tilde, el nombre, su estado y «Ver». Abiertos vienen lo próximo
+ * y lo que falta, que es lo que hay que hacer. Todos son el mismo `<details>`
+ * nativo (anda sin script y el contenido sigue en la página): marcar o
+ * desmarcar no cambia el árbol, así el botón no se desarma bajo el dedo. Lo
+ * que la persona acaba de marcar sigue abierto (`keepOpen`) hasta que recarga.
  */
 export function OnboardingItemRow({
   row,
   n,
   isNext,
+  keepOpen = false,
   base,
   canWrite,
   canMark,
@@ -96,6 +104,8 @@ export function OnboardingItemRow({
   /** El número del paso dentro de su sección. */
   n: number
   isNext: boolean
+  /** Se marcó o desmarcó en esta visita: no se pliega aunque quede hecho. */
+  keepOpen?: boolean
   base: string
   canWrite: boolean
   /** Se pueden guardar marcas (la base ya da el estado de la guía). */
@@ -106,6 +116,74 @@ export function OnboardingItemRow({
 }) {
   const titleId = `${itemAnchor(row.id)}-titulo`
   const statusText = onboardingStatusText(row, isNext)
+  const folded = row.status === 'done' && !isNext && !keepOpen
+
+  return (
+    <li id={itemAnchor(row.id)} className="scroll-mt-24">
+      <details open={!folded} className={cn('group/item', isNext && 'bg-primary/5')}>
+        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 px-4 py-3 outline-none transition-colors duration-(--duration-fast) hover:bg-secondary/30 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-reduce:transition-none group-open/item:items-start group-open/item:pt-5 group-open/item:pb-3 sm:gap-4 sm:px-5 [&::-webkit-details-marker]:hidden">
+          <StepMarker n={n} status={row.status} isNext={isNext} className="group-open/item:mt-px" />
+          {/* El título con su estado: un `<summary>` admite un encabezado adentro. */}
+          <h3
+            id={titleId}
+            className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium leading-snug group-open/item:text-base group-open/item:font-semibold group-open/item:tracking-tight"
+          >
+            <span className="text-pretty">{row.title}</span>
+            {statusText ? (
+              <StatusBadge status={row.status} isNext={isNext}>
+                {statusText}
+              </StatusBadge>
+            ) : null}
+            {row.optional ? <Badge variant="muted">Opcional</Badge> : null}
+          </h3>
+          <span className="shrink-0 text-xs font-medium text-muted-foreground group-open/item:hidden">
+            Ver
+          </span>
+          <ChevronDown
+            aria-hidden="true"
+            className="size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-fast) group-open/item:mt-1 group-open/item:rotate-180 motion-reduce:transition-none"
+          />
+        </summary>
+        <div className="pr-4 pb-5 pl-14 sm:pr-5 sm:pl-16">
+          <ItemBody
+            row={row}
+            isNext={isNext}
+            base={base}
+            canWrite={canWrite}
+            canMark={canMark}
+            onMark={onMark}
+            supplier={supplier}
+            booksStartDate={booksStartDate}
+            titleId={titleId}
+          />
+        </div>
+      </details>
+    </li>
+  )
+}
+
+/** Lo de adentro de un ítem: qué, dónde, por qué falta, cómo, lo que hace sola y los botones. */
+function ItemBody({
+  row,
+  isNext,
+  base,
+  canWrite,
+  canMark,
+  onMark,
+  supplier,
+  booksStartDate,
+  titleId,
+}: {
+  row: OnboardingRow
+  isNext: boolean
+  base: string
+  canWrite: boolean
+  canMark: boolean
+  onMark: (row: OnboardingRow, done: boolean) => void
+  supplier: SupplierMessageData
+  booksStartDate: string | null
+  titleId: string
+}) {
   const minutes = minutesText(row.minutes)
   const markable =
     canWrite && canMark && canMarkManually(row) && (row.status === 'todo' || row.manualDone)
@@ -126,108 +204,86 @@ export function OnboardingItemRow({
       : 'ghost'
 
   return (
-    <li id={itemAnchor(row.id)} className="scroll-mt-24">
-      <article
-        aria-labelledby={titleId}
-        className={cn('flex gap-3 px-4 py-5 sm:gap-4 sm:px-5', isNext && 'bg-primary/5')}
-      >
-        <StepMarker n={n} status={row.status} isNext={isNext} className="mt-px" />
-        <div className="min-w-0 flex-1 space-y-3">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <h3 id={titleId} className="text-base font-semibold leading-snug tracking-tight">
-              {row.title}
-            </h3>
-            {statusText ? (
-              <StatusBadge status={row.status} isNext={isNext}>
-                {statusText}
-              </StatusBadge>
-            ) : null}
-            {row.optional ? <Badge variant="muted">Opcional</Badge> : null}
-          </div>
-
-          <dl className="grid gap-1.5 text-sm">
-            <div className="text-pretty">
-              <dt className="inline font-medium text-foreground">
-                {row.whatLabel ?? 'Qué cargás'}:{' '}
-              </dt>
-              <dd className="inline text-muted-foreground">{row.what}</dd>
-            </div>
-            <div className="text-pretty">
-              <dt className="inline font-medium text-foreground">Dónde: </dt>
-              <dd className="inline">
-                <WhereText row={row} base={base} />
-                {minutes ? (
-                  <span className="text-muted-foreground">
-                    {/* El punto queda pegado a lo anterior (nbsp) y los minutos enteros: si no
-                        entra, «≈ 5 min» baja solo y ningún renglón empieza con «·». */}
-                    {'\u00a0· '}
-                    <span className="whitespace-nowrap">{minutes}</span>
-                  </span>
-                ) : null}
-              </dd>
-            </div>
-          </dl>
-
-          {row.pending ? (
-            <p className="flex items-start gap-1.5 text-sm text-warning-text text-pretty">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              {row.pending}
-            </p>
-          ) : null}
-
-          {row.id === 'opening' && booksStartDate && row.status !== 'done' ? (
-            <p className="text-sm text-muted-foreground text-pretty">
-              Los libros arrancan el{' '}
-              <span className="font-medium text-foreground">{formatIsoDay(booksStartDate)}</span>:
-              cargá lo que había ese día.
-            </p>
-          ) : null}
-
-          {row.id === 'suppliers_message' ? (
-            <SupplierMessage data={supplier} base={base} canWrite={canWrite} />
-          ) : null}
-
-          <HowSteps
-            key={isNext ? 'abierto' : 'cerrado'}
-            steps={row.how}
-            example={row.example}
-            howTo={row.howTo}
-            defaultOpen={isNext}
-          />
-
-          {row.auto && row.status !== 'done' ? (
-            <p className="flex items-start gap-1.5 text-sm text-muted-foreground text-pretty">
-              <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
-              <span>
-                <span className="font-medium text-foreground">La plataforma lo hace sola: </span>
-                {row.auto}
+    <div className="space-y-3">
+      <dl className="grid gap-1.5 text-sm">
+        <div className="text-pretty">
+          <dt className="inline font-medium text-foreground">{row.whatLabel ?? 'Qué cargás'}: </dt>
+          <dd className="inline text-muted-foreground">{row.what}</dd>
+        </div>
+        <div className="text-pretty">
+          <dt className="inline font-medium text-foreground">Dónde: </dt>
+          <dd className="inline">
+            <WhereText row={row} base={base} />
+            {minutes ? (
+              <span className="text-muted-foreground">
+                {/* El punto queda pegado a lo anterior (nbsp) y los minutos enteros: si no
+                    entra, «≈ 5 min» baja solo y ningún renglón empieza con «·». */}
+                {'\u00a0· '}
+                <span className="whitespace-nowrap">{minutes}</span>
               </span>
-            </p>
-          ) : null}
+            ) : null}
+          </dd>
+        </div>
+      </dl>
 
-          {primary || markable ? (
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-              {primary}
-              {markable ? (
-                <Button
-                  type="button"
-                  variant={markVariant}
-                  className={cn(GUIDE_BUTTON, markVariant === 'ghost' && 'text-muted-foreground')}
-                  aria-describedby={titleId}
-                  onClick={() => onMark(row, !row.manualDone)}
-                >
-                  {row.manualDone ? (
-                    <Undo2 className="size-4" aria-hidden="true" />
-                  ) : (
-                    <Check className="size-4" aria-hidden="true" />
-                  )}
-                  {row.manualDone ? 'Desmarcar' : (row.manualLabel ?? 'Ya lo hice')}
-                </Button>
-              ) : null}
-            </div>
+      {row.pending ? (
+        <p className="flex items-start gap-1.5 text-sm text-warning-text text-pretty">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          {row.pending}
+        </p>
+      ) : null}
+
+      {row.id === 'opening' && booksStartDate && row.status !== 'done' ? (
+        <p className="text-sm text-muted-foreground text-pretty">
+          Los libros arrancan el{' '}
+          <span className="font-medium text-foreground">{formatIsoDay(booksStartDate)}</span>: cargá
+          lo que había ese día.
+        </p>
+      ) : null}
+
+      {row.id === 'suppliers_message' ? (
+        <SupplierMessage data={supplier} base={base} canWrite={canWrite} />
+      ) : null}
+
+      <HowSteps
+        key={isNext ? 'abierto' : 'cerrado'}
+        steps={row.how}
+        example={row.example}
+        howTo={row.howTo}
+        defaultOpen={isNext}
+      />
+
+      {row.auto && row.status !== 'done' ? (
+        <p className="flex items-start gap-1.5 text-sm text-muted-foreground text-pretty">
+          <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+          <span>
+            <span className="font-medium text-foreground">La plataforma lo hace sola: </span>
+            {row.auto}
+          </span>
+        </p>
+      ) : null}
+
+      {primary || markable ? (
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          {primary}
+          {markable ? (
+            <Button
+              type="button"
+              variant={markVariant}
+              className={cn(GUIDE_BUTTON, markVariant === 'ghost' && 'text-muted-foreground')}
+              aria-describedby={titleId}
+              onClick={() => onMark(row, !row.manualDone)}
+            >
+              {row.manualDone ? (
+                <Undo2 className="size-4" aria-hidden="true" />
+              ) : (
+                <Check className="size-4" aria-hidden="true" />
+              )}
+              {row.manualDone ? 'Desmarcar' : (row.manualLabel ?? 'Ya lo hice')}
+            </Button>
           ) : null}
         </div>
-      </article>
-    </li>
+      ) : null}
+    </div>
   )
 }

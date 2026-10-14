@@ -1402,3 +1402,51 @@ check de CI queda en rojo aunque el job de lint/typecheck/tests esté verde.
   - `components/ui/checkbox.tsx` en oscuro: el tilde marcado casi no se ve (Administración lo corrige por
     fuera en sus hojas).
 
+## Administración — pulido de la tanda 2 (14/10/2026)
+
+Lo que no estaba anotado arriba. Contexto y decisiones en `docs/features/administracion-experiencia.md`.
+
+- **Necesita migración o lógica nueva** (se suma a la lista del 14/10; se construyó la versión sin migración):
+  - Gastos fijos: con qué papel se pagó cada mes (`acc_report_recurring_status` devuelve el último
+    comprobante pero no su papel); guardar varios renglones en un viaje (hoy «Completar la planilla» hace un
+    guardado y una revalidación por renglón); una categoría de sueldos elegible para pagarlos desde la planilla.
+  - Compras: los vencimientos por día de todos los proveedores (un almanaque de vencimientos); el clip
+    «sin foto» en la lista de comprobantes.
+  - Ventas y Cajas: la racha y los billetes del conteo de efectivo; la proyección con lo que se espera vender;
+    abrir los movimientos de una categoría desde «En qué se va la plata».
+  - Importar: buscar adentro de un archivo.
+  - Libros: «ese día no abrimos» (para que un día sin cierre no cuente como falta); saber si los sueldos del
+    mes se cargaron; notas para la contadora; que la contadora vea los avisos del mes.
+  - Ajustes: el borrador de la puesta en marcha en la base (hoy vive en el navegador); reordenar los medios
+    de cobro en un solo guardado; un interruptor único para una app de delivery; poder decir «no facturamos».
+  - Ya no hace falta: «abrir «Pagar» con UN papel ya tildado» (lista del 14/10) quedó resuelto sin migración:
+    con `?partida=` la hoja tilda solo esa partida.
+- **Git.** El commit `16c9ad5` (mensaje fuera de Conventional Commits) ya está en `main` por el merge
+  `ea1b9a6`: rehacerlo pide reescribir `main` con force push, y no se hizo. Decidir si se deja como está.
+  `preguntas-pos.m4a` (28 bytes, roto) quedó fuera del repo; la copia suelta en el árbol de trabajo se
+  puede borrar.
+- **Pendientes chicos de la sección** (vistos en el cierre técnico, sin arreglar):
+  - `CA/charts/split-bar.tsx` (`ChartLegend`): la leyenda tiene su propio ancho máximo y no sigue el de la
+    barra; Gastos fijos lo tapa con `max-w-[34rem]`.
+  - El flotante «＋ Cargar» del celular tapa lo que queda abajo a la derecha (el % de la leyenda en Gastos fijos).
+  - `ViewPills` podría marcar la píldora tocada mientras navega (`useLinkStatus`).
+  - `BalanceArea` en el celular: la etiqueta «Más bajo · $ …» pisa la línea del saldo (ficha de una caja).
+  - Una variante compacta de `LedgerRow` bajaría cada partida de ~99 px a ~64 px en el celular (Ventas).
+  - `NavDialog` no tiene tamaño `xl` («Armar el objetivo» entra en 50rem sin scroll a 1440 y a 1280).
+  - `TreasuryPicker` muestra «$ 0» en cada caja mientras faltan los saldos iniciales: para ocultarlo,
+    el catálogo de cajas tendría que traer el estado de los saldos iniciales y la fecha del último movimiento.
+  - La barra de la sección no marca ninguna píldora en `/configurar` (además de comprobantes y asientos).
+  - Importar: a 1280 px la pila de hojitas de un archivo de ARCA corta en dos filas desparejas; `LedgerRail`
+    dibuja el mes y el día de la semana a 10 px en todas las listas con margen.
+  - Libros: el subdiario de ventas (diez columnas) no entra entero a 1440 px (se desliza).
+  - Comprobante: el foco de teclado dentro de la ficha está sin confirmar; en el celular el título del
+    diálogo «Separar» corta entre «Factura» y «A».
+  - «useAccounting: falta <AccountingProvider>» apareció dos veces después de una recarga en caliente:
+    mirarlo en un build de producción.
+  - Un timeout `57014` en `acc_report_open_items` en una captura de Plata por cobrar: si se repite, revisar el RPC.
+  - Gastos fijos: en la ficha de un vencido, «Los próximos» lista primero el vencimiento atrasado. Al llegar a
+    `/gastos-fijos` desde una página larga, Next conserva el scroll mientras muestra el esqueleto (la guía lo
+    evita en sus botones; los otros links no se revisaron).
+  - Compras: en el celular, «Quitar» baja solo a su renglón en «Editar datos».
+  - Resumen en la compu: con tres gastos fijos por vencer, la columna de pagos termina ~160 px más abajo que
+    el panel de ventas.

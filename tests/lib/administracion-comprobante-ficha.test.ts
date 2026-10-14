@@ -822,6 +822,20 @@ describe('el título se arma con los datos, nunca con la descripción entera', (
     )
   })
 
+  it('una liquidación de tarjeta se titula por lo que es: un cobro, y de quién', () => {
+    // Tiene número, pero «Liquidación de tarjeta o plataforma 0001-00031001» no dice de quién es
+    // ni que es un cobro, y en el celular eran tres renglones de título.
+    const heading = documentHeading(cobroConDescuentos())
+    expect(heading.title).toBe('Cobro de Tarjetas de débito (Posnet)')
+    expect(heading.parts).toEqual([
+      { key: 'paper', text: 'Liquidación 0001-00031001' },
+      { key: 'day', text: 'martes 08/09/2026' },
+      { key: 'seq', text: '#60' },
+    ])
+    // Una factura sigue titulándose con su número.
+    expect(documentHeading(hubFacturaA()).title).toBe('Factura A 0003-00001290')
+  })
+
   it('un nombre de 60 letras se corta en los rótulos, no en el título', () => {
     const largo = 'Distribuidora Mayorista de Bebidas y Alimentos del Centro SRL'
     expect(largo.length).toBeGreaterThanOrEqual(60)
@@ -905,8 +919,9 @@ describe('el número, su oración y el botón del momento', () => {
     expect(plain(richText(hero.sentence))).toBe(
       'Todavía no hay ningún pago anotado: venció ayer, el 12/10.',
     )
+    // La hoja «Pagar» abre con lo vencido de ese proveedor tildado: la ayuda lo avisa.
     expect(hero.help).toBe(
-      '¿Ya lo pagaste? Tocá «Pagar» y elegí con qué: no hace falta cargarlo de nuevo.',
+      '¿Ya lo pagaste? No lo cargues de nuevo: tocá «Pagar» y dejá tildado solo lo que pagaste.',
     )
     expect(hero.action).toEqual({
       action: 'pagar',
@@ -998,7 +1013,7 @@ describe('el número, su oración y el botón del momento', () => {
     const hero = documentHero(gasto, ctx())
     expect(hero.label).toBe('Salieron de Caja')
     expect(hero.cents).toBe(1_200_000)
-    expect(plain(richText(hero.sentence))).toBe('El 06/10, en Compras: alimentos.')
+    expect(plain(richText(hero.sentence))).toBe('El 06/10. Quedó en «Compras: alimentos».')
     expect(hero.action).toBeNull()
   })
 
@@ -1089,14 +1104,17 @@ describe('el número, su oración y el botón del momento', () => {
     const hero = documentHero(d, ctx())
     expect(hero.label).toBe('Se vendió')
     expect(hero.cents).toBe(75_647_280)
+    // Dos importes y sin centavos: cuánto quedó en camino y cuánto llegó lo dice la leyenda.
     expect(plain(richText(hero.sentence))).toBe(
-      'Entraron $ 120.013 a Caja y quedaron $ 636.459,80 en camino: ya llegaron $ 193.355 y faltan $ 443.104,80.',
+      'Entraron $ 120.013 a Caja. De lo que quedó en camino, todavía no llegaron $ 443.105.',
     )
     expect(hero.split?.map((s) => [s.key, s.label, s.cents, s.hatched ?? false])).toEqual([
       ['cash', 'Entró a Caja', 12_001_300, false],
       ['arrived', 'Ya llegó', 19_335_500, false],
       ['pending', 'Sigue en camino', 44_310_480, true],
     ])
+    // «Ya llegó» no usa el azul de «sin factura»: esta barra va al lado del sello del papel.
+    expect(hero.split?.map((s) => s.swatch)).toEqual(['bg-adm-s1', 'bg-adm-s6', 'bg-adm-neutral'])
     // La cuenta cierra: vendido − caja − llegó = sigue en camino.
     const rows = hero.explain?.rows ?? []
     expect(rows.map((r) => r.label)).toEqual([
@@ -1114,12 +1132,10 @@ describe('el número, su oración y el botón del momento', () => {
 
   it('el cierre, cuando ya llegó todo, cuando no llegó nada y cuando fue todo efectivo', () => {
     const todo = cierre47({ 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 })
-    expect(sentence(todo)).toBe(
-      'Entraron $ 120.013 a Caja y quedaron $ 636.459,80 en camino: ya llegó todo.',
-    )
+    expect(sentence(todo)).toBe('Entraron $ 120.013 a Caja. Lo que quedó en camino ya llegó todo.')
     expect(documentHero(todo, ctx()).action).toBeNull()
     expect(sentence(cierre47())).toBe(
-      'Entraron $ 120.013 a Caja y quedaron $ 636.459,80 en camino: todavía no llegó nada.',
+      'Entraron $ 120.013 a Caja. Quedaron $ 636.460 en camino y todavía no llegó nada.',
     )
     const efectivo = doc({
       kind: 'sales_close',
@@ -1280,7 +1296,7 @@ describe('el número, su oración y el botón del momento', () => {
     expect(hero.label).toBe('Entraron a Banco Nación')
     expect(hero.cents).toBe(228_903_258)
     expect(plain(richText(hero.sentence))).toBe(
-      'Tarjetas de débito (Posnet) te liquidó $ 2.311.407 y te descontó $ 22.374,42 (1 %) entre comisión, impuestos y retenciones.',
+      'Tarjetas de débito (Posnet) te liquidó $ 2.311.407 y te descontó $ 22.374 (1 %) entre comisión, impuestos y retenciones.',
     )
   })
 
@@ -1363,7 +1379,7 @@ describe('el número, su oración y el botón del momento', () => {
     expect(hero.label).toBe('Entraron a Mercado Pago')
     expect(hero.cents).toBe(200_176_698)
     expect(plain(richText(hero.sentence))).toBe(
-      'Contaste $ 2.801.766,98 y el sistema decía $ 800.000: la diferencia es lo que entró, ya sin los $ 95.729,02 que te descontó Mercado Pago.',
+      'Contaste $ 2.801.767 y el sistema decía $ 800.000: la diferencia es lo que entró, ya sin los $ 95.729 que te descontó Mercado Pago.',
     )
     // El papel: lo contado, lo liquidado y cada descuento (los dos de SIRCUPA van sumados).
     const paper = documentPaper(conteo, ctx())
@@ -1500,7 +1516,17 @@ describe('el número, su oración y el botón del momento', () => {
       paymentStatus: 'partial',
       allocations: [allocation({ amountCents: 99_999_999_950 })],
     })
-    expect(sentence(parcial)).toContain('De $ 1.234.567.890 ya pagaste $ 999.999.999,50')
+    // En una oración, pesos sin centavos (el exacto está en el papel): $ 999.999.999,50 redondea.
+    expect(sentence(parcial)).toContain('De $ 1.234.567.890 ya pagaste $ 1.000.000.000')
+    // Menos de un peso sí lleva centavos: nunca «$ 0» por algo que no es cero.
+    const centavos = doc({
+      ...hubFacturaA(),
+      totalCents: 100_000,
+      openCents: 99_950,
+      paymentStatus: 'partial',
+      allocations: [allocation({ amountCents: 50 })],
+    })
+    expect(plain(sentence(centavos))).toContain('De $ 1.000 ya pagaste $ 0,50')
     const vacio = doc({ kind: 'sales_close', title: 'Cierre del día', totalCents: 0, lines: [] })
     expect(sentence(vacio)).toBe('Este cierre no tiene importes.')
   })
@@ -1635,6 +1661,41 @@ describe('el papel, como quedó guardado', () => {
     )
   })
 
+  it('anulado: el papel no promete nada (ni «quedó en tus números», ni «vence», ni «lo recuperás»)', () => {
+    const vigente = documentPaper(hubFacturaA(), ctx())
+    expect(vigente.total.hint).toBe('Vence el 12/10')
+    expect(vigente.note).not.toBeNull()
+    expect(vigente.rows.some((r) => r.hint === 'Lo recuperás' || r.hint === 'Va al costo')).toBe(
+      true,
+    )
+
+    const facturaAnulada: DocumentDetail = {
+      ...hubFacturaA(),
+      status: 'voided',
+      paymentStatus: 'voided',
+      openCents: null,
+    }
+    const anulados: DocumentDetail[] = [
+      facturaAnulada,
+      { ...hubSinFactura(), status: 'voided', paymentStatus: 'voided', openCents: null },
+      // Anulado con fecha posterior: tampoco cuenta.
+      { ...hubFacturaA(), reversedBy: link({ seq: 9, title: 'Anulación', kind: 'reversal' }) },
+    ]
+    for (const d of anulados) {
+      const paper = documentPaper(d, ctx())
+      expect(paper.note).toBeNull()
+      expect(paperNote(d)).toBeNull()
+      expect(paper.total.hint).toBeNull()
+      expect(paper.rows.map((r) => r.hint)).not.toContain('Lo recuperás')
+      expect(paper.rows.map((r) => r.hint)).not.toContain('Va al costo')
+      expect(paper.total.cents).toBe(d.totalCents)
+    }
+    // Los renglones siguen, con sus importes: es el mismo papel, con la banda encima.
+    expect(documentPaper(facturaAnulada, ctx()).rows.map((r) => [r.label, r.cents])).toEqual(
+      vigente.rows.map((r) => [r.label, r.cents]),
+    )
+  })
+
   it('un gasto: el total dice de qué caja salió (o con qué tarjeta)', () => {
     const gasto = doc({
       kind: 'expense',
@@ -1654,9 +1715,17 @@ describe('el papel, como quedó guardado', () => {
       ],
     })
     const paper = documentPaper(gasto, ctx())
-    expect(paper.title).toBe('Compras: alimentos')
+    // Sin proveedor, el membrete es lo que escribió la persona; la categoría ya es su renglón.
+    expect(paper.title).toBe('Hielo')
+    expect(paper.rows.map((r) => r.label)).toEqual(['Compras: alimentos'])
     expect(paper.total.label).toBe('Salieron de Caja')
-    expect(paper.detail).toEqual({ extra: 'Hielo', notes: 'Para el evento del sábado' })
+    // Lo que ya es el membrete no se repite en «Detalle».
+    expect(paper.detail).toEqual({ extra: null, notes: 'Para el evento del sábado' })
+    expect(documentPaper({ ...gasto, notes: null }, ctx()).detail).toBeNull()
+    // Con proveedor manda el proveedor, y lo escrito queda en «Detalle».
+    const conProveedor = documentPaper({ ...gasto, partyName: 'Hielo Polar' }, ctx())
+    expect(conProveedor.title).toBe('Hielo Polar')
+    expect(conProveedor.detail).toEqual({ extra: 'Hielo', notes: 'Para el evento del sábado' })
     const tarjeta = doc({
       ...gasto,
       lines: [gasto.lines[0] as Line, treasury('Visa del bar', 1_200_000, 'out')],
@@ -1689,6 +1758,9 @@ describe('el papel, como quedó guardado', () => {
 
   it('un cobro con descuentos: lo liquidado menos cada descuento da lo que entró', () => {
     const paper = documentPaper(cobroConDescuentos(), ctx())
+    expect(paper.title).toBe('Tarjetas de débito (Posnet)')
+    // La palabra y el número, sin el nombre largo del catálogo.
+    expect(paper.word).toBe('Liquidación 0001-00031001')
     expect(paper.stamp).toEqual({ tone: 'factura', text: 'Con liquidación' })
     expect(paper.rows.map((r) => [r.label, r.cents, r.minus ?? false])).toEqual([
       ['Te liquidaron', 231_140_700, false],
@@ -1959,6 +2031,13 @@ describe('el mapa de vínculos', () => {
     expect(node(nodes, 'foto')?.emptyText).toBe(
       'Aunque sea sin factura, la foto del remito o del papelito sirve de respaldo. No cambia ningún número: es el respaldo si un día te lo piden.',
     )
+    // Anulado ya no «queda en tus números»: al lado dice «Ya no cuenta en los libros».
+    const anulado = doc({ ...d, status: 'voided', paymentStatus: 'voided', openCents: null })
+    expect(node(documentLinks(anulado, ctx()), 'libro-iva')?.off).toEqual({
+      title: 'No entra al Libro IVA.',
+      hint: null,
+      guide: true,
+    })
   })
 
   it('el título dice qué falta: una cosa, dos o ninguna', () => {
@@ -1987,9 +2066,9 @@ describe('el mapa de vínculos', () => {
     const pagoNode = node(documentLinks(d, ctx()), 'pago')
     expect(pagoNode?.state).toBe('linked')
     expect(pagoNode?.rows.map((r) => [r.label, r.meta, r.cents])).toEqual([
-      ['Pago #6', 'el 03/10/2026', 50_000_000],
+      ['Pago #6', 'el 03/10', 50_000_000],
     ])
-    expect(plain(pagoNode?.footer ?? '')).toBe('Falta pagar $ 710.000,00')
+    expect(plain(pagoNode?.footer ?? '')).toBe('Falta pagar $ 710.000')
     // Un pago unido después se puede separar: se nombra el pago y la factura.
     expect(pagoNode?.rows[0]?.separate).toMatchObject({
       paymentLabel: 'Pago #6',
@@ -2008,7 +2087,7 @@ describe('el mapa de vínculos', () => {
     expect(pagoNode?.state).toBe('missing')
     expect(pagoNode?.rows).toEqual([])
     expect(pagoNode?.separated.map(plain)).toEqual([
-      'Pago #6 · $ 500.000,00 · separado el 05/10/2026: quedó a cuenta.',
+      'Pago #6 · $ 500.000 · separado el 05/10/2026: quedó a cuenta.',
     ])
   })
 
@@ -2027,10 +2106,16 @@ describe('el mapa de vínculos', () => {
     expect(aplicado?.rows[0]?.meta).toBeNull()
     expect(aplicado?.rows[0]?.separate).toMatchObject({
       paymentLabel: 'Pago #6',
-      invoiceLabel: 'Factura A 0003-00001100 #2',
+      // Una factura con número se nombra por su número: el «#2» de la fila sobra en la pregunta.
+      invoiceLabel: 'Factura A 0003-00001100',
+      // Con su artículo, para la pregunta del diálogo; y cómo se la nombra la segunda vez.
+      paymentWords: 'el Pago #6',
+      invoiceWords: 'la Factura A 0003-00001100',
+      invoiceNoun: 'La factura',
     })
-    // Un pago no «le falta» nada al título aunque esté a cuenta.
-    expect(linksTitle(nodes, pago(), TODAY)).toBe('Le falta la foto')
+    // Un pago no trae un papel de afuera: la foto se ofrece, pero no «le falta».
+    expect(node(nodes, 'foto')?.state).toBe('ask')
+    expect(linksTitle(nodes, pago(), TODAY)).toBe('Con qué está unido')
   })
 
   it('un pago a cuenta es válido: cajita hueca, sin «Falta»', () => {
@@ -2046,9 +2131,81 @@ describe('el mapa de vínculos', () => {
     )
   })
 
+  it('un cobro dice de qué noches es: cada cierre por su día, del más viejo al más nuevo', () => {
+    const cobro = doc({
+      ...cobroConDescuentos(),
+      allocations: [
+        allocation({
+          amountCents: 10_088_700,
+          otherDocumentId: 'doc-13',
+          otherDocumentTitle: 'Cierre del día',
+          otherDocumentSeq: 13,
+        }),
+        allocation({
+          amountCents: 8_165_800,
+          otherDocumentId: 'doc-12',
+          otherDocumentTitle: 'Cierre del día',
+          otherDocumentSeq: 12,
+        }),
+      ],
+    })
+    // Sin los días (la lectura falló o no se pidió), como siempre: «Cierre del día #12» no le
+    // dice a nadie qué noche cobró, pero no se inventa nada.
+    expect(node(documentLinks(cobro, ctx()), 'aplicado')?.rows.map((r) => r.label)).toEqual([
+      'Cierre del día #13',
+      'Cierre del día #12',
+    ])
+    const linked = new Map([
+      ['doc-12', { kind: 'sales_close', issueDate: '2026-09-01' }],
+      ['doc-13', { kind: 'sales_close', issueDate: '2026-09-02' }],
+    ])
+    const aplicado = node(documentLinks(cobro, ctx({ linked })), 'aplicado')
+    expect(aplicado?.what).toBe('De qué ventas es')
+    expect(aplicado?.rows.map((r) => [r.label, r.documentId, r.cents])).toEqual([
+      ['Cierre del mar 01/09', 'doc-12', 8_165_800],
+      ['Cierre del mié 02/09', 'doc-13', 10_088_700],
+    ])
+    // De otro año, la fecha entera.
+    const viejo = new Map([
+      ['doc-12', { kind: 'sales_close', issueDate: '2025-12-30' }],
+      ['doc-13', { kind: 'sales_close', issueDate: '2025-12-31' }],
+    ])
+    expect(
+      node(documentLinks(cobro, ctx({ linked: viejo })), 'aplicado')?.rows.map((r) => r.label),
+    ).toEqual(['Cierre del 30/12/2025', 'Cierre del 31/12/2025'])
+    // Dos medios de la misma noche (el QR y la transferencia) son UNA fila, con el importe sumado.
+    const dosMedios = doc({
+      ...cobro,
+      allocations: [
+        ...cobro.allocations,
+        allocation({
+          id: 'union-qr-12',
+          amountCents: 1_000_000,
+          otherDocumentId: 'doc-12',
+          otherDocumentTitle: 'Cierre del día',
+          otherDocumentSeq: 12,
+        }),
+      ],
+    })
+    expect(
+      node(documentLinks(dosMedios, ctx({ linked })), 'aplicado')?.rows.map((r) => [
+        r.label,
+        r.cents,
+      ]),
+    ).toEqual([
+      ['Cierre del mar 01/09', 9_165_800],
+      ['Cierre del mié 02/09', 10_088_700],
+    ])
+    // Lo que no es un cierre conserva su nombre.
+    const factura = new Map([['doc-2', { kind: 'purchase', issueDate: '2026-09-10' }]])
+    expect(
+      node(documentLinks(pago(), ctx({ linked: factura })), 'aplicado')?.rows.map((r) => r.label),
+    ).toEqual(['Factura A 0003-00001100 #2'])
+  })
+
   it('un pago con resto: cuánto quedó a cuenta y de quién', () => {
     const aplicado = node(documentLinks(pago({ openCents: 2_000_000 }), ctx()), 'aplicado')
-    expect(plain(aplicado?.rest?.title ?? '')).toBe('Quedaron $ 20.000,00 a cuenta')
+    expect(plain(aplicado?.rest?.title ?? '')).toBe('Quedaron $ 20.000 a cuenta')
     expect(aplicado?.rest).toMatchObject({
       hint: 'Se descuentan solos de la próxima factura de Distribuidora de Bebidas Demo SA.',
       partyId: 'prov-3',
@@ -2140,20 +2297,28 @@ describe('el mapa de vínculos', () => {
         r.action?.label ?? null,
       ]),
     ).toEqual([
-      ['Transferencia', 'Mercado Pago', 'ok', 'Ya entró', null],
-      ['QR Mercado Pago', 'Mercado Pago', 'ok', 'Ya entró', null],
+      // Lo que ya está se dice con el verbo de la leyenda («Ya llegó»), también el QR.
+      ['Transferencia', 'Mercado Pago', 'ok', 'Llegó', null],
+      ['QR Mercado Pago', 'Mercado Pago', 'ok', 'Llegó', null],
       [
         'Débito',
         'Tarjetas de débito (Posnet)',
         'warn',
         'Llegó una parte: faltan $ 90.000',
-        'Ya llegó',
+        'Anotar que llegó',
       ],
-      ['Crédito', 'Tarjetas de crédito (Posnet)', 'muted', 'Llega el vie 16/10', 'Ya llegó'],
-      ['PedidosYa', 'PedidosYa', 'muted', 'Llega el mar 20/10', 'Ya llegó'],
-      ['Rappi', 'Rappi', 'muted', 'Llega el mar 20/10', 'Ya llegó'],
+      [
+        'Crédito',
+        'Tarjetas de crédito (Posnet)',
+        'muted',
+        'Llega el vie 16/10',
+        'Anotar que llegó',
+      ],
+      ['PedidosYa', 'PedidosYa', 'muted', 'Llega el mar 20/10', 'Anotar que llegó'],
+      ['Rappi', 'Rappi', 'muted', 'Llega el mar 20/10', 'Anotar que llegó'],
     ])
-    // «Ya llegó» abre el cobro con ese partícipe y esa partida ya elegidos.
+    // El botón es un verbo: «Ya llegó» al lado de «Llega el vie 16/10» se leía como un estado.
+    // Abre el cobro con ese partícipe y esa partida ya elegidos.
     expect(camino?.rows[2]?.action?.params).toEqual({
       cliente: 'part-Tarjetas de débito (Posnet)',
       partida: 'partida-4',
@@ -2161,19 +2326,19 @@ describe('el mapa de vínculos', () => {
     // El mismo cobro no sale dos veces: un renglón por comprobante, con lo suyo sumado.
     expect(camino?.arrivals.map((r) => [r.label, r.cents])).toEqual([
       ['Cobro #58', 19_335_500],
-      ['Liquidación de tarjeta o plataforma 0001-00031002 #61', 10_335_400],
+      // El nombre largo del catálogo no va en una lista: la palabra y el número.
+      ['Liquidación 0001-00031002 #61', 10_335_400],
     ])
-    expect(plain(linksTitle(nodes, d, TODAY))).toBe(
-      'De este día todavía faltan llegar $ 339.750,80',
-    )
+    expect(camino?.arrivals.map((r) => r.meta)).toEqual(['el 07/10', 'el 08/10'])
+    expect(plain(linksTitle(nodes, d, TODAY))).toBe('De este día todavía no llegaron $ 339.751')
     // Sin puntos de venta ni facturas ese día: el Libro IVA no aplica, y se dice.
     expect(node(nodes, 'libro-iva')?.off?.title).toBe('No entra al Libro IVA.')
   })
 
-  it('el cierre: lo atrasado va en ámbar («tendría que haber llegado»), nunca en rojo', () => {
+  it('el cierre: lo atrasado va en ámbar («debió llegar»), nunca en rojo', () => {
     const camino = node(documentLinks(cierre47(), ctx()), 'en-camino')
     const debito = camino?.rows.find((r) => r.medium === 'Débito')
-    expect(debito).toMatchObject({ tone: 'warn', status: 'Tendría que haber llegado el 07/10' })
+    expect(debito).toMatchObject({ tone: 'warn', status: 'Debió llegar el 07/10' })
     // Lo cobrado con QR no «vence»: está en camino hasta que se cuenta la billetera.
     expect(camino?.rows.find((r) => r.medium === 'QR Mercado Pago')).toMatchObject({
       tone: 'muted',
@@ -2185,7 +2350,7 @@ describe('el mapa de vínculos', () => {
     )
   })
 
-  it('la contadora no recibe «Ya llegó», «Separar» ni la pregunta del gasto fijo', () => {
+  it('la contadora no recibe «Anotar que llegó», «Separar» ni la pregunta del gasto fijo', () => {
     const read = ctx({ canWrite: false })
     const camino = node(documentLinks(cierre47(), read), 'en-camino')
     expect(camino?.rows.every((r) => r.action === null)).toBe(true)
@@ -2359,8 +2524,40 @@ describe('el mapa de vínculos', () => {
     })
     expect(node(documentLinks(conteo, ctx()), 'foto')?.state).toBe('ask')
     expect(photoHint({ kind: 'bank_expense', voucherType: null })).toMatch(
-      /^Subí el comprobante o el resumen donde figura\./,
+      /^Si tenés el comprobante o el resumen donde figura, subilo\./,
     )
+  })
+
+  it('la foto «falta» solo en lo que trae un papel de afuera; al resto se le ofrece', () => {
+    const state = (kind: DocumentKind) =>
+      node(documentLinks(doc({ kind, title: documentKindLabel(kind) }), ctx()), 'foto')?.state
+    // La factura o el remito del proveedor, y el cierre de caja y del posnet.
+    for (const kind of [
+      'purchase',
+      'purchase_credit_note',
+      'purchase_debit_note',
+      'expense',
+      'sales_close',
+    ] as const) {
+      expect(state(kind), kind).toBe('missing')
+    }
+    // Un pago, un cobro, un pase entre cajas, lo que cobró el banco o una venta propia no
+    // «les falta» nada: si no, todas las fichas abren con un aviso ámbar y deja de leerse.
+    for (const kind of [
+      'payment',
+      'collection',
+      'transfer',
+      'bank_expense',
+      'cash_movement',
+      'treasury_adjustment',
+      'sales_invoice',
+      'sales_credit_note',
+      'sales_debit_note',
+      'opening',
+      'manual',
+    ] as const) {
+      expect(state(kind), kind).toBe('ask')
+    }
   })
 
   it('un comprobante anulado no «le falta» nada', () => {
@@ -2411,14 +2608,25 @@ describe('el mapa de vínculos', () => {
     expect(photoHint({ kind: 'purchase', voucherType: 'factura_a' })).toMatch(
       /^Sacale una foto a la factura/,
     )
-    expect(photoHint({ kind: 'payment', voucherType: null })).toMatch(
-      /^Subí el comprobante de la transferencia/,
+    expect(photoHint({ kind: 'expense', voucherType: 'sin_comprobante' })).toMatch(
+      /^Aunque sea sin factura, la foto del remito o del papelito sirve de respaldo\./,
     )
     expect(photoHint({ kind: 'sales_close', voucherType: null })).toMatch(
       /cierre de lote del posnet/,
     )
+    // Donde la foto no «falta», se invita en vez de pedir.
+    expect(photoHint({ kind: 'payment', voucherType: null })).toMatch(
+      /^Si tenés el comprobante de la transferencia o el recibo, subilo\./,
+    )
     expect(photoHint({ kind: 'collection', voucherType: 'liquidacion' })).toMatch(
-      /^Subí la liquidación\./,
+      /^Si tenés la liquidación, subila\./,
+    )
+    // Un conteo no deja una liquidación, y una venta propia no es «la factura que te dieron».
+    expect(photoHint({ kind: 'collection', voucherType: null, countedCents: 280_176_698 })).toMatch(
+      /^Si tenés la captura del saldo, subila\./,
+    )
+    expect(photoHint({ kind: 'sales_invoice', voucherType: 'factura_a' })).toMatch(
+      /^Si tenés el remito o el comprobante firmado, subilo\./,
     )
     for (const kind of DOCUMENT_KINDS) {
       expect(photoHint({ kind, voucherType: null })).toMatch(

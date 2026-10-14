@@ -30,6 +30,8 @@ import {
   daysBetween,
   formatDayMonth,
   isRealIsoDay,
+  WEEKDAY_NAMES,
+  WEEKDAY_NAMES_SHORT,
   weekdayName,
 } from '@/lib/dates'
 import { formatCentsShort } from '@/lib/money'
@@ -88,6 +90,12 @@ export type ActivityRow = {
   key: string
   date: string
   title: string
+  /**
+   * El mismo título, más corto, para una hoja angosta (el celular, la columna
+   * de «Últimos movimientos»): «Ventas del mar 06/10». Solo donde el largo no
+   * entra en un renglón.
+   */
+  titleShort?: string
   /** La segunda línea: qué tipo de cosa fue. */
   sub: string
   icon: ActivityIcon
@@ -255,11 +263,16 @@ export function activityFromMovement(
       const match = /^Cierre del día (\S+) (\d{2})\/(\d{2})\/\d{4}$/.exec(description)
       if (!match) return raw('sale')
       const memo = (m.memo ?? '').trim()
-      return row(
-        `Ventas del ${match[1]} ${match[2]}/${match[3]}`,
-        memo ? `Cierre del día${SEP}${memo}` : 'Cierre del día',
-        'sale',
-      )
+      const weekday = (WEEKDAY_NAMES as readonly string[]).indexOf(match[1] ?? '')
+      const short = weekday >= 0 ? WEEKDAY_NAMES_SHORT[weekday] : undefined
+      return {
+        ...row(
+          `Ventas del ${match[1]} ${match[2]}/${match[3]}`,
+          memo ? `Cierre del día${SEP}${memo}` : 'Cierre del día',
+          'sale',
+        ),
+        ...(short ? { titleShort: `Ventas del ${short} ${match[2]}/${match[3]}` } : {}),
+      }
     }
     case 'expense': {
       if (head !== 'Gasto' || p.length < 2) return raw('expense')
@@ -361,18 +374,40 @@ export function mergeTransfers(rows: readonly ActivityRow[]): ActivityRow[] {
   return out
 }
 
-/** «↑ + $ 120.013» · «↓ − $ 12.000» · «↔ $ 200.000»: la dirección no depende del color. */
-export function activityAmountText(row: Pick<ActivityRow, 'direction' | 'cents'>): string {
+/**
+ * «↑ $ 120.013» · «↓ $ 12.000» · «↔ $ 200.000»: la dirección la dice la flecha
+ * (no depende del color) y con eso alcanza: flecha y signo decían lo mismo. Es
+ * la misma forma que el título del día («↑ entró $ 120.013»).
+ *
+ * Lo que había al arrancar no entró ni salió: va el importe solo.
+ */
+export function activityAmountText(
+  row: Pick<ActivityRow, 'direction' | 'cents'> & { icon?: ActivityIcon },
+): string {
   const amount = formatCentsShort(row.cents)
+  if (row.icon === 'opening') return amount
   if (row.direction === 'neutral') return `↔ ${amount}`
-  return row.direction === 'in' ? `↑ + ${amount}` : `↓ − ${amount}`
+  return row.direction === 'in' ? `↑ ${amount}` : `↓ ${amount}`
 }
 
 /** Lo mismo para lectores: «entraron $ 120.013», «salieron $ 12.000», «se movieron $ 200.000». */
-export function activityAmountLabel(row: Pick<ActivityRow, 'direction' | 'cents'>): string {
+export function activityAmountLabel(
+  row: Pick<ActivityRow, 'direction' | 'cents'> & { icon?: ActivityIcon },
+): string {
   const amount = formatCentsShort(row.cents)
+  if (row.icon === 'opening') return `había ${amount}`
   if (row.direction === 'neutral') return `se movieron ${amount}`
   return row.direction === 'in' ? `entraron ${amount}` : `salieron ${amount}`
+}
+
+/**
+ * ¿Este renglón cuenta como plata que entró o que salió? Lo que había al
+ * arrancar no: sube el saldo de la caja, pero no es plata que entró. Es el
+ * mismo criterio del dibujo de «Lo que entró y lo que salió» y de la oración
+ * de la tarjeta («Arrancó con $ X. … entraron $ Y»).
+ */
+export function countsAsFlow(row: Pick<ActivityRow, 'direction' | 'icon'>): boolean {
+  return row.icon !== 'opening' && row.direction !== 'neutral'
 }
 
 export type ActivityDay = {
@@ -381,7 +416,10 @@ export type ActivityDay = {
   /** «Martes 13/10 · hoy». */
   title: string
   rows: ActivityRow[]
-  /** Lo que entró y salió ese día (los pasajes entre cajas ya unidos no suman). */
+  /**
+   * Lo que entró y salió ese día. No suman los pasajes entre cajas ya unidos ni
+   * lo que había al arrancar (`countsAsFlow`).
+   */
   inCents: number
   outCents: number
   /** El saldo después del último movimiento del día (para la ficha de una caja). */
@@ -421,8 +459,10 @@ export function groupByDay(
       days.set(row.date, day)
     }
     day.rows.push(row)
-    if (row.direction === 'in') day.inCents += row.cents
-    else if (row.direction === 'out') day.outCents += row.cents
+    if (countsAsFlow(row)) {
+      if (row.direction === 'in') day.inCents += row.cents
+      else day.outCents += row.cents
+    }
     day.closingCents = row.balanceCents
   }
   const list = [...days.values()]

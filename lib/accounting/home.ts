@@ -70,7 +70,13 @@ import { formatCentsShort } from '@/lib/money'
 export type HomeSheet = 'gasto' | 'pagar' | 'cobrar' | 'ajustar'
 
 /** Lo que la hoja precarga (ids). Entra tal cual en `openAction(sheet, params)`. */
-export type HomeSheetParams = { proveedor?: string; cliente?: string; caja?: string }
+export type HomeSheetParams = {
+  proveedor?: string
+  cliente?: string
+  caja?: string
+  /** «Nuevo gasto» con ese gasto fijo ya puesto (lo mismo que «Pagar» en su renglón). */
+  'gasto-fijo'?: string
+}
 
 /** La única acción de una tarjeta: ir a una pantalla o abrir una hoja sobre el Resumen. */
 export type HomeAction =
@@ -409,9 +415,9 @@ export function heroState(
       reason: 'opening_pending',
       title: 'Todavía no sé cuánta plata hay',
       sentence: canWrite
-        ? 'Contame cuánto hay hoy en cada caja y empiezo a llevar la cuenta.'
+        ? 'Contame cuánto había en cada caja el día que arrancaste y empiezo a llevar la cuenta.'
         : 'Los dueños todavía no cargaron cuánto había en cada caja al empezar.',
-      action: canWrite ? link(base, '/configurar', 'Cargar lo que hay') : null,
+      action: canWrite ? link(base, '/configurar', 'Cargar lo que había') : null,
     }
   }
 
@@ -1523,12 +1529,25 @@ function payablesItem(input: TodayInput): TodayItem | null {
  * Los ya cargados y sin pagar son deuda con el proveedor: van en «Pagos que
  * vencen», no acá (no se cuentan dos veces).
  */
+/**
+ * Los gastos fijos que tocan pagar (la regla del aviso de la base: dentro de su aviso o ya
+ * vencidos, y ni cargados ni salteados), del más atrasado al que vence más lejos. Los usan la
+ * tarjeta de «Hoy te toca» y los renglones con «Pagar» de «Lo que tenés que pagar».
+ */
+export function fixedDueRows<T extends HomeRecurringRow>(
+  rows: readonly T[] | null | undefined,
+): T[] {
+  if (!rows) return []
+  return rows
+    .filter(
+      (r) =>
+        r.active && !r.ended && r.monthStatus === 'pending' && r.daysToDue <= r.remindDaysBefore,
+    )
+    .sort((a, b) => a.daysToDue - b.daysToDue)
+}
+
 function fixedItem(input: TodayInput, base: string): TodayItem | null {
-  const rows = input.recurring
-  if (!rows) return null
-  const due = rows.filter(
-    (r) => r.active && !r.ended && r.monthStatus === 'pending' && r.daysToDue <= r.remindDaysBefore,
-  )
+  const due = fixedDueRows(input.recurring)
   if (due.length === 0) return null
 
   const late = due.filter((r) => r.daysToDue < 0).length
@@ -1566,8 +1585,12 @@ function fixedItem(input: TodayInput, base: string): TodayItem | null {
     status,
     tone: late > 0 ? 'late' : 'warn',
     done: false,
+    // Uno solo: «Pagar» abre «Nuevo gasto» con ese gasto fijo ya puesto, sin salir del Resumen.
+    // Varios: cada uno tiene su «Pagar» en «Lo que tenés que pagar»; acá, la planilla entera.
     action: input.canWrite
-      ? link(base, '/gastos-fijos', single ? 'Ver y pagar' : 'Ver gastos fijos')
+      ? single
+        ? { kind: 'sheet', sheet: 'gasto', params: { 'gasto-fijo': single.id }, label: 'Pagar' }
+        : link(base, '/gastos-fijos', 'Ver gastos fijos')
       : null,
     covers: ['recurring_due'],
   }
@@ -1783,6 +1806,13 @@ export type SetupStep = {
 export type SetupStrip = {
   /** «Puesta en marcha · 4 de 12». */
   title: string
+  /**
+   * Con la guía en la base, el «N de M» es el de su sección «Puesta en marcha · una sola vez»
+   * (la misma cuenta que la guía, adonde lleva «Ver todo»). Los pasos que no son de la guía
+   * (el primer cierre, el primer gasto, las categorías de los proveedores, los montos de los
+   * gastos fijos) se siguen ofreciendo en «Sigue» y no dejan que la franja se vaya, pero no se
+   * cuentan: si no, el Resumen decía «9 de 16» y la guía «6 de 12».
+   */
   done: number
   total: number
   /** No queda nada obligatorio: la franja se va. */
@@ -1791,7 +1821,7 @@ export type SetupStrip = {
   steps: SetupStep[]
   /** Lo próximo que conviene hacer: hasta tres pendientes. */
   next: SetupStep[]
-  /** «Ver todo». */
+  /** «Ver todo»: la sección de la puesta en marcha de «Cómo arrancar». */
   guideHref: string
 }
 
@@ -1807,6 +1837,8 @@ export type SetupInput = {
 }
 
 const SETUP_GUIDE_PATH = '/guias/como-arrancar'
+/** El ancla de la sección «Puesta en marcha · una sola vez» de la guía. */
+const SETUP_GUIDE_SECTION = '#arranque-day1'
 const SETUP_NEXT_MAX = 3
 
 /**
@@ -1825,7 +1857,16 @@ export function buildSetup(input: SetupInput): SetupStrip {
   const base = input.base ?? ''
   const { state } = onboardingParts(input.onboarding)
   const item = (id: string) => state?.items.find((i) => i.id === id) ?? null
-  const guideHref = `${base}${SETUP_GUIDE_PATH}`
+  const guideHref = `${base}${SETUP_GUIDE_PATH}${SETUP_GUIDE_SECTION}`
+  // Lo que cuenta para «N de M»: con la guía, sus ítems de una sola vez (los mismos que cuenta
+  // ella); sin la guía, todo lo que hay.
+  const counted = state
+    ? new Set(
+        state.items
+          .filter((i) => i.section === 'day1' && i.status !== 'info' && !i.optional)
+          .map((i) => i.id as string),
+      )
+    : null
 
   const openingItem = item('opening')
   const openingDone = openingItem
@@ -1863,7 +1904,7 @@ export function buildSetup(input: SetupInput): SetupStrip {
         action: null,
       })
     }
-    return stripOf(steps, guideHref)
+    return stripOf(steps, guideHref, null)
   }
 
   const steps: SetupStep[] = []
@@ -1876,13 +1917,13 @@ export function buildSetup(input: SetupInput): SetupStrip {
   if (openingDone !== null) {
     push({
       id: 'opening',
-      title: 'Cargá lo que hay hoy en cada caja',
+      title: 'Cargá lo que había en cada caja al arrancar',
       detail: openingDone
         ? null
         : 'Los saldos iniciales: cuánta plata hay y cuánto se debe. Sin eso, todo arranca en cero.',
       done: openingDone,
       optional: false,
-      action: link(base, '/configurar', 'Cargar lo que hay'),
+      action: link(base, '/configurar', 'Cargar lo que había'),
     })
   }
   if (input.summary) {
@@ -1990,12 +2031,12 @@ export function buildSetup(input: SetupInput): SetupStrip {
     })
   }
 
-  return stripOf(steps, guideHref)
+  return stripOf(steps, guideHref, counted)
 }
 
 /**
  * Lo próximo de la puesta en marcha que la pantalla todavía NO ofrece en otro
- * lado. El héroe ya pide los saldos iniciales («Cargar lo que hay») y «Hoy te
+ * lado. El héroe ya pide los saldos iniciales («Cargar lo que había») y «Hoy te
  * toca» ya tiene la tarjeta del cierre y la del gasto: repetirlos en la franja
  * eran dos botones con nombres distintos para la misma cosa. Los pasos siguen
  * contando para «N de M»; solo no se vuelven a ofrecer.
@@ -2020,10 +2061,16 @@ export function setupNext(
     .slice(0, Math.max(0, max))
 }
 
-function stripOf(steps: SetupStep[], guideHref: string): SetupStrip {
+function stripOf(
+  steps: SetupStep[],
+  guideHref: string,
+  /** Los ids que cuentan para «N de M» (`null`: todos los que no son opcionales). */
+  counted: ReadonlySet<string> | null,
+): SetupStrip {
   const required = steps.filter((s) => !s.optional)
-  const done = required.filter((s) => s.done).length
-  const total = required.length
+  const scored = counted ? required.filter((s) => counted.has(s.id)) : required
+  const done = scored.filter((s) => s.done).length
+  const total = scored.length
   const pending = required.filter((s) => !s.done)
   return {
     title: total > 0 ? `Puesta en marcha · ${done} de ${total}` : 'Puesta en marcha',

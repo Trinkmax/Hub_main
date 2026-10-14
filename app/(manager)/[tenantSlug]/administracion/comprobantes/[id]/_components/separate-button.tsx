@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { unallocateItem } from '@/lib/accounting/actions/documents'
-import { formatCents } from '@/lib/money'
+import { formatCents, formatCentsShort } from '@/lib/money'
 import { ReasonField, reasonError } from '../../../libros/_components/reason-field'
 
 const OFFLINE = 'Sin conexión: no se separó. Probá de nuevo.'
@@ -42,6 +42,9 @@ export function SeparateButton({
   allocationId,
   paymentLabel,
   invoiceLabel,
+  paymentWords,
+  invoiceWords,
+  invoiceNoun,
   amountCents,
   partyName,
 }: {
@@ -51,6 +54,11 @@ export function SeparateButton({
   paymentLabel: string
   /** «Factura A 0003-00001100». */
   invoiceLabel: string
+  /** Con su artículo, para la pregunta: «el Pago #6», «la Factura A 0003-00001100». */
+  paymentWords: string
+  invoiceWords: string
+  /** Cómo se la nombra la segunda vez: «La factura», «La compra». */
+  invoiceNoun: string
   amountCents: number
   partyName: string | null
 }) {
@@ -65,6 +73,12 @@ export function SeparateButton({
   if (readOnly) return null
 
   const withWhom = partyName ? ` con ${partyName}` : ''
+  // En una oración, pesos sin centavos (el exacto está en la fila que se separa). Menos de un
+  // peso sí los lleva: nunca «$ 0» por algo que no es cero.
+  const amount =
+    amountCents !== 0 && Math.abs(amountCents) < 100
+      ? formatCents(amountCents)
+      : formatCentsShort(amountCents)
 
   function reset() {
     setReason('')
@@ -126,13 +140,13 @@ export function SeparateButton({
         <AlertDialogHeader>
           {/* El número del comprobante no se corta en el guion. */}
           <AlertDialogTitle>
-            ¿Separás {paymentLabel} de <VoucherText text={invoiceLabel} />?
+            ¿Separás {paymentWords} de <VoucherText text={invoiceWords} />?
           </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-2 text-sm text-muted-foreground">
               <p className="text-pretty">
-                <VoucherText text={invoiceLabel} /> vuelve a deber {formatCents(amountCents)} y el
-                pago queda a cuenta{withWhom}, como saldo a favor. No se pierde nada.
+                {invoiceNoun} vuelve a deber {amount} y el pago queda a cuenta{withWhom}, como saldo
+                a favor. No se pierde nada.
               </p>
               <p className="text-pretty">
                 Para unirlo a otra factura, abrila y tocá «Pagar»: el saldo a favor viene tildado y

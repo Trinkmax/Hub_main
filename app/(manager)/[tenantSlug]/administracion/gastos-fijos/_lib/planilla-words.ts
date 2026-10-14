@@ -281,8 +281,10 @@ export function rowWords(item: SheetItem, today: string): RowWords {
   switch (line.state) {
     case 'paid': {
       const when = doc ? `Pagado el ${shortDay(doc.accountingDate, today)}` : 'Pagado'
-      const over = line.dueCents !== null && paid > line.dueCents
-      return out(when, over ? pesos(paid) : null, 'ok')
+      // Pagaste de más: se dice la diferencia con su palabra, igual que cuando pagaste de menos
+      // (un importe pelado al lado del monto no dice qué es).
+      const over = line.dueCents !== null ? paid - line.dueCents : 0
+      return out(when, over > 0 ? `${pesos(over)} más que el monto` : null, 'ok')
     }
     case 'partial':
     case 'unpaid':
@@ -659,13 +661,104 @@ export function sheetFilterPills(sheet: Pick<Sheet, 'items' | 'later'>): SheetFi
   return pills
 }
 
+// ─── Lo que suma lo que se ve ────────────────────────────────────────────────
+
+export type ShownTotals = {
+  count: number
+  /** Pagado más lo que falta, de los que tienen monto. */
+  totalCents: number
+  paidCents: number
+  remainingCents: number
+  /** Los que no tienen monto: no suman. */
+  noAmount: number
+}
+
+/**
+ * La suma de un grupo de renglones (los que deja un filtro, los de un día): en
+ * una planilla, la fila de abajo suma lo que se ve arriba. Misma cuenta que el
+ * total del mes: pagado más lo que falta, sin los que no tienen monto.
+ */
+export function shownTotals(items: readonly SheetItem[]): ShownTotals {
+  const totals: ShownTotals = {
+    count: items.length,
+    totalCents: 0,
+    paidCents: 0,
+    remainingCents: 0,
+    noAmount: 0,
+  }
+  for (const { line } of items) {
+    if (line.state === 'no_amount') totals.noAmount += 1
+    if (line.remainingCents === null || line.paidCents === null) continue
+    totals.paidCents += line.paidCents
+    totals.remainingCents += line.remainingCents
+    totals.totalCents += line.paidCents + line.remainingCents
+  }
+  return totals
+}
+
+// ─── Lo que quedó de antes (mirando el mes que viene) ────────────────────────
+
+/**
+ * Mirando el mes que viene, la hoja trae dos cosas distintas: lo que vence ESE
+ * mes y lo que quedó de antes sin pagar (aparece una vez, con su fecha vieja).
+ * Nunca se suman bajo el nombre del mes que viene: un «Te falta · noviembre»
+ * armado con la deuda de octubre es un número con el mes equivocado.
+ *
+ * En el mes de hoy no se separa nada: lo vencido de antes es parte de «Te
+ * falta», como en el Resumen.
+ */
+export type SheetCarry = {
+  /** El mes de hoy (`yyyy-MM`): la hoja donde se pagan. */
+  month: string
+  /** Los que quedaron de antes sin pagar. */
+  count: number
+  /** Lo que suman (los que no tienen monto no suman). */
+  cents: number
+  /** Los renglones que sí son del mes que se mira. */
+  own: SheetItem[]
+  /** Lo que suman esos (pagado, falta y cuántos no tienen monto). */
+  ownTotals: ShownTotals
+}
+
+/** Lo que la cabecera dice de lo que quedó de antes: cuántos, cuánto y en qué hoja se pagan. */
+export type SheetCarried = Pick<SheetCarry, 'month' | 'count' | 'cents'>
+
+function isCarried(item: SheetItem, month: string): boolean {
+  const { state } = item.line
+  return monthOf(item.day) < month && state !== 'paid' && state !== 'skipped'
+}
+
+/** `null` en el mes de hoy, o si no quedó nada de antes. */
+export function sheetCarry(
+  sheet: Pick<Sheet, 'isCurrent' | 'items' | 'month' | 'today'>,
+): SheetCarry | null {
+  if (sheet.isCurrent) return null
+  const carried = sheet.items.filter((item) => isCarried(item, sheet.month))
+  if (carried.length === 0) return null
+  const own = sheet.items.filter((item) => !isCarried(item, sheet.month))
+  return {
+    month: monthOf(sheet.today),
+    count: carried.length,
+    cents: carried.reduce((sum, item) => sum + (item.line.remainingCents ?? 0), 0),
+    own,
+    ownTotals: shownTotals(own),
+  }
+}
+
+/** Los renglones que cuentan como «de ese mes»: en el que viene, sin lo que quedó de antes. */
+export function ownItems(sheet: Pick<Sheet, 'isCurrent' | 'items' | 'month' | 'today'>) {
+  return sheetCarry(sheet)?.own ?? sheet.items
+}
+
 // ─── La oración de la cabecera ───────────────────────────────────────────────
 
 export type SheetSentence =
   /** La hoja no tiene renglones: no hay número, hay un titular. */
   | { kind: 'empty'; title: string; text: string; nextMonth: string | null }
   /** Hay renglones y ninguno suma: nunca «$ 0». */
-  | { kind: 'no_amounts'; title: string; text: string }
+  | { kind: 'no_amounts'; title: string; text: string; carried?: SheetCarried }
+  /** Mirando el mes que viene y lo único que hay es lo que quedó de antes: sin número. */
+  | { kind: 'carried'; title: string; text: string; carried: SheetCarried }
   | {
       kind: 'number'
       cents: number
@@ -674,6 +767,8 @@ export type SheetSentence =
       allPaid: boolean
       /** Vencen este mes y no tienen monto: no suman. */
       noAmount: number
+      /** Mirando el mes que viene: lo que quedó de antes va aparte del número. */
+      carried?: SheetCarried
     }
 
 /** Lo próximo que vence fuera de la hoja: «el 10 de noviembre: 31 gastos, $ 2.450.000». */
@@ -701,6 +796,67 @@ function upcomingWords(later: readonly SheetItem[]): { text: string; month: stri
 }
 
 /**
+ * La cabecera del mes que viene cuando hay cosas que quedaron de antes sin
+ * pagar. Tres casos, y en ninguno lo de antes entra al número:
+ *
+ * - lo único que hay es lo de antes: sin número, «Noviembre todavía no se
+ *   armó» (esos renglones pasan a noviembre recién cuando se pagan);
+ * - lo del mes no suma (ninguno tiene monto): «Todavía no sé cuánto te falta»;
+ * - hay de los dos: el número es lo del mes y lo de antes va al lado, aparte.
+ */
+function carriedSentence(sheet: Sheet, carry: SheetCarry): SheetSentence {
+  const mes = monthWord(sheet.month)
+  const carried: SheetCarried = { month: carry.month, count: carry.count, cents: carry.cents }
+  const own = carry.ownTotals
+  const ownCounted = carry.own.filter((item) => item.line.remainingCents !== null).length
+
+  if (ownCounted === 0 && own.noAmount === 0) {
+    const one = carry.count === 1
+    const sum = carry.cents > 0 ? `: ${one ? '' : 'suman '}${pesos(carry.cents)}` : ''
+    return {
+      kind: 'carried',
+      title: `${monthTitle(sheet.month)} todavía no se armó`,
+      text: one
+        ? `Acá abajo está el que quedó de antes sin pagar${sum}. Cuando lo pagues, vas a ver el de ${mes}.`
+        : `Acá abajo están los ${carry.count} que quedaron de antes sin pagar${sum}. Cuando los pagues, vas a ver los de ${mes}.`,
+      carried,
+    }
+  }
+
+  const apart =
+    carry.count === 1
+      ? 'El que quedó de antes sin pagar va aparte.'
+      : `Los ${carry.count} que quedaron de antes sin pagar van aparte.`
+  if (ownCounted === 0) {
+    return {
+      kind: 'no_amounts',
+      title: 'Todavía no sé cuánto te falta',
+      text: `${
+        own.noAmount === 1
+          ? `Es un solo gasto de ${mes} y no tiene monto.`
+          : `Son ${own.noAmount} gastos de ${mes} y ninguno tiene monto.`
+      } ${apart}`,
+      carried,
+    }
+  }
+  const lead =
+    own.remainingCents === 0
+      ? `Los de ${mes} ya están pagos.`
+      : ownCounted === 1
+        ? `Es un solo gasto de ${mes}.`
+        : `Son ${ownCounted} gastos de ${mes}.`
+  return {
+    kind: 'number',
+    cents: own.remainingCents,
+    text: `${lead} ${apart}`,
+    // Con algo de antes sin pagar no se dice «al día», aunque lo del mes esté pago.
+    allPaid: false,
+    noAmount: own.noAmount,
+    carried,
+  }
+}
+
+/**
  * Qué se dice al lado del número de arriba. El orden importa: primero «no hay
  * renglones», después «ninguno suma» (nunca «$ 0» por un dato que falta) y
  * recién después el número.
@@ -720,6 +876,10 @@ export function sheetSentence(sheet: Sheet): SheetSentence {
       nextMonth: sheet.isCurrent && upcoming?.month === nextMonth ? nextMonth : null,
     }
   }
+
+  // Mirando el mes que viene con cosas que quedaron de antes: van aparte, nunca en el número.
+  const carry = sheetCarry(sheet)
+  if (carry) return carriedSentence(sheet, carry)
 
   const counted = items.filter((item) => item.line.remainingCents !== null)
   if (counted.length === 0) {
@@ -758,25 +918,9 @@ export function sheetSentence(sheet: Sheet): SheetSentence {
   const total = progress.totalCents
   const lead =
     counted.length === 1 ? `Es un solo gasto de ${mes}.` : `Son ${counted.length} gastos de ${mes}.`
-  // Mirando el mes que viene, lo que quedó sin pagar de antes aparece una vez, con su fecha
-  // vieja: se dice, para que nadie crea que son los vencimientos de ese mes.
-  const carried = sheet.isCurrent
-    ? 0
-    : counted.filter((item) => monthOf(item.day) < month && (item.line.remainingCents ?? 0) > 0)
-        .length
   let text: string
   if (progress.remainingCents === 0) {
     text = `Pagaste los ${pesos(total)} de gastos fijos de ${mes}.`
-  } else if (carried > 0 && carried === counted.length) {
-    text =
-      carried === 1
-        ? `Es el que quedó de antes sin pagar. Cuando lo pagues, acá vas a ver el de ${mes}.`
-        : `Son los ${carried} que quedaron de antes sin pagar. Cuando los pagues, acá vas a ver los de ${mes}.`
-  } else if (carried > 0) {
-    const rest = counted.length - carried
-    text = `Son ${counted.length} gastos: ${carried === 1 ? '1 quedó' : `${carried} quedaron`} de antes sin pagar y ${
-      rest === 1 ? '1 vence' : `${rest} vencen`
-    } en ${mes}.`
   } else if (progress.paidCents > 0) {
     text = `Pagaste ${pesos(progress.paidCents)} de ${pesos(total)}. ${
       progress.pendingRows === 1 ? 'Te falta 1' : `Te faltan ${progress.pendingRows}`
@@ -856,8 +1000,12 @@ export function nextUpView(sheet: Sheet, opts: { canWrite: boolean }): NextUpVie
   }
   if (items.length === 0) return { kind: 'none' }
 
-  // Mirando el mes que viene: lo primero que vence de ESE mes, sin botón. Si lo único que hay
-  // es lo que quedó de antes sin pagar, lo que sigue es pagarlo: va el botón de siempre.
+  // Mirando el mes que viene y lo único que hay es lo que quedó de antes: ese mes todavía no
+  // tiene «lo que sigue». Se pagan desde la hoja de hoy (la cabecera lleva a ella) o desde su
+  // renglón, que sigue teniendo su «Pagar».
+  if (sheetCarry(sheet)?.own.length === 0) return { kind: 'none' }
+
+  // Mirando el mes que viene: lo primero que vence de ESE mes, sin botón.
   const ahead = sheet.isCurrent ? undefined : sheet.groups.find((g) => g.place !== 'before')
   if (ahead) {
     const days = daysBetween(sheet.today, ahead.day)
@@ -911,7 +1059,25 @@ export function nextUpView(sheet: Sheet, opts: { canWrite: boolean }): NextUpVie
 
 // ─── Los dibujos ─────────────────────────────────────────────────────────────
 
-export type DueDay = { date: string; cents: number; count: number; overdue: boolean }
+export type DueDay = {
+  /** `yyyy-MM-dd`. En la columna que junta lo de otros meses, el primero de sus días. */
+  date: string
+  cents: number
+  count: number
+  overdue: boolean
+  /**
+   * La columna junta todo lo que quedó de meses anteriores (`before`) o lo de
+   * meses siguientes (`after`): va rotulada con palabras («Antes»), porque un
+   * «10» de septiembre adelante del día 1 es un eje que miente.
+   */
+  outside?: 'before' | 'after'
+}
+
+/** Cómo se llama en el eje y en el globito la columna que junta lo de otros meses. */
+export const DUE_OUTSIDE_LABELS: Readonly<Record<NonNullable<DueDay['outside']>, string>> = {
+  before: 'Antes',
+  after: 'Después',
+}
 
 /** «El 15 se te van $ 35.000»; con vencidos, «Tenés $ 880.000 vencidos del 10». */
 export function dueTitle(days: readonly DueDay[]): string {
@@ -920,14 +1086,15 @@ export function dueTitle(days: readonly DueDay[]): string {
   if (overdue.length > 0) {
     const total = overdue.reduce((sum, d) => sum + d.cents, 0)
     const only = overdue.length === 1 ? overdue[0] : undefined
-    return only
-      ? `Tenés ${pesos(total)} vencidos del ${Number(only.date.slice(8, 10))}`
-      : `Tenés ${pesos(total)} vencidos`
+    if (!only) return `Tenés ${pesos(total)} vencidos`
+    return only.outside
+      ? `Tenés ${pesos(total)} vencidos de antes`
+      : `Tenés ${pesos(total)} vencidos del ${Number(only.date.slice(8, 10))}`
   }
-  const busiest = withMoney.reduce<DueDay | null>(
-    (best, d) => (best === null || d.cents > best.cents ? d : best),
-    null,
-  )
+  // El día más cargado es un día del mes: lo de otros meses no tiene «el 15».
+  const busiest = withMoney
+    .filter((d) => !d.outside)
+    .reduce<DueDay | null>((best, d) => (best === null || d.cents > best.cents ? d : best), null)
   if (!busiest) return 'Este mes no queda nada por vencer'
   return `El ${Number(busiest.date.slice(8, 10))} se te van ${pesos(busiest.cents)}`
 }
@@ -943,6 +1110,31 @@ export function categoryTitle(bars: readonly CategoryBar[]): string {
   )
   if (!top || total <= 0) return 'En qué se va lo fijo'
   return `Lo que más se lleva de lo fijo: ${top.name} (${Math.round((top.cents * 100) / total)} %)`
+}
+
+/** Las categorías que no entran al dibujo, juntas: cuántas son, cuánto suman y cuántos gastos. */
+export type CategoryRest = { categories: number; cents: number; count: number }
+
+/**
+ * Las categorías que entran al dibujo: las más grandes y, si hay muchas, el
+ * resto junto en un renglón («Otras 7 categorías»). Una docena de barritas de
+ * menos del 1 % no compara nada; la tabla las conserva todas.
+ */
+export function topCategoryBars(
+  bars: readonly CategoryBar[],
+  max = 6,
+): { top: CategoryBar[]; rest: CategoryRest | null } {
+  // Con una sola de más no vale la pena juntar: «Otras 1 categoría» ocupa lo mismo.
+  if (bars.length <= max + 1) return { top: [...bars], rest: null }
+  const others = bars.slice(max)
+  return {
+    top: bars.slice(0, max),
+    rest: {
+      categories: others.length,
+      cents: others.reduce((sum, bar) => sum + bar.cents, 0),
+      count: others.reduce((sum, bar) => sum + bar.count, 0),
+    },
+  }
 }
 
 export type PaperSplit = {

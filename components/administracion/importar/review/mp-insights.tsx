@@ -1,5 +1,6 @@
 import { ChevronDown } from 'lucide-react'
 import { ChartFrame } from '@/components/administracion/charts/chart-frame'
+import { ChartTable } from '@/components/administracion/charts/chart-parts'
 import { DayBars, type DayBarsDay, DayBarsTable } from '@/components/administracion/charts/day-bars'
 import { SplitBar, type SplitBarSegment } from '@/components/administracion/charts/split-bar'
 import { Explain, MathRow, PanelSection, PillLink } from '@/components/administracion/kit'
@@ -11,7 +12,7 @@ import {
   mpDaysSummary,
   mpDayTitle,
 } from '@/lib/imports/ui/mp-insights'
-import { formatCents } from '@/lib/money'
+import { formatCents, formatCentsShort } from '@/lib/money'
 
 const PART_SWATCH: Readonly<Record<MpCutPart['key'], string>> = {
   net: 'bg-adm-s1',
@@ -33,9 +34,17 @@ const PART_SWATCH: Readonly<Record<MpCutPart['key'], string>> = {
  * 2. De cada $ 100 cobrados, cuánto quedó: la barra partida en lo que te
  *    depositaron, la comisión, su IVA y los impuestos.
  *
+ * Con uno o dos días no hay columnas que comparar: una sola barra en mil
+ * píxeles parece un gráfico vacío. Ahí van el título y la tabla (un renglón por
+ * día), sin dibujo.
+ *
  * Plegado mientras quedan preguntas (ahí la tarea es contestar), con su título
  * a la vista. Los datos llegan armados (`mpDays`, `mpCut`). Server-safe.
  */
+
+/** Desde cuántos días el dibujo de columnas dice más que la tabla. */
+const MIN_DAYS_FOR_BARS = 3
+
 export function MpInsights({
   days,
   cut,
@@ -69,6 +78,10 @@ export function MpInsights({
     swatch: PART_SWATCH[part.key],
   }))
   const period = periodFrom && periodTo ? formatRange(periodFrom, periodTo) : null
+  const drawBars = days.length >= MIN_DAYS_FOR_BARS
+  // «La marca» se nombra solo si algún día la tiene (un cierre cargado).
+  const anyClose = days.some((d) => d.closeCents !== null)
+  const caption = 'Lo que cobró Mercado Pago y lo que dice el cierre, día por día'
 
   return (
     <details
@@ -92,26 +105,69 @@ export function MpInsights({
       </summary>
       <div className="border-t border-border/60 px-4 py-4 sm:px-5">
         <PanelSection>
-          <ChartFrame
-            title={summary.title}
-            sentence="Cada columna es lo que cobró Mercado Pago ese día; la marca, lo que anotaste en el cierre."
-            chart={
-              <DayBars
-                days={bars}
-                seriesLabel="Cobró Mercado Pago"
-                targetLabel="Según tu cierre"
-                missingPills={false}
-              />
-            }
-            table={
-              <DayBarsTable
-                days={bars}
-                seriesLabel="Cobró Mercado Pago"
-                targetLabel="Según tu cierre"
-                caption="Lo que cobró Mercado Pago y lo que dice el cierre, día por día"
-              />
-            }
-          />
+          {drawBars ? (
+            <ChartFrame
+              title={summary.title}
+              sentence={
+                anyClose
+                  ? 'Cada columna es lo que cobró Mercado Pago ese día; la marca, lo que anotaste en el cierre.'
+                  : 'Cada columna es lo que cobró Mercado Pago ese día. Cuando cargues los cierres, vas a ver al lado lo que anotaste.'
+              }
+              chart={
+                <DayBars
+                  days={bars}
+                  seriesLabel="Cobró Mercado Pago"
+                  targetLabel="Según tu cierre"
+                  missingPills={false}
+                />
+              }
+              table={
+                <DayBarsTable
+                  days={bars}
+                  seriesLabel="Cobró Mercado Pago"
+                  targetLabel="Según tu cierre"
+                  caption={caption}
+                />
+              }
+            />
+          ) : (
+            <ChartFrame
+              title={summary.title}
+              sentence={
+                anyClose
+                  ? 'Lo que cobró Mercado Pago contra lo que anotaste en el cierre de ese día.'
+                  : 'Lo que cobró Mercado Pago. Cuando cargues el cierre de ese día, te digo si coincide.'
+              }
+              chart={
+                // Sin fila de total: con uno o dos días repetiría el renglón de arriba. Rótulos
+                // cortos: «Cobró Mercado Pago · Según tu cierre» cortaba la tabla a 390 px, y el
+                // título de arriba ya dice qué es cada columna.
+                <ChartTable
+                  className="max-w-xl"
+                  caption={caption}
+                  columns={[
+                    { key: 'dia', label: 'Día' },
+                    { key: 'cobro', label: 'Mercado Pago', align: 'right' },
+                    { key: 'cierre', label: 'Tu cierre', align: 'right' },
+                  ]}
+                  rows={days.map((d) => ({
+                    key: d.date,
+                    cells: [
+                      mpDayTitle(d),
+                      formatCentsShort(d.collectedCents),
+                      d.closeCents !== null ? (
+                        formatCentsShort(d.closeCents)
+                      ) : (
+                        <span key="falta" className="text-warning-text">
+                          Falta
+                        </span>
+                      ),
+                    ],
+                  }))}
+                />
+              }
+            />
+          )}
           {summary.missing.length > 0 ? (
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
               <span className="text-sm text-muted-foreground">Falta el cierre:</span>

@@ -45,9 +45,8 @@ import {
   monthAvailabilityMessage,
   resolveBookMonth,
 } from '../_lib/periods'
-import { BookPage, WideBookHint } from './book-page'
+import { BookPage, PERIOD_ROW, WideBookHint } from './book-page'
 import { BookTotals } from './book-totals'
-import { ExportButton } from './export-button'
 import { KeysetPagination } from './keyset-pagination'
 import { MonthPicker } from './period-picker'
 import { PeriodError, QueryErrorBlock } from './report-error'
@@ -148,26 +147,33 @@ export async function IvaBookScreen({
         page?.ok ? ` · ${plural(totalRows, 'comprobante', 'comprobantes')}` : ''
       }`}
       badge={isOpen ? <StatusPill tone="info">Mes abierto: puede cambiar</StatusPill> : null}
-      actions={
-        hasCuit ? (
-          <>
-            <ExportButton
-              href={exportHref(tenantSlug, copy.exportBook, { mes: month.month })}
-              fileName={`${fileBase}-${copy.exportBook}-${month.month}.csv`}
-              label="Exportar libro"
-            />
-            <ExportButton
-              href={exportHref(tenantSlug, copy.aliquots, { mes: month.month })}
-              fileName={`${fileBase}-${copy.aliquots}-${month.month}.csv`}
-              label="Exportar alícuotas"
-            />
-          </>
-        ) : null
+      exports={
+        hasCuit
+          ? [
+              {
+                href: exportHref(tenantSlug, copy.exportBook, { mes: month.month }),
+                fileName: `${fileBase}-${copy.exportBook}-${month.month}.csv`,
+                label: 'Exportar libro',
+              },
+              {
+                href: exportHref(tenantSlug, copy.aliquots, { mes: month.month }),
+                fileName: `${fileBase}-${copy.aliquots}-${month.month}.csv`,
+                label: 'Exportar alícuotas',
+              },
+            ]
+          : undefined
       }
       booksPath={`${base}/libros`}
       book={copy.slug}
       period={{ kind: 'month', month: month.month, from: month.from, to: month.to }}
-      toolbar={<MonthPicker month={month.month} today={today} minMonth={ctx.minMonth} />}
+      toolbar={
+        <MonthPicker
+          month={month.month}
+          today={today}
+          minMonth={ctx.minMonth}
+          className={PERIOD_ROW}
+        />
+      }
       totals={
         showBook && totals?.ok ? <IvaTotals book={book} amounts={totals.data.amounts} /> : null
       }

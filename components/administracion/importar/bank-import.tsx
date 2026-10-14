@@ -68,7 +68,8 @@ export function BankImport({
           </Button>
         }
       >
-        La agregás una vez en Cajas, con su CBU, y volvés.
+        La agregás una vez en Ajustes › Cajas y cuentas, con su CBU, y volvés. Si el bar no tiene
+        cuenta en el banco, esto no hace falta.
       </EmptyTeach>
     )
   }

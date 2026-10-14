@@ -2,6 +2,7 @@
 
 import { ChevronDown } from 'lucide-react'
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { ChoiceChips } from '@/components/administracion/cajas-ventas/choice-chips'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -20,6 +21,7 @@ import { cn } from '@/lib/utils'
 import { Callout, describedBy, Field } from '../../ajustes/_components/form-bits'
 import { INPUT_CLASS, SwitchRow } from '../../ajustes/_components/inputs'
 import { useMasterAction } from '../../ajustes/_components/use-master-action'
+import { categoryListGroups } from '../_lib/categories'
 import { formFeedback } from '../_lib/feedback'
 import {
   type ChartIndex,
@@ -199,6 +201,18 @@ export function AccountCreateForm({
     () => (expenseOnly ? groups.filter((a) => a.type === 'expense') : groups),
     [expenseOnly, groups],
   )
+  // En «Nueva categoría» el grupo se elige entre los MISMOS de la lista «Tus categorías», con sus
+  // nombres y sin código ni ruta del plan («Personal», «Gastos del local»…). Si todavía no hay
+  // ninguna categoría (la lista está vacía), queda el buscador de grupos de gastos de siempre.
+  const listGroups = useMemo(() => {
+    if (!expenseOnly) return []
+    const offered = new Set(offeredGroups.map((a) => a.id))
+    return categoryListGroups(index.ordered).flatMap((group) =>
+      group.parentId && offered.has(group.parentId)
+        ? [{ value: group.parentId, label: group.name }]
+        : [],
+    )
+  }, [expenseOnly, offeredGroups, index])
   const formRef = useRef<HTMLFormElement | null>(null)
 
   useEffect(() => onBusyChange(pending), [pending, onBusyChange])
@@ -220,7 +234,12 @@ export function AccountCreateForm({
       setMoreOpen(true)
     }
     const frame = requestAnimationFrame(() => {
-      formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
+      // Un campo marcado, o (si lo que falta es el grupo) la opción donde cae el foco del grupo.
+      formRef.current
+        ?.querySelector<HTMLElement>(
+          '[aria-invalid="true"], [data-invalid="true"] [role="radio"][tabindex="0"]',
+        )
+        ?.focus()
     })
     return () => cancelAnimationFrame(frame)
   }, [errors, groupGiven])
@@ -283,6 +302,47 @@ export function AccountCreateForm({
     )
   }
 
+  const chooseGroup = (v: string) => {
+    setParentChoice(v)
+    setErrors((prev) => {
+      const { parentId: _drop, ...rest } = prev
+      return rest
+    })
+  }
+
+  // «Nueva categoría»: los grupos de la lista, a la vista, para tocar. Manda el mismo id de grupo.
+  const groupChips = (
+    <div className="grid content-start gap-1.5">
+      <span id="ac-parent-label" className="text-sm font-medium">
+        ¿En qué grupo va?
+        <span aria-hidden="true" className="ml-0.5 text-destructive">
+          *
+        </span>
+      </span>
+      <div data-invalid={err('parentId') ? 'true' : undefined}>
+        <ChoiceChips
+          labelledBy="ac-parent-label"
+          // En el celular los nombres largos («Impuestos, tasas y contribuciones») dejaban una
+          // píldora por renglón: nueve renglones antes del nombre. Ahí van en dos columnas
+          // parejas, con el nombre en dos líneas si hace falta (siguen midiendo 44 px o más).
+          className="max-sm:grid max-sm:grid-cols-2 max-sm:[&>button]:h-auto max-sm:[&>button]:min-h-11 max-sm:[&>button]:rounded-xl max-sm:[&>button]:px-3 max-sm:[&>button]:py-2 max-sm:[&>button]:text-left max-sm:[&>button]:leading-snug"
+          options={listGroups}
+          value={parentChoice}
+          onChange={chooseGroup}
+        />
+      </div>
+      {err('parentId') ? (
+        <p role="alert" className="text-xs text-destructive">
+          {err('parentId')}
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground text-pretty">
+          Son los grupos de «Tus categorías». Para otro lugar del plan, usá «Plan completo».
+        </p>
+      )}
+    </div>
+  )
+
   const parentField = (
     <Field
       id="ac-parent"
@@ -302,13 +362,7 @@ export function AccountCreateForm({
         index={index}
         groups={offeredGroups}
         value={parentChoice}
-        onValueChange={(v) => {
-          setParentChoice(v)
-          setErrors((prev) => {
-            const { parentId: _drop, ...rest } = prev
-            return rest
-          })
-        }}
+        onValueChange={chooseGroup}
         allowRoot={!expenseOnly}
         invalid={Boolean(err('parentId'))}
         describedBy={describedBy('ac-parent', true, err('parentId'))}
@@ -489,6 +543,8 @@ export function AccountCreateForm({
               <p className="rounded-xl bg-secondary/50 px-3 py-2.5 text-sm text-pretty">
                 Va adentro de <span className="font-medium">{parent.name}</span>.
               </p>
+            ) : listGroups.length > 0 ? (
+              groupChips
             ) : (
               parentField
             )}

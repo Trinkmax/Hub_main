@@ -14,10 +14,37 @@ function exact(cents: number): 0 | 2 {
 }
 
 /**
+ * «del 10/09 · de un total de $ 1.210.000»: en una hoja ancha, en un renglón; en una
+ * angosta (el celular), la fecha arriba y el total abajo, sin el punto. Cada parte va
+ * entera: antes se partía «del» solo en un renglón y «10/09 · de un total…» en el otro.
+ */
+function DateAndTotal({ date, totalCents }: { date: string; totalCents: number | null }) {
+  return (
+    <span className="tabular-nums">
+      <span className="whitespace-nowrap">del {formatDayMonth(date)}</span>
+      {totalCents !== null ? (
+        <>
+          <span className="@max-[28rem]/ledger:hidden"> · </span>
+          <span className="whitespace-nowrap @max-[28rem]/ledger:block">
+            de un total de {formatCentsShort(totalCents)}
+          </span>
+        </>
+      ) : null}
+    </span>
+  )
+}
+
+/**
  * Las compras sin pagar de un proveedor, como renglones de su libreta: en el
  * margen, cuándo vence (las mismas palabras que en la portada); en el medio, el
  * papel y de cuándo es; a la derecha, lo que falta pagar y [Pagar], que abre
  * «Pagar» con ESA compra tildada (`?partida=`).
+ *
+ * Si ya se pagó una parte, «de un total de $ X» va con la fecha y no debajo del
+ * importe: así el bloque de la derecha mide lo mismo en todos los renglones. En
+ * una hoja angosta (el celular) el importe baja a la línea de [Pagar], en TODOS
+ * los renglones: el papel se lee entero en un renglón y los importes quedan en
+ * columna, sin unos al lado del nombre y otros debajo.
  *
  * La contadora ve los renglones sin el botón (`canWrite={false}`).
  */
@@ -55,7 +82,14 @@ export function DebtItems({
         const partial = item.openCents !== item.amountCents
         // La nota suele repetir el nombre del papel («Factura A 0003-…»): así no se lee dos veces.
         const memo = item.memo?.trim()
-        const note = memo && memo !== item.documentLabel.trim() ? memo : null
+        // El motor anota «Sin comprobante»: la palabra del dueño es «Sin factura».
+        const note =
+          memo && memo !== item.documentLabel.trim()
+            ? memo.replace(/^sin comprobante\b/i, 'Sin factura')
+            : null
+        const amount = (
+          <Amount cents={item.openCents} decimals={exact(item.openCents)} className="text-base" />
+        )
         return (
           <LedgerRow
             key={item.lineId}
@@ -63,22 +97,17 @@ export function DebtItems({
             title={<VoucherText text={item.documentLabel} />}
             href={documentHref(tenantSlug, item.documentId)}
             meta={
-              <span className="tabular-nums">
-                del {formatDayMonth(item.entryDate)}
-                {note ? ` · ${note}` : ''}
-              </span>
+              <>
+                <DateAndTotal
+                  date={item.entryDate}
+                  totalCents={partial ? item.amountCents : null}
+                />
+                {note ? <span> · {note}</span> : null}
+              </>
             }
+            // Con [Pagar], en una hoja angosta el importe no va acá: baja a la línea del botón.
             amount={
-              <Amount
-                cents={item.openCents}
-                decimals={exact(item.openCents)}
-                className="text-base"
-              />
-            }
-            amountNote={
-              partial ? (
-                <span className="whitespace-nowrap">de {formatCentsShort(item.amountCents)}</span>
-              ) : undefined
+              canWrite ? <span className="@max-[28rem]/ledger:hidden">{amount}</span> : amount
             }
             action={
               canWrite ? (
@@ -91,6 +120,14 @@ export function DebtItems({
                 >
                   Pagar
                 </ActionButton>
+              ) : undefined
+            }
+            // Hoja angosta: «$ 710.000 ………… [Pagar]», el importe a la izquierda de su botón.
+            menu={
+              canWrite ? (
+                <span className="mr-auto text-sm font-medium tabular-nums @[28rem]/ledger:hidden">
+                  {amount}
+                </span>
               ) : undefined
             }
           />
@@ -119,14 +156,14 @@ export function CreditItems({
           rail={<LedgerRail label="a tu" value="favor" tone="ok" />}
           title={<VoucherText text={item.documentLabel} />}
           href={documentHref(tenantSlug, item.documentId)}
-          meta={<span className="tabular-nums">del {formatDayMonth(item.entryDate)}</span>}
+          meta={
+            <DateAndTotal
+              date={item.entryDate}
+              totalCents={item.openCents !== item.amountCents ? item.amountCents : null}
+            />
+          }
           amount={
             <Amount cents={item.openCents} decimals={exact(item.openCents)} className="text-base" />
-          }
-          amountNote={
-            item.openCents !== item.amountCents ? (
-              <span className="whitespace-nowrap">de {formatCentsShort(item.amountCents)}</span>
-            ) : undefined
           }
         />
       ))}

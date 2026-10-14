@@ -10,12 +10,63 @@ import {
 } from '@/components/administracion/kit'
 import { ActionButton } from '@/components/administracion/quick-actions'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { formatDayMonth } from '@/lib/dates'
 import { formatCentsShort } from '@/lib/money'
+import { cn } from '@/lib/utils'
 import type { WalletCardView, WalletView } from '../_lib/wallet-view'
 import { CajasAcciones, CajasArchivos } from './cajas-acciones'
 
-const GRID = 'grid gap-4 sm:grid-cols-2 xl:grid-cols-3'
+/**
+ * El encabezado de la billetera. Hasta `xl`, una cosa debajo de la otra: el
+ * total, el conteo, las acciones y los archivos. Desde `xl`, dos columnas: el
+ * dato a la izquierda y lo que se hace con él a la derecha, así el total no
+ * queda solo con media pantalla vacía al lado. Las dos filas están alineadas
+ * (el total con las acciones, el conteo con los archivos) y «¿Cómo se
+ * calcula?» se abre hacia abajo sin mover las acciones.
+ */
+const HEAD =
+  'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(22rem,1fr)_minmax(0,34rem)] xl:items-end xl:gap-x-10 xl:gap-y-3'
+
+/**
+ * La grilla de tarjetas se acomoda a SU ancho (no al de la ventana: con el menú
+ * abierto hay 260 px menos) y a cuántas cajas hay, para que ninguna quede sola
+ * en una fila con medio ancho vacío:
+ * - dos cajas: siempre mitad y mitad;
+ * - tres (o cinco, o más): de a dos con la última a lo ancho; de a tres cuando entran;
+ * - cuatro: dos y dos; las cuatro en fila cuando entran.
+ * Las clases van escritas enteras (Tailwind no ve una clase armada al vuelo).
+ */
+function gridOf(count: number): { list: string; item: string } {
+  if (count <= 1) return { list: 'grid max-w-md grid-cols-1 gap-4', item: 'flex' }
+  if (count === 2)
+    return { list: 'grid grid-cols-1 gap-4 @[36rem]/cards:grid-cols-2', item: 'flex' }
+  if (count === 4) {
+    return {
+      list: 'grid grid-cols-1 gap-4 @[36rem]/cards:grid-cols-2 @[68rem]/cards:grid-cols-4',
+      item: 'flex',
+    }
+  }
+  return {
+    list: 'grid grid-cols-1 gap-4 @[36rem]/cards:grid-cols-2 @[51rem]/cards:grid-cols-3',
+    item: 'flex @[36rem]/cards:@max-[51rem]/cards:last:odd:col-span-2',
+  }
+}
+
+function CardGrid({ label, cards }: { label: string; cards: readonly WalletCardView[] }) {
+  const grid = gridOf(cards.length)
+  return (
+    <div className="@container/cards">
+      <ul aria-label={label} className={grid.list}>
+        {cards.map((card) => (
+          <li key={card.id} className={grid.item}>
+            <TreasuryCard card={card} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
 
 /**
  * La billetera: lo primero que se ve en Cajas y bancos. Como la app del banco
@@ -70,47 +121,44 @@ export function Wallet({
         </div>
       ) : null}
 
-      <div className="space-y-4">
-        <div className="space-y-2">
-          <MoneyHero
-            size="lg"
-            animate
-            label={view.label}
-            cents={view.cents}
-            sentence={view.sentence}
-          />
-          {/* El conteo y «¿Cómo se calcula?» en un renglón; abierta, la cuenta baja a lo ancho. */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            <StatusPill tone={view.countPill.tone}>{view.countPill.text}</StatusPill>
-            <Explain
-              note="Es lo que dice el sistema según lo que se cargó. Las tarjetas de la empresa no suman (son una deuda) y lo que está en camino tampoco, hasta que entra."
-              className="open:basis-full [&>div]:max-w-xl"
-            >
-              {view.math.map((row) => (
-                <MathRow key={row.key} op={row.op} label={row.label} value={row.value} />
-              ))}
-              <MathRow op="=" label={view.label} value={formatCentsShort(view.cents)} />
-            </Explain>
-          </div>
+      <div className={HEAD}>
+        <MoneyHero
+          size="lg"
+          animate
+          label={view.label}
+          cents={view.cents}
+          sentence={view.sentence}
+          className="xl:col-start-1 xl:row-start-1"
+        />
+        {/* El conteo y «¿Cómo se calcula?» en un renglón; abierta, la cuenta baja a lo ancho. */}
+        <div className="-mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 xl:col-start-1 xl:row-start-2 xl:mt-0 xl:self-start">
+          <StatusPill tone={view.countPill.tone}>{view.countPill.text}</StatusPill>
+          <Explain
+            note="Es lo que dice el sistema según lo que se cargó. Las tarjetas de la empresa no suman (son una deuda) y lo que está en camino tampoco, hasta que entra."
+            className="open:basis-full [&>div]:max-w-xl"
+          >
+            {view.math.map((row) => (
+              <MathRow key={row.key} op={row.op} label={row.label} value={row.value} />
+            ))}
+            <MathRow op="=" label={view.label} value={formatCentsShort(view.cents)} />
+          </Explain>
         </div>
-        <CajasAcciones base={base} hasNonCash={view.hasNonCash} />
+        <CajasAcciones
+          base={base}
+          hasNonCash={view.hasNonCash}
+          className="xl:col-start-2 xl:row-start-1"
+        />
         {/* En la compu, pegado a las acciones; en el celular va después de las tarjetas. */}
         <CajasArchivos
           base={base}
           hasWallet={view.hasWallet}
           hasBank={view.hasBank}
-          className="max-sm:hidden"
+          className="max-sm:hidden xl:col-start-2 xl:row-start-2 xl:self-start xl:pt-1"
         />
       </div>
 
       <div className="space-y-3">
-        <ul aria-label="Tus cajas" className={GRID}>
-          {view.cards.map((card) => (
-            <li key={card.id} className="flex">
-              <TreasuryCard card={card} />
-            </li>
-          ))}
-        </ul>
+        <CardGrid label="Tus cajas" cards={view.cards} />
         {canWrite ? (
           <Link
             href={`${base}/ajustes?tab=cajas`}
@@ -140,13 +188,7 @@ export function Wallet({
             <span className="font-medium text-foreground">Tarjetas de la empresa</span> · no suman:
             son deuda
           </p>
-          <ul aria-label="Tarjetas de la empresa" className={GRID}>
-            {view.companyCards.map((card) => (
-              <li key={card.id} className="flex">
-                <TreasuryCard card={card} />
-              </li>
-            ))}
-          </ul>
+          <CardGrid label="Tarjetas de la empresa" cards={view.companyCards} />
         </div>
       ) : null}
 
@@ -156,13 +198,7 @@ export function Wallet({
             <span className="font-medium text-foreground">Desactivadas con saldo</span> · no suman a
             lo disponible
           </p>
-          <ul aria-label="Cajas desactivadas con saldo" className={GRID}>
-            {view.inactive.map((card) => (
-              <li key={card.id} className="flex">
-                <TreasuryCard card={card} />
-              </li>
-            ))}
-          </ul>
+          <CardGrid label="Cajas desactivadas con saldo" cards={view.inactive} />
         </div>
       ) : null}
 
@@ -227,5 +263,67 @@ function TreasuryCard({ card }: { card: WalletCardView }) {
         ) : undefined
       }
     />
+  )
+}
+
+const SKELETON_CARDS = ['a', 'b', 'c'] as const
+const SKELETON_ACTIONS = ['a', 'b', 'c', 'd'] as const
+
+/**
+ * La billetera mientras carga, con su forma: el total, las cuatro acciones (en
+ * el celular, círculos con su nombre; en la compu, a la derecha del total) y
+ * tres tarjetas con su lomo. Lo usan `loading.tsx` y el cambio de vista.
+ */
+export function WalletSkeleton() {
+  const grid = gridOf(SKELETON_CARDS.length)
+  return (
+    <div className="space-y-6" aria-hidden="true">
+      <div className={HEAD}>
+        <div className="space-y-2.5 xl:col-start-1 xl:row-start-1">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-10 w-64 max-w-full sm:h-12" />
+          <Skeleton className="h-4 w-56 max-w-full" />
+        </div>
+        <Skeleton className="-mt-2 h-6 w-64 max-w-full rounded-full xl:col-start-1 xl:row-start-2 xl:mt-0" />
+        <div className="grid grid-cols-4 gap-2 sm:flex sm:flex-wrap xl:col-start-2 xl:row-start-1 xl:grid xl:grid-cols-2">
+          {SKELETON_ACTIONS.map((key) => (
+            <div key={key} className="flex flex-col items-center gap-1.5 sm:block">
+              <Skeleton className="size-12 rounded-full sm:h-11 sm:w-40 xl:h-14 xl:w-full xl:rounded-2xl" />
+              <Skeleton className="h-3 w-14 sm:hidden" />
+            </div>
+          ))}
+        </div>
+        <Skeleton className="h-3 w-80 max-w-full max-sm:hidden xl:col-start-2 xl:row-start-2" />
+      </div>
+
+      <div className="@container/cards">
+        <div className={grid.list}>
+          {SKELETON_CARDS.map((key) => (
+            <div
+              key={key}
+              className={cn(
+                grid.item,
+                'card-hairline relative flex-col overflow-hidden rounded-2xl border bg-card p-4 pt-[1.375rem] shadow-xs',
+              )}
+            >
+              <Skeleton className="absolute inset-x-0 top-0 h-1.5 rounded-none" />
+              <div className="flex items-center gap-3">
+                <Skeleton className="size-10 shrink-0 rounded-full" />
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+              </div>
+              <Skeleton className="mt-4 h-9 w-44" />
+              <Skeleton className="mt-3 h-6 w-40 rounded-full" />
+              <div className="mt-4 flex items-center justify-between border-t border-border/60 pt-3">
+                <Skeleton className="h-3 w-36" />
+                <Skeleton className="h-11 w-20 rounded-full sm:h-9" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }

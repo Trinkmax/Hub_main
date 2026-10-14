@@ -280,13 +280,21 @@ describe('el ticket de sueldos y sus atajos', () => {
   })
 
   it('los atajos de fecha respetan el límite del primer día abierto', () => {
+    // Una sola fila, en el orden en que se usan: fin del mes pasado, fin de este y hoy. Sin
+    // «Ayer», y sin el día en el nombre (va en el campo apenas se toca).
     expect(payrollDateShortcuts('2026-10-13', '2026-09-01')).toEqual([
-      { date: '2026-09-30', label: 'Fin de septiembre · 30/09' },
-      { date: '2026-10-31', label: 'Fin de octubre · 31/10' },
+      { date: '2026-09-30', label: 'Fin de septiembre' },
+      { date: '2026-10-31', label: 'Fin de octubre' },
+      { date: '2026-10-13', label: 'Hoy' },
     ])
     // Septiembre ya está cerrado (o el bar arrancó en octubre): ese atajo no se ofrece.
     expect(payrollDateShortcuts('2026-10-13', '2026-10-12')).toEqual([
-      { date: '2026-10-31', label: 'Fin de octubre · 31/10' },
+      { date: '2026-10-31', label: 'Fin de octubre' },
+      { date: '2026-10-13', label: 'Hoy' },
+    ])
+    // Si hoy es justo fin de mes, ese atajo ya lo dice: «Hoy» no se repite.
+    expect(payrollDateShortcuts('2026-10-31', '2026-10-01')).toEqual([
+      { date: '2026-10-31', label: 'Fin de octubre' },
     ])
   })
 })

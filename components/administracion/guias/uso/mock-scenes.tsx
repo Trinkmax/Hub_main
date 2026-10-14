@@ -31,12 +31,7 @@ import { ACTION_TITLES } from '@/components/administracion/acciones/types'
 import { MonthStrip } from '@/components/administracion/charts/month-strip'
 import { ScaledMock } from '@/components/administracion/guias/arca-mock/scaled-mock'
 import { PileSheet } from '@/components/administracion/importar/review/paper-pile'
-import {
-  LedgerList,
-  LedgerRail,
-  LedgerRow,
-  type LedgerTone,
-} from '@/components/administracion/kit/ledger'
+import { LedgerList, LedgerRail, LedgerRow } from '@/components/administracion/kit/ledger'
 import { StatusPill } from '@/components/administracion/kit/status-pill'
 import { StepCard } from '@/components/administracion/kit/step'
 import {
@@ -166,8 +161,9 @@ function TreasuryChips({
           key={item.name}
           className={cn(
             'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium whitespace-nowrap',
+            // La elegida, en el verde del botón y sin tilde: como `TreasuryPicker`.
             item.active
-              ? 'border-foreground bg-foreground text-background'
+              ? 'border-primary bg-primary text-primary-foreground'
               : 'border-border/70 bg-card text-foreground',
           )}
         >
@@ -264,7 +260,11 @@ function LauncherScene({ pick }: { pick: GuideLauncherKey }) {
       <p className={cn(group, 'mt-3')}>{LAUNCHER_GROUPS.sometimes}</p>
       <ul className="mx-3 mt-1.5 mb-3 space-y-0.5 rounded-2xl bg-secondary/50 p-1.5">
         {sometimes.map((item) => (
-          <li key={item.key}>{item.key === pick ? <Tap>{row(item)}</Tap> : row(item)}</li>
+          // El renglón marcado lleva aire arriba y abajo: la etiqueta y el anillo no pisan el
+          // texto del renglón de arriba ni el título del de abajo.
+          <li key={item.key} className={item.key === pick ? 'pt-3 pb-2.5' : undefined}>
+            {item.key === pick ? <Tap>{row(item)}</Tap> : row(item)}
+          </li>
         ))}
       </ul>
     </MockCanvas>
@@ -409,14 +409,16 @@ function PaperChoice({ paper, tap }: { paper: PaperId; tap: boolean }) {
           <span
             key={p.id}
             className={cn(
-              'relative flex items-center gap-2 rounded-xl border bg-card px-2.5 py-2 shadow-2xs',
+              // Ajustado para que «Remito o nada» entre en un renglón también dentro de un paso.
+              'relative flex items-center gap-1.5 rounded-xl border bg-card px-2 py-2 shadow-2xs',
               active ? 'border-primary bg-accent/50 ring-2 ring-primary/25' : 'border-border/70',
             )}
           >
-            <PaperArt id={p.id} className="h-9 shrink-0" />
+            <PaperArt id={p.id} className="h-8 shrink-0" />
             <span className="min-w-0 text-xs leading-tight font-medium">{p.title}</span>
             {active ? (
-              <span className="absolute top-1.5 right-1.5 flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
+              // En la esquina, montado sobre el borde: así no tapa el final del nombre.
+              <span className="absolute -top-1.5 -right-1.5 flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-background">
                 <Check aria-hidden className="size-2.5" strokeWidth={3.5} />
               </span>
             ) : null}
@@ -461,7 +463,7 @@ function ExpenseScene({
       </span>
     </Tap>
   ) : (
-    <MockChips items={[{ label: 'Verduras y frutas', active: true }]} />
+    <MockChips items={[{ label: 'Verduras y frutas', active: true, tick: true }]} />
   )
   return (
     <MockSheet title={ACTION_TITLES.gasto}>
@@ -921,7 +923,7 @@ function CollectScene({ part }: { part: 'amount' | 'sales' }) {
             <MockField label={L.cobrar.deductions}>
               <span className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2 shadow-2xs">
                 <span>Comisión</span>
-                <span className="font-mono tabular-nums">{money(DEDUCTIONS)}</span>
+                <span className="tabular-nums">{money(DEDUCTIONS)}</span>
               </span>
             </MockField>
           </div>
@@ -1155,18 +1157,21 @@ function ImportReviewScene({ source }: { source: 'mercado_pago' | 'arca' }) {
           <MockSecondary className="h-11">{L.importar.different}</MockSecondary>
         </span>
       </div>
+      {/* El importe arriba, en la línea del título, como en la revisión de verdad; el estado
+          debajo. Con aire abajo: el renglón no queda pegado al borde del dibujo. */}
       <LedgerList aria-label="No se cargan" className={WIDE_LEDGER}>
         <LedgerRow
-          muted
           rail={<LedgerRail label="sep" value="14" />}
           title="Factura A 0003-00001290"
-          meta={SUPPLIER}
-          amount={
-            <span className="flex flex-col items-end gap-1">
-              <ProposalPill status="skipped" reason="already_loaded" />
-              <span className="tabular-nums">{money(INVOICE_1)}</span>
-            </span>
+          meta={
+            <>
+              <span className="block">{SUPPLIER}</span>
+              <span className="mt-1.5 flex">
+                <ProposalPill status="skipped" reason="already_loaded" />
+              </span>
+            </>
           }
+          amount={money(INVOICE_1)}
         />
       </LedgerList>
     </MockPage>
@@ -1289,7 +1294,9 @@ function MonthCloseScene() {
       />
       <StepCard open n={1} state="current" title={L.cierreMes.review} className={STEP}>
         <Tap label="Mirá acá">
-          <ul className="w-full divide-y divide-border/60">
+          {/* Aire arriba adentro del anillo: la etiqueta queda sobre el borde, no sobre la
+              píldora del primer renglón. */}
+          <ul className="w-full divide-y divide-border/60 pt-2.5">
             {REVIEW_ROWS.map((row) => (
               <li key={row.key} className="py-2 first:pt-0 last:pb-0">
                 <p className="flex items-center gap-2.5">
@@ -1329,14 +1336,23 @@ function MonthCloseScene() {
 const LIGHT = 18_000_000
 const FRIDGE = 12_000_000
 
-/** Un renglón de la planilla: el casillero, el nombre, su cuota o su estado, el monto y «Pagar». */
+/** El «Pagar» de un renglón de la planilla: el botón chico de contorno, como el de verdad. */
+function RowPay() {
+  return (
+    <span className="flex h-8 items-center rounded-full border border-border bg-card px-3.5 text-xs font-medium shadow-2xs">
+      {L.gastosFijos.pay}
+    </span>
+  )
+}
+
+/** Un renglón de la planilla: el casillero, el nombre y el monto; debajo, cómo va y su «Pagar». */
 function FixedRow({
   tick,
   name,
   cents,
   status,
   dots,
-  action,
+  pay = false,
 }: {
   tick: TickState
   name: string
@@ -1344,58 +1360,56 @@ function FixedRow({
   /** Cómo va, en palabras: una píldora si es un estado, texto gris si es solo una fecha. */
   status: ReactNode
   dots?: ReactNode
-  action?: ReactNode
+  pay?: boolean
 }) {
   return (
-    <span className="flex w-full items-start gap-2.5 px-2.5 py-2.5">
+    <span className="flex w-full items-start gap-2.5 px-3 py-2.5">
       <TickBox state={tick} label="" className="mt-0.5 size-5" />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-2">
           <span className="truncate font-medium">{name}</span>
           <span className="shrink-0 font-medium tabular-nums">{money(cents)}</span>
         </span>
-        <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted-foreground">
-          {dots}
-          {status}
+        <span className="mt-1 flex min-h-8 items-center justify-between gap-2">
+          <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted-foreground">
+            {dots}
+            {status}
+          </span>
+          {pay ? <RowPay /> : null}
         </span>
-        {/* Con aire arriba: ahí cae la etiqueta «Tocá acá» sin pisar el monto. */}
-        {action ? <span className="mt-4 flex justify-end">{action}</span> : null}
       </span>
     </span>
   )
 }
 
-/** Un día de la planilla: su margen (cuándo vence) y los renglones de ese día. */
-function FixedDay({
-  day,
-  weekday,
-  tone,
-  children,
-}: {
-  day: string
-  weekday: string
-  tone?: LedgerTone
-  children: ReactNode
-}) {
+/** La línea de un día, como la planilla en un celular: «Lun 5 oct · 1 gasto · $ 950.000». */
+function FixedBand({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className="flex border-b border-border/60 last:border-b-0">
-      <LedgerRail label="oct" value={day} unit={weekday} tone={tone} />
-      <div className="min-w-0 flex-1 divide-y divide-border/60 border-l border-adm-s5/35">
-        {children}
-      </div>
-    </div>
+    <p
+      className={cn(
+        'border-b border-border/60 bg-secondary/40 px-3 py-1.5 text-[10px] font-semibold tracking-[0.1em] text-muted-foreground uppercase',
+        className,
+      )}
+    >
+      {children}
+    </p>
   )
 }
 
 /**
- * La planilla de gastos fijos: cuánto falta este mes y, debajo, un renglón por gasto con el día
- * en el margen, su casillero y, si es en cuotas, sus puntitos. `due`: con «Pagar» en el renglón
- * vencido · `paid`: el mismo renglón ya tildado.
+ * La planilla de gastos fijos como se ve en un celular: cuánto falta este mes y, adentro, «Lo que
+ * sigue» con el botón grande del que vence primero; debajo, los renglones agrupados por el día,
+ * cada uno con su casillero, su monto, sus puntitos si es en cuotas y su «Pagar». `due`: el
+ * alquiler vencido, con «Tocá acá» en el botón grande · `paid`: el alquiler ya tildado y «Lo que
+ * sigue» nombrando la luz.
  */
 function FixedScene({ state }: { state: 'due' | 'paid' }) {
   const paid = state === 'paid'
   const total = RENT + LIGHT + FRIDGE
   const left = paid ? LIGHT + FRIDGE : total
+  const nextPay = (
+    <MockPrimary className="mt-2.5 h-11">{`${L.gastosFijos.pay} ${money(paid ? LIGHT : RENT)}`}</MockPrimary>
+  )
   const rent = (
     <FixedRow
       tick={paid ? 'done' : 'empty'}
@@ -1408,15 +1422,7 @@ function FixedScene({ state }: { state: 'due' | 'paid' }) {
           <StatusPill tone="late">Venció hace 2 días</StatusPill>
         )
       }
-      action={
-        paid ? undefined : (
-          <Tap className="w-auto shrink-0" rounded="rounded-full">
-            <span className="flex h-9 items-center rounded-full border border-border bg-card px-4 text-xs font-medium shadow-2xs">
-              {L.gastosFijos.pay}
-            </span>
-          </Tap>
-        )
-      }
+      pay={!paid}
     />
   )
   return (
@@ -1433,27 +1439,57 @@ function FixedScene({ state }: { state: 'due' | 'paid' }) {
             ? `Pagaste ${money(RENT)} de ${money(total)}. Te faltan 2.`
             : `Son 3 gastos de octubre. 1 ya venció: ${money(RENT)}.`}
         </p>
+        <div className="mt-3 rounded-xl bg-secondary/50 p-3">
+          <p className="text-[10px] font-medium tracking-[0.18em] text-muted-foreground uppercase">
+            {L.gastosFijos.next}
+          </p>
+          <p className="mt-1 font-serif text-[17px] leading-snug font-semibold tracking-tight">
+            {paid ? 'Luz' : 'Alquiler'}
+          </p>
+          <p className="mt-1 flex items-center text-[11px] text-muted-foreground">
+            {paid ? (
+              'Vence el jueves 15/10'
+            ) : (
+              <StatusPill tone="late">Venció hace 2 días</StatusPill>
+            )}
+          </p>
+          {paid ? nextPay : <Tap rounded="rounded-[14px]">{nextPay}</Tap>}
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Después: {paid ? 'Heladera.' : 'Luz y 1 más.'}
+          </p>
+        </div>
       </div>
+      {/* Sin `overflow-hidden`: el anillo de «Quedó pago» se sale del renglón y no se recorta. */}
       <div className="rounded-2xl border border-border/70 bg-card shadow-2xs">
-        <FixedDay day="05" weekday="lun" tone={paid ? 'ok' : 'late'}>
-          {paid ? (
+        <FixedBand className="rounded-t-2xl">Lun 5 oct · 1 gasto · {money(RENT)}</FixedBand>
+        {paid ? (
+          // Con aire alrededor: el anillo no pisa las líneas de los días ni el borde.
+          <span className="block px-2 py-2.5">
             <Tap label="Quedó pago" rounded="rounded-[12px]">
               {rent}
             </Tap>
-          ) : (
-            rent
-          )}
-        </FixedDay>
-        <FixedDay day="15" weekday="jue">
-          <FixedRow tick="empty" name="Luz" cents={LIGHT} status={<span>Vence el 15/10</span>} />
+          </span>
+        ) : (
+          rent
+        )}
+        <FixedBand>Jue 15 oct · 2 gastos · {money(LIGHT + FRIDGE)}</FixedBand>
+        <span className="block divide-y divide-border/60">
+          <FixedRow
+            tick="empty"
+            name="Luz"
+            cents={LIGHT}
+            status={<span>Vence el jueves 15/10</span>}
+            pay
+          />
           <FixedRow
             tick="empty"
             name="Heladera"
             cents={FRIDGE}
             dots={<InstallmentDots current={2} total={6} remaining={5} />}
             status={<span>cuota 2 de 6</span>}
+            pay
           />
-        </FixedDay>
+        </span>
       </div>
     </MockPage>
   )
@@ -1468,7 +1504,8 @@ function FixedScene({ state }: { state: 'due' | 'paid' }) {
 function sceneHeight(scene: GuideScene): number {
   switch (scene.kind) {
     case 'launcher':
-      return 582
+      // El renglón de «Cada tanto» marcado lleva 22 px de aire (ver `LauncherScene`).
+      return launcherGroups().daily.some((item) => item.key === scene.pick) ? 582 : 604
     case 'close':
       return scene.part === 'methods' ? 416 : 496
     case 'expense':
@@ -1487,15 +1524,15 @@ function sceneHeight(scene: GuideScene): number {
       return 612
     case 'import':
       if (scene.phase === 'upload') return 552
-      return scene.source === 'arca' ? 546 : 536
+      return scene.source === 'arca' ? 558 : 536
     case 'undo':
       return 262
     case 'void':
       return 372
     case 'month-close':
-      return 688
+      return 698
     case 'fixed':
-      return scene.state === 'due' ? 432 : 388
+      return scene.state === 'due' ? 640 : 652
   }
 }
 

@@ -20,6 +20,8 @@ export type PurchaseTicketRow = {
   label: ReactNode
   value: ReactNode
   hint?: ReactNode
+  /** Un dato que el sistema propone y nadie eligió todavía: va en la tinta gris del papel. */
+  muted?: boolean
 }
 
 /**
@@ -32,17 +34,28 @@ export type PurchaseTicketRow = {
  * mirarlo. Con datos faltantes igual se dibuja, en borrador: «—» y, en la letra
  * chica, lo que falta. Nunca «$ 0».
  *
+ * El borrador no afirma lo que nadie eligió: sin proveedor, el título es la
+ * pregunta («¿A quién le compraste?», en gris) y no un nombre; y mientras nadie
+ * tocó un papel ni eligió a quién (`stampDraft`), el sello es solo su contorno
+ * punteado: se ve dónde va, no se lee como dicho.
+ *
  * El sello dice qué papel es (el mismo mapa de toda la sección, `voucherStamp`):
  * «Con factura A» en verde o «Sin factura» en azul; ninguno es alarma.
+ *
+ * Los importes van como en un tique de verdad: si alguno tiene centavos, los
+ * llevan todos; si son todos redondos, ninguno (`withCents`, la regla del
+ * ticket del cierre del día).
  */
 export function PurchaseTicket({
   supplier,
   subtitle,
   stamp,
   stampNonce,
+  stampDraft = false,
   rows,
   totalLabel,
   totalCents,
+  withCents = false,
   totalHint,
   note,
   pending,
@@ -58,10 +71,14 @@ export function PurchaseTicket({
   stamp: PaperStamp | null
   /** Sube cada vez que la persona toca un papel: el sello entra de nuevo. En 0, quieto. */
   stampNonce: number
+  /** El papel es solo el que propone el sistema (sin proveedor ni papel tocado): sello en contorno. */
+  stampDraft?: boolean
   rows: readonly PurchaseTicketRow[]
   totalLabel: string
   /** `null` = todavía sin importe («—»). */
   totalCents: number | null
+  /** Algún importe del ticket tiene centavos: el total los muestra también. */
+  withCents?: boolean
   totalHint?: ReactNode
   note: ReactNode
   /** Falta algo: el papel se ve en borrador. */
@@ -76,19 +93,35 @@ export function PurchaseTicket({
     <div className={cn('space-y-3', className)}>
       <Ticket aria-label="Lo que vas a cargar" className="mx-auto w-full max-w-[22rem]">
         <TicketHeader
-          title={supplier ?? 'Proveedor'}
+          title={
+            supplier ?? (
+              // La pregunta, no un nombre: «Proveedor» de título parecía uno ya elegido.
+              <span className="font-normal text-muted-foreground">¿A quién le compraste?</span>
+            )
+          }
           subtitle={subtitle}
-          className={cn((pending || supplier === null) && 'opacity-70')}
+          className={cn(pending && supplier !== null && 'opacity-70')}
         >
           {stamp ? (
-            <TicketStamp key={stampNonce} tone={stamp.tone} animate={stampNonce > 0}>
+            <TicketStamp
+              key={stampNonce}
+              tone={stamp.tone}
+              animate={stampNonce > 0}
+              className={cn(stampDraft && 'border-2 border-dashed opacity-40')}
+            >
               {stamp.text}
             </TicketStamp>
           ) : null}
         </TicketHeader>
         <TicketRule />
         {rows.map((row) => (
-          <TicketRow key={row.key} label={row.label} value={row.value} hint={row.hint} />
+          <TicketRow
+            key={row.key}
+            label={row.label}
+            value={row.value}
+            hint={row.hint}
+            muted={row.muted}
+          />
         ))}
         {rows.length > 0 ? <TicketRule double /> : null}
         <TicketTotal
@@ -97,7 +130,7 @@ export function PurchaseTicket({
             totalCents !== null && totalCents > 0 ? (
               <MoneyTicker
                 cents={totalCents}
-                decimals={totalCents % 100 === 0 ? 0 : 2}
+                decimals={withCents ? 2 : 0}
                 durationMs={380}
                 align="end"
               />

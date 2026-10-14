@@ -39,6 +39,11 @@ type IndexGroup = {
   entries: IndexEntry[]
 }
 
+/**
+ * El orden es también el de las dos columnas de la compu: «Lo de todos los días» y «Control» a la
+ * izquierda; «IVA» y los dos plegados de la contadora a la derecha. Con «Control» al final, la
+ * columna derecha quedaba con tres renglones contra ocho.
+ */
 const GROUPS: readonly IndexGroup[] = [
   {
     key: 'diario',
@@ -65,6 +70,20 @@ const GROUPS: readonly IndexGroup[] = [
         line: 'El saldo de todas las cuentas al cierre del mes.',
         view: { path: 'sumas-y-saldos', period: 'rango' },
         libro: 'sumas-y-saldos',
+      },
+    ],
+  },
+  {
+    key: 'control',
+    title: 'Control',
+    foldForOwner: false,
+    entries: [
+      {
+        key: 'historia',
+        title: 'Historia',
+        line: 'Quién cargó, anuló o cerró qué.',
+        view: { path: 'historia', period: 'rango' },
+        libro: 'historia',
       },
     ],
   },
@@ -182,20 +201,6 @@ const GROUPS: readonly IndexGroup[] = [
       },
     ],
   },
-  {
-    key: 'control',
-    title: 'Control',
-    foldForOwner: false,
-    entries: [
-      {
-        key: 'historia',
-        title: 'Historia',
-        line: 'Quién cargó, anuló o cerró qué.',
-        view: { path: 'historia', period: 'rango' },
-        libro: 'historia',
-      },
-    ],
-  },
 ]
 
 /** Lo que se sabe de cuántos registros trae cada archivo (`null` si la lectura falló). */
@@ -265,8 +270,8 @@ export function BookIndex({
                 className="size-3.5 -rotate-90 transition-transform duration-(--duration-fast) group-open/fold:rotate-0 motion-reduce:transition-none"
               />
               {group.title}
-              <span className="font-mono text-[11px] font-normal normal-case tracking-normal">
-                · {group.entries.length}
+              <span className="text-[11px] font-normal normal-case tracking-normal tabular-nums">
+                · {group.entries.length} libros
               </span>
             </summary>
             {list}
@@ -305,8 +310,11 @@ function IndexRow({
       })
     : null
   // Solo se cuentan los archivos del paquete (y la posición es una sola hoja: no tiene cuenta).
+  // Sumas y saldos tampoco: su archivo trae TODAS las cuentas del plan («229 cuentas»), y la
+  // pantalla cuenta las que tuvieron movimiento («32»): dos números distintos para lo mismo.
   const counted =
     entry.libro !== 'posicion-iva' &&
+    entry.libro !== 'sumas-y-saldos' &&
     (MONTH_PACKAGE_BOOKS as readonly ExportBook[]).includes(entry.libro)
   const count = counted ? (
     <Suspense fallback={<CountPending />}>
@@ -321,7 +329,9 @@ function IndexRow({
       )}
     >
       <div className="min-w-0">
-        <p className="flex items-baseline gap-2">
+        {/* La cuenta va en la línea del nombre, en gris (si no entra, baja sola a su renglón). En
+            el celular iba pegada a la descripción y se leía como parte de la oración. */}
+        <p className="flex flex-wrap items-baseline gap-x-2">
           <span className={cn('text-sm', entry.sub ? 'text-foreground/90' : 'font-medium')}>
             {entry.title}
           </span>
@@ -332,18 +342,13 @@ function IndexRow({
                 aria-hidden
                 className="hidden min-w-4 flex-1 -translate-y-[0.2em] border-b border-dotted border-border sm:block"
               />
-              <span className="hidden whitespace-nowrap text-xs tabular-nums text-muted-foreground sm:inline">
+              <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
                 {count}
               </span>
             </>
           ) : null}
         </p>
-        <p className="text-xs text-muted-foreground text-pretty">
-          {entry.line}
-          {count ? (
-            <span className="whitespace-nowrap tabular-nums sm:hidden"> {count}</span>
-          ) : null}
-        </p>
+        <p className="text-xs text-muted-foreground text-pretty">{entry.line}</p>
       </div>
       <div className="flex shrink-0 items-center gap-0.5">
         {viewHref ? (

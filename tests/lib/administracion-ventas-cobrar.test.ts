@@ -20,6 +20,7 @@ import {
   monthTicket,
 } from '@/app/(manager)/[tenantSlug]/administracion/ventas/_lib/invoiced-view'
 import {
+  netRowDetail,
   netRows,
   netSentence,
   netTitle,
@@ -84,6 +85,32 @@ describe('incomingSentence: la oración del héroe', () => {
     ).toBe(
       `$${NB}400.000 ya están en Mercado Pago: falta contarla. Además hay $${NB}174.600 a favor de ellos.`,
     )
+  })
+
+  it('lo que tienen a favor se dice con su nombre: «ellos» no dice quiénes', () => {
+    const base = tranches({ totalCents: 100, lateCents: 100 })
+    const late = `$${NB}1 ya tendrían que haber llegado.`
+    expect(
+      incomingSentence(base, {
+        creditCents: 17_460_000,
+        creditors: [{ name: 'Mercado Pago', cents: 17_460_000, isCustomer: false }],
+      }),
+    ).toBe(`${late} Además, a Mercado Pago le debemos $${NB}174.600.`)
+    expect(
+      incomingSentence(base, {
+        creditCents: 5_000_000,
+        creditors: [{ name: 'Eventos SA', cents: 5_000_000, isCustomer: true }],
+      }),
+    ).toBe(`${late} Además, Eventos SA tiene $${NB}50.000 a favor.`)
+    expect(
+      incomingSentence(base, {
+        creditCents: 3_000_000,
+        creditors: [
+          { name: 'Rappi', cents: 1_000_000, isCustomer: false },
+          { name: 'Ana', cents: 2_000_000, isCustomer: true },
+        ],
+      }),
+    ).toBe(`${late} Además hay $${NB}30.000 a favor de Rappi y Ana.`)
   })
 })
 
@@ -408,6 +435,26 @@ describe('netRows: de cada $ 100', () => {
     expect(credit?.segments.map((s) => s.key)).toEqual(['arrived', 'commission', 'withholdings'])
     expect(credit?.segments.reduce((sum, s) => sum + s.percent, 0)).toBeCloseTo(100, 6)
     expect(credit?.segments[0]?.percent).toBeCloseTo(89.74, 2)
+  })
+
+  it('debajo de cada barra, cómo te llega: el efectivo no «te liquidó»', () => {
+    const [pedidos, credito, efectivo, rappi] = views
+    if (!pedidos || !credito || !efectivo || !rappi) throw new Error('faltan renglones')
+    expect(
+      netRowDetail(efectivo, { kind: 'treasury', partyName: null, treasuryName: 'Caja' }),
+    ).toBe(`Entró directo a la caja: $${NB}9.000.`)
+    expect(
+      netRowDetail(credito, { kind: 'settled_now', partyName: 'Mercado Pago', treasuryName: null }),
+    ).toBe(`Quedó en Mercado Pago: $${NB}8.974 de $${NB}10.000. Siguen en camino $${NB}10.000.`)
+    // Una tarjeta o una app sí liquida; sin saber el medio, se dice como siempre.
+    expect(
+      netRowDetail(pedidos, { kind: 'receivable', partyName: 'PedidosYa', treasuryName: null }),
+    ).toBe(`De $${NB}10.000 que ya te liquidó, te llegaron $${NB}6.975.`)
+    expect(netRowDetail(pedidos, null)).toBe(
+      `De $${NB}10.000 que ya te liquidó, te llegaron $${NB}6.975.`,
+    )
+    // Lo que todavía no liquidó no lleva aclaración: ya lo dice el renglón.
+    expect(netRowDetail(rappi, null)).toBeNull()
   })
 
   it('el título afirma cuál es el que más cuesta', () => {

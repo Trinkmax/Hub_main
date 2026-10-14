@@ -87,10 +87,42 @@ export function receivableTranches(
   return out
 }
 
+/** Quien tiene plata a favor (un cliente que pagó de más, una app a la que le debemos). */
+export type Creditor = { name: string; cents: number; isCustomer: boolean }
+
+/** Desde cuántos nombres «a favor de …» deja de nombrarlos uno por uno. */
+const MAX_CREDITOR_NAMES = 3
+
+/**
+ * El cierre de la oración cuando alguien tiene plata a favor, dicho con su
+ * nombre: «Además, a Mercado Pago le debemos $ 174.600.» Sin nombres (no se
+ * pasaron), la cuenta igual: «Además hay $ X a favor de ellos.»
+ */
+function creditClause(cents: number, creditors: readonly Creditor[] | undefined): string {
+  const amount = formatCentsShort(cents)
+  const named = (creditors ?? []).filter((c) => c.cents > 0)
+  if (named.length === 1) {
+    const [only] = named
+    if (only) {
+      return only.isCustomer
+        ? `Además, ${only.name} tiene ${amount} a favor.`
+        : `Además, a ${only.name} le debemos ${amount}.`
+    }
+  }
+  if (named.length > 1 && named.length <= MAX_CREDITOR_NAMES) {
+    const names = named.map((c) => c.name)
+    return `Además hay ${amount} a favor de ${names.slice(0, -1).join(', ')} y ${names.at(-1)}.`
+  }
+  if (named.length > MAX_CREDITOR_NAMES) {
+    return `Además hay ${amount} a favor de ${named.length} de ellos (filtro «A favor»).`
+  }
+  return `Además hay ${amount} a favor de ellos.`
+}
+
 /** La oración del héroe de «Plata por cobrar». */
 export function incomingSentence(
   tranches: ReceivableTranches,
-  opts: { creditCents?: number } = {},
+  opts: { creditCents?: number; creditors?: readonly Creditor[] } = {},
 ): string {
   const parts: string[] = []
   if (tranches.lateCents > 0) {
@@ -109,7 +141,7 @@ export function incomingSentence(
   }
   if (parts.length === 0) parts.push('Todavía no llegó la fecha de nada.')
   if ((opts.creditCents ?? 0) > 0) {
-    parts.push(`Además hay ${formatCentsShort(opts.creditCents ?? 0)} a favor de ellos.`)
+    parts.push(creditClause(opts.creditCents ?? 0, opts.creditors))
   }
   return parts.join(' ')
 }

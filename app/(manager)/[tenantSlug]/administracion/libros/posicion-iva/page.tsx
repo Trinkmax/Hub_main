@@ -1,6 +1,6 @@
 import { ArrowRight, CalendarRange, ChevronDown, CircleAlert, Percent } from 'lucide-react'
 import Link from 'next/link'
-import { type ReactNode, Suspense } from 'react'
+import { type ReactNode, Suspense, useId } from 'react'
 import { Amount } from '@/components/administracion/amount'
 import { ChartFrame } from '@/components/administracion/charts/chart-frame'
 import { ChartSilhouette, ChartTable } from '@/components/administracion/charts/chart-parts'
@@ -14,7 +14,6 @@ import {
   MoneyHero,
   Panel,
   PanelLink,
-  PanelSection,
   StatusPill,
 } from '@/components/administracion/kit'
 import { ActionButton } from '@/components/administracion/quick-actions'
@@ -33,8 +32,9 @@ import {
 import { formatDate, formatIsoDay, monthOf, todayInCordoba } from '@/lib/dates'
 import { formatCents, formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
+import { PERIOD_ROW } from '../_components/book-page'
 import { BookSwitcher } from '../_components/book-switcher'
-import { ExportButton } from '../_components/export-button'
+import { ExportButton, ExportMenuButton } from '../_components/export-button'
 import { MonthPicker } from '../_components/period-picker'
 import { PeriodError, QueryErrorBlock } from '../_components/report-error'
 import { loadBookContext } from '../_lib/book-context'
@@ -123,11 +123,20 @@ export default async function PosicionIvaPage({
     .map((period) => monthOf(period.month))
     .slice(-TREND_MONTHS)
 
+  const exportItem =
+    hasCuit && availability === 'ok'
+      ? {
+          href: exportHref(tenantSlug, 'posicion-iva', { mes: month.month }),
+          fileName: `administracion-${tenantSlug}-posicion-iva-${month.month}.csv`,
+        }
+      : null
   return (
     <AdmPage width="comfortable">
       <AdmHeader
         back={{ href: bookHref(books, { mes: month.month }), label: 'Libros' }}
         title={`El IVA de ${noun}`}
+        // En el celular el lugar de «Exportar» queda vacío (8 + 16 px): se descuenta del margen.
+        className={exportItem ? 'max-sm:mb-2' : undefined}
         description="Posición de IVA · es una estimación: la declaración la presenta tu contadora."
         badge={
           <>
@@ -139,14 +148,19 @@ export default async function PosicionIvaPage({
                   : `Cerrado${p.closedAt ? ` el ${formatDate(p.closedAt)}` : ''}`}
               </StatusPill>
             ) : null}
+            {/* En el celular «Exportar» es un ícono en esta línea, como en los demás libros. */}
+            {exportItem ? (
+              <span className="ml-auto flex shrink-0 items-center sm:hidden">
+                <ExportMenuButton items={[exportItem]} />
+              </span>
+            ) : null}
           </>
         }
         actions={
-          hasCuit && availability === 'ok' ? (
-            <ExportButton
-              href={exportHref(tenantSlug, 'posicion-iva', { mes: month.month })}
-              fileName={`administracion-${tenantSlug}-posicion-iva-${month.month}.csv`}
-            />
+          exportItem ? (
+            <div className="contents max-sm:hidden">
+              <ExportButton href={exportItem.href} fileName={exportItem.fileName} />
+            </div>
           ) : null
         }
       />
@@ -159,7 +173,12 @@ export default async function PosicionIvaPage({
           period={{ kind: 'month', month: month.month, from: month.from, to: month.to }}
         />
       )}
-      <MonthPicker month={month.month} today={today} minMonth={ctx.minMonth} />
+      <MonthPicker
+        month={month.month}
+        today={today}
+        minMonth={ctx.minMonth}
+        className={PERIOD_ROW}
+      />
 
       {!resolved.ok ? <PeriodError message={resolved.message} /> : null}
       {availability !== 'ok' ? (
@@ -620,6 +639,7 @@ function HowItAdds({
   asTable: boolean
   sales: ReadonlyArray<{ soldCents: number; uninvoicedCents: number }> | null
 }) {
+  const withoutId = useId()
   const bar = ivaCoverBar(p)
   const oneSided = ivaOneSidedSentence(p, month)
   const cascade = <Cascade position={p} month={month} />
@@ -631,7 +651,9 @@ function HowItAdds({
   const salesSentence =
     sales && sold > 0 ? (
       <>
-        En {noun} vendiste <Money cents={sold} />:{' '}
+        {/* «Contando las facturas cargadas aparte»: por eso este total puede ser mayor que el
+            «Vendido en los cierres del día» del papel de Fin de mes. */}
+        En {noun} vendiste <Money cents={sold} />, contando las facturas cargadas aparte:{' '}
         {uninvoiced <= 0 ? (
           'todo con factura.'
         ) : invoiced <= 0 ? (
@@ -647,57 +669,72 @@ function HowItAdds({
 
   return (
     <Panel>
-      {bar ? (
-        <ChartFrame
-          headingLevel="h2"
-          title={bar.title}
-          sentence={bar.sentence}
-          defaultView={asTable ? 'table' : 'chart'}
-          chart={
-            <SplitBar
-              segments={bar.segments}
-              height={16}
-              totalLabel={bar.totalLabel}
-              ariaLabel={`${bar.title}. ${bar.sentence}`}
+      {/* Compu: la cuenta a la izquierda y «Lo que va sin factura» al lado (la leyenda y la
+          cascada no pasan de media pantalla: abajo dejaban la mitad derecha vacía). Celular: una
+          debajo de la otra, separadas por una raya. */}
+      <div className="grid grid-cols-1 gap-x-8 gap-y-5 lg:grid-cols-12">
+        <div className="min-w-0 lg:col-span-7">
+          {bar ? (
+            <ChartFrame
+              headingLevel="h2"
+              title={bar.title}
+              sentence={bar.sentence}
+              defaultView={asTable ? 'table' : 'chart'}
+              chart={
+                <SplitBar
+                  segments={bar.segments}
+                  height={16}
+                  totalLabel={bar.totalLabel}
+                  ariaLabel={`${bar.title}. ${bar.sentence}`}
+                />
+              }
+              table={cascade}
+              footer="En los libros: lo que cobraste de IVA es el débito fiscal; lo de tus compras con Factura A, el crédito fiscal."
             />
-          }
-          table={cascade}
-          footer="En los libros: lo que cobraste de IVA es el débito fiscal; lo de tus compras con Factura A, el crédito fiscal."
-        />
-      ) : (
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <h2 className="font-serif text-lg font-semibold leading-snug tracking-tight">
-              ¿Cómo se calcula?
-            </h2>
-            {oneSided ? (
-              <p className="max-w-prose text-sm text-muted-foreground text-pretty">{oneSided}</p>
-            ) : null}
-          </div>
-          {cascade}
+          ) : (
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <h2 className="font-serif text-lg font-semibold leading-snug tracking-tight">
+                  ¿Cómo se calcula?
+                </h2>
+                {oneSided ? (
+                  <p className="max-w-prose text-sm text-muted-foreground text-pretty">
+                    {oneSided}
+                  </p>
+                ) : null}
+              </div>
+              {cascade}
+            </div>
+          )}
         </div>
-      )}
 
-      <PanelSection title="Lo que va sin factura">
-        <div className="max-w-prose space-y-2 text-sm leading-relaxed text-muted-foreground text-pretty">
-          {salesSentence ? <p>{salesSentence}</p> : null}
-          <p>
-            De tus compras, solo las de Factura A restan IVA. Las de Factura B o C, los tiques y lo
-            que va sin factura quedan registrados igual, sin IVA para recuperar.
-          </p>
-          <p>Cómo se trata cada cosa lo define tu contadora.</p>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
-          <PanelLink href={`${base}/ventas?tab=facturas`}>
-            Ver las ventas con y sin factura
-            <ArrowRight className="size-3.5" aria-hidden />
-          </PanelLink>
-          <PanelLink href={`${base}/guias/con-y-sin-factura`}>
-            Guía: con factura y sin factura
-            <ArrowRight className="size-3.5" aria-hidden />
-          </PanelLink>
-        </div>
-      </PanelSection>
+        <section
+          aria-labelledby={withoutId}
+          className="min-w-0 border-t border-border/60 pt-4 lg:col-span-5 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-8"
+        >
+          <h3 id={withoutId} className="text-sm font-semibold leading-snug">
+            Lo que va sin factura
+          </h3>
+          <div className="mt-2 max-w-prose space-y-2 text-sm leading-relaxed text-muted-foreground text-pretty">
+            {salesSentence ? <p>{salesSentence}</p> : null}
+            <p>
+              De tus compras, solo las de Factura A restan IVA. Las de Factura B o C, los tiques y
+              lo que va sin factura quedan registrados igual, sin IVA para recuperar.
+            </p>
+            <p>Cómo se trata cada cosa lo define tu contadora.</p>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
+            <PanelLink href={`${base}/ventas?tab=facturas`}>
+              Ver las ventas con y sin factura
+              <ArrowRight className="size-3.5" aria-hidden />
+            </PanelLink>
+            <PanelLink href={`${base}/guias/con-y-sin-factura`}>
+              Guía: con factura y sin factura
+              <ArrowRight className="size-3.5" aria-hidden />
+            </PanelLink>
+          </div>
+        </section>
+      </div>
     </Panel>
   )
 }

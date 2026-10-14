@@ -43,6 +43,11 @@ export function supplierHero(input: {
   oldestDueDate: string | null
   nextDueDate: string | null
   today: string
+  /**
+   * Faltan los saldos iniciales: «al día» sería por lo cargado nomás (lo que le debías al
+   * arrancar todavía no está). Lo mismo que dice el Resumen.
+   */
+  openingPending?: boolean
 }): SupplierHero {
   const favor =
     input.creditCents > 0 ? ` Tenés ${formatCentsShort(input.creditCents)} a favor.` : ''
@@ -71,7 +76,13 @@ export function supplierHero(input: {
       sentence: 'No le debés nada. Se descuenta solo de la próxima compra.',
     }
   }
-  return { kind: 'clear', title: 'No le debés nada', sentence: 'Está al día.' }
+  return {
+    kind: 'clear',
+    title: 'No le debés nada',
+    sentence: input.openingPending
+      ? 'Por lo que cargaste. Si le debías de antes de arrancar, entra con los saldos iniciales.'
+      : 'Está al día.',
+  }
 }
 
 export type AgingTranche = { key: 'overdue' | 'week' | 'later'; label: string; cents: number }
@@ -211,6 +222,8 @@ export type LedgerLine = {
   verb: string
   /** El comprobante («Factura A 0003-00001100», «Pago»). */
   label: string
+  /** El número interno del comprobante, para nombrar un pago («n.º 12»). */
+  seq: number | null
   documentId: string | null
   /** Solo en lo que suma deuda: «pagada», «vencida hace 12 días», «vence el 24/10». */
   status: { text: string; tone: LedgerLineTone } | null
@@ -278,6 +291,7 @@ export function supplierLedger(input: {
       date: r.entryDate ?? input.from,
       verb: ledgerVerb(r.documentKind, r),
       label: r.documentLabel ?? 'Comprobante',
+      seq: r.documentSeq,
       documentId: r.documentId,
       status: lineStatus(r, input.today),
       increaseCents: r.increaseCents > 0 ? r.increaseCents : null,
@@ -340,6 +354,36 @@ export function ledgerTrendTitle(input: {
   if (diff > 0) return `${input.lead} le pasaste a deber ${formatCentsShort(diff)} más`
   if (diff < 0) return `${input.lead} le bajaste la deuda en ${formatCentsShort(-diff)}`
   return `${input.lead} la deuda quedó igual`
+}
+
+/**
+ * Lo que se lee al lado del verbo de un movimiento. Un pago se llama «Pago» a
+ * secas, y «Le pagaste Pago» suena a error: se nombra por su número («n.º 12»).
+ * El resto lleva su papel («Factura A 0003-00001100»).
+ */
+export function ledgerLineName(line: Pick<LedgerLine, 'label' | 'seq'>): string {
+  if (line.label.trim().toLowerCase() !== 'pago') return line.label
+  return line.seq !== null ? `n.º ${line.seq}` : 'ver el pago'
+}
+
+/** Cuántos días quietos se dejan a la vista antes del primer escalón. */
+const LEAD_DAYS = 3
+
+/**
+ * La escalera sin la raya plana del principio: si en las primeras semanas del
+ * período la deuda no se movió, el dibujo arranca unos días antes del primer
+ * escalón (lo anterior ya lo dice el renglón «Al 15/07 no le debías nada»).
+ * Si nunca se movió, queda como está.
+ */
+export function trimFlatStart<T extends { cents: number }>(
+  points: readonly T[],
+  lead = LEAD_DAYS,
+): T[] {
+  const first = points[0]
+  if (!first) return []
+  const change = points.findIndex((p) => p.cents !== first.cents)
+  if (change < 0) return [...points]
+  return points.slice(Math.max(0, change - Math.max(0, lead)))
 }
 
 /** Cuántos días dibuja la escalera como mucho (un año largo). */

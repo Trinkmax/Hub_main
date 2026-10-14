@@ -72,8 +72,8 @@ function Difference({ day }: { day: ProjectionDay }) {
  * «Ventas contra caja» (pedido de los socios, 12/10/2026): por día, lo vendido
  * en el salón según el cierre contra lo que entró de verdad en las cajas,
  * cargado a mano, y la diferencia. El delivery no entra: se acredita en otro
- * momento. Es una comparación para encontrar diferencias: no registra nada en
- * los libros.
+ * momento. Es una comparación para encontrar diferencias: no cambia ningún
+ * saldo.
  *
  * Con `bare` va sin su encabezado y sin la tarjeta: es la tabla plegada dentro
  * del bloque «Ventas contra caja» de «El mes», que ya trae el título.
@@ -146,10 +146,10 @@ export function CashTable({
           <div className="max-w-2xl">
             <h2 className="font-serif text-lg font-semibold tracking-tight">Ventas contra caja</h2>
             <p className="text-xs text-muted-foreground text-pretty">
-              {monthLabel} · La venta real del salón (el cierre del día menos las comisiones
+              {monthLabel} · Lo vendido en el salón (el cierre del día menos las comisiones
               estimadas del posnet) contra lo que entró de verdad en las cajas. El delivery no
-              entra: llega después. No se registra nada en los libros: es para encontrar
-              diferencias.
+              entra: llega después. No cambia ningún saldo: es para comparar con lo vendido en el
+              salón.
             </p>
           </div>
         </header>
@@ -166,12 +166,12 @@ export function CashTable({
             <DataTableScroll>
               <DataTableRoot>
                 <caption className="sr-only">
-                  Venta real del salón contra caja por día, {monthLabel}
+                  Vendido en el salón contra caja por día, {monthLabel}
                 </caption>
                 <DataTableHead>
                   <tr>
                     <DataTableHeader>Día</DataTableHeader>
-                    <DataTableHeader className="text-right">Venta real del salón</DataTableHeader>
+                    <DataTableHeader className="text-right">Vendido en el salón</DataTableHeader>
                     <DataTableHeader className="text-right">Entró</DataTableHeader>
                     <DataTableHeader className="text-right">Diferencia</DataTableHeader>
                   </tr>
@@ -235,7 +235,7 @@ export function CashTable({
 
           {/* Celular: cada día con lo vendido y lo que entró; la diferencia, debajo. */}
           <ul
-            aria-label={`Venta real del salón contra caja por día, ${monthLabel}`}
+            aria-label={`Vendido en el salón contra caja por día, ${monthLabel}`}
             className="divide-y divide-border/60 sm:hidden"
           >
             {days.map((d) => (
@@ -254,9 +254,13 @@ export function CashTable({
                   </span>
                   <Difference day={d} />
                 </div>
-                <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1.5">Venta real {sales(d)}</span>
-                  <span className="flex items-center gap-1.5">Entró {counted(d)}</span>
+                <div className="flex flex-wrap items-center justify-between gap-x-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1.5 whitespace-nowrap">
+                    Vendido en el salón {sales(d)}
+                  </span>
+                  <span className="flex items-center gap-1.5 whitespace-nowrap">
+                    Entró {counted(d)}
+                  </span>
                 </div>
               </li>
             ))}

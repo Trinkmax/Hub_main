@@ -12,8 +12,7 @@ import {
   settleQuery,
 } from '@/lib/accounting/queries'
 import { todayInCordoba } from '@/lib/dates'
-import { BookPage } from '../_components/book-page'
-import { ExportButton } from '../_components/export-button'
+import { BookPage, PERIOD_ROW } from '../_components/book-page'
 import { KeysetPagination } from '../_components/keyset-pagination'
 import { RangePicker } from '../_components/period-picker'
 import { PeriodError, QueryErrorBlock } from '../_components/report-error'
@@ -22,7 +21,13 @@ import { keysetPageInfo } from '../_lib/keyset'
 import { requireBooksAccess } from '../_lib/page-access'
 import { bookHref, firstParam, periodParams, resolveBookRange } from '../_lib/periods'
 import { HistoryFilters, type HistoryKindOption } from './_components/history-filters'
-import { groupHistoryByDay, historyText, historyTime, personInitial } from './_lib/days'
+import {
+  collapseHistoryRuns,
+  groupHistoryByDay,
+  historyText,
+  historyTime,
+  personInitial,
+} from './_lib/days'
 
 export const metadata = { title: 'Historia' }
 
@@ -125,18 +130,19 @@ export default async function HistoriaPage({
       description={`Quién cargó, anuló o cerró qué · ${shown.label}${
         page ? ` · ${plural(page.totalRows, 'movimiento', 'movimientos')}` : ''
       }`}
-      actions={
-        <ExportButton
-          href={exportHref(tenantSlug, 'historia', { desde: shown.from, hasta: shown.to })}
-          fileName={`administracion-${tenantSlug}-historia-${shown.from}_${shown.to}.csv`}
-        />
-      }
+      exports={[
+        {
+          href: exportHref(tenantSlug, 'historia', { desde: shown.from, hasta: shown.to }),
+          fileName: `administracion-${tenantSlug}-historia-${shown.from}_${shown.to}.csv`,
+        },
+      ]}
       booksPath={`${base}/libros`}
       book="historia"
       period={shown}
       toolbar={
         <div className="space-y-3">
           <RangePicker
+            className={PERIOD_ROW}
             range={shown}
             today={today}
             fiscalYear={ctx.fiscalYear}
@@ -226,8 +232,8 @@ export default async function HistoriaPage({
                   </h2>
                   <div className="card-hairline overflow-hidden rounded-xl border border-border/70 bg-card">
                     <ul className="divide-y divide-border/60">
-                      {group.rows.map((row) => (
-                        <HistoryItem key={row.id} row={row} base={base} />
+                      {collapseHistoryRuns(group.rows).map(({ row, count }) => (
+                        <HistoryItem key={row.id} row={row} count={count} base={base} />
                       ))}
                     </ul>
                   </div>
@@ -249,7 +255,7 @@ export default async function HistoriaPage({
   )
 }
 
-function HistoryItem({ row, base }: { row: HistoryRow; base: string }) {
+function HistoryItem({ row, count, base }: { row: HistoryRow; count: number; base: string }) {
   const text = historyText(row.text)
   const what = row.documentId ? (
     <Link
@@ -277,6 +283,7 @@ function HistoryItem({ row, base }: { row: HistoryRow; base: string }) {
             {row.documentSeq ? (
               <span className="text-muted-foreground"> · #{row.documentSeq}</span>
             ) : null}
+            {count > 1 ? <span className="text-muted-foreground"> · {count} veces</span> : null}
           </p>
           <p className="text-xs tabular-nums text-muted-foreground">
             {time}

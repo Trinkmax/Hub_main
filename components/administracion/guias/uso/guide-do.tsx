@@ -48,7 +48,17 @@ export function GuideDo({
   const classes = cn(BASE, 'h-11 md:h-9', LOOK[look], className)
   if (target.kind === 'route') {
     return (
-      <Link href={`/${ctx.tenantSlug}/administracion${target.path}`} className={classes}>
+      <Link
+        href={`/${ctx.tenantSlug}/administracion${target.path}`}
+        className={classes}
+        // La guía es larga: llegando desde abajo, la pantalla nueva (más corta) heredaba el
+        // scroll recortado y en el celular Gastos fijos abría mostrando su final. Se sale desde
+        // arriba, así siempre se llega a su título.
+        onClick={(event) => {
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+          window.scrollTo({ top: 0, behavior: 'instant' })
+        }}
+      >
         {children}
         <ArrowRight aria-hidden className="size-4" />
       </Link>

@@ -54,6 +54,38 @@ export function ReceivablesList({
         const name = partyDisplayName(row)
         const kind = PARTY_KIND_LABELS[row.partyKind] ?? 'Cliente'
         const state = receivableMeta(row, { today, walletName: wallet?.name ?? null })
+        const credit = creditText(row)
+        const debt =
+          row.debtCents > 0 ? (
+            <Amount
+              cents={row.debtCents}
+              decimals={0}
+              className="font-serif text-lg font-semibold"
+            />
+          ) : null
+        const button =
+          canWrite && row.debtCents > 0 ? (
+            wallet ? (
+              <ActionButton
+                action="ajustar"
+                params={{ caja: wallet.treasuryId }}
+                variant="outline"
+                className={ROW_ACTION}
+              >
+                Contar {wallet.name}
+              </ActionButton>
+            ) : (
+              <ActionButton
+                action="cobrar"
+                params={{ cliente: row.partyId }}
+                variant="outline"
+                className={ROW_ACTION}
+                aria-label={`Ya entró: anotar lo que pagó ${name}`}
+              >
+                Ya entró
+              </ActionButton>
+            )
+          ) : null
         return (
           <LedgerRow
             key={row.partyId}
@@ -72,41 +104,37 @@ export function ReceivablesList({
                 />
               )
             }
-            meta={state ? `${kind} · ${state}` : kind}
-            amount={
-              row.debtCents > 0 ? (
-                <Amount
-                  cents={row.debtCents}
-                  decimals={0}
-                  className="font-serif text-lg font-semibold"
-                />
-              ) : (
-                <span className="text-xs font-normal text-muted-foreground">Sin deuda</span>
-              )
+            // Con botón, en el celular el importe va debajo del nombre y el botón a su lado (un
+            // piso menos); en la compu, importe y botón a la derecha, como siempre.
+            meta={
+              <>
+                {button && debt ? (
+                  <span className="block text-foreground sm:hidden">{debt}</span>
+                ) : null}
+                <span>{state ? `${kind} · ${state}` : kind}</span>
+              </>
             }
-            amountNote={creditText(row)}
+            amount={
+              button
+                ? undefined
+                : (debt ??
+                  // Sin deuda: lo que tiene a favor, o nada («No te debe nada» ya lo dice el renglón).
+                  (credit ? <span className="text-sm font-normal">{credit}</span> : undefined))
+            }
+            amountNote={button || !debt ? undefined : credit}
             action={
-              canWrite && row.debtCents > 0 ? (
-                wallet ? (
-                  <ActionButton
-                    action="ajustar"
-                    params={{ caja: wallet.treasuryId }}
-                    variant="outline"
-                    className={ROW_ACTION}
-                  >
-                    Contar {wallet.name}
-                  </ActionButton>
-                ) : (
-                  <ActionButton
-                    action="cobrar"
-                    params={{ cliente: row.partyId }}
-                    variant="outline"
-                    className={ROW_ACTION}
-                    aria-label={`Ya entró: anotar lo que pagó ${name}`}
-                  >
-                    Ya entró
-                  </ActionButton>
-                )
+              button ? (
+                <span className="flex items-center gap-3">
+                  <span className="text-right max-sm:hidden">
+                    {debt}
+                    {credit ? (
+                      <span className="mt-0.5 block text-xs tabular-nums text-muted-foreground">
+                        {credit}
+                      </span>
+                    ) : null}
+                  </span>
+                  {button}
+                </span>
               ) : undefined
             }
           />

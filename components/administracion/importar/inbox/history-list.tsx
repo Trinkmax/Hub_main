@@ -1,5 +1,6 @@
 import { ChevronRight } from 'lucide-react'
 import Link from 'next/link'
+import { Fragment } from 'react'
 import {
   EmptyTeach,
   LedgerList,
@@ -17,7 +18,7 @@ import {
 } from '@/lib/dates'
 import type { ImportBatchCounts, ImportBatchStatus } from '@/lib/imports/server/types'
 import type { ImportSource } from '@/lib/imports/types'
-import { batchPeriodLabel, displayBatchStatus } from '@/lib/imports/ui/inbox'
+import { batchPeriodLabel, batchWaiting, displayBatchStatus } from '@/lib/imports/ui/inbox'
 import { IMPORT_SOURCE_COPY, importBatchHref, isUiImportSource } from '@/lib/imports/ui/labels'
 import { count } from '@/lib/imports/ui/progress'
 
@@ -40,18 +41,31 @@ export function historySourceLabel(source: ImportSource): string {
   return isUiImportSource(source) ? IMPORT_SOURCE_COPY[source].short : 'ARCA (emitidos)'
 }
 
-/** «18 cargados · 3 para revisar · 2 no van»: qué pasó con lo que trajo el archivo. */
-export function historyCounts(row: Pick<HistoryRow, 'counts' | 'pending' | 'status'>): string {
+/**
+ * Qué pasó con lo que trajo el archivo, tramo por tramo: «18 cargados», «3 con
+ * una pregunta», «2 no se cargan». Lo que espera se dice con las mismas palabras que
+ * la hoja de la bandeja («3 con una pregunta», «5 listos»): es el mismo archivo.
+ */
+export function historyCountParts(
+  row: Pick<HistoryRow, 'counts' | 'pending' | 'status'>,
+): string[] {
   const c = row.counts
-  if (!c) return row.status === 'staging' ? 'Sin terminar de subir' : 'Sin detalle'
+  if (!c) return [row.status === 'staging' ? 'Sin terminar de subir' : 'Sin detalle']
   const out = c.skipped + c.voided
+  const { questions, ready } = row.pending > 0 ? batchWaiting(row) : { questions: 0, ready: 0 }
   const parts = [
     c.posted > 0 ? count(c.posted, 'cargado', 'cargados') : null,
-    row.pending > 0 ? `${row.pending} para revisar` : null,
-    out > 0 ? (out === 1 ? '1 no va' : `${out} no van`) : null,
-  ].filter(Boolean)
-  if (parts.length > 0) return parts.join(' · ')
-  return c.items > 0 ? count(c.items, 'renglón', 'renglones') : 'Sin renglones'
+    questions > 0 ? `${questions} con una pregunta` : null,
+    ready > 0 ? count(ready, 'listo', 'listos') : null,
+    out > 0 ? (out === 1 ? '1 no se carga' : `${out} no se cargan`) : null,
+  ].filter((part): part is string => part !== null)
+  if (parts.length > 0) return parts
+  return [c.items > 0 ? count(c.items, 'renglón', 'renglones') : 'Sin renglones']
+}
+
+/** «18 cargados · 3 con una pregunta · 2 no se cargan», en una sola línea. */
+export function historyCounts(row: Pick<HistoryRow, 'counts' | 'pending' | 'status'>): string {
+  return historyCountParts(row).join(' · ')
 }
 
 /**
@@ -62,6 +76,10 @@ export function historyCounts(row: Pick<HistoryRow, 'counts' | 'pending' | 'stat
  * Reemplaza a la tabla «Filas · Repetidas · Cargados · Pendientes», que hablaba
  * en palabras de sistema. La tabla densa queda para la contadora
  * (`ImportHistory`), que en el celular también usa esta lista. Server-safe.
+ *
+ * El estado va a la derecha cuando la hoja tiene lugar; en una hoja angosta (el
+ * celular) baja a su propio renglón al pie: al lado aplastaba el texto y no se
+ * leía qué archivo era cada uno.
  */
 export function HistoryList({
   slug,
@@ -82,6 +100,7 @@ export function HistoryList({
         const day = isoDayInCordoba(row.createdAt) ?? row.createdAt.slice(0, 10)
         const real = isRealIsoDay(day)
         const shown = displayBatchStatus(row)
+        const parts = historyCountParts(row)
         return (
           <LedgerRow
             key={row.id}
@@ -105,11 +124,33 @@ export function HistoryList({
                   {row.fileName ? ` · ${row.fileName}` : ''}
                   {row.createdByName ? ` · lo subió ${row.createdByName}` : ''}
                 </span>
-                <span className="block">{historyCounts(row)}</span>
+                {/* Cada tramo va entero: «4 no se cargan» nunca se parte en «4 / no se cargan». El punto
+                    queda pegado al tramo de antes (espacio duro) y el corte cae después. */}
+                <span className="block">
+                  {parts.map((part, index) => (
+                    <Fragment key={part}>
+                      {index > 0 ? '\u00A0· ' : null}
+                      <span className="whitespace-nowrap">{part}</span>
+                    </Fragment>
+                  ))}
+                </span>
+                <span
+                  title={shown.hint}
+                  className="mt-1.5 flex items-center gap-1.5 @[28rem]/ledger:hidden"
+                >
+                  <StatusPill tone={shown.tone}>{shown.label}</StatusPill>
+                  <ChevronRight
+                    aria-hidden
+                    className="ml-auto size-4 shrink-0 text-muted-foreground"
+                  />
+                </span>
               </>
             }
             amount={
-              <span className="inline-flex items-center gap-1.5" title={shown.hint}>
+              <span
+                title={shown.hint}
+                className="hidden items-center gap-1.5 @[28rem]/ledger:inline-flex"
+              >
                 <StatusPill tone={shown.tone}>{shown.label}</StatusPill>
                 <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
               </span>

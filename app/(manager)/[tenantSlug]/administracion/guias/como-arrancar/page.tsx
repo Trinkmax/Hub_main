@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 import {
-  GlossaryCard,
+  GlossaryLink,
   PlatformDoesCard,
   StaysManualCard,
 } from '@/components/administracion/guias/onboarding/onboarding-extras'
@@ -36,7 +36,7 @@ export const metadata = { title: 'Cómo arrancar · Administración' }
  * (link a la pantalla exacta), qué y cómo. Lo que la plataforma puede ver se
  * marca solo (`acc_report_onboarding`); lo que pasa afuera, con «Ya lo hice»
  * (`markOnboardingStep`). Al pie: lo que sigue siendo a mano, lo que la
- * plataforma hace sola y las palabras que se usan.
+ * plataforma hace sola y el link al glosario de la portada (uno solo).
  *
  * Sin el estado de la base (su parte todavía no está), la guía se ve entera
  * sin marcas. La contadora la ve en modo lectura.
@@ -137,7 +137,7 @@ export default async function ComoArrancarPage({
         <PlatformDoesCard />
       </div>
 
-      <GlossaryCard />
+      <GlossaryLink base={base} />
     </AdmPage>
   )
 }

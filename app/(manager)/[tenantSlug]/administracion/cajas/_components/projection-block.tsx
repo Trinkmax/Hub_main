@@ -61,8 +61,20 @@ export function ProjectionBlock({
   )
 
   if (view.kind === 'unknown') {
+    // Sin la plata de hoy no se estima si alcanza, pero lo que hay que pagar ya se sabe: se dice
+    // (un bar recién arrancado con compras vencidas veía solo «primero decime cuánta plata hay»).
+    const dueCents = projection.data.reduce((sum, week) => sum + Math.max(0, week.outCents), 0)
     return (
-      <Panel id={PROJECTION_ANCHOR} title={TITLE}>
+      <Panel id={PROJECTION_ANCHOR} title={TITLE} footer={footer}>
+        {dueCents > 0 ? (
+          <p className="mb-4 rounded-xl bg-secondary/50 px-4 py-3 text-sm text-pretty">
+            <span className="font-medium">Lo que ya se sabe:</span> en estas 4 semanas tenés{' '}
+            <span className="font-medium whitespace-nowrap tabular-nums">
+              {formatCentsShort(dueCents)}
+            </span>{' '}
+            para pagar, contando lo que ya venció.
+          </p>
+        ) : null}
         <EmptyTeach
           plain
           title={view.title}
@@ -70,7 +82,7 @@ export function ProjectionBlock({
             canWrite ? (
               <Button asChild className="h-11 gap-2">
                 <Link href={`${base}/configurar`}>
-                  Cargar lo que hay
+                  Cargar lo que había
                   <ArrowRight className="size-4" aria-hidden />
                 </Link>
               </Button>
@@ -105,30 +117,38 @@ export function ProjectionBlock({
         <ul aria-label="Semana por semana" className="divide-y divide-border/60">
           {view.weeks.map((week) => (
             <li key={week.key} className="py-2.5 first:pt-0 last:pb-0">
-              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                <p className="text-sm font-medium">{week.label}</p>
+              {/* El nombre de la semana es corto para que «queda $ X» esté SIEMPRE a la derecha,
+                  en la misma columna, también en un celular. */}
+              <div className="flex items-baseline justify-between gap-x-3">
+                <p className="min-w-0 text-sm font-medium">{week.label}</p>
                 {week.short ? (
                   <StatusPill tone="warn">
                     faltarían {formatCentsShort(-week.balanceCents)}
                   </StatusPill>
                 ) : (
-                  <p className="text-sm tabular-nums">
+                  <p className="shrink-0 text-sm whitespace-nowrap tabular-nums">
                     <span className="text-muted-foreground">queda </span>
                     <span className="font-medium">{formatCentsShort(week.balanceCents)}</span>
                   </p>
                 )}
               </div>
               <p className="mt-0.5 flex flex-wrap gap-x-3 text-xs tabular-nums text-muted-foreground">
+                {week.note ? <span className="whitespace-nowrap">{week.note}</span> : null}
                 {week.inCents === 0 && week.outCents === 0 ? (
                   <span>No entra ni sale nada</span>
                 ) : (
                   <>
-                    <span className="whitespace-nowrap">
-                      <span aria-hidden>↑ </span>entra {formatCentsShort(week.inCents)}
-                    </span>
-                    <span className="whitespace-nowrap">
-                      <span aria-hidden>↓ </span>sale {formatCentsShort(week.outCents)}
-                    </span>
+                    {/* El lado que es cero no se nombra: «↑ entra $ 0» es ruido. */}
+                    {week.inCents > 0 ? (
+                      <span className="whitespace-nowrap">
+                        <span aria-hidden>↑ </span>entra {formatCentsShort(week.inCents)}
+                      </span>
+                    ) : null}
+                    {week.outCents > 0 ? (
+                      <span className="whitespace-nowrap">
+                        <span aria-hidden>↓ </span>sale {formatCentsShort(week.outCents)}
+                      </span>
+                    ) : null}
                   </>
                 )}
               </p>

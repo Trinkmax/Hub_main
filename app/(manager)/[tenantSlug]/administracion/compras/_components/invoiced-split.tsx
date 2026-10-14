@@ -8,7 +8,7 @@ import { invoicedSplit } from '@/lib/accounting/home'
 import type { InvoiceFilter } from '@/lib/accounting/invoiced'
 import { getMonthSpending, settleQuery } from '@/lib/accounting/queries'
 import { daysBetween } from '@/lib/dates'
-import { formatCentsShort } from '@/lib/money'
+import { formatCentsShort, NBSP } from '@/lib/money'
 import { administracionHref } from '../_lib/links'
 
 /** Hasta cuántos días se pide el total: más que eso cuesta demasiados viajes a la base. */
@@ -28,6 +28,9 @@ type Amounts = {
  * Las tres píldoras «Todo · Con factura · Sin factura»: son el FILTRO de la
  * lista (`?factura=`) y, cuando hay total, también la leyenda de la barra. Van
  * siempre, con o sin importes: la guía manda a filtrar «Con factura» acá.
+ *
+ * El porcentaje va escrito al lado del importe («$ 1.094.700 · 95 %»), no en
+ * una pastilla adentro de la píldora: una pastilla dentro de otra es ruido.
  */
 function InvoicePills({
   invoice,
@@ -55,8 +58,7 @@ function InvoicePills({
           <LegendPill
             swatchClassName={INVOICED_SWATCH}
             label="Con factura"
-            value={amounts?.invoiced ?? ''}
-            share={amounts?.invoicedShare}
+            value={amounts ? `${amounts.invoiced} · ${amounts.invoicedShare}` : ''}
             href={hrefFor(invoice === 'con' ? 'todos' : 'con')}
             active={invoice === 'con'}
             className={`max-w-full ${PILL_SIZE}`}
@@ -66,8 +68,7 @@ function InvoicePills({
           <LegendPill
             swatchClassName={NOT_INVOICED_SWATCH}
             label="Sin factura"
-            value={amounts?.notInvoiced ?? ''}
-            share={amounts?.notInvoicedShare}
+            value={amounts ? `${amounts.notInvoiced} · ${amounts.notInvoicedShare}` : ''}
             href={hrefFor(invoice === 'sin' ? 'todos' : 'sin')}
             active={invoice === 'sin'}
             className={`max-w-full ${PILL_SIZE}`}
@@ -167,17 +168,16 @@ export async function InvoicedSplitPanel({
   }
   const split = invoicedSplit(spending.vouchers)
   if (split.isEmpty) {
-    return quiet(
-      `${lead} todavía no cargaste compras ni gastos. Cuando cargues, acá ves cuánto fue con factura y cuánto sin.`,
-    )
+    // Que no hay nada ya lo dice la lista de abajo, con su botón: acá, solo para qué sirve.
+    return quiet('Cuando cargues compras o gastos, acá ves cuánto fue con factura y cuánto sin.')
   }
 
   const invoicedShare = Math.round(split.invoicedPercent)
   const amounts: Amounts = {
     invoiced: formatCentsShort(split.invoicedCents),
     notInvoiced: formatCentsShort(split.notInvoicedCents),
-    invoicedShare: `${invoicedShare} %`,
-    notInvoicedShare: `${100 - invoicedShare} %`,
+    invoicedShare: `${invoicedShare}${NBSP}%`,
+    notInvoicedShare: `${100 - invoicedShare}${NBSP}%`,
   }
 
   return (

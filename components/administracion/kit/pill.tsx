@@ -72,7 +72,7 @@ function PillBody({
       {count !== undefined && count !== null ? (
         <span
           className={cn(
-            'rounded-full px-1.5 py-px font-mono text-[11px] tabular-nums',
+            'rounded-full px-1.5 py-px text-[11px] font-medium tabular-nums',
             active ? 'bg-background/20' : 'bg-secondary',
           )}
         >
@@ -195,7 +195,7 @@ export function LegendPill({
       {share !== undefined && share !== null ? (
         <span
           className={cn(
-            'rounded-full px-1.5 py-px font-mono text-[11px] tabular-nums',
+            'rounded-full px-1.5 py-px text-[11px] font-medium tabular-nums',
             active ? 'bg-background/20' : 'bg-secondary',
           )}
         >

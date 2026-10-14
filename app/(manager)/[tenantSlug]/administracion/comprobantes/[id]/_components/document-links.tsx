@@ -46,9 +46,14 @@ import { SeparateButton } from './separate-button'
 /**
  * ③ «Con qué está unido»: el mapa de vínculos de este comprobante. Cada nodo
  * dice qué tiene unido (con un link para seguirlo), en qué estado está y, donde
- * se puede, la acción: «Separar» un pago, «Ya llegó» en un cierre, «Agregar
- * foto o PDF». Lo que falta se ve como falta, con su oración; lo que no aplica
- * y vale decirlo (una compra sin factura no entra al Libro IVA), en gris.
+ * se puede, la acción: «Separar» un pago, «Anotar que llegó» en un cierre,
+ * «Agregar foto o PDF». Lo que falta se ve como falta, con su oración; lo que
+ * no aplica y vale decirlo (una compra sin factura no entra al Libro IVA), en
+ * gris.
+ *
+ * Los importes van en pesos, sin centavos: es una lista para el dueño y los
+ * exactos están en el papel de al lado. Con centavos quedan solo «Ver los
+ * importes» del Libro IVA y el asiento, que son de la contadora.
  *
  * Qué nodos hay, en qué orden y con qué textos lo arma `documentLinks()`; acá
  * se dibujan y se montan las islas que escriben. Ninguna de esas islas se
@@ -58,6 +63,11 @@ import { SeparateButton } from './separate-button'
 
 const FOCUS = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 const LIST = 'divide-y divide-border/60'
+
+/** Sin centavos, salvo que sea menos de un peso: nunca «$ 0» por algo que no es cero. */
+function listDecimals(cents: number): 0 | 2 {
+  return cents !== 0 && Math.abs(cents) < 100 ? 2 : 0
+}
 const SUB_LABEL = 'text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase'
 
 const ICONS: Readonly<Record<LinkNodeId, LucideIcon>> = {
@@ -135,13 +145,17 @@ function Row({
 }) {
   return (
     <div className="py-2 first:pt-0 last:pb-0">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+      {/* Por la línea de base: si el dato baja a un segundo renglón, el importe sigue a la
+          altura del nombre y no flotando en el medio. */}
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
         {/* El dato va entero: si no entra al lado, baja completo (nunca un «·» colgando). */}
-        <div className="flex min-w-0 flex-1 basis-44 flex-wrap items-center gap-x-2">
+        <div className="flex min-w-0 flex-1 basis-40 flex-wrap items-baseline gap-x-2">
           {title}
           {meta ? <span className="whitespace-nowrap text-muted-foreground">{meta}</span> : null}
         </div>
-        {cents !== undefined ? <Amount cents={cents} className="shrink-0 font-medium" /> : null}
+        {cents !== undefined ? (
+          <Amount cents={cents} decimals={listDecimals(cents)} className="shrink-0 font-medium" />
+        ) : null}
         {action}
       </div>
       {note ? <p className="mt-0.5 text-xs text-muted-foreground text-pretty">{note}</p> : null}
@@ -376,43 +390,47 @@ function NodeBody({
               </p>
               <ul className={LIST}>
                 {node.rows.map((row) => (
-                  // Dos columnas: a la izquierda qué es y cómo viene; a la derecha cuánto y,
-                  // si falta, su botón. Así el botón queda siempre en el mismo lugar.
-                  <li
-                    key={row.key}
-                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 py-2.5 first:pt-1 last:pb-0"
-                  >
-                    <p className="min-w-0 text-pretty">
-                      <span className="font-medium">{row.medium}</span>
-                      {row.partyName && row.partyName !== row.medium ? (
-                        <span className="text-muted-foreground max-sm:block max-sm:text-xs">
-                          <span className="max-sm:hidden"> · </span>
-                          {row.partyName}
-                        </span>
-                      ) : null}
-                    </p>
-                    <Amount cents={row.cents} className="justify-self-end font-medium" />
-                    <div className="min-w-0">
+                  // Dos renglones: arriba qué es y cuánto; abajo cómo viene y, si falta, su
+                  // botón, siempre a la derecha. Si los dos no entran (un celular angosto), el
+                  // botón baja entero: la píldora nunca se parte en dos renglones por él.
+                  <li key={row.key} className="py-2.5 first:pt-1 last:pb-0">
+                    <div className="flex items-baseline justify-between gap-x-3">
+                      <p className="min-w-0 text-pretty">
+                        <span className="font-medium">{row.medium}</span>
+                        {row.partyName && row.partyName !== row.medium ? (
+                          <span className="text-muted-foreground max-sm:block max-sm:text-xs">
+                            <span className="max-sm:hidden"> · </span>
+                            {row.partyName}
+                          </span>
+                        ) : null}
+                      </p>
+                      <Amount
+                        cents={row.cents}
+                        decimals={listDecimals(row.cents)}
+                        className="shrink-0 font-medium"
+                      />
+                    </div>
+                    {/* Separación y relleno justos: a 390 la píldora más larga («Debió llegar
+                        el 07/10») y el botón entran en un renglón. */}
+                    <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-1.5 gap-y-1.5">
                       <StatusPill
                         tone={row.tone}
-                        className="h-auto min-h-6 max-w-full shrink py-1 leading-tight whitespace-normal"
+                        className="h-auto min-h-6 max-w-full shrink gap-1 py-1 leading-tight whitespace-normal"
                       >
                         {row.status}
                       </StatusPill>
+                      {row.action ? (
+                        <ActionButton
+                          action="cobrar"
+                          params={row.action.params}
+                          variant="outline"
+                          className="ml-auto h-11 px-2 md:h-8 md:px-3"
+                          aria-label={`${row.action.label}: ${row.medium}`}
+                        >
+                          {row.action.label}
+                        </ActionButton>
+                      ) : null}
                     </div>
-                    {row.action ? (
-                      <ActionButton
-                        action="cobrar"
-                        params={row.action.params}
-                        variant="outline"
-                        className="h-11 justify-self-end px-3 md:h-8"
-                        aria-label={`${row.action.label}: ${row.medium}`}
-                      >
-                        {row.action.label}
-                      </ActionButton>
-                    ) : (
-                      <span />
-                    )}
                   </li>
                 ))}
               </ul>
@@ -509,7 +527,12 @@ function NodeBody({
                     <span className="flex flex-wrap gap-x-3">
                       {voucher.summary.map((item) => (
                         <span key={item.label} className="whitespace-nowrap">
-                          {item.label} <Amount cents={item.cents} className="text-foreground" />
+                          {item.label}{' '}
+                          <Amount
+                            cents={item.cents}
+                            decimals={listDecimals(item.cents)}
+                            className="text-foreground"
+                          />
                         </span>
                       ))}
                     </span>
@@ -611,13 +634,20 @@ export function DocumentLinks({
       id="vinculos"
       title={title}
       action={<span className="hidden sm:inline-flex">{guide}</span>}
-      footer={<span className="sm:hidden">{guide}</span>}
-      className="sm:[&>footer]:hidden"
+      // En el celular, al pie: cómo leer los dos trazos y el link a la guía, juntos.
+      footer={
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 sm:hidden">
+          <LinkLegend />
+          {guide}
+        </div>
+      }
+      // Si el título y el link no entran en un renglón, el link baja: el título no se estruja.
+      className="[&>header]:flex-wrap sm:[&>footer]:hidden"
     >
       <LinkRail
         label="Con qué está unido este comprobante"
         origin="Este papel"
-        aside={<LinkLegend />}
+        aside={<LinkLegend className="max-sm:hidden" />}
       >
         {nodes.map((node) => (
           <LinkNode

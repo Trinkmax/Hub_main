@@ -12,6 +12,7 @@
  */
 
 import type { AccountingAction, ActionParams } from '@/components/administracion/acciones/types'
+import type { HomeRecurringRow } from '@/lib/accounting/home'
 import type { RecurringExpenseRow } from '@/lib/accounting/queries/documents'
 import type { IntegrationAttentionItem } from '@/lib/accounting/queries/integrations'
 import type {
@@ -228,7 +229,15 @@ export function attentionView(
       return view(`${subject} · ${when}`, 'warning', pay)
     }
     case 'recurring_due': {
-      const when = item.date ? `vence el ${formatDayMonth(item.date)}` : 'vence pronto'
+      // Uno que ya pasó su día no «vence el 10/10»: venció, y va en rojo como lo vencido.
+      const late = item.date !== null && item.date < today
+      const when = !item.date
+        ? 'vence pronto'
+        : late
+          ? `venció el ${formatDayMonth(item.date)}`
+          : item.date === today
+            ? 'vence hoy'
+            : `vence el ${formatDayMonth(item.date)}`
       const actions: AttentionAction[] = []
       if (item.refId) {
         // «Pagar»: «Nuevo gasto» con ese gasto fijo ya puesto, lo mismo que el botón de su
@@ -255,7 +264,7 @@ export function attentionView(
       }
       return view(
         `${subject} · ${when} · todavía sin pagar`,
-        'warning',
+        late ? 'danger' : 'warning',
         actions,
         item.amountCents,
         'aprox.',
@@ -337,6 +346,50 @@ export function attentionView(
     default:
       return view(item.label.trim() || 'Hay algo para revisar.', 'info', [])
   }
+}
+
+/** Lo que el aviso agrega y debajo de «Te falta de gasto fijo» sobra: todos están sin pagar. */
+const UNPAID_TAIL = ' · todavía sin pagar'
+
+/**
+ * Los gastos fijos que tocan pagar, como renglones de «Lo que tenés que pagar». Salen de las
+ * filas de la planilla (`fixedDueRows`, la regla de la tarjeta de «Hoy te toca»), no de los avisos
+ * topeados del resumen: así son los mismos que cuenta «Te falta de gasto fijo».
+ *
+ * Uno solo trae las tres acciones del aviso de la base («Pagar», «Lo pago después», «Este mes no
+ * se paga»). Con varios, cada renglón lleva su «Pagar», como los proveedores de arriba: nueve
+ * botones apilados alargaban el bloque media pantalla; lo demás está en su renglón de la planilla.
+ */
+export function fixedDueViews(
+  rows: ReadonlyArray<
+    Pick<HomeRecurringRow, 'id' | 'name' | 'nextDueDate' | 'amountCents' | 'daysToDue'>
+  >,
+  today: string,
+  base: string,
+): AttentionView[] {
+  const single = rows.length === 1
+  return rows.map((row, index) => {
+    const view = attentionView(
+      {
+        kind: 'recurring_due',
+        refId: row.id,
+        label: row.name,
+        amountCents: row.amountCents,
+        date: row.nextDueDate,
+        days: row.daysToDue,
+        partyId: null,
+        count: null,
+      },
+      today,
+      base,
+      index,
+    )
+    return {
+      ...view,
+      text: view.text.endsWith(UNPAID_TAIL) ? view.text.slice(0, -UNPAID_TAIL.length) : view.text,
+      actions: single ? view.actions : view.actions.filter((action) => action.type === 'sheet'),
+    }
+  })
 }
 
 // ─── Integraciones: la segunda fuente de «Avisos» ────────────────────────────

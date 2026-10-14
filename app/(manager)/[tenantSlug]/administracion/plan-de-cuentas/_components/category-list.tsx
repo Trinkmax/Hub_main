@@ -25,20 +25,23 @@ import { useChartWorkspace } from './workspace-context'
  * el alta corta, que pide el nombre y para qué se usa.
  *
  * Sin barras: cuánto va a cada categoría ya se dibuja en el Resumen («En qué se
- * va la plata»). Acá, en gris, va lo anotado en el año o «sin uso». La contadora
+ * va la plata»). Acá, en gris, va lo anotado en el año o «sin uso» (con casi nada cargado,
+ * solo lo que tiene importe: el aviso de arriba explica el resto). La contadora
  * (solo lectura) ve la misma lista sin ningún botón de alta.
  */
 
 /**
  * «Nueva categoría» del encabezado: abre el alta corta sin grupo elegido (se elige ahí mismo). No se
- * dibuja en solo lectura.
+ * dibuja en solo lectura. `quiet` = en contorno: el vacío de la búsqueda la repite y el botón
+ * relleno de la vista sigue siendo el del encabezado.
  */
-export function NewCategoryButton() {
+export function NewCategoryButton({ quiet = false }: { quiet?: boolean } = {}) {
   const { readOnly, createAccount } = useChartWorkspace()
   if (readOnly) return null
   return (
     <Button
       type="button"
+      variant={quiet ? 'outline' : 'default'}
       className="h-11 gap-2 md:pointer-fine:h-9"
       onClick={() => createAccount(undefined, { simple: true })}
     >
@@ -122,10 +125,14 @@ export function CategoryList({
         ) : null}
 
         {shown.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground text-pretty" role="status">
-            No encontramos ninguna categoría con «{query.trim()}». Probá con otra palabra
-            {readOnly ? '.' : ' o agregala en su grupo.'}
-          </p>
+          // El vacío de la búsqueda ofrece el alta: los «Agregar en …» no están a la vista acá.
+          <div className="flex flex-col items-center gap-3 py-6 text-center" role="status">
+            <p className="text-sm text-muted-foreground text-pretty">
+              No encontramos ninguna categoría con «{query.trim()}». Probá con otra palabra
+              {readOnly ? '.' : ' o creala.'}
+            </p>
+            <NewCategoryButton quiet />
+          </div>
         ) : (
           <div className="gap-x-10 lg:columns-2">
             {shown.map((group) => (
@@ -133,7 +140,10 @@ export function CategoryList({
                 key={group.id}
                 group={group}
                 showUsed={balancesAvailable}
-                onOpen={openAccount}
+                // Casi sin gastos (un bar que recién arranca) el aviso de arriba ya lo dice: un
+                // «sin uso» en cada uno de los 51 renglones era ruido. Solo va lo que tiene importe.
+                quietUnused={fewUsed}
+                onOpen={(id) => openAccount(id, { simple: true })}
                 onAdd={
                   readOnly || group.parentId === null
                     ? null
@@ -173,12 +183,15 @@ export function CategoryList({
 function CategoryGroupBlock({
   group,
   showUsed,
+  quietUnused,
   onOpen,
   onAdd,
 }: {
   group: CategoryListGroup
   /** Hay saldos: se muestra lo anotado (o «sin uso»). */
   showUsed: boolean
+  /** Sin «sin uso»: solo se dice el importe de las que tienen. */
+  quietUnused: boolean
   onOpen: (id: string) => void
   /** `null` = sin alta (la contadora, o un grupo que no es una cuenta del plan). */
   onAdd: (() => void) | null
@@ -186,9 +199,12 @@ function CategoryGroupBlock({
   return (
     <section className="mb-6 break-inside-avoid">
       <div className="mb-1 px-2">
-        <h3 className="flex items-baseline gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        {/* «Personal · 3 categorías»: el número nunca va suelto al lado del nombre. */}
+        <h3 className="flex flex-wrap items-baseline gap-x-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           {group.name}
-          <span className="font-mono font-normal tracking-normal">{group.items.length}</span>
+          <span className="font-normal normal-case tracking-normal tabular-nums">
+            · {plural(group.items.length, 'categoría', 'categorías')}
+          </span>
         </h3>
         {group.note ? (
           <p className="mt-0.5 text-xs text-muted-foreground text-pretty">{group.note}</p>
@@ -210,7 +226,7 @@ function CategoryGroupBlock({
                   </span>
                 ) : null}
               </span>
-              {showUsed ? (
+              {showUsed && !(quietUnused && !((item.usedCents ?? 0) > 0)) ? (
                 <span className="shrink-0 text-xs whitespace-nowrap tabular-nums text-muted-foreground">
                   {categoryUsedText(item.usedCents)}
                 </span>

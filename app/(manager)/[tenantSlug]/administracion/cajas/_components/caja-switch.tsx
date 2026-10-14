@@ -1,7 +1,14 @@
 'use client'
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { type ReactNode, useOptimistic, useTransition } from 'react'
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useOptimistic,
+  useRef,
+  useTransition,
+} from 'react'
 import { Pill } from '@/components/administracion/kit/pill'
 import {
   CASH_CHART_ACCOUNT_PARAM,
@@ -39,6 +46,31 @@ function syncAccountParam(value: string) {
 const PILL_SIZE =
   'h-11 px-4 text-sm md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]'
 
+/** Una fila que se desliza en el celular (sin barra a la vista) y baja de renglón desde `sm`. */
+const SLIDING_ROW =
+  'flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden'
+
+/**
+ * En una fila que se desliza, la píldora elegida tiene que verse entera: al
+ * entrar con `?grafico=` de la tercera caja, o al tocar una que estaba a medio
+ * ver bajo el desvanecido, la fila se corre hasta dejarla en el medio. Mueve
+ * SOLO la fila (no la página: `scrollIntoView` la haría saltar hasta el
+ * dibujo). Si todo entra, no hace nada.
+ */
+function useActiveInView(row: RefObject<HTMLElement | null>, active: string) {
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `active` no se lee acá, pero es lo que dispara el efecto (cambió la píldora elegida)
+  useEffect(() => {
+    const scroller = row.current
+    if (!scroller || scroller.scrollWidth <= scroller.clientWidth) return
+    const pill = scroller.querySelector<HTMLElement>('[aria-pressed="true"]')
+    if (!pill) return
+    const box = scroller.getBoundingClientRect()
+    const own = pill.getBoundingClientRect()
+    const left = own.left - box.left + scroller.scrollLeft - (box.width - own.width) / 2
+    scroller.scrollTo({ left: Math.max(0, left) })
+  }, [row, active])
+}
+
 /**
  * Qué caja y qué período se dibujan en «Cómo se movió la plata».
  *
@@ -75,6 +107,11 @@ export function CajaSwitch({
   const requested = searchParams.get(CASH_CHART_ACCOUNT_PARAM) ?? CASH_CHART_ALL
   const selected = options.find((o) => o.value === requested) ?? options[0]
 
+  const cajasRow = useRef<HTMLDivElement>(null)
+  const rangesRow = useRef<HTMLDivElement>(null)
+  useActiveInView(cajasRow, selected?.value ?? '')
+  useActiveInView(rangesRow, shownRange)
+
   function goToRange(next: CashChartRangeKey) {
     if (next === shownRange) return
     const params = new URLSearchParams(searchParams.toString())
@@ -95,7 +132,13 @@ export function CajaSwitch({
         {/* El margen negativo deja lugar al anillo de foco contra el borde del área que desliza. */}
         <fieldset className="-mx-1 min-w-0 max-w-full border-0 p-0">
           <legend className="sr-only">Qué caja se dibuja</legend>
-          <div className="flex items-center gap-1.5 overflow-x-auto px-1 py-1 [scrollbar-width:none] max-sm:pr-10 max-sm:[mask-image:linear-gradient(to_right,black_calc(100%_-_2.5rem),transparent)] sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
+          <div
+            ref={cajasRow}
+            className={cn(
+              SLIDING_ROW,
+              'px-1 py-1 max-sm:pr-10 max-sm:[mask-image:linear-gradient(to_right,black_calc(100%_-_2.5rem),transparent)]',
+            )}
+          >
             {options.map((option) => (
               <Pill
                 key={option.value}
@@ -120,15 +163,18 @@ export function CajaSwitch({
             ))}
           </div>
         </fieldset>
-        <fieldset className="min-w-0 border-0 p-0">
+        {/* El período, en UN renglón también en el celular (ahí las píldoras van un punto más
+            angostas para que entren las tres; si no entran, la fila se desliza). El margen
+            negativo deja lugar al anillo de foco, como arriba. */}
+        <fieldset className="-mx-1 min-w-0 max-w-full border-0 p-0">
           <legend className="sr-only">Período</legend>
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div ref={rangesRow} className={cn(SLIDING_ROW, 'px-1 py-1')}>
             {ranges.map((range) => (
               <Pill
                 key={range.key}
                 active={range.key === shownRange}
                 onClick={() => goToRange(range.key)}
-                className={PILL_SIZE}
+                className={cn(PILL_SIZE, 'max-sm:px-3 max-sm:text-[13px]')}
               >
                 {range.label}
               </Pill>

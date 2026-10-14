@@ -8,6 +8,7 @@ import { useAccounting } from '@/components/administracion/accounting-provider'
 import { Meter } from '@/components/administracion/charts/meter'
 import { StatusPill } from '@/components/administracion/kit'
 import { Button } from '@/components/ui/button'
+import { capitalizeFirst } from '@/lib/dates'
 import { formatCentsShort } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import type { NextUpView, SheetSetup } from '../_lib/planilla-words'
@@ -230,7 +231,9 @@ export function NextUp({
               <span className="text-sm text-muted-foreground">{view.status.label}</span>
             )}
             {view.status.detail ? (
-              <span className="text-xs text-muted-foreground">{view.status.detail}</span>
+              <span className="text-xs text-muted-foreground">
+                {capitalizeFirst(view.status.detail)}
+              </span>
             ) : null}
           </p>
           {view.billed ? (

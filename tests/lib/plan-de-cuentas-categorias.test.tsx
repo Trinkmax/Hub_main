@@ -9,6 +9,7 @@ import {
   createAccountDefaults,
   createAccountInput,
 } from '@/app/(manager)/[tenantSlug]/administracion/plan-de-cuentas/_components/account-create-form'
+import { AccountEditForm } from '@/app/(manager)/[tenantSlug]/administracion/plan-de-cuentas/_components/account-edit-form'
 import {
   CategoryList,
   NewCategoryButton,
@@ -330,12 +331,17 @@ describe('«Tus categorías» ya dibujada', () => {
     expect(html).toContain('Agregar en ')
     // Casi sin gastos cargados (como HUB): se dice qué va a aparecer, sin un solo «$ 0».
     expect(html).toContain('Todavía cargaste muy pocos gastos')
-    expect(html).toContain('sin uso')
+    // …y el aviso alcanza: ningún «sin uso» repetido en cada renglón.
+    expect(html).not.toContain('sin uso')
     expect(html).not.toMatch(/\$ 0\b/)
     expect(html).toContain('Clasificar proveedores')
     expect(html).toContain('/hub/administracion/compras?tab=proveedores&amp;filtro=sin-clasificar')
     // Sin códigos de cuenta: eso es del plan completo.
     expect(html).not.toContain('1.0.00.00.000')
+    // El número de cada grupo dice qué cuenta («· 3 categorías»): nunca va suelto al lado del
+    // nombre, que es el «2 6» que el dueño rechazó.
+    expect(html).toMatch(/Personal<span[^>]*>· 3 categorías<\/span>/)
+    expect(html).not.toMatch(/<span class="font-mono[^"]*">\d+<\/span>/)
   })
 
   it('la contadora: la misma lista, sin ningún botón de alta', () => {
@@ -411,8 +417,24 @@ describe('«Tus categorías» ya dibujada', () => {
     )
     // Fuera de los gastos el tilde de «¿En qué se gastó?» arranca apagado y acá está plegado:
     // por eso el alta corta solo ofrece grupos de gastos (lo demás, desde «Plan completo»).
-    expect(html).toContain('Adentro de')
-    expect(html).toContain('El grupo de gastos donde va')
+    // Y los ofrece como en la lista: los MISMOS grupos, por su nombre, para tocar. Ni el código
+    // ni la ruta del plan («4.2.00.00.000 EGRESOS», «RESULTADO DEL EJERCICIO ›…»), ni un grupo
+    // que no esté en «Tus categorías».
+    expect(html).toContain('¿En qué grupo va?')
+    expect(html).toContain('role="radiogroup"')
+    const offered = [...html.matchAll(/role="radio"[^>]*>([^<]+)</g)].map((m) => m[1])
+    const listed = categoryListGroups(index.ordered)
+      .filter((group) => group.parentId !== null)
+      .map((group) => group.name)
+    expect(listed.length).toBeGreaterThan(3)
+    expect(offered).toEqual(listed)
+    expect(offered).toContain('Personal')
+    expect(offered).toContain('Gastos del local')
+    expect(offered).not.toContain('EGRESOS')
+    expect(html).not.toContain('Adentro de')
+    expect(html).not.toContain('Código o nombre del grupo')
+    expect(html).not.toMatch(/\d\.\d\.\d\d\.\d\d\.\d{3}/)
+    expect(html).not.toContain('RESULTADO DEL EJERCICIO')
     expect(html).not.toContain('Va al mismo nivel que ACTIVO o PASIVO')
     expect(html).toContain('Primero elegí el grupo donde va.')
     expect(html).toContain('Crear categoría')
@@ -431,6 +453,66 @@ describe('«Tus categorías» ya dibujada', () => {
     )
     expect(full).toContain('El grupo donde va la cuenta.')
     expect(full).not.toContain('El grupo de gastos donde va')
+  })
+
+  it('editar desde «Tus categorías»: primero el nombre y «para qué se usa»; lo demás, plegado', () => {
+    const plan = standardPlan()
+    const index = indexChart(plan)
+    const group = categoryListGroups(plan)[0]
+    const category = group?.items[0]
+    const account = category ? index.byId.get(category.id) : undefined
+    if (!account) throw new Error('el plan estándar tiene categorías')
+    const render = (simple: boolean) =>
+      plain(
+        renderToStaticMarkup(
+          createElement(AccountEditForm, {
+            tenantSlug: 'hub',
+            index,
+            account,
+            balancesAvailable: true,
+            simple,
+            onDone: () => {},
+            onMove: () => {},
+            onChangeActive: () => {},
+            onBusyChange: () => {},
+          }),
+        ),
+      )
+
+    const short = render(true)
+    const more = short.indexOf('Más opciones')
+    expect(more).toBeGreaterThan(-1)
+    // Lo que un socio sabe contestar va antes del plegable…
+    expect(short.indexOf('for="ae-name"')).toBeGreaterThan(-1)
+    expect(short.indexOf('for="ae-name"')).toBeLessThan(more)
+    expect(short.indexOf('for="ae-description"')).toBeLessThan(more)
+    // …y lo de la contadora (grupo, código, tipo y tildes), adentro, plegado.
+    for (const inside of [
+      'Mover',
+      'for="ae-code"',
+      'for="ae-type"',
+      'Lleva proveedor o cliente',
+      'Se usa en asientos manuales',
+    ]) {
+      expect(short.indexOf(inside), inside).toBeGreaterThan(more)
+    }
+    expect(short).toContain('(las usa la contadora)')
+    expect(short).not.toMatch(/<details[^>]*\sopen/)
+    expect(short).toContain('Desactivar la categoría')
+    expect(short).toContain('Ver sus movimientos')
+    expect(short).not.toContain('Ver mayor')
+
+    // Desde «Plan completo» sigue la ficha entera, sin nada plegado. Los campos son los mismos:
+    // lo que se manda no depende de dónde se abrió.
+    const full = render(false)
+    expect(full).not.toContain('Más opciones')
+    expect(full.indexOf('for="ae-code"')).toBeLessThan(full.indexOf('for="ae-name"'))
+    expect(full).toContain('Desactivar la cuenta')
+    expect(full).toContain('Ver mayor')
+    for (const id of ['ae-code', 'ae-name', 'ae-description', 'ae-manual']) {
+      expect(short, id).toContain(`id="${id}"`)
+      expect(full, id).toContain(`id="${id}"`)
+    }
   })
 
   it('el tilde se llama como la pregunta del gasto, en el alta y en la edición', () => {

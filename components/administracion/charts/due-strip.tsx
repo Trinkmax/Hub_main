@@ -15,6 +15,11 @@ import {
 import { ChartTip } from './chart-tip'
 import { compactCents, pct, ticks, valueY } from './scale'
 
+/** Pesos sin «,00»: los centavos solo cuando los hay de verdad (globito y tabla, no un ticket). */
+function plainMoney(cents: number): string {
+  return cents % 100 === 0 ? formatCentsShort(cents) : formatCents(cents)
+}
+
 /**
  * Lo que vence en los próximos días (14 por defecto): una columna por día con
  * la plata que hay que tener ese día.
@@ -183,9 +188,9 @@ export function DueStrip({
                 <ChartMark
                   key={s.day.date}
                   href={s.day.href}
-                  label={`${title}: ${formatCents(s.cents)}, ${countText(s.count, unit)}${state ? `, ${state.toLowerCase()}` : ''}`}
+                  label={`${title}: ${formatCentsShort(s.cents)}, ${countText(s.count, unit)}${state ? `, ${state.toLowerCase()}` : ''}`}
                   tipTitle={title}
-                  tipValue={formatCents(s.cents)}
+                  tipValue={formatCentsShort(s.cents)}
                   tipSub={[countText(s.count, unit), state].filter(Boolean).join('\n')}
                   className={cn(
                     'h-full min-w-0 flex-1 rounded-[3px] data-[tip-active]:bg-foreground/[0.07]',
@@ -251,10 +256,10 @@ export function DueStripTable({
         cells: [
           s.day.overdue ? `${s.title} · vencido` : s.title,
           countText(s.count, unit),
-          formatCents(s.cents),
+          plainMoney(s.cents),
         ],
       }))}
-      foot={['Total', countText(count, unit), formatCents(total)]}
+      foot={['Total', countText(count, unit), plainMoney(total)]}
     />
   )
 }

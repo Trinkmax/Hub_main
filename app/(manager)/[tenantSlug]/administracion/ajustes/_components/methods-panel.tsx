@@ -5,9 +5,11 @@ import {
   ArrowRight,
   ArrowUp,
   ArrowUpDown,
+  ChartLine,
   ChevronRight,
   type LucideIcon,
   Plus,
+  Table2,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -118,6 +120,8 @@ export function MethodsPanel({
   /** En «Cambiar el orden»: los ids de los prendidos en el orden que se está armando. */
   const [order, setOrder] = useState<string[] | null>(null)
   const [savingOrder, startSavingOrder] = useTransition()
+  /** La lista de medios como tabla (los mismos números, en filas). */
+  const [asTable, setAsTable] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
 
   const rows = useMemo<Row[]>(() => {
@@ -252,8 +256,10 @@ export function MethodsPanel({
   )
 
   const grouped = (
-    <div className="grid gap-3">
-      <p className="text-xs text-muted-foreground text-pretty">
+    <div className="@container/lista grid gap-3">
+      {/* Con lugar, cada fila dice solo «$ 9.519 te llegan» y la nota dice de cuánto. En angosto
+          cada fila ya lo dice entero («te llegan de cada $ 10.000»): la nota sobra. */}
+      <p className="hidden text-xs text-muted-foreground text-pretty @[36rem]/lista:block">
         La barra de cada medio muestra cuánto te llega de cada {whole}.
       </p>
       {blocks.map((block) => {
@@ -333,6 +339,26 @@ export function MethodsPanel({
     />
   )
 
+  // «Ver como tabla». En la compu va al lado del título; en el celular, al pie del panel, para
+  // que lo primero que se vea sean los medios y no un renglón de botones.
+  const tableToggle = (className?: string) => (
+    <button
+      type="button"
+      onClick={() => setAsTable((v) => !v)}
+      className={cn(
+        'h-11 shrink-0 items-center gap-2 rounded-full border border-border/70 bg-card px-3.5 text-xs font-medium text-foreground transition-[background-color] duration-(--duration-fast) hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none sm:h-9',
+        className,
+      )}
+    >
+      {asTable ? (
+        <ChartLine className="size-3.5" aria-hidden />
+      ) : (
+        <Table2 className="size-3.5" aria-hidden />
+      )}
+      {asTable ? 'Ver como gráfico' : 'Ver como tabla'}
+    </button>
+  )
+
   // ─── «Cambiar el orden» ────────────────────────────────────────────────────
 
   const reorderList = order ? (
@@ -341,45 +367,49 @@ export function MethodsPanel({
       description="Así, en el cierre del día pegás la columna entera de una vez."
     >
       <ol className="divide-y divide-border/60">
-        {ordered.map((m, index) => (
-          <li key={m.id} className="flex items-center gap-3 py-1.5">
-            <span className="w-6 shrink-0 text-right font-mono text-sm text-muted-foreground tabular-nums">
-              {index + 1}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium" title={m.name}>
-                {m.name}
+        {ordered.map((m, index) => {
+          const groupName = closeGroupTitle(m.group, [m])
+          return (
+            <li key={m.id} className="flex items-center gap-3 py-1.5">
+              <span className="w-6 shrink-0 text-right text-sm text-muted-foreground tabular-nums">
+                {index + 1}
               </span>
-              <span className="block text-xs text-muted-foreground">
-                {closeGroupTitle(m.group, [m])}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium" title={m.name}>
+                  {m.name}
+                </span>
+                {/* Si el grupo se llama igual que el medio («Efectivo»), no se repite. */}
+                {groupName === m.name ? null : (
+                  <span className="block text-xs text-muted-foreground">{groupName}</span>
+                )}
               </span>
-            </span>
-            <span className="flex shrink-0 items-center gap-1">
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="size-11 rounded-full"
-                disabled={busy || index === 0}
-                aria-label={`Subir ${m.name}`}
-                onClick={() => setOrder(moveId(order, m.id, -1))}
-              >
-                <ArrowUp className="size-4" />
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="size-11 rounded-full"
-                disabled={busy || index === ordered.length - 1}
-                aria-label={`Bajar ${m.name}`}
-                onClick={() => setOrder(moveId(order, m.id, 1))}
-              >
-                <ArrowDown className="size-4" />
-              </Button>
-            </span>
-          </li>
-        ))}
+              <span className="flex shrink-0 items-center gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="size-11 rounded-full"
+                  disabled={busy || index === 0}
+                  aria-label={`Subir ${m.name}`}
+                  onClick={() => setOrder(moveId(order, m.id, -1))}
+                >
+                  <ArrowUp className="size-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="size-11 rounded-full"
+                  disabled={busy || index === ordered.length - 1}
+                  aria-label={`Bajar ${m.name}`}
+                  onClick={() => setOrder(moveId(order, m.id, 1))}
+                >
+                  <ArrowDown className="size-4" />
+                </Button>
+              </span>
+            </li>
+          )
+        })}
       </ol>
       {splitsAGroup(ordered.map((m) => m.group)) ? (
         <p className="mt-3 rounded-xl bg-secondary/50 p-3 text-xs text-muted-foreground text-pretty">
@@ -485,16 +515,20 @@ export function MethodsPanel({
                 headingLevel="h2"
                 title={headline.title}
                 sentence={headline.sentence}
+                action={active.length > 0 ? tableToggle('hidden sm:inline-flex') : undefined}
                 chart={
                   active.length > 0 ? (
-                    grouped
+                    asTable ? (
+                      table
+                    ) : (
+                      grouped
+                    )
                   ) : (
                     <p className="rounded-xl bg-secondary/50 p-4 text-sm text-muted-foreground">
                       Prendé alguno de los de abajo, o agregá uno.
                     </p>
                   )
                 }
-                table={active.length > 0 ? table : undefined}
                 footer={
                   headline.missing || worst?.breakdown ? (
                     <div className="space-y-2">
@@ -530,6 +564,9 @@ export function MethodsPanel({
                   ) : undefined
                 }
               />
+              {active.length > 0 ? (
+                <div className="mt-4 flex sm:hidden">{tableToggle('inline-flex')}</div>
+              ) : null}
             </Panel>
           )}
 
@@ -541,7 +578,7 @@ export function MethodsPanel({
                   className="size-4 text-muted-foreground transition-transform group-open/off:rotate-90 motion-reduce:transition-none"
                 />
                 Apagados
-                <span className="rounded-full bg-card px-1.5 py-px font-mono text-[11px] tabular-nums">
+                <span className="rounded-full bg-card px-1.5 py-px text-[11px] font-medium tabular-nums">
                   {inactive.length}
                 </span>
               </summary>

@@ -762,15 +762,18 @@ describe('Libros · la contadora no ve nada que cargue', () => {
     const owner = await render(LibrosPage)
     expect(owner).toContain('Los libros se arman solos')
     expect(owner).toContain('Vos no escribís nada en los libros.')
-    const ownerButtons = buttons(owner).length
+    // Sin nada cargado, el dueño no ve el índice vacío ni un paquete vacío para descargar.
+    expect(owner).not.toContain('Descargar el paquete del mes')
+    expect(owner).not.toContain('id="paquete-del-mes"')
 
     asReader()
     const reader = await render(LibrosPage, { mes: '2026-09' })
     expect(reader).toContain('Los libros se arman solos')
     expect(reader).toContain('Cuando los dueños carguen gastos, ventas y pagos')
-    // Un botón menos que el dueño, por lo menos: el de «¿Qué querés cargar?».
-    expect(buttons(reader).length).toBeLessThan(ownerButtons)
     expect(reader).not.toContain('Vos no escribís nada en los libros.')
+    // La contadora sí: el índice es su herramienta. Y ningún botón de cargar.
+    expect(reader).toContain('Descargar el paquete del mes')
+    expect(buttons(reader).some((b) => b.includes('Cargar'))).toBe(false)
   })
 
   it('El IVA del mes, cerrado y con deuda: «Pagar a ARCA» es solo de quien carga', async () => {

@@ -199,10 +199,15 @@ export function periodState(
   return 'current'
 }
 
-/** «Oct», «Apertura», «Ajustes»: lo que entra en una pestaña. */
+/**
+ * «Oct», «Apertura», «Cierre»: lo que entra en una pestaña (53 px en el celular). El período
+ * de ajustes de cierre va como «Cierre»: «Ajustes», adentro de la pantalla Ajustes, se leía
+ * como el nombre de la sección. Su nombre entero («Ajustes de cierre 2026») está en el
+ * globito y en «Ver como tabla».
+ */
 function stripLabel(p: PeriodRow): string {
   if (p.kind === 'fy_opening') return 'Apertura'
-  if (p.kind === 'fy_adjustments') return 'Ajustes'
+  if (p.kind === 'fy_adjustments') return 'Cierre'
   return capitalizeFirst(MONTH_NAMES_SHORT[Number(p.month.slice(5, 7)) - 1] ?? '')
 }
 

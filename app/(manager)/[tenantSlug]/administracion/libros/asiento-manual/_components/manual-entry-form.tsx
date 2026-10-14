@@ -58,8 +58,15 @@ export type ManualKind = 'adjustment' | 'payroll' | 'manual' | 'fy_adjustment'
 
 const FIELD_RE = /^lines\.(\d+)\.(accountId|debitCents|creditCents|partyId|dueDate|memo)$/
 
+/** La grilla entera: Cuenta · Proveedor o cliente · Debe · Haber · Leyenda · Vence · quitar. */
 const GRID =
   'lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_8.5rem_8.5rem_minmax(0,1.2fr)_9.5rem_2.75rem]'
+/**
+ * Sin «Proveedor o cliente» ni «Vence»: mientras ninguna línea usa una cuenta que los pida, esas
+ * dos columnas no se dibujan (eran dos títulos sin ningún control debajo) y su lugar es de la
+ * leyenda. Aparecen solas al elegir una cuenta de control.
+ */
+const GRID_SLIM = 'lg:grid-cols-[minmax(0,2.2fr)_8.5rem_8.5rem_minmax(0,2.2fr)_2.75rem]'
 
 const HELP =
   'Usalo para ajustes y para lo que te dicta la contadora. Lo del día a día se carga desde Compras, Ventas y Cajas; para pagar sueldos o impuestos usá «Pagar».'
@@ -247,6 +254,8 @@ export function ManualEntryForm({
   const accountOf = (id: string | null) => (id ? (ctx.accounts.get(id) ?? null) : null)
   const totals = entryTotals(currentLines)
   const movesVat = currentLines.some((l) => accountOf(l.accountId)?.systemKey?.startsWith('vat_'))
+  // «Proveedor o cliente» y «Vence» solo ocupan lugar si alguna línea los usa.
+  const partyColumns = lines.some((l) => accountOf(l.accountId)?.requiresParty)
 
   const values = useMemo<Omit<ManualEntryValues, 'clientRef' | 'previewHash'>>(
     () =>
@@ -675,16 +684,16 @@ export function ManualEntryForm({
             aria-hidden
             className={cn(
               'hidden gap-2 px-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground lg:grid',
-              GRID,
+              partyColumns ? GRID : GRID_SLIM,
             )}
           >
             <span>Cuenta</span>
-            <span>Proveedor o cliente</span>
+            {partyColumns ? <span>Proveedor o cliente</span> : null}
             {/* Con el mismo margen que el número adentro del campo: si no, «Haber» se pega a «Leyenda». */}
             <span className="pr-3 text-right">Debe</span>
             <span className="pr-3 text-right">Haber</span>
             <span className="pl-0.5">Leyenda</span>
-            <span>Vence</span>
+            {partyColumns ? <span>Vence</span> : null}
             <span />
           </div>
           <ol className="grid gap-3 lg:gap-1.5">
@@ -696,6 +705,7 @@ export function ManualEntryForm({
                 isLast={index === lines.length - 1}
                 canRemove={lines.length > 2}
                 requiresParty={accountOf(line.accountId)?.requiresParty ?? false}
+                partyColumns={partyColumns}
                 accounts={accounts}
                 parties={parties}
                 today={today}
@@ -729,9 +739,11 @@ export function ManualEntryForm({
           </div>
         ) : null}
 
+        {/* El mismo rótulo que en «Sueldos del mes» (y en toda la sección). */}
         <EntryPreview
           entries={override ?? [gridPreview]}
-          emptyText="Elegí las cuentas y cargá los importes para ver el asiento."
+          label="Ver cómo queda en los libros"
+          emptyText="Elegí las cuentas y cargá los importes para ver cómo queda en los libros."
         />
 
         <FormBanner banner={posting.banner} />
@@ -760,6 +772,7 @@ function LineRow({
   isLast,
   canRemove,
   requiresParty,
+  partyColumns,
   accounts,
   parties,
   today,
@@ -772,6 +785,8 @@ function LineRow({
   isLast: boolean
   canRemove: boolean
   requiresParty: boolean
+  /** Alguna línea pide proveedor o cliente: la grilla lleva sus dos columnas. */
+  partyColumns: boolean
   accounts: readonly AccountOption[]
   parties: readonly PartyOption[]
   today: string
@@ -803,7 +818,7 @@ function LineRow({
     <li
       className={cn(
         'grid grid-cols-2 gap-2 rounded-lg border border-border/60 p-3 lg:items-start lg:rounded-none lg:border-0 lg:p-0',
-        GRID,
+        partyColumns ? GRID : GRID_SLIM,
       )}
     >
       <div className="col-span-2 grid gap-1 lg:col-span-1">
@@ -836,9 +851,9 @@ function LineRow({
             onValueChange={(id) => onChange({ partyId: id })}
           />
         </div>
-      ) : (
+      ) : partyColumns ? (
         <span aria-hidden className="hidden lg:block" />
-      )}
+      ) : null}
 
       <div className="grid gap-1">
         <Label htmlFor={ids.debit} className={labelClass}>
@@ -909,9 +924,9 @@ function LineRow({
             invalid={Boolean(errors.dueDate)}
           />
         </div>
-      ) : (
+      ) : partyColumns ? (
         <span aria-hidden className="hidden lg:block" />
-      )}
+      ) : null}
 
       <div className="col-span-2 flex justify-end lg:col-span-1">
         <Button
@@ -928,7 +943,7 @@ function LineRow({
       </div>
 
       {messages.length > 0 ? (
-        <p role="alert" className="col-span-2 text-xs text-destructive lg:col-span-7">
+        <p role="alert" className="col-span-2 text-xs text-destructive lg:col-span-full">
           {messages.join(' ')}
         </p>
       ) : null}

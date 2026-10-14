@@ -38,10 +38,12 @@ import { Ticket, TicketHeader, TicketNote, TicketRow, TicketRule, TicketTotal } 
 import { MoneyField } from '../money-input'
 import { PartyCombobox, type PartyOption } from '../party-combobox'
 import { TreasuryPicker } from '../treasury-picker'
-import { TreasuryAfterHint, TreasuryAfterLine } from './gasto-piezas'
+import { TreasuryAfterLine } from './gasto-piezas'
 import {
+  accountPlaceholder,
   accountQuestion,
   applySituation,
+  booksEmptyText,
   MOTIVE_ACCOUNT,
   type MoveDirection,
   type MoveMotive,
@@ -55,13 +57,7 @@ import {
   voucherNote,
   voucherTotalLabel,
 } from './movimiento-vista'
-import {
-  ADD_LINK,
-  BIG_MONEY_FIELD,
-  SHEET_QUESTION_BLOCK,
-  SheetQuestion,
-  TEXT_LINK,
-} from './sheet-parts'
+import { ADD_LINK, BIG_MONEY_FIELD, SHEET_QUESTION_BLOCK, SheetQuestion } from './sheet-parts'
 import { ACTION_TITLES, type ActionSheetProps } from './types'
 
 const TITLE = ACTION_TITLES.movimiento
@@ -110,6 +106,14 @@ const PARTNER_ACCOUNT_KEYS = new Set(['partners_current', 'partner_loans'])
 const VAT_KEYS: ReadonlySet<string> = new Set(VAT_ACCOUNT_KEYS)
 
 const EMPTY = '—'
+
+/**
+ * Un link adentro de una oración. Es un `<button>` (un bloque en línea): con
+ * alto mínimo o relleno vertical estira el renglón en el que está, así que no
+ * lleva ninguno de los dos.
+ */
+const INLINE_LINK =
+  'cursor-pointer rounded-sm font-medium text-foreground underline decoration-border underline-offset-4 outline-none hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-ring'
 
 /** Una píldora de situación: la elegida va rellena, como todas las de las hojas. */
 const SITUATION =
@@ -307,6 +311,14 @@ function MovimientoForm({
   const party = partyId ? catalog.parties.find((p) => p.id === partyId) : undefined
   const partyName = party ? (party.tradeName ?? party.name) : null
   const treasuryError = errorOf('treasuryAccountId')
+  // Qué falta para poder mostrar los libros, en el orden de la hoja (solo para decirlo).
+  const missing = [
+    picked === null ? 'qué pasó' : null,
+    treasury ? null : 'la caja',
+    needsParty && !partyId ? (isPartnerAccount ? 'el socio' : 'con quién') : null,
+    amount === null || amount <= 0 ? 'el importe' : null,
+    accountAsked && !accountId ? (direction === 'in' ? 'de qué es' : 'en qué se fue') : null,
+  ].filter((item): item is string => item !== null)
 
   return (
     <>
@@ -467,6 +479,7 @@ function MovimientoForm({
                 }}
                 accounts={catalog.accounts}
                 filter={(a) => counterpartIds.has(a.id)}
+                placeholder={accountPlaceholder(direction)}
                 invalid={Boolean(accountError)}
                 aria-describedby={`${id}-cuenta-hint${accountError ? ` ${id}-cuenta-error` : ''}`}
               />
@@ -482,43 +495,8 @@ function MovimientoForm({
             </div>
           ) : null}
 
-          {/* El vale: lo que queda anotado, en palabras. */}
-          <Ticket aria-label="El vale de caja" className="mx-auto w-full max-w-[22rem]">
-            <TicketHeader
-              title="Vale de caja"
-              subtitle={date ? formatWeekdayDayMonth(date) : undefined}
-              className={cn(picked === null && 'opacity-70')}
-            />
-            <TicketRule />
-            <TicketRow label="Qué" value={picked?.what ?? EMPTY} muted={picked === null} />
-            {needsParty || fixedSenas ? (
-              <TicketRow label="Quién" value={partyName ?? EMPTY} muted={partyName === null} />
-            ) : null}
-            {motive === 'other' ? (
-              <TicketRow
-                label={direction === 'in' ? 'De qué' : 'En qué'}
-                value={account?.name ?? EMPTY}
-                muted={!account}
-              />
-            ) : null}
-            <TicketRule double />
-            <TicketTotal
-              label={voucherTotalLabel(direction, treasury?.name)}
-              value={amount !== null && amount > 0 ? formatCents(amount) : EMPTY}
-              hint={
-                treasury && direction && amount !== null && amount > 0 ? (
-                  <TreasuryAfterHint
-                    treasury={treasury}
-                    amountCents={amount}
-                    direction={direction}
-                  />
-                ) : undefined
-              }
-            />
-            <TicketNote>{voucherNote(motive)}</TicketNote>
-          </Ticket>
-
-          {/* Lo demás: la fecha y una nota. Una raya lo separa de las preguntas y su vale. */}
+          {/* Lo demás: la fecha y una nota. Una raya lo separa de las preguntas. Va ANTES del
+              vale, como en «Nuevo gasto»: el papel cierra el recorrido, justo arriba del botón. */}
           <div className="space-y-5 border-t border-border/60 pt-6">
             <DateField
               label="Fecha"
@@ -571,8 +549,42 @@ function MovimientoForm({
             )}
           </div>
 
-          <div className="grid gap-2">
-            <EntryPreview entries={shown} label="Ver cómo queda en los libros" />
+          {/* El vale: lo que queda anotado, en palabras. El «hoy → queda» de la caja ya está
+              bajo el importe, con sus rótulos: acá no se repite. */}
+          <Ticket aria-label="El vale de caja" className="mx-auto w-full max-w-[22rem]">
+            <TicketHeader
+              title="Vale de caja"
+              subtitle={date ? formatWeekdayDayMonth(date) : undefined}
+              className={cn(picked === null && 'opacity-70')}
+            />
+            <TicketRule />
+            <TicketRow label="Qué" value={picked?.what ?? EMPTY} muted={picked === null} />
+            {needsParty || fixedSenas ? (
+              <TicketRow label="Quién" value={partyName ?? EMPTY} muted={partyName === null} />
+            ) : null}
+            {motive === 'other' ? (
+              <TicketRow
+                label={direction === 'in' ? 'De qué' : 'En qué'}
+                value={account?.name ?? EMPTY}
+                muted={!account}
+              />
+            ) : null}
+            <TicketRule double />
+            <TicketTotal
+              label={voucherTotalLabel(direction, treasury?.name)}
+              value={amount !== null && amount > 0 ? formatCents(amount) : EMPTY}
+            />
+            <TicketNote>{voucherNote(motive)}</TicketNote>
+          </Ticket>
+
+          {/* `group/books`: lo de la cuenta contable se ve recién con «Ver cómo queda en los
+              libros» abierto (el botón de `EntryPreview` lo dice con `aria-expanded`). */}
+          <div className="group/books grid gap-2">
+            <EntryPreview
+              entries={shown}
+              label="Ver cómo queda en los libros"
+              emptyText={booksEmptyText(missing)}
+            />
             {/* Con un motivo conocido la cuenta ya viene puesta: queda acá, para quien la quiera cambiar. */}
             {motive !== null && !accountAsked ? (
               accountShown ? (
@@ -599,11 +611,13 @@ function MovimientoForm({
                   ) : null}
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground text-pretty">
+                // Palabra de contadora: va adentro del plegado. El link es de texto corrido
+                // (sin alto mínimo: en el celular estiraba el renglón al doble).
+                <p className="hidden px-1 text-xs leading-relaxed text-muted-foreground text-pretty group-has-[button[aria-expanded=true]]/books:block">
                   En los libros va a «{account?.name ?? ''}».{' '}
                   <button
                     type="button"
-                    className={cn(TEXT_LINK, 'text-xs underline')}
+                    className={INLINE_LINK}
                     onClick={() => setAccountChanging(true)}
                   >
                     Cambiar la cuenta

@@ -1,13 +1,12 @@
 'use client'
 
-import { ArrowRight, RotateCcw } from 'lucide-react'
+import { ArrowRight, ChevronDown, RotateCcw } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { StepCard, StepRail, type StepRailItem } from '@/components/administracion/kit'
 import { Button } from '@/components/ui/button'
-import { formatDayMonth } from '@/lib/dates'
 import {
   addImportItems,
   buildImportProposals,
@@ -47,7 +46,7 @@ import { SourceMark } from './inbox/source-mark'
 import { ANSWER_BUTTON, QUIET_ANSWER, QuestionAnswers, QuestionCard } from './review/question-card'
 import { ArrivalTicket } from './upload/arrival-ticket'
 import { UploadProgress } from './upload/upload-progress'
-import { WantRange } from './upload/want-range'
+import { WantRange, WantRangeChips } from './upload/want-range'
 
 /** Lo que cada pantalla le pasa al cargador (todo serializable, desde el servidor). */
 export type UploaderContext =
@@ -80,24 +79,29 @@ type Job =
 
 const UNREACHABLE = 'Sin conexión: no se pudo subir. Revisá internet y tocá «Reintentar».'
 
-const DROP_COPY: Readonly<Record<UiImportSource, { title: string; hint: string; accept: string }>> =
-  {
-    arca_recibidos: {
-      title: 'Soltá acá el ZIP que bajaste de ARCA',
-      hint: 'Tal cual vino, sin abrirlo con Excel. También sirve el CSV o el Excel. Hasta 20 MB.',
-      accept: '.zip,.csv,.txt,.xlsx,.xls',
-    },
-    mp_release: {
-      title: 'Soltá acá el reporte de Liquidaciones',
-      hint: 'El .csv que te llegó por mail, sin abrirlo con Excel. Hasta 20 MB.',
-      accept: '.csv,.txt,.zip,.xlsx',
-    },
-    bank_statement: {
-      title: 'Soltá acá lo que exportaste del banco',
-      hint: 'CSV, TXT o Excel. Hasta 20 MB.',
-      accept: '.csv,.txt,.xls,.xlsx,.html,.htm,.zip',
-    },
-  }
+/** `touch`: el título en un teléfono, donde no se arrastra nada. */
+const DROP_COPY: Readonly<
+  Record<UiImportSource, { title: string; touch: string; hint: string; accept: string }>
+> = {
+  arca_recibidos: {
+    title: 'Soltá acá el ZIP que bajaste de ARCA',
+    touch: 'Elegí el ZIP que bajaste de ARCA',
+    hint: 'Tal cual vino, sin abrirlo con Excel. También sirve el CSV o el Excel. Hasta 20 MB.',
+    accept: '.zip,.csv,.txt,.xlsx,.xls',
+  },
+  mp_release: {
+    title: 'Soltá acá el reporte de Liquidaciones',
+    touch: 'Elegí el reporte de Liquidaciones',
+    hint: 'El .csv que te llegó por mail, sin abrirlo con Excel. Hasta 20 MB.',
+    accept: '.csv,.txt,.zip,.xlsx',
+  },
+  bank_statement: {
+    title: 'Soltá acá lo que exportaste del banco',
+    touch: 'Elegí lo que exportaste del banco',
+    hint: 'CSV, TXT o Excel. Hasta 20 MB.',
+    accept: '.csv,.txt,.xls,.xlsx,.html,.htm,.zip',
+  },
+}
 
 const STEP_ONE_TITLE: Readonly<Record<UiImportSource, string>> = {
   arca_recibidos: 'Bajalo de ARCA',
@@ -121,6 +125,13 @@ function errorKey(detail: Record<string, unknown> | undefined): string | null {
  * muestra el papel «Llegó esto» y recién ahí se sube) y ③ revisá y cargá (en la
  * pantalla siguiente). Es un asistente porque se hace una vez por semana o por
  * mes, y porque el paso 1 pasa en otra página.
+ *
+ * Quien ya subió antes arranca en el paso 2, con el paso 1 plegado y SIN tilde:
+ * las fechas que tiene que pedir («Desde · Hasta») son lo que viene a buscar
+ * cada semana, y un tilde las hacía leer como algo ya hecho. El tilde aparece
+ * recién con «Ya lo tengo» o al elegir el archivo. Y si hoy no hay nada nuevo
+ * para pedir, arranca en el paso 1 diciéndolo, con «Quiero adelantar» al lado:
+ * antes decía «no hay nada para pedir» arriba de una ranura abierta.
  *
  * La subida es la de siempre: el lote, las filas en tandas (≤ 500 o ≤ 1 MB) con
  * su barra, y el armado. Si se corta, se retoma desde la tanda que faltó
@@ -163,7 +174,14 @@ export function ImportUploader({
   const summaryRef = useRef<HTMLDivElement | null>(null)
   const errorRef = useRef<HTMLDivElement | null>(null)
   const uploadingRef = useRef(false)
-  const [active, setActive] = useState<1 | 2>(firstTime ? 1 : 2)
+  const stepOneHeading = useId()
+  // Hoy no hay nada nuevo para pedir: se dice en el paso 1 antes de ofrecer la ranura.
+  const nothingToAsk = wanted.from === null || wanted.to === null
+  const [active, setActive] = useState<1 | 2>(firstTime || nothingToAsk ? 1 : 2)
+  /** Dijo «Ya lo tengo»: recién ahí el paso 1 lleva su tilde. */
+  const [gotIt, setGotIt] = useState(false)
+  /** El «cómo se baja», plegado cuando hoy no hay nada para pedir. */
+  const [showHow, setShowHow] = useState(false)
   const [reading, setReading] = useState(false)
   const [readError, setReadError] = useState<{
     message: string
@@ -214,7 +232,9 @@ export function ImportUploader({
   // `#paso-1` en la URL abre siempre el «cómo se baja» (el link de las bandejas).
   useEffect(() => {
     const open = () => {
-      if (window.location.hash === '#paso-1') setActive(1)
+      if (window.location.hash !== '#paso-1') return
+      setActive(1)
+      setShowHow(true)
     }
     open()
     window.addEventListener('hashchange', open)
@@ -427,19 +447,30 @@ export function ImportUploader({
 
   const busy = reading || running || job.kind === 'done'
   const finished = job.kind === 'done'
-  const stepOne = finished || active === 2 ? 'done' : 'current'
+  // El paso 1 está hecho cuando la persona lo dijo o ya eligió el archivo; plegado sin eso,
+  // espera (sin tilde) con las fechas a la vista.
+  const stepOne: 'done' | 'current' | 'waiting' =
+    active === 1 && !finished ? 'current' : finished || gotIt || file !== null ? 'done' : 'waiting'
   const stepTwo = finished ? 'done' : active === 2 ? 'current' : 'todo'
   const stepThree = finished ? 'current' : 'todo'
+  // El resumen del paso 1 plegado: las dos fechas en sus fichas, o por qué hoy no hacía falta.
   const askedRange =
-    wanted.from && wanted.to
-      ? `Pedí del ${formatDayMonth(wanted.from)} al ${formatDayMonth(wanted.to)}`
-      : 'Hoy no hay nada nuevo para pedir'
+    wanted.from && wanted.to ? (
+      <WantRangeChips from={wanted.from} to={wanted.to} />
+    ) : (
+      'Hoy no hacía falta: subís uno igual'
+    )
+  // El riel no repite el resumen del paso 1 (ya está en su tarjeta, al lado).
   const rail: StepRailItem[] = [
-    { title: STEP_ONE_TITLE[source], state: stepOne, summary: askedRange },
+    { title: STEP_ONE_TITLE[source], state: stepOne === 'waiting' ? 'todo' : stepOne },
     { title: 'Subilo acá', state: stepTwo, summary: file?.name },
     { title: 'Revisá y cargá', state: stepThree },
   ]
   const narrowNote = NARROW_NOTE[source]
+  const seeHow = () => {
+    setActive(1)
+    setShowHow(true)
+  }
   const uploadLabel = readyPlan
     ? readyPlan.rows.length === 1
       ? 'Subir y revisar'
@@ -452,55 +483,165 @@ export function ImportUploader({
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
+      {/* En el celular no va: las tres tarjetas de abajo ya llevan su número, y «Paso 2 de 3 ·
+          Subilo acá» quedaba repetido a 150 px de «② Subilo acá». */}
       <StepRail
         steps={rail}
         label={`Pasos para ${copy.cta.charAt(0).toLowerCase()}${copy.cta.slice(1)}`}
-        className="lg:sticky lg:top-20"
+        className="max-lg:hidden lg:sticky lg:top-20"
       />
       <div className="min-w-0 space-y-3">
         <p id={live} aria-live="polite" className="sr-only">
           {announce}
         </p>
 
-        <StepCard
-          n={1}
-          id="paso-1"
-          title={STEP_ONE_TITLE[source]}
-          state={stepOne}
-          summary={askedRange}
-          action={
-            // Mientras se lee o se sube no se ofrece: taparía el progreso del paso 2.
-            stepOne === 'done' && !busy ? (
-              <button type="button" className={QUIET_ANSWER} onClick={() => setActive(1)}>
-                Ver cómo se baja
-              </button>
-            ) : null
-          }
-        >
-          <div className="space-y-5">
-            <WantRange wanted={wanted} />
-            {narrowNote ? (
-              <p className="rounded-xl bg-secondary/50 px-3.5 py-2.5 text-sm text-pretty lg:hidden">
-                {narrowNote}
-              </p>
-            ) : null}
-            {stepOneExtra}
-            <div className="border-t border-border/60 pt-5">{howTo}</div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-              <Button
-                type="button"
-                className="h-12 w-full gap-2 px-5 text-base sm:w-auto"
-                onClick={() => setActive(2)}
+        {stepOne === 'waiting' ? (
+          // Plegado y sin tilde: todavía no dijo «Ya lo tengo». Misma tarjeta que un paso
+          // hecho, con el número en lugar del tilde y las fechas en sus fichas.
+          <section
+            id="paso-1"
+            aria-labelledby={stepOneHeading}
+            data-state="waiting"
+            className="scroll-mt-28 rounded-2xl border border-border/70 bg-card/60 px-4 py-3"
+          >
+            <div className="flex items-start gap-3">
+              <span
+                aria-hidden
+                className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-card text-xs font-semibold tabular-nums text-muted-foreground"
               >
-                Ya lo tengo: seguir
-                <ArrowRight aria-hidden className="size-4" />
-              </Button>
-              <Link href={importHref(slug)} className={QUIET_ANSWER}>
-                Lo hago después
-              </Link>
+                1
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center justify-between gap-x-3">
+                  <h2 id={stepOneHeading} className="py-1 text-sm font-medium leading-snug">
+                    <span className="sr-only">Paso 1: </span>
+                    {STEP_ONE_TITLE[source]}
+                  </h2>
+                  {/* Con lugar, al lado del título; en el celular va al pie (abajo): ahí se
+                      metía entre el título y las fechas, que son lo que se viene a buscar. */}
+                  {busy ? null : (
+                    <button
+                      type="button"
+                      className={`${QUIET_ANSWER} max-sm:hidden`}
+                      onClick={seeHow}
+                    >
+                      Ver cómo se baja
+                    </button>
+                  )}
+                </div>
+                {/* Con fechas, sus dos fichas; sin nada para pedir, la oración entera. */}
+                <p className="text-sm leading-snug text-pretty">
+                  {nothingToAsk ? (
+                    <span className="text-muted-foreground">{wanted.sentence}</span>
+                  ) : (
+                    askedRange
+                  )}
+                </p>
+                {narrowNote ? (
+                  <p className="mt-2 text-xs leading-snug text-muted-foreground text-pretty lg:hidden">
+                    {narrowNote}
+                  </p>
+                ) : null}
+                {busy ? null : (
+                  <button
+                    type="button"
+                    className={`${QUIET_ANSWER} -mb-1.5 sm:hidden`}
+                    onClick={seeHow}
+                  >
+                    Ver cómo se baja
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        </StepCard>
+          </section>
+        ) : (
+          <StepCard
+            n={1}
+            id="paso-1"
+            title={STEP_ONE_TITLE[source]}
+            state={stepOne}
+            summary={askedRange}
+            action={
+              // Mientras se lee o se sube no se ofrece: taparía el progreso del paso 2.
+              stepOne === 'done' && !busy ? (
+                <button type="button" className={QUIET_ANSWER} onClick={seeHow}>
+                  Ver cómo se baja
+                </button>
+              ) : null
+            }
+          >
+            {nothingToAsk ? (
+              <div className="space-y-5">
+                <WantRange wanted={wanted} />
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-12 w-full gap-2 px-5 text-base sm:w-auto"
+                    onClick={() => setActive(2)}
+                  >
+                    Quiero adelantar
+                    <ArrowRight aria-hidden className="size-4" />
+                  </Button>
+                  <Link href={importHref(slug)} className={QUIET_ANSWER}>
+                    Volver a Importar
+                  </Link>
+                </div>
+                {stepOneExtra}
+                <details
+                  open={showHow}
+                  onToggle={(event) => setShowHow(event.currentTarget.open)}
+                  className="group/how border-t border-border/60 pt-3"
+                >
+                  <summary
+                    className={`${QUIET_ANSWER} list-none gap-1.5 [&::-webkit-details-marker]:hidden`}
+                  >
+                    Ver cómo se baja
+                    <ChevronDown
+                      aria-hidden
+                      className="size-4 transition-transform duration-(--duration-fast) group-open/how:rotate-180 motion-reduce:transition-none"
+                    />
+                  </summary>
+                  <div className="space-y-4 pt-3">
+                    {narrowNote ? (
+                      <p className="rounded-xl bg-secondary/50 px-3.5 py-2.5 text-sm text-pretty lg:hidden">
+                        {narrowNote}
+                      </p>
+                    ) : null}
+                    {howTo}
+                  </div>
+                </details>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <WantRange wanted={wanted} />
+                {narrowNote ? (
+                  <p className="rounded-xl bg-secondary/50 px-3.5 py-2.5 text-sm text-pretty lg:hidden">
+                    {narrowNote}
+                  </p>
+                ) : null}
+                {stepOneExtra}
+                <div className="border-t border-border/60 pt-5">{howTo}</div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+                  <Button
+                    type="button"
+                    className="h-12 w-full gap-2 px-5 text-base sm:w-auto"
+                    onClick={() => {
+                      setGotIt(true)
+                      setActive(2)
+                    }}
+                  >
+                    Ya lo tengo: seguir
+                    <ArrowRight aria-hidden className="size-4" />
+                  </Button>
+                  <Link href={importHref(slug)} className={QUIET_ANSWER}>
+                    Lo hago después
+                  </Link>
+                </div>
+              </div>
+            )}
+          </StepCard>
+        )}
 
         <StepCard
           n={2}
@@ -524,6 +665,7 @@ export function ImportUploader({
               <FileDropZone
                 accept={DROP_COPY[source].accept}
                 title={reading ? 'Leyendo el archivo…' : DROP_COPY[source].title}
+                touchTitle={reading ? undefined : DROP_COPY[source].touch}
                 hint={DROP_COPY[source].hint}
                 art={<SourceMark source={source} className="size-8" />}
                 disabled={busy || Boolean(blockedReason)}

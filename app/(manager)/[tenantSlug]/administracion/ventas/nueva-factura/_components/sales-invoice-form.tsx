@@ -104,7 +104,6 @@ import {
 import { condicionFromIvaCondition } from '@/lib/arca/vouchers'
 import { addDays, capitalizeFirst, formatDayMonth, formatIsoDay } from '@/lib/dates'
 import { formatVoucherNumber, parseVoucherNumber } from '@/lib/fiscal'
-import { formatCents } from '@/lib/money'
 import { type GateAnswer, InvoiceGate } from './invoice-gate'
 import { InvoicePaper, type InvoicePaperStatus, paperAmounts } from './invoice-paper'
 
@@ -848,7 +847,10 @@ export function SalesInvoiceForm({
   const firstPending = stepStates.indexOf(false)
   const stepState = (index: number): StepState =>
     stepStates[index] ? 'done' : index === firstPending ? 'current' : 'todo'
-  const paidState: StepState = firstPending === -1 ? 'current' : 'todo'
+  // «¿Ya te la pagaron?» se tilda como los demás, apenas tiene su respuesta (y la caja, si ya te
+  // pagó): no espera a que se completen los pasos de arriba.
+  const paidDone = !collectNow || collectTreasury !== null
+  const paidState: StepState = paidDone ? 'done' : firstPending === -1 ? 'current' : 'todo'
 
   const kindWords: Readonly<Record<DocKind, { title: string; consequence: string }>> = {
     sales_invoice: { title: 'Una factura', consequence: 'Le cobrás algo a un cliente.' },
@@ -861,7 +863,14 @@ export function SalesInvoiceForm({
       consequence: 'Le suma algo a una factura.',
     },
   }
-  const paperLetter: 'A' | 'B' | null = arcaMode ? arcaLetter : isLetterA ? 'A' : 'B'
+  // Sin cliente todavía no se sabe qué letra lleva: el recuadro va vacío (no una «B» de borrador).
+  const paperLetter: 'A' | 'B' | null = !party
+    ? null
+    : arcaMode
+      ? arcaLetter
+      : isLetterA
+        ? 'A'
+        : 'B'
   const paperNumber = arcaMode
     ? arca.setup.pointOfSale !== null && arcaNumber !== null
       ? formatVoucherNumber(arca.setup.pointOfSale, arcaNumber)
@@ -873,16 +882,18 @@ export function SalesInvoiceForm({
   const relatedLabel = arcaMode
     ? (relatedVoucher?.label ?? null)
     : (related.find((r) => r.documentId === relatedId)?.label ?? null)
-  const paperStatus: InvoicePaperStatus | null = isCredit
-    ? relatedLabel
-      ? { tone: 'muted', text: `Corrige la ${relatedLabel}` }
-      : null
-    : collectNow
-      ? { tone: 'ok', text: 'Cobrada' }
-      : {
-          tone: 'warn',
-          text: dueShown ? `A cobrar · vence ${formatDayMonth(dueShown)}` : 'A cobrar',
-        }
+  const paperStatus: InvoicePaperStatus | null = !party
+    ? null
+    : isCredit
+      ? relatedLabel
+        ? { tone: 'muted', text: `Corrige la ${relatedLabel}` }
+        : null
+      : collectNow
+        ? { tone: 'ok', text: 'Cobrada' }
+        : {
+            tone: 'warn',
+            text: dueShown ? `A cobrar · vence ${formatDayMonth(dueShown)}` : 'A cobrar',
+          }
   const amounts = paperAmounts({
     aliquots,
     nonTaxedCents: mode === 'detail' ? (nonTaxed ?? 0) : 0,
@@ -1142,7 +1153,7 @@ export function SalesInvoiceForm({
                               className="min-h-11 md:min-h-8"
                             >
                               {r.label} · {formatDayMonth(r.entryDate)} · pendiente{' '}
-                              {formatCents(r.openCents)}
+                              {moneyLabel(r.openCents)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -1424,7 +1435,7 @@ export function SalesInvoiceForm({
                       error={amountsError}
                       hint={
                         aliquots[0] && total !== null && rate !== 0
-                          ? `Neto ${formatCents(aliquots[0].netCents)} · IVA ${vatRateLabel(rate)} ${formatCents(total - (aliquots[0].netCents ?? 0))}`
+                          ? `Neto ${moneyLabel(aliquots[0].netCents ?? 0)} · IVA ${vatRateLabel(rate)} ${moneyLabel(total - (aliquots[0].netCents ?? 0))}`
                           : undefined
                       }
                     />
@@ -1521,7 +1532,7 @@ export function SalesInvoiceForm({
                             />
                             {row.net !== null && row.rate !== 0 ? (
                               <p className="text-right text-xs text-muted-foreground">
-                                IVA {vatRateLabel(row.rate)}: {formatCents(vat)}
+                                IVA {vatRateLabel(row.rate)}: {moneyLabel(vat)}
                               </p>
                             ) : null}
                           </div>
@@ -1581,7 +1592,7 @@ export function SalesInvoiceForm({
                     <div className="flex items-baseline justify-between gap-3 border-t border-border/60 pt-4">
                       <span className="text-sm text-muted-foreground">Total del comprobante</span>
                       <span className="font-serif text-2xl font-semibold tracking-tight tabular-nums">
-                        {formatCents(computedTotal)}
+                        {moneyLabel(computedTotal)}
                       </span>
                     </div>
                   </div>
@@ -1650,7 +1661,7 @@ export function SalesInvoiceForm({
                         onValueChange={setCollectAmount}
                         hint={
                           collectAmount === null && computedTotal > 0
-                            ? `Vacío: el total (${formatCents(computedTotal)}).`
+                            ? `Vacío: el total (${moneyLabel(computedTotal)}).`
                             : undefined
                         }
                         error={errorOf('collectNow.amountCents')}
@@ -1749,7 +1760,7 @@ export function SalesInvoiceForm({
                     </p>
                     <p className="mt-0.5 font-serif text-2xl font-semibold leading-none tracking-tight whitespace-nowrap tabular-nums">
                       {computedTotal > 0 ? (
-                        formatCents(computedTotal)
+                        moneyLabel(computedTotal)
                       ) : (
                         <span className="text-muted-foreground">
                           <span aria-hidden>—</span>
@@ -1774,8 +1785,20 @@ export function SalesInvoiceForm({
         </div>
 
         <aside className="hidden space-y-4 lg:sticky lg:top-20 lg:block">
-          {paper}
-          <EntryPreview entries={shown} label="Ver cómo queda en los libros" />
+          {gate === 'in_close' ? (
+            // Ya está en un cierre: no hace falta esta factura. El papel queda apagado, de fondo.
+            <>
+              <p className="text-sm font-medium text-pretty">No hace falta esta factura</p>
+              <div aria-hidden className="pointer-events-none opacity-35 grayscale">
+                {paper}
+              </div>
+            </>
+          ) : (
+            <>
+              {paper}
+              <EntryPreview entries={shown} label="Ver cómo queda en los libros" />
+            </>
+          )}
         </aside>
       </form>
 

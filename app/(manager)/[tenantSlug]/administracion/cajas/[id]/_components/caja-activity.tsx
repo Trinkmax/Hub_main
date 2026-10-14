@@ -24,14 +24,15 @@ import {
   type ActivityRow,
   activityAmountLabel,
   activityAmountText,
+  countsAsFlow,
 } from '../../_lib/activity'
-import { cajaEmpty } from '../../_lib/wallet-view'
+import { type CajaPeriod, cajaEmpty, periodLead } from '../../_lib/wallet-view'
 
 /**
  * Los movimientos como «actividad», día por día: lo que muestra cualquier
  * billetera cuando tocás una tarjeta. Cada renglón dice qué pasó en palabras
  * («Hielo · Gasto»), con el ícono de lo que fue en el margen y la plata a la
- * derecha, con flecha y signo (la dirección no depende del color).
+ * derecha, con su flecha (la dirección no depende del color).
  *
  * `ActivityDays` es la lista (la usan la portada, con todas las cajas, y la
  * ficha de una caja). `CajaActivity` le suma el filtro «Todo · Entró · Salió»
@@ -39,6 +40,29 @@ import { cajaEmpty } from '../../_lib/wallet-view'
  *
  * La tabla Debe / Haber de siempre sigue estando, en «Ver como tabla».
  */
+
+/**
+ * En el celular la lista va de borde a borde de su tarjeta (los 16 px de cada
+ * lado del `Panel` se los queda el renglón): con el margen del ícono y la plata
+ * a la derecha, al texto le quedaban unos 130 px y cada movimiento ocupaba
+ * cuatro líneas.
+ */
+const EDGE_TO_EDGE = 'max-sm:-mx-4'
+
+/**
+ * El título de un renglón. Si tiene uno corto («Ventas del mar 06/10»), va ese
+ * cuando la HOJA es angosta (el celular, la columna de «Últimos movimientos»):
+ * el corte es por el ancho de la lista, no de la ventana.
+ */
+function RowTitle({ row }: { row: ActivityRow }) {
+  if (!row.titleShort) return row.title
+  return (
+    <>
+      <span className="@[30rem]/ledger:hidden">{row.titleShort}</span>
+      <span className="hidden @[30rem]/ledger:inline">{row.title}</span>
+    </>
+  )
+}
 
 /** Cómo se dice el saldo al cierre de un día. */
 function closingText(mode: 'money' | 'card', cents: number): string {
@@ -89,7 +113,7 @@ export function ActivityDays({
   className?: string
 }) {
   return (
-    <LedgerList bare aria-label={label} className={className}>
+    <LedgerList bare aria-label={label} className={cn(EDGE_TO_EDGE, className)}>
       {days.map((day) => (
         <LedgerGroup
           key={day.date}
@@ -123,7 +147,7 @@ export function ActivityDays({
                   swatch={row.treasuryId ? swatches?.[row.treasuryId] : undefined}
                 />
               }
-              title={row.title}
+              title={<RowTitle row={row} />}
               href={row.path ? `${base}${row.path}` : undefined}
               meta={row.sub}
               amount={<Amount row={row} />}
@@ -164,12 +188,18 @@ export function CajaActivity({
   const outLabel = mode === 'card' ? 'consumos' : 'salió'
   if (days.length === 0) return <>{empty}</>
 
+  // Lo que había al arrancar no entró ni salió: se ve en «Todo».
   const shown =
     filter === 'all'
       ? days
       : days
-          .map((day) => ({ ...day, rows: day.rows.filter((row) => row.direction === filter) }))
+          .map((day) => ({
+            ...day,
+            rows: day.rows.filter((row) => row.direction === filter && countsAsFlow(row)),
+          }))
           .filter((day) => day.rows.length > 0)
+  const total = days.reduce((sum, day) => sum + day.rows.length, 0)
+  const visible = shown.reduce((sum, day) => sum + day.rows.length, 0)
 
   const options: ReadonlyArray<{ value: Filter; label: string }> = [
     { value: 'all', label: 'Todo' },
@@ -179,21 +209,29 @@ export function CajaActivity({
 
   return (
     <div className="space-y-3">
-      <fieldset className="mx-0 min-w-0 border-0 p-0">
-        <legend className="sr-only">Qué movimientos se ven</legend>
-        <div className="flex flex-wrap gap-1.5">
-          {options.map((option) => (
-            <Pill
-              key={option.value}
-              active={filter === option.value}
-              onClick={() => setFilter(option.value)}
-              className="h-11 px-4 text-sm md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]"
-            >
-              {option.label}
-            </Pill>
-          ))}
-        </div>
-      </fieldset>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <fieldset className="mx-0 min-w-0 border-0 p-0">
+          <legend className="sr-only">Qué movimientos se ven</legend>
+          <div className="flex flex-wrap gap-1.5">
+            {options.map((option) => (
+              <Pill
+                key={option.value}
+                active={filter === option.value}
+                onClick={() => setFilter(option.value)}
+                className="h-11 px-4 text-sm md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]"
+              >
+                {option.label}
+              </Pill>
+            ))}
+          </div>
+        </fieldset>
+        {/* Con el filtro puesto, cuántos se ven de cuántos: el subtítulo cuenta todos. */}
+        <p role="status" className="text-xs tabular-nums text-muted-foreground">
+          {filter !== 'all' && visible > 0
+            ? `Se ${visible === 1 ? 've' : 'ven'} ${visible} de ${total} movimientos.`
+            : null}
+        </p>
+      </div>
       {shown.length === 0 ? (
         <p className="rounded-xl bg-secondary/50 px-4 py-6 text-center text-sm text-muted-foreground">
           {filter === 'in'
@@ -216,7 +254,7 @@ export function CajaActivity({
  * movió, enseña qué la mueve sola y el paso que sigue; si tiene historia, lleva
  * al último mes en que pasó algo.
  *
- * El paso que sigue es una carga («Cargar lo que hay», «Cargar el cierre»,
+ * El paso que sigue es una carga («Cargar lo que había», «Cargar el cierre»,
  * «Mover plata»): quien solo lee ve el texto y ningún botón (`canWrite`). Vive
  * acá, y no en la página, para que ese resguardo tenga su test de render.
  */
@@ -224,7 +262,7 @@ export function CajaActivityEmpty({
   treasury,
   everMoved,
   lastMovementDate,
-  periodLabel,
+  period,
   methods,
   openingPending,
   base,
@@ -234,8 +272,8 @@ export function CajaActivityEmpty({
   /** La caja tuvo algún movimiento alguna vez. */
   everMoved: boolean
   lastMovementDate: string | null
-  /** «Septiembre 2026». */
-  periodLabel: string
+  /** El período que se mira: un mes o un rango de días. */
+  period: CajaPeriod
   /** Los medios de cobro que entran a esta caja («lo cobrado con: Efectivo»). */
   methods: readonly string[]
   /** Faltan los saldos iniciales: el paso de todas es cargar lo que hay. */
@@ -246,18 +284,27 @@ export function CajaActivityEmpty({
 }) {
   if (everMoved) {
     const month = lastMovementDate ? monthOf(lastMovementDate) : null
+    const monthWord = month ? monthName(Number(month.slice(5, 7))) : ''
+    // Un rango de días adentro del último mes con movimientos: la salida es ver ese mes
+    // entero, no «ir a octubre» estando en octubre.
+    const inside =
+      month !== null &&
+      period.kind === 'range' &&
+      period.from.slice(0, 7) === month &&
+      period.to.slice(0, 7) === month
     return (
       <EmptyTeach
         plain
         icon={ReceiptText}
-        title={`No hubo movimientos en ${periodLabel.toLowerCase()}`}
+        // «En octubre no hubo movimientos» · «Del 09/10 al 11/10 no hubo movimientos».
+        title={`${periodLead(period)} no hubo movimientos`}
       >
         {month ? (
           <Link
             href={hrefWith(`${base}/cajas/${treasury.id}`, { mes: month })}
             className="inline-flex min-h-11 items-center gap-1 rounded-sm font-medium text-foreground underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-0"
           >
-            Ir a {monthName(Number(month.slice(5, 7)))}, el último mes con movimientos
+            {inside ? `Ver todo ${monthWord}` : `Ir a ${monthWord}, el último mes con movimientos`}
             <ArrowRight className="size-4" aria-hidden />
           </Link>
         ) : (
@@ -275,7 +322,7 @@ export function CajaActivityEmpty({
   const action = !canWrite ? null : empty.action === 'opening' ? (
     <Button asChild className="h-11 gap-2">
       <Link href={`${base}/configurar`}>
-        Cargar lo que hay
+        Cargar lo que había
         <ArrowRight className="size-4" aria-hidden />
       </Link>
     </Button>

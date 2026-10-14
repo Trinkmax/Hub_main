@@ -1,11 +1,13 @@
-import { CircleCheck } from 'lucide-react'
+import { CircleCheck, HandCoins } from 'lucide-react'
 import Link from 'next/link'
 import { DUE_SWATCHES } from '@/components/administracion/charts/palette'
 import { SplitBar } from '@/components/administracion/charts/split-bar'
 import { Explain, HeroPanel, MathRow, MoneyHero } from '@/components/administracion/kit'
+import { ActionButton } from '@/components/administracion/quick-actions'
 import { payablesTranches } from '@/lib/accounting/home'
 import type { PartyListTotals } from '@/lib/accounting/queries/parties'
 import { formatCentsShort } from '@/lib/money'
+import { cn } from '@/lib/utils'
 import { libretaSentence } from '../_lib/libreta'
 import { comprasHref } from '../_lib/links'
 
@@ -22,8 +24,11 @@ const QUIET_LINK =
  * «Le debés» (por eso va adentro de la barra) y lo que hay a favor no se resta
  * (por eso va aparte, con su oración).
  *
+ * Al lado del número va la acción del momento: [Pagar lo vencido] abre «Pagar»,
+ * que arranca por lo más urgente. Solo para quien carga.
+ *
  * Sin deuda no muestra «$ 0»: dice «No le debés nada a nadie» y qué va a
- * aparecer. Server-safe (el número que cuenta es su única isla cliente).
+ * aparecer. Server-safe (el número que cuenta y el botón son sus islas cliente).
  */
 export function LibretaHero({
   tenantSlug,
@@ -31,6 +36,8 @@ export function LibretaHero({
   debtors,
   overdueParties,
   hasSuppliers,
+  openingPending = false,
+  canWrite = false,
   className,
 }: {
   tenantSlug: string
@@ -42,14 +49,43 @@ export function LibretaHero({
   overdueParties: number
   /** Ya hay algún proveedor cargado. */
   hasSuppliers: boolean
+  /**
+   * Los saldos iniciales siguen sin cargar (lo que el bar ya debía al arrancar): un cero
+   * no es «no le debés nada» y lo cargado no es todo. Lo mismo que dice el Resumen.
+   */
+  openingPending?: boolean
+  /** Quien carga ve [Pagar lo vencido] al lado del número. */
+  canWrite?: boolean
   className?: string
 }) {
-  const tranches = payablesTranches({
-    totalCents: totals.debtCents,
-    overdueCents: totals.overdueCents,
-    dueWeekCents: totals.dueSoonCents,
-    partiesRed: overdueParties,
-  })
+  const tranches = payablesTranches(
+    {
+      totalCents: totals.debtCents,
+      overdueCents: totals.overdueCents,
+      dueWeekCents: totals.dueSoonCents,
+      partiesRed: overdueParties,
+    },
+    { openingPending },
+  )
+
+  if (tranches?.unknown) {
+    // El bar recién configurado: ni «$ 0» ni «no le debés nada» (puede deber de antes).
+    return (
+      <HeroPanel tone="crema" className={className}>
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+          Le debés a proveedores
+        </p>
+        <p className="mt-2 font-serif text-2xl font-semibold leading-tight tracking-tight text-balance sm:text-3xl">
+          {tranches.title}
+        </p>
+        <p className="mt-2.5 max-w-prose text-sm leading-relaxed text-muted-foreground text-pretty">
+          {tranches.sentence} Y cada compra que cargues para pagar después aparece acá, con su
+          vencimiento.
+        </p>
+        <CreditLine tenantSlug={tenantSlug} creditCents={totals.creditCents} />
+      </HeroPanel>
+    )
+  }
 
   if (!tranches || tranches.isEmpty) {
     return (
@@ -72,17 +108,32 @@ export function LibretaHero({
   }
 
   const [overdue, week, later] = tranches.tranches
+  const hasOverdue = (overdue?.cents ?? 0) > 0
   return (
     <HeroPanel tone="crema" className={className}>
-      <MoneyHero
-        size="xl"
-        animate
-        label="Le debés a proveedores"
-        cents={tranches.totalCents}
-        sentence={libretaSentence(debtors, tranches)}
-      />
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+        <MoneyHero
+          size="xl"
+          animate
+          label="Le debés a proveedores"
+          cents={tranches.totalCents}
+          sentence={libretaSentence(debtors, tranches)}
+        />
+        {canWrite ? (
+          <ActionButton
+            action="pagar"
+            variant={hasOverdue ? 'default' : 'outline'}
+            className="h-12 gap-2 rounded-full px-6 text-base max-sm:w-full"
+          >
+            <HandCoins className="size-4" aria-hidden />
+            {hasOverdue ? 'Pagar lo vencido' : 'Pagarle a un proveedor'}
+          </ActionButton>
+        ) : null}
+      </div>
       <SplitBar
-        className="mt-5"
+        // La barra y su tabla, del mismo ancho: al lado de la puerta la tabla se estira hasta
+        // el borde del bloque; a todo el ancho (la contadora) las dos paran en el tope de la tabla.
+        className={cn('mt-5', canWrite ? '[&_table]:max-w-none' : 'max-w-[34rem]')}
         ariaLabel={`Le debés ${formatCentsShort(tranches.totalCents)}: ${tranches.tranches
           .map((t) => `${t.label.toLowerCase()} ${formatCentsShort(t.cents)}`)
           .join(', ')}`}
@@ -99,8 +150,13 @@ export function LibretaHero({
         }))}
       />
       <CreditLine tenantSlug={tenantSlug} creditCents={totals.creditCents} />
+      {tranches.note ? (
+        <p className="mt-3 text-xs leading-relaxed text-muted-foreground text-pretty">
+          {tranches.note}
+        </p>
+      ) : null}
       <Explain
-        className="mt-4"
+        className="mt-3"
         note="Son las compras que cargaste como «lo debo» y todavía no pagaste, con IVA. Lo que tenés a favor va aparte: no se resta hasta que lo usás en un pago."
       >
         <MathRow label="Vencido" value={formatCentsShort(overdue?.cents ?? 0)} />
@@ -112,20 +168,26 @@ export function LibretaHero({
   )
 }
 
-/** Lo que hay a favor va aparte de la barra: no se resta de la deuda hasta que se usa. */
+/**
+ * Lo que hay a favor va aparte de la barra: no se resta de la deuda hasta que
+ * se usa. Una sola línea (el porqué está en «¿Cómo se calcula?»): es un dato al
+ * margen, no puede empujar la libreta fuera de la primera pantalla.
+ */
 function CreditLine({ tenantSlug, creditCents }: { tenantSlug: string; creditCents: number }) {
   if (creditCents <= 0) return null
   return (
-    <p className="mt-4 rounded-xl bg-secondary/50 px-3.5 py-3 text-sm leading-relaxed text-muted-foreground text-pretty">
-      Aparte tenés{' '}
+    <p className="mt-4 text-sm leading-relaxed text-muted-foreground text-pretty">
+      {/* En el celular entra en UN renglón con el link: «Tenés $ X a favor. Ver con quiénes». */}
+      <span className="max-sm:hidden">Aparte tenés</span>
+      <span className="sm:hidden">Tenés</span>{' '}
       <strong className="font-semibold whitespace-nowrap text-foreground">
         {formatCentsShort(creditCents)} a favor
-      </strong>{' '}
-      (te devolvieron algo o adelantaste plata): se descuenta solo la próxima vez que les pagues.{' '}
+      </strong>
+      <span className="max-sm:hidden">: se descuenta solo cuando les pagues</span>.{' '}
       <Link
         href={comprasHref(tenantSlug, 'proveedores', { filtro: 'a-favor' })}
         scroll={false}
-        className={QUIET_LINK}
+        className={cn(QUIET_LINK, 'whitespace-nowrap')}
       >
         Ver con quiénes
       </Link>

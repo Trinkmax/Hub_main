@@ -27,7 +27,7 @@ import { DEDUCTION_KINDS } from '@/lib/accounting/schemas'
 import type { CollectionValues } from '@/lib/accounting/server/document-types'
 import type { OpenItemRef } from '@/lib/accounting/types'
 import { formatDayMonth, formatWeekdayDayMonth } from '@/lib/dates'
-import { formatCents } from '@/lib/money'
+import { formatCentsShort } from '@/lib/money'
 import { useAccounting } from '../accounting-provider'
 import {
   ACTION_SHEET_QUESTION,
@@ -53,7 +53,7 @@ import { usePosting, useUndoToast } from '../cajas-ventas/use-posting'
 import { useSheetLoad } from '../cajas-ventas/use-sheet-load'
 import { DateField } from '../date-input'
 import { EntryPreview } from '../entry-preview'
-import { StepCard } from '../kit'
+import { Pill, StepCard } from '../kit'
 import { MoneyField, MoneyInput } from '../money-input'
 import { PartyCombobox, type PartyOption } from '../party-combobox'
 import { TreasuryPicker } from '../treasury-picker'
@@ -417,8 +417,8 @@ function CobrarForm({
   const missingError =
     attempted && missing !== null && missing !== 0
       ? missing > 0
-        ? `Faltan explicar ${formatCents(missing)}: elegí una de las tres opciones.`
-        : `Entraron ${formatCents(-missing)} más de lo que da la cuenta: dejalo a cuenta o revisá los descuentos.`
+        ? `Faltan explicar ${formatCentsShort(missing)}: elegí una de las tres opciones.`
+        : `Entraron ${formatCentsShort(-missing)} más de lo que da la cuenta: dejalo a cuenta o revisá los descuentos.`
       : null
 
   const shown = posting.overrideFor(preview.key) ?? (preview.state.ok ? preview.state.preview : [])
@@ -470,6 +470,18 @@ function CobrarForm({
     setApps(new Map(debtItems.filter(filter).map((i) => [i.lineId, i.openCents])))
     posting.clearFieldError('applications')
   }
+
+  // Qué atajo de «Tildar:» coincide con lo que está tildado (para dibujarlo relleno).
+  const selectionShortcut = ((): 'late' | 'all' | 'none' | null => {
+    if (apps.size === 0) return 'none'
+    const picked = (filter: (i: OpenItemRef) => boolean) => {
+      const ids = debtItems.filter(filter).map((i) => i.lineId)
+      return ids.length === apps.size && ids.every((lineId) => apps.has(lineId))
+    }
+    if (picked(() => true)) return 'all'
+    if (picked((i) => i.dueDate !== null && i.dueDate <= (date ?? today))) return 'late'
+    return null
+  })()
 
   function itemLabel(item: OpenItemRef): string {
     const method = item.salesMethodId ? catalog.ctx.methods.get(item.salesMethodId)?.name : null
@@ -541,7 +553,7 @@ function CobrarForm({
             title={<span id={`${id}-who`}>¿Quién te pagó?</span>}
             summary={
               party && !pickingPayer
-                ? `${displayName(party)}${debt > 0 ? ` · te debe ${moneyLabel(debt)}` : ''}`
+                ? `${displayName(party)}${debt > 0 ? ` · te debe ${formatCentsShort(debt)}` : ''}`
                 : 'Una tarjeta, una app de delivery o un cliente.'
             }
             action={
@@ -652,8 +664,8 @@ function CobrarForm({
                       <p className="text-xs text-muted-foreground text-pretty">
                         ¿No tenés el número a mano?{' '}
                         {estimated.length > 0
-                          ? `Con lo que suele descontarte ${displayName(party)}, serían unos ${moneyLabel(expectedNet)}.`
-                          : `Lo de las ventas elegidas son ${moneyLabel(expectedNet)}.`}{' '}
+                          ? `Con lo que suele descontarte ${displayName(party)}, serían unos ${formatCentsShort(expectedNet)}.`
+                          : `Lo de las ventas elegidas son ${formatCentsShort(expectedNet)}.`}{' '}
                         <button
                           type="button"
                           className="font-medium text-foreground underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -770,44 +782,36 @@ function CobrarForm({
               {ready && party ? (
                 <div className="grid gap-5">
                   <fieldset className="grid gap-2">
-                    <div className="flex flex-wrap items-end justify-between gap-2">
-                      <legend className="text-sm font-medium leading-none">
-                        Ventas pendientes
-                      </legend>
-                      {debtItems.length > 1 ? (
-                        <div className="flex gap-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-11 text-xs md:h-7"
-                            onClick={() =>
-                              selectItems((i) => i.dueDate !== null && i.dueDate <= (date ?? today))
-                            }
+                    <legend className="text-sm font-medium leading-none">Ventas pendientes</legend>
+                    {debtItems.length > 1 ? (
+                      // Los atajos con forma de control: «Tildar:» y tres píldoras; la que
+                      // coincide con lo tildado va rellena.
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="mr-0.5 text-xs text-muted-foreground">Tildar:</span>
+                        {(
+                          [
+                            {
+                              key: 'late',
+                              label: 'Lo atrasado',
+                              pick: (i: OpenItemRef) =>
+                                i.dueDate !== null && i.dueDate <= (date ?? today),
+                            },
+                            { key: 'all', label: 'Todas', pick: () => true },
+                            { key: 'none', label: 'Ninguna', pick: () => false },
+                          ] as const
+                        ).map((shortcut) => (
+                          <Pill
+                            key={shortcut.key}
+                            size="touch"
+                            active={selectionShortcut === shortcut.key}
+                            className="md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]"
+                            onClick={() => selectItems(shortcut.pick)}
                           >
-                            Lo atrasado
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-11 text-xs md:h-7"
-                            onClick={() => selectItems(() => true)}
-                          >
-                            Todas
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-11 text-xs md:h-7"
-                            onClick={() => selectItems(() => false)}
-                          >
-                            Ninguna
-                          </Button>
-                        </div>
-                      ) : null}
-                    </div>
+                            {shortcut.label}
+                          </Pill>
+                        ))}
+                      </div>
+                    ) : null}
                     {debtItems.length === 0 ? (
                       <p className="rounded-xl border border-dashed border-border/80 bg-card/50 px-4 py-4 text-sm text-muted-foreground">
                         {displayName(party)} no tiene ventas pendientes de cobro. Lo que cargues
@@ -852,7 +856,7 @@ function CobrarForm({
                                   className="w-36 shrink-0"
                                 />
                               ) : (
-                                <Amount cents={item.openCents} tone="muted" />
+                                <Amount cents={item.openCents} decimals={0} tone="muted" />
                               )}
                             </li>
                           )
@@ -898,7 +902,7 @@ function CobrarForm({
                               >
                                 {item.label} · {formatDayMonth(item.entryDate)}
                               </Label>
-                              <Amount cents={item.openCents} />
+                              <Amount cents={item.openCents} decimals={0} />
                             </li>
                           )
                         })}
@@ -919,12 +923,12 @@ function CobrarForm({
                     <p className="text-sm">
                       Estas ventas suman{' '}
                       <span className="font-semibold tabular-nums">
-                        {formatCents(Math.max(0, applied - creditUsed))}
+                        {formatCentsShort(Math.max(0, applied - creditUsed))}
                       </span>
                       {creditUsed > 0 ? (
                         <span className="text-muted-foreground">
                           {' '}
-                          (ya sin los {formatCents(creditUsed)}{' '}
+                          (ya sin los {formatCentsShort(creditUsed)}{' '}
                           {isCustomer ? 'de su saldo a favor' : 'que le debíamos'})
                         </span>
                       ) : null}
@@ -951,9 +955,10 @@ function CobrarForm({
                   ) : (
                     <button
                       type="button"
-                      className={`${TEXT_LINK} -mt-3 justify-self-start text-sm`}
+                      className={`${ADD_LINK} -mt-3`}
                       onClick={() => setGrossOpen(true)}
                     >
+                      <Plus className="size-3.5" aria-hidden />
                       El total de la liquidación es otro
                     </button>
                   )}

@@ -160,7 +160,7 @@ export function TargetRace({
   if (focusTarget !== null && focusTarget > 0) {
     rows.push({
       key: 'objetivo',
-      label: `${targetLabel} a esa fecha`,
+      label: `${targetLabel} ${when}`,
       value: formatCentsShort(focusTarget),
       sub: `Vas ${gapWords(focusSold, focusTarget)} (${gapPercent(focusSold, focusTarget)})`,
       glyph: 'line',

@@ -7,7 +7,9 @@ import { type MonthDays, monthPace, monthTitle } from '@/lib/accounting/home'
 import { type Projection, projectionFigures } from '@/lib/accounting/projection'
 import type { DayEvents } from '@/lib/accounting/queries/projection'
 import { addMonthsToYearMonth, formatMonthLabel, monthName } from '@/lib/dates'
+import { keepPercent, staleSentence, staleTarget } from '../_lib/almanac'
 import { tabHref } from '../_lib/ventas-view'
+import { FoldOnPhone } from './panel-focus'
 import { ProjectionTable } from './projection-table'
 import { TargetBuilder } from './target-builder'
 import { TargetsImportDialog } from './targets-import-dialog'
@@ -20,7 +22,9 @@ import { TargetsImportDialog } from './targets-import-dialog'
  * que no cambió), armarlo acá o escribirlo día por día en el almanaque.
  *
  * Se llega con `?tab=proyeccion` (el link de siempre): ahí la planilla viene
- * abierta. Para quien solo mira también: es su vista de trabajo.
+ * abierta y el bloque va a todo el ancho (lo decide «El mes»). Para quien solo mira
+ * también: es su vista de trabajo. En el celular, a quien carga se le pliega
+ * igual (son 31 fichas): arriba quedan los tres caminos para poner el objetivo.
  */
 
 /** El plegable de un bloque: una raya, el rótulo y la flecha. */
@@ -80,7 +84,11 @@ export function ProjectionPanel({
     ) : null
 
   const sheet = (
-    <details open={open} className="group/fold mt-4 border-t border-border/60 pt-2">
+    <details
+      open={open}
+      id="planilla-dia-por-dia"
+      className="group/fold mt-4 border-t border-border/60 pt-2"
+    >
       <summary className={FOLD_SUMMARY}>
         Ver la planilla día por día
         <FoldChevron />
@@ -96,6 +104,7 @@ export function ProjectionPanel({
           canWrite={canWrite}
         />
       </div>
+      {open && canWrite ? <FoldOnPhone target="planilla-dia-por-dia" /> : null}
     </details>
   )
 
@@ -158,12 +167,15 @@ export function ProjectionPanel({
     targetAccumCents: d.targetAccumCents,
   }))
   const hasSales = summary.soldCents > 0
+  // Antes de cargar el cierre de anoche, «a hoy» ya cuenta su objetivo y la carrera corta en la
+  // última noche cargada: sin explicarlo, la misma pantalla decía «abajo» y «arriba».
+  const stale = staleTarget(projection)
 
   return (
     <Panel id="proyeccion" title="Proyección">
       <ChartFrame
         title={monthTitle(summary, name)}
-        sentence={figures.target.hint}
+        sentence={stale ? staleSentence(stale) : keepPercent(figures.target.hint)}
         defaultView={canWrite ? 'chart' : 'table'}
         chart={
           <TargetRace

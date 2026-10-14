@@ -4,6 +4,12 @@ import { Download, Loader2 } from 'lucide-react'
 import { type ComponentProps, type ReactNode, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { ACC_ERRORS, isAccErrorKey } from '@/lib/accounting/errors'
 import { cn } from '@/lib/utils'
 
@@ -151,6 +157,78 @@ export function ExportButton({
   )
 }
 
+export type ExportItem = {
+  href: string
+  /** Nombre si el servidor no manda uno. */
+  fileName: string
+  /** «Exportar», «Exportar esta cuenta». */
+  label?: string
+}
+
+/**
+ * Los exportes de un libro en el celular: van en la línea del título, como un
+ * solo ícono. Con un archivo lo baja directo; con dos o más abre un menú que
+ * los nombra (dos íconos iguales al lado no dicen cuál es cuál). En la compu
+ * siguen siendo los botones con su texto (`ExportButton`).
+ */
+export function ExportMenuButton({ items }: { items: readonly ExportItem[] }) {
+  const [pending, setPending] = useState(false)
+  const [only] = items
+
+  async function run(item: ExportItem) {
+    if (pending) return
+    setPending(true)
+    const outcome = await downloadExport(item.href, item.fileName)
+    setPending(false)
+    if (!outcome.ok) toast.error(outcome.message)
+  }
+
+  if (!only) return null
+  if (items.length === 1) {
+    return (
+      <ExportButton
+        iconOnly
+        href={only.href}
+        fileName={only.fileName}
+        label={only.label ?? 'Exportar'}
+        className="rounded-full border border-border/70 bg-card text-foreground"
+      />
+    )
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-11 shrink-0 rounded-full border border-border/70 bg-card text-foreground"
+          aria-label={pending ? 'Preparando…' : 'Exportar'}
+          aria-busy={pending}
+        >
+          {pending ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : (
+            <Download className="size-4" aria-hidden />
+          )}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-56">
+        {items.map((item) => (
+          <DropdownMenuItem
+            key={item.href}
+            className="min-h-11 gap-2"
+            onSelect={() => void run(item)}
+          >
+            <Download className="size-4" aria-hidden />
+            {item.label ?? 'Exportar'}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 /**
  * «Descargar el paquete del mes»: baja los archivos uno por uno (el `.zip`
  * queda para más adelante). Si alguno falla, sigue con los demás y al final
@@ -221,7 +299,8 @@ export function ExportAllButton({
       {count !== undefined && count !== null && progress === null ? (
         <span
           className={cn(
-            'rounded-full px-1.5 py-px font-mono text-[11px] font-normal tabular-nums',
+            // Con la letra del botón: la de máquina es del ticket.
+            'rounded-full px-1.5 py-px text-[11px] font-normal tabular-nums',
             variant === 'default' ? 'bg-primary-foreground/15' : 'bg-secondary',
           )}
         >

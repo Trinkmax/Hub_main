@@ -5,7 +5,7 @@ import type { ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { DEDUCTION_KINDS } from '@/lib/accounting/schemas'
 import type { PartyKind } from '@/lib/accounting/types'
-import { formatCents } from '@/lib/money'
+import { formatCents, formatCentsShort, NBSP } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import {
   ChoiceCard,
@@ -114,28 +114,36 @@ export function SettlementNumber({
       </p>
     )
   }
+  // Sin centavos (es un titular), y el porcentaje y «Estimado» van juntos: en el celular bajan
+  // los dos al renglón de abajo, nunca «(13,6» arriba y «%)» abajo.
   return (
     <p
       role="status"
-      className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 font-serif text-2xl font-semibold leading-tight tracking-tight"
+      className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1.5 font-serif text-2xl font-semibold leading-tight tracking-tight"
     >
       <span>
         {isCustomer ? 'Te retuvieron' : 'Te descontaron'}{' '}
-        <span className="tabular-nums">{formatCents(summary.discountCents)}</span>{' '}
-        <span className="font-sans text-base font-normal text-muted-foreground tabular-nums">
-          ({summary.percentText})
+        <span className="whitespace-nowrap tabular-nums">
+          {formatCentsShort(summary.discountCents)}
         </span>
       </span>
-      {estimated ? (
-        <StatusPill tone="muted" className="font-sans">
-          Estimado
-        </StatusPill>
-      ) : null}
+      <span className="inline-flex items-center gap-2 whitespace-nowrap font-sans text-base font-normal text-muted-foreground tabular-nums">
+        ({summary.percentText.replace(' %', `${NBSP}%`)})
+        {estimated ? (
+          <StatusPill tone="muted" className="font-sans">
+            Estimado
+          </StatusPill>
+        ) : null}
+      </span>
     </p>
   )
 }
 
 // ─── ③ Lo que falta explicar ─────────────────────────────────────────────────
+
+/** Cada salida de «Faltan explicar»: alto parejo y el texto puede bajar de renglón. */
+const MISSING_CHOICE =
+  'h-auto min-h-11 whitespace-normal px-2 py-1.5 text-center leading-tight text-balance md:min-h-9'
 
 /**
  * La cuenta tiene que cerrar: ventas − descuentos = lo que entró. Si falta
@@ -191,35 +199,36 @@ export function MissingLine({
         className={cn('font-medium', error ? 'text-destructive' : 'text-warning-text')}
       >
         {missing > 0
-          ? `Faltan explicar ${formatCents(missing)}`
-          : `Entraron ${formatCents(-missing)} más de lo que da la cuenta`}
+          ? `Faltan explicar ${formatCentsShort(missing)}. ¿Qué es?`
+          : `Entraron ${formatCentsShort(-missing)} más de lo que da la cuenta`}
       </p>
-      <div className="flex flex-wrap gap-2">
-        {missing > 0 ? (
-          <>
-            <Button type="button" size="sm" className="h-11 md:h-9" onClick={onCommission}>
-              Es comisión
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-11 md:h-9"
-              onClick={onOther}
-            >
-              Son otros cargos
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-11 md:h-9"
-              onClick={onDifference}
-            >
-              No sé qué es
-            </Button>
-          </>
-        ) : (
+      {missing > 0 ? (
+        // Las tres salidas, parejas en una grilla de tres (en el celular quedaban 2 + 1).
+        <div className="grid grid-cols-3 gap-2">
+          <Button type="button" size="sm" className={MISSING_CHOICE} onClick={onCommission}>
+            Es comisión
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={MISSING_CHOICE}
+            onClick={onOther}
+          >
+            Son otros cargos
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={MISSING_CHOICE}
+            onClick={onDifference}
+          >
+            No sé qué es
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
           <Button
             type="button"
             variant="outline"
@@ -227,10 +236,10 @@ export function MissingLine({
             className="h-11 md:h-9"
             onClick={onOnAccount}
           >
-            Dejarlo a cuenta ({formatCents(-missing)})
+            Dejarlo a cuenta ({formatCentsShort(-missing)})
           </Button>
-        )}
-      </div>
+        </div>
+      )}
       {missing < 0 && estimated ? (
         <p className="text-xs text-muted-foreground text-pretty">
           Si te descontaron menos de lo estimado, bajá la comisión de arriba.

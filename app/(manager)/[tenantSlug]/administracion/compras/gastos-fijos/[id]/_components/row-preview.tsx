@@ -38,6 +38,7 @@ export function RowPreview({
   frequency,
   dues,
   installmentsTotal,
+  ended = false,
   today,
   className,
 }: {
@@ -53,6 +54,8 @@ export function RowPreview({
   /** Cuotas que faltan contando la próxima (`null` = no termina). */
   dues: number | null
   installmentsTotal: number | null
+  /** Ya pasó su última cuota y todavía no se dijo cuántas más faltan: no hay próximo vencimiento. */
+  ended?: boolean
   today: string
   className?: string
 }) {
@@ -119,7 +122,14 @@ export function RowPreview({
                   )}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  Vence el {weekdayDay(nextDueDate)}
+                  {/* Un vencimiento que ya pasó (y sigue sin pagar) se dice en pasado. */}
+                  {ended
+                    ? 'Ya terminó'
+                    : isToday
+                      ? 'Vence hoy'
+                      : nextDueDate < today
+                        ? `Venció el ${weekdayDay(nextDueDate)}`
+                        : `Vence el ${weekdayDay(nextDueDate)}`}
                 </span>
               </p>
             </div>

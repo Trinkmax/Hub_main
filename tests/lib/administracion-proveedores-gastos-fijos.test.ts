@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   joinNameSources,
+  missingTypical,
   nameKey,
   parseNameList,
   suggestAccount,
@@ -97,6 +98,30 @@ describe('cargar una lista: parseNameList', () => {
     expect(parsed.repeated).toEqual([])
     expect(parsed.invalid).toEqual([])
   })
+
+  it('lo típico que se ofrece: no lo que ya está cargado, tampoco adentro de un nombre más largo', () => {
+    // Un bar sin nada: se ofrece todo.
+    expect(missingTypical([])).toEqual([...TYPICAL_RECURRING])
+    const offered = missingTypical([
+      'Alquiler del local',
+      'LUZ (EPEC)',
+      'Internet y teléfono',
+      'Ingresos brutos Piojo - RRII',
+      'Gastos varios',
+    ])
+    // Tildar «Alquiler» con «Alquiler del local» ya cargado sería cargarlo dos veces.
+    for (const name of ['Alquiler', 'Luz', 'Internet', 'Ingresos Brutos']) {
+      expect(offered, name).not.toContain(name)
+    }
+    // Palabra entera: «Gastos varios» no es «Gas», ni «Contadora» es «Contador».
+    expect(offered).toContain('Gas')
+    expect(missingTypical(['Kari Contadora'])).toContain('Contador')
+    expect(offered).toHaveLength(TYPICAL_RECURRING.length - 4)
+    // Solo cambia lo que se MUESTRA: lo que se carga sigue saliendo de `parseNameList`.
+    expect(
+      parseNameList('Alquiler', { existing: ['Alquiler del local'], maxLength: 80 }).names,
+    ).toEqual(['Alquiler'])
+  })
 })
 
 describe('cargar una lista: la cuenta propuesta de cada gasto fijo', () => {
@@ -132,6 +157,43 @@ describe('cargar una lista: la cuenta propuesta de cada gasto fijo', () => {
     expect(suggest('Dominio DON WEB')).toBe('soft')
     expect(suggest('Youtube Premium')).toBe('soft')
     expect(suggest('Nafta Tomi')).toBe('mov')
+  })
+
+  it('la luz, el gas y el agua van cada uno a su categoría del plan estándar', () => {
+    const services = [
+      ...accounts,
+      { id: 'luz', code: '4.2.01.03.004', name: 'Energía eléctrica' },
+      { id: 'gas', code: '4.2.01.03.005', name: 'Gas' },
+      { id: 'agua', code: '4.2.01.03.024', name: 'Agua' },
+      { id: 'varios', code: '4.2.01.03.014', name: 'Gastos varios' },
+    ]
+    expect(suggestAccount('Luz', services)).toBe('luz')
+    expect(suggestAccount('Luz (EPEC)', services)).toBe('luz')
+    expect(suggestAccount('Gas', services)).toBe('gas')
+    expect(suggestAccount('Dispenser Agua', services)).toBe('agua')
+    // «Gastos varios» no es «gas».
+    expect(suggestAccount('Gastos de la barra', services)).toBeNull()
+    // Un plan que los junta en «Servicios» sigue valiendo.
+    const joined = [...accounts, { id: 'serv', code: '4.2.01.03.050', name: 'Servicios públicos' }]
+    for (const name of ['Luz', 'Gas', 'Agua']) expect(suggestAccount(name, joined)).toBe('serv')
+    // Y sin ninguna de esas cuentas, no propone nada.
+    expect(suggest('Luz')).toBeNull()
+  })
+
+  it('una alarma no es la seguridad social', () => {
+    // La retención del SUSS es un crédito que se puede elegir en una compra y, por su código,
+    // aparece antes que «Seguridad y monitoreo»: la alarma no puede caer ahí.
+    const suss = {
+      id: 'suss',
+      code: '1.1.04.02.003',
+      name: 'Retenciones de seguridad social (SUSS) sufridas',
+    }
+    const withSuss = [suss, ...accounts]
+    expect(suggestAccount('Alarma', withSuss)).toBe('seg')
+    expect(suggestAccount('Alarma', [suss])).toBeNull()
+    // Un gasto que se llama «seguridad social» va con los aportes, no con la alarma.
+    const cargas = { id: 'cargas', code: '4.2.01.01.002', name: 'Cargas sociales' }
+    expect(suggestAccount('Seguridad social', [suss, ...accounts, cargas])).toBe('cargas')
   })
 
   it('lo que no reconoce (o no tiene cuenta) queda sin proponer', () => {

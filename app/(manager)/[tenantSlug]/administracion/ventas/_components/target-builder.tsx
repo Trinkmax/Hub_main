@@ -14,10 +14,10 @@ import { toastUndo } from '@/components/administracion/quick-actions'
 import { Button } from '@/components/ui/button'
 import { saveSalesTargets } from '@/lib/accounting/actions/projection'
 import { MAX_CENTS } from '@/lib/accounting/schemas'
-import { capitalizeFirst, WEEKDAY_NAMES } from '@/lib/dates'
+import { capitalizeFirst, WEEKDAY_NAMES, WEEKDAY_NAMES_SHORT } from '@/lib/dates'
 import { formatCentsShort } from '@/lib/money'
 import { useMasterAction } from '../../ajustes/_components/use-master-action'
-import { cellShort, longDayTitle } from '../_lib/almanac'
+import { cellMillions, longDayTitle } from '../_lib/almanac'
 import {
   type BuiltTarget,
   buildTargets,
@@ -35,7 +35,8 @@ import { MonthGrid, type MonthGridCell } from './month-grid'
  * «Armar el objetivo»: el camino guiado para el bar que no tiene su planilla
  * (quien la tiene usa «Cargar una lista», que no cambió). Tres pasos a la
  * vista: cuánto querés vender en el mes, qué días son fuertes, y cómo queda
- * repartido día por día antes de guardar.
+ * repartido día por día antes de guardar. En la compu, «Mirá cómo queda» va
+ * fijo a la derecha: al tocar «Flojo / Normal / Fuerte» se ve cambiar el mes.
  *
  * Guarda con lo mismo de siempre: `saveSalesTargets(slug, { items })`, un ítem
  * por día (sin tocar las notas), por `useMasterAction`. Después de guardar se
@@ -90,7 +91,7 @@ export function TargetBuilder({
       built.items.map((item) => ({
         date: item.day,
         state: 'future',
-        valueShort: item.targetCents === null ? null : cellShort(item.targetCents),
+        valueShort: item.targetCents === null ? null : cellMillions(item.targetCents),
         label: `${longDayTitle(item.day)}: ${
           item.targetCents === null ? 'sin objetivo' : formatCentsShort(item.targetCents)
         }`,
@@ -154,7 +155,7 @@ export function TargetBuilder({
         size="lg"
       >
         <form
-          className="grid gap-3 px-1 pb-2"
+          className="grid gap-3 px-1 pb-2 lg:grid-cols-[minmax(0,1fr)_19.5rem] lg:items-start"
           // Enter en el total NO guarda (pisaría el objetivo del mes sin haber mirado los pasos
           // 2 y 3): guarda el botón del final, o ⌘↵ / Ctrl↵.
           onKeyDown={handleFormKeyDown}
@@ -163,75 +164,83 @@ export function TargetBuilder({
             save()
           }}
         >
-          <StepCard
-            open
-            n={1}
-            state={total !== null && total > 0 ? 'done' : 'current'}
-            title={`¿Cuánto querés vender en ${monthName}?`}
-            summary="Es la venta de todo el mes, ya sin las comisiones."
-          >
-            <MoneyField
-              label={`Objetivo de ${monthName}`}
-              fieldClassName="[&>label]:sr-only"
-              className={BIG_MONEY_FIELD}
-              decimals="auto"
-              inputRef={amountRef}
-              value={total}
-              maxCents={MAX_CENTS}
-              onValueChange={(cents) => {
-                setTotal(cents)
-                setError(null)
-              }}
-              hint={hint ?? undefined}
-            />
-          </StepCard>
+          <div className="grid min-w-0 gap-3">
+            <StepCard
+              open
+              n={1}
+              state={total !== null && total > 0 ? 'done' : 'current'}
+              title={`¿Cuánto querés vender en ${monthName}?`}
+              summary="Es la venta de todo el mes, ya sin las comisiones."
+            >
+              <MoneyField
+                label={`Objetivo de ${monthName}`}
+                fieldClassName="[&>label]:sr-only"
+                className={BIG_MONEY_FIELD}
+                decimals="auto"
+                inputRef={amountRef}
+                value={total}
+                maxCents={MAX_CENTS}
+                onValueChange={(cents) => {
+                  setTotal(cents)
+                  setError(null)
+                }}
+                hint={hint ?? undefined}
+              />
+            </StepCard>
 
-          <StepCard
-            open
-            n={2}
-            state={ready ? 'done' : 'todo'}
-            title="¿Qué días son más fuertes?"
-            summary="Un día fuerte se lleva más objetivo que uno flojo. Si un día no abrís, marcalo cerrado."
-          >
-            <ul className="grid gap-2">
-              {WEEK_ORDER.map((weekday) => {
-                const name = capitalizeFirst(WEEKDAY_NAMES[weekday] ?? '')
-                return (
-                  <li
-                    key={weekday}
-                    className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5"
-                  >
-                    <span id={`dia-${weekday}`} className="w-24 text-sm font-medium">
-                      {name}
-                    </span>
-                    {/* biome-ignore lint/a11y/useSemanticElements: un grupo de píldoras que se aprietan (aria-pressed), no un fieldset de radios */}
-                    <span
-                      role="group"
-                      aria-labelledby={`dia-${weekday}`}
-                      // En el celular las cuatro van en un renglón parejo (sueltas, «Fuerte» bajaba sola).
-                      className="grid w-full grid-cols-4 gap-1.5 sm:flex sm:w-auto sm:flex-wrap"
+            <StepCard
+              open
+              n={2}
+              state={ready ? 'done' : 'todo'}
+              title="¿Qué días son más fuertes?"
+              summary="Un día fuerte se lleva más objetivo que uno flojo. Si un día no abrís, marcalo cerrado."
+            >
+              <ul className="grid gap-2">
+                {WEEK_ORDER.map((weekday) => {
+                  const name = capitalizeFirst(WEEKDAY_NAMES[weekday] ?? '')
+                  const short = capitalizeFirst(WEEKDAY_NAMES_SHORT[weekday] ?? '')
+                  return (
+                    <li
+                      key={weekday}
+                      className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5"
                     >
-                      {TARGET_LEVELS.map((level: TargetLevel) => (
-                        <Pill
-                          key={level}
-                          size="touch"
-                          className="max-sm:w-full max-sm:justify-center max-sm:px-1 md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]"
-                          active={(plan[weekday] ?? 'normal') === level}
-                          onClick={() => setPlan((prev) => ({ ...prev, [weekday]: level }))}
-                        >
-                          {LEVEL_LABELS[level]}
-                        </Pill>
-                      ))}
-                    </span>
-                  </li>
-                )
-              })}
-            </ul>
-          </StepCard>
+                      <span id={`dia-${weekday}`} className="w-24 text-sm font-medium lg:w-10">
+                        {/* En la compu la columna es angosta: «Lun». El nombre entero se sigue leyendo. */}
+                        <span className="lg:sr-only">{name}</span>
+                        <span aria-hidden className="max-lg:hidden">
+                          {short}
+                        </span>
+                      </span>
+                      {/* biome-ignore lint/a11y/useSemanticElements: un grupo de píldoras que se aprietan (aria-pressed), no un fieldset de radios */}
+                      <span
+                        role="group"
+                        aria-labelledby={`dia-${weekday}`}
+                        // En el celular las cuatro van en un renglón parejo (sueltas, «Fuerte» bajaba sola).
+                        className="grid w-full grid-cols-4 gap-1.5 sm:flex sm:w-auto sm:flex-wrap"
+                      >
+                        {TARGET_LEVELS.map((level: TargetLevel) => (
+                          <Pill
+                            key={level}
+                            size="touch"
+                            className="max-sm:w-full max-sm:justify-center max-sm:px-1 md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]"
+                            active={(plan[weekday] ?? 'normal') === level}
+                            onClick={() => setPlan((prev) => ({ ...prev, [weekday]: level }))}
+                          >
+                            {LEVEL_LABELS[level]}
+                          </Pill>
+                        ))}
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            </StepCard>
+          </div>
 
           <StepCard
             open
             n={3}
+            className="min-w-0 lg:sticky lg:top-0"
             state={ready ? 'current' : 'todo'}
             title="Mirá cómo queda"
             summary={

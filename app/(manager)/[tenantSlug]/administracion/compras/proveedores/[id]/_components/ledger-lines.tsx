@@ -6,7 +6,7 @@ import { formatDayMonth } from '@/lib/dates'
 import { formatCents, formatCentsShort, MINUS_SIGN } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { documentHref } from '../../../_lib/links'
-import type { LedgerLine, SupplierLedger } from '../../../_lib/supplier-ledger'
+import { type LedgerLine, ledgerLineName, type SupplierLedger } from '../../../_lib/supplier-ledger'
 
 /** Con centavos solo si los tiene: la libreta no redondea lo que se debe. */
 function money(cents: number): string {
@@ -52,7 +52,7 @@ function Cell({ label, children }: { label: string; children: ReactNode }) {
  *
  *                                         Te dejó    Le pagaste    Le debés
  *   10/09  Te dejó     Factura A 0003-…   $ 1.210.000              $ 1.210.000
- *   03/10  Le pagaste  Pago                           $ 500.000      $ 710.000
+ *   03/10  Le pagaste  n.º 12                         $ 500.000      $ 710.000
  *
  * El sentido lo dan la columna Y el verbo («Te dejó», «Le pagaste», «Te
  * descontó»), nunca solo el color. En una hoja angosta (el celular) no hay
@@ -122,10 +122,10 @@ export function LedgerLines({
                     href={documentHref(tenantSlug, line.documentId)}
                     className="rounded-sm underline decoration-border underline-offset-4 outline-none after:absolute after:inset-0 after:content-[''] hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    <VoucherText text={line.label} />
+                    <VoucherText text={ledgerLineName(line)} />
                   </Link>
                 ) : (
-                  <VoucherText text={line.label} />
+                  <VoucherText text={ledgerLineName(line)} />
                 )}
               </p>
               {line.status ? (

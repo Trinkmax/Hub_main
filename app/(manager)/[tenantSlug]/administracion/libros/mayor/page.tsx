@@ -16,9 +16,8 @@ import {
 } from '@/lib/accounting/queries'
 import { decodePageToken } from '@/lib/accounting/queries/shared'
 import { formatDayMonth, formatIsoDay, todayInCordoba } from '@/lib/dates'
-import { BookPage } from '../_components/book-page'
+import { BookPage, PERIOD_ROW } from '../_components/book-page'
 import { BookTotals } from '../_components/book-totals'
-import { ExportButton } from '../_components/export-button'
 import { KeysetPagination } from '../_components/keyset-pagination'
 import { RangePicker } from '../_components/period-picker'
 import { PeriodError, QueryErrorBlock } from '../_components/report-error'
@@ -176,28 +175,29 @@ export default async function MayorPage({
           ? `${accountName}${partyName ? ` · ${partyName}` : ''} · ${shown.label}`
           : `Los movimientos de una cuenta, con su saldo · ${shown.label}`
       }
-      actions={
-        <>
-          {exportOne && account ? (
-            <ExportButton
-              href={exportOne}
-              fileName={`administracion-${tenantSlug}-mayor-${account.code}-${suffix}.csv`}
-              label="Exportar esta cuenta"
-            />
-          ) : null}
-          <ExportButton
-            href={exportAll}
-            fileName={`administracion-${tenantSlug}-mayor-general-${suffix}.csv`}
-            label="Exportar mayor general"
-          />
-        </>
-      }
+      exports={[
+        ...(exportOne && account
+          ? [
+              {
+                href: exportOne,
+                fileName: `administracion-${tenantSlug}-mayor-${account.code}-${suffix}.csv`,
+                label: 'Exportar esta cuenta',
+              },
+            ]
+          : []),
+        {
+          href: exportAll,
+          fileName: `administracion-${tenantSlug}-mayor-general-${suffix}.csv`,
+          label: 'Exportar mayor general',
+        },
+      ]}
       booksPath={`${base}/libros`}
       book="mayor"
       period={shown}
       toolbar={
         <div className="space-y-3">
           <RangePicker
+            className={PERIOD_ROW}
             range={shown}
             today={today}
             fiscalYear={ctx.fiscalYear}
@@ -335,10 +335,16 @@ function QuickAccounts({
  */
 function rowDetail(row: LedgerRow, isGroup: boolean): string | null {
   const label = row.documentLabel?.trim()
-  const description =
-    label && row.description?.startsWith(`${label} · `)
-      ? row.description.slice(label.length + 3)
-      : row.description
+  // El comprobante ya es el título del renglón: se saca de la descripción, venga adelante
+  // («Pago · Carnicería») o atrás («Tostadero Serrano SA · Factura A 0003-00004512»).
+  const text = row.description?.trim()
+  const description = !label
+    ? text
+    : text?.startsWith(`${label} · `)
+      ? text.slice(label.length + 3)
+      : text?.endsWith(` · ${label}`)
+        ? text.slice(0, -(label.length + 3))
+        : text
   const parts: string[] = []
   for (const raw of [
     // En un grupo, de qué cuenta es: el nombre alcanza («Caja», «Banco Nación»);
@@ -349,7 +355,8 @@ function rowDetail(row: LedgerRow, isGroup: boolean): string | null {
     row.memo,
   ]) {
     const part = raw?.trim()
-    if (!part || parts.some((p) => p.includes(part))) continue
+    // La leyenda de la línea suele ser el comprobante otra vez («Factura A 0003-00004512»).
+    if (!part || part === label || parts.some((p) => p.includes(part))) continue
     parts.push(part)
   }
   return parts.length > 0 ? parts.join(' · ') : null

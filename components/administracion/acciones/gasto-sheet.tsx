@@ -884,14 +884,20 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
     }) ?? (entries.length === 0 ? 'Todavía falta completar un dato.' : null)
   const answered = !unanswered.amount && !unanswered.target && !unanswered.treasury
   const linkedRecurring = recurringId ? data.recurring.find((r) => r.id === recurringId) : undefined
+  // Como un tique de verdad (la regla del ticket del cierre, la misma de la compra y del
+  // pago): si algún importe tiene centavos, los llevan todos; si son todos redondos, ninguno.
+  const ticketWithCents = [split?.netCents ?? 0, split?.vatCents ?? 0, amount ?? 0].some(
+    (cents) => cents % 100 !== 0,
+  )
+  const ticketMoney = (cents: number) => formatCents(cents, { decimals: ticketWithCents ? 2 : 0 })
   const ticketRows: GastoTicketRow[] = split
     ? [
-        { key: 'neto', label: 'Neto', value: formatCents(split.netCents) },
+        { key: 'neto', label: 'Neto', value: ticketMoney(split.netCents) },
         {
           key: 'iva',
           label: `IVA ${vatRateLabel(vatRate)}`,
           hint: recovers ? 'Lo recuperás' : 'Va al costo',
-          value: formatCents(split.vatCents),
+          value: ticketMoney(split.vatCents),
         },
       ]
     : []
@@ -1330,7 +1336,7 @@ function GastoForm({ tenantSlug, params, close, setDirty, data, reload }: FormPr
             stampNonce={stampNonce}
             rows={ticketRows}
             totalLabel={ticketTotalLabel(treasury ?? null)}
-            total={amount !== null && amount > 0 ? formatCents(amount) : EMPTY_VALUE}
+            total={amount !== null && amount > 0 ? ticketMoney(amount) : EMPTY_VALUE}
             totalHint={
               treasury && amount !== null && amount > 0 ? (
                 <TreasuryAfterHint treasury={treasury} amountCents={amount} />

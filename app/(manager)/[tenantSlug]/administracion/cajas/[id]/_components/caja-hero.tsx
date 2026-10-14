@@ -1,4 +1,11 @@
-import { ArrowLeftRight, CircleEllipsis, FileUp, Landmark, type LucideIcon } from 'lucide-react'
+import {
+  ArrowLeftRight,
+  ArrowRight,
+  CircleEllipsis,
+  FileUp,
+  Landmark,
+  type LucideIcon,
+} from 'lucide-react'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import {
@@ -9,6 +16,7 @@ import {
   WalletCard,
 } from '@/components/administracion/kit'
 import { ActionButton } from '@/components/administracion/quick-actions'
+import { Button } from '@/components/ui/button'
 import type { TreasuryTone } from '@/lib/accounting/home'
 import { TREASURY_KIND_LABELS } from '@/lib/accounting/queries/labels'
 import type { TreasuryKind } from '@/lib/accounting/types'
@@ -57,6 +65,7 @@ export function CajaHero({
   fallback = null,
   count,
   pendingCents,
+  opening = null,
   base,
   canWrite,
 }: {
@@ -74,6 +83,12 @@ export function CajaHero({
   count: CountStatus | null
   /** Billeteras: lo vendido con QR y transferencia que todavía no entró. */
   pendingCents: number
+  /**
+   * Faltan los saldos iniciales y la caja nunca se movió: el «$ 0» no es un dato. Se dice que
+   * todavía no se sabe y EL botón es cargar lo que hay (contarla ahora anotaría como sobrante
+   * toda la plata que hay). `href`: la puesta en marcha.
+   */
+  opening?: { href: string } | null
   /** `/<bar>/administracion`. */
   base: string
   canWrite: boolean
@@ -93,7 +108,21 @@ export function CajaHero({
     >
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,20rem)] lg:items-start lg:gap-8">
         <div className="min-w-0 space-y-3">
-          {hero ? (
+          {opening ? (
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                {card ? 'Debés hoy' : 'Hay hoy'}
+              </p>
+              <p className="mt-2 font-serif text-3xl font-semibold leading-[1.08] tracking-tight text-balance sm:text-4xl">
+                Todavía no sé cuánto hay
+              </p>
+              <p className="mt-3 max-w-prose text-sm leading-relaxed text-muted-foreground text-pretty">
+                {canWrite
+                  ? `Contame cuánto hay hoy en ${name} y empiezo a llevar la cuenta. Es una sola vez.`
+                  : 'Todavía no se cargó lo que había al arrancar: hasta entonces, el saldo no es un dato.'}
+              </p>
+            </div>
+          ) : hero ? (
             <>
               <MoneyHero
                 size="xl"
@@ -118,7 +147,20 @@ export function CajaHero({
           )}
         </div>
 
-        {active && (count || arriving) ? (
+        {opening && active && canWrite ? (
+          <div className="space-y-3 rounded-xl bg-secondary/50 p-4">
+            <p className="text-sm font-medium text-pretty">¿Cuánto había en {name} al arrancar?</p>
+            <p className="text-xs text-muted-foreground text-pretty">
+              Primero esto: si la contás antes, toda la plata queda anotada como sobrante.
+            </p>
+            <Button asChild className="h-12 w-full gap-2 rounded-full text-base font-semibold">
+              <Link href={opening.href}>
+                Cargar lo que había
+                <ArrowRight aria-hidden className="size-4" />
+              </Link>
+            </Button>
+          </div>
+        ) : opening ? null : active && (count || arriving) ? (
           <div className="space-y-3 rounded-xl bg-secondary/50 p-4">
             <p className="text-sm font-medium text-pretty">
               {!canWrite

@@ -100,7 +100,8 @@ export function ArcaAuthorizationCard({
           ARCA no contestó a tiempo cuando se emitió. No la vuelvas a emitir: verificala.
         </p>
       ) : null}
-      {canWrite && card.canPost ? (
+      {/* Un aviso a la vez: mientras haya que verificarla, eso va primero. */}
+      {canWrite && card.canPost && !card.canReconcile ? (
         <p className="text-pretty">
           ARCA la autorizó, pero falta vincularla con su asiento. «Cargarla ahora» lo resuelve sin
           cargarla dos veces.

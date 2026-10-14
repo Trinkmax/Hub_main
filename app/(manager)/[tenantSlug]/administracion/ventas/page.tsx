@@ -124,7 +124,9 @@ export default async function VentasPage({
       <AdmHeader
         title="Ventas"
         badge={<ReadOnlyBadge />}
-        description={VIEW_COPY[view].description}
+        // En el celular la bajada no se muestra (como en el Cierre del día): el título y las
+        // vistas ya dicen dónde estás, y el primer dato sube 50 px.
+        description={<span className="max-sm:hidden">{VIEW_COPY[view].description}</span>}
       />
       <VentasViews base={base} view={view} month={monthParam} aside={aside} />
       {body}

@@ -118,8 +118,10 @@ export function ProposalTicket({ p, className }: { p: ProposalView; className?: 
 }
 
 /**
- * El papel en tres líneas (para el celular y para un renglón abierto), con el
- * papel entero plegado en «Ver el papel».
+ * El papel en tres líneas, con el papel entero plegado en «Ver el papel». Es
+ * para la pregunta en la mano en el celular, donde el papel va arriba de la
+ * pregunta y entero la empujaría fuera de la pantalla. Un renglón abierto de
+ * una lista muestra el ticket directo (`ProposalOpened`).
  */
 export function PaperFold({ p, className }: { p: ProposalView; className?: string }) {
   const s = p.summary
@@ -130,7 +132,8 @@ export function PaperFold({ p, className }: { p: ProposalView; className?: strin
           <span className="block font-medium leading-snug [overflow-wrap:anywhere]">
             {unbreakableNumbers(s.label)}
           </span>
-          <span className="block truncate text-xs text-muted-foreground">
+          {/* Hasta dos renglones: un nombre cortado con «…» no dice de quién es el papel. */}
+          <span className="line-clamp-2 text-xs text-muted-foreground [overflow-wrap:anywhere]">
             {[s.counterparty, formatIsoDay(s.date)].filter(Boolean).join(' · ')}
           </span>
         </span>
@@ -141,7 +144,8 @@ export function PaperFold({ p, className }: { p: ProposalView; className?: strin
           </span>
         </span>
       </summary>
-      <ProposalTicket p={p} className="mt-3" />
+      {/* Un ticket mide lo que un ticket: en una tablet no se estira a todo el ancho. */}
+      <ProposalTicket p={p} className="mt-3 max-w-md" />
     </details>
   )
 }

@@ -141,13 +141,21 @@ export default async function ConectarArcaPage({
   // su paso: quedan plegadas, a un toque.
   const introDone = states.s0_prereq?.status === 'done'
 
+  // El avance («1 de 9 pasos listos») cuenta los obligatorios, y la lista trae también los
+  // opcionales (va del 0 al 10): la bajada dice los dos números, para que no parezcan dos cuentas.
+  const optionalSteps = ARCA_GUIDE_STEPS.filter((step) => step.optional).length
+  const stepsWord =
+    optionalSteps > 0 && guide.summary.total === ARCA_GUIDE_STEPS.length - optionalSteps
+      ? `Son ${guide.summary.total} pasos y ${optionalSteps === 1 ? '1 opcional' : `${optionalSteps} opcionales`}, unos 40 minutos.`
+      : 'Unos 40 minutos.'
+
   return (
     <AdmPage width="comfortable">
       <AdmHeader
         back={{ href: `${base}/ajustes?tab=arca`, label: 'ARCA' }}
         title="Conectar ARCA"
         badge={<ReadOnlyBadge />}
-        description="Unos 40 minutos. Lo hace quien maneja la clave fiscal de la SAS. Vamos marcando cada paso solos."
+        description={`${stepsWord} Lo hace quien maneja la clave fiscal de la SAS. Vamos marcando cada paso solos.`}
       />
 
       {!overviewResult.ok ? (

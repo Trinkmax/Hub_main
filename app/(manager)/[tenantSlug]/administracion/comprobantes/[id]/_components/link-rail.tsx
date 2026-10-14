@@ -1,4 +1,4 @@
-import type { LucideIcon } from 'lucide-react'
+import { ChevronRight, type LucideIcon } from 'lucide-react'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { StatusPill } from '@/components/administracion/kit/status-pill'
@@ -17,6 +17,11 @@ import type { LinkHow, LinkState } from '../../_lib/document-story'
  * «Foto», «Libro IVA») y, al lado, lo unido: a dónde lleva, en qué estado está
  * y UNA acción. Una unión que falta es una cajita punteada y hueca con la
  * píldora «Falta»; una que no aplica y vale decirlo, una cajita gris.
+ *
+ * La cajita va al costado de su cuerpo solo si el mapa tiene lugar (unos 600
+ * px): se mide el ancho del mapa, no el de la ventana, porque con el menú
+ * lateral abierto una notebook chica deja menos lugar que un celular acostado.
+ * Más angosto, la cajita va arriba y el cuerpo debajo, a todo el ancho.
  *
  * Vive en la ficha del comprobante y no en el kit: hoy es la única pantalla
  * que la usa. Server-safe.
@@ -67,7 +72,7 @@ export function LinkRail({
   className?: string
 }) {
   return (
-    <div className={cn('min-w-0', className)}>
+    <div className={cn('@container min-w-0', className)}>
       {origin || aside ? (
         <div className="flex items-center justify-between gap-3">
           {origin ? (
@@ -89,8 +94,9 @@ export function LinkRail({
 }
 
 /**
- * Un tramo de la espina con su cajita y su cuerpo. En el celular la cajita va
- * arriba y el cuerpo debajo, a todo el ancho; desde `sm`, al costado.
+ * Un tramo de la espina con su cajita y su cuerpo. Con el mapa angosto la
+ * cajita va arriba y el cuerpo debajo, a todo el ancho; desde 38rem de mapa,
+ * al costado.
  */
 export function LinkNode({
   what,
@@ -116,7 +122,7 @@ export function LinkNode({
   return (
     <li
       id={id}
-      className="group/node relative grid scroll-mt-28 grid-cols-[1rem_minmax(0,1fr)] gap-x-2.5 pt-3 pb-2 pl-3 last:pb-0 sm:grid-cols-[1.25rem_10.5rem_minmax(0,1fr)] sm:gap-x-3"
+      className="group/node relative grid scroll-mt-28 grid-cols-[1rem_minmax(0,1fr)] gap-x-2.5 pt-3 pb-2 pl-3 last:pb-0 @[38rem]:grid-cols-[1.25rem_10.5rem_minmax(0,1fr)] @[38rem]:gap-x-3"
     >
       {/* La espina: baja del papel y corta a la altura de la última cajita. */}
       <span
@@ -138,16 +144,22 @@ export function LinkNode({
         </span>
         {state === 'missing' ? <StatusPill tone="warn">Falta</StatusPill> : null}
       </div>
-      <div className="col-start-2 min-w-0 pt-2 text-sm sm:col-start-3 sm:pt-1.5">
+      <div className="col-start-2 min-w-0 pt-2 text-sm @[38rem]:col-start-3 @[38rem]:pt-1.5">
         {children}
         {limitHref ? (
-          <p className="mt-2">
+          // Un link que dice lo que es, y no una píldora: «Con un límite» se leía como un
+          // estado del comprobante («¿un límite de plata?») y nadie la tocaba.
+          <p className="mt-1.5">
             <Link
               href={limitHref}
-              className={cn('inline-flex rounded-full pointer-coarse:py-2.5', FOCUS)}
+              className={cn(
+                'inline-flex items-center gap-0.5 rounded-sm text-xs text-muted-foreground underline decoration-dotted underline-offset-4 transition-colors hover:text-foreground pointer-coarse:min-h-11',
+                FOCUS,
+              )}
             >
-              <StatusPill tone="info">Con un límite</StatusPill>
-              <span className="sr-only">: ver en la guía qué no se puede hoy con esta unión</span>
+              Qué no se puede todavía
+              <ChevronRight aria-hidden className="size-3" />
+              <span className="sr-only"> con esta unión: lo explica la guía</span>
             </Link>
           </p>
         ) : null}
@@ -156,12 +168,16 @@ export function LinkNode({
   )
 }
 
-/** Cómo leer las líneas: «── Se une solo · ╌╌ Lo unís vos». Desde `sm`; en el celular lo dicen los lectores. */
+/**
+ * Cómo leer las líneas: «── Se une solo · ╌╌ Lo unís vos». Va siempre a la
+ * vista: un trazo que cambia de forma y de color sin su palabra al lado no se
+ * entiende (en la compu, al lado de «ESTE PAPEL»; en el celular, al pie).
+ */
 export function LinkLegend({ className }: { className?: string }) {
   return (
     <ul
       aria-label="Cómo leer las líneas"
-      className={cn('hidden items-center gap-4 text-xs text-muted-foreground sm:flex', className)}
+      className={cn('flex items-center gap-4 text-xs text-muted-foreground', className)}
     >
       <li className="inline-flex items-center gap-1.5 whitespace-nowrap">
         <span aria-hidden className="w-6 border-t-2 border-adm-s1" />

@@ -518,11 +518,39 @@ export type CajaHeroView = {
 }
 
 /**
+ * Lo que había al arrancar, cuando cae adentro de un período: la suma de los
+ * renglones de «Saldos iniciales» (los movimientos con `documentKind`
+ * `opening`), como llegan de la base (Debe / Haber). `null` si en lo leído no
+ * hay ninguno.
+ */
+export type OpeningMoves = { inCents: number; outCents: number }
+
+export function openingMoves(
+  lines: ReadonlyArray<{ documentKind: string | null; inCents: number; outCents: number }>,
+): OpeningMoves | null {
+  let inCents = 0
+  let outCents = 0
+  for (const line of lines) {
+    if (line.documentKind !== 'opening') continue
+    inCents += Math.max(0, line.inCents)
+    outCents += Math.max(0, line.outCents)
+  }
+  return inCents > 0 || outCents > 0 ? { inCents, outCents } : null
+}
+
+/**
  * El número de la ficha de una caja y su cuenta. Los importes llegan como en
  * los reportes (Debe − Haber): en la tarjeta de la empresa el saldo es una
  * deuda en negativo, lo que entra son pagos y lo que sale, consumos.
  * `closingDay` es el día al que corresponde el saldo de cierre (hoy, si el
  * período todavía no terminó).
+ *
+ * `opening` es lo que había al arrancar, si cae adentro del período (el mes en
+ * que arrancan los libros). NO es plata que entró: se dice aparte («Arrancó con
+ * $ 3.000.000. En septiembre entraron…») y se descuenta de lo que entró, con
+ * el mismo criterio que el dibujo de «Lo que entró y lo que salió» y que el
+ * título de cada día. Sin eso, la tarjeta decía «entraron $ 33,8 M» arriba de
+ * un dibujo que decía «Entró $ 30,8 M».
  */
 export function cajaHero(input: {
   kind: TreasuryKind
@@ -533,6 +561,7 @@ export function cajaHero(input: {
   closingCents: number
   closingDay: string
   today: string
+  opening?: OpeningMoves | null
 }): CajaHeroView {
   const { kind, period } = input
   const card = kind === 'credit_card'
@@ -541,29 +570,44 @@ export function cajaHero(input: {
   const lead = periodLead(period)
   const name = periodName(period)
   const money = (cents: number) => formatCentsShort(Math.abs(cents))
-  const moved = input.inCents > 0 || input.outCents > 0
+  const started = input.opening ?? null
+  const inCents = Math.max(0, input.inCents - (started?.inCents ?? 0))
+  const outCents = Math.max(0, input.outCents - (started?.outCents ?? 0))
+  // Con lo que arrancó: lo de antes del período (casi siempre cero) más los saldos iniciales.
+  const startCents = input.openingCents + (started ? started.inCents - started.outCents : 0)
+  const moved = inCents > 0 || outCents > 0
   const note = 'Acá sí cuenta lo que pasaste desde otra caja o hacia otra caja.'
 
   if (card) {
     // La deuda, en positivo.
     const debt = -input.closingCents
-    const openingDebt = -input.openingCents
+    const startDebt = -startCents
     const label = debt < 0 ? `A favor ${when}` : isToday ? 'Debés hoy' : `Debías ${when}`
+    const startLabel = startDebt < 0 ? 'Arrancó con plata a favor' : 'Arrancó debiendo'
+    const startSentence =
+      startDebt < 0
+        ? `Arrancó con ${money(startDebt)} a favor.`
+        : `Arrancó debiendo ${money(startDebt)}.`
+    const flows = moved
+      ? `${lead} hubo consumos por ${money(outCents)} y pagos por ${money(inCents)}.`
+      : started
+        ? `${lead} no hubo otros consumos ni pagos.`
+        : `${lead} no hubo consumos ni pagos.`
     return {
       label,
       cents: Math.abs(debt),
-      sentence: moved
-        ? `${lead} hubo consumos por ${money(input.outCents)} y pagos por ${money(input.inCents)}.`
-        : `${lead} no hubo consumos ni pagos.`,
+      sentence: started ? `${startSentence} ${flows}` : flows,
       math: [
-        {
-          key: 'antes',
-          label:
-            openingDebt < 0 ? `Tenías a favor al empezar ${name}` : `Debías al empezar ${name}`,
-          value: money(openingDebt),
-        },
-        { key: 'consumos', label: 'Consumos', value: money(input.outCents), op: '+' },
-        { key: 'pagos', label: 'Pagos', value: money(input.inCents), op: '−' },
+        started
+          ? { key: 'antes', label: startLabel, value: money(startDebt) }
+          : {
+              key: 'antes',
+              label:
+                startDebt < 0 ? `Tenías a favor al empezar ${name}` : `Debías al empezar ${name}`,
+              value: money(startDebt),
+            },
+        { key: 'consumos', label: 'Consumos', value: money(outCents), op: '+' },
+        { key: 'pagos', label: 'Pagos', value: money(inCents), op: '−' },
         { key: 'total', label, value: money(debt), op: '=' },
       ],
       note,
@@ -572,21 +616,26 @@ export function cajaHero(input: {
 
   const overdrawn = input.closingCents < 0
   const label = overdrawn ? `Descubierto ${when}` : isToday ? 'Hay hoy' : `Había ${when}`
+  const startLabel = startCents < 0 ? 'Arrancó con un descubierto de' : 'Arrancó con'
+  const flows = moved
+    ? `${lead} entraron ${money(inCents)} y salieron ${money(outCents)}.`
+    : started
+      ? `${lead} no hubo otros movimientos.`
+      : `${lead} no hubo movimientos.`
   return {
     label,
     cents: Math.abs(input.closingCents),
-    sentence: moved
-      ? `${lead} entraron ${money(input.inCents)} y salieron ${money(input.outCents)}.`
-      : `${lead} no hubo movimientos.`,
+    sentence: started ? `${startLabel} ${money(startCents)}. ${flows}` : flows,
     math: [
-      {
-        key: 'antes',
-        label:
-          input.openingCents < 0 ? `Descubierto al empezar ${name}` : `Había al empezar ${name}`,
-        value: money(input.openingCents),
-      },
-      { key: 'entro', label: 'Entró', value: money(input.inCents), op: '+' },
-      { key: 'salio', label: 'Salió', value: money(input.outCents), op: '−' },
+      started
+        ? { key: 'antes', label: startLabel, value: money(startCents) }
+        : {
+            key: 'antes',
+            label: startCents < 0 ? `Descubierto al empezar ${name}` : `Había al empezar ${name}`,
+            value: money(startCents),
+          },
+      { key: 'entro', label: 'Entró', value: money(inCents), op: '+' },
+      { key: 'salio', label: 'Salió', value: money(outCents), op: '−' },
       { key: 'total', label, value: money(input.closingCents), op: '=' },
     ],
     note,

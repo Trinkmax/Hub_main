@@ -5,7 +5,7 @@ import { HeroPanel } from '@/components/administracion/kit/hero'
 import { StatusPill } from '@/components/administracion/kit/status-pill'
 import { Button } from '@/components/ui/button'
 import type { SetupStep } from '@/lib/accounting/home'
-import { type SetupNextView, stepHref } from '../../../configurar/_lib/setup-next'
+import { type SetupNextView, stepHref, stepPlaceLinks } from '../../../configurar/_lib/setup-next'
 
 /**
  * «Puesta en marcha» en la portada de Ajustes: lo próximo que conviene hacer.
@@ -26,25 +26,24 @@ import { type SetupNextView, stepHref } from '../../../configurar/_lib/setup-nex
 const LINK =
   'rounded-sm font-medium text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring'
 
-function StepLink({ step }: { step: SetupStep }) {
-  const href = stepHref(step)
-  return href ? (
-    <Link href={href} className={LINK}>
-      {step.title}
-    </Link>
-  ) : (
-    <span className="font-medium text-foreground">{step.title}</span>
-  )
-}
-
-/** «A · B · C», cada uno un link. */
+/**
+ * «A · B · C», cada uno un link. En fila van por el nombre de su lugar («Datos de la SAS ·
+ * Cajas y cuentas · Accesos»), el mismo de las tarjetas de abajo: así no se mezcla una orden
+ * con nombres sueltos.
+ */
 function StepLinks({ steps }: { steps: readonly SetupStep[] }) {
   return (
     <>
-      {steps.map((step, index) => (
-        <Fragment key={step.id}>
+      {stepPlaceLinks(steps).map((item, index) => (
+        <Fragment key={item.id}>
           {index > 0 ? <span aria-hidden> · </span> : null}
-          <StepLink step={step} />
+          {item.href ? (
+            <Link href={item.href} className={LINK}>
+              {item.label}
+            </Link>
+          ) : (
+            <span className="font-medium text-foreground">{item.label}</span>
+          )}
         </Fragment>
       ))}
     </>

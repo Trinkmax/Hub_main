@@ -117,7 +117,7 @@ describe('el estado de la guía', () => {
       status: 'todo',
       pending: 'Hay un extracto para revisar.',
     })
-    expect(by.get('treasury_check')?.pending).toBe('Faltan ajustar 2 cajas este mes.')
+    expect(by.get('treasury_check')?.pending).toBe('Faltan contar 2 cajas este mes.')
     expect(by.get('month_close')?.pending).toBe('El mes pasado sigue abierto.')
     expect(by.get('small_expenses')?.status).toBe('info')
     expect(by.get('suppliers_message')).toMatchObject({ status: 'done', manualDone: true })
@@ -147,7 +147,7 @@ describe('el estado de la guía', () => {
     expect(by.get('recurring')?.pending).toBe('Todavía no hay gastos fijos.')
     expect(by.get('mp_connect')?.pending).toBe('Hay que volver a conectar Mercado Pago.')
     expect(by.get('daily_close')?.pending).toBe('Faltan 7 cierres de la última semana.')
-    expect(by.get('treasury_check')?.pending).toBe('Falta ajustar 1 caja este mes.')
+    expect(by.get('treasury_check')?.pending).toBe('Falta contar 1 caja este mes.')
     expect(s.done).toBe(0)
   })
 

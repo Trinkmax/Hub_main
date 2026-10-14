@@ -579,7 +579,7 @@ export function RuleDialog({
               value={pattern}
               maxLength={200}
               placeholder="EXPENSAS"
-              className="h-11 font-mono text-base md:h-10 md:text-sm"
+              className="h-11 text-base md:h-10 md:text-sm"
               aria-invalid={errors['match.pattern'] || patternProblem ? true : undefined}
               aria-describedby={`${field('pattern')}-hint`}
               onChange={(e) => setPattern(e.target.value)}

@@ -35,8 +35,27 @@ import { useMasterAction } from './use-master-action'
 
 const ADD_ICON_KINDS: readonly TreasuryKind[] = ['cash', 'bank', 'wallet', 'credit_card']
 
-/** El saldo, chico: «Saldo $ X»; en la tarjeta de la empresa, «Debe $ X». Sin dato, «—». */
-function Balance({ kind, cents }: { kind: TreasuryKind; cents: number | undefined }) {
+/**
+ * El saldo, chico: «Saldo $ X»; en la tarjeta de la empresa, «Debe $ X». Sin dato, «—».
+ *
+ * - En pesos, sin centavos, como la misma caja en Cajas y en el Resumen. La contadora los ve
+ *   (`decimals={2}`): es la que los necesita.
+ * - `opening`: faltan los saldos iniciales. Mientras la caja esté en cero, ese cero no es un
+ *   dato (es lo que dice el Resumen: «Todavía no sé cuánta plata hay»): se dice que falta
+ *   cargarlo y, a quien puede, se lo lleva a cargarlo. Con un movimiento, el número ya vale.
+ */
+function Balance({
+  kind,
+  cents,
+  decimals,
+  opening,
+}: {
+  kind: TreasuryKind
+  cents: number | undefined
+  decimals: 0 | 2
+  /** Faltan los saldos iniciales: a dónde se cargan (`null` = quien mira no carga). */
+  opening?: { href: string | null }
+}) {
   if (cents === undefined) {
     return (
       <>
@@ -45,18 +64,37 @@ function Balance({ kind, cents }: { kind: TreasuryKind; cents: number | undefine
       </>
     )
   }
+  if (opening && cents === 0) {
+    const word = kind === 'credit_card' ? 'Deuda: ' : 'Saldo: '
+    return (
+      <>
+        <span className="text-muted-foreground">{word}</span>
+        {opening.href ? (
+          <Link
+            href={opening.href}
+            className="-my-3 inline-flex min-h-11 items-center gap-1 rounded-sm font-medium underline underline-offset-4 outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring md:my-0 md:min-h-0"
+          >
+            falta cargarlo
+            <ArrowRight className="size-3" aria-hidden />
+          </Link>
+        ) : (
+          <span className="font-medium">sin cargar</span>
+        )}
+      </>
+    )
+  }
   if (kind === 'credit_card') {
     return (
       <>
         <span className="text-muted-foreground">{cents < 0 ? 'A favor ' : 'Debe '}</span>
-        <Amount cents={Math.abs(cents)} className="font-medium" />
+        <Amount cents={Math.abs(cents)} decimals={decimals} className="font-medium" />
       </>
     )
   }
   return (
     <>
       {cents < 0 ? null : <span className="text-muted-foreground">Saldo </span>}
-      <Amount cents={cents} balance="treasury" tone="auto" />
+      <Amount cents={cents} decimals={decimals} balance="treasury" tone="auto" />
     </>
   )
 }
@@ -89,6 +127,9 @@ export function TreasuriesPanel({
   const inUse = rows.filter((t) => t.active)
   const unused = rows.filter((t) => !t.active)
   const hasBank = inUse.some((t) => t.kind === 'bank')
+  // «opening» = los saldos iniciales siguen pendientes (lo mismo que decide el aviso al crear una caja).
+  const opening =
+    afterCreate === 'opening' ? { href: readOnly ? null : `${base}/configurar` } : undefined
 
   const card = (t: TreasuryAccountRow) => {
     const switchId = `aj-caja-${t.id}-uso`
@@ -102,7 +143,14 @@ export function TreasuriesPanel({
           muted={!t.active}
           line={treasuryLine(t)}
           missing={t.active ? treasuryMissing(t) : null}
-          balance={<Balance kind={t.kind} cents={balances[t.id]} />}
+          balance={
+            <Balance
+              kind={t.kind}
+              cents={balances[t.id]}
+              decimals={readOnly ? 2 : 0}
+              opening={t.active ? opening : undefined}
+            />
+          }
           accountCode={readOnly ? t.accountCode : null}
           controls={
             readOnly ? undefined : (
@@ -210,7 +258,7 @@ export function TreasuriesPanel({
               className="size-4 text-muted-foreground transition-transform group-open/unused:rotate-90 motion-reduce:transition-none"
             />
             Las que ya no se usan
-            <span className="rounded-full bg-card px-1.5 py-px font-mono text-[11px] tabular-nums">
+            <span className="rounded-full bg-card px-1.5 py-px text-[11px] font-medium tabular-nums">
               {unused.length}
             </span>
           </summary>

@@ -61,8 +61,8 @@ export function ChartWorkspace({
   const [remapping, setRemapping] = useState<SystemAccountKey | null>(null)
   const [focusId, setFocusId] = useState<string | null>(null)
 
-  const openAccount = useCallback((id: string) => {
-    setSheet({ mode: 'account', id })
+  const openAccount = useCallback((id: string, opts?: { simple?: boolean }) => {
+    setSheet({ mode: 'account', id, simple: opts?.simple ?? false })
     syncCuentaParam(id)
   }, [])
 

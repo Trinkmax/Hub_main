@@ -39,10 +39,12 @@ export function SettingsTile({
     <li className="stagger-item flex" style={{ '--i': index } as CSSProperties}>
       <Link
         href={href}
-        className="card-hairline press-lift group grid w-full grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border bg-card p-4 shadow-xs outline-none transition-[border-color,box-shadow] hover:border-primary/30 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring sm:gap-4 sm:p-5"
+        // Arriba, no al centro: con oraciones de uno, dos o tres renglones, el título de cada
+        // tarjeta de la fila queda a la misma altura. La flecha sí va al medio.
+        className="card-hairline press-lift group grid w-full grid-cols-[72px_minmax(0,1fr)_auto] items-start gap-3 rounded-2xl border bg-card p-4 shadow-xs outline-none transition-[border-color,box-shadow] hover:border-primary/30 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring sm:gap-4 sm:p-5"
       >
         <span className="flex h-[72px] w-[72px] items-center justify-center">{art}</span>
-        <span className="min-w-0">
+        <span className="min-w-0 self-start">
           <span className="block font-serif text-lg leading-snug font-semibold tracking-tight">
             {title}
           </span>
@@ -60,7 +62,7 @@ export function SettingsTile({
         </span>
         <ChevronRight
           aria-hidden
-          className="size-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none"
+          className="size-5 shrink-0 self-center text-muted-foreground transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none"
         />
       </Link>
     </li>

@@ -212,27 +212,27 @@ export default async function FinDeMesPage({
       ? await fiscalYearClosePreview(tenantId, fyCandidate, ctx)
       : null
 
-  const strip = (
-    <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
-      {year ? (
-        <nav aria-label="Meses del ejercicio" className="min-w-0 flex-1 basis-full sm:basis-96">
-          <MonthStrip
-            months={monthStripModel(year.periods, {
-              today,
-              selected: resolved.ok ? month.month : null,
-              hrefFor: (m) => bookHref(path, { mes: m }),
-              alertIds: changed,
-            })}
-          />
-        </nav>
-      ) : null}
-      <PanelLink
-        href={`${base}/guias/dia-a-dia#receta-fin-de-mes`}
-        className="text-muted-foreground"
-      >
-        ¿Cómo es el fin de mes?
-      </PanelLink>
-    </div>
+  const strip = year ? (
+    <nav aria-label="Meses del ejercicio">
+      <MonthStrip
+        months={monthStripModel(year.periods, {
+          today,
+          selected: resolved.ok ? month.month : null,
+          hrefFor: (m) => bookHref(path, { mes: m }),
+          alertIds: changed,
+        })}
+      />
+    </nav>
+  ) : null
+  // La ayuda va en el encabezado, a la altura de la oración del mes (no suelta al lado de la tira).
+  const howLink = (
+    // En el celular baja a su renglón: se le recorta el aire de más (el link mide 44 px de alto).
+    <PanelLink
+      href={`${base}/guias/dia-a-dia#receta-fin-de-mes`}
+      className="text-muted-foreground max-sm:-mt-2 max-sm:-mb-3"
+    >
+      ¿Cómo es el fin de mes?
+    </PanelLink>
   )
   const changedAlert =
     changedMonths.length > 0 ? (
@@ -250,6 +250,10 @@ export default async function FinDeMesPage({
 
   // ── Un mes sin libros (anterior al arranque, que no empezó, o un `?mes=` roto) ──
   if (!period) {
+    // La salida: el mes que toca atender (o el de hoy), si no es este mismo.
+    const target = focusMonth(allPeriods, today)
+    const backTo =
+      target !== month.month && months.some((p) => monthOf(p.month) === target) ? target : null
     return (
       <AdmPage width="comfortable">
         <AdmHeader
@@ -262,6 +266,16 @@ export default async function FinDeMesPage({
                 ? `${month.label} no tiene libros todavía.`
                 : monthAvailabilityMessage(availability, month.month, settings?.booksStartDate)}
             </span>
+          }
+          actions={
+            backTo ? (
+              <Button asChild className="h-12 w-full gap-2 px-5 text-base sm:w-auto">
+                <Link href={bookHref(path, { mes: backTo })}>
+                  Ir a {monthNoun(backTo)}
+                  <ArrowRight className="size-4" aria-hidden />
+                </Link>
+              </Button>
+            ) : undefined
           }
         />
         {!resolved.ok ? <PeriodError message={resolved.message} hint={null} /> : null}
@@ -298,6 +312,7 @@ export default async function FinDeMesPage({
         finished,
         canWrite,
         checklist,
+        today,
         calendar,
         settings: settings ? { openingStatus: settings.openingStatus, cuit: settings.cuit } : null,
       })
@@ -468,6 +483,7 @@ export default async function FinDeMesPage({
             ) : null}
           </>
         }
+        actions={howLink}
       />
 
       {!resolved.ok ? <PeriodError message={resolved.message} hint={null} /> : null}

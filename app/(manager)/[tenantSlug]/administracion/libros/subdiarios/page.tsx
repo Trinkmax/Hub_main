@@ -1,4 +1,4 @@
-import { Layers, Table2 } from 'lucide-react'
+import { Layers, MoveHorizontal, Table2 } from 'lucide-react'
 import Link from 'next/link'
 import { type ReactNode, useId } from 'react'
 import { Amount } from '@/components/administracion/amount'
@@ -11,7 +11,6 @@ import {
   DataTableHead,
   DataTableHeader,
   DataTableRoot,
-  DataTableScroll,
   DataTableShell,
 } from '@/components/ui/data-table'
 import {
@@ -28,8 +27,7 @@ import {
 } from '@/lib/accounting/queries'
 import { todayInCordoba } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import { BookPage, WideBookHint } from '../_components/book-page'
-import { ExportButton } from '../_components/export-button'
+import { BookPage, PERIOD_ROW, WideBookHint } from '../_components/book-page'
 import { KeysetPagination } from '../_components/keyset-pagination'
 import { RangePicker } from '../_components/period-picker'
 import { PeriodError, QueryErrorBlock } from '../_components/report-error'
@@ -103,6 +101,9 @@ export default async function SubdiariosPage({
   const columns = subledgerColumns(tab.kind)
   const page = ledger?.ok ? ledger.data : null
   const lines = page ? page.rows.filter((r) => r.rowKind === 'line') : []
+  // La tabla ancha no dibuja las columnas que en estas filas no traen nada («Turno», «Vendido
+  // eventos»): el exporte las lleva todas igual.
+  const tableColumns = usedColumns(columns, lines)
   const cajaName = cajaId ? treasuryList.find((t) => t.id === cajaId)?.name : null
   const info = page
     ? keysetPageInfo({
@@ -120,17 +121,17 @@ export default async function SubdiariosPage({
       description={`${tab.label}${cajaName ? ` · ${cajaName}` : ''} · ${shown.label}${
         page ? ` · ${plural(page.totalRows, 'fila', 'filas')}` : ''
       }`}
-      actions={
-        <ExportButton
-          href={exportHref(tenantSlug, tab.exportBook, {
+      exports={[
+        {
+          href: exportHref(tenantSlug, tab.exportBook, {
             desde: shown.from,
             hasta: shown.to,
             caja: cajaId,
-          })}
-          fileName={`administracion-${tenantSlug}-${tab.exportBook}-${shown.from}_${shown.to}.csv`}
-          label={`Exportar ${tab.label.toLowerCase()}`}
-        />
-      }
+          }),
+          fileName: `administracion-${tenantSlug}-${tab.exportBook}-${shown.from}_${shown.to}.csv`,
+          label: `Exportar ${tab.label.toLowerCase()}`,
+        },
+      ]}
       booksPath={`${base}/libros`}
       book="subdiarios"
       period={shown}
@@ -148,6 +149,7 @@ export default async function SubdiariosPage({
             }))}
           />
           <RangePicker
+            className={PERIOD_ROW}
             range={shown}
             today={today}
             fiscalYear={ctx.fiscalYear}
@@ -181,10 +183,10 @@ export default async function SubdiariosPage({
               base={base}
               caption={`Subdiario de ${tab.label.toLowerCase()}, ${shown.label}`}
             />
-            <WideTable>
+            <WideTable wide={tableColumns.length >= WIDE_COLUMNS}>
               <SubledgerTable
                 rows={page.rows}
-                columns={columns}
+                columns={tableColumns}
                 base={base}
                 caption={`Subdiario de ${tab.label.toLowerCase()}, ${shown.label}`}
                 showTotals={Boolean(info?.isFirst) && !page.nextCursor}
@@ -214,7 +216,14 @@ export default async function SubdiariosPage({
  * movimiento). Es UNA sola tabla en el HTML: el interruptor es una casilla, así
  * anda sin JavaScript y con teclado.
  */
-function WideTable({ children }: { children: ReactNode }) {
+function WideTable({
+  wide,
+  children,
+}: {
+  /** Tiene tantas columnas que puede no entrar ni en la compu. */
+  wide: boolean
+  children: ReactNode
+}) {
   const id = useId()
   return (
     <div>
@@ -228,11 +237,54 @@ function WideTable({ children }: { children: ReactNode }) {
       </label>
       <div className="hidden space-y-3 peer-checked:block sm:block">
         <WideBookHint />
+        {wide ? (
+          <p className="flex items-center gap-2 text-xs text-muted-foreground max-sm:hidden">
+            <MoveHorizontal className="size-3.5 shrink-0" aria-hidden />
+            Tabla ancha: si no entra, deslizala de costado para ver todas las columnas.
+          </p>
+        ) : null}
         {children}
       </div>
     </div>
   )
 }
+
+/** Desde cuántas columnas una tabla puede no entrar en la compu (se avisa que se desliza). */
+const WIDE_COLUMNS = 9
+
+/**
+ * Las columnas que se dibujan: fuera las que no traen nada en ninguna fila (ni texto ni un
+ * importe distinto de cero). La fecha, la referencia y el saldo acumulado van siempre. Sin
+ * filas, todas (la tabla vacía conserva sus títulos).
+ */
+function usedColumns(
+  columns: readonly SubledgerColumn[],
+  lines: readonly SubledgerRow[],
+): SubledgerColumn[] {
+  if (lines.length === 0) return [...columns]
+  return columns.filter((column, index) => {
+    if (index === 0 || column.type === 'date') return true
+    if (isRefColumn(column) || isRunningBalanceColumn(column)) return true
+    return lines.some((row) => {
+      const cell = subledgerCell(row, column)
+      if (column.type === 'money') return (subledgerCellCents(cell) ?? 0) !== 0
+      return subledgerCellText(cell, column) !== ''
+    })
+  })
+}
+
+/**
+ * El contenedor que desliza, con una sombra en el borde derecho SOLO mientras queda tabla para
+ * ese lado (el viejo truco de los dos fondos: uno viaja con el contenido y tapa al otro cuando
+ * se llega al final). Sin esto, una columna cortada a mitad de número parecía el final de la
+ * tabla.
+ */
+const SCROLL_SHADOW = {
+  background: [
+    'linear-gradient(to left, var(--card) 35%, transparent) right center / 3rem 100% no-repeat local',
+    'radial-gradient(farthest-side at 100% 50%, color-mix(in oklab, var(--foreground) 26%, transparent), transparent) right center / 0.875rem 100% no-repeat scroll',
+  ].join(', '),
+} as const
 
 /** Celular: un renglón por movimiento (fecha, «#125», de qué es y UN importe). Tocarlo abre el comprobante. */
 function SubledgerMobileList({
@@ -323,6 +375,9 @@ function SubledgerMobileList({
   )
 }
 
+/** El aire de costado de cada celda: menos que el de fábrica (16 px), para que entren más columnas. */
+const CELL_X = 'px-3 first:pl-4 last:pr-4'
+
 function SubledgerTable({
   rows,
   columns,
@@ -361,7 +416,8 @@ function SubledgerTable({
 
   return (
     <DataTableShell>
-      <DataTableScroll>
+      {/* El `DataTableScroll` de siempre, con la sombra que avisa que la tabla sigue. */}
+      <div className="overflow-x-auto overflow-y-auto" style={SCROLL_SHADOW}>
         <DataTableRoot>
           <caption className="sr-only">{caption}</caption>
           <DataTableHead>
@@ -370,6 +426,7 @@ function SubledgerTable({
                 <DataTableHeader
                   key={c.header}
                   className={cn(
+                    CELL_X,
                     // Los títulos largos («No gravado, exento y sin crédito») van en dos
                     // líneas: si no, la columna queda el doble de ancha que sus importes.
                     c.header.length > 16 ? 'min-w-44' : 'whitespace-nowrap',
@@ -397,17 +454,19 @@ function SubledgerTable({
                 <tr key={`opening-${rowIndex.toString()}`} className="bg-secondary/20">
                   <DataTableCell
                     colSpan={Math.max(1, balanceIndex === -1 ? columns.length : balanceIndex)}
-                    className="text-xs text-muted-foreground"
+                    className={cn(CELL_X, 'text-xs text-muted-foreground')}
                   >
                     Saldo anterior
                   </DataTableCell>
                   {balanceColumn ? (
                     <>
-                      <DataTableCell className="text-right text-muted-foreground">
+                      <DataTableCell className={cn(CELL_X, 'text-right text-muted-foreground')}>
                         <OpeningBalance row={row} column={balanceColumn} />
                       </DataTableCell>
                       {columns.slice(balanceIndex + 1).map((c) => (
-                        <DataTableCell key={c.header}>{null}</DataTableCell>
+                        <DataTableCell key={c.header} className={CELL_X}>
+                          {null}
+                        </DataTableCell>
                       ))}
                     </>
                   ) : null}
@@ -422,7 +481,7 @@ function SubledgerTable({
                     if (column.type === 'money') {
                       const cents = subledgerCellCents(cell)
                       return (
-                        <DataTableCell key={column.header} className="text-right">
+                        <DataTableCell key={column.header} className={cn(CELL_X, 'text-right')}>
                           {cents === null || (cents === 0 && index !== balanceIndex) ? null : (
                             <Amount cents={cents} currency={false} />
                           )}
@@ -435,6 +494,7 @@ function SubledgerTable({
                       <DataTableCell
                         key={column.header}
                         className={cn(
+                          CELL_X,
                           // Una fila, una línea: el subdiario es ancho y se desliza de costado;
                           // partir «Factura A 0003-00001290» en tres renglones no lo hace entrar.
                           column.type !== 'list' && 'whitespace-nowrap',
@@ -465,11 +525,11 @@ function SubledgerTable({
               <tr className="border-t border-border">
                 {columns.map((column, index) =>
                   index === 0 ? (
-                    <DataTableCell key={column.header} className="text-xs">
+                    <DataTableCell key={column.header} className={cn(CELL_X, 'text-xs')}>
                       Totales
                     </DataTableCell>
                   ) : (
-                    <DataTableCell key={column.header} className="text-right">
+                    <DataTableCell key={column.header} className={cn(CELL_X, 'text-right')}>
                       {totals[index] === null || totals[index] === undefined ? null : (
                         <Amount cents={totals[index]} currency={false} />
                       )}
@@ -480,7 +540,7 @@ function SubledgerTable({
             </tfoot>
           ) : null}
         </DataTableRoot>
-      </DataTableScroll>
+      </div>
     </DataTableShell>
   )
 }

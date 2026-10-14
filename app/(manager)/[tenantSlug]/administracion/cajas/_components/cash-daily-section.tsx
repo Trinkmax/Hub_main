@@ -5,9 +5,22 @@ import type { TreasuryTone } from '@/lib/accounting/home'
 import type { QueryOutcome } from '@/lib/accounting/queries/shared'
 import { cn } from '@/lib/utils'
 import { CashMovePanel } from './cash-move-panel'
+import { RecentActivitySkeleton } from './recent-activity'
+import { WalletSkeleton } from './wallet'
 
 /** El ancla del bloque: los links «ver cómo se movió» de otras pantallas caen acá. */
 export const CASH_MOVE_ANCHOR = 'como-se-movio'
+
+/**
+ * «Cómo se movió la plata» y «Últimos movimientos», lado a lado recién desde
+ * `xl`: antes, con el menú abierto, a la lista le quedaban unos 215 px y cada
+ * renglón ocupaba cinco líneas. Más angosto, van uno debajo del otro.
+ */
+export const MOVE_SPLIT = {
+  grid: 'grid gap-6 xl:grid-cols-12 xl:items-start',
+  chart: 'min-w-0 xl:col-span-8',
+  recent: 'min-w-0 xl:col-span-4',
+} as const
 
 const TITLE = 'Cómo se movió la plata'
 
@@ -65,6 +78,22 @@ const BARS = [
 ] as const
 
 const STEPS = ['h-10', 'h-14', 'h-12', 'h-20', 'h-16', 'h-24', 'h-20', 'h-28', 'h-24', 'h-32']
+
+/**
+ * «Lo que hay» entera mientras carga: la billetera, el dibujo y los movimientos.
+ * La usan `loading.tsx` (al entrar) y la página (al cambiar de vista).
+ */
+export function LoQueHaySkeleton() {
+  return (
+    <div className="space-y-8" aria-hidden="true">
+      <WalletSkeleton />
+      <div className={MOVE_SPLIT.grid}>
+        <CashMoveSkeleton className={MOVE_SPLIT.chart} />
+        <RecentActivitySkeleton className={MOVE_SPLIT.recent} />
+      </div>
+    </div>
+  )
+}
 
 /** Con la forma real: las píldoras, el título, la escalera del saldo y las barras de entró y salió. */
 export function CashMoveSkeleton({ className }: { className?: string }) {

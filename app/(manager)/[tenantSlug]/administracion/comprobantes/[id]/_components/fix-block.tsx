@@ -8,7 +8,7 @@ import type { DocumentDetail, DocumentLink } from '@/lib/accounting/queries/docu
 import { formatMonthLabel } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import { creditNoteHref, type DocumentActions } from '../../_lib/document-view'
-import { ReverseDocumentButton, VoidDocumentButton } from './document-actions'
+import { type AppliedWord, ReverseDocumentButton, VoidDocumentButton } from './document-actions'
 
 /**
  * ④ «¿Hay algo mal?»: cómo se corrige este comprobante, entrando por lo que
@@ -91,6 +91,12 @@ export function FixBlock({
 
   const sales = doc.kind === 'sales_invoice' || doc.kind === 'sales_debit_note'
   const purchase = doc.kind === 'purchase' || doc.kind === 'purchase_debit_note'
+  // Lo que tiene unido una compra son pagos; una venta o un cierre, cobros.
+  const appliedWord: AppliedWord = purchase
+    ? 'pagos'
+    : sales || doc.kind === 'sales_close'
+      ? 'cobros'
+      : 'pagos o cobros'
   // Una devolución o un descuento no se anulan: se cargan con la nota de crédito.
   const openCreditNote: 'purchase' | 'sales' | null =
     actions.void && doc.partyId ? (purchase ? 'purchase' : sales ? 'sales' : null) : null
@@ -147,6 +153,7 @@ export function FixBlock({
             title={doc.title}
             siblings={siblings}
             appliedCents={appliedCents}
+            appliedWord={appliedWord}
             extraNotes={extraNotes}
           />
         }
@@ -213,6 +220,7 @@ export function FixBlock({
             ivaMode={ivaMode}
             hasFiscal={doc.fiscalVouchers.some((v) => !v.voided)}
             appliedCents={appliedCents}
+            appliedWord={appliedWord}
             extraNotes={extraNotes}
           />
         }

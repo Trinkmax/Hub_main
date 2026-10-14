@@ -3,7 +3,6 @@
 import { ChevronRight } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 import { type ChoiceChip, ChoiceChips } from '@/components/administracion/cajas-ventas/choice-chips'
-import { Term } from '@/components/administracion/kit/term'
 import { Label } from '@/components/ui/label'
 import type { AccFailureState } from '@/lib/accounting/action-state'
 import { saveParty } from '@/lib/accounting/actions/master'
@@ -22,7 +21,7 @@ import {
 } from '../_lib/payloads'
 import { ChargeSplit } from './charge-split'
 import { EditDialog } from './edit-dialog'
-import { describedBy, Field } from './form-bits'
+import { describedBy, Field, OptionalMark } from './form-bits'
 import { CuitInput, PercentInput, SwitchRow } from './inputs'
 import { useMasterAction } from './use-master-action'
 
@@ -130,15 +129,39 @@ export function PartyDialog({
   const live: PartyRates = draft ? { ...EMPTY_RATES, ...partyDraftRates(draft).rates } : EMPTY_RATES
   const methods = target?.methods ?? []
 
-  const rateField = (key: RateKey, label: ReactNode) =>
+  const rateField = (
+    key: RateKey,
+    label: ReactNode,
+    opts: { hint?: string; wide?: boolean } = {},
+  ) =>
     draft ? (
-      <Field key={key} id={`sp-${key}`} label={label} optional error={err(key)}>
+      <Field
+        key={key}
+        id={`sp-${key}`}
+        // Un rótulo largo va entero en un solo bloque (con su «(opcional)» adentro): suelto en la
+        // etiqueta, que es una fila, se parte en una columna de una palabra por renglón.
+        label={
+          opts.wide ? (
+            <span className="leading-snug text-pretty">
+              {label} <OptionalMark />
+            </span>
+          ) : (
+            label
+          )
+        }
+        optional={!opts.wide}
+        hint={opts.hint}
+        error={err(key)}
+        className={opts.wide ? 'sm:col-span-2' : undefined}
+      >
         <PercentInput
           id={`sp-${key}`}
           value={draft.rates[key]}
           invalid={Boolean(err(key))}
-          describedBy={describedBy(`sp-${key}`, null, err(key))}
+          describedBy={describedBy(`sp-${key}`, opts.hint, err(key))}
           onChange={(text) => setRate(key, text)}
+          // A todo el ancho del renglón, pero el casillero mide lo mismo que los de arriba.
+          className={opts.wide ? 'sm:w-[calc(50%-0.375rem)]' : undefined}
         />
       </Field>
     ) : null
@@ -204,12 +227,10 @@ export function PartyDialog({
                       key === 'commissionBp'
                         ? null
                         : key === 'sircupaBp'
-                          ? rateField(
-                              key,
-                              <Term name="SIRCUPA" inline>
-                                Ingresos Brutos que retiene la billetera
-                              </Term>,
-                            )
+                          ? rateField(key, 'Ingresos Brutos que retiene la billetera', {
+                              wide: true,
+                              hint: 'En la liquidación figura como SIRCUPA.',
+                            })
                           : rateField(key, RATE_LABEL[key]),
                     )}
                   </div>

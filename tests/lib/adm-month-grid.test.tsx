@@ -103,9 +103,10 @@ describe('MonthGrid: qué se toca y qué dice cada casillero', () => {
     expect(markup).toMatch(/1,1<span[^>]*>M<\/span>/)
     expect(markup).toContain('92 %')
     expect(markup).toContain('Noche de tacos')
-    // El relleno (el lavado y su columna) y la marca del objetivo van con su altura.
-    expect(count(markup, 'height:57%')).toBe(2)
-    expect(count(markup, 'bottom:62%')).toBe(1)
+    // El relleno (el lavado y su columna) y la marca del objetivo van con su altura, medida
+    // debajo del renglón del día (la marca, un píxel abajo para que a tope no se salga).
+    expect(count(markup, 'height:calc((100% - var(--cell-top, 0px)) * 0.57)')).toBe(2)
+    expect(count(markup, 'bottom:calc(calc((100% - var(--cell-top, 0px)) * 0.62) - 1px)')).toBe(1)
     // El globito trae el día y el dato.
     expect(markup).toContain('data-tip-title="Mié 07/10"')
   })
@@ -175,8 +176,8 @@ describe('MonthGrid: qué se toca y qué dice cada casillero', () => {
         )}
       />,
     )
-    expect(markup).toContain('height:100%')
-    expect(markup).toContain('bottom:100%')
+    expect(markup).toContain('height:calc((100% - var(--cell-top, 0px)) * 1)')
+    expect(markup).toContain('bottom:calc(calc((100% - var(--cell-top, 0px)) * 1) - 1px)')
   })
 
   it('un importe de nueve cifras y un evento de sesenta caracteres no rompen el marcado', () => {
@@ -228,5 +229,29 @@ describe('MonthGrid: sin días', () => {
     const markup = html(<MonthGrid month="2026-10" cells={[]} caption="Octubre" />)
     expect(markup).not.toContain('<table')
     expect(markup).toContain('Todavía no hay días para mostrar')
+  })
+})
+
+describe('MonthGrid: un bar que arrancó a mitad de mes', () => {
+  // HUB lleva la cuenta desde el lunes 12/10: las dos primeras semanas son de antes.
+  const markup = html(
+    <MonthGrid
+      month="2026-10"
+      cells={cells((date) => (date < '2026-10-12' ? { state: 'before' } : {}))}
+      caption="Lo vendido cada noche de octubre"
+    />,
+  )
+  const rows = markup.slice(markup.indexOf('<tbody>')).split('</tr>')
+
+  it('las semanas enteras de antes van en un renglón bajo, sin casilleros que se toquen', () => {
+    expect(rows[0]).toContain('h-6')
+    expect(rows[1]).toContain('h-6')
+    expect(rows[0]).not.toContain('<a ')
+    expect(rows[1]).not.toContain('<a ')
+  })
+
+  it('desde la semana del arranque, los casilleros tienen su alto de siempre', () => {
+    expect(rows[2]).not.toContain('h-6')
+    expect(rows[2]).toContain('h-14')
   })
 })

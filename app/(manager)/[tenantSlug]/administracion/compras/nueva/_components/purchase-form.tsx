@@ -977,7 +977,9 @@ export function PurchaseForm({
       return 'Factura M: puede corresponder retener IVA y Ganancias. Consultalo con la contadora.'
     }
     if (check.warnings.includes('voucher_condition')) {
-      return `Con ${VOUCHER_CATALOG[voucherType].label} no computás el IVA: va todo al costo. Pedí factura A si podés.`
+      // «Con tique…», «Con Factura B…»: el tique va en minúscula, como una palabra más.
+      const name = VOUCHER_CATALOG[voucherType].label.replace(/^Tique/, 'tique')
+      return `Con ${name} no recuperás el IVA: va todo al costo. Pedí factura A si podés.`
     }
     return null
   })()
@@ -1166,6 +1168,10 @@ export function PurchaseForm({
       : null
   const stamp = purchaseStamp(voucherType)
   const hasNumber = !numbered || (pos !== null && number !== null)
+  const partyDone =
+    party !== null && accountId !== null && (party.kind !== 'new' || party.name.trim().length >= 2)
+  const paperDone = voucherType !== null && hasNumber && issueDate !== null
+  const amountDone = total !== null && total > 0
   const extrasCents = [
     percIvaCents,
     percIibbCents,
@@ -1180,6 +1186,23 @@ export function PurchaseForm({
       number: voucherType !== null && !hasNumber,
       total: total === null || total <= 0,
     }) ?? (entries.length === 0 ? 'Todavía falta completar un dato.' : null)
+  // El borrador no afirma lo que nadie eligió: sin proveedor y sin tocar un papel, el que
+  // se ve es solo el que propone el sistema (el valor por defecto no cambia; se ve apagado).
+  const paperProposed = party === null && stampNonce === 0
+  const ticketTotalCents = paying ? payAmount : total
+  // Como un tique de verdad (la regla del ticket del cierre): si algún importe tiene
+  // centavos, los llevan todos; si son todos redondos, ninguno.
+  const showsSplit = vat && split !== null
+  const showsDetail = vat && !showsSplit && amountMode === 'detail' && detail.totalCents > 0
+  const ticketWithCents = [
+    showsSplit ? (split?.netCents ?? 0) : 0,
+    showsSplit ? (split?.vatCents ?? 0) : 0,
+    showsDetail ? detail.netCents : 0,
+    showsDetail ? detail.vatCents : 0,
+    extrasCents,
+    ticketTotalCents ?? 0,
+  ].some((cents) => cents % 100 !== 0)
+  const ticketMoney = (cents: number) => formatCents(cents, { decimals: ticketWithCents ? 2 : 0 })
   const ticketRows: PurchaseTicketRow[] = [
     {
       key: 'papel',
@@ -1191,27 +1214,28 @@ export function PurchaseForm({
           number: voucherNumber.number,
           remito,
         }) ?? '—',
+      muted: paperProposed,
     },
     { key: 'en-que', label: 'En qué', value: accountName ? categoryShortName(accountName) : '—' },
   ]
   if (vat && split) {
     ticketRows.push(
-      { key: 'neto', label: 'Neto', value: formatCents(split.netCents) },
+      { key: 'neto', label: 'Neto', value: ticketMoney(split.netCents) },
       {
         key: 'iva',
         label: `IVA ${vatRateLabel(vatRateBp)}`,
         hint: recovers ? 'Lo recuperás' : 'Va al costo',
-        value: formatCents(split.vatCents),
+        value: ticketMoney(split.vatCents),
       },
     )
-  } else if (vat && amountMode === 'detail' && detail.totalCents > 0) {
+  } else if (showsDetail) {
     ticketRows.push(
-      { key: 'neto', label: 'Neto', value: formatCents(detail.netCents) },
+      { key: 'neto', label: 'Neto', value: ticketMoney(detail.netCents) },
       {
         key: 'iva',
         label: 'IVA',
         hint: recovers ? 'Lo recuperás' : 'Va al costo',
-        value: formatCents(detail.vatCents),
+        value: ticketMoney(detail.vatCents),
       },
     )
   }
@@ -1219,13 +1243,12 @@ export function PurchaseForm({
     ticketRows.push({
       key: 'extras',
       label: 'Percepciones e impuestos',
-      value: formatCents(extrasCents),
+      value: ticketMoney(extrasCents),
     })
   }
   if (linkedRecurring) {
     ticketRows.push({ key: 'fijo', label: 'Gasto fijo', value: linkedRecurring.name })
   }
-  const ticketTotalCents = paying ? payAmount : total
   const totalLabel =
     paying && payTreasury ? ticketTotalLabel(payTreasury) : purchaseTotalLabel({ docKind, paying })
   const ticketNote =
@@ -1251,15 +1274,18 @@ export function PurchaseForm({
       subtitle={ticketSubtitle}
       stamp={stamp}
       stampNonce={stampNonce}
+      stampDraft={paperProposed}
       rows={ticketRows}
       totalLabel={totalLabel}
       totalCents={ticketTotalCents}
+      withCents={ticketWithCents}
       totalHint={
         isCreditNote ? undefined : paying ? (
           payTreasury ? (
             <TreasuryAfterHint treasury={payTreasury} amountCents={payAmount} />
           ) : undefined
-        ) : dueAnswered ? (
+        ) : // «Vence el…» recién cuando hay un importe que venza.
+        dueAnswered && amountDone ? (
           dueLine(dueDate)
         ) : undefined
       }
@@ -1271,11 +1297,14 @@ export function PurchaseForm({
   )
 
   // ── Las cuatro secciones: cuál ya está ──
-  const partyDone =
-    party !== null && accountId !== null && (party.kind !== 'new' || party.name.trim().length >= 2)
-  const paperDone = voucherType !== null && hasNumber && issueDate !== null
-  const amountDone = total !== null && total > 0
-  const payDone = paying ? payNow?.treasuryAccountId != null : dueAnswered
+  // «¿Cuándo le pagás?» llega contestada de fábrica («lo debo», vence el mismo día): se da por
+  // hecha recién cuando las tres de antes lo están. Si no, el paso a paso arrancaba con el
+  // último paso tildado.
+  const payDone =
+    (paying ? payNow?.treasuryAccountId != null : dueAnswered) &&
+    partyDone &&
+    paperDone &&
+    amountDone
   const [partyState, paperState, amountState, payState] = purchaseStepStates(
     isCreditNote ? [partyDone, paperDone, amountDone] : [partyDone, paperDone, amountDone, payDone],
   )
@@ -1660,7 +1689,8 @@ export function PurchaseForm({
                     }${issueDate ? ` · del ${formatDayMonth(issueDate)}` : ''}`
                   : family === 'factura'
                     ? 'Tocá el que tenés en la mano. Con factura o sin factura, todo queda registrado en los libros.'
-                    : `Estás cargando ${FAMILY_WORDS[family]}.`
+                    : // «Estás cargando una nota de crédito» ya lo dice el pie de la sección.
+                      'La letra, el número y la fecha, como figuran en el papel.'
               }
             >
               <div className="grid gap-4">
@@ -1786,6 +1816,7 @@ export function PurchaseForm({
                             setAskingPaper(null)
                           }}
                         >
+                          <Plus className="size-3.5" aria-hidden />
                           Es otro papel
                         </button>
                       ) : null}
@@ -2474,7 +2505,8 @@ export function PurchaseForm({
                     ? payTreasury
                       ? `Ya lo pagué con ${payTreasury.name}.`
                       : 'Ya lo pagué.'
-                    : dueAnswered
+                    : // Lo que viene de fábrica no se lee como contestado hasta que se llegó acá.
+                      dueAnswered && (payDone || dueTouched)
                       ? `Lo debo · ${dueLine(dueDate).toLowerCase()}.`
                       : 'Si lo quedás debiendo, queda anotado en su libreta.'
                 }
@@ -2517,7 +2549,10 @@ export function PurchaseForm({
                           {errors.dueDate}
                         </p>
                       ) : null}
-                      {dueSameDayWarning({ issueDate, dueDate, paying }) && dueAnswered ? (
+                      {/* Con un importe a la vista: antes no hay nada que «figure como vencido». */}
+                      {dueSameDayWarning({ issueDate, dueDate, paying }) &&
+                      dueAnswered &&
+                      amountDone ? (
                         <InlineNotice tone="info">
                           Así, desde mañana va a figurar como vencida. Si le pagás más adelante,
                           tocá cuándo.

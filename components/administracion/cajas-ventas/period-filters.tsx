@@ -103,9 +103,11 @@ function Stepper({
       >
         <ChevronLeft className="size-4" />
       </Button>
-      <div className="flex items-center gap-2 px-1.5">
-        <CalendarDays className="size-4 text-muted-foreground" aria-hidden />
-        <span className="min-w-[124px] text-center text-sm font-semibold tabular-nums">
+      {/* En el celular, sin el ícono y sin ancho fijo: «‹ Octubre 2026 › · Este mes · Rango»
+          entra en un renglón y lo que sigue sube. */}
+      <div className="flex items-center gap-2 px-1 sm:px-1.5">
+        <CalendarDays className="size-4 text-muted-foreground max-sm:hidden" aria-hidden />
+        <span className="text-center text-sm font-semibold tabular-nums sm:min-w-[124px]">
           {formatMonthLabel(month)}
         </span>
       </div>
@@ -265,7 +267,11 @@ function RangePopover({
               {label}
             </>
           ) : (
-            'Rango'
+            // En el celular, solo el ícono (el nombre queda para el lector de pantalla).
+            <>
+              <span className="max-sm:sr-only">Rango</span>
+              <span className="sr-only sm:hidden">: elegir un rango de fechas</span>
+            </>
           )}
         </Pill>
       </PopoverTrigger>

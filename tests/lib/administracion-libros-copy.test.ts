@@ -108,4 +108,40 @@ describe('las palabras de Libros, Fin de mes y Plan de cuentas', () => {
       SOURCES.find((s) => s.path.endsWith('libros/cierres/_components/send-step.tsx'))?.text ?? ''
     expect(send).toContain('Los libros llevan todo, con factura y sin factura.')
   })
+
+  it('los dos «vendido» del mes dicen de dónde sale cada uno', () => {
+    // El papel de Fin de mes suma los cierres del día; «El IVA del mes» suma además las facturas
+    // cargadas aparte. Son dos números distintos a un clic de distancia: cada uno lo aclara.
+    const cover =
+      SOURCES.find((s) => s.path.endsWith('libros/cierres/_components/month-cover.tsx'))?.text ?? ''
+    expect(cover).toContain('label="Vendido en los cierres del día"')
+    expect(cover).toContain('hint="sin las facturas cargadas aparte"')
+    const iva = SOURCES.find((s) => s.path.endsWith('libros/posicion-iva/page.tsx'))?.text ?? ''
+    expect(iva).toContain('contando las facturas cargadas aparte')
+  })
+
+  it('«Ver cómo queda en los libros» es el único nombre del plegable del asiento', () => {
+    // «Ver asiento» es el nombre de fábrica de la pieza: en las pantallas del área va siempre el
+    // de la sección, también en el asiento manual (antes, uno en Sueldos y otro en la grilla).
+    for (const file of ['manual-entry-form.tsx', 'payroll-steps.tsx']) {
+      const text =
+        SOURCES.find((s) => s.path.endsWith(`libros/asiento-manual/_components/${file}`))?.text ??
+        ''
+      expect(text, file).toContain('label="Ver cómo queda en los libros"')
+    }
+    expect(offenders(/para ver el asiento\./i, never)).toEqual([])
+  })
+
+  it('fuera de un ticket no hay letra de máquina en pastillas ni contadores', () => {
+    const exportButton =
+      SOURCES.find((s) => s.path.endsWith('libros/_components/export-button.tsx'))?.text ?? ''
+    expect(exportButton).not.toContain('font-mono')
+    const index =
+      SOURCES.find((s) => s.path.endsWith('libros/_components/book-index.tsx'))?.text ?? ''
+    expect(index).not.toContain('font-mono')
+    const list =
+      SOURCES.find((s) => s.path.endsWith('plan-de-cuentas/_components/category-list.tsx'))?.text ??
+      ''
+    expect(list).not.toContain('font-mono')
+  })
 })

@@ -16,6 +16,12 @@ import type { CoverageCell } from '@/lib/imports/ui/inbox'
 const html = (node: React.ReactNode) => renderToStaticMarkup(node)
 
 const DAYS: CoverageCell[] = [
+  {
+    key: '2026-10-08',
+    label: '08/10',
+    title: 'Jue 08/10: falta, de más atrás',
+    state: 'gap',
+  },
   { key: '2026-10-09', label: '09/10', title: 'Vie 09/10: subido', state: 'loaded', tick: '09/10' },
   {
     key: '2026-10-10',
@@ -24,14 +30,8 @@ const DAYS: CoverageCell[] = [
     state: 'review',
   },
   { key: '2026-10-11', label: '11/10', title: 'Dom 11/10: falta subir', state: 'missing' },
-  {
-    key: '2026-10-12',
-    label: '12/10',
-    title: 'Lun 12/10: falta subir',
-    state: 'missing',
-    tick: 'ayer',
-  },
-  { key: '2026-10-13', label: '13/10', title: 'Mar 13/10: hoy', state: 'today' },
+  { key: '2026-10-12', label: '12/10', title: 'Lun 12/10: falta subir', state: 'missing' },
+  { key: '2026-10-13', label: '13/10', title: 'Mar 13/10: hoy', state: 'today', tick: 'hoy' },
 ]
 
 const MONTHS: CoverageCell[] = [
@@ -77,21 +77,42 @@ describe('la tira por días', () => {
 
   it('lo que falta va punteado en ámbar y lo que espera revisión, rayado', () => {
     expect(out).toContain('border-dashed border-warning')
-    // El rayado es un fondo en línea (`HATCH_OVER_FILL` y `HATCH_MISSING`).
-    expect(out.match(/repeating-linear-gradient/g)?.length).toBe(3)
+    // El rayado es un fondo en línea (`HATCH_OVER_FILL` y `HATCH_MISSING`): las tres
+    // marcas (una en revisión, dos que faltan) y sus dos muestras de la leyenda.
+    expect(out.match(/repeating-linear-gradient/g)?.length).toBe(5)
   })
 
-  it('rotula solo algunos días', () => {
+  it('un hueco de más atrás no se ve igual que lo que falta ahora: gris, sin rayado', () => {
+    expect(out).toContain('border-dashed border-adm-neutral')
+    // La marca del hueco viejo (la que lleva su globito) no lleva el rayado ámbar.
+    expect(out).toMatch(
+      /data-tip-title="Jue 08\/10" data-tip-value="Falta, de más atrás" class="[^"]*border-adm-neutral[^"]*"><\/span>/,
+    )
+  })
+
+  it('la leyenda nombra solo las marcas que aparecen, cada una con su muestra', () => {
+    expect(out).toContain('aria-label="Qué es cada marca"')
+    for (const word of ['subido', 'falta revisarlo', 'falta', 'falta, de más atrás']) {
+      expect(out, word).toMatch(new RegExp(`</span>${word}</li>`))
+    }
+    // «Hoy» lo dice el rótulo del anillo; lo anterior al arranque no aparece en esta tira.
+    expect(out).not.toContain('antes de arrancar')
+  })
+
+  it('rotula solo algunos días, y el anillo dice «hoy»', () => {
     expect(out).toContain('>09/10<')
-    expect(out).toContain('>ayer<')
+    expect(out).toContain('>hoy<')
+    expect(out).not.toContain('>ayer<')
     expect(out).not.toContain('>11/10<')
+    // Los rótulos no bajan de 11 px.
+    expect(out).not.toContain('text-[10px]')
   })
 
   it('sin ticks no deja el renglón vacío', () => {
     const plain = html(
       <CoverageStrip cells={DAYS.map(({ tick: _tick, ...c }) => c)} granularity="day" />,
     )
-    expect(plain).not.toContain('>ayer<')
+    expect(plain).not.toContain('>hoy<')
     expect(plain).toContain('aria-label="Días subidos y días que faltan"')
   })
 })
@@ -111,6 +132,12 @@ describe('la tira por meses', () => {
       expect(out, cell.key).toContain(cell.title)
     }
     expect(out).toContain('Los últimos 4 meses. 1 mes subido. Falta bajar agosto.')
+  })
+
+  it('la leyenda de los meses dice qué es el anillo', () => {
+    for (const word of ['subido', 'falta bajarlo', 'este mes', 'antes de arrancar']) {
+      expect(out, word).toMatch(new RegExp(`</span>${word}</li>`))
+    }
   })
 
   it('un mes subido es un link a su archivo; los demás no se tocan', () => {

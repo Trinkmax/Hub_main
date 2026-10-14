@@ -9,7 +9,8 @@ import { comprasHref } from '../_lib/links'
  * destino y el mismo verbo de «Clasificar proveedores» de la puesta en marcha.
  *
  * Es una franja callada y su botón va en contorno: en esta pantalla lo primero
- * es lo que se debe. Solo la ve quien carga (la monta la pestaña con permiso de
+ * es lo que se debe (con deuda a la vista, la pestaña la dibuja debajo de la
+ * libreta). Solo la ve quien carga (la monta la pestaña con permiso de
  * escritura) y solo si falta alguno.
  */
 export function UnclassifiedStrip({
@@ -45,18 +46,21 @@ export function UnclassifiedStrip({
               <span className="tabular-nums">
                 {pending} de {all}
               </span>{' '}
-              {all === 1 ? 'proveedor no tiene' : 'proveedores no tienen'} categoría
+              {/* El sustantivo concuerda con el total; el verbo, con los que faltan. */}
+              {all === 1 ? 'proveedor' : 'proveedores'} {pending === 1 ? 'no tiene' : 'no tienen'}{' '}
+              categoría
             </>
           )}
         </p>
         <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground text-pretty">
-          Decí una sola vez en qué le comprás a cada uno y sus compras se ordenan solas. Es un toque
-          por proveedor; si no, te lo preguntamos la primera vez que le cargues algo.
+          {pending === 1
+            ? 'Decí una sola vez en qué le comprás y sus compras se ordenan solas. Es un toque; si no, te lo preguntamos la primera vez que le cargues algo.'
+            : 'Decí una sola vez en qué le comprás a cada uno y sus compras se ordenan solas. Es un toque por proveedor; si no, te lo preguntamos la primera vez que le cargues algo.'}
         </p>
       </div>
       <Button asChild variant="outline" className="h-11 shrink-0 rounded-full px-5">
         <Link href={comprasHref(tenantSlug, 'proveedores', { filtro: 'sin-clasificar' })}>
-          Clasificarlos ahora
+          {pending === 1 ? 'Clasificarlo ahora' : 'Clasificarlos ahora'}
         </Link>
       </Button>
     </section>

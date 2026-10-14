@@ -77,7 +77,8 @@ type StateLook = {
 /**
  * Cómo se ve cada estado. La palabra va en tinta o en el ámbar de texto (AA
  * sobre su fondo); el verde y el ámbar puros quedan para el ícono y el borde.
- * «En curso» usa `inset-ring` para no pelearse con el anillo de foco.
+ * El mes elegido (`SELECTED`) lleva el borde en tinta y el `inset-ring`, que no se pelea con
+ * el anillo de foco.
  */
 const LOOK: Readonly<Record<MonthStripState, StateLook>> = {
   closed: {
@@ -97,7 +98,9 @@ const LOOK: Readonly<Record<MonthStripState, StateLook>> = {
   current: {
     word: 'En curso',
     icon: CircleDot,
-    cell: 'border-foreground/80 bg-card inset-ring-1 inset-ring-foreground/80',
+    // Sin anillo: el anillo fuerte es del mes que se está viendo (`SELECTED`). Dos marcas
+    // fuertes en la misma tira no dejaban ver cuál estaba elegido.
+    cell: 'border-foreground/40 bg-card',
     iconInk: 'text-foreground',
     wordInk: 'text-foreground',
   },
@@ -125,7 +128,7 @@ const LEGEND: Readonly<
 > = {
   closed: { label: 'Cerrados', swatch: 'bg-success' },
   to_close: { label: 'Falta cerrar', glyph: 'dashed' },
-  current: { label: 'En curso', swatch: 'inset-ring-2 inset-ring-foreground/80' },
+  current: { label: 'En curso', swatch: 'border border-foreground/40 bg-card' },
   open: { label: 'Abiertos', swatch: 'border border-border' },
   future: { label: 'No empezaron', swatch: 'border border-border/60', muted: true },
 }
@@ -169,6 +172,10 @@ const TOUCHABLE =
   'outline-none transition-[box-shadow,transform] duration-(--duration-fast) ease-(--ease-out) focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[tip-active]:shadow-sm motion-reduce:transition-none'
 
 const PRESSABLE = 'hover:shadow-sm active:scale-[0.97] motion-reduce:active:scale-100'
+
+/** El mes que se está viendo: la marca fuerte de la tira (va sobre la de su estado). */
+const SELECTED =
+  'border-solid border-foreground bg-card shadow-sm inset-ring-1 inset-ring-foreground dark:border-foreground'
 
 function CellBody({ month, link }: { month: MonthStripMonth; link: boolean }) {
   const look = LOOK[month.state]
@@ -232,7 +239,7 @@ function MonthCell({ month }: { month: MonthStripMonth }) {
         prefetch={false}
         aria-label={spoken}
         aria-current={current}
-        className={cn(CELL, look.cell, TOUCHABLE, PRESSABLE)}
+        className={cn(CELL, look.cell, month.selected && SELECTED, TOUCHABLE, PRESSABLE)}
         {...tip}
       >
         <CellBody month={month} link />
@@ -249,7 +256,7 @@ function MonthCell({ month }: { month: MonthStripMonth }) {
         tabIndex={0}
         aria-label={spoken}
         aria-current={current}
-        className={cn(CELL, look.cell, TOUCHABLE)}
+        className={cn(CELL, look.cell, month.selected && SELECTED, TOUCHABLE)}
         {...tip}
       >
         <CellBody month={month} link={false} />
@@ -260,7 +267,11 @@ function MonthCell({ month }: { month: MonthStripMonth }) {
   // Todo lo que hay para decir ya está escrito en la pestaña: no se enfoca. El lector de
   // pantalla oye la misma oración que en las demás («Noviembre 2026: no empezó»).
   return (
-    <span aria-current={current} title={month.title} className={cn(CELL, look.cell)}>
+    <span
+      aria-current={current}
+      title={month.title}
+      className={cn(CELL, look.cell, month.selected && SELECTED)}
+    >
       <span className="sr-only">{spoken}</span>
       <span aria-hidden className="contents">
         <CellBody month={month} link={false} />

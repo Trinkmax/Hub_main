@@ -34,15 +34,30 @@ import {
   parseInvoiceBucket,
   parseSheetFilter,
   type Sheet,
+  sheetCarry,
 } from './_lib/planilla-words'
 
 export const metadata = { title: 'Gastos fijos' }
 
+/**
+ * Cuántos quedan por pagar de ESE mes: es el contador de su píldora. Mirando
+ * el mes que viene, lo que quedó de antes no cuenta (ya lo cuenta la píldora
+ * de hoy): si no, «Noviembre 3» repetía a «Octubre 3» con otro nombre.
+ */
+function monthLeft(sheet: Sheet): { own: number; carried: number } {
+  const carry = sheetCarry(sheet)
+  if (!carry) return { own: sheet.counts.falta, carried: 0 }
+  return { own: Math.max(0, sheet.counts.falta - carry.count), carried: carry.count }
+}
+
 /** «Octubre, este mes: 3 por pagar», para quien no ve la pastilla. */
 function monthAria(sheet: Sheet): string {
   const which = sheet.isCurrent ? 'este mes' : 'el mes que viene'
-  const left = sheet.counts.falta
-  return `${monthTitle(sheet.month)}, ${which}: ${left === 0 ? 'nada por pagar' : `${left} por pagar`}`
+  const { own, carried } = monthLeft(sheet)
+  const left = own === 0 ? 'nada por pagar' : `${own} por pagar`
+  const before =
+    carried === 0 ? '' : `; ${carried === 1 ? 'queda 1' : `quedan ${carried}`} de antes`
+  return `${monthTitle(sheet.month)}, ${which}: ${left}${before}`
 }
 
 /**
@@ -73,7 +88,13 @@ export default async function GastosFijosPage({
   const header = (
     <AdmHeader
       title="Gastos fijos"
-      description="Tu planilla de todos los meses: qué vence, qué pagaste y cuánto te falta."
+      // En el celular lo dice la hoja (el número y su oración), y cada renglón que se saca de
+      // arriba es un renglón más de la planilla a la vista: la bajada queda para pantallas con lugar.
+      description={
+        <span className="hidden sm:inline">
+          Tu planilla de todos los meses: qué vence, qué pagaste y cuánto te falta.
+        </span>
+      }
       badge={<ReadOnlyBadge className="ml-0" />}
     />
   )
@@ -181,15 +202,18 @@ export default async function GastosFijosPage({
     factura: parseInvoiceBucket(firstParam(sp.factura)),
   }
 
-  const monthPills: ViewPillItem[] = [sheets.current, sheets.next].map((s) => ({
-    key: s.month,
-    label: monthTitle(s.month),
-    href: gastosFijosHref(tenantSlug, { mes: s.month }),
-    count: s.counts.falta > 0 ? s.counts.falta : undefined,
-    active: s.month === month,
-    ariaLabel: monthAria(s),
-    scroll: false,
-  }))
+  const monthPills: ViewPillItem[] = [sheets.current, sheets.next].map((s) => {
+    const left = monthLeft(s).own
+    return {
+      key: s.month,
+      label: monthTitle(s.month),
+      href: gastosFijosHref(tenantSlug, { mes: s.month }),
+      count: left > 0 ? left : undefined,
+      active: s.month === month,
+      ariaLabel: monthAria(s),
+      scroll: false,
+    }
+  })
 
   return (
     <AdmPage>
@@ -201,8 +225,15 @@ export default async function GastosFijosPage({
           items={monthPills}
           aside={
             <>
-              {sheet.isCurrent ? null : <StatusPill tone="info">Todavía no empezó</StatusPill>}
-              <span className="text-sm text-muted-foreground">
+              {sheet.isCurrent ? null : (
+                // Si la hoja se abrió sola, en el celular ya lo dice la oración de abajo.
+                <StatusPill tone="info" className={auto ? 'max-sm:hidden' : undefined}>
+                  Todavía no empezó
+                </StatusPill>
+              )}
+              {/* En el celular no entra al lado de los meses y un renglón propio empuja la hoja:
+                  ahí el día lo dicen los renglones («Vence hoy», «Venció hace 3 días»). */}
+              <span className="text-sm text-muted-foreground max-sm:hidden">
                 Hoy es {weekdayName(today)} {formatDayMonth(today)}
               </span>
             </>

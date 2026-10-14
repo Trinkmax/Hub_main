@@ -19,12 +19,17 @@ import {
 import { Button } from '@/components/ui/button'
 import { reverseDocument, voidDocument } from '@/lib/accounting/actions/documents'
 import { formatIsoDay, formatMonthLabel, monthName } from '@/lib/dates'
-import { formatCents } from '@/lib/money'
+import { formatCents, formatCentsShort } from '@/lib/money'
 import { ReasonField, reasonError } from '../../../libros/_components/reason-field'
 
 /** «Factura A 0003-00001100» se nombra; un comprobante sin número («Pago») se pregunta en genérico. */
 function hasNumber(title: string): boolean {
   return /\d/.test(title)
+}
+
+/** «la» Factura A 0003-00001100, «el» Tique 0001-00000012: la pregunta suena a persona. */
+function articleFor(title: string): 'la' | 'el' {
+  return /^(factura|nota|liquidación|boleta)/i.test(title.trim()) ? 'la' : 'el'
 }
 
 const OFFLINE = 'Sin conexión: no se anuló. Probá de nuevo.'
@@ -35,10 +40,14 @@ function bundleText(siblings: readonly string[]): string | null {
   return `Se guardó junto con ${siblings.join(', ')}: se anula todo junto.`
 }
 
-function appliedText(appliedCents: number | null): string | null {
-  return appliedCents && appliedCents > 0
-    ? `Tiene ${formatCents(appliedCents)} en pagos o cobros aplicados. Si lo anulás, esos pagos quedan a cuenta.`
-    : null
+/** Qué tiene unido lo que se anula: pagos (una compra), cobros (una venta) o no se sabe cuál. */
+export type AppliedWord = 'pagos' | 'cobros' | 'pagos o cobros'
+
+function appliedText(appliedCents: number | null, word: AppliedWord): string | null {
+  if (!appliedCents || appliedCents <= 0) return null
+  // En una oración, pesos sin centavos; menos de un peso sí los lleva (nunca «$ 0»).
+  const amount = appliedCents < 100 ? formatCents(appliedCents) : formatCentsShort(appliedCents)
+  return `Tiene ${amount} en ${word} unidos. Si lo anulás, quedan a cuenta.`
 }
 
 /**
@@ -52,6 +61,7 @@ export function VoidDocumentButton({
   title,
   siblings,
   appliedCents,
+  appliedWord = 'pagos o cobros',
   extraNotes = [],
 }: {
   tenantSlug: string
@@ -61,6 +71,8 @@ export function VoidDocumentButton({
   siblings: readonly string[]
   /** Pagos o cobros de otros aplicados sobre sus partidas (factura pagada). */
   appliedCents: number | null
+  /** Cómo se nombran en el aviso: «pagos» en una compra, «cobros» en una venta. */
+  appliedWord?: AppliedWord
   /** Otros avisos de la ficha antes de anular (es de un gasto fijo, vino de un archivo). */
   extraNotes?: readonly string[]
 }) {
@@ -114,7 +126,11 @@ export function VoidDocumentButton({
     })
   }
 
-  const extra = [bundleText(siblings), appliedText(appliedCents), ...extraNotes].filter(Boolean)
+  const extra = [
+    bundleText(siblings),
+    appliedText(appliedCents, appliedWord),
+    ...extraNotes,
+  ].filter(Boolean)
 
   return (
     <AlertDialog
@@ -140,7 +156,7 @@ export function VoidDocumentButton({
           <AlertDialogTitle>
             {hasNumber(title) ? (
               <>
-                ¿Anulás <VoucherText text={title} />?
+                ¿Anulás {articleFor(title)} <VoucherText text={title} />?
               </>
             ) : (
               '¿Anulás este comprobante?'
@@ -210,6 +226,7 @@ export function ReverseDocumentButton({
   ivaMode,
   hasFiscal,
   appliedCents,
+  appliedWord = 'pagos o cobros',
   extraNotes = [],
 }: {
   tenantSlug: string
@@ -224,6 +241,8 @@ export function ReverseDocumentButton({
   ivaMode: 'adjustment_only' | 'negative_row' | null
   hasFiscal: boolean
   appliedCents: number | null
+  /** Cómo se nombran en el aviso: «pagos» en una compra, «cobros» en una venta. */
+  appliedWord?: AppliedWord
   /** Otros avisos de la ficha antes de anular (es de un gasto fijo, vino de un archivo). */
   extraNotes?: readonly string[]
 }) {
@@ -299,7 +318,7 @@ export function ReverseDocumentButton({
     : ivaMode === 'negative_row'
       ? `En el Libro IVA${targetMonth ? ` de ${targetMonth}` : ''} aparece el mismo comprobante en negativo («Anulación de …»).`
       : `En el Libro IVA no aparece una fila nueva: la contadora lo ve en la posición de IVA${targetMonth ? ` de ${targetMonth}` : ''} como ajuste de un período cerrado y decide si rectifica.`
-  const extra = [ivaText, appliedText(appliedCents), ...extraNotes].filter(Boolean)
+  const extra = [ivaText, appliedText(appliedCents, appliedWord), ...extraNotes].filter(Boolean)
 
   return (
     <AlertDialog
@@ -325,7 +344,7 @@ export function ReverseDocumentButton({
           <AlertDialogTitle>
             {hasNumber(title) ? (
               <>
-                ¿Anulás <VoucherText text={title} /> con fecha de hoy?
+                ¿Anulás {articleFor(title)} <VoucherText text={title} /> con fecha de hoy?
               </>
             ) : (
               '¿Anulás este comprobante con fecha de hoy?'

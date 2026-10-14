@@ -153,7 +153,10 @@ export function SalesPointsPanel({
                       {p.label}
                     </p>
                     <p className="mt-1 flex flex-wrap gap-1.5">
-                      <StatusPill tone="muted">{CHANNEL_LABEL[p.defaultChannel]}</StatusPill>
+                      {/* La píldora dice qué es: sola, «Salón» debajo de «Salón» no explicaba nada. */}
+                      <StatusPill tone="muted">
+                        En el cierre: {CHANNEL_LABEL[p.defaultChannel]}
+                      </StatusPill>
                       {p.active ? null : <StatusPill tone="muted">Sin usar</StatusPill>}
                     </p>
                   </div>
@@ -269,7 +272,7 @@ export function SalesPointsPanel({
                   id="pv-number"
                   label="Número"
                   required
-                  hint={preview ? `Sale como ${preview}-` : 'Por ejemplo, 3.'}
+                  hint="Por ejemplo, 3."
                   error={err('number')}
                 >
                   <Input
@@ -298,17 +301,35 @@ export function SalesPointsPanel({
                   />
                 </Field>
               </div>
+              {/* Cómo sale en la factura, mientras se escribe: el mismo número rodeado del dibujo. */}
+              <p
+                aria-live="polite"
+                className="-mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-sm text-muted-foreground"
+              >
+                En tus facturas sale
+                <span className="inline-flex items-baseline font-mono text-lg leading-none font-semibold tabular-nums">
+                  <span
+                    className={cn(
+                      'rounded-md px-1 py-0.5',
+                      preview
+                        ? 'text-foreground ring-2 ring-destructive'
+                        : 'border border-dashed border-muted-foreground/60',
+                    )}
+                  >
+                    {preview ?? '????'}
+                  </span>
+                  <span>-00001234</span>
+                </span>
+              </p>
               <div className="grid gap-1.5">
-                <Label id="pv-channel-label">Canal</Label>
+                {/* La misma pregunta que en la puesta en marcha (antes decía «Canal»). */}
+                <Label id="pv-channel-label">¿A qué parte del cierre del día va?</Label>
                 <ChoiceChips
                   options={CHANNELS}
                   value={editing.channel}
                   labelledBy="pv-channel-label"
                   onChange={(channel) => setEditing({ ...editing, channel })}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Decide en qué parte del cierre del día aparece.
-                </p>
                 {err('defaultChannel') ? (
                   <p role="alert" className="text-xs text-destructive">
                     {err('defaultChannel')}

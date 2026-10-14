@@ -11,7 +11,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -23,16 +22,18 @@ import { createRecurringBulk } from '@/lib/accounting/actions/master'
 import { cn } from '@/lib/utils'
 import {
   joinNameSources,
-  nameKey,
+  missingTypical,
   parseNameList,
   recurringBulkItems,
   suggestAccount,
-  TYPICAL_RECURRING,
 } from '../_lib/bulk'
 import { gastosFijosFillHref } from '../_lib/links'
 import { nextDueFrom } from '../_lib/recurring'
 
 type Row = { name: string; accountId: string | null; suggested: boolean }
+
+/** Cuántos típicos se ven de entrada en el celular: el resto queda detrás de «Ver más». */
+const TYPICAL_AT_A_GLANCE = 8
 
 /**
  * «Pegar una lista» de gastos fijos (pedido de los socios, 09/10/2026), en dos
@@ -76,6 +77,7 @@ export function BulkRecurringDialog({
   const [rows, setRows] = useState<Row[]>([])
   const [dueDay, setDueDay] = useState(10)
   const [error, setError] = useState<string | null>(null)
+  const [allTypical, setAllTypical] = useState(false)
   const [pending, start] = useTransition()
   const parsed = useMemo(
     () => parseNameList(joinNameSources(picked, text), { existing: existingNames, maxLength: 80 }),
@@ -83,10 +85,19 @@ export function BulkRecurringDialog({
   )
   const postable = useMemo(() => accounts.filter((a) => a.postable), [accounts])
   // Lo típico que este bar todavía no tiene: lo que ya está cargado no se ofrece.
-  const typical = useMemo(() => {
-    const existing = new Set(existingNames.map(nameKey))
-    return TYPICAL_RECURRING.filter((name) => !existing.has(nameKey(name)))
-  }, [existingNames])
+  const typical = useMemo(() => missingTypical(existingNames), [existingNames])
+  const hiddenTypical = Math.max(0, typical.length - TYPICAL_AT_A_GLANCE)
+  const summary =
+    parsed.names.length === 0 && parsed.existing.length === 0
+      ? 'Todavía no elegiste ninguno.'
+      : [
+          parsed.names.length === 1 ? '1 nuevo' : `${parsed.names.length} nuevos`,
+          parsed.existing.length > 0
+            ? `${parsed.existing.length} ya ${parsed.existing.length === 1 ? 'estaba' : 'estaban'} (no se repiten)`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')
 
   const toggle = (name: string) => {
     setError(null)
@@ -178,7 +189,8 @@ export function BulkRecurringDialog({
         </button>
       )}
       <Dialog open={open} onOpenChange={(next) => !pending && setOpen(next)}>
-        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
+        {/* Sin relleno abajo: el pie va pegado al borde del diálogo, siempre a la vista. */}
+        <DialogContent className="max-h-[90dvh] overflow-y-auto pb-0 sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Cargar varios gastos fijos de una</DialogTitle>
             <DialogDescription>
@@ -194,18 +206,32 @@ export function BulkRecurringDialog({
                 <fieldset className="m-0 min-w-0 border-0 p-0">
                   <legend className="mb-2 p-0 text-sm font-medium">Lo típico de un bar</legend>
                   <div className="flex flex-wrap gap-2">
-                    {typical.map((name) => (
+                    {typical.map((name, index) => (
                       <Pill
                         key={name}
                         size="touch"
                         activeTone="brand"
                         active={picked.includes(name)}
                         onClick={() => toggle(name)}
-                        className="md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]"
+                        className={cn(
+                          'md:pointer-fine:h-9 md:pointer-fine:px-3 md:pointer-fine:text-[13px]',
+                          // En el celular, dieciséis píldoras de 44 px tapaban el cuadro para pegar
+                          // y el botón del paso: van las primeras y el resto, detrás de «Ver más».
+                          index >= TYPICAL_AT_A_GLANCE && !allTypical && 'max-sm:hidden',
+                        )}
                       >
                         {name}
                       </Pill>
                     ))}
+                    {hiddenTypical > 0 && !allTypical ? (
+                      <button
+                        type="button"
+                        onClick={() => setAllTypical(true)}
+                        className="inline-flex h-11 cursor-pointer items-center rounded-full px-3 text-sm font-medium text-muted-foreground underline underline-offset-4 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring sm:hidden"
+                      >
+                        Ver {hiddenTypical} más
+                      </button>
+                    ) : null}
                   </div>
                 </fieldset>
               ) : null}
@@ -216,7 +242,7 @@ export function BulkRecurringDialog({
                 <Textarea
                   id={`${uid}-names`}
                   value={text}
-                  rows={7}
+                  rows={5}
                   placeholder={'Alarma\nSeguro integral de comercio\nSueldos personal'}
                   aria-describedby={`${uid}-hint ${uid}-summary`}
                   onChange={(e) => {
@@ -225,24 +251,8 @@ export function BulkRecurringDialog({
                   }}
                   className="text-base md:text-sm"
                 />
-                <p id={`${uid}-hint`} className="text-xs text-muted-foreground">
+                <p id={`${uid}-hint`} className="text-xs text-muted-foreground text-pretty">
                   Si pegás varias columnas, tomo la primera como nombre.
-                </p>
-                <p
-                  id={`${uid}-summary`}
-                  aria-live="polite"
-                  className="text-sm font-medium tabular-nums"
-                >
-                  {parsed.names.length === 0 && parsed.existing.length === 0
-                    ? 'Todavía no elegiste ninguno.'
-                    : [
-                        parsed.names.length === 1 ? '1 nuevo' : `${parsed.names.length} nuevos`,
-                        parsed.existing.length > 0
-                          ? `${parsed.existing.length} ya ${parsed.existing.length === 1 ? 'estaba' : 'estaban'} (no se repiten)`
-                          : null,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
                 </p>
                 {parsed.invalid.length > 0 ? (
                   <p className="text-xs text-warning-text">
@@ -283,6 +293,8 @@ export function BulkRecurringDialog({
                     </span>
                     <AccountCombobox
                       id={`${uid}-acc-${index}`}
+                      // Sin el código de la cuenta: acá se elige una categoría, no se lee el plan.
+                      className="[&_.font-mono]:hidden"
                       value={row.accountId}
                       onValueChange={(next) =>
                         setRows((prev) =>
@@ -302,57 +314,69 @@ export function BulkRecurringDialog({
             </div>
           )}
 
-          {error ? (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          ) : null}
-
-          <DialogFooter className="gap-2">
-            {step === 'review' ? (
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 md:h-9"
-                disabled={pending}
-                onClick={() => setStep('paste')}
-              >
-                Volver a la lista
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 md:h-9"
-                onClick={() => setOpen(false)}
-              >
-                Cancelar
-              </Button>
-            )}
-            {step === 'paste' ? (
-              <Button
-                type="button"
-                className="h-11 min-w-[140px] md:h-9"
-                disabled={parsed.names.length === 0}
-                onClick={review}
-              >
-                Revisar
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                className="h-11 min-w-[160px] md:h-9"
-                disabled={pending}
-                onClick={submit}
-              >
-                {pending
-                  ? 'Cargando…'
-                  : rows.length === 1
-                    ? 'Cargar 1 gasto fijo'
-                    : `Cargar ${rows.length} gastos fijos`}
-              </Button>
-            )}
-          </DialogFooter>
+          {/* El pie, pegado abajo del diálogo: cuántos van y el botón del paso, siempre a la vista. */}
+          <div className="sticky bottom-0 z-10 -mx-6 grid gap-2 border-t border-border/60 bg-background px-6 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+            {error ? (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            ) : null}
+            <div className="flex items-center gap-2">
+              {step === 'paste' ? (
+                <>
+                  <p
+                    id={`${uid}-summary`}
+                    aria-live="polite"
+                    className="min-w-0 flex-1 text-sm font-medium text-pretty tabular-nums"
+                  >
+                    {summary}
+                  </p>
+                  {/* En el celular se cierra con la «×» de arriba: el pie es el botón del paso. */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 max-sm:hidden md:h-9"
+                    onClick={() => setOpen(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="button"
+                    className="h-11 min-w-[120px] md:h-9 md:min-w-[140px]"
+                    disabled={parsed.names.length === 0}
+                    onClick={review}
+                  >
+                    Revisar
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 sm:ml-auto md:h-9"
+                    disabled={pending}
+                    onClick={() => setStep('paste')}
+                  >
+                    <span className="sm:hidden">Volver</span>
+                    <span className="max-sm:hidden">Volver a la lista</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    className="h-11 min-w-[160px] max-sm:flex-1 md:h-9"
+                    disabled={pending}
+                    onClick={submit}
+                  >
+                    {pending
+                      ? 'Cargando…'
+                      : rows.length === 1
+                        ? 'Cargar 1 gasto fijo'
+                        : `Cargar ${rows.length} gastos fijos`}
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </>

@@ -16,6 +16,7 @@ import {
 } from '@/lib/imports/server/types'
 import {
   ANSWER,
+  flowOf,
   isBeforeStart,
   MANUAL_COPY,
   NOTE_COPY,
@@ -32,6 +33,7 @@ import {
   reviewTally,
   reviewTitle,
   routeSteps,
+  rowWords,
   SKIP_COPY,
   STALE_QUESTION,
   skipText,
@@ -161,8 +163,9 @@ describe('cada cosa que puede faltar tiene su pregunta', () => {
       return questionFor(need, ctx)
     }
     expect(by('supplier_account').question).toBe('¿En qué le comprás a Limpieza Demo SA?')
+    // Un título va en pesos sin centavos: los centavos quedan en el papel de al lado.
     expect(plain(by('other_taxes_as').question)).toBe(
-      'Esta factura trae $ 14.400,00 de «otros impuestos» y ARCA no dice cuáles. ¿Qué son?',
+      'Esta factura trae $ 14.400 de «otros impuestos» y ARCA no dice cuáles. ¿Qué son?',
     )
     expect(plain(by('foreign_currency').question)).toBe(
       'Está en dólares: 107,69 USD × 1.465,50 = $ 157.819,70. ¿La cargo en pesos con ese cambio?',
@@ -174,7 +177,7 @@ describe('cada cosa que puede faltar tiene su pregunta', () => {
       'Mercado Pago le dice «Cobros con QR». ¿Cómo lo llamás en tu cierre del día?',
     )
     expect(plain(by('unknown_tax').question)).toBe(
-      'Mercado Pago te descontó $ 45,00 de «TASA X» y no sé qué impuesto es. ¿Dónde lo anoto?',
+      'Mercado Pago te descontó $ 45 de «TASA X» y no sé qué impuesto es. ¿Dónde lo anoto?',
     )
     expect(by('counterpart_account').question).toBe('Entró plata y no sé de qué es. ¿Qué fue?')
     expect(questionFor({ key: 'counterpart_account', direction: 'out' }, ctx).context).toBe(
@@ -257,6 +260,20 @@ describe('el estado de cada hoja', () => {
     expect(outGroup('skipped', 'ignored')).toBe('ours')
     expect(outGroup('skipped', 'rule_ignore')).toBe('other')
     expect(outGroup('voided')).toBe('other')
+  })
+
+  it('una hoja sacada del archivo dice el motivo que se guardó, no siempre «No es nuestro»', () => {
+    expect(proposalBadge('skipped', 'ignored', 'Se carga a mano').label).toBe('Se carga a mano')
+    expect(proposalBadge('skipped', 'ignored', 'Ya estaba cargado').label).toBe('Ya está cargado')
+    expect(proposalBadge('skipped', 'ignored', 'No es de la SAS').label).toBe('No es nuestro')
+    expect(outGroup('skipped', 'ignored', 'Se carga a mano')).toBe('manual')
+    expect(outGroup('skipped', 'ignored', 'Recibo de una factura ya cargada')).toBe('already')
+    expect(outGroup('skipped', 'ignored', 'No es nuestro')).toBe('ours')
+    expect(skipText('ignored', 'Se carga a mano')).toBe(
+      'Lo sacaste de este archivo para cargarlo a mano.',
+    )
+    expect(skipText('ignored')).toBe(SKIP_COPY.ignored)
+    expect(OUT_GROUP_TITLE.manual).toBe('Los sacaste para cargarlos a mano')
   })
 
   it('cada motivo de salteo y cada nota tienen texto', () => {
@@ -379,7 +396,48 @@ describe('el número de arriba', () => {
       value: '5',
       unit: 'movimientos',
     })
-    expect(hero.sentence).toBe('1 ya estaba cargado.')
+    // «Otro»: el número de arriba son los cargados; este es aparte, no uno de esos.
+    expect(hero.sentence).toBe('Otro ya estaba cargado: no se repite.')
+    const tally = { questions: 0, ready: 0, posted: 4, already: 4, out: 0, total: 8 }
+    expect(reviewHero({ source: 'bank_statement', tally, readyCents: 0 }).sentence).toBe(
+      'Otros 4 ya estaban cargados: no se repiten.',
+    )
+    expect(
+      reviewHero({
+        source: 'bank_statement',
+        tally: { ...tally, already: 2, out: 2 },
+        readyCents: 0,
+      }).sentence,
+    ).toBe('Otros 2 ya estaban cargados y 2 no iban.')
+    expect(
+      reviewHero({
+        source: 'bank_statement',
+        tally: { ...tally, already: 0, out: 1, total: 5 },
+        readyCents: 0,
+      }).sentence,
+    ).toBe('Otro no iba.')
+    expect(
+      reviewHero({
+        source: 'bank_statement',
+        tally: { ...tally, already: 0, total: 4 },
+        readyCents: 0,
+      }).sentence,
+    ).toBe('No quedó nada pendiente.')
+  })
+
+  it('a quien solo lee no se le habla de «te»', () => {
+    const tally = { questions: 3, ready: 0, posted: 18, already: 2, out: 0, total: 23 }
+    const reader = reviewHero({ source: 'arca_recibidos', tally, readyCents: 0, reader: true })
+    expect(reader.label).toBe('Falta contestar')
+    expect(reader.sentence).toBe('18 ya se cargaron y 2 ya estaban cargados.')
+    expect(
+      reviewHero({
+        source: 'arca_recibidos',
+        tally: { questions: 1, ready: 0, posted: 0, already: 0, out: 0, total: 1 },
+        readyCents: 0,
+        reader: true,
+      }).sentence,
+    ).not.toMatch(/te pregunto/)
   })
 
   it('nada para cargar: el archivo «eterno» se explica', () => {
@@ -389,7 +447,7 @@ describe('el número de arriba', () => {
       readyCents: 0,
     })
     expect(none).toMatchObject({ stage: 'nothing', label: null, value: 'Nada para cargar' })
-    expect(none.sentence).toBe('Los 4 quedaron en «No van».')
+    expect(none.sentence).toBe('Los 4 quedaron en «No se cargan»: abajo dice por qué.')
     expect(
       reviewHero({ source: 'arca_recibidos', tally: reviewTally({ skipped: 2 }, 2), readyCents: 0 })
         .sentence,
@@ -547,5 +605,154 @@ describe('el papel de una hoja', () => {
       aside: [],
     })
     expect(paperLines({ ...base, kind: 'credit_note' }).total?.label).toBe('A tu favor')
+  })
+})
+
+describe('un renglón de la lista: para qué lado fue la plata y cómo se titula', () => {
+  const row = (
+    over: Partial<ProposalSummary> & Pick<ProposalSummary, 'kind' | 'label'>,
+  ): ProposalSummary => ({
+    date: '2026-10-08',
+    month: null,
+    counterparty: null,
+    total_cents: 20_000_000,
+    item_count: 1,
+    ...over,
+  })
+
+  it('un movimiento del banco dice si entró o salió, con el dato del archivo', () => {
+    const out = row({
+      kind: 'bank_transfer',
+      label: 'EXTRACCION POR CAJA',
+      detail: { direction: 'debit' },
+    })
+    const into = row({ kind: 'bank_transfer', label: 'CR-DEPEF', detail: { direction: 'credit' } })
+    expect(flowOf(out)).toBe('out')
+    expect(flowOf(into)).toBe('in')
+    // El papel y el renglón dicen lo mismo.
+    expect(paperLines(out).total?.label).toBe('Salió')
+    expect(paperLines(into).total?.label).toBe('Entró')
+  })
+
+  it('en Mercado Pago sale del tipo de movimiento; una compra de ARCA no lleva dirección', () => {
+    expect(flowOf(row({ kind: 'mp_collection', label: 'Cobros con QR del 08/10' }))).toBe('in')
+    expect(flowOf(row({ kind: 'mp_bank_tax', label: 'x' }))).toBe('out')
+    expect(flowOf(row({ kind: 'bank_expense', label: 'Gastos bancarios del 01/10' }))).toBe('out')
+    expect(flowOf(row({ kind: 'mp_review', label: 'x', detail: { direction: 'in' } }))).toBe('in')
+    // El retiro a tu banco trae los últimos dígitos de la cuenta; la transferencia que entra, no.
+    expect(flowOf(row({ kind: 'mp_transfer', label: 'Retiro', detail: { last4: '1234' } }))).toBe(
+      'out',
+    )
+    expect(flowOf(row({ kind: 'mp_transfer', label: 'Transferencia propia' }))).toBe('in')
+    expect(flowOf(row({ kind: 'purchase', label: 'Factura A 0002-00003455' }))).toBeNull()
+    expect(flowOf(row({ kind: 'bank_review', label: 'x' }))).toBeNull()
+  })
+
+  it('en una compra manda el proveedor', () => {
+    expect(
+      rowWords(
+        row({
+          kind: 'purchase',
+          label: 'Factura A 0002-00000061',
+          counterparty: 'Limpieza Demo SA',
+        }),
+        'Compra',
+      ),
+    ).toEqual({ title: 'Limpieza Demo SA', paper: 'Compra · Factura A 0002-00000061' })
+  })
+
+  it('Mercado Pago: las mismas palabras que el dibujo de arriba; el nombre largo queda en gris', () => {
+    expect(
+      rowWords(
+        row({
+          kind: 'mp_bank_tax',
+          label: 'Impuesto a los débitos y créditos (Ley 25.413) del 08/10',
+          counterparty: 'Mercado Pago',
+        }),
+        'Impuesto a los débitos y créditos',
+      ),
+    ).toEqual({
+      title: 'Impuesto al cheque del 08/10',
+      paper: 'Impuesto a los débitos y créditos · Mercado Pago',
+    })
+    expect(
+      rowWords(
+        row({
+          kind: 'mp_iibb',
+          label: 'Retención de Ingresos Brutos (SIRTAC) del 08/10',
+          counterparty: 'Mercado Pago',
+        }),
+        'Ingresos Brutos',
+      ),
+    ).toEqual({
+      title: 'Retención de Ingresos Brutos del 08/10',
+      paper: 'Ingresos Brutos (SIRTAC) · Mercado Pago',
+    })
+    // Lo demás ya se titula por lo que es.
+    expect(
+      rowWords(
+        row({
+          kind: 'mp_collection',
+          label: 'Cobros con QR del 08/10',
+          counterparty: 'QR Mercado Pago',
+        }),
+        'Cobros del día',
+      ),
+    ).toEqual({ title: 'Cobros con QR del 08/10', paper: 'Cobros del día · QR Mercado Pago' })
+  })
+
+  it('banco: el título dice qué fue y el texto crudo del archivo queda en gris', () => {
+    expect(
+      rowWords(
+        row({
+          kind: 'bank_transfer',
+          label: 'EXTRACCION POR CAJA',
+          counterparty: 'Caja',
+          detail: { direction: 'debit' },
+        }),
+        'Transferencia entre tus cuentas',
+      ),
+    ).toEqual({ title: 'Pasaste plata a Caja', paper: 'EXTRACCION POR CAJA' })
+    expect(
+      rowWords(
+        row({
+          kind: 'bank_transfer',
+          label: 'CR-DEPEF',
+          counterparty: 'Caja',
+          detail: { direction: 'credit' },
+        }),
+        'Transferencia entre tus cuentas',
+      ),
+    ).toEqual({ title: 'Pasaste plata desde Caja', paper: 'CR-DEPEF' })
+    expect(
+      rowWords(
+        row({ kind: 'bank_payment', label: 'DEBAUT EXPENSAS', counterparty: 'Consorcio Centro' }),
+        'Pago',
+      ),
+    ).toEqual({ title: 'Pago a Consorcio Centro', paper: 'DEBAUT EXPENSAS' })
+    // Lo que el bar le enseñó a reconocer titula el renglón.
+    expect(
+      rowWords(
+        row({
+          kind: 'bank_review',
+          label: 'DEBAUT SERVICIO LUZ',
+          detail: { direction: 'debit', rule: 'Luz del local' },
+        }),
+        'Otro movimiento',
+      ),
+    ).toEqual({ title: 'Luz del local', paper: 'DEBAUT SERVICIO LUZ' })
+  })
+
+  it('si no se sabe qué fue, el texto del archivo sigue de título (es lo único que lo identifica)', () => {
+    expect(
+      rowWords(
+        row({ kind: 'bank_transfer', label: 'TRANSF MERCADOPAGO', detail: { direction: 'debit' } }),
+        'Transferencia entre tus cuentas',
+      ),
+    ).toEqual({ title: 'TRANSF MERCADOPAGO', paper: 'Transferencia entre tus cuentas' })
+    expect(rowWords(row({ kind: 'bank_review', label: 'DEB VARIOS' }), 'Otro movimiento')).toEqual({
+      title: 'DEB VARIOS',
+      paper: 'Otro movimiento',
+    })
   })
 })

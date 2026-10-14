@@ -267,7 +267,15 @@ export function FillSheet({
         </ul>
       )}
 
-      <div className="sticky bottom-0 z-30 -mx-4 border-t border-border/70 bg-background/90 px-4 pt-2.5 pb-[calc(env(safe-area-inset-bottom)+0.625rem)] shadow-[0_-10px_24px_-16px_rgb(0_0_0/0.35)] backdrop-blur-md sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+      {/* El pie: en el celular, una banda pegada abajo de borde a borde. Desde `sm` es una barra
+          del ancho de la planilla, con sus esquinas: una banda que sobresale de la columna y se
+          corta en seco flota rara cuando la lista es corta y la pantalla, ancha. */}
+      <div
+        className={cn(
+          'sticky bottom-0 z-30 -mx-4 border-t border-border/70 bg-background/90 px-4 pt-2.5 pb-[calc(env(safe-area-inset-bottom)+0.625rem)] shadow-[0_-10px_24px_-16px_rgb(0_0_0/0.35)] backdrop-blur-md',
+          'sm:bottom-4 sm:mx-0 sm:rounded-2xl sm:border sm:bg-card/95 sm:px-5 sm:pt-3 sm:pb-3 sm:shadow-md',
+        )}
+      >
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           {pastedIds.length > 0 || bulk ? (
             <>
